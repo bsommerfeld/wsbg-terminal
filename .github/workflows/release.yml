@@ -1,0 +1,113 @@
+# =============================================================================
+#  Release CI
+#
+#  Builds the full application, collects all runtime JARs (including cross-
+#  platform JavaFX natives), packages them via TinyUpdate, and uploads the
+#  OTA artifacts (update.json + files.zip) to the GitHub Release.
+#
+#  This workflow runs on ubuntu-latest only — the application JARs are
+#  platform-independent. JavaFX platform-specific JARs are fetched
+#  explicitly for all targets (mac, mac-aarch64, win, linux, linux-aarch64).
+# =============================================================================
+
+name: Release CI
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build_and_release:
+    name: Build, Test & Upload Artifacts
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: 'zulu'
+          cache: maven
+
+      - name: Build and Test with Maven
+        id: build_test
+        run: mvn clean install -U -Dgpg.skip=true
+
+      # Collect all runtime dependencies into a single directory.
+      # JavaFX is platform-specific — Maven on Linux only resolves linux JARs.
+      # We explicitly fetch all platform classifiers so the zip works everywhere.
+      #
+      # The JavaFX version is extracted from the root pom.xml — hardcoding it
+      # here would silently desync on version bumps and fail at runtime.
+      - name: Collect Runtime Dependencies
+        run: |
+          DEPS_DIR="terminal/target/deps"
+
+          mvn dependency:copy-dependencies \
+            -pl terminal \
+            -DincludeScope=runtime \
+            -DoutputDirectory="${GITHUB_WORKSPACE}/${DEPS_DIR}"
+
+          JAVAFX_VERSION=$(mvn help:evaluate -Dexpression=javafx.version -q -DforceStdout)
+          echo "Resolved JavaFX version from pom.xml: $JAVAFX_VERSION"
+
+          if [ -z "$JAVAFX_VERSION" ]; then
+            echo "::error::Failed to resolve javafx.version from pom.xml"
+            exit 1
+          fi
+
+          JAVAFX_MODULES="javafx-base javafx-controls javafx-fxml javafx-graphics javafx-media javafx-web"
+          for mod in $JAVAFX_MODULES; do
+            for classifier in mac-aarch64 mac win linux linux-aarch64; do
+              mvn dependency:copy \
+                -Dartifact=org.openjfx:${mod}:${JAVAFX_VERSION}:jar:${classifier} \
+                -DoutputDirectory="${GITHUB_WORKSPACE}/${DEPS_DIR}" \
+                -Dmdep.stripVersion=false || true
+            done
+          done
+
+      - name: Package with TinyUpdate
+        uses: ./updater/action
+        with:
+          artifact-dirs: 'core/target,database/target,reddit/target,agent/target,terminal/target,terminal/target/deps'
+          script-dir: '.script'
+
+      - name: Prepare Build Status Badges
+        id: badges
+        run: |
+          if [ "${{ steps.build_test.outcome }}" = "success" ]; then
+            BUILD_BADGE="![Build Success](https://img.shields.io/badge/Build-Success-brightgreen)"
+            TEST_BADGE="![Tests Succeeded](https://img.shields.io/badge/Tests-Succeeded-brightgreen)"
+          else
+            BUILD_BADGE="![Build Failed](https://img.shields.io/badge/Build-Failed-red)"
+            TEST_BADGE="![Tests Failed](https://img.shields.io/badge/Tests-Failed-red)"
+          fi
+
+          echo "build-badge=${BUILD_BADGE}" >> $GITHUB_OUTPUT
+          echo "test-badge=${TEST_BADGE}" >> $GITHUB_OUTPUT
+
+      - name: Update Release with Changelog
+        uses: bsommerfeld/release-changelog@v0.1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          prepend-text: |
+            ${{ steps.badges.outputs.build-badge }} ${{ steps.badges.outputs.test-badge }}
+
+      - name: Upload TinyUpdate Artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" \
+            updater-dist/update.json \
+            updater-dist/files.zip \
+            updater-dist/app.zip \
+            updater-dist/deps.zip \
+            --clobber

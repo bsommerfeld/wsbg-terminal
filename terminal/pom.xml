@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <parent>
+        <artifactId>wsbg-terminal</artifactId>
+        <groupId>de.bsommerfeld</groupId>
+        <version>${revision}</version>
+    </parent>
+    <modelVersion>4.0.0</modelVersion>
+
+    <artifactId>terminal</artifactId>
+
+    <dependencies>
+
+         <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>core</artifactId>
+        </dependency>
+         <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>reddit</artifactId>
+        </dependency>
+
+         <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>agent</artifactId>
+        </dependency>
+         <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>database</artifactId>
+        </dependency>
+         <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>financial-juice</artifactId>
+        </dependency>
+
+
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-controls</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-fxml</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-graphics</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld.jshepherd</groupId>
+            <artifactId>core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld.jshepherd</groupId>
+            <artifactId>toml</artifactId>
+        </dependency>
+         <dependency>
+            <groupId>com.google.inject</groupId>
+            <artifactId>guice</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+        </dependency>
+    </dependencies>
+    
+    <build>
+        <plugins>
+            <!-- Embeds Main-Class in the JAR manifest so the launcher's
+                 resolveMainClass() scan finds the entry point automatically.
+                 The javafx-maven-plugin only uses mainClass for mvn javafx:run
+                 and does NOT write it into META-INF/MANIFEST.MF. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <configuration>
+                    <archive>
+                        <manifest>
+                            <mainClass>de.bsommerfeld.wsbg.terminal.ui.WsbgTerminalApp</mainClass>
+                        </manifest>
+                    </archive>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.openjfx</groupId>
+                <artifactId>javafx-maven-plugin</artifactId>
+                <version>0.0.8</version>
+                <configuration>
+                    <mainClass>de.bsommerfeld.wsbg.terminal.ui.WsbgTerminalApp</mainClass>
+                    <options>
+                        <option>--enable-preview</option>
+                        <option>-Djavafx.enablePreview=true</option>
+                        <option>-Xdock:name=WSBG</option>
+                        <option>-Xdock:icon=${project.basedir}/src/main/resources/images/app-icon.png</option>
+                    </options>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>

@@ -1,0 +1,12 @@
+Extract all financial instruments mentioned in the following text.
+Include: stocks, ETFs, ETCs, indices, commodities, crypto, and leveraged products.
+Map informal names to their ticker/symbol where possible (e.g., "Gold" → "GOLD", "die Fetten" → "SPY", "Nassdachs" → "QQQ", "Dachs"/"Dax" → "DAX").
+
+TEXT:
+{{CONTEXT}}
+
+RULES:
+- Only extract instruments that are explicitly discussed or referenced.
+- Do NOT invent tickers. If you cannot determine the symbol, use the common name as-is.
+- Each mention counts once per thread, not per comment.
+- Ignore generic market commentary without a specific instrument.

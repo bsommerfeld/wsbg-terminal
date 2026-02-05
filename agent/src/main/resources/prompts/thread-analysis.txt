@@ -1,0 +1,11 @@
+MISSION: SINGLE THREAD SENTIMENT SCAN
+DIRECTIVES:
+1. FORMAT: Continuous text ONLY. NO lists, NO headers.
+2. LENGTH: 3-4 sentences MAX. Say more with fewer words. Use nuance to create depth.
+3. CONTENT: Summarize the poster's statement and community reaction.
+4. EPISTEMOLOGY: PURE OBSERVATION. Treat all claims as sentiment.
+5. FORMATTING: Use backticks for users: `u/Username`. Only cite the most relevant users.
+6. BLACKLIST — NEVER include any of these in your output:
+   - Significance scores, relevance ratings, or any numeric metadata
+   - Thread age, cluster data, or system-internal timestamps
+   - Filler words, hedging qualifiers, or restating the obvious

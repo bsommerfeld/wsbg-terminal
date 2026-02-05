@@ -1,0 +1,6 @@
+Analyze this image in the context of financial markets and trading. Focus on:
+1. All visible text, numbers, prices, percentages, and timestamps.
+2. Chart patterns, trends, support/resistance levels, and indicators if present.
+3. If it is a screenshot (e.g. Trade Republic, brokerage app), extract the instrument name, position data, and P/L.
+4. If it is a meme, explain the sentiment and financial implications.
+Be precise and data-driven. Do not speculate beyond what is visible.

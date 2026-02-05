@@ -1,0 +1,166 @@
+# =============================================================================
+#  PR Build — Test Artifacts
+#
+#  Builds the project on every PR and uploads executable JARs for both the
+#  Launcher and Terminal module so reviewers can live-test changes without
+#  building locally.
+#
+#  Artifacts are uploaded as GitHub Actions artifacts (downloadable via the
+#  Actions tab) and a comment with download links is posted on the PR.
+#
+#  Note: GitHub does not allow attaching files directly to a PR. The workflow
+#  uses actions/upload-artifact to store them and posts a convenience comment.
+# =============================================================================
+
+name: PR Build
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+# Only one build per PR at a time — fast pushes cancel the previous run
+# instead of wasting resources on an already-outdated commit.
+concurrency:
+  group: pr-build-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  build:
+    name: Build & Upload Test JARs
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: 'zulu'
+          cache: maven
+
+      - name: Build with Maven
+        run: mvn clean package -DskipTests -U
+
+      # ── Launcher JAR ──────────────────────────────────────────────────
+      # The shade plugin produces the fat JAR we need. The "original-"
+      # prefixed file is the un-shaded copy — we skip it.
+      - name: Prepare Launcher JAR
+        shell: bash
+        run: |
+          SHADED_JAR=$(find launcher/target -maxdepth 1 -name 'launcher-*.jar' ! -name 'original-*' | head -1)
+
+          if [ -z "$SHADED_JAR" ]; then
+            echo "::error::No shaded launcher JAR found — build is broken"
+            exit 1
+          fi
+
+          mkdir -p pr-artifacts/launcher
+          cp "$SHADED_JAR" pr-artifacts/launcher/wsbg-launcher.jar
+
+      # ── Terminal JAR (with dependencies) ──────────────────────────────
+      # Terminal doesn't use shade — we collect the module JAR plus all
+      # runtime dependencies into a single directory.
+      - name: Prepare Terminal JARs
+        shell: bash
+        run: |
+          TERMINAL_JAR=$(find terminal/target -maxdepth 1 -name 'terminal-*.jar' | head -1)
+
+          if [ -z "$TERMINAL_JAR" ]; then
+            echo "::error::No terminal JAR found — build is broken"
+            exit 1
+          fi
+
+          mkdir -p pr-artifacts/terminal
+
+          mvn dependency:copy-dependencies \
+            -pl terminal \
+            -DincludeScope=runtime \
+            -DoutputDirectory=terminal/target/deps
+
+          # Guard against empty version — without it the loop silently
+          # fails on every artifact, hidden by || true.
+          JAVAFX_VERSION=$(mvn help:evaluate -Dexpression=javafx.version -q -DforceStdout)
+          if [ -z "$JAVAFX_VERSION" ]; then
+            echo "::error::Failed to resolve javafx.version from pom.xml"
+            exit 1
+          fi
+
+          JAVAFX_MODULES="javafx-base javafx-controls javafx-fxml javafx-graphics javafx-media javafx-web"
+          for mod in $JAVAFX_MODULES; do
+            for classifier in mac-aarch64 mac win linux linux-aarch64; do
+              mvn dependency:copy \
+                -Dartifact=org.openjfx:${mod}:${JAVAFX_VERSION}:jar:${classifier} \
+                -DoutputDirectory=terminal/target/deps \
+                -Dmdep.stripVersion=false || true
+            done
+          done
+
+          # Sanity check — not all classifier/module combos exist, but
+          # too few downloads means something is fundamentally wrong.
+          DOWNLOAD_COUNT=$(find terminal/target/deps -name 'javafx-*-*.jar' | wc -l)
+          if [ "$DOWNLOAD_COUNT" -lt 5 ]; then
+            echo "::warning::Only $DOWNLOAD_COUNT JavaFX platform JARs downloaded — artifact may not be runnable on all platforms"
+          fi
+
+          cp "$TERMINAL_JAR" pr-artifacts/terminal/
+          cp terminal/target/deps/*.jar pr-artifacts/terminal/
+
+          printf '#!/usr/bin/env bash\nDIR="$(cd "$(dirname "$0")" && pwd)"\njava --enable-preview -cp "$DIR/*" de.bsommerfeld.wsbg.terminal.ui.AppMain "$@"\n' > pr-artifacts/terminal/run.sh
+          chmod +x pr-artifacts/terminal/run.sh
+
+          printf '@echo off\r\njava --enable-preview -cp "%%~dp0*" de.bsommerfeld.wsbg.terminal.ui.AppMain %%*\r\n' > pr-artifacts/terminal/run.bat
+
+      - name: Upload Launcher Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: launcher-jar
+          path: pr-artifacts/launcher/
+          retention-days: 14
+
+      - name: Upload Terminal Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: terminal-jars
+          path: pr-artifacts/terminal/
+          retention-days: 14
+
+      - name: PR-Kommentar
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const MARKER = '<!-- pr-build-artifacts -->';
+            const runId = context.runId;
+            const repo = context.repo;
+            const runUrl = `https://github.com/${repo.owner}/${repo.repo}/actions/runs/${runId}`;
+
+            const body = `${MARKER}\n📦 [Test-Artefakte herunterladen](${runUrl}#artifacts)`;
+
+            const comments = await github.rest.issues.listComments({
+              owner: repo.owner,
+              repo: repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const existing = comments.data.find(c => c.body.includes(MARKER));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: repo.owner,
+                repo: repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: repo.owner,
+                repo: repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
