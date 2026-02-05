@@ -31,7 +31,7 @@
         </dependency>
         <dependency>
             <groupId>de.bsommerfeld.jshepherd</groupId>
-            <artifactId>yaml</artifactId>
+            <artifactId>toml</artifactId>
         </dependency>
     </dependencies>
 

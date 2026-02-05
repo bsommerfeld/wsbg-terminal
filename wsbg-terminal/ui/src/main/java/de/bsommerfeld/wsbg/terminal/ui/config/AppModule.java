@@ -5,7 +5,7 @@ import de.bsommerfeld.jshepherd.core.ConfigurationLoader;
 
 import de.bsommerfeld.wsbg.terminal.core.config.AgentConfig;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
-import de.bsommerfeld.wsbg.terminal.core.config.MarketConfig;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.nio.file.Files;
@@ -27,7 +27,7 @@ public class AppModule extends AbstractModule {
             if (!Files.exists(appDataDir)) {
                 Files.createDirectories(appDataDir);
             }
-            Path configPath = appDataDir.resolve("config.yaml");
+            Path configPath = appDataDir.resolve("config.toml");
             LOG.info("Loading Configuration from: {}", configPath.toAbsolutePath());
 
             GlobalConfig config = ConfigurationLoader
@@ -39,7 +39,7 @@ public class AppModule extends AbstractModule {
             bind(GlobalConfig.class).toInstance(config);
 
             // Bind Sub-Configs for convenience
-            bind(MarketConfig.class).toInstance(config.getMarket());
+
             bind(AgentConfig.class).toInstance(config.getAgent());
 
             // Start Passive Monitor

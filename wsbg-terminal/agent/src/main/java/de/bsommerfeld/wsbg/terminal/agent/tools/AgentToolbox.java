@@ -2,7 +2,7 @@ package de.bsommerfeld.wsbg.terminal.agent.tools;
 
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
-import de.bsommerfeld.wsbg.terminal.data.reddit.RedditScraper;
+import de.bsommerfeld.wsbg.terminal.reddit.RedditScraper;
 
 import dev.langchain4j.agent.tool.Tool;
 import jakarta.inject.Inject;

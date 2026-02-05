@@ -1,4 +1,4 @@
-package de.bsommerfeld.wsbg.terminal.data.reddit;
+package de.bsommerfeld.wsbg.terminal.reddit;
 
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.db.DatabaseService;

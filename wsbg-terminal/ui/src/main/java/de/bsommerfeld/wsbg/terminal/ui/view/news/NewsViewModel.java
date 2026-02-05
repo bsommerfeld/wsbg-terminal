@@ -2,7 +2,7 @@ package de.bsommerfeld.wsbg.terminal.ui.view.news;
 
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
-import de.bsommerfeld.wsbg.terminal.data.reddit.RedditScraper;
+import de.bsommerfeld.wsbg.terminal.reddit.RedditScraper;
 import de.bsommerfeld.wsbg.terminal.db.DatabaseService;
 import de.bsommerfeld.wsbg.terminal.agent.ChatService;
 import jakarta.inject.Inject;
@@ -54,7 +54,7 @@ public class NewsViewModel {
         CompletableFuture.runAsync(() -> {
             try {
                 RedditScraper.ScrapeStats totalStats = new RedditScraper.ScrapeStats();
-                for (String sub : config.getAgent().getSubreddits()) {
+                for (String sub : config.getReddit().getSubreddits()) {
                     totalStats.add(scraper.scanSubreddit(sub));
                 }
 

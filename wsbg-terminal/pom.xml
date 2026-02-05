@@ -12,7 +12,7 @@
     <modules>
         <module>core</module>
         <module>db</module>
-        <module>data</module>
+        <module>reddit</module>
 
         <module>agent</module>
         <module>ui</module>
@@ -57,7 +57,7 @@
             </dependency>
             <dependency>
                 <groupId>de.bsommerfeld</groupId>
-                <artifactId>data</artifactId>
+                <artifactId>reddit</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
@@ -145,7 +145,7 @@
             </dependency>
             <dependency>
                 <groupId>de.bsommerfeld.jshepherd</groupId>
-                <artifactId>yaml</artifactId>
+                <artifactId>toml</artifactId>
                 <version>${jshepherd.version}</version>
             </dependency>
             <dependency>

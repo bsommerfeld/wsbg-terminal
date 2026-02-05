@@ -16,13 +16,13 @@ public class GlobalConfig extends ConfigurablePojo<GlobalConfig> {
     @Comment("Visibility state of the Reddit List Panel")
     private boolean redditListVisible = true;
 
-    @Section("market")
-    @Comment("Market Data Provider Settings")
-    private MarketConfig market = new MarketConfig();
-
     @Section("agent")
     @Comment("AI Agent Settings")
     private AgentConfig agent = new AgentConfig();
+
+    @Section("reddit")
+    @Comment("Reddit Monitor Settings")
+    private RedditConfig reddit = new RedditConfig();
 
     public boolean isRedditListVisible() {
         return redditListVisible;
@@ -36,11 +36,11 @@ public class GlobalConfig extends ConfigurablePojo<GlobalConfig> {
         return debugMode;
     }
 
-    public MarketConfig getMarket() {
-        return market;
-    }
-
     public AgentConfig getAgent() {
         return agent;
+    }
+
+    public RedditConfig getReddit() {
+        return reddit;
     }
 }

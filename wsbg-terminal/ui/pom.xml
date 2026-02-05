@@ -19,7 +19,7 @@
         </dependency>
          <dependency>
             <groupId>de.bsommerfeld</groupId>
-            <artifactId>data</artifactId>
+            <artifactId>reddit</artifactId>
         </dependency>
 
          <dependency>
@@ -60,7 +60,7 @@
         </dependency>
         <dependency>
             <groupId>de.bsommerfeld.jshepherd</groupId>
-            <artifactId>yaml</artifactId>
+            <artifactId>toml</artifactId>
         </dependency>
          <dependency>
             <groupId>com.google.inject</groupId>

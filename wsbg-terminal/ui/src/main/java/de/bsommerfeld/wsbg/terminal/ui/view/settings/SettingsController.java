@@ -33,7 +33,7 @@ public class SettingsController {
     private void loadValues() {
         modelField.setText(config.getAgent().getOllamaModel());
 
-        subredditsField.setText(String.join(", ", config.getAgent().getSubreddits()));
+        subredditsField.setText(String.join(", ", config.getReddit().getSubreddits()));
     }
 
     @FXML
@@ -46,7 +46,7 @@ public class SettingsController {
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
                 .collect(Collectors.toList());
-        config.getAgent().setSubreddits(subList);
+        config.getReddit().setSubreddits(subList);
 
         // 2. Persist to YAML
         try {

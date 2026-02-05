@@ -4,7 +4,7 @@ import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
-import de.bsommerfeld.wsbg.terminal.data.reddit.RedditScraper;
+import de.bsommerfeld.wsbg.terminal.reddit.RedditScraper;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.ollama.OllamaEmbeddingModel;
@@ -46,6 +46,7 @@ public class PassiveMonitorService {
     private final ApplicationEventBus eventBus;
     private final de.bsommerfeld.wsbg.terminal.db.DatabaseService db;
     private final I18nService i18n;
+    private final de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig config;
 
     // Vector Model (Ollama)
     private final EmbeddingModel embeddingModel;
@@ -68,15 +69,13 @@ public class PassiveMonitorService {
     private static final String OLLAMA_URL = "http://localhost:11434";
 
     // Config
-    private static final double SIMILARITY_THRESHOLD = 0.55;
-    private static final Duration INVESTIGATION_TTL = Duration.ofMinutes(60);
-
-    // Significance Thresholds (The "Wake Up" Levels)
-    private static final double SIGNIFICANCE_THRESHOLD_REPORT = 10.0; // Raised from 30.0 to reduce noise
-
-    // Cleanup Config
-    private static final Duration CLEANUP_INTERVAL = Duration.ofHours(1);
-    private static final long DATA_RETENTION_SECONDS = 6 * 3600;
+    // Config fields (initialized from Config)
+    private double similarityThreshold;
+    private Duration investigationTtl;
+    private double significanceThresholdReport;
+    private Duration cleanupInterval;
+    private long dataRetentionSeconds;
+    private long updateIntervalSeconds;
 
     @Inject
     public PassiveMonitorService(RedditScraper scraper, AgentBrain brain, ApplicationEventBus eventBus,
@@ -88,6 +87,19 @@ public class PassiveMonitorService {
         this.eventBus = eventBus;
         this.db = db;
         this.i18n = i18n;
+
+        // Load Config
+        var redditConfig = config.getReddit();
+        this.similarityThreshold = redditConfig.getSimilarityThreshold();
+        this.investigationTtl = Duration.ofMinutes(redditConfig.getInvestigationTtlMinutes());
+        this.significanceThresholdReport = redditConfig.getSignificanceThreshold();
+        this.cleanupInterval = Duration.ofHours(redditConfig.getCleanupIntervalHours());
+        this.dataRetentionSeconds = Duration.ofHours(redditConfig.getDataRetentionHours()).toSeconds();
+        this.updateIntervalSeconds = redditConfig.getUpdateIntervalSeconds();
+
+        // Also keep reference to config for runtime updates if needed, or subreddits
+        // list
+        this.config = config;
 
         String embeddingModelName = config.getAgent().getEmbeddingModel();
 
@@ -104,19 +116,22 @@ public class PassiveMonitorService {
 
     private void startMonitoring() {
         LOG.info("Starting Passive Reddit Monitor (Weighted Significance Logic)...");
-        scannerExecutor.scheduleAtFixedRate(this::scanCycle, 30, 60, TimeUnit.SECONDS);
+        scannerExecutor.scheduleAtFixedRate(this::scanCycle, 30, updateIntervalSeconds, TimeUnit.SECONDS);
     }
 
     private void scanCycle() {
         try {
-            if (Duration.between(lastCleanup, Instant.now()).compareTo(CLEANUP_INTERVAL) > 0) {
-                int deleted = db.cleanupOldThreads(DATA_RETENTION_SECONDS);
+            if (Duration.between(lastCleanup, Instant.now()).compareTo(cleanupInterval) > 0) {
+                int deleted = db.cleanupOldThreads(dataRetentionSeconds);
                 lastCleanup = Instant.now();
                 eventBus.post(new de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.LogEvent(
                         String.valueOf(deleted), "CLEANUP"));
             }
 
-            RedditScraper.ScrapeStats stats = scraper.scanSubreddit("wallstreetbetsGER");
+            RedditScraper.ScrapeStats stats = new RedditScraper.ScrapeStats();
+            for (String sub : config.getReddit().getSubreddits()) {
+                stats.add(scraper.scanSubreddit(sub));
+            }
 
             // Fetch updates from ScrapeStats to pass to analysis
             List<RedditThread> updates = stats.threadUpdates;
@@ -183,7 +198,7 @@ public class PassiveMonitorService {
                     }
                 }
 
-                if (bestMatch != null && bestScore >= SIMILARITY_THRESHOLD) {
+                if (bestMatch != null && bestScore >= similarityThreshold) {
                     // Update: Only add event if something actually changed
                     if (deltaScore > 0 || deltaComments > 0) {
                         bestMatch.addUpdate(t, deltaScore, deltaComments);
@@ -220,7 +235,7 @@ public class PassiveMonitorService {
         Iterator<Investigation> it = investigations.iterator();
         while (it.hasNext()) {
             Investigation inv = it.next();
-            if (Duration.between(inv.lastActivity, now).compareTo(INVESTIGATION_TTL) > 0) {
+            if (Duration.between(inv.lastActivity, now).compareTo(investigationTtl) > 0) {
                 investigations.remove(inv);
             }
         }
@@ -246,11 +261,10 @@ public class PassiveMonitorService {
             inv.currentSignificance = score;
 
             LOG.info(
-                    "[INTERNAL][AI-REASONING] Topic '{}' Score: {:.2f} (Threads: {} | Comments: {} | BaseScore: {} | Velocity: {}) -> Threshold: {}",
                     inv.initialTitle, score, inv.threadCount, inv.totalComments, inv.totalScore, eventsLast5Min,
-                    SIGNIFICANCE_THRESHOLD_REPORT);
+                    significanceThresholdReport);
 
-            if (score >= SIGNIFICANCE_THRESHOLD_REPORT) {
+            if (score >= significanceThresholdReport) {
                 candidates.add(inv);
             }
         }

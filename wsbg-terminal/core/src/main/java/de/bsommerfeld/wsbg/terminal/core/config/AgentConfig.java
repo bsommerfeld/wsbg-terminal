@@ -21,10 +21,6 @@ public class AgentConfig {
     @Comment("Ollama Model Name for Embeddings (default: nomic-embed-text-v2-moe:latest)")
     private String embeddingModel = "nomic-embed-text-v2-moe:latest";
 
-    @Key("subreddits")
-    @Comment("List of subreddits to scan")
-    private java.util.List<String> subreddits = java.util.List.of("wallstreetbetsGER");
-
     public String getOllamaModel() {
         return ollamaModel;
     }
@@ -39,10 +35,6 @@ public class AgentConfig {
 
     public String getEmbeddingModel() {
         return embeddingModel;
-    }
-
-    public java.util.List<String> getSubreddits() {
-        return subreddits;
     }
 
     public void setOllamaModel(String ollamaModel) {
@@ -61,7 +53,4 @@ public class AgentConfig {
         this.embeddingModel = embeddingModel;
     }
 
-    public void setSubreddits(java.util.List<String> subreddits) {
-        this.subreddits = subreddits;
-    }
 }

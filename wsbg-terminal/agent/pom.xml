@@ -14,7 +14,7 @@
     <dependencies>
          <dependency>
             <groupId>de.bsommerfeld</groupId>
-            <artifactId>data</artifactId>
+            <artifactId>reddit</artifactId>
         </dependency>
         <dependency>
             <groupId>dev.langchain4j</groupId>

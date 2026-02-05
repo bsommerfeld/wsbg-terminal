@@ -26,7 +26,7 @@ public class ChatService {
 
     @Inject
     public ChatService(AgentBrain brain, ApplicationEventBus eventBus, I18nService i18n,
-            de.bsommerfeld.wsbg.terminal.data.reddit.RedditScraper scraper,
+            de.bsommerfeld.wsbg.terminal.reddit.RedditScraper scraper,
             de.bsommerfeld.wsbg.terminal.agent.PassiveMonitorService passiveMonitor) {
         this.brain = brain;
         this.eventBus = eventBus;
@@ -157,7 +157,7 @@ public class ChatService {
         return CompletableFuture.supplyAsync(() -> brain.see(imageUrl));
     }
 
-    private final de.bsommerfeld.wsbg.terminal.data.reddit.RedditScraper scraper;
+    private final de.bsommerfeld.wsbg.terminal.reddit.RedditScraper scraper;
     private final de.bsommerfeld.wsbg.terminal.agent.PassiveMonitorService passiveMonitor;
 
     @com.google.common.eventbus.Subscribe
@@ -242,7 +242,7 @@ public class ChatService {
 
         CompletableFuture.supplyAsync(() -> {
             try {
-                de.bsommerfeld.wsbg.terminal.data.reddit.RedditScraper.ThreadAnalysisContext context = scraper
+                de.bsommerfeld.wsbg.terminal.reddit.RedditScraper.ThreadAnalysisContext context = scraper
                         .fetchThreadContext(permalink);
 
                 if (context.isEmpty()) {
