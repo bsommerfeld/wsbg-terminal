@@ -6,7 +6,7 @@
 
     <groupId>de.bsommerfeld</groupId>
     <artifactId>wsbg-terminal</artifactId>
-    <version>1.0-SNAPSHOT</version>
+    <version>${revision}</version>
     <packaging>pom</packaging>
 
     <modules>
@@ -19,6 +19,8 @@
     </modules>
 
     <properties>
+        <revision>0.1.0</revision>
+
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.source>25</maven.compiler.source>
         <maven.compiler.target>25</maven.compiler.target>
@@ -37,6 +39,7 @@
         <jshepherd.version>4.0.1</jshepherd.version>
         <jfx-frameless.version>0.1.1</jfx-frameless.version>
         <logback.version>1.4.14</logback.version>
+        <flatten-maven-plugin.version>1.6.0</flatten-maven-plugin.version>
     </properties>
 
     <dependencyManagement>
@@ -159,6 +162,33 @@
     </dependencyManagement>
 
     <build>
+        <plugins>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>flatten-maven-plugin</artifactId>
+                <version>${flatten-maven-plugin.version}</version>
+                <configuration>
+                    <updatePomFile>true</updatePomFile>
+                    <flattenMode>resolveCiFriendliesOnly</flattenMode>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>flatten</id>
+                        <phase>process-resources</phase>
+                        <goals>
+                            <goal>flatten</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>flatten.clean</id>
+                        <phase>clean</phase>
+                        <goals>
+                            <goal>clean</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
         <pluginManagement>
              <plugins>
                  <plugin>

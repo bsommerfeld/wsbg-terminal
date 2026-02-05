@@ -108,8 +108,11 @@ public class DashboardController {
             // Load Font URLs for WebView
             String fontUrlRegular = getClass().getResource("/fonts/FiraCode-Regular.ttf").toExternalForm();
             String fontUrlBold = getClass().getResource("/fonts/FiraCode-Bold.ttf").toExternalForm();
+            String fontUrlRetina = getClass().getResource("/fonts/FiraCode-Retina.ttf").toExternalForm();
 
             String fontFaceCss = "@font-face { font-family: 'Fira Code'; src: url('" + fontUrlRegular
+                    + "'); font-weight: normal; font-style: normal; }" +
+                    "@font-face { font-family: 'Fira Code Retina'; src: url('" + fontUrlRetina
                     + "'); font-weight: normal; font-style: normal; }" +
                     "@font-face { font-family: 'Fira Code'; src: url('" + fontUrlBold
                     + "'); font-weight: bold; font-style: normal; }";
@@ -117,7 +120,7 @@ public class DashboardController {
             String initialHtml = "<html><head><style>" +
                     ":root { --source-width: 40px; }" +
                     fontFaceCss +
-                    "body { font-family: 'Fira Code', monospace; font-size: 13px; color: #e0e0e0; background-color: transparent; margin: 0; padding: 10px; overflow-x: hidden; overflow-y: scroll; }"
+                    "body { font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace; font-size: 13px; color: #e0e0e0; background-color: transparent; margin: 0; padding: 10px; overflow-x: hidden; overflow-y: scroll; }"
                     +
                     // Hardware accelerate entries to prevent repaint lag
                     ".log-entry { margin-bottom: 4px; line-height: 1.4; display: flex; align-items: flex-start; transform: translate3d(0,0,0); }"
@@ -145,7 +148,7 @@ public class DashboardController {
                     // Status Line
                     "#status { color: #888; font-style: italic; margin-top: 4px; display: flex; align-items: center; padding-left: calc(80px + var(--source-width)); }"
                     +
-                    "#spinner { color: #4CAF50; font-weight: bold; margin-left: 8px; font-family: 'Fira Code', monospace; }"
+                    "#spinner { color: #4CAF50; font-weight: bold; margin-left: 8px; font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace; }"
                     +
                     ".subject { color: #ffb86c; font-weight: bold; }" +
                     ".bullish { color: #50fa7b; background-color: rgba(80, 250, 123, 0.15); padding: 2px 0px; border-radius: 4px; }"
@@ -387,7 +390,7 @@ public class DashboardController {
                     "<div id='content'></div>" +
                     "<div id='status'></div>" +
                     "<div id='sentinel'></div>" +
-                    "<div id='width-tester' style='position:absolute; visibility:hidden; white-space:nowrap; font-family: \"Fira Code\", monospace; font-size: 13px; font-weight: bold;'></div>"
+                    "<div id='width-tester' style='position:absolute; visibility:hidden; white-space:nowrap; font-family: \"Fira Code\", \"Fira Code Retina\", \"JetBrains Mono\", \"Consolas\", monospace; font-size: 13px; font-weight: bold;'></div>"
                     +
                     "</body></html>";
 
@@ -698,7 +701,7 @@ public class DashboardController {
                     javafx.scene.control.Label highlight = new javafx.scene.control.Label(
                             text.substring(index, index + lowerQuery.length()));
                     highlight.setStyle(
-                            "-fx-background-color: #ffd700; -fx-text-fill: #000000; -fx-font-family: 'Fira Code'; -fx-font-weight: bold; -fx-font-size: 13px; -fx-padding: 0;");
+                            "-fx-background-color: #ffd700; -fx-text-fill: #000000; -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace; -fx-font-weight: bold; -fx-font-size: 13px; -fx-padding: 0;");
                     titleFlow.getChildren().add(highlight);
 
                     lastIndex = index + lowerQuery.length();

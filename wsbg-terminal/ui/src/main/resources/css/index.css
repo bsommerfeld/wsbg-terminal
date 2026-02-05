@@ -93,7 +93,7 @@
 }
 
 .terminal-brand {
-    -fx-font-family: 'Fira Code', monospace;
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
     -fx-font-weight: 800;
     -fx-font-size: 16px;
     -fx-text-fill: white;
@@ -104,7 +104,7 @@
 
 /* Ticker Text */
 .ticker-value {
-    -fx-font-family: 'Fira Code', 'Fira Code Retina', monospace;
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
     -fx-font-size: 14px;
 }
 
@@ -117,7 +117,7 @@
 
 
 .terminal-console {
-    -fx-font-family: 'Fira Code', 'Fira Code Retina', monospace;
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
     -fx-control-inner-background: #000000;
     -fx-text-fill: #00ff00;
 }
@@ -205,7 +205,7 @@
     -fx-border-radius: 4;
     -fx-background-radius: 4;
     -fx-text-fill: #00ff41;
-    -fx-font-family: 'Fira Code', 'Fira Code Retina', monospace;
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
     -fx-padding: 8;
 }
 
@@ -286,63 +286,63 @@
 .log-timestamp {
     -fx-fill: #666666;
     -fx-font-size: 12px;
-    -fx-font-family: 'Fira Code';
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
 }
 
 .log-agent {
     -fx-fill: #00ff41;
-    -fx-font-family: 'Fira Code';
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
     -fx-effect: dropshadow(gaussian, rgba(0, 255, 65, 0.4), 5, 0, 0, 0);
 }
 
 .log-user {
     -fx-fill: #00bcd4;
-    -fx-font-family: 'Fira Code';
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
     -fx-font-weight: bold;
     -fx-effect: dropshadow(gaussian, rgba(0, 188, 212, 0.4), 5, 0, 0, 0);
 }
 
 .log-system {
     -fx-fill: #a0a0a0;
-    -fx-font-family: 'Fira Code';
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
 }
 
 .log-info {
     -fx-fill: #00e676;
-    -fx-font-family: 'Fira Code';
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
 }
 
 .log-error {
     -fx-fill: #ff1744;
     -fx-font-weight: bold;
-    -fx-font-family: 'Fira Code';
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
     -fx-effect: dropshadow(gaussian, rgba(255, 23, 68, 0.6), 8, 0, 0, 0);
 }
 
 .log-warn {
     -fx-fill: #ff9f00;
-    -fx-font-family: 'Fira Code';
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
 }
 
 /* Passive Agent Priority Levels (Applied to Source Label) */
 .source-passive-low {
     -fx-fill: #805500;
     /* Noise - Dark Orange */
-    -fx-font-family: 'Fira Code';
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
     -fx-font-weight: bold;
 }
 
 .source-passive-med {
     -fx-fill: #cc8800;
     /* Neutral - Medium Orange */
-    -fx-font-family: 'Fira Code';
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
     -fx-font-weight: bold;
 }
 
 .source-passive-high {
     -fx-fill: #ff9f00;
     /* Relevant - Bright Orange */
-    -fx-font-family: 'Fira Code';
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
     -fx-font-weight: bold;
     -fx-effect: dropshadow(gaussian, rgba(255, 159, 0, 0.5), 8, 0, 0, 0);
 }
@@ -350,14 +350,14 @@
 
 /* Flat Log Layout */
 .log-header-base {
-    -fx-font-family: 'Fira Code';
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
     -fx-font-size: 14px;
     /* Larger Header */
     -fx-font-weight: bold;
 }
 
 .log-content-text {
-    -fx-font-family: 'Fira Code', monospace;
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
     /* Retro Mono */
     -fx-font-size: 15px;
     /* Larger Content */
@@ -560,7 +560,7 @@
 
 /* Integrated Header */
 .section-header {
-    -fx-font-family: 'Fira Code', monospace;
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
     -fx-font-size: 11px;
     -fx-font-weight: bold;
     -fx-text-fill: #666;
@@ -571,7 +571,7 @@
 }
 
 .section-header-small {
-    -fx-font-family: 'Fira Code', monospace;
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
     -fx-font-size: 12px;
     -fx-text-fill: #888;
     /* Brighter Terminal Grey */
@@ -632,7 +632,7 @@
 }
 
 .text {
-    -fx-font-family: 'Fira Code';
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
 }
 
 /* Reddit Thread Terminal Style - High Contrast & Crisp */
@@ -652,7 +652,7 @@
 .reddit-thread-title {
     -fx-fill: #555;
     /* Stealth Mode: Dark Grey */
-    -fx-font-family: 'Fira Code';
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
     -fx-font-size: 13px;
     -fx-font-weight: bold;
     -fx-effect: null;
@@ -666,7 +666,7 @@
 .reddit-thread-score {
     -fx-fill: #555;
     /* Stealth Mode */
-    -fx-font-family: 'Fira Code';
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
     -fx-font-size: 12px;
     -fx-font-weight: normal;
 }
@@ -678,7 +678,7 @@
 .reddit-thread-comments {
     -fx-fill: #555;
     /* Stealth Mode */
-    -fx-font-family: 'Fira Code';
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
     -fx-font-size: 12px;
     -fx-font-weight: normal;
 }
@@ -690,7 +690,7 @@
 .reddit-thread-arrow {
     -fx-fill: #555;
     /* Stealth Mode: Grey default */
-    -fx-font-family: 'Fira Code';
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
     -fx-font-size: 14px;
     -fx-font-weight: bold;
 }
@@ -702,7 +702,7 @@
 .reddit-thread-bubble {
     -fx-fill: #555;
     /* Stealth Mode */
-    -fx-font-family: 'Fira Code';
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
     -fx-font-size: 14px;
     -fx-font-weight: bold;
 }
@@ -715,7 +715,7 @@
 .ascii-button {
     -fx-background-color: transparent;
     -fx-text-fill: #666666;
-    -fx-font-family: 'Fira Code', monospace;
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
     -fx-font-size: 12px;
     -fx-border-width: 0;
     -fx-padding: 4 10;
@@ -842,7 +842,7 @@
     -fx-border-width: 0;
     -fx-text-fill: #e0e0e0;
     -fx-prompt-text-fill: #666;
-    -fx-font-family: 'Fira Code', sans-serif;
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
     -fx-font-size: 13px;
     -fx-padding: 0;
 }
@@ -856,7 +856,7 @@
     -fx-background-color: transparent;
     -fx-text-fill: #666666;
     -fx-font-size: 10px;
-    -fx-font-family: 'Fira Code';
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
     -fx-cursor: hand;
     -fx-padding: 2 6;
     -fx-min-width: 20px;
