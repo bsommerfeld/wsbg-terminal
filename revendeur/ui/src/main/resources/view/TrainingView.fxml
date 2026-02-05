@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.chart.*?>
+<?import javafx.geometry.Insets?>
+
+<BorderPane xmlns:fx="http://javafx.com/fxml" 
+            fx:controller="de.bsommerfeld.revendeur.ui.view.training.TrainingController"
+            styleClass="glass-pane">
+
+    <top>
+        <Label text="NEURAL NETWORK TRAINING" styleClass="section-header" BorderPane.alignment="CENTER">
+            <padding><Insets top="20" bottom="20"/></padding>
+        </Label>
+    </top>
+
+    <left>
+        <VBox spacing="20" styleClass="glass-card" maxWidth="300" minWidth="250">
+            <padding>
+                <Insets top="20" right="20" bottom="20" left="20"/>
+            </padding>
+            <Label text="PARAMETERS" styleClass="section-header" />
+            
+            <VBox spacing="5">
+                <Label text="Epochs" styleClass="field-label"/>
+                <Spinner fx:id="epochsSpinner" editable="true" styleClass="terminal-spinner"/>
+            </VBox>
+            
+            <VBox spacing="5">
+                <Label text="Batch Size" styleClass="field-label"/>
+                <ComboBox fx:id="batchSizeCombo" styleClass="terminal-combo"/>
+            </VBox>
+
+            <VBox spacing="5">
+                <Label text="Learning Rate" styleClass="field-label"/>
+                <TextField fx:id="learningRateField" text="0.001" styleClass="terminal-input"/>
+            </VBox>
+
+            <Separator/>
+
+            <Button fx:id="startTrainingBtn" text="INITIATE TRAINING" maxWidth="Infinity" onAction="#onStartTraining" styleClass="action-button-success"/>
+            <Button fx:id="stopTrainingBtn" text="ABORT" maxWidth="Infinity" onAction="#onStopTraining" disable="true" styleClass="action-button-danger"/>
+        </VBox>
+    </left>
+
+    <center>
+        <VBox spacing="15" styleClass="glass-card">
+            <padding>
+                <Insets top="10" right="10" bottom="10" left="10"/>
+            </padding>
+            <LineChart fx:id="trainingChart" title="Loss / Accuracy" createSymbols="false" VBox.vgrow="ALWAYS">
+                <xAxis><NumberAxis label="Epoch"/></xAxis>
+                <yAxis><NumberAxis label="Value"/></yAxis>
+            </LineChart>
+        </VBox>
+    </center>
+
+    <bottom>
+         <TextArea fx:id="trainingLog" prefHeight="150" editable="false" styleClass="terminal-console" BorderPane.alignment="CENTER">
+            <BorderPane.margin><Insets top="10"/></BorderPane.margin>
+         </TextArea>
+    </bottom>
+
+</BorderPane>

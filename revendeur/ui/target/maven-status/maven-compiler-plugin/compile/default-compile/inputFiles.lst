@@ -1,0 +1,9 @@
+/Users/bsommerfeld/Documents/Antigravity/revendeur/ui/src/main/java/de/bsommerfeld/wsbg/terminal/ui/WsbgTerminalApp.java
+/Users/bsommerfeld/Documents/Antigravity/revendeur/ui/src/main/java/de/bsommerfeld/wsbg/terminal/ui/config/AppModule.java
+/Users/bsommerfeld/Documents/Antigravity/revendeur/ui/src/main/java/de/bsommerfeld/wsbg/terminal/ui/view/dashboard/DashboardController.java
+/Users/bsommerfeld/Documents/Antigravity/revendeur/ui/src/main/java/de/bsommerfeld/wsbg/terminal/ui/view/dashboard/DashboardViewModel.java
+/Users/bsommerfeld/Documents/Antigravity/revendeur/ui/src/main/java/de/bsommerfeld/wsbg/terminal/ui/view/dashboard/LogMessage.java
+/Users/bsommerfeld/Documents/Antigravity/revendeur/ui/src/main/java/de/bsommerfeld/wsbg/terminal/ui/view/dashboard/LogType.java
+/Users/bsommerfeld/Documents/Antigravity/revendeur/ui/src/main/java/de/bsommerfeld/wsbg/terminal/ui/view/news/NewsController.java
+/Users/bsommerfeld/Documents/Antigravity/revendeur/ui/src/main/java/de/bsommerfeld/wsbg/terminal/ui/view/news/NewsViewModel.java
+/Users/bsommerfeld/Documents/Antigravity/revendeur/ui/src/main/java/de/bsommerfeld/wsbg/terminal/ui/view/settings/SettingsController.java
