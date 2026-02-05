@@ -1,0 +1,870 @@
+/* WSBG Terminal Main Styles - 'Digital Ether' / High-Fidelity Retro-Cozy */
+
+.root {
+    /* Color Palette - Dark, High Contrast, Amber/Orange Accents */
+    -fx-background-color: transparent;
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
+
+    /* High-Fidelity Terminal Colors */
+    color-bg-deep: #050505;
+    color-bg-card: rgba(20, 20, 20, 0.6);
+    color-text-primary: #e0e0e0;
+    color-text-secondary: #a0a0a0;
+    color-accent-orange: #ff9f00;
+    color-accent-blue: #00bcd4;
+    color-accent-green: #00e676;
+    color-accent-red: #ff1744;
+
+    glass-border: rgba(255, 255, 255, 0.1);
+}
+
+/* JFX-Frameless Internal Root Container */
+.window-shell-root {
+    /* Main Background: Deep Black */
+    -fx-background-color: #0a0a0a !important;
+    -fx-background-radius: 16 !important;
+
+    /* Light Reflection Outline (Border) */
+    /* Uses standard border optimized for high-dpi displays */
+    -fx-border-color: linear-gradient(to bottom, rgba(255, 255, 255, 0.35) 0%, rgba(255, 255, 255, 0.05) 40%, rgba(0, 0, 0, 0.3) 100%) !important;
+    -fx-border-width: 1px !important;
+    -fx-border-radius: 16 !important;
+    /* Ensure border fits strictly within bounds */
+    -fx-border-insets: 0 !important;
+}
+
+/* Ensure the Inner Layout (BorderPane) is transparent so the Shell styling shows through */
+.window-shell-layout {
+    -fx-background-color: transparent;
+}
+
+/* Base Text */
+.label,
+.text {
+    -fx-text-fill: color-text-primary;
+}
+
+/* Glassy Cards */
+.glass-card {
+    -fx-background-color: color-bg-card;
+    -fx-background-radius: 12px;
+    -fx-border-color: glass-border;
+    -fx-border-radius: 12px;
+    -fx-border-width: 1px;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.5), 10, 0, 0, 4);
+}
+
+/* Buttons */
+.button {
+    -fx-background-color: rgba(255, 159, 0, 0.1);
+    -fx-text-fill: color-accent-orange;
+    -fx-background-radius: 6px;
+    -fx-border-color: color-accent-orange;
+    -fx-border-radius: 6px;
+    -fx-cursor: hand;
+    -fx-font-weight: bold;
+}
+
+.button:hover {
+    -fx-background-color: rgba(255, 159, 0, 0.25);
+    -fx-effect: null;
+}
+
+/* Title Bar */
+.window-title-bar,
+.window-header,
+.title-bar {
+    -fx-background-color: transparent;
+    /* Transparent to let Shell background/sheen show through */
+    -fx-background-radius: 15 15 0 0;
+    -fx-border-color: rgba(255, 255, 255, 0.08);
+    -fx-border-width: 0 0 1px 0;
+    -fx-padding: 10px 10px 10px 0;
+    -fx-alignment: center-left;
+    -fx-effect: null;
+    /* Remove shadow on titlebar itself, let shell handle it */
+    -fx-cursor: open-hand;
+}
+
+.window-title-bar:pressed,
+.window-header:pressed,
+.title-bar:pressed {
+    -fx-cursor: closed-hand;
+}
+
+.terminal-brand {
+    -fx-font-family: 'Fira Code', monospace;
+    -fx-font-weight: 800;
+    -fx-font-size: 16px;
+    -fx-text-fill: white;
+    -fx-effect: dropshadow(gaussian, rgba(255, 255, 255, 0.3), 10, 0, 0, 0);
+    -fx-padding: 0 10 0 0;
+    -fx-letter-spacing: 1.5;
+}
+
+/* Ticker Text */
+.ticker-value {
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', monospace;
+    -fx-font-size: 14px;
+}
+
+
+
+.app-title {
+    -fx-font-weight: bold;
+    -fx-text-fill: color-accent-orange;
+}
+
+
+.terminal-console {
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', monospace;
+    -fx-control-inner-background: #000000;
+    -fx-text-fill: #00ff00;
+}
+
+.terminal-console .content {
+    -fx-background-color: #000000;
+}
+
+/* Close (Red) */
+.macos-controls-box:hover .close {
+    -fx-background-color: #FF5F57 !important;
+}
+
+/* Minimize (Yellow) */
+.macos-controls-box:hover .minimize {
+    -fx-background-color: #FEBC2E !important;
+}
+
+/* Maximize (Green) */
+.macos-controls-box:hover .maximize {
+    -fx-background-color: #28C840 !important;
+}
+
+/* List View */
+.list-view {
+    -fx-background-color: transparent;
+    -fx-padding: 5px;
+}
+
+.list-view .viewport {
+    -fx-background-color: transparent;
+}
+
+.list-cell {
+    -fx-background-color: transparent;
+    -fx-text-fill: color-text-primary;
+    -fx-padding: 0;
+}
+
+.list-cell:filled:selected,
+.list-cell:filled:selected:hover {
+    -fx-background-color: rgba(255, 159, 0, 0.2);
+    -fx-text-fill: color-accent-orange;
+    -fx-background-radius: 4px;
+}
+
+.list-cell:filled:hover {
+    -fx-background-color: rgba(255, 255, 255, 0.05);
+    -fx-background-radius: 4px;
+}
+
+/* Text Inputs */
+.text-field,
+.text-area {
+    -fx-background-color: rgba(20, 20, 30, 0.9);
+    -fx-text-fill: color-text-primary;
+    -fx-prompt-text-fill: color-text-secondary;
+    -fx-border-color: glass-border;
+    -fx-border-radius: 4px;
+    -fx-background-radius: 4px;
+    -fx-highlight-fill: color-accent-orange;
+    -fx-highlight-text-fill: black;
+}
+
+.text-area .content {
+    -fx-background-color: transparent;
+}
+
+.text-area:focused .content {
+    -fx-background-color: transparent;
+}
+
+.text-field:focused,
+.text-area:focused {
+    -fx-border-color: color-accent-orange;
+}
+
+/* ComboBox */
+/* ComboBox & TextArea variants */
+.terminal-input {
+    -fx-background-color: rgba(20, 20, 30, 0.9);
+    -fx-control-inner-background: rgba(20, 20, 30, 0.9);
+    -fx-background: rgba(20, 20, 30, 0.9);
+    -fx-border-color: rgba(255, 255, 255, 0.2);
+    -fx-border-radius: 4;
+    -fx-background-radius: 4;
+    -fx-text-fill: #00ff41;
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', monospace;
+    -fx-padding: 8;
+}
+
+.terminal-input .viewport,
+.terminal-input .content {
+    -fx-background-color: transparent;
+    -fx-background: transparent;
+}
+
+
+
+.combo-box-base {
+    -fx-background-color: rgba(0, 0, 0, 0.3);
+    -fx-border-color: glass-border;
+    -fx-border-radius: 4px;
+    -fx-background-radius: 4px;
+}
+
+.combo-box .list-cell {
+    -fx-text-fill: color-text-primary;
+}
+
+.combo-box-popup .list-view {
+    -fx-background-color: color-bg-deep;
+    -fx-border-color: glass-border;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.5), 10, 0, 0, 4);
+}
+
+/* Spinner */
+.spinner {
+    -fx-background-color: transparent;
+    -fx-border-color: glass-border;
+    -fx-border-radius: 4px;
+}
+
+.spinner .increment-arrow-button,
+.spinner .decrement-arrow-button {
+    -fx-background-color: transparent;
+}
+
+.spinner .increment-arrow,
+.spinner .decrement-arrow {
+    -fx-background-color: color-text-secondary;
+}
+
+/* Charts */
+.chart {
+    -fx-padding: 10px;
+}
+
+.chart-plot-background {
+    -fx-background-color: transparent;
+}
+
+.chart-vertical-grid-lines,
+.chart-horizontal-grid-lines {
+    -fx-stroke: rgba(255, 255, 255, 0.05);
+}
+
+.chart-legend {
+    -fx-background-color: transparent;
+}
+
+.axis {
+    -fx-tick-label-fill: color-text-secondary;
+}
+
+.axis-label {
+    -fx-text-fill: color-text-secondary;
+}
+
+/* Log Colors */
+/* Log Colors - Retro/Modern High Contrast with Glow */
+.terminal-entry {
+    -fx-padding: 4px 0;
+}
+
+.log-timestamp {
+    -fx-fill: #666666;
+    -fx-font-size: 12px;
+    -fx-font-family: 'Fira Code';
+}
+
+.log-agent {
+    -fx-fill: #00ff41;
+    -fx-font-family: 'Fira Code';
+    -fx-effect: dropshadow(gaussian, rgba(0, 255, 65, 0.4), 5, 0, 0, 0);
+}
+
+.log-user {
+    -fx-fill: #00bcd4;
+    -fx-font-family: 'Fira Code';
+    -fx-font-weight: bold;
+    -fx-effect: dropshadow(gaussian, rgba(0, 188, 212, 0.4), 5, 0, 0, 0);
+}
+
+.log-system {
+    -fx-fill: #a0a0a0;
+    -fx-font-family: 'Fira Code';
+}
+
+.log-info {
+    -fx-fill: #00e676;
+    -fx-font-family: 'Fira Code';
+}
+
+.log-error {
+    -fx-fill: #ff1744;
+    -fx-font-weight: bold;
+    -fx-font-family: 'Fira Code';
+    -fx-effect: dropshadow(gaussian, rgba(255, 23, 68, 0.6), 8, 0, 0, 0);
+}
+
+.log-warn {
+    -fx-fill: #ff9f00;
+    -fx-font-family: 'Fira Code';
+}
+
+/* Passive Agent Priority Levels (Applied to Source Label) */
+.source-passive-low {
+    -fx-fill: #805500;
+    /* Noise - Dark Orange */
+    -fx-font-family: 'Fira Code';
+    -fx-font-weight: bold;
+}
+
+.source-passive-med {
+    -fx-fill: #cc8800;
+    /* Neutral - Medium Orange */
+    -fx-font-family: 'Fira Code';
+    -fx-font-weight: bold;
+}
+
+.source-passive-high {
+    -fx-fill: #ff9f00;
+    /* Relevant - Bright Orange */
+    -fx-font-family: 'Fira Code';
+    -fx-font-weight: bold;
+    -fx-effect: dropshadow(gaussian, rgba(255, 159, 0, 0.5), 8, 0, 0, 0);
+}
+
+
+/* Flat Log Layout */
+.log-header-base {
+    -fx-font-family: 'Fira Code';
+    -fx-font-size: 14px;
+    /* Larger Header */
+    -fx-font-weight: bold;
+}
+
+.log-content-text {
+    -fx-font-family: 'Fira Code', monospace;
+    /* Retro Mono */
+    -fx-font-size: 15px;
+    /* Larger Content */
+    -fx-fill: #ffffff;
+    /* High Contrast White */
+    -fx-effect: dropshadow(gaussian, rgba(255, 255, 255, 0.15), 4, 0, 0, 0);
+    /* Subtle Text Glow */
+}
+
+/* Header Colors (Text Nodes use -fx-fill) */
+.log-header-agent {
+    -fx-fill: #00e676;
+    -fx-effect: dropshadow(gaussian, rgba(0, 230, 118, 0.4), 5, 0, 0, 0);
+}
+
+.log-header-vision {
+    -fx-fill: #d500f9;
+}
+
+.log-header-user {
+    -fx-fill: #00bcd4;
+    -fx-effect: dropshadow(gaussian, rgba(0, 188, 212, 0.4), 5, 0, 0, 0);
+}
+
+.log-header-error {
+    -fx-fill: #ff1744;
+}
+
+.log-header-system {
+    -fx-fill: #888888;
+}
+
+.log-header-search {
+    -fx-fill: #00e5ff;
+    -fx-font-weight: bold;
+    -fx-effect: dropshadow(gaussian, rgba(0, 229, 255, 0.5), 6, 0, 0, 0);
+}
+
+
+
+/* Navigation Tabs in Title Bar */
+.button-tab {
+    -fx-background-color: transparent;
+    -fx-text-fill: #666666;
+    -fx-font-weight: bold;
+    -fx-border-color: transparent;
+    -fx-cursor: hand;
+    -fx-font-size: 11px;
+    -fx-padding: 4 8;
+}
+
+.button-tab:hover {
+    -fx-text-fill: #e0e0e0;
+    -fx-background-color: transparent;
+}
+
+/* ScrollBar Styling */
+.scroll-bar {
+    -fx-background-color: transparent;
+    -fx-pref-width: 10px;
+    -fx-pref-height: 10px;
+}
+
+.scroll-bar .track {
+    -fx-background-color: rgba(0, 0, 0, 0.3);
+    -fx-background-radius: 4px;
+}
+
+.scroll-bar .thumb {
+    -fx-background-color: rgba(255, 255, 255, 0.2);
+    -fx-background-radius: 4px;
+}
+
+.scroll-bar .thumb:hover {
+    -fx-background-color: rgba(255, 255, 255, 0.3);
+}
+
+.scroll-bar .thumb:pressed {
+    -fx-background-color: color-accent-orange;
+}
+
+.scroll-bar .increment-button,
+.scroll-bar .decrement-button {
+    -fx-padding: 0;
+    -fx-pref-width: 0;
+    -fx-pref-height: 0;
+    -fx-shape: " ";
+}
+
+.scroll-bar .increment-arrow,
+.scroll-bar .decrement-arrow {
+    -fx-padding: 0;
+    -fx-shape: " ";
+}
+
+/* Custom Traffic Light Buttons (Stealth Mode) */
+/* Classes injected by WsbgTerminalApp.java: .custom-traffic-light .close/.minimize/.maximize */
+
+.custom-traffic-light {
+    -fx-background-radius: 50%;
+    -fx-min-width: 12px;
+    -fx-min-height: 12px;
+    -fx-max-width: 12px;
+    -fx-max-height: 12px;
+    -fx-padding: 0;
+
+    /* Base State: Nice Neutral Grey - OVERRIDE EVERYTHING */
+    -fx-background-color: rgba(40, 40, 40, 0.5) !important;
+    -fx-text-fill: transparent !important;
+    /* Prevent orange text spill */
+    -fx-border-color: transparent !important;
+    -fx-border-width: 0 !important;
+
+    -fx-effect: null !important;
+    /* No glow */
+    -fx-cursor: hand;
+    -fx-background-insets: 0;
+}
+
+/* Icon (Child Node) Styles */
+/* We successfully cleared legacy styles and applied .traffic-light-icon in Java. */
+.traffic-light-icon {
+    -fx-background-color: rgba(0, 0, 0, 0.5) !important;
+    /* Icon Color */
+    -fx-max-width: 7px;
+    -fx-max-height: 7px;
+    -fx-min-width: 7px;
+    -fx-min-height: 7px;
+    -fx-opacity: 0;
+    /* Default: Hidden (Stealth) */
+    -fx-scale-shape: true !important;
+    -fx-position-shape: true !important;
+    -fx-snap-to-pixel: true;
+    -fx-text-fill: transparent !important;
+}
+
+/* Define SVG Shapes for the Icons based on Parent Role */
+/* Since the icon itself doesn't know its parent's role class in CSS (no parent selector),
+   we use the parent to target the child. */
+
+/* Close Icon (X) */
+.custom-traffic-light.close .traffic-light-icon {
+    -fx-shape: "M 3 3 L 7 7 M 7 3 L 3 7" !important;
+}
+
+/* Minimize Icon (-) */
+.custom-traffic-light.minimize .traffic-light-icon {
+    -fx-shape: "M 3 5 L 7 5" !important;
+}
+
+/* Maximize Icon (+) */
+.custom-traffic-light.maximize .traffic-light-icon {
+    -fx-shape: "M 2 5 L 8 5 M 5 2 L 5 8" !important;
+}
+
+/* Group Hover (Container): Reveal Icons */
+.macos-controls-box:hover .traffic-light-icon {
+    -fx-opacity: 0.6 !important;
+}
+
+/* Individual Button Hover: Full Opacity */
+.macos-controls-box:hover .custom-traffic-light:hover .traffic-light-icon {
+    -fx-opacity: 1.0 !important;
+}
+
+/* Pressed State */
+.custom-traffic-light:pressed {
+    -fx-background-color: derive(-fx-background-color, -10%);
+}
+
+/* SplitPane Styling */
+.split-pane {
+    -fx-background-color: transparent;
+    -fx-padding: 0;
+}
+
+
+/* TUI Style SplitPane */
+/* Integrated Terminal Style SplitPane */
+.split-pane>.split-pane-divider {
+    -fx-background-color: transparent;
+    -fx-border-color: #222;
+    /* Subtle separation line */
+    -fx-border-width: 0 0 0 1px;
+    -fx-padding: 0 1px;
+}
+
+.split-pane>.split-pane-divider:hover {
+    -fx-background-color: transparent;
+    -fx-border-color: #444;
+    /* Slightly lighter on hover */
+    -fx-cursor: open-hand;
+}
+
+.split-pane>.split-pane-divider:pressed {
+    -fx-background-color: transparent;
+    -fx-border-color: color-accent-orange;
+    -fx-cursor: closed-hand;
+}
+
+/* Integrated Header */
+.section-header {
+    -fx-font-family: 'Fira Code', monospace;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #666;
+    -fx-background-color: transparent;
+    -fx-padding: 6 0 6 10;
+    -fx-border-color: #333;
+    -fx-border-width: 0 0 1px 0;
+}
+
+.section-header-small {
+    -fx-font-family: 'Fira Code', monospace;
+    -fx-font-size: 12px;
+    -fx-text-fill: #888;
+    /* Brighter Terminal Grey */
+    -fx-background-color: transparent;
+    -fx-border-color: #222;
+    -fx-border-width: 0 0 1px 0;
+    /* Discrete separator */
+    -fx-padding: 8 10;
+}
+
+.integrated-split-pane {
+    /* Match top titlebar spacing for uniformity */
+    -fx-padding: 0;
+}
+
+.scroll-pane>.corner {
+    -fx-background-color: transparent;
+}
+
+/* Hide Scrollbars */
+/* Ghost Scrollbars - Managed by Code/Animation */
+.scroll-bar {
+    -fx-background-color: transparent;
+    -fx-block-increment: 20;
+    -fx-pref-width: 6px;
+    -fx-pref-height: 6px;
+}
+
+.scroll-bar .increment-button,
+.scroll-bar .decrement-button {
+    -fx-visibility: hidden;
+    -fx-min-height: 0;
+    -fx-max-height: 0;
+    -fx-padding: 0;
+}
+
+.scroll-bar:vertical .track,
+.scroll-bar:vertical .thumb {
+    -fx-background-color: transparent;
+    -fx-background-radius: 4px;
+}
+
+.scroll-bar:vertical .thumb {
+    -fx-background-color: rgba(120, 120, 120, 0.6);
+}
+
+.scroll-bar:horizontal .track,
+.scroll-bar:horizontal .thumb {
+    -fx-background-color: transparent;
+}
+
+.scroll-pane>.viewport {
+    -fx-background-color: transparent;
+}
+
+.scroll-pane {
+    -fx-background-color: transparent;
+}
+
+.text {
+    -fx-font-family: 'Fira Code';
+}
+
+/* Reddit Thread Terminal Style - High Contrast & Crisp */
+.reddit-thread-root {
+    -fx-padding: 8 10 9 10;
+    -fx-background-color: transparent;
+    -fx-border-color: #333;
+    -fx-border-width: 0 0 1 0;
+    -fx-cursor: hand;
+}
+
+.reddit-thread-root:hover {
+    -fx-background-color: #1a1a1a;
+    -fx-border-color: #555;
+}
+
+.reddit-thread-title {
+    -fx-fill: #555;
+    /* Stealth Mode: Dark Grey */
+    -fx-font-family: 'Fira Code';
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-effect: null;
+}
+
+.reddit-thread-root:hover .reddit-thread-title {
+    -fx-fill: #e0e0e0;
+    /* Brighten on hover via parent trigger */
+}
+
+.reddit-thread-score {
+    -fx-fill: #555;
+    /* Stealth Mode */
+    -fx-font-family: 'Fira Code';
+    -fx-font-size: 12px;
+    -fx-font-weight: normal;
+}
+
+.reddit-thread-root:hover .reddit-thread-score {
+    -fx-fill: #ccc;
+}
+
+.reddit-thread-comments {
+    -fx-fill: #555;
+    /* Stealth Mode */
+    -fx-font-family: 'Fira Code';
+    -fx-font-size: 12px;
+    -fx-font-weight: normal;
+}
+
+.reddit-thread-root:hover .reddit-thread-comments {
+    -fx-fill: #ccc;
+}
+
+.reddit-thread-arrow {
+    -fx-fill: #555;
+    /* Stealth Mode: Grey default */
+    -fx-font-family: 'Fira Code';
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+}
+
+.reddit-thread-root:hover .reddit-thread-arrow {
+    -fx-fill: #ff5500;
+}
+
+.reddit-thread-bubble {
+    -fx-fill: #555;
+    /* Stealth Mode */
+    -fx-font-family: 'Fira Code';
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+}
+
+.reddit-thread-root:hover .reddit-thread-bubble {
+    -fx-fill: #777;
+}
+
+/* ASCII Button in Titlebar/Header */
+.ascii-button {
+    -fx-background-color: transparent;
+    -fx-text-fill: #666666;
+    -fx-font-family: 'Fira Code', monospace;
+    -fx-font-size: 12px;
+    -fx-border-width: 0;
+    -fx-padding: 4 10;
+    -fx-cursor: hand;
+}
+
+.ascii-button:hover {
+    -fx-text-fill: #e0e0e0;
+    -fx-background-color: transparent;
+}
+
+.ascii-button:hover .icon-broom {
+    -fx-background-color: #e0e0e0;
+}
+
+.icon-broom {
+    -fx-shape: "M440-520h80v-280q0-17-11.5-28.5T480-840q-17 0-28.5 11.5T440-800v280ZM200-360h560v-80H200v80Zm-58 240h98v-80q0-17 11.5-28.5T280-240q17 0 28.5 11.5T320-200v80h120v-80q0-17 11.5-28.5T480-240q17 0 28.5 11.5T520-200v80h120v-80q0-17 11.5-28.5T680-240q17 0 28.5 11.5T720-200v80h98l-40-160H182l-40 160Zm676 80H142q-39 0-63-31t-14-69l55-220v-80q0-33 23.5-56.5T200-520h160v-280q0-50 35-85t85-35q50 0 85 35t35 85v280h160q33 0 56.5 23.5T840-440v80l55 220q13 38-11.5 69T818-40Zm-58-400H200h560Zm-240-80h-80 80Z";
+    -fx-background-color: #666666;
+    -fx-min-width: 16px;
+    -fx-min-height: 16px;
+    -fx-max-width: 16px;
+    -fx-max-height: 16px;
+    -fx-scale-shape: true;
+}
+
+.icon-panel-open {
+    -fx-shape: "M460-320v-320L300-480l160 160ZM200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm440-80h120v-560H640v560Zm-80 0v-560H200v560h360Zm80 0h120-120Z";
+    -fx-background-color: #666666;
+    -fx-min-width: 16px;
+    -fx-min-height: 16px;
+    -fx-max-width: 16px;
+    -fx-max-height: 16px;
+    -fx-scale-shape: true;
+}
+
+.icon-panel-close {
+    -fx-shape: "M300-640v320l160-160-160-160ZM200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm440-80h120v-560H640v560Zm-80 0v-560H200v560h360Zm80 0h120-120Z";
+    -fx-background-color: #666666;
+    -fx-min-width: 16px;
+    -fx-min-height: 16px;
+    -fx-max-width: 16px;
+    -fx-max-height: 16px;
+    -fx-scale-shape: true;
+}
+
+.ascii-button:hover .icon-panel-open,
+.ascii-button:hover .icon-panel-close {
+    -fx-background-color: #e0e0e0;
+}
+
+/* Highlight state for sidebar icon when search results exist but sidebar is closed */
+.icon-search-match {
+    -fx-background-color: #ffd700 !important;
+    /* Match text highlight (Gold) */
+    -fx-effect: dropshadow(gaussian, rgba(255, 215, 0, 0.6), 8, 0, 0, 0);
+}
+
+.ascii-button:hover .icon-search-match {
+    -fx-background-color: #ffd700 !important;
+    -fx-effect: dropshadow(gaussian, rgba(255, 215, 0, 1.0), 12, 0.5, 0, 0);
+}
+
+/* Utility Controls Box (Broom + Toggle) */
+.utility-controls-box {
+    /* Recessed but Lighter */
+    -fx-background-color: rgba(40, 40, 40, 0.5);
+    -fx-background-radius: 100px;
+    -fx-padding: 2px 4px;
+
+    /* Strong inner shadow for depth */
+    -fx-effect: innershadow(gaussian, rgba(0, 0, 0, 0.8), 10, 0, 0, 2);
+
+    /* Subtle bottom lip highlight */
+    -fx-border-color: transparent transparent rgba(255, 255, 255, 0.1) transparent;
+    -fx-border-width: 1px;
+    -fx-border-radius: 100px;
+
+    -fx-alignment: center;
+}
+
+.utility-controls-box:hover {
+    -fx-background-color: rgba(60, 60, 60, 0.6);
+    -fx-border-color: transparent transparent rgba(255, 255, 255, 0.2) transparent;
+}
+
+/* Title Bar Search - Chrome/Safari Style */
+.title-search-box {
+    -fx-alignment: center-left;
+    /* Recessed but Lighter */
+    -fx-background-color: rgba(40, 40, 40, 0.5);
+    -fx-background-radius: 100px;
+    /* Fully rounded/Pill */
+
+    /* Subtle bottom lip highlight */
+    -fx-border-color: transparent transparent rgba(255, 255, 255, 0.1) transparent;
+    -fx-border-radius: 100px;
+    -fx-border-width: 1px;
+
+    -fx-padding: 0 10 0 15;
+    -fx-min-width: 250px;
+    -fx-max-width: 400px;
+    -fx-min-height: 28px;
+    -fx-max-height: 28px;
+    -fx-cursor: text;
+
+    /* Strong inner shadow for depth */
+    -fx-effect: innershadow(gaussian, rgba(0, 0, 0, 0.8), 10, 0, 0, 2);
+}
+
+.title-search-box:hover {
+    -fx-background-color: rgba(60, 60, 60, 0.6);
+    -fx-border-color: transparent transparent rgba(255, 255, 255, 0.2) transparent;
+}
+
+.title-search-box:focused-within {
+    -fx-background-color: rgba(20, 20, 20, 0.9);
+    -fx-border-color: color-accent-orange;
+    -fx-effect: dropshadow(gaussian, rgba(255, 159, 0, 0.15), 5, 0, 0, 0);
+    -fx-padding: 0 5 0 10;
+}
+
+.title-search-field {
+    -fx-background-color: transparent;
+    -fx-border-width: 0;
+    -fx-text-fill: #e0e0e0;
+    -fx-prompt-text-fill: #666;
+    -fx-font-family: 'Fira Code', sans-serif;
+    -fx-font-size: 13px;
+    -fx-padding: 0;
+}
+
+.title-search-field:focused {
+    -fx-background-color: transparent;
+    -fx-border-width: 0;
+}
+
+.title-search-clear-btn {
+    -fx-background-color: transparent;
+    -fx-text-fill: #666666;
+    -fx-font-size: 10px;
+    -fx-font-family: 'Fira Code';
+    -fx-cursor: hand;
+    -fx-padding: 2 6;
+    -fx-min-width: 20px;
+    -fx-border-color: transparent;
+    -fx-border-width: 0;
+}
+
+.title-search-clear-btn:hover {
+    -fx-text-fill: #e0e0e0;
+    -fx-background-color: transparent;
+}
