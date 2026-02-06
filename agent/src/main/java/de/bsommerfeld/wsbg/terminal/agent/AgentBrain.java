@@ -56,19 +56,27 @@ public class AgentBrain {
     }
 
     public void initialize(de.bsommerfeld.wsbg.terminal.core.config.AgentConfig config, String baseUrl) {
-        LOG.info("Initializing Agent Brain with main model: {}", config.getOllamaModel());
+        // 1. Resolve Models (Auto-Heal if config default doesn't match installed
+        // Low/Super versions)
+        String reasoningModel = validateOrResolveModel(baseUrl, config.getOllamaModel(), "gemma3");
+        String translatorModelName = validateOrResolveModel(baseUrl, config.getTranslatorModel(), "translategemma");
+        String visionModelName = config.getVisionModel(); // Usually static/latest, less critical to resolve
+
+        LOG.info("Initializing Agent Brain with Verified Models:");
+        LOG.info(" -> Reasoning:  {}", reasoningModel);
+        LOG.info(" -> Translator: {}", translatorModelName);
 
         // Main Agent - Streaming (Analysis)
         this.model = OllamaStreamingChatModel.builder()
                 .baseUrl(baseUrl)
-                .modelName(config.getOllamaModel())
+                .modelName(reasoningModel)
                 .temperature(0.2)
                 .build();
 
         // Translator - Streaming (Plain Translation)
         this.translatorModel = OllamaStreamingChatModel.builder()
                 .baseUrl(baseUrl)
-                .modelName(config.getTranslatorModel())
+                .modelName(translatorModelName)
                 .temperature(0.1)
                 .build();
 
@@ -77,7 +85,7 @@ public class AgentBrain {
         // Vision - Blocking
         this.visionModel = OllamaChatModel.builder()
                 .baseUrl(baseUrl)
-                .modelName(config.getVisionModel())
+                .modelName(visionModelName)
                 .temperature(0.1)
                 .build();
 
@@ -92,6 +100,70 @@ public class AgentBrain {
         this.translatorBot = AiServices.builder(TranslatorBot.class)
                 .streamingChatLanguageModel(translatorModel)
                 .build();
+    }
+
+    /**
+     * Checks if the target model exists in Ollama. If not, tries to find a
+     * best-match fallback
+     * from the same family to prevent crashes (e.g. Config says 12b, but only 27b
+     * installed).
+     */
+    private String validateOrResolveModel(String baseUrl, String targetModel, String familyPrefix) {
+        try {
+            java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
+                    .uri(java.net.URI.create(baseUrl + "/api/tags"))
+                    .GET()
+                    .build();
+            String json = new String(
+                    httpClient.send(request, java.net.http.HttpResponse.BodyHandlers.ofByteArray()).body());
+
+            // Simple check: Is the exact model name in the JSON?
+            // JSON format: "name":"mnodelname"
+            if (json.contains("\"" + targetModel + "\"")) {
+                return targetModel; // Exact match found
+            }
+
+            LOG.warn("Configured model '{}' not found in Ollama. Attempting auto-resolution for family '{}'...",
+                    targetModel, familyPrefix);
+
+            // Fallback: simple string parsing to find any installed model starting with
+            // familyPrefix
+            // We look for "name":"(familyPrefix[^"]+)"
+            java.util.regex.Pattern p = java.util.regex.Pattern
+                    .compile("\"name\":\"(" + java.util.regex.Pattern.quote(familyPrefix) + "[^\"]*)\"");
+            java.util.regex.Matcher m = p.matcher(json);
+
+            if (m.find()) {
+                String fallback = m.group(1);
+                LOG.warn(">>> AUTO-RESOLVED: Swapping missing '{}' for installed '{}'. System will function normally.",
+                        targetModel, fallback);
+                return fallback;
+            }
+
+            // CRITICAL: No model found at all
+            logCriticalErrorAndDie(targetModel, familyPrefix, "No installed model found in this family.");
+            return null; // unreachable
+
+        } catch (Exception e) {
+            // Check if it was our intentional death
+            if (e instanceof RuntimeException && e.getMessage().contains("Critical Model Error")) {
+                throw (RuntimeException) e;
+            }
+
+            logCriticalErrorAndDie(targetModel, familyPrefix, "Ollama Connection Failed (" + e.getMessage() + ")");
+            return null; // unreachable
+        }
+    }
+
+    private void logCriticalErrorAndDie(String targetModel, String familyPrefix, String technicalReason) {
+        LOG.error("################################################################################");
+        LOG.error("CRITICAL ERROR: Model Resolution Failed for '{}' (Family: '{}')", targetModel, familyPrefix);
+        LOG.error("Reason: {}", technicalReason);
+        LOG.error("");
+        LOG.error("Die Anwendung ist aufgrund von Installationsfehlern nicht nutzbar.");
+        LOG.error("Bitte starten Sie die Anwendung neu, um eine automatische Reparatur durchzufuehren.");
+        LOG.error("################################################################################");
+        throw new RuntimeException("Critical Model Error: " + technicalReason);
     }
 
     public TokenStream translate(String text, String sourceLang, String sourceCode, String targetLang,

@@ -127,7 +127,7 @@ public class DashboardController {
                     +
 
                     // Column 1: Timestamp
-                    ".timestamp { color: #a0a0a0; font-weight: normal; flex: 0 0 70px; font-size: 11px; user-select: none; padding-top: 2px; }"
+                    ".timestamp { color: #a0a0a0; font-weight: normal; flex: 0 0 70px; font-size: 11px; user-select: none; padding-top: 2px; margin-right: 4px; }"
                     +
 
                     // Column 2: Source

@@ -127,17 +127,17 @@
 }
 
 /* Close (Red) */
-.macos-controls-box:hover .close {
+.custom-traffic-light.close:hover {
     -fx-background-color: #FF5F57 !important;
 }
 
 /* Minimize (Yellow) */
-.macos-controls-box:hover .minimize {
+.custom-traffic-light.minimize:hover {
     -fx-background-color: #FEBC2E !important;
 }
 
 /* Maximize (Green) */
-.macos-controls-box:hover .maximize {
+.custom-traffic-light.maximize:hover {
     -fx-background-color: #28C840 !important;
 }
 
@@ -477,49 +477,24 @@
     -fx-background-insets: 0;
 }
 
-/* Icon (Child Node) Styles */
-/* We successfully cleared legacy styles and applied .traffic-light-icon in Java. */
-.traffic-light-icon {
-    -fx-background-color: rgba(0, 0, 0, 0.5) !important;
-    /* Icon Color */
-    -fx-max-width: 7px;
-    -fx-max-height: 7px;
-    -fx-min-width: 7px;
-    -fx-min-height: 7px;
+/* MAC OS: Stealth Mode (Hidden by default) */
+.os-mac .traffic-light-icon {
     -fx-opacity: 0;
-    /* Default: Hidden (Stealth) */
-    -fx-scale-shape: true !important;
-    -fx-position-shape: true !important;
-    -fx-snap-to-pixel: true;
-    -fx-text-fill: transparent !important;
 }
 
-/* Define SVG Shapes for the Icons based on Parent Role */
-/* Since the icon itself doesn't know its parent's role class in CSS (no parent selector),
-   we use the parent to target the child. */
+/* REMOVED container hover effect to match requirement: */
+/* "NUR angezeigt werden beim dem Knopf den ich hovere" */
 
-/* Close Icon (X) */
-.custom-traffic-light.close .traffic-light-icon {
-    -fx-shape: "M 3 3 L 7 7 M 7 3 L 3 7" !important;
+.os-mac .custom-traffic-light:hover .traffic-light-icon {
+    -fx-opacity: 1.0 !important;
 }
 
-/* Minimize Icon (-) */
-.custom-traffic-light.minimize .traffic-light-icon {
-    -fx-shape: "M 3 5 L 7 5" !important;
+/* WINDOWS / LINUX: Always Visible */
+.os-win-linux .traffic-light-icon {
+    -fx-opacity: 0.7 !important;
 }
 
-/* Maximize Icon (+) */
-.custom-traffic-light.maximize .traffic-light-icon {
-    -fx-shape: "M 2 5 L 8 5 M 5 2 L 5 8" !important;
-}
-
-/* Group Hover (Container): Reveal Icons */
-.macos-controls-box:hover .traffic-light-icon {
-    -fx-opacity: 0.6 !important;
-}
-
-/* Individual Button Hover: Full Opacity */
-.macos-controls-box:hover .custom-traffic-light:hover .traffic-light-icon {
+.os-win-linux .custom-traffic-light:hover .traffic-light-icon {
     -fx-opacity: 1.0 !important;
 }
 

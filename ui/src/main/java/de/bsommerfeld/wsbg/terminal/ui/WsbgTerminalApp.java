@@ -175,9 +175,10 @@ public class WsbgTerminalApp extends Application {
                         bar.getChildren().clear();
 
                         // --- 3. Create Custom Controls (Unconditionally) ---
+                        boolean isMac = System.getProperty("os.name").toLowerCase().contains("mac");
                         HBox customControls = new HBox(8);
                         customControls.setAlignment(Pos.CENTER);
-                        customControls.getStyleClass().add("macos-controls-box");
+                        customControls.getStyleClass().addAll("macos-controls-box", isMac ? "os-mac" : "os-win-linux");
 
                         Function<String, Button> createBtn = (type) -> {
                             Button btn = new Button();
@@ -196,10 +197,26 @@ public class WsbgTerminalApp extends Application {
                         Button maxBtn = createBtn.apply("maximize");
                         maxBtn.setOnAction(e -> primaryStage.setMaximized(!primaryStage.isMaximized()));
 
-                        customControls.getChildren().addAll(closeBtn, minBtn, maxBtn);
+                        // Listener to toggle icon state
+                        primaryStage.maximizedProperty().addListener((obs, oldVal, newVal) -> {
+                            if (newVal) {
+                                if (!maxBtn.getStyleClass().contains("is-maximized")) {
+                                    maxBtn.getStyleClass().add("is-maximized");
+                                }
+                            } else {
+                                maxBtn.getStyleClass().remove("is-maximized");
+                            }
+                        });
+
+                        if (isMac) {
+                            customControls.getChildren().addAll(closeBtn, minBtn, maxBtn);
+                        } else {
+                            // Windows/Linux Standard: Min, Max, Close
+                            customControls.getChildren().addAll(minBtn, maxBtn, closeBtn);
+                        }
 
                         // --- 4. Setup Layout (Auto-Expanding Regions for Perfect Centering) ---
-                        boolean isMac = System.getProperty("os.name").toLowerCase().contains("mac");
+                        // isMac is already defined above
 
                         HBox mainLayout = new HBox();
                         mainLayout.setAlignment(Pos.CENTER);

@@ -1,0 +1,53 @@
+name: Release CI - Pathetic
+
+on:
+  push:
+    tags:
+      - '*'
+
+permissions:
+  contents: write
+
+jobs:
+  build_test_and_release:
+    name: Build, Test, and Create Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: 'zulu' # Switched to Zulu for Java 25 EA support
+          cache: maven
+
+      - name: Build and Test with Maven
+        id: build_test
+        run: mvn clean install -U -Dgpg.skip=true
+
+      - name: Prepare Build Status Badges
+        id: badges
+        run: |
+          if [ "${{ steps.build_test.outcome }}" = "success" ]; then
+            BUILD_BADGE="![Build Success](https://img.shields.io/badge/Build-Success-brightgreen)"
+            TEST_BADGE="![Tests Succeeded](https://img.shields.io/badge/Tests-Succeeded-brightgreen)"
+          else
+            BUILD_BADGE="![Build Failed](https://img.shields.io/badge/Build-Failed-red)"
+            TEST_BADGE="![Tests Failed](https://img.shields.io/badge/Tests-Failed-red)"
+          fi
+
+          echo "build-badge=${BUILD_BADGE}" >> $GITHUB_OUTPUT
+          echo "test-badge=${TEST_BADGE}" >> $GITHUB_OUTPUT
+
+      - name: Update Release with Changelog
+        if: always()
+        uses: bsommerfeld/release-changelog@v0.1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          prepend-text: |
+            ${{ steps.badges.outputs.build-badge }} ${{ steps.badges.outputs.test-badge }}

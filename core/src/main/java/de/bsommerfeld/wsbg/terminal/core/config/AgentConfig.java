@@ -6,12 +6,12 @@ import de.bsommerfeld.jshepherd.annotation.Key;
 public class AgentConfig {
 
     @Key("ollama.model")
-    @Comment("Ollama Model Name for Analysis/Reasoning (default: llama3.1:8b)")
-    private String ollamaModel = "llama3.1:8b";
+    @Comment("Ollama Model Name for Analysis/Reasoning (default: gemma3:12b)")
+    private String ollamaModel = "gemma3:12b";
 
     @Key("ollama.translator-model")
-    @Comment("Ollama Model Name for Translation (default: translategemma:latest)")
-    private String translatorModel = "translategemma:latest";
+    @Comment("Ollama Model Name for Translation (default: translategemma:12b)")
+    private String translatorModel = "translategemma:12b";
 
     @Key("ollama.vision-model")
     @Comment("Ollama Model Name for Vision/OCR (default: glm-ocr:latest)")
