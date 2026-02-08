@@ -5,6 +5,8 @@ import com.google.common.eventbus.Subscribe;
 import de.bsommerfeld.wsbg.terminal.agent.ChatService;
 import de.bsommerfeld.wsbg.terminal.agent.ChatService.AgentResponseEvent;
 import de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.OpenTabEvent;
+import de.bsommerfeld.wsbg.terminal.ui.view.graph.GraphController;
+import de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.ToggleGraphViewEvent;
 
 import de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.TriggerAgentAnalysisEvent;
 import jakarta.inject.Inject;
@@ -34,20 +36,17 @@ import de.bsommerfeld.wsbg.terminal.core.i18n.I18nService;
 public class DashboardController {
 
     @FXML
-    private javafx.scene.control.ListView<RedditThread> redditList;
-
-    @FXML
     private javafx.scene.control.SplitPane rootSplitPane;
 
     @FXML
     private javafx.scene.control.Label liveFeedLabel;
 
+    @FXML
+    private javafx.scene.layout.StackPane mainContentStack;
+
     private final DashboardViewModel viewModel;
     private final NewsViewModel newsViewModel;
     private final ApplicationEventBus eventBus;
-    private double lastDividerPosition = 0.75;
-    private static final double MAX_DIVIDER = 0.7; // 30% sidebar max width
-    private static final double MIN_DIVIDER = 0.85; // 15% sidebar (2/4 of max)
     private boolean isAnimating = false;
 
     // Log Aggregation State
@@ -63,6 +62,7 @@ public class DashboardController {
     private final Injector injector;
     private final I18nService i18n;
     private final de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig globalConfig;
+    private final GraphController graphController;
 
     @Inject
     public DashboardController(DashboardViewModel viewModel,
@@ -70,33 +70,21 @@ public class DashboardController {
             ApplicationEventBus eventBus,
             Injector injector,
             de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig globalConfig,
-            I18nService i18n) {
+            I18nService i18n,
+            GraphController graphController) {
         this.viewModel = viewModel;
         this.newsViewModel = newsViewModel;
         this.eventBus = eventBus;
         this.injector = injector;
         this.globalConfig = globalConfig;
         this.i18n = i18n;
+        this.graphController = graphController;
     }
 
     @FXML
     public void initialize() {
         // Enforce SplitPane Constraints
-        if (rootSplitPane != null) {
-            // Prevent dragging divider too far left (e.g. max width of sidebar)
-            // Reduced max width by 25% -> Now limited to 0.7 (30% width max)
-            if (!rootSplitPane.getDividers().isEmpty()) {
-                rootSplitPane.getDividers().get(0).positionProperty().addListener((obs, oldVal, newVal) -> {
-                    if (isAnimating)
-                        return;
-                    if (newVal.doubleValue() < MAX_DIVIDER) {
-                        rootSplitPane.setDividerPositions(MAX_DIVIDER);
-                    } else if (newVal.doubleValue() > MIN_DIVIDER) {
-                        rootSplitPane.setDividerPositions(MIN_DIVIDER);
-                    }
-                });
-            }
-        }
+        // Enforce SplitPane Constraints - REMOVED (No split pane anymore)
 
         // Initialize WebView
         if (logWebView != null) {
@@ -120,10 +108,16 @@ public class DashboardController {
             String initialHtml = "<html><head><style>" +
                     ":root { --source-width: 40px; }" +
                     fontFaceCss +
-                    "body { font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace; font-size: 13px; color: #e0e0e0; background-color: transparent; margin: 0; padding: 10px; overflow-x: hidden; overflow-y: scroll; }"
+                    "body { font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace; font-size: 14px; width: 100%; max-width: 100%; color: #e0e0e0; background-color: transparent; margin: 0; padding: 10px; overflow-x: hidden; overflow-y: scroll; }"
                     +
                     // Hardware accelerate entries to prevent repaint lag
-                    ".log-entry { margin-bottom: 4px; line-height: 1.4; display: flex; align-items: flex-start; transform: translate3d(0,0,0); }"
+                    "@keyframes fadeInUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }"
+                    +
+                    "@keyframes slideInLeft { 0% { opacity: 0; transform: translateX(-100px); } 100% { opacity: 1; transform: translateX(0); } }"
+                    +
+                    "@keyframes bounceIn { 0% { opacity: 0; transform: scale(0.3); } 50% { opacity: 1; transform: scale(1.05); } 70% { transform: scale(0.9); } 100% { transform: scale(1); } }"
+                    +
+                    ".log-entry { margin-bottom: 4px; line-height: 1.4; display: flex; align-items: flex-start; animation: fadeInUp 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }"
                     +
 
                     // Column 1: Timestamp
@@ -409,35 +403,8 @@ public class DashboardController {
             });
         }
 
-        // Initialize Reddit List with Filtered List
+        // Initialize Reddit List - REMOVED
         filteredThreads = new javafx.collections.transformation.FilteredList<>(newsViewModel.getThreads(), p -> true);
-        redditList.setItems(filteredThreads);
-
-        redditList.setCellFactory(param -> new RedditThreadCell());
-
-        // Setup Ghost ScrollBar with robust layout waiting
-        Runnable configureScrollBar = () -> {
-            Platform.runLater(() -> Platform.runLater(() -> {
-                Set<Node> nodes = redditList.lookupAll(".scroll-bar");
-                for (Node node : nodes) {
-                    if (node instanceof ScrollBar) {
-                        ScrollBar bar = (ScrollBar) node;
-                        if (bar.getOrientation() == Orientation.VERTICAL) {
-                            setupGhostScrollBar(bar);
-                        }
-                    }
-                }
-            }));
-        };
-
-        if (redditList.getSkin() != null) {
-            configureScrollBar.run();
-        }
-        redditList.skinProperty().addListener((obs, oldSkin, newSkin) -> {
-            if (newSkin != null) {
-                configureScrollBar.run();
-            }
-        });
 
         // Log Flow Binding
         viewModel.getLogs().addListener((ListChangeListener<LogMessage>) change -> {
@@ -456,9 +423,47 @@ public class DashboardController {
         // Initial Visibility State
         // Store reference to the sidebar (2nd item)
         if (rootSplitPane.getItems().size() > 1) {
-            this.sidebarNode = rootSplitPane.getItems().get(1);
+            // Remove sidebar if present (Reddit List is gone)
+            rootSplitPane.getItems().remove(1);
         }
-        setRedditListVisible(globalConfig.isRedditListVisible());
+
+        // Initialize Graph View
+        if (mainContentStack != null && globalConfig.getAgent().isAllowGraphView()) {
+            mainContentStack.getChildren().add(graphController.getView());
+            graphController.getView().setVisible(false); // Default OFF (Terminal first)
+            graphController.start(); // Start immediately to pre-load and settle
+            // GraphController self-manages loops. It will run in background initially.
+
+            // Ensure WebView is visible
+            if (logWebView != null) {
+                logWebView.setVisible(true);
+            }
+        } else if (logWebView != null) {
+            logWebView.setVisible(true);
+        }
+    }
+
+    @Subscribe
+    public void onToggleGraphView(ToggleGraphViewEvent event) {
+        if (!globalConfig.getAgent().isAllowGraphView())
+            return; // Ignore if disabled
+
+        javafx.application.Platform.runLater(() -> {
+            boolean isGraphVisible = graphController.getView().isVisible();
+            if (isGraphVisible) {
+                // Hide Graph, Show Terminal
+                graphController.stop();
+                graphController.getView().setVisible(false);
+                if (logWebView != null)
+                    logWebView.setVisible(true);
+            } else {
+                // Show Graph, Hide Terminal
+                if (logWebView != null)
+                    logWebView.setVisible(false);
+                graphController.getView().setVisible(true);
+                graphController.start();
+            }
+        });
     }
 
     private Node sidebarNode;
@@ -466,100 +471,7 @@ public class DashboardController {
     @Subscribe
     public void onToggleRedditPanelEvent(
             de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.ToggleRedditPanelEvent event) {
-        javafx.application.Platform.runLater(() -> {
-            setRedditListVisible(event.visible);
-        });
-    }
-
-    private void setRedditListVisible(boolean visible) {
-        if (sidebarNode == null && rootSplitPane.getItems().size() > 1) {
-            sidebarNode = rootSplitPane.getItems().get(1);
-        }
-        if (sidebarNode == null)
-            return;
-
-        // Reset constraints to allow animation (remove min/max width blocks)
-        if (sidebarNode instanceof javafx.scene.layout.Region) {
-            javafx.scene.layout.Region r = (javafx.scene.layout.Region) sidebarNode;
-            r.setMinWidth(0);
-            r.setMaxWidth(Double.MAX_VALUE);
-        }
-
-        if (visible) {
-            if (!rootSplitPane.getItems().contains(sidebarNode)) {
-                rootSplitPane.getItems().add(sidebarNode);
-
-                // Re-apply constraint listener to the new divider
-                if (!rootSplitPane.getDividers().isEmpty()) {
-                    rootSplitPane.getDividers().get(0).positionProperty().addListener((obs, oldVal, newVal) -> {
-                        if (isAnimating)
-                            return;
-                        if (newVal.doubleValue() < MAX_DIVIDER) {
-                            rootSplitPane.setDividerPositions(MAX_DIVIDER);
-                        } else if (newVal.doubleValue() > MIN_DIVIDER) {
-                            rootSplitPane.setDividerPositions(MIN_DIVIDER);
-                        }
-                    });
-                }
-
-                // Start fully closed (1.0)
-                rootSplitPane.setDividerPositions(1.0);
-
-                // Animate open to last known position (or default)
-                // Ensure last position respects constraint
-                double target = Math.max(lastDividerPosition, MAX_DIVIDER);
-                animateDivider(1.0, target, null);
-            }
-        } else {
-            if (rootSplitPane.getItems().contains(sidebarNode)) {
-                // Save current position before closing
-                double[] divs = rootSplitPane.getDividerPositions();
-                if (divs != null && divs.length > 0) {
-                    lastDividerPosition = divs[0];
-                }
-
-                // Animate closed to 1.0, then remove
-                double current = lastDividerPosition;
-                animateDivider(current, 1.0, () -> {
-                    // Double check we are still attempting to close
-                    if (!globalConfig.isRedditListVisible()) {
-                        rootSplitPane.getItems().remove(sidebarNode);
-                    }
-                });
-            }
-        }
-    }
-
-    private void animateDivider(double start, double end, Runnable onFinished) {
-        isAnimating = true;
-        javafx.animation.Transition transition = new javafx.animation.Transition() {
-            {
-                setCycleCount(1);
-                // Snappy: 70ms
-                setCycleDuration(javafx.util.Duration.millis(70));
-                setInterpolator(javafx.animation.Interpolator.EASE_BOTH);
-            }
-
-            @Override
-            protected void interpolate(double frac) {
-                // Ensure the node is still there before modifying divider
-                if (rootSplitPane.getDividers().isEmpty())
-                    return;
-                double val = start + (end - start) * frac;
-                try {
-                    rootSplitPane.setDividerPositions(val);
-                } catch (Exception e) {
-                    // Ignore transient layout errors during rapid toggles
-                }
-            }
-        };
-        transition.setOnFinished(e -> {
-            isAnimating = false;
-            if (onFinished != null) {
-                onFinished.run();
-            }
-        });
-        transition.play();
+        // No-op: Reddit List removed
     }
 
     private void setupGhostScrollBar(ScrollBar bar) {
@@ -585,137 +497,6 @@ public class DashboardController {
 
         // Triggers
         bar.valueProperty().addListener((obs, oldVal, newVal) -> showScrollBar.run());
-
-        // Also trigger on generic scroll events on the list itself (uses capture phase
-        // to ensure detection)
-        redditList.addEventFilter(ScrollEvent.ANY, e -> showScrollBar.run());
-    }
-
-    private class RedditThreadCell extends ListCell<RedditThread> {
-        private final VBox root = new VBox(4);
-        private final javafx.scene.text.TextFlow titleFlow = new javafx.scene.text.TextFlow();
-        private final javafx.scene.text.Text arrow = new javafx.scene.text.Text("^");
-        private final javafx.scene.text.Text score = new javafx.scene.text.Text();
-        private final javafx.scene.text.Text bubble = new javafx.scene.text.Text("*");
-        private final javafx.scene.text.Text comments = new javafx.scene.text.Text();
-
-        public RedditThreadCell() {
-            root.setMaxWidth(Double.MAX_VALUE);
-            root.getStyleClass().add("reddit-thread-root");
-
-            // Title Flow Sizing
-            titleFlow.prefWidthProperty().bind(redditList.widthProperty().subtract(40));
-
-            // Stats Row
-            javafx.scene.layout.HBox stats = new javafx.scene.layout.HBox(16);
-            stats.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
-
-            // Score Group
-            javafx.scene.layout.HBox scoreBox = new javafx.scene.layout.HBox(4);
-            scoreBox.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
-            arrow.getStyleClass().add("reddit-thread-arrow");
-            arrow.setFont(javafx.scene.text.Font.font("Fira Code", javafx.scene.text.FontWeight.BOLD, 14));
-            score.getStyleClass().add("reddit-thread-score");
-            score.setFont(javafx.scene.text.Font.font("Fira Code", javafx.scene.text.FontWeight.NORMAL, 12));
-            scoreBox.getChildren().addAll(arrow, score);
-
-            // Comments Group
-            javafx.scene.layout.HBox commentsBox = new javafx.scene.layout.HBox(3);
-            commentsBox.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
-            bubble.getStyleClass().add("reddit-thread-bubble");
-            bubble.setFont(javafx.scene.text.Font.font("Fira Code", javafx.scene.text.FontWeight.BOLD, 14));
-            comments.getStyleClass().add("reddit-thread-comments");
-            comments.setFont(javafx.scene.text.Font.font("Fira Code", javafx.scene.text.FontWeight.NORMAL, 12));
-            commentsBox.getChildren().addAll(bubble, comments);
-
-            stats.getChildren().addAll(scoreBox, commentsBox);
-            root.getChildren().addAll(titleFlow, stats);
-        }
-
-        @Override
-        protected void updateItem(RedditThread item, boolean empty) {
-            super.updateItem(item, empty);
-            if (empty || item == null) {
-                setGraphic(null);
-                setText(null);
-                setStyle("-fx-background-color: transparent;");
-                setOnMouseClicked(null);
-            } else {
-                // Update Content
-                score.setText(String.valueOf(item.getScore()));
-                comments.setText(String.valueOf(item.getNumComments()));
-
-                // Highlight Logic for Title
-                updateTitleWithHighlight(item.getTitle());
-
-                // Highlight Logic for Content Match (Visual Feedback in Stats)
-                if (currentSearchQuery != null && !currentSearchQuery.isEmpty()) {
-                    boolean matchContent = item.getTextContent() != null
-                            && item.getTextContent().toLowerCase().contains(currentSearchQuery);
-                    if (matchContent) {
-                        comments.setStyle("-fx-fill: #ffd700; -fx-font-weight: bold;");
-                        bubble.setStyle("-fx-fill: #ffd700;");
-                    } else {
-                        comments.setStyle("");
-                        bubble.setStyle("");
-                    }
-                } else {
-                    comments.setStyle("");
-                    bubble.setStyle("");
-                }
-
-                setGraphic(root);
-
-                // Interaction
-                setOnMouseClicked(e -> {
-                    if (!redditList.isDisabled()) {
-                        redditList.setDisable(true);
-                        newsViewModel.analyzeSentiment(item);
-                    }
-                    e.consume();
-                });
-            }
-        }
-
-        private void updateTitleWithHighlight(String text) {
-            titleFlow.getChildren().clear();
-            if (currentSearchQuery == null || currentSearchQuery.isEmpty()) {
-                javafx.scene.text.Text t = new javafx.scene.text.Text(text);
-                t.getStyleClass().add("reddit-thread-title");
-                t.setFont(javafx.scene.text.Font.font("Fira Code", javafx.scene.text.FontWeight.BOLD, 13));
-                titleFlow.getChildren().add(t);
-            } else {
-                String lowerText = text.toLowerCase();
-                String lowerQuery = currentSearchQuery;
-                int lastIndex = 0;
-                int index = lowerText.indexOf(lowerQuery);
-
-                while (index >= 0) {
-                    if (index > lastIndex) {
-                        javafx.scene.text.Text t = new javafx.scene.text.Text(text.substring(lastIndex, index));
-                        t.getStyleClass().add("reddit-thread-title");
-                        t.setFont(javafx.scene.text.Font.font("Fira Code", javafx.scene.text.FontWeight.BOLD, 13));
-                        titleFlow.getChildren().add(t);
-                    }
-
-                    javafx.scene.control.Label highlight = new javafx.scene.control.Label(
-                            text.substring(index, index + lowerQuery.length()));
-                    highlight.setStyle(
-                            "-fx-background-color: #ffd700; -fx-text-fill: #000000; -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace; -fx-font-weight: bold; -fx-font-size: 13px; -fx-padding: 0;");
-                    titleFlow.getChildren().add(highlight);
-
-                    lastIndex = index + lowerQuery.length();
-                    index = lowerText.indexOf(lowerQuery, lastIndex);
-                }
-                if (lastIndex < text.length()) {
-                    javafx.scene.text.Text t = new javafx.scene.text.Text(text.substring(lastIndex));
-                    t.getStyleClass().add("reddit-thread-title");
-                    t.setFont(javafx.scene.text.Font.font("Fira Code", javafx.scene.text.FontWeight.BOLD, 13));
-                    titleFlow.getChildren().add(t);
-                }
-            }
-        }
-
     }
 
     @FXML
@@ -764,9 +545,10 @@ public class DashboardController {
             webEngine.executeScript("startStreamLog('" + escapeJs(headerHtml) + "', '" + extraStreamClass + "')");
 
             // Only disable UI for interactive Main Agent, not background Passive Agent
-            if (redditList != null && !i18n.get("log.source.passive_agent").equals(source)) {
-                redditList.setDisable(true);
+            if (source.equals("WSBG-TERMINAL")) {
+                // Keep UI interactive
             }
+
         });
     }
 
@@ -786,16 +568,11 @@ public class DashboardController {
         javafx.application.Platform.runLater(() -> {
             if (event.status == null || event.status.isEmpty()) {
                 webEngine.executeScript("setStatus('')");
-                if (redditList != null && redditList.isDisable()) {
-                    // If status is cleared (and not streaming), enable list?
-                    // Careful: Stream might be running.
-                    // But usually status clear implies idle.
-                    // Let's rely on StreamEnd for enabling content logic.
-                }
             } else {
                 webEngine.executeScript("setStatus('" + escapeJs(event.status) + "')");
             }
         });
+
     }
 
     @Subscribe
@@ -808,9 +585,8 @@ public class DashboardController {
             // Only interact with Status/UI if this was a Main Agent task (not Passive)
             if (!isPassive) {
                 webEngine.executeScript("setStatus('')"); // FORCE RESET STATUS
-                if (redditList != null) {
-                    redditList.setDisable(false);
-                }
+                // Re-enable UI
+
             }
 
             // Add to history, and allow display (replacing the removed stream)
@@ -827,9 +603,8 @@ public class DashboardController {
         // anymore for streams)
         viewModel.appendToConsole("||AI_FINAL||" + event.message);
         javafx.application.Platform.runLater(() -> {
-            if (redditList != null) {
-                redditList.setDisable(false);
-            }
+            // Re-enable UI on error/completion
+
         });
     }
 
@@ -869,6 +644,76 @@ public class DashboardController {
             }
 
             String originalMsg = log.getMessage().trim();
+
+            // Banner Logic
+            if (originalMsg.startsWith("||BANNER||")) {
+                String bannerContent = originalMsg.substring(10);
+
+                // Color Parsing Logic for "Germany G" and "WSB Blue"
+                // We assume the input string contains markers: {{B}} (Blue/Default), {{K}}
+                // (Black/Grey), {{R}} (Red), {{Y}} (Gold)
+                // First, escape HTML to be safe
+                String safeContent = escapeHtml(bannerContent);
+
+                // Now replace markers with spans
+                // We use a specific class for the base font
+                // {{B}} Changed from Blue to Default Grey (#e0e0e0) per user request ("Farbe
+                // der restlichen Software")
+                String styledContent = safeContent
+                        .replace("{{B}}",
+                                "<span style='color: #e0e0e0; text-shadow: 0 0 10px rgba(224, 224, 224, 0.1);'>")
+                        .replace("{{K}}", "<span style='color: #444444; text-shadow: none;'>") // Dark Grey for "Black"
+                                                                                               // visibility
+                        .replace("{{R}}",
+                                "<span style='color: #ff3333; text-shadow: 0 0 10px rgba(255, 51, 51, 0.4);'>")
+                        .replace("{{Y}}",
+                                "<span style='color: #ffcc00; text-shadow: 0 0 10px rgba(255, 204, 0, 0.4);'>")
+                        .replace("{{X}}", "</span>");
+
+                // Classic Terminal Integration
+                StringBuilder html = new StringBuilder();
+                // Container: Align left (flex-start), reduced padding to fit flow
+                html.append(
+                        "<div style='display: flex; flex-direction: column; align-items: flex-start; padding: 10px 0 20px 0;'>");
+
+                // 1. The Prompt (Context anchor)
+                // Use a unique ID if needed or just styling
+                html.append(
+                        "<div style='font-family: \"Fira Code\", monospace; font-size: 14px; margin-bottom: 15px; width: 100%; text-align: left;'>");
+                html.append(
+                        "<span style='color: #50fa7b; font-weight: bold;'>root@wsbg-term</span>:<span style='color: #bd93f9;'>~</span>$ <span style='color: #f8f8f2;'>./init_sequence.sh --visual</span>");
+                html.append("</div>");
+
+                // 2. The Banner Output (Split by line and animate)
+                String[] lines = styledContent.split("\n");
+                for (int i = 0; i < lines.length; i++) {
+                    String line = lines[i];
+                    if (line.trim().isEmpty())
+                        continue;
+
+                    // Animation: slideInLeft
+                    String delay = (i * 80) + "ms";
+                    html.append(
+                            "<div style='white-space: pre; font-family: \"Fira Code\", \"Consolas\", monospace; font-weight: bold; font-size: 20px; line-height: 1.0; text-align: left; opacity: 0; animation: slideInLeft 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; animation-delay: "
+                                    + delay + ";'>");
+                    html.append(line);
+                    html.append("</div>");
+                }
+
+                // 3. The Result / Anchor
+                String footerDelay = ((lines.length * 80) + 200) + "ms";
+                html.append(
+                        "<div style='margin-top: 15px; font-family: \"Fira Code\", monospace; font-size: 14px; color: #6272a4; opacity: 0; animation: fadeInUp 0.5s ease-out forwards; animation-delay: "
+                                + footerDelay + ";'>");
+                html.append("[ <span style='color: #50fa7b;'>OK</span> ] Core systems loaded successfully.");
+                html.append("</div>");
+
+                html.append("</div>");
+
+                webEngine.executeScript("appendLog('" + escapeJs(html.toString()) + "', 'log-banner')");
+                return;
+            }
+
             int finalTagIndex = originalMsg.indexOf("||AI_FINAL||");
             boolean isAiFinal = finalTagIndex >= 0;
             String displayMsg = isAiFinal ? originalMsg.substring(finalTagIndex + 12) : originalMsg;
@@ -1244,8 +1089,6 @@ public class DashboardController {
                     // But user request implies it. For now, we search what we have.
                     return matchTitle || matchContent;
                 });
-                redditList.refresh(); // Trigger highlighting update
-
                 // Notify Search Results Status
                 boolean hasResults = !currentSearchQuery.isEmpty() && !filteredThreads.isEmpty();
                 eventBus.post(

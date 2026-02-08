@@ -121,13 +121,17 @@ public class ChatService {
                                         "Translation Error: " + ex.getMessage(), "ERROR"));
                             })
                             .start();
-                })
-                .exceptionally(ex -> {
-                    LOG.error("Agent Pipeline Failed", ex);
-                    eventBus.post(new de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.LogEvent(
-                            "Pipeline Error: " + ex.getMessage(), "ERROR"));
-                    return null;
                 });
+    }
+
+    /**
+     * Sends a prompt to the agent and returns the raw response as a Future.
+     * Bypasses UI streaming and translation.
+     */
+    public CompletableFuture<String> askRaw(String prompt) {
+        String id = "raw-" + UUID.randomUUID().toString();
+        LOG.info("Agent Raw Query [ID={}]: {}", id, prompt);
+        return collectStream(brain.ask(id, prompt));
     }
 
     private CompletableFuture<String> collectStream(TokenStream stream) {

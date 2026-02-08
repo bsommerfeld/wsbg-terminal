@@ -20,7 +20,7 @@ public class NewsViewModel {
     private static final Logger LOG = LoggerFactory.getLogger(NewsViewModel.class);
 
     private final RedditScraper scraper;
-    private final DatabaseService db;
+    private final de.bsommerfeld.wsbg.terminal.db.RedditRepository repository; // Changed
     private final de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig config;
     private final ChatService chatService;
     private final de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus eventBus;
@@ -36,11 +36,12 @@ public class NewsViewModel {
             });
 
     @Inject
-    public NewsViewModel(RedditScraper scraper, DatabaseService db, ChatService chatService,
+    public NewsViewModel(RedditScraper scraper, de.bsommerfeld.wsbg.terminal.db.RedditRepository repository,
+            ChatService chatService,
             de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig config,
             de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus eventBus) {
         this.scraper = scraper;
-        this.db = db;
+        this.repository = repository; // Changed
         this.chatService = chatService;
         this.config = config;
         this.eventBus = eventBus;
@@ -70,7 +71,7 @@ public class NewsViewModel {
                 }
 
                 // Increased limit to 500 to catch older threads with new activity
-                var recent = db.getRecentThreads(500);
+                var recent = repository.getRecentThreads(500);
                 // Sorting is now handled by SQL (Order By Correctness) but list integrity is
                 // key
                 // recent.sort(...) is no longer strictly needed if SQL does it, but we can keep

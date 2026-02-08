@@ -21,6 +21,10 @@ public class AgentConfig {
     @Comment("Ollama Model Name for Embeddings (default: nomic-embed-text-v2-moe:latest)")
     private String embeddingModel = "nomic-embed-text-v2-moe:latest";
 
+    @Key("ui.allow-graph-view")
+    @Comment("Enable the 3D Graph View feature (default: true)")
+    private boolean allowGraphView = true;
+
     public String getOllamaModel() {
         return ollamaModel;
     }
@@ -51,6 +55,14 @@ public class AgentConfig {
 
     public void setEmbeddingModel(String embeddingModel) {
         this.embeddingModel = embeddingModel;
+    }
+
+    public boolean isAllowGraphView() {
+        return allowGraphView;
+    }
+
+    public void setAllowGraphView(boolean allowGraphView) {
+        this.allowGraphView = allowGraphView;
     }
 
 }

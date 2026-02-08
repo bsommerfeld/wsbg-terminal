@@ -67,8 +67,8 @@ public class WsbgTerminalApp extends Application {
     private Injector injector;
     private double xOffset = 0;
     private double yOffset = 0;
-    private javafx.scene.layout.Region sidebarToggleIcon;
-    private boolean lastSearchHadResults = false;
+    // private javafx.scene.layout.Region sidebarToggleIcon; // REMOVED
+    // private boolean lastSearchHadResults = false; // REMOVED
 
     @Override
     public void init() throws Exception {
@@ -254,42 +254,28 @@ public class WsbgTerminalApp extends Application {
                             return btn;
                         };
 
-                        // Define Toggle Button Creator
-                        Function<Injector, Button> createToggleBtn = (inj) -> {
-                            GlobalConfig config = inj.getInstance(GlobalConfig.class);
+                        // Define Graph Toggle Button Creator
+                        Function<Void, Button> createGraphToggle = (v) -> {
                             Button btn = new Button();
                             btn.getStyleClass().add("ascii-button");
                             Region icon = new Region();
-
-                            // Initial State
-                            boolean isVisible = config.isRedditListVisible();
-                            // If Visible -> Show Close Icon (>)
-                            // If Hidden -> Show Open Icon (<)
-                            icon.getStyleClass().add(isVisible ? "icon-panel-close" : "icon-panel-open");
-                            // Capture reference for highlighting logic
-                            this.sidebarToggleIcon = icon;
+                            icon.getStyleClass().add("icon-graph"); // Default State
                             btn.setGraphic(icon);
-
                             btn.setOnAction(e -> {
-                                boolean newState = !config.isRedditListVisible();
-                                config.setRedditListVisible(newState);
-
-                                // Update Icon
+                                boolean isGraphActive = icon.getStyleClass().contains("icon-view-terminal");
                                 icon.getStyleClass().clear();
-                                icon.getStyleClass().add(newState ? "icon-panel-close" : "icon-panel-open");
-
-                                // Post Event
-                                inj.getInstance(ApplicationEventBus.class).post(new ToggleRedditPanelEvent(newState));
-
-                                // Save Config
-                                try {
-                                    config.save();
-                                } catch (Exception ex) {
-                                    LOG.error("Failed to save config", ex);
+                                if (isGraphActive) {
+                                    icon.getStyleClass().add("icon-graph");
+                                } else {
+                                    icon.getStyleClass().add("icon-view-terminal");
                                 }
+                                injector.getInstance(ApplicationEventBus.class)
+                                        .post(new de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.ToggleGraphViewEvent());
                             });
                             return btn;
                         };
+
+                        // Define Toggle Button Creator - REMOVED per user request
 
                         // Create Utility Controls Wrapper (Broom + Toggle)
                         HBox utilityControls = new HBox(0);
@@ -297,9 +283,10 @@ public class WsbgTerminalApp extends Application {
                         utilityControls.setAlignment(Pos.CENTER);
 
                         Button broomBtn = createBroom.apply(null);
-                        Button toggleBtn = createToggleBtn.apply(injector);
+                        Button graphBtn = createGraphToggle.apply(null);
+                        // Button toggleBtn = createToggleBtn.apply(injector); // REMOVED
 
-                        utilityControls.getChildren().addAll(broomBtn, toggleBtn);
+                        utilityControls.getChildren().addAll(graphBtn, broomBtn);
 
                         if (isMac) {
                             // Mac: Traffic Lights Left (with Margin), Utilities Right
@@ -354,6 +341,18 @@ public class WsbgTerminalApp extends Application {
     @Override
     public void stop() throws Exception {
         LOG.info("Stopping...");
+
+        // Ensure Reddit Repository saves everything and shuts down executor
+        if (injector != null) {
+            try {
+                de.bsommerfeld.wsbg.terminal.db.RedditRepository repo = injector
+                        .getInstance(de.bsommerfeld.wsbg.terminal.db.RedditRepository.class);
+                repo.shutdown();
+            } catch (Exception e) {
+                LOG.warn("Failed to shutdown RedditRepository: " + e.getMessage());
+            }
+        }
+
         super.stop();
         System.exit(0);
     }
@@ -371,35 +370,16 @@ public class WsbgTerminalApp extends Application {
     @com.google.common.eventbus.Subscribe
     public void onRedditSearchResults(
             de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.RedditSearchResultsEvent event) {
-        javafx.application.Platform.runLater(() -> {
-            this.lastSearchHadResults = event.hasResults;
-            updateSidebarIconHighlight();
-        });
+        // Highlighting logic removed
     }
 
     @com.google.common.eventbus.Subscribe
     public void onToggleRedditPanel(
             de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.ToggleRedditPanelEvent event) {
-        javafx.application.Platform.runLater(() -> {
-            // Event provides new visibility state
-            updateSidebarIconHighlight();
-        });
+        // Logic removed
     }
 
     private void updateSidebarIconHighlight() {
-        if (sidebarToggleIcon == null || injector == null)
-            return;
-
-        GlobalConfig config = injector.getInstance(GlobalConfig.class);
-        boolean isClosed = !config.isRedditListVisible();
-
-        // Condition: Closed AND Has Results -> Apply Highlight
-        if (isClosed && lastSearchHadResults) {
-            if (!sidebarToggleIcon.getStyleClass().contains("icon-search-match")) {
-                sidebarToggleIcon.getStyleClass().add("icon-search-match");
-            }
-        } else {
-            sidebarToggleIcon.getStyleClass().remove("icon-search-match");
-        }
+        // Logic removed - Button doesn't exist anymore
     }
 }

@@ -35,9 +35,27 @@ public class DashboardViewModel {
     private void initialize() {
         LOG.info("Initializing Dashboard ViewModel...");
 
-        // System Ready
-        java.util.ResourceBundle bundle = java.util.ResourceBundle.getBundle("i18n.messages");
-        appendToConsole(bundle.getString("system.terminal_ready"));
+        // Simulate Boot Sequence
+        new Thread(() -> {
+            try {
+                // Initial Silence
+                Thread.sleep(600);
+
+                // Advanced ASCII Banner (Tightest Spacing)
+                // Pattern: "WSB" in {{B}}lue (with white accents), "G" in {{K}}Black, {{R}}ed,
+                // {{Y}}Gold
+                String banner = "{{B}}██╗    ██╗███████╗██████╗ {{K}}██████╗{{X}}\n"
+                        + "{{B}}██║    ██║██╔════╝██╔══██╗{{K}}██╔════╝{{X}}\n"
+                        + "{{B}}██║ █╗ ██║███████╗██████╔╝{{R}}██║  ███╗{{X}}\n"
+                        + "{{B}}██║███╗██║╚════██║██╔══██╗{{R}}██║   ██║{{X}}\n"
+                        + "{{B}}╚███╔███╔╝███████║██████╔╝{{Y}}╚██████╔╝{{X}}\n"
+                        + "{{B}} ╚══╝╚══╝ ╚══════╝╚═════╝ {{Y}} ╚═════╝{{X}}";
+
+                appendToConsole("||BANNER||" + banner);
+            } catch (InterruptedException e) {
+                // Ignore
+            }
+        }).start();
     }
 
     public void onAskAgent(String query) {

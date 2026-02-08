@@ -1,7 +1,7 @@
 package de.bsommerfeld.wsbg.terminal.reddit;
 
 import com.google.inject.Singleton;
-import de.bsommerfeld.wsbg.terminal.db.DatabaseService;
+import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -17,19 +17,19 @@ import java.net.http.HttpResponse;
 /**
  * Reddit Scraper utilizing .json endpoints (No API Key).
  * Enforces Rate Limiting to prevent 429s.
- * Checks Delta against DB before processing.
+ * Checks Delta against Cache/DB before processing.
  */
 @Singleton
 public class RedditScraper {
 
     private static final Logger LOG = LoggerFactory.getLogger(RedditScraper.class);
     private static final String REDDIT_BASE = "https://www.reddit.com";
-    private final DatabaseService databaseService;
+    private final RedditRepository repository;
     private final HttpClient httpClient;
 
     @Inject
-    public RedditScraper(DatabaseService databaseService) {
-        this.databaseService = databaseService;
+    public RedditScraper(RedditRepository repository) {
+        this.repository = repository;
         this.httpClient = HttpClient.newBuilder()
                 .version(HttpClient.Version.HTTP_2)
                 .build();
@@ -39,6 +39,7 @@ public class RedditScraper {
     private static final String USER_AGENT = "java:de.bsommerfeld.wsbg.terminal:v1.0 (by /u/WsbgTerminal)";
 
     public static class ThreadAnalysisContext {
+        public String threadId; // Added Thread ID for DB linking
         public String title; // Added Title
         public String imageUrl;
         public String selftext;
@@ -68,7 +69,7 @@ public class RedditScraper {
         if (!permalink.startsWith("/"))
             permalink = "/" + permalink;
 
-        String url = REDDIT_BASE + permalink + REDDIT_JSON_SUFFIX;
+        String url = REDDIT_BASE + permalink + REDDIT_JSON_SUFFIX + "?limit=500&depth=20";
         LOG.info("Fetching Thread Context: {}", url);
 
         try {
@@ -89,6 +90,12 @@ public class RedditScraper {
                     // Extract Title & Data (Index 0)
                     JsonNode tData = root.get(0).get("data").get("children").get(0).get("data");
 
+                    if (tData.has("name")) {
+                        context.threadId = tData.get("name").asText();
+                    } else if (tData.has("id")) {
+                        context.threadId = "t3_" + tData.get("id").asText();
+                    }
+
                     if (tData.has("title")) {
                         context.title = tData.get("title").asText();
                     }
@@ -102,8 +109,6 @@ public class RedditScraper {
                             && tData.has("url_overridden_by_dest")) {
                         context.selftext = "[Link: " + tData.get("url_overridden_by_dest").asText() + "]";
                     }
-
-                    // ... (Image extraction logic continues)
 
                     String candidateUrl = null;
 
@@ -129,22 +134,30 @@ public class RedditScraper {
         return context;
     }
 
+    private static class ImageExtractionResult {
+        String text;
+        java.util.List<String> images;
+
+        public ImageExtractionResult(String text, java.util.List<String> images) {
+            this.text = text;
+            this.images = images;
+        }
+    }
+
     private void processComments(JsonNode node, ThreadAnalysisContext context, int depth) {
-        if (depth > 3)
+        if (depth > 8)
             return; // Limit nesting depth
         if (node.has("data") && node.get("data").has("children")) {
             int count = 0;
             for (JsonNode child : node.get("data").get("children")) {
-                // if (count > 10 && depth == 0) break; // Limit removed as per user request
-                // (ALLE)
-
                 JsonNode data = child.get("data");
                 if (data.has("body")) {
                     String indent = "  ".repeat(depth);
-                    String body = data.get("body").asText().replace("\n", " ");
+                    String rawBody = data.get("body").asText().replace("\n", " ");
 
-                    // Extract and tag images
-                    body = extractAndTagImages(body, context);
+                    // Extract and tag images locally for this comment
+                    ImageExtractionResult searchResult = extractImages(rawBody, context);
+                    String body = searchResult.text;
 
                     String rawAuthor = data.has("author") ? data.get("author").asText() : "anon";
                     int score = data.has("score") ? data.get("score").asInt() : 0;
@@ -152,6 +165,28 @@ public class RedditScraper {
                             ? "`u/" + rawAuthor + "`"
                             : rawAuthor;
                     context.comments.add(indent + author + " (Score: " + score + "): " + body);
+
+                    // --- Save Comment to DB ---
+                    String id = data.has("name") ? data.get("name").asText() : "unknown_" + java.util.UUID.randomUUID();
+                    String parentId = data.has("parent_id") ? data.get("parent_id").asText() : context.threadId;
+                    long createdUtc = data.has("created_utc") ? data.get("created_utc").asLong()
+                            : System.currentTimeMillis() / 1000;
+                    long now = System.currentTimeMillis() / 1000;
+
+                    de.bsommerfeld.wsbg.terminal.core.domain.RedditComment dbComment = new de.bsommerfeld.wsbg.terminal.core.domain.RedditComment(
+                            id,
+                            context.threadId != null ? context.threadId : "unknown",
+                            parentId,
+                            rawAuthor,
+                            body,
+                            score,
+                            createdUtc,
+                            now, // fetched_at
+                            now, // last_updated_utc (assume fresh activity if we are fetching it)
+                            searchResult.images // Pass found images
+                    );
+                    repository.saveComment(dbComment);
+                    // ---------------------------
 
                     if (data.has("replies") && data.get("replies").isObject()) {
                         processComments(data.get("replies"), context, depth + 1);
@@ -162,11 +197,12 @@ public class RedditScraper {
         }
     }
 
-    private String extractAndTagImages(String text, ThreadAnalysisContext context) {
+    private ImageExtractionResult extractImages(String text, ThreadAnalysisContext context) {
         // Regex to find http/https URLs (greedy matching to include query params)
         java.util.regex.Pattern p = java.util.regex.Pattern.compile("https?://\\S+");
         java.util.regex.Matcher m = p.matcher(text);
         StringBuffer sb = new StringBuffer();
+        java.util.List<String> imagesFound = new java.util.ArrayList<>();
 
         while (m.find()) {
             String fullMatch = m.group();
@@ -185,18 +221,21 @@ public class RedditScraper {
 
             if (isImage(unescapedUrl)) {
                 String id = "IMG_" + (context.imageCounter++);
-                context.imageIdToUrl.put(id, unescapedUrl);
+                // context.imageIdToUrl.put(id, unescapedUrl); // Can still populate context if
+                // needed for legacy, or remove
+                imagesFound.add(unescapedUrl);
+
                 // Replace URL with URL + [Image: IMG_X] + original suffix
+                // Or just [Image] marker? The UI will pick it up from DB.
+                // Converting to marker helps text analysis know there is an image.
                 m.appendReplacement(sb,
-                        java.util.regex.Matcher.quoteReplacement(cleanUrl + " [Image: " + id + "]" + suffix));
+                        java.util.regex.Matcher.quoteReplacement(cleanUrl + " [Image]" + suffix));
             } else {
-                // Not an image, keep original text (essentially a no-op replacement, but
-                // advances buffer)
                 m.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(fullMatch));
             }
         }
         m.appendTail(sb);
-        return sb.toString();
+        return new ImageExtractionResult(sb.toString(), imagesFound);
     }
 
     private String unescapeUrl(String url) {
@@ -230,12 +269,14 @@ public class RedditScraper {
         public int newUpvotes = 0;
         public int newComments = 0;
         public java.util.List<de.bsommerfeld.wsbg.terminal.core.domain.RedditThread> threadUpdates = new java.util.ArrayList<>();
+        public java.util.Set<String> scannedIds = new java.util.HashSet<>();
 
         public void add(ScrapeStats other) {
             this.newThreads += other.newThreads;
             this.newUpvotes += other.newUpvotes;
             this.newComments += other.newComments;
             this.threadUpdates.addAll(other.threadUpdates);
+            this.scannedIds.addAll(other.scannedIds);
         }
 
         public boolean hasUpdates() {
@@ -250,8 +291,16 @@ public class RedditScraper {
     }
 
     public ScrapeStats scanSubreddit(String subreddit) {
-        LOG.info("Scanning r/{}", subreddit);
-        String url = REDDIT_BASE + "/r/" + subreddit + "/new" + REDDIT_JSON_SUFFIX;
+        return scanSubredditListing(subreddit, "new");
+    }
+
+    public ScrapeStats scanSubredditHot(String subreddit) {
+        return scanSubredditListing(subreddit, "hot");
+    }
+
+    private ScrapeStats scanSubredditListing(String subreddit, String listing) {
+        LOG.info("Scanning r/{}/{}", subreddit, listing);
+        String url = REDDIT_BASE + "/r/" + subreddit + "/" + listing + REDDIT_JSON_SUFFIX + "?limit=50";
         ScrapeStats stats = new ScrapeStats();
 
         try {
@@ -273,65 +322,13 @@ public class RedditScraper {
             JsonNode root = mapper.readTree(response.body());
 
             if (root.has("data") && root.get("data").has("children")) {
+                java.util.List<de.bsommerfeld.wsbg.terminal.core.domain.RedditThread> batchToSave = new java.util.ArrayList<>();
                 for (JsonNode child : root.get("data").get("children")) {
-                    JsonNode data = child.get("data");
-
-                    String id = data.has("name") ? data.get("name").asText() : "unknown";
-                    String title = data.has("title") ? data.get("title").asText() : "No Title";
-                    String rawAuthor = data.has("author") ? data.get("author").asText() : "unknown";
-                    String author = (!rawAuthor.equals("unknown") && !rawAuthor.equals("[deleted]")) ? "u/" + rawAuthor
-                            : rawAuthor;
-
-                    String selftext = data.has("selftext") ? data.get("selftext").asText() : "";
-                    if (selftext.isEmpty()) {
-                        if (data.has("url_overridden_by_dest")) {
-                            selftext = "[Link: " + data.get("url_overridden_by_dest").asText() + "]";
-                        } else if (data.has("url")) {
-                            selftext = "[Link: " + data.get("url").asText() + "]";
-                        }
-                    }
-
-                    long created = data.has("created_utc") ? data.get("created_utc").asLong() : 0;
-                    String permalink = data.has("permalink") ? data.get("permalink").asText() : "";
-                    int score = data.has("score") ? data.get("score").asInt() : 0;
-                    double upvoteRatio = data.has("upvote_ratio") ? data.get("upvote_ratio").asDouble() : 0.0;
-                    int numComments = data.has("num_comments") ? data.get("num_comments").asInt() : 0;
-
-                    de.bsommerfeld.wsbg.terminal.core.domain.RedditThread thread = new de.bsommerfeld.wsbg.terminal.core.domain.RedditThread(
-                            id, subreddit, title, author, selftext, created, permalink, score, upvoteRatio,
-                            numComments);
-
-                    // --- Calc Deltas ---
-                    de.bsommerfeld.wsbg.terminal.core.domain.RedditThread existing = databaseService.getThread(id);
-                    if (existing == null) {
-                        // New Thread
-                        stats.newThreads++;
-                        stats.newComments += numComments;
-                        stats.newUpvotes += score;
-                        stats.threadUpdates.add(thread);
-                        LOG.debug("New Thread found: {}", title);
-                    } else {
-                        // Existing Thread - Check diffs
-                        int commentDiff = numComments - existing.getNumComments();
-                        int scoreDiff = score - existing.getScore();
-                        boolean updated = false;
-
-                        if (commentDiff > 0) {
-                            stats.newComments += commentDiff;
-                            updated = true;
-                        }
-
-                        if (scoreDiff > 0) {
-                            stats.newUpvotes += scoreDiff;
-                            updated = true;
-                        }
-
-                        if (updated) {
-                            stats.threadUpdates.add(thread);
-                        }
-                    }
-
-                    databaseService.saveThread(thread);
+                    processThreadNode(child, stats, subreddit, batchToSave);
+                }
+                // Batch Save!
+                if (!batchToSave.isEmpty()) {
+                    repository.saveThreadsBatch(batchToSave);
                 }
             }
 
@@ -339,6 +336,180 @@ public class RedditScraper {
             LOG.error("Error scraping subreddit {}", subreddit, e);
         }
         return stats;
+    }
+
+    /**
+     * Efficiently updates a list of known thread IDs using batch requests.
+     */
+    public ScrapeStats updateThreadsBatch(java.util.List<String> threadIds) {
+        ScrapeStats stats = new ScrapeStats();
+        if (threadIds == null || threadIds.isEmpty())
+            return stats;
+
+        // Dedup IDs
+        java.util.Set<String> uniqueIds = new java.util.HashSet<>(threadIds);
+        java.util.List<String> distinctIds = new java.util.ArrayList<>(uniqueIds);
+
+        int batchSize = 100;
+        for (int i = 0; i < distinctIds.size(); i += batchSize) {
+            int end = Math.min(distinctIds.size(), i + batchSize);
+            java.util.List<String> batch = distinctIds.subList(i, end);
+
+            // Ensure IDs have t3_ prefix if missing (Link IDs)
+            String idsParam = batch.stream()
+                    .map(id -> id.startsWith("t3_") ? id : "t3_" + id)
+                    .collect(java.util.stream.Collectors.joining(","));
+
+            String url = REDDIT_BASE + "/by_id/" + idsParam + REDDIT_JSON_SUFFIX;
+            LOG.debug("Batch Updating {} threads...", batch.size());
+
+            try {
+                HttpRequest request = HttpRequest.newBuilder()
+                        .uri(URI.create(url))
+                        .header("User-Agent", USER_AGENT)
+                        .GET()
+                        .build();
+
+                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                checkRateLimit(response);
+
+                if (response.statusCode() == 200) {
+                    ObjectMapper mapper = new ObjectMapper();
+                    JsonNode root = mapper.readTree(response.body());
+                    if (root.has("data") && root.get("data").has("children")) {
+                        java.util.List<de.bsommerfeld.wsbg.terminal.core.domain.RedditThread> batchToSave = new java.util.ArrayList<>();
+                        for (JsonNode child : root.get("data").get("children")) {
+                            String sub = "unknown";
+                            if (child.get("data").has("subreddit")) {
+                                sub = child.get("data").get("subreddit").asText();
+                            }
+                            processThreadNode(child, stats, sub, batchToSave);
+                        }
+                        // Batch Save!
+                        if (!batchToSave.isEmpty()) {
+                            repository.saveThreadsBatch(batchToSave);
+                        }
+                    }
+                } else {
+                    LOG.warn("Batch update failed (HTTP {}): {}", response.statusCode(), url);
+                }
+            } catch (Exception e) {
+                LOG.error("Error during batch update", e);
+            }
+        }
+        return stats;
+    }
+
+    private void processThreadNode(JsonNode child, ScrapeStats stats, String subredditDefault,
+            java.util.List<de.bsommerfeld.wsbg.terminal.core.domain.RedditThread> batchCollector) {
+        try {
+            JsonNode data = child.get("data");
+
+            String id = data.has("name") ? data.get("name").asText() : "unknown";
+
+            // --- BLACKLIST FILTER ---
+            // ID: t3_nwvkto (Willkommen im r/wallstreetbetsGER LiveChat!)
+            // Reason: Massive history, low signal-to-noise ratio for real-time alerts.
+            if (id.equals("t3_nwvkto") || id.contains("nwvkto")) {
+                LOG.debug("Skipping Blacklisted Thread: {}", id);
+                return;
+            }
+
+            stats.scannedIds.add(id);
+
+            String subreddit = data.has("subreddit") ? data.get("subreddit").asText() : subredditDefault;
+            String title = data.has("title") ? data.get("title").asText() : "No Title";
+            String rawAuthor = data.has("author") ? data.get("author").asText() : "unknown";
+            String author = (!rawAuthor.equals("unknown") && !rawAuthor.equals("[deleted]")) ? "u/" + rawAuthor
+                    : rawAuthor;
+
+            String selftext = data.has("selftext") ? data.get("selftext").asText() : "";
+            if (selftext.isEmpty()) {
+                if (data.has("url_overridden_by_dest")) {
+                    selftext = "[Link: " + data.get("url_overridden_by_dest").asText() + "]";
+                } else if (data.has("url")) {
+                    selftext = "[Link: " + data.get("url").asText() + "]";
+                }
+            }
+
+            long created = data.has("created_utc") ? data.get("created_utc").asLong() : 0;
+            String permalink = data.has("permalink") ? data.get("permalink").asText() : "";
+            int score = data.has("score") ? data.get("score").asInt() : 0;
+            double upvoteRatio = data.has("upvote_ratio") ? data.get("upvote_ratio").asDouble() : 0.0;
+            int numComments = data.has("num_comments") ? data.get("num_comments").asInt() : 0;
+
+            String imageUrl = null;
+            String candidateUrl = null;
+            if (data.has("url_overridden_by_dest")) {
+                candidateUrl = data.get("url_overridden_by_dest").asText();
+            } else if (data.has("url")) {
+                candidateUrl = data.get("url").asText();
+            }
+            if (candidateUrl != null) {
+                String lower = candidateUrl.toLowerCase();
+                if (lower.contains(".jpg") || lower.contains(".jpeg") || lower.contains(".png")
+                        || lower.contains(".webp")) {
+                    imageUrl = candidateUrl;
+                }
+            }
+
+            long now = System.currentTimeMillis() / 1000;
+
+            de.bsommerfeld.wsbg.terminal.core.domain.RedditThread thread = new de.bsommerfeld.wsbg.terminal.core.domain.RedditThread(
+                    id, subreddit, title, author, selftext, created, permalink, score, upvoteRatio,
+                    numComments, now, imageUrl);
+
+            // --- Calc Deltas & Fetch Deep ---
+            de.bsommerfeld.wsbg.terminal.core.domain.RedditThread existing = repository.getThread(id);
+            if (existing == null) {
+                // New Thread
+                stats.newThreads++;
+                stats.newComments += numComments;
+                stats.newUpvotes += score;
+                stats.threadUpdates.add(thread);
+                LOG.debug("New Thread found: {}", title);
+
+                // Add to batch for saving
+                batchCollector.add(thread);
+
+                // Fetch full context (comments/images) immediately for new threads.
+                // Note: Fetching context is still sequential/individual as required by API
+                // structure
+                LOG.info("Fetching full context for new thread: {}", id);
+                fetchThreadContext(permalink);
+
+            } else {
+                // Existing Thread - Check diffs
+                int commentDiff = numComments - existing.getNumComments();
+                int scoreDiff = score - existing.getScore();
+                boolean updated = false;
+
+                if (commentDiff > 0) {
+                    stats.newComments += commentDiff;
+                    updated = true;
+                }
+
+                if (scoreDiff > 0) {
+                    stats.newUpvotes += scoreDiff;
+                    updated = true;
+                }
+
+                if (updated) {
+                    stats.threadUpdates.add(thread);
+                }
+
+                if (commentDiff > 0) {
+                    LOG.info("Context Update: {} ({})\n +{} comments, Score: {}", title, id, commentDiff, score);
+                    fetchThreadContext(permalink);
+                }
+
+                // Add to batch for saving (Metadata Update)
+                batchCollector.add(thread);
+            }
+
+        } catch (Exception e) {
+            LOG.error("Error processing thread node", e);
+        }
     }
 
     private void checkRateLimit(HttpResponse<?> response) {

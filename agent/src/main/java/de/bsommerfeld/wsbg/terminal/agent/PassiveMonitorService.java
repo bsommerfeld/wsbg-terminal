@@ -44,7 +44,7 @@ public class PassiveMonitorService {
     private final RedditScraper scraper;
     private final AgentBrain brain;
     private final ApplicationEventBus eventBus;
-    private final de.bsommerfeld.wsbg.terminal.db.DatabaseService db;
+    private final de.bsommerfeld.wsbg.terminal.db.RedditRepository repository; // Changed
     private final I18nService i18n;
     private final de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig config;
 
@@ -79,13 +79,13 @@ public class PassiveMonitorService {
 
     @Inject
     public PassiveMonitorService(RedditScraper scraper, AgentBrain brain, ApplicationEventBus eventBus,
-            de.bsommerfeld.wsbg.terminal.db.DatabaseService db,
+            de.bsommerfeld.wsbg.terminal.db.RedditRepository repository, // Changed
             de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig config,
             I18nService i18n) {
         this.scraper = scraper;
         this.brain = brain;
         this.eventBus = eventBus;
-        this.db = db;
+        this.repository = repository; // Changed
         this.i18n = i18n;
 
         // Load Config
@@ -93,7 +93,7 @@ public class PassiveMonitorService {
         this.similarityThreshold = redditConfig.getSimilarityThreshold();
         this.investigationTtl = Duration.ofMinutes(redditConfig.getInvestigationTtlMinutes());
         this.significanceThresholdReport = redditConfig.getSignificanceThreshold();
-        this.cleanupInterval = Duration.ofHours(redditConfig.getCleanupIntervalHours());
+        this.cleanupInterval = Duration.ofHours(1); // Enforced 1h interval per user request
         this.dataRetentionSeconds = Duration.ofHours(redditConfig.getDataRetentionHours()).toSeconds();
         this.updateIntervalSeconds = redditConfig.getUpdateIntervalSeconds();
 
@@ -116,21 +116,69 @@ public class PassiveMonitorService {
 
     private void startMonitoring() {
         LOG.info("Starting Passive Reddit Monitor (Weighted Significance Logic)...");
+        scannerExecutor.execute(this::performInitialStartup);
         scannerExecutor.scheduleAtFixedRate(this::scanCycle, 30, updateIntervalSeconds, TimeUnit.SECONDS);
+    }
+
+    private void performInitialStartup() {
+        LOG.info("Performing Initial Scan (Filling Gaps)...");
+        try {
+            // 1. Refresh ALL known threads
+            refreshLocalThreads();
+
+            // 2. Initial Cleanup
+            repository.cleanupOldThreads(dataRetentionSeconds).thenAccept(count -> {
+                LOG.info("Initial cleanup: Removed {} old threads.", count);
+            });
+
+        } catch (Exception e) {
+            LOG.error("Initial Startup Failed", e);
+        }
+    }
+
+    private void refreshLocalThreads() {
+        try {
+            java.util.List<RedditThread> all = repository.getAllThreads();
+            java.util.List<String> ids = all.stream().map(RedditThread::getId).collect(Collectors.toList());
+            if (!ids.isEmpty()) {
+                LOG.debug("Refreshing {} local threads via batch update...", ids.size());
+                RedditScraper.ScrapeStats stats = scraper.updateThreadsBatch(ids);
+                if (stats.hasUpdates()) {
+                    LOG.info("Local Thread Refresh: {}", stats);
+                    if (!stats.threadUpdates.isEmpty()) {
+                        analysisExecutor.submit(() -> processUpdates(stats.threadUpdates));
+                    }
+                }
+            }
+        } catch (Exception e) {
+            LOG.error("Failed to refresh local threads", e);
+        }
     }
 
     private void scanCycle() {
         try {
             if (Duration.between(lastCleanup, Instant.now()).compareTo(cleanupInterval) > 0) {
-                int deleted = db.cleanupOldThreads(dataRetentionSeconds);
                 lastCleanup = Instant.now();
-                eventBus.post(new de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.LogEvent(
-                        String.valueOf(deleted), "CLEANUP"));
+                repository.cleanupOldThreads(dataRetentionSeconds).thenAccept(count -> {
+                    eventBus.post(new de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.LogEvent(
+                            String.valueOf(count), "CLEANUP"));
+                });
             }
 
             RedditScraper.ScrapeStats stats = new RedditScraper.ScrapeStats();
             for (String sub : config.getReddit().getSubreddits()) {
                 stats.add(scraper.scanSubreddit(sub));
+            }
+
+            // --- BATCH UPDATE EXISTING (Gap Fill) ---
+            java.util.List<RedditThread> allLocal = repository.getAllThreads();
+            java.util.List<String> idsToUpdate = allLocal.stream()
+                    .map(RedditThread::getId)
+                    .filter(id -> !stats.scannedIds.contains(id))
+                    .collect(Collectors.toList());
+
+            if (!idsToUpdate.isEmpty()) {
+                stats.add(scraper.updateThreadsBatch(idsToUpdate));
             }
 
             // Fetch updates from ScrapeStats to pass to analysis
@@ -303,43 +351,40 @@ public class PassiveMonitorService {
             reportData.append("Cluster Age: ").append(ageStr).append("\n");
             reportData.append("Significance Score: ").append(String.format("%.1f", inv.currentSignificance))
                     .append("\n");
-            reportData.append("Active Threads: ").append(inv.activePermalinks.size()).append("\n\n");
+            reportData.append("Active Threads: ").append(inv.activeThreadIds.size()).append("\n\n");
 
             // --- DEEP DIVE: Aggregate Context from Top Active Threads ---
-            // We select up to 3 permalinks to fetch, prioritizing the "best" and "latest"
-            // This allows us to catch comments in Daily Threads or breaking news across
-            // duplicate posts.
+            // Fetch from DB strictly.
+            // We select up to 3 IDs to fetch.
             java.util.Set<String> targets = new java.util.HashSet<>();
-            if (inv.bestPermalink != null)
-                targets.add(inv.bestPermalink);
-            if (inv.latestPermalink != null)
-                targets.add(inv.latestPermalink);
-
-            int count = 0;
-            for (String link : inv.activePermalinks) {
-                if (count >= 3)
+            if (inv.bestThreadId != null)
+                targets.add(inv.bestThreadId);
+            // Add latest/others from list
+            for (String id : inv.activeThreadIds) {
+                if (targets.size() >= 3)
                     break;
-                targets.add(link);
-                count++;
+                targets.add(id);
             }
 
             int threadIndex = 1;
-            for (String permalink : targets) {
+            for (String threadId : targets) {
                 try {
-                    var context = scraper.fetchThreadContext(permalink);
-                    if (context.isEmpty())
+                    // DB Lookup
+                    var thread = repository.getThread(threadId);
+                    if (thread == null)
                         continue;
 
                     reportData.append("=== THREAD SOURCE ").append(threadIndex++).append(" ===\n");
-                    reportData.append("Title: ").append(context.title).append("\n");
+                    reportData.append("Title: ").append(thread.getTitle()).append("\n");
 
-                    if (context.imageUrl != null && !context.imageUrl.isEmpty()) {
-                        reportData.append(" [MAIN IMAGE]: ").append(context.imageUrl).append("\n");
+                    if (thread.getImageUrl() != null && !thread.getImageUrl().isEmpty()) {
+                        reportData.append(" [MAIN IMAGE]: ").append(thread.getImageUrl()).append("\n");
 
                         // Active Vision Analysis during Passive Scan
                         try {
-                            LOG.info("[INTERNAL][VISION] Passive Scan invoking Vision Model on: {}", context.imageUrl);
-                            String visionResult = brain.see(context.imageUrl);
+                            LOG.info("[INTERNAL][VISION] Passive Scan invoking Vision Model on: {}",
+                                    thread.getImageUrl());
+                            String visionResult = brain.see(thread.getImageUrl());
                             LOG.info("[INTERNAL][VISION] Result: {}", visionResult);
                             reportData.append("[VISION ANALYSIS]: ").append(visionResult).append("\n");
                         } catch (Exception e) {
@@ -347,29 +392,40 @@ public class PassiveMonitorService {
                         }
                     }
 
-                    if (context.selftext != null && !context.selftext.isEmpty()) {
-                        String snippet = context.selftext.length() > 500 ? context.selftext.substring(0, 500) + "..."
-                                : context.selftext;
+                    if (thread.getTextContent() != null && !thread.getTextContent().isEmpty()) {
+                        String snippet = thread.getTextContent().length() > 500
+                                ? thread.getTextContent().substring(0, 500) + "..."
+                                : thread.getTextContent();
                         reportData.append("Content Snippet: ").append(snippet).append("\n");
                     }
 
-                    if (!context.comments.isEmpty()) {
+                    // Fetch Comments from DB
+                    var comments = repository.getCommentsForThread(threadId, 15);
+                    if (!comments.isEmpty()) {
                         reportData.append("RELEVANT COMMENTS (Nested):\n");
-                        context.comments.stream().limit(15).forEach(c -> reportData.append(c).append("\n"));
-                    }
+                        for (de.bsommerfeld.wsbg.terminal.core.domain.RedditComment c : comments) {
+                            String indent = "  "; // Since we flatten, just use generic indent. Or assume parent
+                                                  // relationship?
+                            // For simplicity in text report, simple list is often enough for LLM unless
+                            // structure is vital.
+                            // The domain object doesn't have easily resolved indentation without building a
+                            // tree locally.
+                            // We'll just prefix:
+                            reportData.append("- ").append(c.getAuthor()).append(" (Score: ").append(c.getScore())
+                                    .append("): ")
+                                    .append(c.getBody()).append("\n");
 
-                    // Images in Comments
-                    if (!context.imageIdToUrl.isEmpty()) {
-                        reportData.append("IMAGES IN COMMENTS:\n");
-                        for (java.util.Map.Entry<String, String> entry : context.imageIdToUrl.entrySet()) {
-                            reportData.append(" - ").append(entry.getKey()).append(": ").append(entry.getValue())
-                                    .append("\n");
+                            // Images in Comments
+                            for (String img : c.getImageUrls()) {
+                                reportData.append("  [IMAGE]: ").append(img).append("\n");
+                            }
                         }
                     }
+
                     reportData.append("\n");
 
                 } catch (Exception e) {
-                    LOG.warn("Failed to fetch deep-dive context for {}", permalink);
+                    LOG.warn("Failed to fetch deep-dive context for {}", threadId);
                 }
             }
 
@@ -554,13 +610,14 @@ public class PassiveMonitorService {
 
         boolean reported = false;
 
-        String latestPermalink; // Store permalink for fetching content
-        String bestPermalink; // Store permalink of highest score thread
+        String latestThreadId; // Replaced Permalink with ID
+        String bestThreadId; // Replaced Permalink with ID
         int bestThreadScore = -1;
 
         long threadCreatedUTC = 0; // For Age Context
         List<String> evidenceLog = new ArrayList<>(); // Re-added
-        java.util.Set<String> activePermalinks = new java.util.HashSet<>();
+        // java.util.Set<String> activePermalinks = new java.util.HashSet<>();
+        java.util.Set<String> activeThreadIds = new java.util.HashSet<>();
 
         public Investigation(RedditThread initialThread, Embedding embedding) {
             this.id = java.util.UUID.randomUUID().toString().substring(0, 8);
@@ -573,30 +630,33 @@ public class PassiveMonitorService {
             this.threadCount = 1;
             this.totalScore = initialThread.getScore();
             this.totalComments = initialThread.getNumComments();
-            this.latestPermalink = initialThread.getPermalink();
-            this.bestPermalink = initialThread.getPermalink();
+            // this.latestPermalink = initialThread.getPermalink();
+            // this.bestPermalink = initialThread.getPermalink();
+            this.latestThreadId = initialThread.getId();
+            this.bestThreadId = initialThread.getId();
+
             this.bestThreadScore = initialThread.getScore();
             this.threadCreatedUTC = initialThread.getCreatedUtc();
 
             this.evidenceLog.add("[" + LocalTime.now() + "] New Thread: " + initialThread.getTitle());
-            this.activePermalinks.add(initialThread.getPermalink());
+            this.activeThreadIds.add(initialThread.getId());
         }
 
         public void addUpdate(RedditThread t, int deltaScore, int deltaComments) {
             this.lastActivity = Instant.now();
             this.totalScore += deltaScore;
             this.totalComments += deltaComments;
-            this.latestPermalink = t.getPermalink(); // Update to latest active thread
-            this.activePermalinks.add(t.getPermalink());
+            this.latestThreadId = t.getId();
+            this.activeThreadIds.add(t.getId());
 
             if (t.getScore() > this.bestThreadScore) {
                 this.bestThreadScore = t.getScore();
-                this.bestPermalink = t.getPermalink();
+                this.bestThreadId = t.getId();
             }
 
             boolean isNewThread = !evidenceLog.stream().anyMatch(s -> s.contains(t.getTitle()));
             if (isNewThread) {
-                this.threadCount++; // Rough heuristic, assuming titles differ slightly or re-posts
+                this.threadCount++; // Rough heuristic
                 this.evidenceLog.add("[" + LocalTime.now() + "] Related Thread: " + t.getTitle());
             } else {
                 this.evidenceLog.add("[" + LocalTime.now() + "] Activity: +" + deltaScore + " score, +" + deltaComments

@@ -68,4 +68,9 @@ public class ControlEvents {
             this.hasResults = hasResults;
         }
     }
+
+    public static class ToggleGraphViewEvent {
+        public ToggleGraphViewEvent() {
+        }
+    }
 }

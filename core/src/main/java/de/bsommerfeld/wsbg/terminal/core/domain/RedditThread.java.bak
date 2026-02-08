@@ -11,12 +11,10 @@ public class RedditThread {
     private final int score;
     private final double upvoteRatio;
     private final int numComments;
-    private final String imageUrl;
     private final long lastActivityUtc;
 
     public RedditThread(String id, String subreddit, String title, String author, String textContent,
-            long createdUtc, String permalink, int score, double upvoteRatio, int numComments, long lastActivityUtc,
-            String imageUrl) {
+            long createdUtc, String permalink, int score, double upvoteRatio, int numComments, long lastActivityUtc) {
         this.id = id;
         this.subreddit = subreddit;
         this.title = title;
@@ -28,22 +26,14 @@ public class RedditThread {
         this.upvoteRatio = upvoteRatio;
         this.numComments = numComments;
         this.lastActivityUtc = lastActivityUtc;
-        this.imageUrl = imageUrl;
     }
 
     // Constructor for backward compatibility (defaults lastActivityUtc to
-    // createdUtc, no image)
+    // createdUtc)
     public RedditThread(String id, String subreddit, String title, String author, String textContent,
             long createdUtc, String permalink, int score, double upvoteRatio, int numComments) {
         this(id, subreddit, title, author, textContent, createdUtc, permalink, score, upvoteRatio, numComments,
-                createdUtc, null);
-    }
-
-    // Constructor with lastActivity but no image
-    public RedditThread(String id, String subreddit, String title, String author, String textContent,
-            long createdUtc, String permalink, int score, double upvoteRatio, int numComments, long lastActivityUtc) {
-        this(id, subreddit, title, author, textContent, createdUtc, permalink, score, upvoteRatio, numComments,
-                lastActivityUtc, null);
+                createdUtc);
     }
 
     public String getId() {
@@ -90,13 +80,8 @@ public class RedditThread {
         return lastActivityUtc;
     }
 
-    public String getImageUrl() {
-        return imageUrl;
-    }
-
     @Override
     public String toString() {
-        return String.format("RedditThread{id='%s', title='%s', comments=%d, image=%s}", id, title, numComments,
-                imageUrl != null);
+        return String.format("RedditThread{id='%s', title='%s', comments=%d}", id, title, numComments);
     }
 }

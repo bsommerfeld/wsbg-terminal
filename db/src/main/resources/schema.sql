@@ -1,30 +1,15 @@
--- WSBG Terminal SQLite Schema (3NF)
+-- WSBG Terminal SQLite Schema (3NF Refactored)
 
--- Market Ticks
-CREATE TABLE IF NOT EXISTS market_ticks (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    symbol TEXT NOT NULL,
-    timestamp INTEGER NOT NULL,
-    open DECIMAL(20, 10) NOT NULL,
-    high DECIMAL(20, 10) NOT NULL,
-    low DECIMAL(20, 10) NOT NULL,
-    close DECIMAL(20, 10) NOT NULL,
-    volume INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_market_ticks_symbol_ts ON market_ticks(symbol, timestamp);
-
--- Reddit Threads
+-- Reddit Threads (Metadata Only)
 CREATE TABLE IF NOT EXISTS reddit_threads (
     id TEXT PRIMARY KEY, -- Reddit ID (t3_...)
     subreddit TEXT NOT NULL,
-    title TEXT NOT NULL,
+    title TEXT NOT NULL, -- Metadata essential for identification
     author TEXT,
-    text_content TEXT,
-    created_utc INTEGER NOT NULL,
     permalink TEXT,
     score INTEGER,
     upvote_ratio REAL,
-    num_comments INTEGER,
+    created_utc INTEGER NOT NULL,
     fetched_at INTEGER NOT NULL,
     last_activity_utc INTEGER DEFAULT 0
 );
@@ -32,19 +17,30 @@ CREATE INDEX IF NOT EXISTS idx_reddit_threads_subreddit ON reddit_threads(subred
 CREATE INDEX IF NOT EXISTS idx_reddit_threads_created ON reddit_threads(created_utc);
 CREATE INDEX IF NOT EXISTS idx_reddit_threads_last_activity ON reddit_threads(last_activity_utc);
 
--- Reddit Comments (Linked to Threads)
+-- Reddit Comments (Metadata + Hierarchy Only)
 CREATE TABLE IF NOT EXISTS reddit_comments (
     id TEXT PRIMARY KEY, -- Reddit ID (t1_...)
-    thread_id TEXT NOT NULL,
-    parent_id TEXT, -- Can be t3_ (thread) or t1_ (comment)
+    parent_id TEXT NOT NULL, -- Points to thread_id OR comment_id
     author TEXT,
-    body TEXT,
     score INTEGER,
     created_utc INTEGER NOT NULL,
-    FOREIGN KEY(thread_id) REFERENCES reddit_threads(id)
+    fetched_at INTEGER NOT NULL
+    -- thread_id removed (implied via recursive Parent)
 );
-CREATE INDEX IF NOT EXISTS idx_reddit_comments_thread ON reddit_comments(thread_id);
+CREATE INDEX IF NOT EXISTS idx_reddit_comments_parent ON reddit_comments(parent_id);
 
+-- Content Table (Text Body for both Threads and Comments)
+CREATE TABLE IF NOT EXISTS reddit_contents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_id TEXT NOT NULL UNIQUE, -- FK to reddit_threads.id OR reddit_comments.id
+    body TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_reddit_contents_entity ON reddit_contents(entity_id);
 
-
-
+-- Images Table (One-to-Many for both Threads and Comments)
+CREATE TABLE IF NOT EXISTS reddit_images (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_id TEXT NOT NULL, -- FK to reddit_threads.id OR reddit_comments.id
+    image_url TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_reddit_images_entity ON reddit_images(entity_id);
