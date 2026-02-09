@@ -455,12 +455,25 @@ public class RedditScraper {
 
             long now = System.currentTimeMillis() / 1000;
 
+            // Resolve Last Activity
+            de.bsommerfeld.wsbg.terminal.core.domain.RedditThread existing = repository.getThread(id);
+            long resolvedActivityUtc = created;
+
+            if (existing != null) {
+                resolvedActivityUtc = existing.getLastActivityUtc();
+                // Check if we have new comments (Activity)
+                if (numComments > existing.getNumComments()) {
+                    resolvedActivityUtc = now; // Update to recent time
+                }
+            } else {
+                // New thread: defaulted to created.
+            }
+
             de.bsommerfeld.wsbg.terminal.core.domain.RedditThread thread = new de.bsommerfeld.wsbg.terminal.core.domain.RedditThread(
                     id, subreddit, title, author, selftext, created, permalink, score, upvoteRatio,
-                    numComments, now, imageUrl);
+                    numComments, resolvedActivityUtc, imageUrl);
 
             // --- Calc Deltas & Fetch Deep ---
-            de.bsommerfeld.wsbg.terminal.core.domain.RedditThread existing = repository.getThread(id);
             if (existing == null) {
                 // New Thread
                 stats.newThreads++;

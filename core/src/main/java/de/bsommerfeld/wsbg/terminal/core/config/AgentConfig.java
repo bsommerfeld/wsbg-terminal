@@ -5,13 +5,9 @@ import de.bsommerfeld.jshepherd.annotation.Key;
 
 public class AgentConfig {
 
-    @Key("ollama.model")
-    @Comment("Ollama Model Name for Analysis/Reasoning (default: gemma3:12b)")
-    private String ollamaModel = "gemma3:12b";
-
-    @Key("ollama.translator-model")
-    @Comment("Ollama Model Name for Translation (default: translategemma:12b)")
-    private String translatorModel = "translategemma:12b";
+    @Key("agent.power-mode")
+    @Comment("Enable Power Mode (uses 12b models instead of 4b) (default: false)")
+    private boolean powerMode = false;
 
     @Key("ollama.vision-model")
     @Comment("Ollama Model Name for Vision/OCR (default: glm-ocr:latest)")
@@ -25,12 +21,12 @@ public class AgentConfig {
     @Comment("Enable the 3D Graph View feature (default: true)")
     private boolean allowGraphView = true;
 
-    public String getOllamaModel() {
-        return ollamaModel;
+    public boolean isPowerMode() {
+        return powerMode;
     }
 
-    public String getTranslatorModel() {
-        return translatorModel;
+    public void setPowerMode(boolean powerMode) {
+        this.powerMode = powerMode;
     }
 
     public String getVisionModel() {
@@ -39,14 +35,6 @@ public class AgentConfig {
 
     public String getEmbeddingModel() {
         return embeddingModel;
-    }
-
-    public void setOllamaModel(String ollamaModel) {
-        this.ollamaModel = ollamaModel;
-    }
-
-    public void setTranslatorModel(String translatorModel) {
-        this.translatorModel = translatorModel;
     }
 
     public void setVisionModel(String visionModel) {

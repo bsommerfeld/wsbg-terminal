@@ -17,8 +17,8 @@
     <Label text="SETTINGS" styleClass="section-header" />
 
     <VBox spacing="5">
-        <Label text="AI Agent Model (Ollama)" styleClass="field-label"/>
-        <TextField fx:id="modelField" styleClass="terminal-input" promptText="e.g. llama3.1:8b"/>
+        <Label text="Power Mode (Enables 12b Models)" styleClass="field-label"/>
+        <CheckBox fx:id="powerModeCheck" text="Enable Power Mode (Requires High RAM/VRAM)" styleClass="terminal-checkbox"/>
     </VBox>
 
     <VBox spacing="5">

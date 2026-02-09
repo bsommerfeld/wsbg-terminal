@@ -123,13 +123,13 @@ public class PassiveMonitorService {
     private void performInitialStartup() {
         LOG.info("Performing Initial Scan (Filling Gaps)...");
         try {
-            // 1. Refresh ALL known threads
-            refreshLocalThreads();
-
-            // 2. Initial Cleanup
-            repository.cleanupOldThreads(dataRetentionSeconds).thenAccept(count -> {
+            // 1. Initial Cleanup FIRST (Avoids rate-limiting on dead threads)
+            repository.cleanupOldThreads(dataRetentionSeconds).thenAcceptAsync(count -> {
                 LOG.info("Initial cleanup: Removed {} old threads.", count);
-            });
+
+                // 2. Refresh w/ remaining threads
+                refreshLocalThreads();
+            }, scannerExecutor);
 
         } catch (Exception e) {
             LOG.error("Initial Startup Failed", e);
@@ -643,7 +643,9 @@ public class PassiveMonitorService {
         }
 
         public void addUpdate(RedditThread t, int deltaScore, int deltaComments) {
-            this.lastActivity = Instant.now();
+            if (deltaComments > 0) {
+                this.lastActivity = Instant.now();
+            }
             this.totalScore += deltaScore;
             this.totalComments += deltaComments;
             this.latestThreadId = t.getId();

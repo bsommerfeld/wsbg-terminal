@@ -56,10 +56,12 @@ public class AgentBrain {
     }
 
     public void initialize(de.bsommerfeld.wsbg.terminal.core.config.AgentConfig config, String baseUrl) {
-        // 1. Resolve Models (Auto-Heal if config default doesn't match installed
-        // Low/Super versions)
-        String reasoningModel = validateOrResolveModel(baseUrl, config.getOllamaModel(), "gemma3");
-        String translatorModelName = validateOrResolveModel(baseUrl, config.getTranslatorModel(), "translategemma");
+        // 1. Resolve Models based on Power Mode
+        String reasoningModelName = config.isPowerMode() ? "gemma3:12b" : "gemma3:4b";
+        String translatorModelNameRaw = config.isPowerMode() ? "translategemma:12b" : "translategemma:4b";
+
+        String reasoningModel = validateOrResolveModel(baseUrl, reasoningModelName, "gemma3");
+        String translatorModelName = validateOrResolveModel(baseUrl, translatorModelNameRaw, "translategemma");
         String visionModelName = config.getVisionModel(); // Usually static/latest, less critical to resolve
 
         LOG.info("Initializing Agent Brain with Verified Models:");
