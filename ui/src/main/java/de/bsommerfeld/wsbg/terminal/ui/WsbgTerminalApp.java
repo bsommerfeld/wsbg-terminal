@@ -277,16 +277,43 @@ public class WsbgTerminalApp extends Application {
 
                         // Define Toggle Button Creator - REMOVED per user request
 
-                        // Create Utility Controls Wrapper (Broom + Toggle)
+                        // Define Power Button Creator
+                        Function<Void, Button> createPowerBtn = (v) -> {
+                            Button btn = new Button();
+                            btn.getStyleClass().add("ascii-button");
+                            Region icon = new Region();
+
+                            // Get initial state
+                            GlobalConfig config = injector.getInstance(GlobalConfig.class);
+                            boolean isPower = config.getAgent().isPowerMode();
+
+                            icon.getStyleClass().add(isPower ? "icon-power-active" : "icon-power");
+                            btn.setGraphic(icon);
+
+                            btn.setOnAction(e -> {
+                                boolean currentState = config.getAgent().isPowerMode();
+                                boolean newState = !currentState;
+                                config.getAgent().setPowerMode(newState);
+
+                                icon.getStyleClass().clear();
+                                icon.getStyleClass().add(newState ? "icon-power-active" : "icon-power");
+
+                                LOG.info("Power Mode toggled to: " + newState);
+                            });
+                            return btn;
+                        };
+
+                        // Create Utility Controls Wrapper (Broom + Toggle + Power)
                         HBox utilityControls = new HBox(0);
                         utilityControls.getStyleClass().add("utility-controls-box");
                         utilityControls.setAlignment(Pos.CENTER);
 
                         Button broomBtn = createBroom.apply(null);
                         Button graphBtn = createGraphToggle.apply(null);
+                        Button powerBtn = createPowerBtn.apply(null);
                         // Button toggleBtn = createToggleBtn.apply(injector); // REMOVED
 
-                        utilityControls.getChildren().addAll(graphBtn, broomBtn);
+                        utilityControls.getChildren().addAll(powerBtn, graphBtn, broomBtn);
 
                         if (isMac) {
                             // Mac: Traffic Lights Left (with Margin), Utilities Right

@@ -400,8 +400,11 @@ public class GraphController {
                     int nodesAdded = 0;
                     while (!pendingNodes.isEmpty() && nodesAdded < 200) {
                         Node n = pendingNodes.poll();
-                        if (n != null)
+                        if (n != null) {
                             simulation.addNode(n);
+                            // Visual Effect for Creation
+                            graphView.addNodeCreationEffect(n.x, n.y, n.isThread);
+                        }
                         nodesAdded++;
                     }
                     int edgesAdded = 0;
@@ -416,6 +419,12 @@ public class GraphController {
                     while (!pendingRemovals.isEmpty() && removalsProcessed < 50) {
                         String idToRemove = pendingRemovals.poll();
                         if (idToRemove != null) {
+                            // Find node to get position for effect
+                            Node n = findNode(idToRemove);
+                            if (n != null) {
+                                // Visual Effect for Deletion
+                                graphView.addNodeCleanupEffect(n.x, n.y, n.isThread);
+                            }
                             removeNodeAndEdges(idToRemove);
                         }
                         removalsProcessed++;

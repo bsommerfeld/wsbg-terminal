@@ -41,8 +41,8 @@ public class GraphView extends Pane {
     private List<Edge> edgesRef; // Reference for drawing
 
     // Font Cache
-    private final Font titleFont = Font.font("Fira Code", FontWeight.BOLD, 10);
-    private final Font statsFont = Font.font("Fira Code", FontWeight.NORMAL, 9);
+    private final Font titleFont = Font.font("Fira Code", FontWeight.BOLD, 16);
+    private final Font statsFont = Font.font("Fira Code", FontWeight.NORMAL, 12);
 
     public GraphView() {
         this.setStyle("-fx-background-color: #050505;");
@@ -174,6 +174,69 @@ public class GraphView extends Pane {
         offsetY = 0;
     }
 
+    // --- VISUAL EFFECTS SYSTEM ---
+    private static class VisualEffect {
+        double x, y;
+        Color color;
+        double progress = 1.0; // 1.0 -> 0.0
+        double initialSize;
+
+        VisualEffect(double x, double y, Color color, double size) {
+            this.x = x;
+            this.y = y;
+            this.color = color;
+            this.initialSize = size;
+        }
+    }
+
+    private final List<VisualEffect> activeEffects = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    public void addNodeCleanupEffect(double x, double y, boolean isThread) {
+        // Only show effect if we are NOT in card view (zoomed out)
+        if (350 * scale > 60)
+            return;
+
+        double size = isThread ? 90.0 : 36.0; // 4.5x normal size (20 or 8)
+        activeEffects.add(new VisualEffect(x, y, Color.RED, size));
+    }
+
+    public void addNodeCreationEffect(double x, double y, boolean isThread) {
+        // Only show effect if we are NOT in card view (zoomed out)
+        if (350 * scale > 60)
+            return;
+
+        double size = isThread ? 90.0 : 36.0; // 4.5x normal size
+        activeEffects.add(new VisualEffect(x, y, Color.LIMEGREEN, size));
+    }
+
+    private void renderEffects() {
+        if (activeEffects.isEmpty())
+            return;
+
+        double decayRate = 0.02; // Adjust speed here
+
+        for (VisualEffect effect : activeEffects) {
+            effect.progress -= decayRate;
+            if (effect.progress <= 0) {
+                activeEffects.remove(effect);
+                continue;
+            }
+
+            double currentRadius = effect.initialSize * effect.progress;
+
+            // Draw
+            gc.save();
+            gc.translate(effect.x, effect.y);
+
+            // Opacity fades with size
+            gc.setGlobalAlpha(effect.progress);
+            gc.setFill(effect.color);
+            gc.fillOval(-currentRadius, -currentRadius, currentRadius * 2, currentRadius * 2);
+
+            gc.restore();
+        }
+    }
+
     public void render(List<Node> nodes, List<Edge> edges) {
         this.edgesRef = edges;
         updateZoomLimits();
@@ -190,8 +253,6 @@ public class GraphView extends Pane {
         gc.scale(scale, scale);
 
         // Visual Scale Logic - Greatly reduced to prevent "fat" look
-        // Nodes will shrink naturally with zoom, but we keep them slightly visible as
-        // dots
         double visualScale = 1.0;
 
         // Calculate bounds for culling
@@ -202,19 +263,11 @@ public class GraphView extends Pane {
         double viewTop = -oy / scale;
         double viewBottom = (h - oy) / scale;
 
-        double cullingBuffer = 2000.0;
+        // Tighten culling to ensure only visible items are processed
+        double cullingBuffer = 500.0;
 
         // 1. Draw Edges
-        // Keep lines thin in screen space (approx 1px), but don't let them disappear
-        // completely
-        // lineWidth = 1.0 / scale ensures constant 1px screen width
-        // We cap 'scale' in division to avoid infinity, though scale is clamped
-        double lineWidth = Math.max(1.0, 1.5 / scale);
-        // Actually, we are in World Space scaling.
-        // 1.0 in world space = 'scale' pixels.
-        // We want 'X' world space = 1 pixel. => X * scale = 1 => X = 1/scale.
-
-        gc.setLineWidth(1.0 / scale);
+        gc.setLineWidth(1.0 / scale); // Hairline width
 
         for (Edge e : edges) {
             if (e.source == null || e.target == null)
@@ -241,14 +294,14 @@ public class GraphView extends Pane {
             if (ratio > 1.0)
                 ratio = 1.0;
 
-            double brightness = 0.6 - (ratio * 0.3); // Darker lines
+            double brightness = 0.6 - (ratio * 0.3);
 
             gc.setStroke(Color.gray(brightness, 0.6));
             gc.strokeLine(x1, y1, x2, y2);
         }
 
         // 2. Draw Nodes
-        double baseNodeWidth = 220;
+        double baseNodeWidth = 350; // Larger for readability
 
         for (Node n : nodes) {
             if (n.x < viewLeft - cullingBuffer || n.x > viewRight + cullingBuffer ||
@@ -257,8 +310,8 @@ public class GraphView extends Pane {
             }
 
             double screenPixelWidth = baseNodeWidth * scale; // True screen size
-            boolean showText = screenPixelWidth > 40; // Only show text if wide enough
-            boolean showShape = screenPixelWidth > 3; // Show dot if visible
+            boolean showText = screenPixelWidth > 60; // Only show text if wide enough
+            boolean showShape = screenPixelWidth > 2; // Show dot if visible
 
             if (!showShape)
                 continue;
@@ -269,21 +322,18 @@ public class GraphView extends Pane {
             gc.save();
             gc.translate(layoutX, layoutY);
 
-            // If very zoomed out, draw constant size dot (e.g. 3px screen size)
-            // or let it shrink? Obsidian lets them shrink but keeps a minimum.
-
             if (showText) {
                 // Detailed Card View
                 List<String> lines = null;
                 String textContent = n.label != null ? n.label : "";
-                lines = wrapText(textContent, 30);
+                lines = wrapText(textContent, 35); // Wrap to ~35 chars
 
-                double lineHeight = 14;
-                double padding = 20;
+                double lineHeight = 20; // Increased for font size 16
+                double padding = 24;
                 double titleHeight = lines.size() * lineHeight;
-                double height = titleHeight + padding + 20;
-                if (height < 60)
-                    height = 60;
+                double height = titleHeight + padding + 30;
+                if (height < 80)
+                    height = 80;
 
                 double lx = -baseNodeWidth / 2;
                 double ly = -height / 2;
@@ -309,15 +359,15 @@ public class GraphView extends Pane {
                 gc.setTextBaseline(javafx.geometry.VPos.TOP);
                 gc.setFont(titleFont);
                 gc.setFill(isHighlighted ? Color.GOLD : Color.WHITE);
-                double cy = ly + 10;
-                double paddingX = 10;
+                double cy = ly + 14;
+                double paddingX = 14;
                 for (String s : lines) {
                     gc.fillText(s, lx + paddingX, cy);
-                    cy += 14;
+                    cy += 20;
                 }
 
-                // Stats and Author
-                double currentY = ly + height - 18;
+                // Stats
+                double currentY = ly + height - 24;
                 gc.setFont(statsFont);
                 String statsStr = n.isThread ? String.format("^%d  *%d", n.score, n.commentCount)
                         : String.format("^%d", n.score);
@@ -336,19 +386,32 @@ public class GraphView extends Pane {
             } else {
                 // Dot View
                 double dotRadius = n.isThread ? 20.0 : 8.0;
-                // Scale dot radius to be at least X screen pixels?
-                // screenRadius = dotRadius * scale.
-                // If screenRadius < 2px, boost it?
-                // Let's stick to true scaling for "Obsidian feel" but min 2px
-
                 double activeRadius = dotRadius;
-                // Dynamic detail:
-                gc.setFill(n.isThread ? Color.GOLD : Color.web("#555555"));
+
+                boolean isHighlighted = highlightedNodeIds.contains(n.id);
+
+                if (isHighlighted) {
+                    activeRadius *= 4.5; // Pop out heavily
+
+                    RadialGradient glow = new RadialGradient(0, 0, 0, 0, activeRadius * 1.5, false,
+                            CycleMethod.NO_CYCLE,
+                            new Stop(0, Color.web("#FFD700", 0.6)), new Stop(1, Color.TRANSPARENT));
+                    gc.setFill(glow);
+                    gc.fillOval(-activeRadius * 1.5, -activeRadius * 1.5, activeRadius * 3, activeRadius * 3);
+
+                    gc.setFill(Color.GOLD);
+                } else {
+                    gc.setFill(n.isThread ? Color.GOLD : Color.web("#555555"));
+                }
+
                 gc.fillOval(-activeRadius, -activeRadius, activeRadius * 2, activeRadius * 2);
             }
 
             gc.restore();
         }
+
+        // Draw Effects on top
+        renderEffects();
 
         gc.restore();
     } // End Render

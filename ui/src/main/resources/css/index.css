@@ -693,8 +693,10 @@
     -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
     -fx-font-size: 12px;
     -fx-border-width: 0;
-    -fx-padding: 4 10;
+    -fx-padding: 0 8;
+    -fx-min-height: 24px;
     -fx-cursor: hand;
+    -fx-alignment: center;
 }
 
 .ascii-button:hover {
@@ -864,4 +866,35 @@
 .title-search-clear-btn:hover {
     -fx-text-fill: #e0e0e0;
     -fx-background-color: transparent;
+}
+
+/* Power Button */
+.icon-power {
+    -fx-shape: "m480-336 128-184H494l80-280H360v320h120v144ZM400-80v-320H280v-480h400l-80 280h160L400-80Zm80-400H360h120Z";
+    -fx-background-color: #666666;
+    -fx-min-width: 10px;
+    -fx-min-height: 18px;
+    -fx-max-width: 10px;
+    -fx-max-height: 18px;
+    -fx-scale-shape: true;
+}
+
+.icon-power-active {
+    -fx-shape: "M400-80v-320H280v-480h400l-80 280h160L400-80Z";
+    -fx-background-color: #FFD700;
+    -fx-effect: dropshadow(gaussian, rgba(255, 215, 0, 0.6), 8, 0, 0, 0);
+    -fx-min-width: 10px;
+    -fx-min-height: 18px;
+    -fx-max-width: 10px;
+    -fx-max-height: 18px;
+    -fx-scale-shape: true;
+}
+
+.ascii-button:hover .icon-power {
+    -fx-background-color: #e0e0e0;
+}
+
+.ascii-button:hover .icon-power-active {
+    -fx-background-color: #FFD700;
+    -fx-effect: dropshadow(gaussian, rgba(255, 215, 0, 0.8), 10, 0, 0, 0);
 }
