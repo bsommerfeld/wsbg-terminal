@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditComment;
 import java.util.ArrayList;
+import java.util.Comparator;
 
 @Singleton
 public class GraphController {
@@ -39,25 +40,27 @@ public class GraphController {
 
     // Dynamic State
     private Map<String, Integer> activeTopics = new HashMap<>(); // Topic -> Count config
-    private int nextThreadIndex = 0; // Tracks spiral position for new threads
+    // We keep nextThreadIndex for incremental stability if needed, though we sort
+    // now.
+    private int nextThreadIndex = 0;
 
     private final java.util.Queue<Node> pendingNodes = new java.util.concurrent.ConcurrentLinkedQueue<>();
     private final java.util.Queue<Edge> pendingEdges = new java.util.concurrent.ConcurrentLinkedQueue<>();
     private final java.util.Queue<String> pendingRemovals = new java.util.concurrent.ConcurrentLinkedQueue<>();
 
     // Tracking
-    private final de.bsommerfeld.wsbg.terminal.db.RedditRepository repository; // Changed
+    private final de.bsommerfeld.wsbg.terminal.db.RedditRepository repository;
     private final Set<String> processedThreads = new HashSet<>();
     private final Set<String> knownNodeIds = java.util.concurrent.ConcurrentHashMap.newKeySet(); // Global ID Tracker
     private final Set<String> knownEdgeIds = java.util.concurrent.ConcurrentHashMap.newKeySet(); // Global Edge Tracker
 
     @Inject
     public GraphController(NewsViewModel newsViewModel, ApplicationEventBus eventBus,
-            TopicExtractionService topicService, de.bsommerfeld.wsbg.terminal.db.RedditRepository repository) { // Changed
+            TopicExtractionService topicService, de.bsommerfeld.wsbg.terminal.db.RedditRepository repository) {
         this.newsViewModel = newsViewModel;
         this.eventBus = eventBus;
         this.topicService = topicService;
-        this.repository = repository; // Changed
+        this.repository = repository;
         this.graphView = new GraphView();
         this.simulation = new GraphSimulation();
 
@@ -70,14 +73,6 @@ public class GraphController {
         this.newsViewModel.getThreads().addListener((ListChangeListener<RedditThread>) c -> {
             recalculateGraph();
         });
-
-        // Listen for DB Cleanup or meaningful updates if available.
-        // For now, relies on NewsViewModel or explicit reload triggers.
-        // User requested listening to Cleanup.
-        // If DatabaseService has an event, use it. If not, maybe just periodic refresh
-        // or manual?
-        // Let's assume re-calculation on NewsViewModel updates covers "new" stuff.
-        // For "cleanup", we might need to poll or listen to a generic event.
 
         // Initial Load - from DB directly for "Entire Database" view
         recalculateGraph();
@@ -130,257 +125,227 @@ public class GraphController {
     }
 
     private void initializeGraphData(List<RedditThread> threads, List<RedditComment> comments) {
-        // --- SOLAR SYSTEM VISUALIZATION (Threads as Cards, Comments as Satellites) ---
+        // --- STATIC HIERARCHICAL GRAPH LAYOUT ---
+        // 1. Data Indexing
+        Map<String, RedditThread> threadMap = threads.stream()
+                .collect(Collectors.toMap(RedditThread::getId, t -> t, (a, b) -> a));
 
-        // Batch Lookups for this update cycle
-        Map<String, Node> batchLookup = new HashMap<>();
+        Map<String, RedditComment> commentMap = comments.stream()
+                .collect(Collectors.toMap(c -> c.getId(), c -> c, (a, b) -> a));
 
-        // 1. Process Threads (Independent Solar System Centers)
-        for (RedditThread t : threads) {
-            String tId = t.getId();
-
-            // Handle existing nodes
-            if (knownNodeIds.contains(tId)) {
-                Node existing = findNode(tId);
-                if (existing != null) {
-                    existing.commentCount = 0; // Will be recalculated in Phase 4
-                    existing.score = t.getScore();
-                    // Update fullText dynamically in case content changed
-                    String authorText = t.getAuthor() != null ? " u/" + t.getAuthor() : "";
-                    existing.fullText = t.getTitle() + " " + (t.getTextContent() != null ? t.getTextContent() : "")
-                            + authorText;
-
-                    batchLookup.put(tId, existing);
-                    batchLookup.put("t3_" + tId, existing);
-                }
+        // Indexed by MULTIPLE possible parent keys to ensure we find them
+        Map<String, List<RedditComment>> commentsByParent = new HashMap<>();
+        for (RedditComment c : comments) {
+            String pStr = c.getParentId();
+            if (pStr == null || pStr.isEmpty() || pStr.equals("null"))
                 continue;
+
+            // 1. Index by raw parent ID (e.g. "t3_12345")
+            commentsByParent.computeIfAbsent(pStr, k -> new ArrayList<>()).add(c);
+
+            // 2. Index by stripped parent ID (e.g. "12345")
+            if (pStr.startsWith("t1_") || pStr.startsWith("t3_")) {
+                String stripped = pStr.substring(3);
+                // Avoid double adding if pStr was already clean (unlikely but safe)
+                if (!stripped.equals(pStr)) {
+                    commentsByParent.computeIfAbsent(stripped, k -> new ArrayList<>()).add(c);
+                }
+            } else {
+                // This is less common but if Thread ID is stored as "t3_123" and comment has
+                // "123"
+                commentsByParent.computeIfAbsent("t3_" + pStr, k -> new ArrayList<>()).add(c);
+                commentsByParent.computeIfAbsent("t1_" + pStr, k -> new ArrayList<>()).add(c);
+                commentsByParent.computeIfAbsent("CMT_" + pStr, k -> new ArrayList<>()).add(c);
+            }
+        }
+
+        // Batch Queue for simulation updates (Thread-safe)
+        List<Node> finalNodes = new ArrayList<>();
+        List<Edge> finalEdges = new ArrayList<>();
+        Set<String> validIds = new HashSet<>();
+
+        // 2. Thread Placement (Global Spiral)
+        List<RedditThread> sortedThreads = new ArrayList<>(threads);
+        // Sort by CreatedUTC for stability
+        sortedThreads.sort(Comparator.comparingLong(RedditThread::getCreatedUtc));
+
+        int threadIndex = 0;
+
+        for (RedditThread t : sortedThreads) {
+            String tId = t.getId();
+            validIds.add(tId);
+
+            Node tn = findNode(tId);
+            if (tn == null) {
+                tn = new Node(tId, t.getTitle(), 0, 0);
+                tn.isThread = true;
+                tn.color = Color.web("#FFD700");
+                tn.mass = 100;
+                tn.radius = 80;
             }
 
-            // Thread Visuals - Card Style
-            Node tn = new Node(tId, t.getTitle(), 0, 0); // Pos set below
+            // Spiral Position (Re-calculated to enforce spacing)
+            double spacing = 2500.0;
+            double angle = threadIndex * 2.39996; // Golden Angle
+            double dist = spacing * Math.sqrt(threadIndex);
+
+            // Force verify/update position
+            tn.x = Math.cos(angle) * dist;
+            tn.y = Math.sin(angle) * dist;
+
+            threadIndex++;
+
+            // Text Update
             String authorText = t.getAuthor() != null ? " u/" + t.getAuthor() : "";
             tn.fullText = t.getTitle() + " " + (t.getTextContent() != null ? t.getTextContent() : "") + authorText;
             tn.author = t.getAuthor();
             tn.score = t.getScore();
-            tn.commentCount = 0; // Will be calc in Phase 4
-            tn.isThread = true;
 
-            // Phyllotaxis Spiral Placement (Deterministic & Spaced)
-            // Golden Angle = ~137.5 degrees = ~2.39996 radians
-            double spacing = 600.0; // Space for the solar system
-            double angle = nextThreadIndex * 2.39996;
-            double dist = spacing * Math.sqrt(nextThreadIndex + 1);
+            finalNodes.add(tn);
 
-            tn.x = Math.cos(angle) * dist;
-            tn.y = Math.sin(angle) * dist;
+            // 3. Recursive Comment Layout (Radial Tree)
+            LayoutNode rootLayout = new LayoutNode(tn, null);
+            buildLayoutTree(rootLayout, commentsByParent, commentMap);
 
-            nextThreadIndex++;
-            tn.mass = 80.0;
-            tn.radius = 80;
-            tn.color = Color.web("#FFD700");
+            // Calculate sizes
+            calculateSubtreeSizes(rootLayout);
 
-            // Root Init
-            tn.level = 0;
-            tn.rootNode = tn;
-            tn.childrenCount = 0;
-            tn.maxSubtreeLevel = 0;
+            // Apply Layout
+            applyRadialLayout(rootLayout, 0, Math.PI * 2, 600.0, tn.x, tn.y, finalNodes, finalEdges, validIds);
 
-            // Register multiple keys for robustness
-            batchLookup.put(tId, tn);
-            batchLookup.put("t3_" + tId, tn);
-
-            knownNodeIds.add(tId);
-            pendingNodes.add(tn);
+            // Set comment count
+            tn.commentCount = rootLayout.subtreeSize;
         }
 
-        // 2. Process Comments (Satellites)
-        for (RedditComment c : comments) {
+        // 4. Update Simulation State
+        for (Node n : finalNodes) {
+            if (!knownNodeIds.contains(n.id)) {
+                knownNodeIds.add(n.id);
+                pendingNodes.add(n);
+            }
+        }
+
+        for (Edge e : finalEdges) {
+            String eid = e.id;
+            if (!knownEdgeIds.contains(eid)) {
+                knownEdgeIds.add(eid);
+                pendingEdges.add(e);
+            }
+        }
+
+        // Cleanup Metadata
+        Set<String> allIds = new HashSet<>(knownNodeIds);
+        allIds.removeAll(validIds);
+        for (String id : allIds) {
+            pendingRemovals.add(id);
+        }
+    }
+
+    // --- LAYOUT HELPERS ---
+
+    private static class LayoutNode {
+        Node node;
+        RedditComment rawComment; // Null if thread
+        List<LayoutNode> children = new ArrayList<>();
+        int subtreeSize = 0;
+
+        LayoutNode(Node node, RedditComment c) {
+            this.node = node;
+            this.rawComment = c;
+        }
+    }
+
+    private void buildLayoutTree(LayoutNode parent, Map<String, List<RedditComment>> map,
+            Map<String, RedditComment> allComments) {
+        String pId = parent.rawComment == null ? parent.node.id : parent.rawComment.getId();
+        List<RedditComment> kids = map.get(pId);
+        if (kids == null)
+            return;
+
+        // Sort chronologically
+        kids.sort(Comparator.comparingLong(RedditComment::getCreatedUtc));
+
+        for (RedditComment c : kids) {
             String cId = "CMT_" + c.getId();
-
-            // Handle existing
-            if (knownNodeIds.contains(cId)) {
-                Node existing = findNode(cId);
-                if (existing != null) {
-                    existing.score = c.getScore(); // Update score
-                    // Update fullText
-                    String authorText = c.getAuthor() != null ? " u/" + c.getAuthor() : "";
-                    existing.fullText = c.getBody() + authorText;
-
-                    batchLookup.put(cId, existing);
-                    batchLookup.put("t1_" + c.getId(), existing);
-                    batchLookup.put(c.getId(), existing);
-                }
-                continue;
+            Node cn = findNode(cId);
+            if (cn == null) {
+                String bodySnippet = c.getBody().length() > 100 ? c.getBody().substring(0, 100) + "..." : c.getBody();
+                cn = new Node(cId, bodySnippet, 0, 0);
+                cn.isThread = false;
+                cn.mass = 10;
+                cn.radius = 20;
+                cn.color = Color.web("#4CAF50");
             }
 
-            // Fix: Truncate longer logic
-            String bodySnippet = c.getBody().length() > 100 ? c.getBody().substring(0, 100) + "..." : c.getBody();
-
-            Node cn = new Node(cId, bodySnippet, 0, 0); // Temp pos
+            // Update Data
             String authorText = c.getAuthor() != null ? " u/" + c.getAuthor() : "";
             cn.fullText = c.getBody() + authorText;
             cn.author = c.getAuthor();
             cn.score = c.getScore();
-            cn.commentCount = 0; // TODO: Calculate children count if possible?
             cn.isThread = false;
+            cn.parent = parent.node;
+            cn.rootNode = parent.node.rootNode != null ? parent.node.rootNode : parent.node;
+            cn.level = parent.node.level + 1;
 
-            cn.mass = 10.0; // Light mass for comments
-            cn.radius = 20;
-            // Neutral Card Color (lines will carry the hierarchy)
-            cn.color = Color.web("#4CAF50"); // Keep for now, but view will ignore for border if needed
+            LayoutNode childLayout = new LayoutNode(cn, c);
+            parent.children.add(childLayout);
 
-            batchLookup.put(cId, cn);
-            batchLookup.put("t1_" + c.getId(), cn);
-            batchLookup.put(c.getId(), cn);
+            buildLayoutTree(childLayout, map, allComments);
+        }
+    }
 
-            knownNodeIds.add(cId);
-            pendingNodes.add(cn);
+    private void calculateSubtreeSizes(LayoutNode node) {
+        node.subtreeSize = 0;
+        for (LayoutNode child : node.children) {
+            calculateSubtreeSizes(child);
+            node.subtreeSize += 1 + child.subtreeSize;
+        }
+    }
+
+    private void applyRadialLayout(LayoutNode layoutNode, double startAngle, double endAngle,
+            double radius, double centerX, double centerY,
+            List<Node> nodesOut, List<Edge> edgesOut, Set<String> validIds) {
+
+        if (layoutNode.children.isEmpty())
+            return;
+
+        double currentAngle = startAngle;
+        double totalWeight = 0;
+        for (LayoutNode child : layoutNode.children) {
+            totalWeight += (child.subtreeSize + 1);
         }
 
-        // 3. ROBUST LINKING PASS
-        for (RedditComment c : comments) {
-            String cId = "CMT_" + c.getId();
-            Node child = batchLookup.get(cId);
-            if (child == null)
-                continue; // Should be in lookup
+        for (LayoutNode child : layoutNode.children) {
+            double weight = (child.subtreeSize + 1);
+            double share = weight / totalWeight;
+            double sweep = (endAngle - startAngle) * share;
 
-            String parentRef = c.getParentId();
-            if (parentRef == null || parentRef.equals("null") || parentRef.isEmpty()) {
-                // Orphan Handling
-                if (child.x == 0 && child.y == 0) {
-                    child.x = (Math.random() - 0.5) * 5000;
-                    child.y = (Math.random() - 0.5) * 5000;
-                }
-                continue;
-            }
+            double midAngle = currentAngle + sweep / 2.0;
 
-            // Attempt to resolve Parent Node using multiple strategies
-            Node parent = null;
+            double cx = centerX + Math.cos(midAngle) * radius;
+            double cy = centerY + Math.sin(midAngle) * radius;
 
-            // Strategy A: Direct Lookup (e.g. "t3_12345" or "t1_67890")
-            parent = batchLookup.get(parentRef);
+            child.node.x = cx;
+            child.node.y = cy;
+            // Reset velocity just in case
+            child.node.vx = 0;
+            child.node.vy = 0;
 
-            // Strategy B: Strip Prefix (e.g. "t3_12345" -> "12345")
-            if (parent == null && parentRef.length() > 3) {
-                parent = batchLookup.get(parentRef.substring(3));
-            }
+            validIds.add(child.node.id);
+            nodesOut.add(child.node);
 
-            // Strategy C: Assume Comment Prefix (e.g. "12345" -> "CMT_12345")
-            if (parent == null) {
-                parent = batchLookup.get("CMT_" + parentRef);
-            }
-
-            // Strategy D: Global Search (if somehow not in batchLookup but exists)
-            if (parent == null) {
-                parent = findNode(parentRef);
-                if (parent == null && parentRef.length() > 3)
-                    parent = findNode(parentRef.substring(3));
-                if (parent == null)
-                    parent = findNode("CMT_" + parentRef);
-            }
-
-            if (parent == null) {
-                // Orphan child (Parent not found in this batch or globally)
-                // Just let it float or handle differently.
-                continue;
-            }
-
-            // Hierarchy Tracking for Counting & Level
-            child.parent = parent;
-            child.level = parent.level + 1;
-            child.rootNode = parent.rootNode != null ? parent.rootNode : parent; // Parent is root if null
-
-            // Update Max Level on Root
-            if (child.rootNode != null) {
-                child.rootNode.maxSubtreeLevel = Math.max(child.rootNode.maxSubtreeLevel, child.level);
-            }
-
-            // ORBIT PLACEMENT (Deterministic Unique Angles)
-            if (child.x == 0 && child.y == 0) {
-                parent.childrenCount++;
-                int idx = parent.childrenCount;
-
-                // "Mitte von 2 Punkten" (Bit-Reversal / Van der Corput Base 2)
-                // 1 -> 0.5 (180), 2 -> 0.25 (90), 3 -> 0.75 (270), etc.
-                double fraction = 0.0;
-                double v = 0.5;
-                int n = idx;
-                while (n > 0) {
-                    if ((n & 1) == 1)
-                        fraction += v;
-                    n >>= 1;
-                    v *= 0.5;
-                }
-
-                double angle = fraction * 2.0 * Math.PI;
-
-                // Check if parent is Thread (heavy) or Comment (light) to decide orbit
-                double orbitDist = parent.isThread ? 250 : 80;
-
-                child.x = parent.x + Math.cos(angle) * orbitDist;
-                child.y = parent.y + Math.sin(angle) * orbitDist;
-            }
-
-            // EDGE
-            String edgeId = "E_" + cId;
+            String edgeId = "E_" + child.node.id;
             if (!knownEdgeIds.contains(edgeId)) {
-                Edge e = new Edge(edgeId, parent, child);
-                e.length = parent.isThread ? 250.0 : 80.0;
-                e.strength = parent.isThread ? 0.05 : 0.2;
-                // Color is calculated dynamically in GraphView now
-
-                pendingEdges.add(e);
-                knownEdgeIds.add(edgeId);
-            }
-        }
-
-        // 4. RECURSIVE COUNTING (Fix for "0" counts)
-        // Iterate only unique nodes to avoid double counting
-        java.util.Set<Node> uniqueNodes = new java.util.HashSet<>(batchLookup.values());
-        for (Node n : uniqueNodes) {
-
-            if (n.isThread)
-                continue; // Only count comments
-
-            // Trace up to thread
-            Node root = n;
-            int depth = 0;
-            while (root != null && !root.isThread && depth < 50) {
-                root = root.parent;
-                depth++;
+                Edge e = new Edge(edgeId, layoutNode.node, child.node);
+                e.length = 200; // Visual length only
+                edgesOut.add(e);
             }
 
-            if (root != null && root.isThread) {
-                root.commentCount++;
-            }
-        }
+            // Recurse with larger radius for next generation
+            applyRadialLayout(child, currentAngle, currentAngle + sweep, radius + 250, centerX, centerY, nodesOut,
+                    edgesOut, validIds);
 
-        // 5. MARK AND SWEEP CLEANUP
-        // Identify nodes that are currently in the simulation (knownNodeIds) but NOT in
-        // the new batch (validIds)
-        // usage of 'batchLookup' keys is tricky because it has multiple aliases.
-        // We rely on the sets we explicitly added to knownNodeIds:
-        // Threads: just the ID (e.g. "123")
-        // Comments: "CMT_" + ID
-
-        Set<String> validIds = new HashSet<>();
-        for (RedditThread t : threads) {
-            validIds.add(t.getId());
-        }
-        for (RedditComment c : comments) {
-            validIds.add("CMT_" + c.getId());
-        }
-
-        List<String> toRemove = new ArrayList<>();
-        for (String existingId : knownNodeIds) {
-            if (!validIds.contains(existingId)) {
-                toRemove.add(existingId);
-            }
-        }
-
-        if (!toRemove.isEmpty()) {
-            pendingRemovals.addAll(toRemove);
-            System.out.println("[Graph Cleanup] Marking " + toRemove.size() + " nodes for removal.");
+            currentAngle += sweep;
         }
     }
 
@@ -395,7 +360,6 @@ public class GraphController {
     }
 
     private Color getColorForTopic(String topic) {
-        // Deterministic Hash to Color or predefined
         switch (topic) {
             case "SILBER":
                 return Color.web("#C0C0C0");
@@ -413,14 +377,9 @@ public class GraphController {
             case "CRYPTO":
                 return Color.web("#F7931A");
             default:
-                // Hash
                 int hash = topic.hashCode();
                 return Color.hsb(Math.abs(hash) % 360, 0.7, 0.9);
         }
-    }
-
-    private void addThreadToGraph(RedditThread thread) {
-        // Now handled by recalculateGraph for correct clustering
     }
 
     private long lastRefreshTime = 0;
@@ -432,30 +391,27 @@ public class GraphController {
                 if (!isRunning)
                     return;
 
-                // Periodic Data Refresh (Every 5 seconds)
                 if (now - lastRefreshTime > 5_000_000_000L) {
                     recalculateGraph();
                     lastRefreshTime = now;
                 }
 
                 try {
-                    // Drain Batch Queues (Limit per tick)
                     int nodesAdded = 0;
-                    while (!pendingNodes.isEmpty() && nodesAdded < 50) {
+                    while (!pendingNodes.isEmpty() && nodesAdded < 200) {
                         Node n = pendingNodes.poll();
                         if (n != null)
                             simulation.addNode(n);
                         nodesAdded++;
                     }
                     int edgesAdded = 0;
-                    while (!pendingEdges.isEmpty() && edgesAdded < 50) {
+                    while (!pendingEdges.isEmpty() && edgesAdded < 200) {
                         Edge e = pendingEdges.poll();
                         if (e != null)
                             simulation.addEdge(e);
                         edgesAdded++;
                     }
 
-                    // Process Removals
                     int removalsProcessed = 0;
                     while (!pendingRemovals.isEmpty() && removalsProcessed < 50) {
                         String idToRemove = pendingRemovals.poll();
@@ -465,9 +421,8 @@ public class GraphController {
                         removalsProcessed++;
                     }
 
-                    simulation.tick();
+                    // physics tick removed
 
-                    // Update View (Canvas Direct Render)
                     graphView.setNodes(simulation.getNodes());
                     graphView.render(simulation.getNodes(), simulation.getEdges());
 
@@ -477,15 +432,7 @@ public class GraphController {
                 }
             }
         };
-
     }
-
-    // Bridge for dragging - We will use the Properties map on the JavaFX node in
-    // GraphView
-    // Helper to sync drag state is missing.
-    // Let's simplify: GraphView simply renders X/Y.
-    // If we want drag, we need to update the Simulation Node's X/Y from UI events.
-    // I will add a cleaner drag handler in GraphView that accepts a Consumer.
 
     public GraphView getView() {
         return graphView;
@@ -494,17 +441,6 @@ public class GraphController {
     public void start() {
         isRunning = true;
         timer.start();
-
-        // Setup Drag callback
-        // We need to fetch the visual nodes to attach listeners properly if GraphView
-        // didn't already
-        // Actually GraphView sets properties "dragging", "userX", "userY".
-        // Let's iterate visual nodes and update simulation state in the loop.
-
-        // Override the tick loop in GraphController to read from View?
-        // No, GraphView is passive.
-
-        // I will modify GraphView to allow passing a callback for drag.
     }
 
     public void stop() {
@@ -513,15 +449,9 @@ public class GraphController {
     }
 
     private void removeNodeAndEdges(String nodeId) {
-        // 1. Remove from Simulation
-        // We need to synchronize access to the lists inside Simulation
         synchronized (simulation.getNodes()) {
             simulation.getNodes().removeIf(n -> n.id.equals(nodeId));
         }
-
-        // 2. Remove associated Edges
-        // Edge IDs are "E_" + nodeId usually for child links, but we must check
-        // source/target
         synchronized (simulation.getEdges()) {
             simulation.getEdges().removeIf(e -> {
                 boolean match = (e.source != null && e.source.id.equals(nodeId)) ||
@@ -532,8 +462,6 @@ public class GraphController {
                 return match;
             });
         }
-
-        // 3. Remove from trackers
         knownNodeIds.remove(nodeId);
     }
 }
