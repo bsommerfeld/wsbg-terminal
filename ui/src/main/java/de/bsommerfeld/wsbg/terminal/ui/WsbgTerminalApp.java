@@ -354,7 +354,8 @@ public class WsbgTerminalApp extends Application {
                 }
             });
 
-            LOG.info("WSBG-TERMINAL BEREIT.");
+            LOG.info("WSBG-TERMINAL BEREIT. (MODE: {})",
+                    de.bsommerfeld.wsbg.terminal.core.config.ApplicationMode.get());
 
             // Register App for Events (Icon Highlighting)
             eventBus.register(this);

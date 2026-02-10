@@ -3,6 +3,7 @@ package de.bsommerfeld.wsbg.terminal.ui.view.dashboard;
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.agent.ChatService;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
+import de.bsommerfeld.wsbg.terminal.core.config.ApplicationMode;
 
 import jakarta.inject.Inject;
 import javafx.application.Platform;
@@ -41,17 +42,50 @@ public class DashboardViewModel {
                 // Initial Silence
                 Thread.sleep(600);
 
-                // Advanced ASCII Banner (Tightest Spacing)
-                // Pattern: "WSB" in {{B}}lue (with white accents), "G" in {{K}}Black, {{R}}ed,
-                // {{Y}}Gold
-                String banner = "{{B}}██╗    ██╗███████╗██████╗ {{K}}██████╗{{X}}\n"
-                        + "{{B}}██║    ██║██╔════╝██╔══██╗{{K}}██╔════╝{{X}}\n"
-                        + "{{B}}██║ █╗ ██║███████╗██████╔╝{{R}}██║  ███╗{{X}}\n"
-                        + "{{B}}██║███╗██║╚════██║██╔══██╗{{R}}██║   ██║{{X}}\n"
-                        + "{{B}}╚███╔███╔╝███████║██████╔╝{{Y}}╚██████╔╝{{X}}\n"
-                        + "{{B}} ╚══╝╚══╝ ╚══════╝╚═════╝ {{Y}} ╚═════╝{{X}}";
+                // WSB Part (Common Left Side)
+                String[] wsbLines = {
+                        "{{B}}██╗    ██╗███████╗██████╗ ",
+                        "{{B}}██║    ██║██╔════╝██╔══██╗",
+                        "{{B}}██║ █╗ ██║███████╗██████╔╝",
+                        "{{B}}██║███╗██║╚════██║██╔══██╗",
+                        "{{B}}╚███╔███╔╝███████║██████╔╝",
+                        "{{B}} ╚══╝╚══╝ ╚══════╝╚═════╝ "
+                };
 
-                appendToConsole("||BANNER||" + banner);
+                String[] suffixLines;
+
+                if (ApplicationMode.get().isTest()) {
+                    // Test Mode: Blue "T" -> "WSBT"
+                    suffixLines = new String[] {
+                            "{{BLUE}}████████╗{{X}}",
+                            "{{BLUE}}╚══██╔══╝{{X}}",
+                            "{{BLUE}}   ██║   {{X}}",
+                            "{{BLUE}}   ██║   {{X}}",
+                            "{{BLUE}}   ██║   {{X}}",
+                            "{{BLUE}}   ╚═╝   {{X}}"
+                    };
+                } else {
+                    // Production Mode: Germany "G" -> "WSBG"
+                    suffixLines = new String[] {
+                            "{{K}}██████╗{{X}}",
+                            "{{K}}██╔════╝{{X}}",
+                            "{{R}}██║  ███╗{{X}}",
+                            "{{R}}██║   ██║{{X}}",
+                            "{{Y}}╚██████╔╝{{X}}",
+                            "{{Y}} ╚═════╝{{X}}"
+                    };
+                }
+
+                // Combine Parts
+                StringBuilder banner = new StringBuilder();
+                for (int i = 0; i < wsbLines.length; i++) {
+                    banner.append(wsbLines[i]).append(suffixLines[i]);
+                    if (i < wsbLines.length - 1) {
+                        banner.append("\n");
+                    }
+                }
+
+                appendToConsole("||BANNER||" + banner.toString());
             } catch (InterruptedException e) {
                 // Ignore
             }

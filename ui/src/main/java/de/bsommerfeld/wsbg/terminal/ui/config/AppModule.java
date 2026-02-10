@@ -4,6 +4,7 @@ import com.google.inject.AbstractModule;
 import de.bsommerfeld.jshepherd.core.ConfigurationLoader;
 
 import de.bsommerfeld.wsbg.terminal.core.config.AgentConfig;
+import de.bsommerfeld.wsbg.terminal.core.config.ApplicationMode;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 
 import org.slf4j.Logger;
@@ -41,6 +42,23 @@ public class AppModule extends AbstractModule {
             // Bind Sub-Configs for convenience
 
             bind(AgentConfig.class).toInstance(config.getAgent());
+
+            // --- MODE SWITCHING (PROD vs TEST) ---
+            ApplicationMode mode = ApplicationMode.get();
+            LOG.info("Application Mode initialized: {}", mode);
+
+            if (mode == ApplicationMode.TEST) {
+                // TEST MODE: Stub Database & Scraper (No Data, No Save)
+                bind(de.bsommerfeld.wsbg.terminal.db.DatabaseService.class)
+                        .to(de.bsommerfeld.wsbg.terminal.db.TestDatabaseService.class);
+                bind(de.bsommerfeld.wsbg.terminal.reddit.RedditScraper.class)
+                        .to(de.bsommerfeld.wsbg.terminal.reddit.TestRedditScraper.class);
+            } else {
+                // PROD MODE: Real Database Logic
+                bind(de.bsommerfeld.wsbg.terminal.db.DatabaseService.class)
+                        .to(de.bsommerfeld.wsbg.terminal.db.SqlDatabaseService.class);
+                // RedditScraper binds to itself via JIT (@Singleton on class)
+            }
 
             // Start Passive Monitor
             bind(de.bsommerfeld.wsbg.terminal.agent.PassiveMonitorService.class).asEagerSingleton();

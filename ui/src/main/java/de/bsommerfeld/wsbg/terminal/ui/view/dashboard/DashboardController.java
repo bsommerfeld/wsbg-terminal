@@ -108,7 +108,7 @@ public class DashboardController {
             String initialHtml = "<html><head><style>" +
                     ":root { --source-width: 40px; }" +
                     fontFaceCss +
-                    "body { font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace; font-size: 14px; width: 100%; max-width: 100%; color: #e0e0e0; background-color: transparent; margin: 0; padding: 10px; overflow-x: hidden; overflow-y: scroll; }"
+                    "body { box-sizing: border-box; font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace; font-size: 14px; width: 100%; max-width: 100%; color: #e0e0e0; background-color: transparent; margin: 0; padding: 10px; overflow-x: hidden; overflow-y: scroll; }"
                     +
                     // Hardware accelerate entries to prevent repaint lag
                     "@keyframes fadeInUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }"
@@ -668,6 +668,8 @@ public class DashboardController {
                                 "<span style='color: #ff3333; text-shadow: 0 0 10px rgba(255, 51, 51, 0.4);'>")
                         .replace("{{Y}}",
                                 "<span style='color: #ffcc00; text-shadow: 0 0 10px rgba(255, 204, 0, 0.4);'>")
+                        .replace("{{BLUE}}",
+                                "<span style='color: #3399ff; text-shadow: 0 0 10px rgba(51, 153, 255, 0.6);'>")
                         .replace("{{X}}", "</span>");
 
                 // Classic Terminal Integration
@@ -1115,50 +1117,17 @@ public class DashboardController {
         if (liveFeedLabel == null)
             return;
 
-        javafx.animation.SequentialTransition sequence = new javafx.animation.SequentialTransition();
+        javafx.animation.FadeTransition fadeOut = new javafx.animation.FadeTransition(javafx.util.Duration.millis(300),
+                liveFeedLabel);
+        fadeOut.setFromValue(1.0);
+        fadeOut.setToValue(0.4);
 
-        javafx.scene.paint.Color normalColor = javafx.scene.paint.Color.web("#888888");
-        javafx.scene.paint.Color darkColor = javafx.scene.paint.Color.web("#555555");
+        javafx.animation.FadeTransition fadeIn = new javafx.animation.FadeTransition(javafx.util.Duration.millis(300),
+                liveFeedLabel);
+        fadeIn.setFromValue(0.4);
+        fadeIn.setToValue(1.0);
 
-        // Iteration 1: Scan (Normal -> Dark)
-        // Scanner moves through, leaving a Dark trail explicitly
-        javafx.animation.Transition scanPass1 = new javafx.animation.Transition() {
-            {
-                setCycleCount(1);
-                setCycleDuration(javafx.util.Duration.seconds(0.6));
-                setInterpolator(javafx.animation.Interpolator.LINEAR);
-            }
-
-            @Override
-            protected void interpolate(double frac) {
-                // Trail: Dark, Future: Normal
-                applyScanEffect(frac, darkColor, normalColor);
-            }
-        };
-
-        // Pause
-        javafx.animation.PauseTransition pause = new javafx.animation.PauseTransition(
-                javafx.util.Duration.seconds(0.4));
-
-        // Iteration 2: Scan (Dark -> Normal)
-        // Scanner moves through, restoring Normal color
-        javafx.animation.Transition scanPass2 = new javafx.animation.Transition() {
-            {
-                setCycleCount(1);
-                setCycleDuration(javafx.util.Duration.seconds(0.6));
-                setInterpolator(javafx.animation.Interpolator.LINEAR);
-            }
-
-            @Override
-            protected void interpolate(double frac) {
-                // Trail: Normal, Future: Dark
-                applyScanEffect(frac, normalColor, darkColor);
-            }
-        };
-
-        sequence.getChildren().addAll(scanPass1, pause, scanPass2);
-        // Ensure strictly set to Normal at the end
-        sequence.setOnFinished(e -> liveFeedLabel.setTextFill(normalColor));
+        javafx.animation.SequentialTransition sequence = new javafx.animation.SequentialTransition(fadeOut, fadeIn);
         sequence.play();
     }
 

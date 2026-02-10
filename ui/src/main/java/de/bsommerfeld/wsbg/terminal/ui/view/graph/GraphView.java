@@ -28,6 +28,12 @@ public class GraphView extends Pane {
     private double offsetY = 0;
     private double scale = 0.15; // Default to zoomed out view
 
+    // Content Bounds
+    private double contentMinX = -5000;
+    private double contentMaxX = 5000;
+    private double contentMinY = -5000;
+    private double contentMaxY = 5000;
+
     // Dynamic Zoom Limits
     private double minScaleLimit = 0.02; // Will be updated based on content
     private static final double MAX_SCALE_LIMIT = 5.0; // Fixed max zoom (close-up)
@@ -85,6 +91,8 @@ public class GraphView extends Pane {
 
             offsetX -= dx * f;
             offsetY -= dy * f;
+
+            clampOffset();
         });
 
         // Mouse Press (Pan Only)
@@ -92,6 +100,7 @@ public class GraphView extends Pane {
             validInteraction = true;
             lastMouseX = e.getX();
             lastMouseY = e.getY();
+            setCursor(javafx.scene.Cursor.CLOSED_HAND);
         });
 
         this.setOnMouseDragged((MouseEvent e) -> {
@@ -105,13 +114,42 @@ public class GraphView extends Pane {
             offsetX += deltaX;
             offsetY += deltaY;
 
+            clampOffset();
+
             lastMouseX = e.getX();
             lastMouseY = e.getY();
         });
 
         this.setOnMouseReleased((MouseEvent e) -> {
             validInteraction = false;
+            setCursor(javafx.scene.Cursor.DEFAULT);
         });
+    }
+
+    private void clampOffset() {
+        // Enforce that the center of the view remains roughly within the content bounds
+        // Center of screen in World Coordinates:
+        // worldX = -offsetX / scale
+
+        double viewCenterX = -offsetX / scale;
+        double viewCenterY = -offsetY / scale;
+
+        // Clamp Center
+        // Add a small buffer (2000) allowed panning outside strictly nodes
+        double buffer = 2000.0;
+
+        if (viewCenterX < contentMinX - buffer)
+            viewCenterX = contentMinX - buffer;
+        if (viewCenterX > contentMaxX + buffer)
+            viewCenterX = contentMaxX + buffer;
+        if (viewCenterY < contentMinY - buffer)
+            viewCenterY = contentMinY - buffer;
+        if (viewCenterY > contentMaxY + buffer)
+            viewCenterY = contentMaxY + buffer;
+
+        // Re-calculate offsetX/Y from clamped center
+        offsetX = -viewCenterX * scale;
+        offsetY = -viewCenterY * scale;
     }
 
     public void setNodes(List<Node> nodes) {
@@ -144,6 +182,12 @@ public class GraphView extends Pane {
 
         if (minX == Double.MAX_VALUE)
             return;
+
+        // Store for panning limits
+        this.contentMinX = minX;
+        this.contentMaxX = maxX;
+        this.contentMinY = minY;
+        this.contentMaxY = maxY;
 
         double contentW = (maxX - minX) + 2000;
         double contentH = (maxY - minY) + 2000;

@@ -24,7 +24,7 @@ public class RedditScraper {
 
     private static final Logger LOG = LoggerFactory.getLogger(RedditScraper.class);
     private static final String REDDIT_BASE = "https://www.reddit.com";
-    private final RedditRepository repository;
+    protected final RedditRepository repository;
     private final HttpClient httpClient;
 
     @Inject
