@@ -34,7 +34,7 @@ jobs:
       # We explicitly fetch all 3 platform classifiers so the zip works everywhere.
       - name: Collect Runtime Dependencies
         run: |
-          mvn dependency:copy-dependencies -pl ui -DincludeScope=runtime -DoutputDirectory=target/deps
+          mvn dependency:copy-dependencies -pl terminal -DincludeScope=runtime -DoutputDirectory=target/deps
 
           JAVAFX_VERSION="25-ea+1"
           JAVAFX_MODULES="javafx-base javafx-controls javafx-fxml javafx-graphics javafx-media javafx-web"
@@ -42,7 +42,7 @@ jobs:
             for classifier in mac-aarch64 mac win linux linux-aarch64; do
               mvn dependency:copy \
                 -Dartifact=org.openjfx:${mod}:${JAVAFX_VERSION}:jar:${classifier} \
-                -DoutputDirectory=ui/target/deps \
+                -DoutputDirectory=terminal/target/deps \
                 -Dmdep.stripVersion=false || true
             done
           done
@@ -50,7 +50,7 @@ jobs:
       - name: Package with TinyUpdate
         uses: ./updater/action
         with:
-          artifact-dirs: 'core/target,db/target,reddit/target,agent/target,ui/target,ui/target/deps'
+          artifact-dirs: 'core/target,database/target,reddit/target,agent/target,terminal/target,terminal/target/deps'
           script-dir: '.script'
 
       - name: Prepare Build Status Badges

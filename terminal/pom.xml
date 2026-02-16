@@ -9,7 +9,7 @@
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
-    <artifactId>ui</artifactId>
+    <artifactId>terminal</artifactId>
 
     <dependencies>
         <!-- Internal Modules -->
@@ -28,7 +28,7 @@
         </dependency>
          <dependency>
             <groupId>de.bsommerfeld</groupId>
-            <artifactId>db</artifactId>
+            <artifactId>database</artifactId>
         </dependency>
 
         <!-- JavaFX -->

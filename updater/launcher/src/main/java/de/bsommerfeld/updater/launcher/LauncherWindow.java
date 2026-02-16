@@ -9,11 +9,13 @@ import java.awt.geom.RoundRectangle2D;
  *
  * <p>Three-line layout: title, status (phase), detail (file name/bytes).
  * Custom-painted progress bar avoids platform-inconsistent Swing LAF.
+ * Updates are coalesced at ~30fps to prevent UI flickering from rapid progress events.
  */
 final class LauncherWindow extends JFrame {
 
     private static final int WIDTH = 420;
     private static final int HEIGHT = 160;
+    private static final long UPDATE_INTERVAL_MS = 33; // ~30fps
 
     private static final Color BG = new Color(22, 22, 26);
     private static final Color FG = Color.WHITE;
@@ -25,6 +27,14 @@ final class LauncherWindow extends JFrame {
     private final JLabel statusLabel;
     private final JLabel detailLabel;
     private final ProgressBar progressBar;
+
+    // Coalescing state — written from any thread, flushed on EDT at capped rate.
+    // Volatile fields instead of locks because overwrites are harmless (latest wins).
+    private volatile String pendingStatus;
+    private volatile String pendingDetail;
+    private volatile double pendingProgress = Double.NaN;
+    private volatile boolean flushScheduled;
+    private volatile long lastFlushTime;
 
     LauncherWindow() {
         setUndecorated(true);
@@ -77,27 +87,70 @@ final class LauncherWindow extends JFrame {
     }
 
     void setStatus(String text) {
-        SwingUtilities.invokeLater(() -> statusLabel.setText(text));
+        pendingStatus = text;
+        scheduleFlush();
     }
 
     void setDetail(String text) {
-        SwingUtilities.invokeLater(() -> detailLabel.setText(text != null ? text : " "));
+        pendingDetail = text;
+        scheduleFlush();
     }
 
     /**
-     * Sets the progress bar value.
-     *
      * @param ratio 0.0 to 1.0 for determinate, or negative for indeterminate pulse
      */
     void setProgress(double ratio) {
+        pendingProgress = ratio;
+        scheduleFlush();
+    }
+
+    /**
+     * Schedules a single EDT flush. Multiple rapid calls coalesce into one
+     * repaint, capped at ~30fps. This prevents Swing from drowning in
+     * repaint events during fast Ollama/download output.
+     */
+    private void scheduleFlush() {
+        if (flushScheduled) return;
+        flushScheduled = true;
+
+        long elapsed = System.currentTimeMillis() - lastFlushTime;
+        long delay = Math.max(0, UPDATE_INTERVAL_MS - elapsed);
+
         SwingUtilities.invokeLater(() -> {
-            if (ratio < 0) {
+            if (delay > 0) {
+                Timer timer = new Timer((int) delay, _ -> flush());
+                timer.setRepeats(false);
+                timer.start();
+            } else {
+                flush();
+            }
+        });
+    }
+
+    private void flush() {
+        String status = pendingStatus;
+        String detail = pendingDetail;
+        double progress = pendingProgress;
+
+        if (status != null) {
+            statusLabel.setText(status);
+            pendingStatus = null;
+        }
+        detailLabel.setText(detail != null ? detail : " ");
+        pendingDetail = null;
+
+        if (!Double.isNaN(progress)) {
+            if (progress < 0) {
                 progressBar.setIndeterminate(true);
             } else {
                 progressBar.setIndeterminate(false);
-                progressBar.setValue(ratio);
+                progressBar.setValue(progress);
             }
-        });
+            pendingProgress = Double.NaN;
+        }
+
+        lastFlushTime = System.currentTimeMillis();
+        flushScheduled = false;
     }
 
     /**

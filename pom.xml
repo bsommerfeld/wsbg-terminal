@@ -11,11 +11,11 @@
 
     <modules>
         <module>core</module>
-        <module>db</module>
+        <module>database</module>
         <module>reddit</module>
 
         <module>agent</module>
-        <module>ui</module>
+        <module>terminal</module>
 
         <module>updater</module>
         <module>launcher</module>
@@ -55,7 +55,7 @@
             </dependency>
             <dependency>
                 <groupId>de.bsommerfeld</groupId>
-                <artifactId>db</artifactId>
+                <artifactId>database</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
@@ -71,7 +71,7 @@
             </dependency>
             <dependency>
                 <groupId>de.bsommerfeld</groupId>
-                <artifactId>ui</artifactId>
+                <artifactId>terminal</artifactId>
                 <version>${project.version}</version>
             </dependency>
 

@@ -18,7 +18,7 @@
         </dependency>
          <dependency>
             <groupId>de.bsommerfeld</groupId>
-            <artifactId>db</artifactId>
+            <artifactId>database</artifactId>
         </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
