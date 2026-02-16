@@ -59,6 +59,7 @@ jobs:
             --dest jpackage-output
 
       - name: Upload Installer to Release
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
