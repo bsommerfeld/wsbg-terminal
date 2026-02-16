@@ -84,7 +84,7 @@
                     <mainClass>de.bsommerfeld.wsbg.terminal.ui.WsbgTerminalApp</mainClass>
                     <options>
                         <option>--enable-preview</option>
-                        <option>-Xdock:name=WSBG Terminal</option>
+                        <option>-Xdock:name=WSBG</option>
                         <option>-Xdock:icon=${project.basedir}/src/main/resources/images/app-icon.png</option>
                     </options>
                 </configuration>

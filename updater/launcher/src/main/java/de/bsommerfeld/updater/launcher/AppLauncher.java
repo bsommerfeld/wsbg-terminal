@@ -47,6 +47,17 @@ final class AppLauncher {
 
         List<String> command = new ArrayList<>();
         command.add(resolveJava());
+
+        // macOS dock icon — ignored on other platforms
+        if (System.getProperty("os.name", "").toLowerCase().contains("mac")) {
+            Path icon = appDirectory.resolve("lib/app-icon.png");
+            if (!Files.exists(icon)) icon = appDirectory.resolve("images/app-icon.png");
+            if (Files.exists(icon)) {
+                command.add("-Xdock:name=WSBG Terminal");
+                command.add("-Xdock:icon=" + icon);
+            }
+        }
+
         command.add("--enable-preview");
         command.add("--module-path");
         command.add(modulePath);
@@ -77,6 +88,16 @@ final class AppLauncher {
         pb.directory(appDirectory.toFile());
         pb.redirectOutput(ProcessBuilder.Redirect.appendTo(logFile.toFile()));
         pb.redirectError(ProcessBuilder.Redirect.appendTo(logFile.toFile()));
+
+        // Same PATH extension as EnvironmentSetup — subprocess needs access
+        // to user-installed tools (e.g. ollama) even when launched via JPackage.
+        String os = System.getProperty("os.name", "").toLowerCase();
+        if (!os.contains("win")) {
+            String path = pb.environment().getOrDefault("PATH", "/usr/bin:/bin");
+            pb.environment().put("PATH", path
+                    + ":/usr/local/bin:/opt/homebrew/bin:/opt/homebrew/sbin"
+                    + ":" + System.getProperty("user.home") + "/.local/bin");
+        }
 
         pb.start();
     }
