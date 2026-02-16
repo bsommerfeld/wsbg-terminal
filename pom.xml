@@ -18,6 +18,7 @@
         <module>terminal</module>
 
         <module>updater</module>
+        <module>launcher</module>
     </modules>
 
     <properties>

@@ -4,14 +4,14 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <parent>
         <groupId>de.bsommerfeld</groupId>
-        <artifactId>updater</artifactId>
-        <version>0.1</version>
+        <artifactId>wsbg-terminal</artifactId>
+        <version>${revision}</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
-    <artifactId>updater-launcher</artifactId>
+    <artifactId>launcher</artifactId>
     <version>0.1</version>
-    <name>Updater Launcher</name>
+    <name>Launcher</name>
     <description>Native Swing launcher with update and environment-setup capabilities</description>
 
     <dependencies>

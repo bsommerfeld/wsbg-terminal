@@ -9,21 +9,17 @@
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>de.bsommerfeld</groupId>
-    <artifactId>updater</artifactId>
+    <artifactId>updater-core</artifactId>
     <version>0.1</version>
-    <packaging>pom</packaging>
-    <!-- Originally named TinyUpdate -->
-    <name>Updater</name>
-    <description>Your tiny updater with integrated native launcher. No overhead, just updating.</description>
+    <name>Updater Core</name>
+    <description>Lightweight file-level update system for Java applications via GitHub Releases</description>
 
-    <modules>
-        <module>core</module>
-        <module>launcher</module>
-    </modules>
-
-    <properties>
-        <maven.compiler.target>25</maven.compiler.target>
-        <maven.compiler.source>25</maven.compiler.source>
-    </properties>
+    <dependencies>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.9.1</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
 </project>

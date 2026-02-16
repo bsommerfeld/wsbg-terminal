@@ -38,13 +38,13 @@ jobs:
           cache: maven
 
       - name: Build Launcher JAR
-        run: mvn clean package -pl updater/launcher -am -DskipTests
+        run: mvn clean package -pl launcher -am -DskipTests
 
       - name: Create JPackage input directory
         shell: bash
         run: |
           mkdir -p jpackage-input
-          cp updater/launcher/target/updater-launcher-*.jar jpackage-input/
+          cp launcher/target/launcher-*.jar jpackage-input/
 
       - name: Package with JPackage
         shell: bash
@@ -56,7 +56,7 @@ jobs:
             --vendor "bsommerfeld" \
             --description "WSBG Terminal Launcher" \
             --input jpackage-input \
-            --main-jar updater-launcher-0.1.jar \
+            --main-jar launcher-0.1.jar \
             --main-class de.bsommerfeld.updater.launcher.LauncherMain \
             --java-options "--enable-preview" \
             --icon ${{ matrix.icon-file }} \
