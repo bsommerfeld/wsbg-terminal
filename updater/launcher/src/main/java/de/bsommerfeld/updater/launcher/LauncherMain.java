@@ -73,8 +73,8 @@ public final class LauncherMain {
             }
 
             boolean updated = client.update(progress -> {
-                // Show window as soon as we know an update exists
-                if (!window.isVisible() && progress.progressRatio() >= 0) {
+                // Show window only when an actual download is in progress (not "Up to date" at 1.0)
+                if (!window.isVisible() && progress.progressRatio() >= 0 && progress.progressRatio() < 1.0) {
                     SwingUtilities.invokeLater(() -> window.setVisible(true));
                 }
                 window.setStatus(progress.phase());
