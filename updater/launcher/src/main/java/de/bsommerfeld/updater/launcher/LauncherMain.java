@@ -59,6 +59,8 @@ public final class LauncherMain {
                     window.setProgress(0);
                 });
                 showFatalError("Update failed", e);
+                // AWT EDT keeps JVM alive after the dialog is dismissed — exit explicitly
+                System.exit(1);
             }
         });
     }
