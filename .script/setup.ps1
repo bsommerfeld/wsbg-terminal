@@ -73,18 +73,25 @@ Write-Host "    - Vision/OCR:      $visionModel" -ForegroundColor Gray
 Write-Host "    - Embeddings:      $embedModel" -ForegroundColor Gray
 
 
-# 4. Pull Models
-Write-Host "[*] Pulling models via Ollama (this may take a while)..." -ForegroundColor Yellow
+# 4. Pull Models (only if not already present)
+$installedModels = @()
+try {
+    $installedModels = (ollama list 2>$null | Select-Object -Skip 1 | ForEach-Object { ($_ -split '\s+')[0] })
+} catch {}
 
-function Pull-Model($modelName) {
-    Write-Host "    > Pulling $modelName..."
-    ollama pull $modelName
+function Pull-IfMissing($modelName) {
+    if ($installedModels -contains $modelName) {
+        Write-Host "    [✓] $modelName already available" -ForegroundColor Green
+    } else {
+        Write-Host "    > Pulling $modelName..."
+        ollama pull $modelName
+    }
 }
 
-Pull-Model $reasoningModel
-Pull-Model $translatorModel
-Pull-Model $visionModel
-Pull-Model $embedModel
+Pull-IfMissing $reasoningModel
+Pull-IfMissing $translatorModel
+Pull-IfMissing $visionModel
+Pull-IfMissing $embedModel
 
 # 5. Generate Config (if strictly new)
 if (!(Test-Path $configFile)) {
