@@ -1,7 +1,7 @@
 package de.bsommerfeld.wsbg.terminal.launcher;
 
-import de.bsommerfeld.tinyupdate.api.GitHubRepository;
-import de.bsommerfeld.tinyupdate.api.TinyUpdateClient;
+import de.bsommerfeld.updater.api.GitHubRepository;
+import de.bsommerfeld.updater.api.TinyUpdateClient;
 
 import java.nio.file.Path;
 
@@ -20,6 +20,6 @@ public final class LauncherApp {
         // Delegate to the TinyUpdate launcher with WSBG-specific config.
         // This class exists so the top-level launcher module can be used
         // independently for testing without the full native JPackage build.
-        de.bsommerfeld.tinyupdate.launcher.LauncherMain.main(args);
+        de.bsommerfeld.updater.launcher.LauncherMain.main(args);
     }
 }

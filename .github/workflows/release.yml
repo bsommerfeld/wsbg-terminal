@@ -29,12 +29,26 @@ jobs:
         id: build_test
         run: mvn clean install -U -Dgpg.skip=true
 
-      # Collect all runtime dependencies (JavaFX, Guice, etc.) into a single directory
+      # Collect all runtime dependencies into a single directory.
+      # JavaFX is platform-specific — Maven on Linux only resolves linux JARs.
+      # We explicitly fetch all 3 platform classifiers so the zip works everywhere.
       - name: Collect Runtime Dependencies
-        run: mvn dependency:copy-dependencies -pl ui -DincludeScope=runtime -DoutputDirectory=target/deps
+        run: |
+          mvn dependency:copy-dependencies -pl ui -DincludeScope=runtime -DoutputDirectory=target/deps
+
+          JAVAFX_VERSION="25-ea+1"
+          JAVAFX_MODULES="javafx-base javafx-controls javafx-fxml javafx-graphics javafx-media javafx-web"
+          for mod in $JAVAFX_MODULES; do
+            for classifier in mac-aarch64 mac-x64 win linux linux-aarch64; do
+              mvn dependency:copy \
+                -Dartifact=org.openjfx:${mod}:${JAVAFX_VERSION}:jar:${classifier} \
+                -DoutputDirectory=ui/target/deps \
+                -Dmdep.stripVersion=false || true
+            done
+          done
 
       - name: Package with TinyUpdate
-        uses: ./tinyupdate/action
+        uses: ./updater/action
         with:
           artifact-dirs: 'core/target,db/target,reddit/target,agent/target,ui/target,ui/target/deps'
           script-dir: '.script'
@@ -67,6 +81,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload "${{ github.event.release.tag_name }}" \
-            tinyupdate-dist/update.json \
-            tinyupdate-dist/files.zip \
+            updater-dist/update.json \
+            updater-dist/files.zip \
             --clobber
