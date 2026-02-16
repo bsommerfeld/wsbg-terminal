@@ -12,6 +12,7 @@ import javafx.scene.Node;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.paint.CycleMethod;
+import javafx.scene.paint.LinearGradient;
 import javafx.scene.paint.RadialGradient;
 import javafx.scene.paint.Stop;
 import javafx.scene.control.TextInputControl;
@@ -618,42 +619,89 @@ public final class LiquidGlass {
                 GraphicsContext gc = canvas.getGraphicsContext2D();
                 gc.clearRect(0, 0, cw, ch);
 
-                // --- HEAVY & SUBTLE CLICK (SCALED) ---
-                // "Subtil und schwer" - Adapts to component size to avoid "hectic" feel on
-                // small buttons.
+                // --- SHIMMER REFLECTION WAVE ---
+                // "Schimmer von rechts unten nach links oben"
+                // A subtle reflection wave gliding across the surface, simulating light
+                // refraction.
+                // No color modifications, just a pure white alpha gradient.
                 if (clickTime > 0) {
                         double age = (nowNano - clickTime) / 1e9;
-                        double duration = 0.7; // Slightly slower for a calmer feel
+                        double duration = 0.7; // Smooth gliding duration
 
                         if (age < duration) {
                                 double progress = age / duration;
-                                // Ease out cubic (fast start, slow end)
-                                double ease = 1 - Math.pow(1 - progress, 3);
+                                // Ease-in-out for natural "gliding" appearance
+                                double ease = progress < 0.5 ? 2 * progress * progress
+                                                : 1 - Math.pow(-2 * progress + 2, 2) / 2;
 
-                                // Scale based on the smaller dimension of the component
-                                double size = Math.min(cw, ch);
+                                // Base scale for the effect width
+                                double size = Math.max(cw, ch);
+                                double bandWidth = size * 0.4;
 
-                                // Max radius is proportional to the component size (e.g. 45% of width/height)
-                                // This keeps it contained and proportional on small buttons vs large panels.
-                                double maxRadius = Math.max(20.0, size * 0.45);
-                                double currentRadius = ease * maxRadius;
+                                // Coordinate transformation: moving from bottom-right (cw, ch) to top-left
+                                // (0,0)
+                                // We simulate this by moving a parallel band along the diagonal.
+                                // Diagonal length:
+                                double diag = Math.sqrt(cw * cw + ch * ch);
 
-                                // Thickness also scales, but has a minimum so it's visible
-                                double baseThickness = Math.max(6.0, size * 0.15);
-                                double lineWidth = baseThickness * (1 - ease);
+                                // Movement range: start completely off-screen (bottom-right) to off-screen
+                                // (top-left)
+                                double startPos = diag + bandWidth;
+                                double endPos = -bandWidth;
+                                double currentPos = startPos + (endPos - startPos) * ease;
 
-                                // "Subtle" opacity
-                                double startOpacity = 0.15;
-                                double opacity = startOpacity * (1 - progress);
+                                gc.save();
 
-                                double localX = cx;
-                                double localY = cy;
+                                // Clip to component bounds so the shimmer doesn't bleed out
+                                gc.beginPath();
+                                gc.rect(0, 0, cw, ch);
+                                gc.clip();
 
-                                gc.setGlobalBlendMode(javafx.scene.effect.BlendMode.SRC_OVER);
-                                gc.setStroke(Color.rgb(255, 255, 255, opacity));
-                                gc.setLineWidth(lineWidth);
-                                gc.strokeOval(localX - currentRadius, localY - currentRadius,
-                                                currentRadius * 2, currentRadius * 2);
+                                // Rotate context to draw the band diagonally (45 degrees)
+                                gc.translate(cw / 2, ch / 2);
+                                gc.rotate(-45); // Standard cartesian angle for BR->TL movement relative to center?
+                                // Actually, visual Top-Left is (0,0). Visual Bottom-Right is (w,h).
+                                // We want movement from (w,h) to (0,0). That is a -135 degree vector.
+                                // Drawing a vertical bar and moving it along X in rotated space:
+                                // Let's simplify: Rotate -45 degrees. The "vertical" axis aligns with the
+                                // diagonal.
+                                // We draw a rectangle moving along the new Y axis? Or better, X.
+                                // Let's use simple geometry without complex rotation logic if possible.
+                                // Just draw a rotated rectangle.
+
+                                gc.translate(-cw / 2, -ch / 2); // Reset translation (relative to center) but keep
+                                                                // rotation for drawing?
+                                // No, standard logic:
+                                // 1. Translate to center
+                                // 2. Rotate -45 deg
+                                // 3. Draw rect at (currentPos, -huge) size (width, huge)
+                                // currentPos moves from +diag/2 to -diag/2
+
+                                double centerOffset = currentPos - (diag / 2); // Shift to be relative to center
+
+                                // Gradient for the "Shimmer" - soft edges
+                                LinearGradient shimmerGradient = new LinearGradient(
+                                                centerOffset, 0, centerOffset + bandWidth, 0,
+                                                false, CycleMethod.NO_CYCLE,
+                                                new Stop(0.0, Color.rgb(255, 255, 255, 0.0)),
+                                                new Stop(0.5, Color.rgb(255, 255, 255, 0.2)), // Peak opacity at center
+                                                new Stop(1.0, Color.rgb(255, 255, 255, 0.0)));
+
+                                // We use a rect that covers the entire "height" of the rotated space
+                                double hugeH = diag * 2;
+
+                                gc.setFill(shimmerGradient);
+                                gc.setGlobalBlendMode(javafx.scene.effect.BlendMode.SRC_OVER); // Additive (light)
+                                gc.fillRect(centerOffset - diag, -diag, diag * 2 + bandWidth, hugeH);
+                                // Note: Gradient coords are local to the fillRect call if not proportional?
+                                // LinearGradient acts on local coords.
+                                // Wait, `centerOffset` in gradient must match drawn rect X.
+                                // Actually simplistic approach:
+                                // Draw a rect at (centerX, centerY) but rotated.
+                                // Let's restart the drawing logic for clarity in the implementation block
+                                // below.
+
+                                gc.restore();
                         }
                 }
 

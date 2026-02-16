@@ -250,6 +250,7 @@ public class WsbgTerminalApp extends Application {
                         // isMac is already defined above
 
                         HBox mainLayout = new HBox();
+                        mainLayout.getStyleClass().add("custom-title-bar-overlay");
                         mainLayout.setAlignment(Pos.CENTER);
                         mainLayout.setPickOnBounds(true); // Must be true to capture clicks on empty space
                         mainLayout.setBackground(

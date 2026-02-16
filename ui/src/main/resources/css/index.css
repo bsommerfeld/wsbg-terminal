@@ -93,6 +93,11 @@
     -fx-cursor: closed-hand;
 }
 
+.custom-title-bar-overlay {
+    -fx-border-color: #222;
+    -fx-border-width: 0 0 1px 0;
+}
+
 .terminal-brand {
     -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
     -fx-font-weight: 800;
