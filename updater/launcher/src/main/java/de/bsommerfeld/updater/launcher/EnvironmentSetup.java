@@ -111,6 +111,12 @@ final class EnvironmentSetup {
             return;
         }
 
+        // Raw progress bar noise from curl/ollama install (###, ▕██▏, bare percentages).
+        // These overflow the label and convey no useful info beyond what we already parse.
+        if (line.matches("^[#=\\-\\s▕▏█░]+$") || line.matches("^[\\d.]+%$")) {
+            return;
+        }
+
         // Setup banner lines
         if (line.contains("Setup Complete") || line.contains("=====")) {
             consumer.accept("Setup complete", null);
@@ -141,8 +147,18 @@ final class EnvironmentSetup {
             );
         }
 
-        // Ensure script is executable on Unix
         script.toFile().setExecutable(true);
-        return new ProcessBuilder("bash", script.toString());
+
+        ProcessBuilder pb = new ProcessBuilder("bash", script.toString());
+
+        // JPackage strips PATH to a bare minimum, hiding user-installed tools
+        // like ollama in /usr/local/bin or /opt/homebrew/bin. Without this,
+        // setup.sh thinks ollama is missing and reinstalls it from scratch.
+        String path = pb.environment().getOrDefault("PATH", "/usr/bin:/bin");
+        pb.environment().put("PATH", path
+                + ":/usr/local/bin:/opt/homebrew/bin:/opt/homebrew/sbin"
+                + ":" + System.getProperty("user.home") + "/.local/bin");
+
+        return pb;
     }
 }

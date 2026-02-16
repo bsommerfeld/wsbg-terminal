@@ -36,12 +36,13 @@ final class LauncherWindow extends JFrame {
     private volatile boolean flushScheduled;
     private volatile long lastFlushTime;
 
+    private int dragX, dragY;
+
     LauncherWindow() {
         setUndecorated(true);
         setSize(WIDTH, HEIGHT);
         setLocationRelativeTo(null);
         setBackground(new Color(0, 0, 0, 0));
-        setAlwaysOnTop(true);
         setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
 
         java.net.URL iconUrl = getClass().getResource("/images/app-icon.png");
@@ -89,6 +90,21 @@ final class LauncherWindow extends JFrame {
         root.add(progressBar, BorderLayout.SOUTH);
 
         setContentPane(root);
+
+        // Undecorated window needs manual drag support
+        addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mousePressed(java.awt.event.MouseEvent e) {
+                dragX = e.getX();
+                dragY = e.getY();
+            }
+        });
+        addMouseMotionListener(new java.awt.event.MouseMotionAdapter() {
+            @Override
+            public void mouseDragged(java.awt.event.MouseEvent e) {
+                setLocation(e.getXOnScreen() - dragX, e.getYOnScreen() - dragY);
+            }
+        });
     }
 
     void setStatus(String text) {
