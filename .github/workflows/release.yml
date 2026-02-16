@@ -50,19 +50,21 @@ jobs:
           echo "build-badge=${BUILD_BADGE}" >> $GITHUB_OUTPUT
           echo "test-badge=${TEST_BADGE}" >> $GITHUB_OUTPUT
 
-      - name: Upload TinyUpdate Artifacts to Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            tinyupdate-dist/update.json
-            tinyupdate-dist/files.zip
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
+      # Creates the release with changelog — must run before asset upload
       - name: Update Release with Changelog
-        if: always()
         uses: bsommerfeld/release-changelog@v0.1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           prepend-text: |
             ${{ steps.badges.outputs.build-badge }} ${{ steps.badges.outputs.test-badge }}
+
+      # Upload assets to the existing release via gh CLI — avoids softprops
+      # creating a duplicate draft release
+      - name: Upload TinyUpdate Artifacts to Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.ref_name }}" \
+            tinyupdate-dist/update.json \
+            tinyupdate-dist/files.zip \
+            --clobber
