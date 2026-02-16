@@ -86,18 +86,22 @@ echo "    - Vision/OCR:      $VISION_MODEL"
 echo "    - Embeddings:      $EMBED_MODEL"
 
 
-# 4. Pull Models
-echo "[*] Pulling models via Ollama (this may take a while)..."
+# 4. Pull Models (only if not already present)
+INSTALLED_MODELS=$(ollama list 2>/dev/null | tail -n +2 | awk '{print $1}')
 
-pull_model() {
-    echo "    > Pulling $1..."
-    ollama pull "$1"
+pull_if_missing() {
+    if echo "$INSTALLED_MODELS" | grep -q "^$1$"; then
+        echo "    [✓] $1 already available"
+    else
+        echo "    > Pulling $1..."
+        ollama pull "$1"
+    fi
 }
 
-pull_model "$REASONING_MODEL"
-pull_model "$TRANSLATOR_MODEL"
-pull_model "$VISION_MODEL"
-pull_model "$EMBED_MODEL"
+pull_if_missing "$REASONING_MODEL"
+pull_if_missing "$TRANSLATOR_MODEL"
+pull_if_missing "$VISION_MODEL"
+pull_if_missing "$EMBED_MODEL"
 
 # 5. Generate Configuration File (if strictly new)
 if [ ! -f "$CONFIG_FILE" ]; then

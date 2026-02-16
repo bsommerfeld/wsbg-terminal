@@ -104,7 +104,6 @@ public final class LauncherMain {
         window.setStatus("Checking environment...");
         window.setDetail(null);
         window.setProgress(-1);
-        SwingUtilities.invokeLater(() -> window.setVisible(true));
 
         EnvironmentSetup setup = new EnvironmentSetup(appDir);
         boolean success = setup.run((phase, detail) -> {

@@ -83,25 +83,24 @@ final class AppLauncher {
 
     /**
      * Collects JavaFX JARs for the current platform onto the module-path.
-     * Includes base API JARs (no classifier) and platform-specific JARs
-     * (e.g. {@code -mac-aarch64.jar}). JARs for other platforms are excluded
-     * to avoid module conflicts.
+     * Includes base API JARs (no classifier) and the exact platform-specific
+     * JARs. Other platforms are excluded to avoid module conflicts.
      */
     private String buildJavaFxModulePath(Path libDir) throws IOException {
-        String osPrefix = detectOsPrefix();
+        String classifier = detectClassifier();
 
         try (Stream<Path> jars = Files.list(libDir)) {
             return jars.filter(p -> {
                         String name = p.getFileName().toString();
                         if (!name.startsWith("javafx-")) return false;
 
-                        // Platform-specific JARs have a classifier after the version
-                        // e.g. javafx-web-25-ea+1-mac-aarch64.jar
                         boolean hasPlatformClassifier = name.contains("-mac") || name.contains("-win") || name.contains("-linux");
                         if (hasPlatformClassifier) {
-                            return name.contains("-" + osPrefix);
+                            // Exact suffix match prevents "mac" from also matching "mac-aarch64".
+                            // Without this, both x86_64 and arm64 JARs land on the module-path
+                            // and JavaFX caches whichever native libs it finds first.
+                            return name.endsWith("-" + classifier + ".jar");
                         }
-                        // Base API JARs (no classifier) are always needed
                         return true;
                     })
                     .map(Path::toString)
@@ -111,14 +110,17 @@ final class AppLauncher {
     }
 
     /**
-     * Detects the OS prefix as used in JavaFX classifier names.
-     * Returns "mac" (matches mac-aarch64, mac-x64), "win", or "linux".
+     * Detects the exact JavaFX classifier for this OS + architecture combo.
+     * Classifiers: mac, mac-aarch64, win, linux, linux-aarch64.
      */
-    private String detectOsPrefix() {
+    private String detectClassifier() {
         String os = System.getProperty("os.name", "").toLowerCase();
-        if (os.contains("mac")) return "mac";
+        String arch = System.getProperty("os.arch", "").toLowerCase();
+        boolean isArm = arch.contains("aarch64") || arch.contains("arm");
+
+        if (os.contains("mac")) return isArm ? "mac-aarch64" : "mac";
         if (os.contains("win")) return "win";
-        return "linux";
+        return isArm ? "linux-aarch64" : "linux";
     }
 
     /**
