@@ -618,75 +618,42 @@ public final class LiquidGlass {
                 GraphicsContext gc = canvas.getGraphicsContext2D();
                 gc.clearRect(0, 0, cw, ch);
 
-                // --- REALISTIC WATER DROP RIPPLES ---
-                // Physically-inspired simulation of capillary waves.
-                // 1. Scales with component size (Search bar vs Button).
-                // 2. Amplitude decays with distance (1/sqrt(r)).
-                // 3. Pure transparent refraction (Highlight/Shadow only).
+                // --- HEAVY & SUBTLE CLICK (SCALED) ---
+                // "Subtil und schwer" - Adapts to component size to avoid "hectic" feel on
+                // small buttons.
                 if (clickTime > 0) {
-                        double age = (nowNano - clickTime) / 1e9; // seconds
-
-                        // Scale physics based on component size.
-                        // Reference size ~200px.
-                        double size = Math.min(cw, ch);
-                        double waveScale = Math.max(0.3, Math.min(1.5, size / 200.0));
-
-                        double duration = 2.0; // Long settling time
+                        double age = (nowNano - clickTime) / 1e9;
+                        double duration = 0.7; // Slightly slower for a calmer feel
 
                         if (age < duration) {
-                                double expansionSpeed = 120.0 * waveScale; // pixels/sec
-                                double wavelength = 22.0 * waveScale; // distance between crests
-                                int rippleCount = 4;
+                                double progress = age / duration;
+                                // Ease out cubic (fast start, slow end)
+                                double ease = 1 - Math.pow(1 - progress, 3);
+
+                                // Scale based on the smaller dimension of the component
+                                double size = Math.min(cw, ch);
+
+                                // Max radius is proportional to the component size (e.g. 45% of width/height)
+                                // This keeps it contained and proportional on small buttons vs large panels.
+                                double maxRadius = Math.max(20.0, size * 0.45);
+                                double currentRadius = ease * maxRadius;
+
+                                // Thickness also scales, but has a minimum so it's visible
+                                double baseThickness = Math.max(6.0, size * 0.15);
+                                double lineWidth = baseThickness * (1 - ease);
+
+                                // "Subtle" opacity
+                                double startOpacity = 0.15;
+                                double opacity = startOpacity * (1 - progress);
+
+                                double localX = cx;
+                                double localY = cy;
 
                                 gc.setGlobalBlendMode(javafx.scene.effect.BlendMode.SRC_OVER);
-
-                                for (int i = 0; i < rippleCount; i++) {
-                                        // Stagger ripples based on wavelength and speed
-                                        double startDelay = i * (wavelength / expansionSpeed) * 0.6;
-                                        double rippleAge = age - startDelay;
-
-                                        if (rippleAge > 0) {
-                                                // Expansion
-                                                double currentRadius = 4 + rippleAge * expansionSpeed; // Start small
-
-                                                // --- ATTENUATION ---
-                                                // 1. Geometric Spreading: Amplitude ~ 1 / sqrt(radius)
-                                                // Normalized so it doesn't blow up at r=0.
-                                                double geoDecay = 1.0 / Math.sqrt(
-                                                                Math.max(1.0, currentRadius / (10.0 * waveScale)));
-
-                                                // 2. Viscous Damping: Exponential decay over time/distance
-                                                double viscousDecay = Math.exp(-rippleAge * 1.5);
-
-                                                // Combined Amplitude
-                                                double amplitude = geoDecay * viscousDecay;
-
-                                                // Stop drawing if too faint
-                                                if (amplitude < 0.05)
-                                                        continue;
-
-                                                double lineWidth = (1.5 + 4.0 * amplitude) * waveScale;
-                                                double opacity = amplitude * 0.7; // Base max opacity 0.7
-
-                                                double localX = cx;
-                                                double localY = cy;
-
-                                                // Shadow Arc (Bottom-Right) - Deep Trough
-                                                gc.setStroke(Color.rgb(0, 0, 0, opacity * 0.6));
-                                                gc.setLineWidth(lineWidth);
-                                                gc.strokeArc(localX - currentRadius, localY - currentRadius,
-                                                                currentRadius * 2, currentRadius * 2,
-                                                                225, 180, javafx.scene.shape.ArcType.OPEN);
-
-                                                // Highlight Arc (Top-Left) - Sparkle Crest
-                                                // Highlights fall off faster than shadows for "sharp" crests
-                                                gc.setStroke(Color.rgb(255, 255, 255, opacity));
-                                                gc.setLineWidth(lineWidth * 0.8);
-                                                gc.strokeArc(localX - currentRadius, localY - currentRadius,
-                                                                currentRadius * 2, currentRadius * 2,
-                                                                45, 180, javafx.scene.shape.ArcType.OPEN);
-                                        }
-                                }
+                                gc.setStroke(Color.rgb(255, 255, 255, opacity));
+                                gc.setLineWidth(lineWidth);
+                                gc.strokeOval(localX - currentRadius, localY - currentRadius,
+                                                currentRadius * 2, currentRadius * 2);
                         }
                 }
 

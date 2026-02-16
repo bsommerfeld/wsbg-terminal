@@ -101,9 +101,16 @@ public class GraphController {
             }
         });
 
+        sidebar.setOnCloseHandler(() -> {
+            graphView.setSelectedThreadId(null);
+            currentSidebarThreadId = null;
+        });
+
         setupLoop();
         eventBus.register(this);
+
         recalculateGraph();
+
     }
 
     private void onThreadClicked(String threadId) {
@@ -118,6 +125,7 @@ public class GraphController {
             Platform.runLater(() -> {
                 currentSidebarThreadId = threadId;
                 sidebar.showThread(pair.getKey(), pair.getValue(), null);
+                graphView.setSelectedThreadId(threadId);
             });
         });
     }

@@ -401,10 +401,19 @@ public class GraphSidebar extends VBox {
         timeline.play();
     }
 
+    private Runnable onCloseHandler;
+
+    public void setOnCloseHandler(Runnable handler) {
+        this.onCloseHandler = handler;
+    }
+
     public void close() {
         if (!isOpen)
             return;
         isOpen = false;
+        if (onCloseHandler != null) {
+            onCloseHandler.run();
+        }
 
         javafx.animation.Timeline timeline = new javafx.animation.Timeline(
                 new javafx.animation.KeyFrame(Duration.ZERO,

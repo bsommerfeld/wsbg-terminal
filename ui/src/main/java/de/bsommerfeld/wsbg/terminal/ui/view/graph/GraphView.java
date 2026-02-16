@@ -59,6 +59,11 @@ public class GraphView extends Pane {
     private boolean validInteraction = false;
     private boolean dragged = false;
     private Set<String> highlightedNodeIds = new HashSet<>();
+    private String selectedThreadId;
+
+    public void setSelectedThreadId(String id) {
+        this.selectedThreadId = id;
+    }
 
     // ... lines 59-224 (no change needed here, context matching is key) ...
     // Note: I will use a larger block to ensure context matching for clampOffset
@@ -613,6 +618,11 @@ public class GraphView extends Pane {
             gc.setGlobalAlpha(dotAlpha);
 
             boolean isHighlighted = highlightedNodeIds.contains(n.id);
+            boolean isSelected = selectedThreadId != null && n.threadId != null && n.threadId.equals(selectedThreadId);
+
+            if (isSelected) {
+                activeRadius *= 1.5; // Make it 50% bigger
+            }
 
             if (isHighlighted) {
                 activeRadius *= 1.8;
@@ -623,6 +633,15 @@ public class GraphView extends Pane {
                 gc.setFill(glow);
                 gc.fillOval(-activeRadius * 1.5, -activeRadius * 1.5, activeRadius * 3, activeRadius * 3);
                 gc.setFill(Color.GOLD);
+            } else if (isSelected) {
+                // Add a subtle glow/ring for the selected node if not search-highlighted
+                RadialGradient selectGlow = new RadialGradient(0, 0, 0, 0, activeRadius * 1.3, false,
+                        CycleMethod.NO_CYCLE,
+                        new Stop(0, Color.web("#FFFFFF", 0.8)), new Stop(1, Color.TRANSPARENT));
+                gc.setFill(selectGlow);
+                gc.fillOval(-activeRadius * 1.3, -activeRadius * 1.3, activeRadius * 2.6, activeRadius * 2.6);
+
+                gc.setFill(n.color != null ? n.color.brighter() : Color.WHITE);
             } else if (n.isCenterNode) {
                 gc.setFill(Color.RED);
             } else {
@@ -774,6 +793,7 @@ public class GraphView extends Pane {
             }
 
             boolean isHighlighted = highlightedNodeIds.contains(n.id);
+            boolean isSelected = selectedThreadId != null && n.threadId != null && n.threadId.equals(selectedThreadId);
 
             // Boost visibility inside magnifier
             gc.setGlobalAlpha(1.0); // Full opacity for "Target" indicators
@@ -787,6 +807,9 @@ public class GraphView extends Pane {
             if (isHighlighted) {
                 gc.setFill(Color.web("#FFD700", 0.6));
                 gc.fillOval(pos[0] - activeR * 1.8, pos[1] - activeR * 1.8, activeR * 3.6, activeR * 3.6);
+            } else if (isSelected) {
+                gc.setFill(Color.web("#FFFFFF", 0.5));
+                gc.fillOval(pos[0] - activeR * 1.6, pos[1] - activeR * 1.6, activeR * 3.2, activeR * 3.2);
             }
 
             // 1. Base Body (Solid Color)
