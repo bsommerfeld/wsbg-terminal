@@ -79,7 +79,8 @@
     -fx-background-radius: 15 15 0 0;
     -fx-border-color: rgba(255, 255, 255, 0.08);
     -fx-border-width: 0 0 1px 0;
-    -fx-padding: 10px 10px 10px 0;
+    -fx-padding: 18px 10px 18px 0;
+    -fx-min-height: 48px;
     -fx-alignment: center-left;
     -fx-effect: null;
     /* Remove shadow on titlebar itself, let shell handle it */
@@ -782,7 +783,10 @@
     /* Recessed but Lighter */
     -fx-background-color: rgba(40, 40, 40, 0.5);
     -fx-background-radius: 100px;
-    -fx-padding: 2px 4px;
+    -fx-padding: 4px 6px;
+    /* Match search bar height for visual consistency */
+    -fx-min-height: 32px;
+    -fx-max-height: 32px;
 
     /* Strong inner shadow for depth */
     -fx-effect: innershadow(gaussian, rgba(0, 0, 0, 0.8), 10, 0, 0, 2);
@@ -795,10 +799,7 @@
     -fx-alignment: center;
 }
 
-.utility-controls-box:hover {
-    -fx-background-color: rgba(60, 60, 60, 0.6);
-    -fx-border-color: transparent transparent rgba(255, 255, 255, 0.2) transparent;
-}
+/* Hover effect removed — Liquid Glass blob highlights controls */
 
 /* Title Bar Search - Chrome/Safari Style */
 .title-search-box {
@@ -813,21 +814,18 @@
     -fx-border-radius: 100px;
     -fx-border-width: 1px;
 
-    -fx-padding: 0 10 0 15;
+    -fx-padding: 0 6 0 0;
     -fx-min-width: 250px;
     -fx-max-width: 400px;
-    -fx-min-height: 28px;
-    -fx-max-height: 28px;
+    -fx-min-height: 32px;
+    -fx-max-height: 32px;
     -fx-cursor: text;
 
     /* Strong inner shadow for depth */
     -fx-effect: innershadow(gaussian, rgba(0, 0, 0, 0.8), 10, 0, 0, 2);
 }
 
-.title-search-box:hover {
-    -fx-background-color: rgba(60, 60, 60, 0.6);
-    -fx-border-color: transparent transparent rgba(255, 255, 255, 0.2) transparent;
-}
+/* Hover effect removed — Liquid Glass blob highlights controls */
 
 .title-search-box:focused-within {
     -fx-background-color: rgba(20, 20, 20, 0.9);
@@ -897,4 +895,208 @@
 .ascii-button:hover .icon-power-active {
     -fx-background-color: #FFD700;
     -fx-effect: dropshadow(gaussian, rgba(255, 215, 0, 0.8), 10, 0, 0, 0);
+}
+
+/* --- Graph Sidebar --- */
+.graph-sidebar {
+    -fx-background-color: #0a0a0a;
+    -fx-border-color: #222;
+    -fx-border-width: 0 0 0 1px;
+}
+
+/* Compact action footer below thread body — visually lighter than title bar controls */
+.sidebar-action-footer {
+    -fx-padding: 4 0 0 0;
+}
+
+.sidebar-compact-controls {
+    -fx-background-color: rgba(40, 40, 40, 0.5);
+    -fx-background-radius: 100px;
+    -fx-padding: 4px 6px;
+    -fx-min-height: 32px;
+    -fx-max-height: 32px;
+    -fx-effect: innershadow(gaussian, rgba(0, 0, 0, 0.8), 10, 0, 0, 2);
+    -fx-border-color: transparent transparent rgba(255, 255, 255, 0.1) transparent;
+    -fx-border-width: 1px;
+    -fx-border-radius: 100px;
+    -fx-alignment: center;
+}
+
+.sidebar-compact-controls:hover {
+    -fx-background-color: rgba(60, 60, 60, 0.6);
+    -fx-border-color: transparent transparent rgba(255, 255, 255, 0.15) transparent;
+}
+
+
+.graph-sidebar-scroll {
+    -fx-background-color: transparent;
+    -fx-background: transparent;
+}
+
+.graph-sidebar-scroll>.viewport {
+    -fx-background-color: transparent;
+}
+
+.graph-sidebar-content {
+    -fx-background-color: transparent;
+}
+
+.graph-sidebar-thread-header {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent transparent #222 transparent;
+    -fx-border-width: 0 0 1px 0;
+}
+
+.graph-sidebar-thread-title {
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #e0e0e0;
+}
+
+.graph-sidebar-meta {
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
+    -fx-font-size: 11px;
+    -fx-text-fill: #666;
+}
+
+.graph-sidebar-body {
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
+    -fx-font-size: 12px;
+    -fx-text-fill: #aaa;
+}
+
+.graph-sidebar-comment {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent transparent #1a1a1a transparent;
+    -fx-border-width: 0 0 1px 0;
+}
+
+.graph-sidebar-comment-author {
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #4488ff;
+}
+
+.graph-sidebar-comment-score {
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
+    -fx-font-size: 10px;
+    -fx-text-fill: #555;
+}
+
+.graph-sidebar-comment-replies {
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
+    -fx-font-size: 10px;
+    -fx-text-fill: #336699;
+}
+
+.graph-sidebar-comment-reply-count {
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
+    -fx-font-size: 10px;
+    -fx-text-fill: #8B6914;
+}
+
+.graph-sidebar-comment-body {
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
+    -fx-font-size: 12px;
+    -fx-text-fill: #ccc;
+}
+
+/* IntelliJ-style indent guide: continuous vertical line spanning child group */
+.graph-sidebar-indent-guide {
+    -fx-border-color: rgba(255, 255, 255, 0.10);
+    -fx-border-width: 0 0 0 1px;
+}
+
+.graph-sidebar-separator {
+    -fx-background-color: #222;
+}
+
+/* Sidebar Close Icon (X) */
+.icon-sidebar-close {
+    -fx-shape: "M256-200l-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z";
+    -fx-background-color: #666666;
+    /* Smaller than other icons to match its visual weight — X fills its
+       bounding box fully, unlike globe/summarize with internal whitespace. */
+    -fx-min-width: 10px;
+    -fx-min-height: 10px;
+    -fx-max-width: 10px;
+    -fx-max-height: 10px;
+    -fx-scale-shape: true;
+}
+
+.ascii-button:hover .icon-sidebar-close {
+    -fx-background-color: #e0e0e0;
+}
+
+/* Summarize Icon */
+.icon-summarize {
+    -fx-shape: "M348.5-611.5Q360-623 360-640t-11.5-28.5Q337-680 320-680t-28.5 11.5Q280-657 280-640t11.5 28.5Q303-600 320-600t28.5-11.5Zm0 160Q360-463 360-480t-11.5-28.5Q337-520 320-520t-28.5 11.5Q280-497 280-480t11.5 28.5Q303-440 320-440t28.5-11.5Zm0 160Q360-303 360-320t-11.5-28.5Q337-360 320-360t-28.5 11.5Q280-337 280-320t11.5 28.5Q303-280 320-280t28.5-11.5ZM200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h440l200 200v440q0 33-23.5 56.5T760-120H200Zm0-80h560v-400H600v-160H200v560Zm0-560v160-160 560-560Z";
+    -fx-background-color: #666666;
+    -fx-min-width: 16px;
+    -fx-min-height: 16px;
+    -fx-max-width: 16px;
+    -fx-max-height: 16px;
+    -fx-scale-shape: true;
+}
+
+.ascii-button:hover .icon-summarize {
+    -fx-background-color: #e0e0e0;
+}
+
+/* Globe Icon (open in browser) */
+.icon-globe {
+    -fx-shape: "M480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-7-.5-14.5T799-507q-5 29-27 48t-52 19h-80q-33 0-56.5-23.5T560-520v-40H400v-80q0-33 23.5-56.5T480-720h40q0-23 12.5-40.5T563-789q-20-5-40.5-8t-42.5-3q-134 0-227 93t-93 227h200q66 0 113 47t47 113v40H400v110q20 5 39.5 7.5T480-160Z";
+    -fx-background-color: #666666;
+    -fx-min-width: 14px;
+    -fx-min-height: 14px;
+    -fx-max-width: 14px;
+    -fx-max-height: 14px;
+    -fx-scale-shape: true;
+}
+
+.ascii-button:hover .icon-globe {
+    -fx-background-color: #e0e0e0;
+}
+
+/* Small image icon for image count indicator in sidebar */
+.icon-image-small {
+    -fx-shape: "M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm40-80h480L570-480 450-320l-90-120-120 160Zm-40 80v-560 560Z";
+    -fx-background-color: #555555;
+    -fx-min-width: 11px;
+    -fx-min-height: 11px;
+    -fx-max-width: 11px;
+    -fx-max-height: 11px;
+    -fx-scale-shape: true;
+}
+
+/* Terminal Blink Animation */
+@keyframes terminal-blink {
+    0% {
+        -fx-opacity: 1.0;
+    }
+
+    50% {
+        -fx-opacity: 0.2;
+    }
+
+    100% {
+        -fx-opacity: 1.0;
+    }
+}
+
+.icon-terminal-blink {
+    -fx-background-color: #ffd700 !important;
+    -fx-effect: dropshadow(gaussian, rgba(255, 215, 0, 0.6), 8, 0, 0, 0);
+}
+
+/* Liquid Glass — applied/removed dynamically by LiquidGlass.java.
+   Only cursor hiding. No -fx-effect: null — the Java effectProperty
+   listener handles CSS overwrites. Setting null here caused a
+   per-frame fight with the listener (CSS pulse → null → listener
+   re-chains → next pulse → null → ...). */
+.liquid-glass-hover,
+.liquid-glass-hover * {
+    -fx-cursor: none;
 }

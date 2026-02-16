@@ -1,7 +1,12 @@
 #!/bin/bash
+set -e
 
 # Navigate to project root relative to this script
 cd "$(dirname "$0")/.."
 
-echo "Starting WSBG Terminal..."
-mvn clean javafx:run -pl ui
+echo "Building WSBG Terminal (PROD)..."
+export APP_MODE=PROD
+mvn clean install -DskipTests
+
+echo "Starting WSBG Terminal UI (PROD MODE)..."
+mvn -pl ui javafx:run

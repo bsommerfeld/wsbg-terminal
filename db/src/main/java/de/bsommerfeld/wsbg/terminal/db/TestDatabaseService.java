@@ -45,13 +45,22 @@ public class TestDatabaseService implements DatabaseService {
     public void saveThread(RedditThread thread) {
         LOG.debug("[TEST] Stub saveThread: {}", thread.getId());
         memoryStore.put(thread.getId(), thread);
+
+        // Eagerly generate comments so getAllComments() returns them on the
+        // next graph refresh, instead of waiting for a lazy getCommentsForThread call.
+        if (!commentStore.containsKey(thread.getId())) {
+            int count = 10 + (int) (Math.random() * 20);
+            List<RedditComment> generated = de.bsommerfeld.wsbg.terminal.core.util.TestDataGenerator
+                    .generateCommentsRecursive(thread.getId(), count);
+            commentStore.put(thread.getId(), generated);
+        }
     }
 
     @Override
     public void saveThreadsBatch(List<RedditThread> threads) {
         LOG.debug("[TEST] Stub saveThreadsBatch: {} items", threads.size());
         for (RedditThread t : threads) {
-            memoryStore.put(t.getId(), t);
+            saveThread(t);
         }
     }
 

@@ -59,7 +59,6 @@ public class TestDataGenerator {
         String text = "Lorem ipsum crypto stonks hodl based. " + title + ". Not financial advice.";
 
         long now = System.currentTimeMillis() / 1000;
-        long created = now - RND.nextInt(3600 * 24); // Last 24h
 
         // Realistic metrics
         int score = RND.nextInt(5000);
@@ -69,14 +68,25 @@ public class TestDataGenerator {
         // Random Image (Cat placeholder or null)
         String image = (RND.nextBoolean()) ? "https://placekitten.com/500/300" : null;
 
-        return new RedditThread(id, sub, title, author, text, created, "/r/" + sub + "/comments/" + id, score, ratio,
-                comments, created, image);
+        return new RedditThread(id, sub, title, author, text, now, "/r/" + sub + "/comments/" + id, score, ratio,
+                comments, now, image);
     }
 
+    /**
+     * Generates a batch of threads. Uses time spread over the last 24h
+     * to simulate a pre-existing history. New threads generated at runtime
+     * via single generateThread() calls always use the current timestamp.
+     */
     public static List<RedditThread> generateThreads(int count) {
+        long now = System.currentTimeMillis() / 1000;
         List<RedditThread> list = new ArrayList<>();
         for (int i = 0; i < count; i++) {
-            list.add(generateThread());
+            RedditThread t = generateThread();
+            // Spread initial batch across last 24h for realistic history
+            long spread = now - (long) ((i / (double) count) * 3600 * 24);
+            list.add(new RedditThread(t.getId(), t.getSubreddit(), t.getTitle(), t.getAuthor(),
+                    t.getTextContent(), spread, t.getPermalink(), t.getScore(), t.getUpvoteRatio(),
+                    t.getNumComments(), spread, t.getImageUrl()));
         }
         // Sort by created desc
         list.sort((a, b) -> Long.compare(b.getCreatedUtc(), a.getCreatedUtc()));
@@ -105,7 +115,22 @@ public class TestDataGenerator {
                 now - RND.nextInt(3600),
                 now,
                 now,
-                Collections.emptyList());
+                generateRandomImageUrls());
+    }
+
+    private static List<String> generateRandomImageUrls() {
+        // ~30% chance of having images, 1-4 images when present
+        if (RND.nextInt(10) < 3) {
+            int count = 1 + RND.nextInt(4);
+            List<String> urls = new ArrayList<>();
+            for (int i = 0; i < count; i++) {
+                int w = 200 + RND.nextInt(600);
+                int h = 200 + RND.nextInt(400);
+                urls.add("https://placekitten.com/" + w + "/" + h);
+            }
+            return urls;
+        }
+        return Collections.emptyList();
     }
 
     /**

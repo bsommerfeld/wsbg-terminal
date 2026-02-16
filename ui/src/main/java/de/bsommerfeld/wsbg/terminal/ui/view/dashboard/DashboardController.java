@@ -150,8 +150,17 @@ public class DashboardController {
                     ".bearish { color: #ff5555; background-color: rgba(255, 85, 85, 0.15); padding: 2px 0px; border-radius: 4px; }"
                     +
                     ".interactive-report { cursor: pointer !important; display: inline-block; }" +
-                    ".interactive-report:hover { background-color: rgba(255, 255, 255, 0.1); border-radius: 4px; }"
+
+                    // Liquid Glass hover for EILMELDUNG entries
+                    ".eilmeldung { position: relative; overflow: hidden; border-radius: 8px; padding: 6px 10px; margin: 2px -10px; transition: transform 0.35s cubic-bezier(0.2, 0.9, 0.1, 1), box-shadow 0.35s cubic-bezier(0.2, 0.9, 0.1, 1), background-color 0.35s ease; }"
                     +
+                    ".eilmeldung::before { content: ''; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; background: radial-gradient(ellipse at 30% 30%, rgba(255,255,255,0.12), transparent 60%); opacity: 0; transition: opacity 0.4s ease; pointer-events: none; }"
+                    +
+                    ".eilmeldung:hover { transform: scale(1.025) translateY(-1px); background-color: rgba(255, 159, 0, 0.06); box-shadow: 0 4px 24px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.08) inset, 0 1px 0 rgba(255,255,255,0.06) inset; cursor: pointer; }"
+                    +
+                    ".eilmeldung:hover::before { opacity: 1; }" +
+                    ".eilmeldung:hover .content { color: #f0f0f0; }" +
+                    ".eilmeldung:active { transform: scale(0.985); transition-duration: 0.1s; }" +
                     ".search-highlight { background-color: #ffd700; color: #000000; font-weight: bold; }" +
 
                     // Passive Agent Priority Colors
@@ -678,14 +687,6 @@ public class DashboardController {
                 html.append(
                         "<div style='display: flex; flex-direction: column; align-items: flex-start; padding: 10px 0 20px 0;'>");
 
-                // 1. The Prompt (Context anchor)
-                // Use a unique ID if needed or just styling
-                html.append(
-                        "<div style='font-family: \"Fira Code\", monospace; font-size: 14px; margin-bottom: 15px; width: 100%; text-align: left;'>");
-                html.append(
-                        "<span style='color: #50fa7b; font-weight: bold;'>root@wsbg-term</span>:<span style='color: #bd93f9;'>~</span>$ <span style='color: #f8f8f2;'>./init_sequence.sh --visual</span>");
-                html.append("</div>");
-
                 // 2. The Banner Output (Split by line and animate)
                 String[] lines = styledContent.split("\n");
                 for (int i = 0; i < lines.length; i++) {
@@ -701,14 +702,6 @@ public class DashboardController {
                     html.append(line);
                     html.append("</div>");
                 }
-
-                // 3. The Result / Anchor
-                String footerDelay = ((lines.length * 80) + 200) + "ms";
-                html.append(
-                        "<div style='margin-top: 15px; font-family: \"Fira Code\", monospace; font-size: 14px; color: #6272a4; opacity: 0; animation: fadeInUp 0.5s ease-out forwards; animation-delay: "
-                                + footerDelay + ";'>");
-                html.append("[ <span style='color: #50fa7b;'>OK</span> ] Core systems loaded successfully.");
-                html.append("</div>");
 
                 html.append("</div>");
 
@@ -916,10 +909,13 @@ public class DashboardController {
                     "<span class=\"log-source " + sourceClass + "\">[" + source + "]:</span> " +
                     "<span class=\"content\">" + formattedBody + "</span>";
 
-            String extraClass = "log-type-" + sourceClass +
-                    (sourceClass.contains("CLEANUP") || sourceClass.contains("REDDIT") || sourceClass.contains("SYSTEM")
-                            ? " log-dimmed"
-                            : "");
+            boolean isEilmeldung = sourceClass.contains("passive");
+            String extraClass = "log-type-" + sourceClass
+                    + (sourceClass.contains("CLEANUP") || sourceClass.contains("REDDIT")
+                            || sourceClass.contains("SYSTEM")
+                                    ? " log-dimmed"
+                                    : "")
+                    + (isEilmeldung ? " eilmeldung" : "");
 
             webEngine.executeScript("appendLog('" + escapeJs(html) + "', '" + extraClass + "')");
         });

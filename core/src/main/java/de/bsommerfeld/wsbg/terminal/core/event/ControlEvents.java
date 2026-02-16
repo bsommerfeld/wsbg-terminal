@@ -73,4 +73,13 @@ public class ControlEvents {
         public ToggleGraphViewEvent() {
         }
     }
+
+    /** Signals the terminal button in the titlebar to blink, drawing attention. */
+    public static class TerminalBlinkEvent {
+        public final boolean active;
+
+        public TerminalBlinkEvent(boolean active) {
+            this.active = active;
+        }
+    }
 }

@@ -15,6 +15,9 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import javafx.scene.layout.Pane;
+import javafx.scene.layout.Background;
+import javafx.scene.layout.BackgroundFill;
+import javafx.scene.layout.CornerRadii;
 import de.bsommerfeld.wsbg.terminal.core.event.ControlEvents;
 import de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.SearchEvent;
 import de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.SearchNextEvent;
@@ -130,20 +133,32 @@ public class WsbgTerminalApp extends Application {
             Platform.runLater(() -> {
                 try {
                     // --- 1. Create Search Box ---
-                    HBox searchBox = new HBox();
+                    HBox searchBox = new HBox(0); // Zero spacing
+                    // searchBox.setPadding(new javafx.geometry.Insets(0)); // Handled by CSS now
                     searchBox.getStyleClass().add("title-search-box");
                     searchBox.setAlignment(Pos.CENTER_LEFT);
+
+                    // STOP EVENT BUBBLING: Prevent click/drag on search bar from triggering Window
+                    // Drag
+                    // Using addEventHandler to coexist with LiquidGlass's handlers
+                    searchBox.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_PRESSED,
+                            javafx.scene.input.MouseEvent::consume);
+                    searchBox.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_DRAGGED,
+                            javafx.scene.input.MouseEvent::consume);
 
                     TextField searchField = new TextField();
                     ResourceBundle bundle = ResourceBundle.getBundle("i18n.messages");
                     searchField.setPromptText(bundle.getString("ui.search.prompt"));
                     searchField.getStyleClass().add("title-search-field");
+                    searchField.setStyle("-fx-background-insets: 0; -fx-padding: 0 0 0 10;"); // Zero insets, slight
+                                                                                              // left pad for text
 
                     HBox.setHgrow(searchField, Priority.ALWAYS);
 
                     Button clearSearchBtn = new Button("x");
                     clearSearchBtn.getStyleClass().add("title-search-clear-btn");
                     clearSearchBtn.setVisible(false);
+                    clearSearchBtn.managedProperty().bind(clearSearchBtn.visibleProperty());
 
                     // Search Logic
                     searchField.textProperty().addListener((obs, oldVal, newVal) -> {
@@ -163,6 +178,10 @@ public class WsbgTerminalApp extends Application {
                         searchField.clear();
                     });
 
+                    // Mark clear button as invisible to LiquidGlass snap logic
+                    // so the blob fills the entire searchBox instead of
+                    // snapping to this tiny internal control.
+                    // clearSearchBtn.getProperties().put("liquid-glass-ignore", Boolean.TRUE);
                     searchBox.getChildren().addAll(searchField, clearSearchBtn);
 
                     // --- 2. Locate and Clear Title Bar ---
@@ -174,11 +193,23 @@ public class WsbgTerminalApp extends Application {
                         // NUCLEAR OPTION: Clear everything to remove "muddy" legacy controls
                         bar.getChildren().clear();
 
+                        // DISABLE LIBRARY DRAG: Remove any default handlers that might be ignoring
+                        // consume()
+                        // or triggering on Cursor state. We will implement our own controlled drag.
+                        bar.setOnMousePressed(null);
+                        bar.setOnMouseDragged(null);
+
                         // --- 3. Create Custom Controls (Unconditionally) ---
                         boolean isMac = System.getProperty("os.name").toLowerCase().contains("mac");
                         HBox customControls = new HBox(8);
                         customControls.setAlignment(Pos.CENTER);
                         customControls.getStyleClass().addAll("macos-controls-box", isMac ? "os-mac" : "os-win-linux");
+
+                        // STOP EVENT BUBBLING: Prevent Window Drag on traffic lights
+                        customControls.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_PRESSED,
+                                javafx.scene.input.MouseEvent::consume);
+                        customControls.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_DRAGGED,
+                                javafx.scene.input.MouseEvent::consume);
 
                         Function<String, Button> createBtn = (type) -> {
                             Button btn = new Button();
@@ -220,7 +251,9 @@ public class WsbgTerminalApp extends Application {
 
                         HBox mainLayout = new HBox();
                         mainLayout.setAlignment(Pos.CENTER);
-                        mainLayout.setPickOnBounds(false);
+                        mainLayout.setPickOnBounds(true); // Must be true to capture clicks on empty space
+                        mainLayout.setBackground(
+                                new Background(new BackgroundFill(Color.TRANSPARENT, CornerRadii.EMPTY, Insets.EMPTY)));
                         // Bind directly to bar size
                         mainLayout.prefWidthProperty().bind(bar.widthProperty());
                         mainLayout.prefHeightProperty().bind(bar.heightProperty());
@@ -266,6 +299,8 @@ public class WsbgTerminalApp extends Application {
                                 icon.getStyleClass().clear();
                                 if (isGraphActive) {
                                     icon.getStyleClass().add("icon-graph");
+                                    // Stop blink when switching to terminal
+                                    stopTerminalBlink();
                                 } else {
                                     icon.getStyleClass().add("icon-view-terminal");
                                 }
@@ -303,36 +338,53 @@ public class WsbgTerminalApp extends Application {
                             return btn;
                         };
 
-                        // Create Utility Controls Wrapper (Broom + Toggle + Power)
+                        // Utility Controls (state buttons only: Power + Graph Toggle)
                         HBox utilityControls = new HBox(0);
                         utilityControls.getStyleClass().add("utility-controls-box");
                         utilityControls.setAlignment(Pos.CENTER);
 
+                        // STOP EVENT BUBBLING
+                        utilityControls.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_PRESSED,
+                                javafx.scene.input.MouseEvent::consume);
+                        utilityControls.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_DRAGGED,
+                                javafx.scene.input.MouseEvent::consume);
+
                         Button broomBtn = createBroom.apply(null);
                         Button graphBtn = createGraphToggle.apply(null);
+                        this.graphToggleButton = graphBtn;
                         Button powerBtn = createPowerBtn.apply(null);
-                        // Button toggleBtn = createToggleBtn.apply(injector); // REMOVED
 
-                        utilityControls.getChildren().addAll(powerBtn, graphBtn, broomBtn);
+                        utilityControls.getChildren().addAll(powerBtn, graphBtn);
+
+                        // Broom in its own container, placed next to traffic lights
+                        HBox broomContainer = new HBox(0);
+                        broomContainer.getStyleClass().add("utility-controls-box");
+                        broomContainer.setAlignment(Pos.CENTER);
+                        // STOP EVENT BUBBLING
+                        broomContainer.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_PRESSED,
+                                javafx.scene.input.MouseEvent::consume);
+                        broomContainer.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_DRAGGED,
+                                javafx.scene.input.MouseEvent::consume);
+                        broomContainer.getChildren().add(broomBtn);
 
                         if (isMac) {
-                            // Mac: Traffic Lights Left (with Margin), Utilities Right
-                            HBox leftWrapper = new HBox(customControls);
-                            HBox.setMargin(leftWrapper, new Insets(0, 0, 0, 13)); // Standard macOS left margin
+                            // Mac: [Traffic Lights + Broom] Left, [State Buttons] Right
+                            HBox leftWrapper = new HBox(16, customControls, broomContainer);
+                            leftWrapper.setAlignment(Pos.CENTER_LEFT);
+                            HBox.setMargin(leftWrapper, new Insets(0, 0, 0, 13));
                             leftContainer.getChildren().add(leftWrapper);
 
-                            // Right margin for window edge - reduced
                             HBox.setMargin(utilityControls, new Insets(0, 4, 0, 0));
                             rightContainer.getChildren().add(utilityControls);
 
                         } else {
-                            // Non-Mac: Utilities Left, Traffic Lights Right
-
-                            // Left margin
+                            // Non-Mac: [State Buttons] Left, [Broom + Traffic Lights] Right
                             HBox.setMargin(utilityControls, new Insets(0, 0, 0, 10));
                             leftContainer.getChildren().add(utilityControls);
 
-                            rightContainer.getChildren().add(customControls);
+                            HBox rightWrapper = new HBox(6, broomContainer, customControls);
+                            rightWrapper.setAlignment(Pos.CENTER_RIGHT);
+                            rightContainer.getChildren().add(rightWrapper);
                         }
 
                         // SEARCH CONTAINER (Center, static width)
@@ -342,8 +394,65 @@ public class WsbgTerminalApp extends Application {
                         // ASSEMBLE: [Left(Grow)] [Search] [Right(Grow)]
                         mainLayout.getChildren().addAll(leftContainer, searchBox, rightContainer);
 
-                        // Add to Bar
-                        bar.getChildren().add(mainLayout);
+                        // iPadOS-style cursor magnetism on interactive containers
+                        de.bsommerfeld.wsbg.terminal.ui.view.LiquidGlass.apply(broomContainer);
+                        de.bsommerfeld.wsbg.terminal.ui.view.LiquidGlass.apply(utilityControls);
+                        de.bsommerfeld.wsbg.terminal.ui.view.LiquidGlass.apply(searchBox);
+
+                        // MANUAL WINDOW DRAG: Re-implement dragging on the layout container.
+                        // Since child controls (searchBox, etc) CONSUME events, this handler
+                        // will only run when clicking the empty space between controls.
+                        final double[] dragDelta = new double[2];
+                        mainLayout.setOnMousePressed(event -> {
+                            // Only drag if clicking the container itself or spacing
+                            if (event.getTarget() == mainLayout || event.getTarget() == leftContainer
+                                    || event.getTarget() == rightContainer) {
+                                dragDelta[0] = primaryStage.getX() - event.getScreenX();
+                                dragDelta[1] = primaryStage.getY() - event.getScreenY();
+                                // CONSUME to prevent bubbling to 'bar' (which triggers Library cursor logic)
+                                event.consume();
+                            }
+                        });
+                        mainLayout.setOnMouseDragged(event -> {
+                            if (event.getTarget() == mainLayout || event.getTarget() == leftContainer
+                                    || event.getTarget() == rightContainer) {
+                                primaryStage.setX(event.getScreenX() + dragDelta[0]);
+                                primaryStage.setY(event.getScreenY() + dragDelta[1]);
+                                // CONSUME to prevent bubbling
+                                event.consume();
+                            }
+                        });
+
+                        // ULTIMATE BYPASS STRATEGY:
+                        // 1. Make the original TitleBar a "Ghost": Invisible (but reserving space) and
+                        // MouseTransparent.
+                        bar.setMouseTransparent(true);
+                        bar.setOpacity(0); // Invisible but takes up layout space
+
+                        // 2. Inject mainLayout into an Overlay Layer on top of the WindowShell root.
+                        // This completely decouples our controls from the Library's TitleBar logic.
+                        Parent sceneRoot = primaryStage.getScene().getRoot();
+                        if (sceneRoot instanceof javafx.scene.layout.StackPane shellRoot) {
+                            // Container to position mainLayout at the top
+                            javafx.scene.layout.VBox overlayContainer = new javafx.scene.layout.VBox();
+                            overlayContainer.setPickOnBounds(false); // Let clicks pass through empty areas below
+                                                                     // titlebar
+                            overlayContainer.setAlignment(Pos.TOP_CENTER);
+
+                            // mainLayout should capture its own events (set in definition)
+                            // and allow pass-through for dragging where defined.
+                            overlayContainer.getChildren().add(mainLayout);
+
+                            // Ensure overlay is on top
+                            shellRoot.getChildren().add(overlayContainer);
+                        } else {
+                            // Fallback if structure isn't as expected (unlikely with this library)
+                            LOG.warn("Could not find Shell Root for Overlay. Falling back to direct injection.");
+                            bar.setMouseTransparent(false);
+                            bar.setOpacity(1);
+                            bar.getChildren().add(mainLayout);
+                        }
+
                         primaryStage.setTitle("");
 
                     } else {
@@ -353,6 +462,11 @@ public class WsbgTerminalApp extends Application {
                     LOG.error("Failed to inject search bar", e);
                 }
             });
+
+            // "Upside Down" Fix Execution:
+            // The platform runLater above does the layout. We need to modify how mainLayout
+            // is added.
+            // Rewriting the lambda body to implement the Overlay Strategy.
 
             LOG.info("WSBG-TERMINAL BEREIT. (MODE: {})",
                     de.bsommerfeld.wsbg.terminal.core.config.ApplicationMode.get());
@@ -407,7 +521,46 @@ public class WsbgTerminalApp extends Application {
         // Logic removed
     }
 
-    private void updateSidebarIconHighlight() {
-        // Logic removed - Button doesn't exist anymore
+    // --- Terminal Blink (Triggered when graph sidebar fires AI analysis) ---
+    private Button graphToggleButton;
+    private javafx.animation.FadeTransition terminalBlinkAnim;
+
+    @com.google.common.eventbus.Subscribe
+    public void onTerminalBlink(
+            de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.TerminalBlinkEvent event) {
+        javafx.application.Platform.runLater(() -> {
+            if (event.active) {
+                startTerminalBlink();
+            } else {
+                stopTerminalBlink();
+            }
+        });
+    }
+
+    private void startTerminalBlink() {
+        if (graphToggleButton == null)
+            return;
+        graphToggleButton.getGraphic().getStyleClass().add("icon-terminal-blink");
+
+        if (terminalBlinkAnim != null)
+            terminalBlinkAnim.stop();
+        terminalBlinkAnim = new javafx.animation.FadeTransition(
+                javafx.util.Duration.millis(500), graphToggleButton);
+        terminalBlinkAnim.setFromValue(1.0);
+        terminalBlinkAnim.setToValue(0.3);
+        terminalBlinkAnim.setCycleCount(javafx.animation.Animation.INDEFINITE);
+        terminalBlinkAnim.setAutoReverse(true);
+        terminalBlinkAnim.play();
+    }
+
+    private void stopTerminalBlink() {
+        if (terminalBlinkAnim != null) {
+            terminalBlinkAnim.stop();
+            terminalBlinkAnim = null;
+        }
+        if (graphToggleButton != null) {
+            graphToggleButton.setOpacity(1.0);
+            graphToggleButton.getGraphic().getStyleClass().remove("icon-terminal-blink");
+        }
     }
 }
