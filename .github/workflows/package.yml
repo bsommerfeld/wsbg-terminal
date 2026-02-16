@@ -15,10 +15,13 @@ jobs:
         include:
           - os: windows-latest
             jpackage-type: msi
+            icon-file: .assets/icons/AppIcon.ico
           - os: macos-latest
             jpackage-type: dmg
+            icon-file: .assets/icons/AppIcon.icns
           - os: ubuntu-latest
             jpackage-type: deb
+            icon-file: .assets/icons/AppIcon.png
 
     runs-on: ${{ matrix.os }}
     name: Build ${{ matrix.jpackage-type }}
@@ -56,6 +59,7 @@ jobs:
             --main-jar updater-launcher-0.1.jar \
             --main-class de.bsommerfeld.updater.launcher.LauncherMain \
             --java-options "--enable-preview" \
+            --icon ${{ matrix.icon-file }} \
             --dest jpackage-output
 
       - name: Upload Installer to Release

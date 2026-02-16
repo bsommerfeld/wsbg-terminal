@@ -103,6 +103,8 @@ public class WsbgTerminalApp extends Application {
     public void start(Stage primaryStage) {
         LOG.info("Starting UI...");
         primaryStage.setTitle("WSBG TERMINAL");
+        primaryStage.getIcons().add(new javafx.scene.image.Image(
+                getClass().getResourceAsStream("/images/app-icon.png")));
 
         try {
             // Load FXML

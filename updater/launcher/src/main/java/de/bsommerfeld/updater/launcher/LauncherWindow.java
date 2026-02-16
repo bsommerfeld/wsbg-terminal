@@ -44,6 +44,11 @@ final class LauncherWindow extends JFrame {
         setAlwaysOnTop(true);
         setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
 
+        java.net.URL iconUrl = getClass().getResource("/images/app-icon.png");
+        if (iconUrl != null) {
+            setIconImage(new ImageIcon(iconUrl).getImage());
+        }
+
         setShape(new RoundRectangle2D.Double(0, 0, WIDTH, HEIGHT, 16, 16));
 
         JPanel root = new JPanel(new BorderLayout()) {
