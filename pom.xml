@@ -16,6 +16,9 @@
 
         <module>agent</module>
         <module>ui</module>
+
+        <module>tinyupdate</module>
+        <module>launcher</module>
     </modules>
 
     <properties>

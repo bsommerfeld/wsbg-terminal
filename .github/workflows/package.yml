@@ -1,0 +1,68 @@
+name: Package Native Launcher
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  package-launcher:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            jpackage-type: msi
+            artifact-name: wsbg-terminal-launcher.msi
+          - os: macos-latest
+            jpackage-type: dmg
+            artifact-name: wsbg-terminal-launcher.dmg
+          - os: ubuntu-latest
+            jpackage-type: deb
+            artifact-name: wsbg-terminal-launcher.deb
+
+    runs-on: ${{ matrix.os }}
+    name: Build ${{ matrix.jpackage-type }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: 'zulu'
+          cache: maven
+
+      - name: Build Launcher JAR
+        run: mvn clean package -pl tinyupdate/launcher -am -DskipTests
+
+      - name: Create JPackage input directory
+        shell: bash
+        run: |
+          mkdir -p jpackage-input
+          cp tinyupdate/launcher/target/tinyupdate-launcher-*.jar jpackage-input/
+
+      - name: Package with JPackage
+        shell: bash
+        run: |
+          jpackage \
+            --type ${{ matrix.jpackage-type }} \
+            --name "WSBG Terminal" \
+            --app-version "${GITHUB_REF_NAME#v}" \
+            --vendor "bsommerfeld" \
+            --description "WSBG Terminal Launcher" \
+            --input jpackage-input \
+            --main-jar tinyupdate-launcher-0.1.jar \
+            --main-class de.bsommerfeld.tinyupdate.launcher.LauncherMain \
+            --java-options "--enable-preview" \
+            --dest jpackage-output
+
+      - name: Upload Installer to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: jpackage-output/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
