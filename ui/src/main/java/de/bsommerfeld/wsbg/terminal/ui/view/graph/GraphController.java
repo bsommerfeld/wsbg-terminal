@@ -550,9 +550,7 @@ public class GraphController {
 
                 try {
                     // Just render the current state.
-                    // The simulation list is thread-safe (synchronizedList),
-                    // and GraphView handles snapshotting internally.
-                    graphView.render(simulation.getNodes(), simulation.getEdges());
+                    graphView.render();
 
                 } catch (Exception ex) {
                     System.err.println("[GRAPH-RENDER-ERROR]: " + ex.getMessage());
@@ -578,9 +576,18 @@ public class GraphController {
                     // This is CPU intensive and now off the UI thread!
                     simulation.tick();
 
+                    // Snapshot and Push to UI (Zero Blocking)
+                    List<Node> safeNodes;
+                    List<Edge> safeEdges;
+                    synchronized (simulation.getNodes()) {
+                        safeNodes = new ArrayList<>(simulation.getNodes());
+                    }
+                    synchronized (simulation.getEdges()) {
+                        safeEdges = new ArrayList<>(simulation.getEdges());
+                    }
+                    graphView.setRenderData(safeNodes, safeEdges);
+
                     // Throttle to ~60Hz (approx 16ms) to save CPU
-                    // We can go higher (e.g. 10ms) for smoother physics if needed,
-                    // but 16ms is standard good practice.
                     long end = System.nanoTime();
                     long durationMs = (end - start) / 1_000_000;
                     long wait = 16 - durationMs;

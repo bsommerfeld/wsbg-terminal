@@ -60,6 +60,21 @@ public class GraphView extends Pane {
     private boolean dragged = false;
     private Set<String> highlightedNodeIds = new HashSet<>();
     private String selectedThreadId;
+    private List<Node> nodesRefInteraction;
+
+    // Render State (Thread-Safe Snapshot)
+    private static class RenderState {
+        final List<Node> nodes;
+        final List<Edge> edges;
+
+        RenderState(List<Node> nodes, List<Edge> edges) {
+            this.nodes = nodes;
+            this.edges = edges;
+        }
+    }
+
+    private final java.util.concurrent.atomic.AtomicReference<RenderState> renderState = new java.util.concurrent.atomic.AtomicReference<>(
+            new RenderState(new ArrayList<>(), new ArrayList<>()));
 
     public void setSelectedThreadId(String id) {
         this.selectedThreadId = id;
@@ -71,8 +86,8 @@ public class GraphView extends Pane {
 
     // I'll target the block containing clampOffset and updateZoomLimits directly.
 
-    private List<Node> nodesRef;
-    private List<Edge> edgesRef;
+    // private List<Node> nodesRef; // Removed
+    // private List<Edge> edgesRef; // Removed
     private Consumer<String> threadClickHandler;
 
     // Mouse position for magnifier (screen coordinates).
@@ -192,7 +207,7 @@ public class GraphView extends Pane {
      * and fires the handler with that threadId. Ignores the center node.
      */
     private void handleMagnifierClick() {
-        if (nodesRef == null)
+        if (nodesRefInteraction == null)
             return;
 
         double w = getWidth(), h = getHeight();
@@ -210,15 +225,15 @@ public class GraphView extends Pane {
 
         // Count nodes per thread inside the lens
         Map<String, Integer> threadHits = new java.util.HashMap<>();
-        synchronized (nodesRef) {
-            for (Node n : nodesRef) {
-                if (n.isCenterNode || n.threadId == null)
-                    continue;
-                double dx = n.x - worldX;
-                double dy = n.y - worldY;
-                if (dx * dx + dy * dy <= worldRadiusSq) {
-                    threadHits.merge(n.threadId, 1, Integer::sum);
-                }
+
+        // No Sync needed on snapshot
+        for (Node n : nodesRefInteraction) {
+            if (n.isCenterNode || n.threadId == null)
+                continue;
+            double dx = n.x - worldX;
+            double dy = n.y - worldY;
+            if (dx * dx + dy * dy <= worldRadiusSq) {
+                threadHits.merge(n.threadId, 1, Integer::sum);
             }
         }
 
@@ -297,11 +312,16 @@ public class GraphView extends Pane {
     }
 
     public void setNodes(List<Node> nodes) {
-        this.nodesRef = nodes;
-        // Sync here because setNodes presumably takes the live list
+        // Compatibility: snapshot and set
+        List<Node> safeNodes;
         synchronized (nodes) {
-            updateZoomLimits(nodes);
+            safeNodes = new ArrayList<>(nodes);
         }
+        setRenderData(safeNodes, new ArrayList<>());
+    }
+
+    public void setRenderData(List<Node> safeNodes, List<Edge> safeEdges) {
+        renderState.set(new RenderState(safeNodes, safeEdges));
     }
 
     private void updateZoomLimits(List<Node> currentNodes) {
@@ -368,10 +388,8 @@ public class GraphView extends Pane {
     }
 
     private void centerView() {
-        if (nodesRef != null) {
-            synchronized (nodesRef) {
-                updateZoomLimits(nodesRef);
-            }
+        if (nodesRefInteraction != null) {
+            updateZoomLimits(nodesRefInteraction);
         } else {
             updateZoomLimits(null);
         }
@@ -515,19 +533,14 @@ public class GraphView extends Pane {
         return new double[] { dx, dy };
     }
 
-    public void render(List<Node> nodes, List<Edge> edges) {
-        // Defines snapshots for thread-safe rendering without blocking simulation
-        List<Node> nodesSnapshot;
-        synchronized (nodes) {
-            nodesSnapshot = new ArrayList<>(nodes);
-        }
-        List<Edge> edgesSnapshot;
-        synchronized (edges) {
-            edgesSnapshot = new ArrayList<>(edges);
-        }
+    public void render() {
+        // Atomic Read - No Blocking
+        RenderState state = renderState.get();
+        List<Node> nodesSnapshot = state.nodes;
+        // edgesSnapshot is used later
+        List<Edge> edgesSnapshot = state.edges;
 
-        this.nodesRef = nodes; // Keep ref to original for interaction
-        this.edgesRef = edges;
+        this.nodesRefInteraction = nodesSnapshot;
 
         // Update Zoom Limits using the snapshot to avoid deadlocks
         updateZoomLimits(nodesSnapshot);
@@ -671,7 +684,7 @@ public class GraphView extends Pane {
      * dark background.
      */
     private void drawAmbientGlow(double w, double h) {
-        if (nodesRef == null || nodesRef.isEmpty())
+        if (nodesRefInteraction == null || nodesRefInteraction.isEmpty())
             return;
 
         double cx = w / 2.0 + offsetX;
