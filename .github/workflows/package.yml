@@ -56,7 +56,7 @@ jobs:
             --vendor "bsommerfeld" \
             --description "WSBG Terminal Launcher" \
             --input jpackage-input \
-            --main-jar launcher-0.1.jar \
+            --main-jar launcher-1.0.0.jar \
             --main-class de.bsommerfeld.updater.launcher.LauncherMain \
             --java-options "--enable-preview" \
             --icon ${{ matrix.icon-file }} \
