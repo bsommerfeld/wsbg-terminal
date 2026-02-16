@@ -9,4 +9,4 @@ export APP_MODE=TEST
 mvn clean install -DskipTests
 
 echo "Starting WSBG Terminal UI (TEST MODE - NO DATA/SAVE)..."
-mvn -pl ui javafx:run
+mvn -pl terminal javafx:run

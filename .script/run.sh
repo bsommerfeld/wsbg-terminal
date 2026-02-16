@@ -9,4 +9,4 @@ export APP_MODE=PROD
 mvn clean install -DskipTests
 
 echo "Starting WSBG Terminal UI (PROD MODE)..."
-mvn -pl ui javafx:run
+mvn -pl terminal javafx:run
