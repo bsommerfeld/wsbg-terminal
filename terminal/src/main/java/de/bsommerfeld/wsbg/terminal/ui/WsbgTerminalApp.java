@@ -334,6 +334,11 @@ public class WsbgTerminalApp extends Application {
                                 icon.getStyleClass().clear();
                                 icon.getStyleClass().add(newState ? "icon-power-active" : "icon-power");
 
+                                try {
+                                    config.save();
+                                } catch (Exception ex) {
+                                    LOG.error("Failed to persist power mode", ex);
+                                }
                                 LOG.info("Power Mode toggled to: " + newState);
                             });
                             return btn;
