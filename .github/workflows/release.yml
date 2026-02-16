@@ -29,10 +29,14 @@ jobs:
         id: build_test
         run: mvn clean install -U -Dgpg.skip=true
 
+      # Collect all runtime dependencies (JavaFX, Guice, etc.) into a single directory
+      - name: Collect Runtime Dependencies
+        run: mvn dependency:copy-dependencies -pl ui -DincludeScope=runtime -DoutputDirectory=target/deps
+
       - name: Package with TinyUpdate
         uses: ./tinyupdate/action
         with:
-          artifact-dirs: 'core/target,db/target,reddit/target,agent/target,ui/target'
+          artifact-dirs: 'core/target,db/target,reddit/target,agent/target,ui/target,ui/target/deps'
           script-dir: '.script'
 
       - name: Prepare Build Status Badges
