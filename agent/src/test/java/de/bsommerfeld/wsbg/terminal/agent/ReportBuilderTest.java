@@ -114,11 +114,12 @@ class ReportBuilderTest {
     }
 
     @Test
-    void buildHeadlinePrompt_shouldIncludeTopicFilter() {
-        String prompt = builder.buildHeadlinePrompt("history", "context", false, List.of("GME", "AMC"));
+    void buildHeadlinePrompt_shouldIncludeTopicFilterAndJargon() {
+        String prompt = builder.buildHeadlinePrompt("history", "context", false, List.of("Gold", "Silber"));
 
-        assertTrue(prompt.contains("GME"));
-        assertTrue(prompt.contains("AMC"));
+        assertTrue(prompt.contains("Gold"));
+        assertTrue(prompt.contains("Silber"));
+        assertTrue(prompt.contains("Eselmetalle"));
     }
 
     @Test
@@ -133,6 +134,21 @@ class ReportBuilderTest {
         String prompt = builder.buildHeadlinePrompt("history", "context", false, List.of());
 
         assertTrue(prompt.contains("No topic restriction"));
+    }
+
+    @Test
+    void isAccepted_shouldAcceptExplicitVerdict() {
+        assertTrue(builder.isAccepted("VERDICT: ACCEPT\nREPORT: [HIGH] Gold rises 5%"));
+    }
+
+    @Test
+    void isAccepted_shouldRejectMissingVerdict() {
+        assertFalse(builder.isAccepted("VERDICT: REJECT"));
+    }
+
+    @Test
+    void isAccepted_shouldRejectNoVerdict() {
+        assertFalse(builder.isAccepted("REPORT: [LOW] Some headline"));
     }
 
     @Test

@@ -331,6 +331,14 @@ public class PassiveMonitorService {
             if (inv.reported)
                 continue;
 
+            // Maturity gate: don't evaluate clusters that were just created.
+            // Single-thread clusters with no activity updates are noise —
+            // wait for at least one update cycle to confirm real engagement.
+            if (inv.threadCount <= 1 && inv.totalComments < 3
+                    && Duration.between(inv.firstSeen, Instant.now()).toMinutes() < 2) {
+                continue;
+            }
+
             SignificanceScore result = SignificanceScorer.compute(inv);
             inv.currentSignificance = result.score();
 
@@ -353,20 +361,35 @@ public class PassiveMonitorService {
                     : String.join("\n", inv.reportHistory.stream()
                             .map(h -> "- " + h).collect(Collectors.toList()));
 
-            // Single AI call: significance + topic relevance + headline
             String prompt = reportBuilder.buildHeadlinePrompt(historyBlock, combinedContext,
                     headlineConfig.isShowAll(), headlineConfig.getTopics());
             String response = collectStreamBlocking(brain.ask("passive-monitor", prompt)).trim();
             LOG.info("[AI-RESPONSE] {}", response);
 
-            if (response.contains("-1"))
+            // Primary gate: VERDICT must be explicit ACCEPT.
+            // The prompt structure forces the AI to choose ACCEPT or REJECT
+            // before generating a headline — this fixes the issue where small
+            // models never return bare "-1" but always generate REPORT: lines.
+            if (!reportBuilder.isAccepted(response)) {
+                LOG.info("Cluster '{}' rejected by AI verdict", inv.initialTitle);
+                inv.reported = true;
                 continue;
-            if (!response.contains("REPORT:"))
-                continue;
+            }
 
             String headline = reportBuilder.extractHeadline(response);
             if (headline.isEmpty())
                 continue;
+
+            // Safety net: catch headlines that describe irrelevance, meta-commentary
+            // about the subreddit, or indirect non-news the AI shouldn't have accepted
+            String lowerHeadline = headline.toLowerCase();
+            if (lowerHeadline.contains("irrelevant") || lowerHeadline.contains("unrelevant")
+                    || lowerHeadline.contains("nicht relevant") || lowerHeadline.contains("not relevant")
+                    || lowerHeadline.contains("subreddit")) {
+                LOG.info("Rejected meta/irrelevance headline: {}", headline);
+                inv.reported = true;
+                continue;
+            }
 
             inv.reported = true;
             inv.addToHistory(headline);
@@ -407,6 +430,14 @@ public class PassiveMonitorService {
             latch.await(30, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+        }
+
+        // Guard: do not emit an empty Eilmeldung if the translation
+        // produced no output (e.g. timeout or model error).
+        if (translated.isEmpty()) {
+            LOG.warn("Translation produced empty output, discarding headline");
+            eventBus.post(new AgentStreamEndEvent(""));
+            return;
         }
 
         String payload = "||PASSIVE||" + translated + "||REF||ID:" + inv.id;

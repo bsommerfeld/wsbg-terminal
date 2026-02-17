@@ -90,12 +90,10 @@ final class ReportBuilder {
     }
 
     /**
-     * Assembles the consolidated headline prompt. A single AI call evaluates
-     * significance, topic relevance, and generates the headline. When
-     * {@code showAll}
-     * is false, the user's topic list is injected and the AI is instructed to
-     * reject
-     * irrelevant clusters with {@code -1}.
+     * Assembles the headline prompt with a binary VERDICT gate.
+     * The prompt forces the AI to explicitly ACCEPT or REJECT before
+     * generating any headline — small models (4b) reliably fail to
+     * return bare "-1" but can handle structured VERDICT responses.
      *
      * @param historyBlock previous headlines to prevent repetition
      * @param context      combined cluster evidence
@@ -112,10 +110,15 @@ final class ReportBuilder {
             topicFilter = "";
             topicInstruction = "No topic restriction — all financial content is relevant.";
         } else {
-            topicFilter = "USER TOPICS: " + String.join(", ", topics);
-            topicInstruction = "Only generate a headline if the cluster is semantically related "
-                    + "to one of the user's topics. Use understanding, not substring matching "
-                    + "(e.g., 'Zinsen' matches interest rate discussions). Output -1 if not relevant.";
+            topicFilter = "USER TOPICS: " + String.join(", ", topics) + "\n"
+                    + "JARGON: 'Eselmetalle'/'Edelmetalle' = precious metals (Gold, Silber). "
+                    + "'die Fetten' = US market. "
+                    + "'Hebel' = leveraged derivative. "
+                    + "'KO'/'Knockout' = barrier option.";
+            topicInstruction = "Is this cluster DIRECTLY about one of the user's topics? "
+                    + "Use semantic understanding (e.g., 'Zinsen' = interest rates). "
+                    + "Indirect connections do NOT count — 'stocks fell so gold might move' is NOT relevant. "
+                    + "If NOT directly relevant, output VERDICT: REJECT";
         }
 
         return PromptLoader.load("headline-generation", Map.of(
@@ -123,6 +126,15 @@ final class ReportBuilder {
                 "CONTEXT", context,
                 "TOPIC_FILTER", topicFilter,
                 "TOPIC_INSTRUCTION", topicInstruction));
+    }
+
+    /**
+     * Checks whether the AI response contains an explicit acceptance.
+     * The prompt demands VERDICT: ACCEPT/REJECT — only explicit
+     * acceptance is treated as valid.
+     */
+    boolean isAccepted(String response) {
+        return response.contains("VERDICT: ACCEPT") || response.contains("VERDICT:ACCEPT");
     }
 
     /**

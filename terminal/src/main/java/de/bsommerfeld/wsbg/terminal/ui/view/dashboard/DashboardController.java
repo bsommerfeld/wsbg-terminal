@@ -234,9 +234,15 @@ public class DashboardController {
     @Subscribe
     public void onAgentStreamEnd(ChatService.AgentStreamEndEvent event) {
         Platform.runLater(() -> {
-            boolean isPassive = event.fullMessage().contains("||PASSIVE||");
-
             webEngine.executeScript("removeCurrentStream()");
+
+            // Discard empty events (e.g. translation timeout)
+            if (event.fullMessage() == null || event.fullMessage().isEmpty()) {
+                ignoreStreamedLog = false;
+                return;
+            }
+
+            boolean isPassive = event.fullMessage().contains("||PASSIVE||");
 
             if (!isPassive) {
                 webEngine.executeScript("setStatus('')");
@@ -480,6 +486,11 @@ public class DashboardController {
             }
 
             String cleanBody = displayMsg.trim();
+
+            // Skip empty passive entries (e.g. failed translation)
+            if (isPassive && cleanBody.isEmpty())
+                return;
+
             String formattedBody = formatMessageToHtml(cleanBody);
 
             if (isPassive) {
