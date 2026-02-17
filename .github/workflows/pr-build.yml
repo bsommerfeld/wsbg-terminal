@@ -18,6 +18,12 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
+# Only one build per PR at a time — fast pushes cancel the previous run
+# instead of wasting resources on an already-outdated commit.
+concurrency:
+  group: pr-build-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   pull-requests: write
@@ -50,68 +56,74 @@ jobs:
           SHADED_JAR=$(find launcher/target -maxdepth 1 -name 'launcher-*.jar' ! -name 'original-*' | head -1)
 
           if [ -z "$SHADED_JAR" ]; then
-            echo "::warning::No shaded launcher JAR found — skipping Launcher artifact"
-            echo "LAUNCHER_FOUND=false" >> $GITHUB_ENV
-          else
-            mkdir -p pr-artifacts/launcher
-            cp "$SHADED_JAR" pr-artifacts/launcher/wsbg-launcher.jar
-            echo "LAUNCHER_FOUND=true" >> $GITHUB_ENV
+            echo "::error::No shaded launcher JAR found — build is broken"
+            exit 1
           fi
+
+          mkdir -p pr-artifacts/launcher
+          cp "$SHADED_JAR" pr-artifacts/launcher/wsbg-launcher.jar
 
       # ── Terminal JAR (with dependencies) ──────────────────────────────
       # Terminal doesn't use shade — we collect the module JAR plus all
-      # runtime dependencies into a single directory. A wrapper script
-      # isn't needed since the artifact is a zip of JARs.
+      # runtime dependencies into a single directory.
       - name: Prepare Terminal JARs
         shell: bash
         run: |
           TERMINAL_JAR=$(find terminal/target -maxdepth 1 -name 'terminal-*.jar' | head -1)
 
           if [ -z "$TERMINAL_JAR" ]; then
-            echo "::warning::No terminal JAR found — skipping Terminal artifact"
-            echo "TERMINAL_FOUND=false" >> $GITHUB_ENV
-          else
-            mkdir -p pr-artifacts/terminal
+            echo "::error::No terminal JAR found — build is broken"
+            exit 1
+          fi
 
-            mvn dependency:copy-dependencies \
-              -pl terminal \
-              -DincludeScope=runtime \
-              -DoutputDirectory=terminal/target/deps
+          mkdir -p pr-artifacts/terminal
 
-            # Fetch JavaFX natives for all platforms so the artifact is runnable everywhere
-            JAVAFX_VERSION=$(mvn help:evaluate -Dexpression=javafx.version -q -DforceStdout)
-            JAVAFX_MODULES="javafx-base javafx-controls javafx-fxml javafx-graphics javafx-media javafx-web"
-            for mod in $JAVAFX_MODULES; do
-              for classifier in mac-aarch64 mac win linux linux-aarch64; do
-                mvn dependency:copy \
-                  -Dartifact=org.openjfx:${mod}:${JAVAFX_VERSION}:jar:${classifier} \
-                  -DoutputDirectory=terminal/target/deps \
-                  -Dmdep.stripVersion=false || true
-              done
+          mvn dependency:copy-dependencies \
+            -pl terminal \
+            -DincludeScope=runtime \
+            -DoutputDirectory=terminal/target/deps
+
+          # Guard against empty version — without it the loop silently
+          # fails on every artifact, hidden by || true.
+          JAVAFX_VERSION=$(mvn help:evaluate -Dexpression=javafx.version -q -DforceStdout)
+          if [ -z "$JAVAFX_VERSION" ]; then
+            echo "::error::Failed to resolve javafx.version from pom.xml"
+            exit 1
+          fi
+
+          JAVAFX_MODULES="javafx-base javafx-controls javafx-fxml javafx-graphics javafx-media javafx-web"
+          for mod in $JAVAFX_MODULES; do
+            for classifier in mac-aarch64 mac win linux linux-aarch64; do
+              mvn dependency:copy \
+                -Dartifact=org.openjfx:${mod}:${JAVAFX_VERSION}:jar:${classifier} \
+                -DoutputDirectory=terminal/target/deps \
+                -Dmdep.stripVersion=false || true
             done
+          done
 
-            cp "$TERMINAL_JAR" pr-artifacts/terminal/
-            cp terminal/target/deps/*.jar pr-artifacts/terminal/
+          # Sanity check — not all classifier/module combos exist, but
+          # too few downloads means something is fundamentally wrong.
+          DOWNLOAD_COUNT=$(find terminal/target/deps -name 'javafx-*-*.jar' | wc -l)
+          if [ "$DOWNLOAD_COUNT" -lt 5 ]; then
+            echo "::warning::Only $DOWNLOAD_COUNT JavaFX platform JARs downloaded — artifact may not be runnable on all platforms"
+          fi
 
-            # Create a launch script so testers don't have to build the classpath manually
-            TERMINAL_JAR_NAME=$(basename "$TERMINAL_JAR")
-            cat > pr-artifacts/terminal/run.sh << 'SCRIPT'
+          cp "$TERMINAL_JAR" pr-artifacts/terminal/
+          cp terminal/target/deps/*.jar pr-artifacts/terminal/
+
+          cat > pr-artifacts/terminal/run.sh << 'SCRIPT'
 #!/usr/bin/env bash
 DIR="$(cd "$(dirname "$0")" && pwd)"
 java --enable-preview -cp "$DIR/*" de.bsommerfeld.wsbg.terminal.ui.AppMain "$@"
 SCRIPT
-            chmod +x pr-artifacts/terminal/run.sh
+          chmod +x pr-artifacts/terminal/run.sh
 
-            cat > pr-artifacts/terminal/run.bat << SCRIPT
+          cat > pr-artifacts/terminal/run.bat << SCRIPT
 @echo off
 java --enable-preview -cp "%~dp0*" de.bsommerfeld.wsbg.terminal.ui.AppMain %*
 SCRIPT
 
-            echo "TERMINAL_FOUND=true" >> $GITHUB_ENV
-          fi
-
       - name: Upload Launcher Artifact
-        if: env.LAUNCHER_FOUND == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: launcher-jar
@@ -119,7 +131,6 @@ SCRIPT
           retention-days: 14
 
       - name: Upload Terminal Artifact
-        if: env.TERMINAL_FOUND == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: terminal-jars
@@ -130,20 +141,20 @@ SCRIPT
         uses: actions/github-script@v7
         with:
           script: |
+            const MARKER = '<!-- pr-build-artifacts -->';
             const runId = context.runId;
             const repo = context.repo;
             const runUrl = `https://github.com/${repo.owner}/${repo.repo}/actions/runs/${runId}`;
 
-            const body = `📦 [Test-Artefakte herunterladen](${runUrl}#artifacts)`;
+            const body = `${MARKER}\n📦 [Test-Artefakte herunterladen](${runUrl}#artifacts)`;
 
-            // Bestehenden Kommentar aktualisieren statt Duplikate bei Re-Push
             const comments = await github.rest.issues.listComments({
               owner: repo.owner,
               repo: repo.repo,
               issue_number: context.issue.number,
             });
 
-            const existing = comments.data.find(c => c.body.startsWith('📦'));
+            const existing = comments.data.find(c => c.body.includes(MARKER));
 
             if (existing) {
               await github.rest.issues.updateComment({
