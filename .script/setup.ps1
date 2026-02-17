@@ -99,7 +99,7 @@ try {
 
 function Pull-IfMissing($modelName) {
     if ($installedModels -contains $modelName) {
-        Write-Host "    [✓] $modelName already available" -ForegroundColor Green
+        Write-Host "    [OK] $modelName already available" -ForegroundColor Green
     } else {
         Write-Host "    > Pulling $modelName..."
         ollama pull $modelName
