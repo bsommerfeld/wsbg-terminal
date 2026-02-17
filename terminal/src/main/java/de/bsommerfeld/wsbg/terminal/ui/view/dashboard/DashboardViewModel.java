@@ -12,6 +12,10 @@ import javafx.collections.ObservableList;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * Observable model backing the terminal dashboard. Manages the log buffer
+ * and dispatches user queries to the chat service.
+ */
 @Singleton
 public class DashboardViewModel {
 
@@ -27,6 +31,11 @@ public class DashboardViewModel {
         initialize();
     }
 
+    /**
+     * Displays the ASCII art boot banner on a background thread
+     * with a 600ms startup delay. The banner characters encode
+     * color markers that the controller resolves to styled HTML spans.
+     */
     private void initialize() {
         LOG.info("Initializing Dashboard ViewModel...");
 
@@ -86,16 +95,25 @@ public class DashboardViewModel {
         }).start();
     }
 
+    /**
+     * Appends the user query to the log buffer and forwards it to the AI chat
+     * service.
+     */
     public void onAskAgent(String query) {
         appendToConsole("User: " + query, LogType.INFO);
         // Async call to agent
         chatService.sendUserMessage(query);
     }
 
+    /** Shorthand: appends a message with {@link LogType#DEFAULT}. */
     public void appendToConsole(String message) {
         appendToConsole(message, LogType.DEFAULT);
     }
 
+    /**
+     * Appends a typed log message. Runs on the FX thread and trims
+     * the buffer to 1 000 entries to cap memory usage.
+     */
     public void appendToConsole(String message, LogType type) {
         Platform.runLater(() -> {
             logs.add(new LogMessage(message + "\n", type));
@@ -106,6 +124,7 @@ public class DashboardViewModel {
         });
     }
 
+    /** Observable log list. Changes fire ListChangeListeners on the FX thread. */
     public ObservableList<LogMessage> getLogs() {
         return logs;
     }

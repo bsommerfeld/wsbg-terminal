@@ -19,7 +19,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
@@ -44,12 +43,6 @@ public class GraphView extends Pane {
     private double offsetY = 0;
     private double scale = 0.5;
 
-    // Content Bounds
-    private double contentMinX = -5000;
-    private double contentMaxX = 5000;
-    private double contentMinY = -5000;
-    private double contentMaxY = 5000;
-
     // Dynamic Zoom Limits
     private double minScaleLimit = 0.02;
     private static final double MAX_SCALE_LIMIT = 5.0;
@@ -66,7 +59,10 @@ public class GraphView extends Pane {
     private String selectedThreadId;
     private List<Node> nodesRefInteraction;
 
-    // Render State (Thread-Safe Snapshot)
+    /**
+     * Thread-safe render snapshot. Published by the physics thread via
+     * {@link #setRenderData} and consumed atomically by {@link #render}.
+     */
     private static class RenderState {
         final List<Node> nodes;
         final List<Edge> edges;
@@ -80,18 +76,11 @@ public class GraphView extends Pane {
     private final AtomicReference<RenderState> renderState = new AtomicReference<>(
             new RenderState(new ArrayList<>(), new ArrayList<>()));
 
+    /** Highlights the given thread's nodes with a larger radius. */
     public void setSelectedThreadId(String id) {
         this.selectedThreadId = id;
     }
 
-    // ... lines 59-224 (no change needed here, context matching is key) ...
-    // Note: I will use a larger block to ensure context matching for clampOffset
-    // and updateZoomLimits.
-
-    // I'll target the block containing clampOffset and updateZoomLimits directly.
-
-    // private List<Node> nodesRef; // Removed
-    // private List<Edge> edgesRef; // Removed
     private Consumer<String> threadClickHandler;
 
     // Mouse position for magnifier (screen coordinates).
@@ -109,6 +98,9 @@ public class GraphView extends Pane {
     private static final double MAGNIFIER_RADIUS = 75.0;
     private static final double MAGNIFIER_ZOOM = 1.0;
 
+    /**
+     * Sets up the canvas, binds its size to the pane, and installs input handlers.
+     */
     public GraphView() {
         this.setStyle("-fx-background-color: #050505;");
 
@@ -126,6 +118,10 @@ public class GraphView extends Pane {
         setupEvents();
     }
 
+    /**
+     * Wires scroll-to-zoom, press/drag/release pan, and mouse tracking for the
+     * magnifier.
+     */
     private void setupEvents() {
         this.setOnScroll((ScrollEvent e) -> {
             e.consume();
@@ -202,6 +198,9 @@ public class GraphView extends Pane {
         this.setOnMouseExited(e -> mouseInView = false);
     }
 
+    /**
+     * Registers the callback invoked when the user clicks on the magnifier area.
+     */
     public void setThreadClickHandler(Consumer<String> handler) {
         this.threadClickHandler = handler;
     }
@@ -256,10 +255,15 @@ public class GraphView extends Pane {
         }
     }
 
+    /** True when zoomed past fit-to-screen level, so dragging actually pans. */
     private boolean isPanningAllowed() {
         return scale > minScaleLimit * 1.05;
     }
 
+    /**
+     * Constrains the camera offset so the content never scrolls fully out of
+     * view. At minimum zoom the view is locked to the content center.
+     */
     private void clampOffset() {
         double viewW = this.getWidth();
         double viewH = this.getHeight();
@@ -315,19 +319,19 @@ public class GraphView extends Pane {
         offsetY = -(contentCenterY + dy) * scale;
     }
 
-    public void setNodes(List<Node> nodes) {
-        // Compatibility: snapshot and set
-        List<Node> safeNodes;
-        synchronized (nodes) {
-            safeNodes = new ArrayList<>(nodes);
-        }
-        setRenderData(safeNodes, new ArrayList<>());
-    }
-
+    /**
+     * Atomically publishes a new node/edge snapshot for the next render frame.
+     * Called by the physics thread after each tick.
+     */
     public void setRenderData(List<Node> safeNodes, List<Edge> safeEdges) {
         renderState.set(new RenderState(safeNodes, safeEdges));
     }
 
+    /**
+     * Recomputes the dynamic zoom floor ({@code minScaleLimit}) from the
+     * bounding box of the given snapshot. Also updates the content center
+     * used by {@link #clampOffset}.
+     */
     private void updateZoomLimits(List<Node> currentNodes) {
         if (currentNodes == null || currentNodes.isEmpty()) {
             minScaleLimit = 0.001;
@@ -357,11 +361,6 @@ public class GraphView extends Pane {
             return;
         }
 
-        this.contentMinX = minX;
-        this.contentMaxX = maxX;
-        this.contentMinY = minY;
-        this.contentMaxY = maxY;
-
         this.contentCenterX = (minX + maxX) / 2.0;
         this.contentCenterY = (minY + maxY) / 2.0;
 
@@ -387,10 +386,12 @@ public class GraphView extends Pane {
             minScaleLimit = 0.0001;
     }
 
+    /** Replaces the set of glowing search-match node IDs. */
     public void setHighlightedNodeIds(Set<String> ids) {
         this.highlightedNodeIds = (ids == null) ? new HashSet<>() : ids;
     }
 
+    /** Resets scale and offset to show the full content, called on first layout. */
     private void centerView() {
         if (nodesRefInteraction != null) {
             updateZoomLimits(nodesRefInteraction);
@@ -409,63 +410,6 @@ public class GraphView extends Pane {
         offsetY = -contentCenterY * scale;
 
         clampOffset();
-    }
-
-    // --- VISUAL EFFECTS SYSTEM ---
-    private static class VisualEffect {
-        double x, y;
-        Color color;
-        double progress = 1.0;
-        double initialSize;
-
-        VisualEffect(double x, double y, Color color, double size) {
-            this.x = x;
-            this.y = y;
-            this.color = color;
-            this.initialSize = size;
-        }
-    }
-
-    private final List<VisualEffect> activeEffects = new CopyOnWriteArrayList<>();
-
-    public void addNodeCleanupEffect(double x, double y, boolean isThread) {
-        if (350 * scale > 60)
-            return;
-        double size = isThread ? 90.0 : 36.0;
-        activeEffects.add(new VisualEffect(x, y, Color.RED, size));
-    }
-
-    public void addNodeCreationEffect(double x, double y, boolean isThread) {
-        if (350 * scale > 60)
-            return;
-        double size = isThread ? 90.0 : 36.0;
-        activeEffects.add(new VisualEffect(x, y, Color.LIMEGREEN, size));
-    }
-
-    private void renderEffects() {
-        if (activeEffects.isEmpty())
-            return;
-
-        double decayRate = 0.02;
-
-        for (VisualEffect effect : activeEffects) {
-            effect.progress -= decayRate;
-            if (effect.progress <= 0) {
-                activeEffects.remove(effect);
-                continue;
-            }
-
-            double currentRadius = effect.initialSize * effect.progress;
-
-            gc.save();
-            gc.translate(effect.x, effect.y);
-
-            gc.setGlobalAlpha(effect.progress);
-            gc.setFill(effect.color);
-            gc.fillOval(-currentRadius, -currentRadius, currentRadius * 2, currentRadius * 2);
-
-            gc.restore();
-        }
     }
 
     // --- BIRTH / DEATH ANIMATION ---
@@ -537,6 +481,12 @@ public class GraphView extends Pane {
         return new double[] { dx, dy };
     }
 
+    /**
+     * Main rendering entry point. Reads the latest snapshot atomically,
+     * draws the grid and ambient glow, then renders edges and nodes in
+     * world space with birth/death animations. Finally draws the magnifier
+     * in screen space at the cursor position.
+     */
     public void render() {
         // Atomic Read - No Blocking
         RenderState state = renderState.get();
@@ -672,7 +622,6 @@ public class GraphView extends Pane {
             gc.restore();
         }
 
-        renderEffects();
         gc.restore();
 
         // Magnifier is drawn in screen space, always follows cursor
@@ -686,6 +635,11 @@ public class GraphView extends Pane {
         }
     }
 
+    /**
+     * Draws a dynamic grid whose cell size adapts to the zoom level.
+     * Cell spacing doubles/halves in powers of two so lines remain
+     * evenly distributed at every zoom.
+     */
     private void drawGrid(double w, double h) {
         double targetVisualSize = 60.0 + (scale * 40.0);
         double fit = targetVisualSize / scale;

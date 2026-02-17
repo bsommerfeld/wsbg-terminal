@@ -83,10 +83,12 @@ public class GraphSidebar extends VBox {
         this.getChildren().add(scrollPane);
     }
 
+    /** Sets the callback invoked when the “Summarize” button is pressed. */
     public void setSummarizeHandler(Consumer<Void> handler) {
         this.summarizeHandler = handler;
     }
 
+    /** Sets the callback invoked when the “Open in Browser” button is pressed. */
     public void setOpenUrlHandler(Consumer<String> handler) {
         this.openUrlHandler = handler;
     }
@@ -102,6 +104,11 @@ public class GraphSidebar extends VBox {
 
     private String currentPermalink;
 
+    /**
+     * Populates the sidebar with a thread header and its comment tree.
+     * Opens the sidebar if it was closed. If {@code scrollToCommentId} is
+     * non-null the view scrolls to that comment after layout.
+     */
     public void showThread(RedditThread thread, List<RedditComment> comments, String scrollToCommentId) {
         commentNodeMap.clear();
         replyCountMap.clear();
@@ -326,6 +333,7 @@ public class GraphSidebar extends VBox {
         return commentBlock;
     }
 
+    /** Returns top-level comments whose parentId resolves to the given threadId. */
     private List<RedditComment> findTopLevel(List<RedditComment> comments, String threadId) {
         List<RedditComment> topLevel = new ArrayList<>();
         for (RedditComment c : comments) {
@@ -341,6 +349,10 @@ public class GraphSidebar extends VBox {
         return topLevel;
     }
 
+    /**
+     * Resolves direct children for a comment, trying bare, t1_, and CMT_ prefix
+     * variants.
+     */
     private List<RedditComment> findChildren(String commentId, Map<String, List<RedditComment>> byParent) {
         List<RedditComment> children = byParent.get(commentId);
         if (children == null)
@@ -350,6 +362,7 @@ public class GraphSidebar extends VBox {
         return children;
     }
 
+    /** Pre-computes total recursive reply counts for all comments. */
     private void computeReplyCounts(List<RedditComment> comments, Map<String, List<RedditComment>> byParent) {
         for (RedditComment c : comments) {
             replyCountMap.put(c.id(), countReplies(c.id(), byParent));
@@ -368,6 +381,10 @@ public class GraphSidebar extends VBox {
         return total;
     }
 
+    /**
+     * Indexes comments by parentId with multiple prefix variants so
+     * lookups work regardless of the caller's ID format.
+     */
     private Map<String, List<RedditComment>> indexByParent(List<RedditComment> comments) {
         Map<String, List<RedditComment>> byParent = new HashMap<>();
         for (RedditComment c : comments) {
@@ -386,6 +403,7 @@ public class GraphSidebar extends VBox {
         return byParent;
     }
 
+    /** Slides the sidebar open with a 250ms width animation. */
     public void open() {
         if (isOpen)
             return;
@@ -410,10 +428,12 @@ public class GraphSidebar extends VBox {
 
     private Runnable onCloseHandler;
 
+    /** Registers a callback fired when the sidebar closes (via the X button). */
     public void setOnCloseHandler(Runnable handler) {
         this.onCloseHandler = handler;
     }
 
+    /** Slides the sidebar closed with a 200ms width animation. */
     public void close() {
         if (!isOpen)
             return;
@@ -445,6 +465,7 @@ public class GraphSidebar extends VBox {
         return isOpen;
     }
 
+    /** Target width (30% of scene, clamped to 300–600px). */
     private double getTargetWidth() {
         double parentWidth = this.getScene() != null ? this.getScene().getWidth() : 400;
         return Math.max(300, Math.min(parentWidth * 0.30, 600));

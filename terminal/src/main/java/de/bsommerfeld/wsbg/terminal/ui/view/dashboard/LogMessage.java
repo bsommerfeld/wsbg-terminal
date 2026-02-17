@@ -1,3 +1,5 @@
 package de.bsommerfeld.wsbg.terminal.ui.view.dashboard;
 
-public record LogMessage(String message, LogType type) {}
+/** A single terminal log entry with its display classification. */
+public record LogMessage(String message, LogType type) {
+}

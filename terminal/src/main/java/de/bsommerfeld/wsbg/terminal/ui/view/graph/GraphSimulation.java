@@ -12,13 +12,13 @@ import javafx.scene.paint.Color;
  */
 public class GraphSimulation {
 
+    /** Particle in the simulation. Mutable physics state is updated each tick. */
     public static class Node {
         public String id;
         public String label;
         public String fullText;
         public String author;
         public int score;
-        public int commentCount;
         public boolean isThread;
         public Node parent;
 
@@ -26,7 +26,6 @@ public class GraphSimulation {
         public int level = 0;
         public Node rootNode;
         public int maxSubtreeLevel = 0;
-        public int childrenCount = 0;
 
         // Comment depth within thread (0 = thread, 1 = direct comment, 2+ = deeper)
         public int commentDepth = 0;
@@ -62,6 +61,10 @@ public class GraphSimulation {
         }
     }
 
+    /**
+     * Directed connection between two nodes with configurable rest length and
+     * spring strength.
+     */
     public static class Edge {
         public String id;
         public Node source;
@@ -77,6 +80,8 @@ public class GraphSimulation {
         }
     }
 
+    // Simulation collections — synchronized wrappers allow the physics thread
+    // to iterate while the data-load future appends.
     private final List<Node> nodes = Collections.synchronizedList(new ArrayList<>());
     private final List<Edge> edges = Collections.synchronizedList(new ArrayList<>());
 
@@ -96,33 +101,34 @@ public class GraphSimulation {
     // Center gravity pulling stragglers back
     private static final double CENTER_GRAVITY = 0.0005;
 
+    /** Thread-safe node insertion. */
     public void addNode(Node node) {
         synchronized (nodes) {
             nodes.add(node);
         }
     }
 
+    /** Thread-safe edge insertion. */
     public void addEdge(Edge edge) {
         synchronized (edges) {
             edges.add(edge);
         }
     }
 
+    /**
+     * Returns the backing synchronized node list. Callers should synchronize on it
+     * for iteration.
+     */
     public List<Node> getNodes() {
         return nodes;
     }
 
+    /**
+     * Returns the backing synchronized edge list. Callers should synchronize on it
+     * for iteration.
+     */
     public List<Edge> getEdges() {
         return edges;
-    }
-
-    public void clear() {
-        nodes.clear();
-        edges.clear();
-    }
-
-    public void clearEdges() {
-        edges.clear();
     }
 
     /**

@@ -57,18 +57,21 @@ public class GraphController {
     private final ApplicationEventBus eventBus;
     private final RedditRepository repository;
     private AnimationTimer timer;
-    private boolean isRunning = false;
+    private volatile boolean isRunning = false;
 
     // Sidebar
     private final GraphSidebar sidebar;
+    /** Container: [GraphView (grows)] [Sidebar (animated width)]. */
     private final HBox containerView;
 
-    // Dynamic State
+    // Pending additions/removals. Written by the data-load future,
+    // drained by the physics thread — ConcurrentLinkedQueue is
+    // lock-free and safe for this single-producer/single-consumer pattern.
     private final Queue<Node> pendingNodes = new ConcurrentLinkedQueue<>();
     private final Queue<Edge> pendingEdges = new ConcurrentLinkedQueue<>();
     private final Queue<String> pendingRemovals = new ConcurrentLinkedQueue<>();
 
-    // Tracking
+    // De-duplication sets — prevent re-queuing nodes/edges across refresh cycles.
     private final Set<String> knownNodeIds = ConcurrentHashMap.newKeySet();
     private final Set<String> knownEdgeIds = ConcurrentHashMap.newKeySet();
 
@@ -79,6 +82,11 @@ public class GraphController {
     // Currently displayed thread in sidebar
     private String currentSidebarThreadId;
 
+    /**
+     * Wires the view, simulation, sidebar, and event handlers.
+     * An initial {@link #recalculateGraph()} populates the graph from
+     * the repository on construction.
+     */
     @Inject
     public GraphController(ApplicationEventBus eventBus,
             RedditRepository repository) {
@@ -123,6 +131,10 @@ public class GraphController {
 
     }
 
+    /**
+     * Loads the selected thread and its comments from the repository
+     * (off-thread) and displays them in the sidebar.
+     */
     private void onThreadClicked(String threadId) {
         if (threadId == null)
             return;
@@ -140,6 +152,11 @@ public class GraphController {
         });
     }
 
+    /**
+     * Builds a German analysis prompt from the current sidebar thread
+     * (title, body, top 30 comments) and fires it as a
+     * {@link TriggerAgentAnalysisEvent}.
+     */
     private void onSummarize() {
         if (currentSidebarThreadId == null)
             return;
@@ -188,6 +205,10 @@ public class GraphController {
         });
     }
 
+    /**
+     * Matches the search query against all node texts and highlights
+     * the matching node IDs in the graph view.
+     */
     @Subscribe
     public void onSearchEvent(SearchEvent event) {
         String query = (event.query() == null) ? "" : event.query().trim();
@@ -213,6 +234,10 @@ public class GraphController {
                 .thenAccept(matches -> Platform.runLater(() -> graphView.setHighlightedNodeIds(matches)));
     }
 
+    /**
+     * Asynchronously fetches all threads and comments from the repository
+     * and feeds them into {@link #initializeGraphData}.
+     */
     private void recalculateGraph() {
         CompletableFuture.supplyAsync(() -> {
             List<RedditThread> threads = repository.getAllThreads();
@@ -225,6 +250,11 @@ public class GraphController {
                 });
     }
 
+    /**
+     * Converts raw Reddit data into graph nodes and edges. Builds a
+     * per-thread radial layout, queues new/updated nodes for the physics
+     * thread, and marks removals for death animation.
+     */
     private void initializeGraphData(List<RedditThread> threads, List<RedditComment> comments) {
         Map<String, RedditComment> commentMap = comments.stream()
                 .collect(Collectors.toMap(RedditComment::id, c -> c, (a, b) -> a));
@@ -344,7 +374,6 @@ public class GraphController {
             GraphLayoutEngine.applyBranchLayout(rootLayout, branchAngle, branchRadius, levelSpacing,
                     angularBudget, finalNodes, finalEdges, validIds, maxDepth, tn.id, knownEdgeIds);
 
-            tn.commentCount = rootLayout.subtreeSize;
         }
 
         // Queue updates
@@ -370,6 +399,7 @@ public class GraphController {
         }
     }
 
+    /** Searches the simulation's node list by ID. Returns null if absent. */
     private Node findNode(String id) {
         synchronized (simulation.getNodes()) {
             for (Node n : simulation.getNodes()) {
@@ -384,6 +414,16 @@ public class GraphController {
 
     private Thread physicsThread;
 
+    /**
+     * Creates both loops:
+     * <ol>
+     * <li><b>Render loop</b> (AnimationTimer on the FX thread) — reads the
+     * atomic snapshot and paints the canvas each frame.</li>
+     * <li><b>Physics loop</b> (daemon background thread) — drains pending
+     * queues, ticks the simulation, and publishes a new snapshot
+     * at ~60 Hz.</li>
+     * </ol>
+     */
     private void setupLoop() {
         // 1. Rendering Loop (JavaFX Thread) - PURE RENDERING
         timer = new AnimationTimer() {
@@ -454,6 +494,11 @@ public class GraphController {
         physicsThread.setDaemon(true);
     }
 
+    /**
+     * Drains pending node/edge/removal queues (capped per cycle to
+     * avoid frame stalls) and reaps fully dead nodes whose death
+     * animation has completed.
+     */
     private void processQueues() {
         // Drain pending nodes
         int nodesAdded = 0;
@@ -507,10 +552,16 @@ public class GraphController {
         }
     }
 
+    /** Returns the top-level container (graph + sidebar). */
     public Pane getView() {
         return containerView;
     }
 
+    /**
+     * Starts the physics thread and render loop.
+     * Safe to call repeatedly — recreates the thread if it was previously
+     * terminated.
+     */
     public void start() {
         isRunning = true;
         if (physicsThread != null && !physicsThread.isAlive()) {
@@ -528,6 +579,7 @@ public class GraphController {
         timer.start();
     }
 
+    /** Stops the physics thread and render loop. */
     public void stop() {
         isRunning = false;
         timer.stop();
