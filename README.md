@@ -22,10 +22,16 @@ Das WSBG Terminal ist eure Kommandozentrale für **r/wallstreetbetsGER**. Statt 
 
 Hier könnte Ihre Werbung stehen (wenn ihr noch Geld hättet).
 
-![Das Terminal - Sieht wichtig aus](PLACEHOLDER_TERMINAL_VIEW.png)
+<img width="1227" height="827" alt="Bildschirmfoto 2026-02-17 um 22 52 28" src="https://github.com/user-attachments/assets/b0c4caa3-6374-4fdd-97f2-e3f36296d95c" />
+
 *Das Dashboard: Sieht aus, als wüsstet ihr, was ihr tut.*
 
-![Graph View - Die Matrix der Dummen](PLACEHOLDER_GRAPH_VIEW.png)
+
+<br>
+
+
+<img width="1227" height="827" alt="Bildschirmfoto 2026-02-17 um 22 52 13" src="https://github.com/user-attachments/assets/0f787837-3c2c-4037-8fa6-4396b92073d8" />
+
 *Graph View: Verbindet alles, was keinen Sinn ergibt.*
 
 ### 🚀 To the Moon (Installation)
