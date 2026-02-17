@@ -1,7 +1,7 @@
 # =============================================================================
 #  Package Native Launcher
 #
-#  Builds platform-specific installers (msi, dmg, deb) via JPackage.
+#  Builds platform-specific installers (exe, dmg, deb) via JPackage.
 #  The Launcher is the ONLY module packaged natively — the application itself
 #  is delivered via OTA update (see release.yml).
 #
@@ -26,20 +26,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Windows: portable app-image (no installer, no admin, no SmartScreen).
-          # MSI/EXE installers fail silently too often on end-user machines.
           - os: windows-latest
-            jpackage-type: app-image
+            jpackage-type: exe
             icon-file: .assets/icons/AppIcon.ico
-            artifact-name: WSBG-Terminal-windows
           - os: macos-latest
             jpackage-type: dmg
             icon-file: .assets/icons/AppIcon.icns
-            artifact-name: ""
           - os: ubuntu-latest
             jpackage-type: deb
             icon-file: .assets/icons/AppIcon.png
-            artifact-name: ""
 
     runs-on: ${{ matrix.os }}
     name: Build ${{ matrix.jpackage-type }}
@@ -89,6 +84,12 @@ jobs:
       - name: Package with JPackage
         shell: bash
         run: |
+          EXTRA_ARGS=""
+          if [ "${{ matrix.jpackage-type }}" = "exe" ]; then
+            # Desktop shortcut + Start Menu entry so the app is immediately visible
+            EXTRA_ARGS="--win-shortcut --win-menu --win-menu-group WSBG"
+          fi
+
           jpackage \
             --type ${{ matrix.jpackage-type }} \
             --name "WSBG Terminal" \
@@ -100,28 +101,14 @@ jobs:
             --main-class de.bsommerfeld.updater.launcher.LauncherMain \
             --java-options "--enable-preview" \
             --icon ${{ matrix.icon-file }} \
-            --dest jpackage-output
-
-      # Windows app-image is a directory — zip it for a clean single-file download.
-      # macOS/Linux produce single files (dmg/deb) that upload directly.
-      - name: Zip Windows App Image
-        if: matrix.artifact-name != ''
-        shell: bash
-        run: |
-          cd jpackage-output
-          7z a -tzip "../${{ matrix.artifact-name }}.zip" "WSBG Terminal"
+            --dest jpackage-output \
+            $EXTRA_ARGS
 
       - name: Upload to Release
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ -n "${{ matrix.artifact-name }}" ]; then
-            gh release upload "${{ github.event.release.tag_name }}" \
-              "${{ matrix.artifact-name }}.zip" \
-              --clobber
-          else
-            gh release upload "${{ github.event.release.tag_name }}" \
-              jpackage-output/* \
-              --clobber
-          fi
+          gh release upload "${{ github.event.release.tag_name }}" \
+            jpackage-output/* \
+            --clobber
