@@ -111,17 +111,10 @@ jobs:
           cp "$TERMINAL_JAR" pr-artifacts/terminal/
           cp terminal/target/deps/*.jar pr-artifacts/terminal/
 
-          cat > pr-artifacts/terminal/run.sh << 'SCRIPT'
-#!/usr/bin/env bash
-DIR="$(cd "$(dirname "$0")" && pwd)"
-java --enable-preview -cp "$DIR/*" de.bsommerfeld.wsbg.terminal.ui.AppMain "$@"
-SCRIPT
+          printf '#!/usr/bin/env bash\nDIR="$(cd "$(dirname "$0")" && pwd)"\njava --enable-preview -cp "$DIR/*" de.bsommerfeld.wsbg.terminal.ui.AppMain "$@"\n' > pr-artifacts/terminal/run.sh
           chmod +x pr-artifacts/terminal/run.sh
 
-          cat > pr-artifacts/terminal/run.bat << SCRIPT
-@echo off
-java --enable-preview -cp "%~dp0*" de.bsommerfeld.wsbg.terminal.ui.AppMain %*
-SCRIPT
+          printf '@echo off\r\njava --enable-preview -cp "%%~dp0*" de.bsommerfeld.wsbg.terminal.ui.AppMain %%*\r\n' > pr-artifacts/terminal/run.bat
 
       - name: Upload Launcher Artifact
         uses: actions/upload-artifact@v4
