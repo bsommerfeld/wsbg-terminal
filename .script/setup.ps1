@@ -34,11 +34,8 @@ if (Get-Command "ollama" -ErrorAction SilentlyContinue) {
     }
 }
 
-# Kill the Desktop GUI if running — we only want the headless server.
-# Matches "Ollama" (Desktop) but not "ollama" CLI serve process on older builds.
-Get-Process "Ollama" -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | Stop-Process -Force -ErrorAction SilentlyContinue
-
 # Start headless server if no ollama process is serving yet.
+# If the user already has Ollama Desktop running, it serves the API too — leave it.
 if (!(Get-Process "ollama*" -ErrorAction SilentlyContinue)) {
     Write-Host "[*] Starting Ollama server (headless)..."
     Start-Process "ollama" "serve" -WindowStyle Hidden
