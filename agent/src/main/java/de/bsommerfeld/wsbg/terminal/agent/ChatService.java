@@ -106,7 +106,6 @@ public class ChatService {
                         return null;
 
                     LOG.info("Translating response...");
-                    eventBus.post(new LogEvent("Translating...", "INFO"));
                     Locale targetLocale = Locale.forLanguageTag(targetLang);
                     String targetName = targetLocale.getDisplayLanguage(Locale.ENGLISH);
                     return brain.translate(english, "English", "en", targetName, targetLang);

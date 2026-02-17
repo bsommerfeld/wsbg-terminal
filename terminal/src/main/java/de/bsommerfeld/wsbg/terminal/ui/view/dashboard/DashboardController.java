@@ -6,6 +6,7 @@ import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
 import de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.LogEvent;
 import de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.TriggerAgentAnalysisEvent;
 import de.bsommerfeld.wsbg.terminal.ui.event.UiEvents.ToggleGraphViewEvent;
+import de.bsommerfeld.wsbg.terminal.ui.event.UiEvents.TerminalBlinkEvent;
 import de.bsommerfeld.wsbg.terminal.ui.event.UiEvents.ClearTerminalEvent;
 import de.bsommerfeld.wsbg.terminal.ui.event.UiEvents.SearchEvent;
 import de.bsommerfeld.wsbg.terminal.ui.event.UiEvents.SearchNextEvent;
@@ -137,6 +138,9 @@ public class DashboardController {
                 graphController.getView().setVisible(false);
                 if (logWebView != null)
                     logWebView.setVisible(true);
+
+                // User returned to terminal — stop the attention blink
+                eventBus.post(new TerminalBlinkEvent(false));
             } else {
                 if (logWebView != null)
                     logWebView.setVisible(false);

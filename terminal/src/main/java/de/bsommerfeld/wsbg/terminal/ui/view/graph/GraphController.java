@@ -5,6 +5,7 @@ import de.bsommerfeld.wsbg.terminal.core.domain.RedditComment;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
 import de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.TriggerAgentAnalysisEvent;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
+
 import de.bsommerfeld.wsbg.terminal.ui.event.UiEvents.TerminalBlinkEvent;
 import de.bsommerfeld.wsbg.terminal.ui.event.UiEvents.SearchEvent;
 import de.bsommerfeld.wsbg.terminal.ui.view.graph.GraphLayoutEngine.LayoutNode;
@@ -199,7 +200,7 @@ public class GraphController {
                 // Fire analysis event
                 eventBus.post(new TriggerAgentAnalysisEvent(prompt.toString()));
 
-                // Signal terminal to blink
+                // Signal terminal icon to blink while user is on graph view
                 eventBus.post(new TerminalBlinkEvent(true));
             });
         });
