@@ -12,7 +12,6 @@ import javafx.scene.Node;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.ButtonBase;
-import javafx.css.PseudoClass;
 import javafx.scene.effect.BlendMode;
 import javafx.scene.effect.DropShadow;
 import javafx.scene.effect.InnerShadow;
@@ -43,7 +42,12 @@ public final class LiquidGlass {
 
         private static final String APPLIED_KEY = "liquid-glass-applied";
         private static final String HOVER_CLASS = "liquid-glass-hover";
-        private static final PseudoClass HOVER_PSEUDO = PseudoClass.getPseudoClass("hover");
+
+        // Applied to the snap target so CSS `:hover`-equivalent rules fire.
+        // A plain style class is used instead of pseudoClassStateChanged(:hover)
+        // because JavaFX's Scene resets the :hover pseudo-class every CSS pulse
+        // based on real mouse pick results.
+        private static final String BLOB_HOVER_CLASS = "blob-hover";
 
         // Container deformation
         private static final double TRANSLATE_MAX = 4.0;
@@ -449,13 +453,13 @@ public final class LiquidGlass {
                 }
 
                 // Synthetic hover management: the blob is the visual cursor,
-                // so the control it covers must show :hover styling even when
+                // so the control it covers must show hover styling even when
                 // the real cursor sits slightly outside the control bounds.
                 if (s.snapTarget != s.prevSnapTarget) {
                         if (s.prevSnapTarget != null)
-                                s.prevSnapTarget.pseudoClassStateChanged(HOVER_PSEUDO, false);
-                        if (s.snapTarget != null)
-                                s.snapTarget.pseudoClassStateChanged(HOVER_PSEUDO, true);
+                                s.prevSnapTarget.getStyleClass().remove(BLOB_HOVER_CLASS);
+                        if (s.snapTarget != null && !s.snapTarget.getStyleClass().contains(BLOB_HOVER_CLASS))
+                                s.snapTarget.getStyleClass().add(BLOB_HOVER_CLASS);
                         s.prevSnapTarget = s.snapTarget;
                 }
         }
@@ -569,9 +573,9 @@ public final class LiquidGlass {
         }
 
         /**
-         * Paints a shimmer reflection wave on click — a diagonal band
-         * gliding from bottom-right to top-left, simulating light refraction
-         * across the glass surface.
+         * Paints a flashlight sweep on click — a narrow specular streak
+         * that enters from the left edge, widens as it crosses the surface,
+         * then tapers and fades out at the right edge.
          */
         private static void paintGlassOverlay(Canvas canvas, Region blob,
                         double dx, double dy, double speed,
@@ -589,23 +593,29 @@ public final class LiquidGlass {
                         return;
 
                 double age = (nowNano - clickTime) / 1e9;
-                double duration = 0.7;
+                double duration = 0.45;
                 if (age >= duration)
                         return;
 
-                double progress = age / duration;
-                // Ease-in-out for natural gliding appearance
-                double ease = progress < 0.5
-                                ? 2 * progress * progress
-                                : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+                double t = age / duration;
 
-                double size = Math.max(cw, ch);
-                double bandWidth = size * 0.4;
-                double diag = Math.sqrt(cw * cw + ch * ch);
+                // Envelope: fade-in 0→0.2, full 0.2→0.7, fade-out 0.7→1.0
+                double envelope;
+                if (t < 0.2)
+                        envelope = t / 0.2;
+                else if (t < 0.7)
+                        envelope = 1.0;
+                else
+                        envelope = 1.0 - (t - 0.7) / 0.3;
 
-                double startPos = diag + bandWidth;
-                double endPos = -bandWidth;
-                double currentPos = startPos + (endPos - startPos) * ease;
+                // Band widens as it travels, simulating a torch being
+                // dragged closer to the glass surface.
+                double minBand = Math.max(cw, ch) * 0.15;
+                double maxBand = Math.max(cw, ch) * 0.45;
+                double bandWidth = minBand + (maxBand - minBand) * t;
+
+                // Sweep position: left edge → right edge
+                double sweepX = -bandWidth + (cw + bandWidth * 2) * t;
 
                 gc.save();
                 gc.beginPath();
@@ -613,21 +623,24 @@ public final class LiquidGlass {
                 gc.clip();
 
                 gc.translate(cw / 2, ch / 2);
-                gc.rotate(-45);
+                gc.rotate(-25);
 
-                double centerOffset = currentPos - (diag / 2);
-                double hugeH = diag * 2;
+                double offset = sweepX - cw / 2;
 
-                LinearGradient shimmer = new LinearGradient(
-                                centerOffset, 0, centerOffset + bandWidth, 0,
+                double peakAlpha = 0.18 * envelope;
+                LinearGradient streak = new LinearGradient(
+                                offset, 0, offset + bandWidth, 0,
                                 false, CycleMethod.NO_CYCLE,
                                 new Stop(0.0, Color.rgb(255, 255, 255, 0.0)),
-                                new Stop(0.5, Color.rgb(255, 255, 255, 0.2)),
+                                new Stop(0.35, Color.rgb(255, 255, 255, peakAlpha * 0.6)),
+                                new Stop(0.5, Color.rgb(255, 255, 255, peakAlpha)),
+                                new Stop(0.65, Color.rgb(255, 255, 255, peakAlpha * 0.6)),
                                 new Stop(1.0, Color.rgb(255, 255, 255, 0.0)));
 
-                gc.setFill(shimmer);
+                double diag = Math.sqrt(cw * cw + ch * ch);
+                gc.setFill(streak);
                 gc.setGlobalBlendMode(BlendMode.SRC_OVER);
-                gc.fillRect(centerOffset - diag, -diag, diag * 2 + bandWidth, hugeH);
+                gc.fillRect(offset - diag, -diag, diag * 2 + bandWidth, diag * 2);
                 gc.restore();
 
                 gc.setGlobalBlendMode(BlendMode.SRC_OVER);
@@ -864,9 +877,9 @@ public final class LiquidGlass {
 
                 // Remove synthetic hover from whatever control the blob was covering
                 if (state.snapTarget != null)
-                        state.snapTarget.pseudoClassStateChanged(HOVER_PSEUDO, false);
+                        state.snapTarget.getStyleClass().remove(BLOB_HOVER_CLASS);
                 if (state.prevSnapTarget != null && state.prevSnapTarget != state.snapTarget)
-                        state.prevSnapTarget.pseudoClassStateChanged(HOVER_PSEUDO, false);
+                        state.prevSnapTarget.getStyleClass().remove(BLOB_HOVER_CLASS);
                 state.snapTarget = null;
                 state.prevSnapTarget = null;
                 state.venom = false;

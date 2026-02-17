@@ -451,7 +451,8 @@
     -fx-border-width: 0;
 }
 
-.title-search-clear-btn:hover {
+.title-search-clear-btn:hover,
+.title-search-clear-btn.blob-hover {
     -fx-text-fill: #e0e0e0;
     -fx-background-color: transparent;
 }
@@ -491,7 +492,8 @@
     -fx-alignment: center;
 }
 
-.ascii-button:hover {
+.ascii-button:hover,
+.ascii-button.blob-hover {
     -fx-text-fill: #e0e0e0;
     -fx-background-color: transparent;
 }
@@ -510,7 +512,8 @@
     -fx-scale-shape: true;
 }
 
-.ascii-button:hover .icon-broom {
+.ascii-button:hover .icon-broom,
+.ascii-button.blob-hover .icon-broom {
     -fx-background-color: #e0e0e0;
 }
 
@@ -535,7 +538,9 @@
 }
 
 .ascii-button:hover .icon-graph,
-.ascii-button:hover .icon-view-terminal {
+.ascii-button:hover .icon-view-terminal,
+.ascii-button.blob-hover .icon-graph,
+.ascii-button.blob-hover .icon-view-terminal {
     -fx-background-color: #e0e0e0;
 }
 
@@ -561,11 +566,13 @@
     -fx-scale-shape: true;
 }
 
-.ascii-button:hover .icon-power {
+.ascii-button:hover .icon-power,
+.ascii-button.blob-hover .icon-power {
     -fx-background-color: #e0e0e0;
 }
 
-.ascii-button:hover .icon-power-active {
+.ascii-button:hover .icon-power-active,
+.ascii-button.blob-hover .icon-power-active {
     -fx-background-color: #FFD700;
     -fx-effect: dropshadow(gaussian, rgba(255, 215, 0, 0.8), 10, 0, 0, 0);
 }
@@ -737,7 +744,10 @@
 
 .ascii-button:hover .icon-sidebar-close,
 .ascii-button:hover .icon-summarize,
-.ascii-button:hover .icon-globe {
+.ascii-button:hover .icon-globe,
+.ascii-button.blob-hover .icon-sidebar-close,
+.ascii-button.blob-hover .icon-summarize,
+.ascii-button.blob-hover .icon-globe {
     -fx-background-color: #e0e0e0;
 }
 
