@@ -1,6 +1,7 @@
 package de.bsommerfeld.wsbg.terminal.ui;
 
 import de.bsommerfeld.wsbg.terminal.core.i18n.I18nService;
+import javafx.beans.property.BooleanProperty;
 import javafx.animation.FadeTransition;
 import javafx.animation.Interpolator;
 import javafx.animation.ParallelTransition;
@@ -17,7 +18,6 @@ import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.TextField;
-import javafx.scene.control.ToggleButton;
 
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.FlowPane;
@@ -244,8 +244,7 @@ public class SettingsPopOver {
         VBox card = glassCard();
         Label title = sectionTitle("[>] " + i18n.get("settings.section.agent"));
 
-        ToggleButton toggle = glassToggle();
-        toggle.selectedProperty().bindBidirectional(viewModel.powerModeProperty());
+        Node toggle = pillToggle(viewModel.powerModeProperty());
 
         HBox row = settingRow(
                 i18n.get("settings.agent.power_mode"),
@@ -262,22 +261,20 @@ public class SettingsPopOver {
         VBox card = glassCard();
         Label title = sectionTitle("[#] " + i18n.get("settings.section.headlines"));
 
-        ToggleButton enabledToggle = glassToggle();
-        enabledToggle.selectedProperty().bindBidirectional(viewModel.headlinesEnabledProperty());
+        Node enabledToggle = pillToggle(viewModel.headlinesEnabledProperty());
         HBox enabledRow = settingRow(
                 i18n.get("settings.headlines.enabled"),
                 i18n.get("settings.headlines.enabled.hint"),
                 enabledToggle);
 
-        ToggleButton showAllToggle = glassToggle();
-        showAllToggle.selectedProperty().bindBidirectional(viewModel.headlinesShowAllProperty());
+        Node showAllToggle = pillToggle(viewModel.headlinesShowAllProperty());
         HBox showAllRow = settingRow(
                 i18n.get("settings.headlines.show_all"),
                 i18n.get("settings.headlines.show_all.hint"),
                 showAllToggle);
 
         // Cascade: disable "show all" when headlines are off
-        showAllRow.disableProperty().bind(enabledToggle.selectedProperty().not());
+        showAllRow.disableProperty().bind(viewModel.headlinesEnabledProperty().not());
 
         // Topic chips
         Label topicsLabel = new Label(i18n.get("settings.headlines.topics"));
@@ -330,8 +327,8 @@ public class SettingsPopOver {
 
         // Cascade: disable topics when headlines are off OR "show all" is on
         topicsBox.disableProperty().bind(
-                enabledToggle.selectedProperty().not()
-                        .or(showAllToggle.selectedProperty()));
+                viewModel.headlinesEnabledProperty().not()
+                        .or(viewModel.headlinesShowAllProperty()));
 
         card.getChildren().addAll(title, enabledRow, showAllRow, topicsBox);
         return card;
@@ -410,8 +407,7 @@ public class SettingsPopOver {
         HBox langRow = settingRow(i18n.get("settings.user.language"), null, langBox);
 
         // Auto-update toggle
-        ToggleButton autoUpdateToggle = glassToggle();
-        autoUpdateToggle.selectedProperty().bindBidirectional(viewModel.autoUpdateProperty());
+        Node autoUpdateToggle = pillToggle(viewModel.autoUpdateProperty());
         HBox autoUpdateRow = settingRow(
                 i18n.get("settings.user.auto_update"),
                 i18n.get("settings.user.auto_update.hint"),
@@ -462,10 +458,55 @@ public class SettingsPopOver {
         return row;
     }
 
-    private static ToggleButton glassToggle() {
-        ToggleButton toggle = new ToggleButton();
-        toggle.getStyleClass().add("settings-toggle");
-        return toggle;
+    /**
+     * Builds a custom pill-shaped toggle switch.
+     * JavaFX ToggleButton lacks an internal thumb node, so pure CSS
+     * cannot produce a pill switch — we build it from raw Regions.
+     */
+    private static StackPane pillToggle(BooleanProperty property) {
+        double trackW = 38, trackH = 22, thumbSize = 16;
+        double travel = trackW - thumbSize - 6;
+
+        StackPane track = new StackPane();
+        track.setMinSize(trackW, trackH);
+        track.setMaxSize(trackW, trackH);
+        track.setPrefSize(trackW, trackH);
+        track.setCursor(Cursor.HAND);
+        track.setAlignment(Pos.CENTER_LEFT);
+
+        Region thumb = new Region();
+        thumb.setMinSize(thumbSize, thumbSize);
+        thumb.setMaxSize(thumbSize, thumbSize);
+        thumb.setTranslateX(3);
+        thumb.setStyle("-fx-background-color: #555; -fx-background-radius: 8;");
+
+        track.getChildren().add(thumb);
+
+        Runnable updateVisual = () -> {
+            if (property.get()) {
+                track.setStyle(
+                        "-fx-background-color: rgba(255, 159, 0, 0.3);"
+                                + "-fx-background-radius: 11;"
+                                + "-fx-border-color: rgba(255, 159, 0, 0.45);"
+                                + "-fx-border-radius: 11; -fx-border-width: 1;");
+                thumb.setStyle("-fx-background-color: #ff9f00; -fx-background-radius: 8;");
+                thumb.setTranslateX(travel);
+            } else {
+                track.setStyle(
+                        "-fx-background-color: rgba(255, 255, 255, 0.06);"
+                                + "-fx-background-radius: 11;"
+                                + "-fx-border-color: rgba(255, 255, 255, 0.1);"
+                                + "-fx-border-radius: 11; -fx-border-width: 1;");
+                thumb.setStyle("-fx-background-color: #555; -fx-background-radius: 8;");
+                thumb.setTranslateX(3);
+            }
+        };
+
+        updateVisual.run();
+        property.addListener((obs, o, n) -> updateVisual.run());
+        track.setOnMouseClicked(e -> property.set(!property.get()));
+
+        return track;
     }
 
     // ── Animations ──────────────────────────────────────────────────

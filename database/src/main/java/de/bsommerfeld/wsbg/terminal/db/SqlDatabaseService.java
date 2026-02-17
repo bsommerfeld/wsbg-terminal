@@ -325,7 +325,8 @@ public class SqlDatabaseService implements DatabaseService {
                 ps.setInt(1, limit);
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
-                    results.add(mapThread(rs, 0));
+                    String id = rs.getString("id");
+                    results.add(mapThread(rs, getThreadCommentCount(conn, id)));
                 }
             }
         } catch (SQLException e) {
