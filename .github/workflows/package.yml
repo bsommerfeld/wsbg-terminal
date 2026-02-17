@@ -26,15 +26,20 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Windows: portable app-image (no installer, no admin, no SmartScreen).
+          # MSI/EXE installers fail silently too often on end-user machines.
           - os: windows-latest
-            jpackage-type: msi
+            jpackage-type: app-image
             icon-file: .assets/icons/AppIcon.ico
+            artifact-name: WSBG-Terminal-windows
           - os: macos-latest
             jpackage-type: dmg
             icon-file: .assets/icons/AppIcon.icns
+            artifact-name: ""
           - os: ubuntu-latest
             jpackage-type: deb
             icon-file: .assets/icons/AppIcon.png
+            artifact-name: ""
 
     runs-on: ${{ matrix.os }}
     name: Build ${{ matrix.jpackage-type }}
@@ -97,11 +102,26 @@ jobs:
             --icon ${{ matrix.icon-file }} \
             --dest jpackage-output
 
-      - name: Upload Installer to Release
+      # Windows app-image is a directory — zip it for a clean single-file download.
+      # macOS/Linux produce single files (dmg/deb) that upload directly.
+      - name: Zip Windows App Image
+        if: matrix.artifact-name != ''
+        shell: bash
+        run: |
+          cd jpackage-output
+          7z a -tzip "../${{ matrix.artifact-name }}.zip" "WSBG Terminal"
+
+      - name: Upload to Release
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload "${{ github.event.release.tag_name }}" \
-            jpackage-output/* \
-            --clobber
+          if [ -n "${{ matrix.artifact-name }}" ]; then
+            gh release upload "${{ github.event.release.tag_name }}" \
+              "${{ matrix.artifact-name }}.zip" \
+              --clobber
+          else
+            gh release upload "${{ github.event.release.tag_name }}" \
+              jpackage-output/* \
+              --clobber
+          fi
