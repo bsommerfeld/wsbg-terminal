@@ -11,6 +11,8 @@ import javafx.scene.Cursor;
 import javafx.scene.Node;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
+import javafx.scene.control.ButtonBase;
+import javafx.css.PseudoClass;
 import javafx.scene.effect.BlendMode;
 import javafx.scene.effect.DropShadow;
 import javafx.scene.effect.InnerShadow;
@@ -41,6 +43,7 @@ public final class LiquidGlass {
 
         private static final String APPLIED_KEY = "liquid-glass-applied";
         private static final String HOVER_CLASS = "liquid-glass-hover";
+        private static final PseudoClass HOVER_PSEUDO = PseudoClass.getPseudoClass("hover");
 
         // Container deformation
         private static final double TRANSLATE_MAX = 4.0;
@@ -101,6 +104,10 @@ public final class LiquidGlass {
 
                 // Saved child cursors — restored on mouse exit
                 final Map<Node, Cursor> savedCursors = new IdentityHashMap<>();
+
+                // Previous snap target — used to toggle synthetic hover
+                // pseudo-class when the blob flows between controls.
+                Node prevSnapTarget;
         }
 
         /**
@@ -183,6 +190,16 @@ public final class LiquidGlass {
 
                 node.addEventFilter(MouseEvent.MOUSE_RELEASED, e -> onRelease(node, blob, glass,
                                 state, timer, springBack));
+
+                // Proxy click to the snap target when the blob covers a control
+                // but the real cursor sits slightly outside it.
+                node.addEventFilter(MouseEvent.MOUSE_CLICKED, e -> {
+                        Node snap = state.snapTarget;
+                        if (snap instanceof ButtonBase btn && !snap.isHover()) {
+                                btn.fire();
+                                e.consume();
+                        }
+                });
         }
 
         private static void onEnter(Node node, Region blob, Canvas glass,
@@ -429,6 +446,17 @@ public final class LiquidGlass {
 
                 } else {
                         fillContainer(blob, pane, lx, ly);
+                }
+
+                // Synthetic hover management: the blob is the visual cursor,
+                // so the control it covers must show :hover styling even when
+                // the real cursor sits slightly outside the control bounds.
+                if (s.snapTarget != s.prevSnapTarget) {
+                        if (s.prevSnapTarget != null)
+                                s.prevSnapTarget.pseudoClassStateChanged(HOVER_PSEUDO, false);
+                        if (s.snapTarget != null)
+                                s.snapTarget.pseudoClassStateChanged(HOVER_PSEUDO, true);
+                        s.prevSnapTarget = s.snapTarget;
                 }
         }
 
@@ -833,7 +861,14 @@ public final class LiquidGlass {
         private static void cleanupHoverState(Node node, GlassState state, AnimationTimer timer) {
                 timer.stop();
                 state.dampInit = false;
+
+                // Remove synthetic hover from whatever control the blob was covering
+                if (state.snapTarget != null)
+                        state.snapTarget.pseudoClassStateChanged(HOVER_PSEUDO, false);
+                if (state.prevSnapTarget != null && state.prevSnapTarget != state.snapTarget)
+                        state.prevSnapTarget.pseudoClassStateChanged(HOVER_PSEUDO, false);
                 state.snapTarget = null;
+                state.prevSnapTarget = null;
                 state.venom = false;
 
                 if (node instanceof Pane pn)
