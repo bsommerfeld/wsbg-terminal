@@ -25,12 +25,30 @@ if (Get-Command "ollama" -ErrorAction SilentlyContinue) {
     }
 }
 
-# Ensure Ollama is serving
-if (!(Get-Process "ollama app" -ErrorAction SilentlyContinue)) {
+# Ensure Ollama is serving — wildcard matches "ollama", "ollama app", etc.
+# The bash script uses a HTTP retry loop; a flat sleep caused race conditions
+# where model pulls started before Ollama was ready.
+if (!(Get-Process "ollama*" -ErrorAction SilentlyContinue)) {
     Write-Host "[*] Starting Ollama..."
     Start-Process "ollama" "serve" -WindowStyle Hidden
-    Start-Sleep -Seconds 5
 }
+
+Write-Host "    Waiting for Ollama to be ready..."
+$ollamaReady = $false
+for ($i = 0; $i -lt 30; $i++) {
+    try {
+        $null = Invoke-WebRequest -Uri "http://localhost:11434/api/tags" -UseBasicParsing -TimeoutSec 2
+        $ollamaReady = $true
+        break
+    } catch {
+        Start-Sleep -Seconds 1
+    }
+}
+if (-not $ollamaReady) {
+    Write-Host "    Error: Ollama failed to start within 30 seconds." -ForegroundColor Red
+    exit 1
+}
+Write-Host "    Ollama is ready." -ForegroundColor Green
 
 # 2. Check Configuration & Determine Mode
 $appDataPath = $env:APPDATA
