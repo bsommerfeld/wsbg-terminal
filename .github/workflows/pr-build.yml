@@ -1,0 +1,162 @@
+# =============================================================================
+#  PR Build — Test Artifacts
+#
+#  Builds the project on every PR and uploads executable JARs for both the
+#  Launcher and Terminal module so reviewers can live-test changes without
+#  building locally.
+#
+#  Artifacts are uploaded as GitHub Actions artifacts (downloadable via the
+#  Actions tab) and a comment with download links is posted on the PR.
+#
+#  Note: GitHub does not allow attaching files directly to a PR. The workflow
+#  uses actions/upload-artifact to store them and posts a convenience comment.
+# =============================================================================
+
+name: PR Build
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  build:
+    name: Build & Upload Test JARs
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: 'zulu'
+          cache: maven
+
+      - name: Build with Maven
+        run: mvn clean package -DskipTests -U
+
+      # ── Launcher JAR ──────────────────────────────────────────────────
+      # The shade plugin produces the fat JAR we need. The "original-"
+      # prefixed file is the un-shaded copy — we skip it.
+      - name: Prepare Launcher JAR
+        shell: bash
+        run: |
+          SHADED_JAR=$(find launcher/target -maxdepth 1 -name 'launcher-*.jar' ! -name 'original-*' | head -1)
+
+          if [ -z "$SHADED_JAR" ]; then
+            echo "::warning::No shaded launcher JAR found — skipping Launcher artifact"
+            echo "LAUNCHER_FOUND=false" >> $GITHUB_ENV
+          else
+            mkdir -p pr-artifacts/launcher
+            cp "$SHADED_JAR" pr-artifacts/launcher/wsbg-launcher.jar
+            echo "LAUNCHER_FOUND=true" >> $GITHUB_ENV
+          fi
+
+      # ── Terminal JAR (with dependencies) ──────────────────────────────
+      # Terminal doesn't use shade — we collect the module JAR plus all
+      # runtime dependencies into a single directory. A wrapper script
+      # isn't needed since the artifact is a zip of JARs.
+      - name: Prepare Terminal JARs
+        shell: bash
+        run: |
+          TERMINAL_JAR=$(find terminal/target -maxdepth 1 -name 'terminal-*.jar' | head -1)
+
+          if [ -z "$TERMINAL_JAR" ]; then
+            echo "::warning::No terminal JAR found — skipping Terminal artifact"
+            echo "TERMINAL_FOUND=false" >> $GITHUB_ENV
+          else
+            mkdir -p pr-artifacts/terminal
+
+            mvn dependency:copy-dependencies \
+              -pl terminal \
+              -DincludeScope=runtime \
+              -DoutputDirectory=terminal/target/deps
+
+            # Fetch JavaFX natives for all platforms so the artifact is runnable everywhere
+            JAVAFX_VERSION=$(mvn help:evaluate -Dexpression=javafx.version -q -DforceStdout)
+            JAVAFX_MODULES="javafx-base javafx-controls javafx-fxml javafx-graphics javafx-media javafx-web"
+            for mod in $JAVAFX_MODULES; do
+              for classifier in mac-aarch64 mac win linux linux-aarch64; do
+                mvn dependency:copy \
+                  -Dartifact=org.openjfx:${mod}:${JAVAFX_VERSION}:jar:${classifier} \
+                  -DoutputDirectory=terminal/target/deps \
+                  -Dmdep.stripVersion=false || true
+              done
+            done
+
+            cp "$TERMINAL_JAR" pr-artifacts/terminal/
+            cp terminal/target/deps/*.jar pr-artifacts/terminal/
+
+            # Create a launch script so testers don't have to build the classpath manually
+            TERMINAL_JAR_NAME=$(basename "$TERMINAL_JAR")
+            cat > pr-artifacts/terminal/run.sh << 'SCRIPT'
+#!/usr/bin/env bash
+DIR="$(cd "$(dirname "$0")" && pwd)"
+java --enable-preview -cp "$DIR/*" de.bsommerfeld.wsbg.terminal.ui.AppMain "$@"
+SCRIPT
+            chmod +x pr-artifacts/terminal/run.sh
+
+            cat > pr-artifacts/terminal/run.bat << SCRIPT
+@echo off
+java --enable-preview -cp "%~dp0*" de.bsommerfeld.wsbg.terminal.ui.AppMain %*
+SCRIPT
+
+            echo "TERMINAL_FOUND=true" >> $GITHUB_ENV
+          fi
+
+      - name: Upload Launcher Artifact
+        if: env.LAUNCHER_FOUND == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: launcher-jar
+          path: pr-artifacts/launcher/
+          retention-days: 14
+
+      - name: Upload Terminal Artifact
+        if: env.TERMINAL_FOUND == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: terminal-jars
+          path: pr-artifacts/terminal/
+          retention-days: 14
+
+      - name: PR-Kommentar
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runId = context.runId;
+            const repo = context.repo;
+            const runUrl = `https://github.com/${repo.owner}/${repo.repo}/actions/runs/${runId}`;
+
+            const body = `📦 [Test-Artefakte herunterladen](${runUrl}#artifacts)`;
+
+            // Bestehenden Kommentar aktualisieren statt Duplikate bei Re-Push
+            const comments = await github.rest.issues.listComments({
+              owner: repo.owner,
+              repo: repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const existing = comments.data.find(c => c.body.startsWith('📦'));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: repo.owner,
+                repo: repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: repo.owner,
+                repo: repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
