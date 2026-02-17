@@ -15,9 +15,18 @@ if (Get-Command "ollama" -ErrorAction SilentlyContinue) {
         if ($LASTEXITCODE -ne 0) {
             throw "Winget installation failed."
         }
-        # Refresh env vars might be needed, but usually requires shell restart.
-        Write-Host "    Ollama installed. You may need to restart the script/terminal for it to be recognized." -ForegroundColor Yellow
-        Write-Host "    Attempting to continue..."
+
+        # Winget install auto-launches the Desktop GUI and registers autostart.
+        # We only need the headless server — kill the GUI and remove the entry.
+        Start-Sleep -Seconds 3
+        Get-Process "Ollama" -ErrorAction SilentlyContinue | Stop-Process -Force
+        Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "Ollama" -ErrorAction SilentlyContinue
+        Write-Host "    Ollama installed (headless mode)." -ForegroundColor Green
+
+        # Refresh PATH so the current session finds ollama.exe
+        $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+        $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+        $env:Path = "$machinePath;$userPath"
     } catch {
         Write-Host "    Failed to install Ollama automatically." -ForegroundColor Red
         Write-Host "    Please install it manually from https://ollama.com/download/windows"
@@ -25,11 +34,13 @@ if (Get-Command "ollama" -ErrorAction SilentlyContinue) {
     }
 }
 
-# Ensure Ollama is serving — wildcard matches "ollama", "ollama app", etc.
-# The bash script uses a HTTP retry loop; a flat sleep caused race conditions
-# where model pulls started before Ollama was ready.
+# Kill the Desktop GUI if running — we only want the headless server.
+# Matches "Ollama" (Desktop) but not "ollama" CLI serve process on older builds.
+Get-Process "Ollama" -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | Stop-Process -Force -ErrorAction SilentlyContinue
+
+# Start headless server if no ollama process is serving yet.
 if (!(Get-Process "ollama*" -ErrorAction SilentlyContinue)) {
-    Write-Host "[*] Starting Ollama..."
+    Write-Host "[*] Starting Ollama server (headless)..."
     Start-Process "ollama" "serve" -WindowStyle Hidden
 }
 
