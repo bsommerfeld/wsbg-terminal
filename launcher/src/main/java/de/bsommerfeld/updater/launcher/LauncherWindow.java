@@ -5,17 +5,31 @@ import java.awt.*;
 import java.awt.geom.RoundRectangle2D;
 
 /**
- * Undecorated, dark-themed Swing window showing update progress.
+ * Undecorated, dark-themed Swing window that visualizes update/setup progress.
  *
- * <p>Three-line layout: title, status (phase), detail (file name/bytes).
- * Custom-painted progress bar avoids platform-inconsistent Swing LAF.
- * Updates are coalesced at ~30fps to prevent UI flickering from rapid progress events.
+ * <h3>Layout</h3>
+ * Three text lines (title → status → detail) above a custom-painted progress
+ * bar. The window has rounded corners and supports drag-to-move since there
+ * is no title bar.
+ *
+ * <h3>Thread safety</h3>
+ * {@link #setStatus}, {@link #setDetail}, and {@link #setProgress} are called
+ * from the virtual update thread. They store values in {@code volatile} fields
+ * and schedule a single EDT flush. Multiple rapid calls coalesce into one
+ * repaint, capped at ~30 fps. This prevents Swing from drowning in repaint
+ * events during fast Ollama/download output.
+ *
+ * <p>
+ * Volatile fields instead of locks because overwrites are harmless — the
+ * latest value always wins, and the window only needs to show the most
+ * recent state.
  */
 final class LauncherWindow extends JFrame {
 
     private static final int WIDTH = 420;
     private static final int HEIGHT = 160;
-    private static final long UPDATE_INTERVAL_MS = 33; // ~30fps
+    private static final int CORNER_ARC = 16;
+    private static final long UPDATE_INTERVAL_MS = 33;
 
     private static final Color BG = new Color(22, 22, 26);
     private static final Color FG = Color.WHITE;
@@ -28,8 +42,6 @@ final class LauncherWindow extends JFrame {
     private final JLabel detailLabel;
     private final ProgressBar progressBar;
 
-    // Coalescing state — written from any thread, flushed on EDT at capped rate.
-    // Volatile fields instead of locks because overwrites are harmless (latest wins).
     private volatile String pendingStatus;
     private volatile String pendingDetail;
     private volatile double pendingProgress = Double.NaN;
@@ -39,49 +51,76 @@ final class LauncherWindow extends JFrame {
     private int dragX, dragY;
 
     LauncherWindow() {
+        configureFrame();
+        statusLabel = createLabel("Initializing...", SUBTLE, Font.PLAIN, 12);
+        detailLabel = createLabel(" ", DETAIL_COLOR, Font.PLAIN, 11);
+        progressBar = new ProgressBar();
+        setContentPane(buildLayout());
+        installDragSupport();
+    }
+
+    // =====================================================================
+    // Public API (called from update thread)
+    // =====================================================================
+
+    /** Sets the primary status line (e.g. "Downloading update..."). */
+    void setStatus(String text) {
+        pendingStatus = text;
+        scheduleFlush();
+    }
+
+    /** Sets the secondary detail line (e.g. "42% — 1.2 GB"). */
+    void setDetail(String text) {
+        pendingDetail = text;
+        scheduleFlush();
+    }
+
+    /**
+     * Sets the progress bar position.
+     *
+     * @param ratio 0.0–1.0 for determinate progress, or negative for
+     *              indeterminate pulse animation
+     */
+    void setProgress(double ratio) {
+        pendingProgress = ratio;
+        scheduleFlush();
+    }
+
+    // =====================================================================
+    // Frame Setup
+    // =====================================================================
+
+    private void configureFrame() {
         setUndecorated(true);
         setSize(WIDTH, HEIGHT);
         setLocationRelativeTo(null);
         setBackground(new Color(0, 0, 0, 0));
         setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
+        setShape(new RoundRectangle2D.Double(0, 0, WIDTH, HEIGHT, CORNER_ARC, CORNER_ARC));
 
         java.net.URL iconUrl = getClass().getResource("/images/app-icon.png");
         if (iconUrl != null) {
             setIconImage(new ImageIcon(iconUrl).getImage());
         }
+    }
 
-        setShape(new RoundRectangle2D.Double(0, 0, WIDTH, HEIGHT, 16, 16));
-
+    private JPanel buildLayout() {
         JPanel root = new JPanel(new BorderLayout()) {
             @Override
             protected void paintComponent(Graphics g) {
                 Graphics2D g2 = (Graphics2D) g.create();
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
                 g2.setColor(BG);
-                g2.fill(new RoundRectangle2D.Double(0, 0, getWidth(), getHeight(), 16, 16));
+                g2.fill(new RoundRectangle2D.Double(0, 0, getWidth(), getHeight(), CORNER_ARC, CORNER_ARC));
                 g2.dispose();
             }
         };
         root.setOpaque(false);
         root.setBorder(BorderFactory.createEmptyBorder(20, 24, 20, 24));
 
-        JLabel titleLabel = new JLabel("WSBG Terminal");
-        titleLabel.setForeground(FG);
-        titleLabel.setFont(new Font("SansSerif", Font.BOLD, 15));
-
-        statusLabel = new JLabel("Initializing...");
-        statusLabel.setForeground(SUBTLE);
-        statusLabel.setFont(new Font("SansSerif", Font.PLAIN, 12));
-
-        detailLabel = new JLabel(" ");
-        detailLabel.setForeground(DETAIL_COLOR);
-        detailLabel.setFont(new Font("SansSerif", Font.PLAIN, 11));
-
-        progressBar = new ProgressBar();
-
         JPanel textPanel = new JPanel(new GridLayout(3, 1, 0, 1));
         textPanel.setOpaque(false);
-        textPanel.add(titleLabel);
+        textPanel.add(createLabel("WSBG Terminal", FG, Font.BOLD, 15));
         textPanel.add(statusLabel);
         textPanel.add(detailLabel);
 
@@ -89,9 +128,21 @@ final class LauncherWindow extends JFrame {
         root.add(Box.createVerticalStrut(10), BorderLayout.CENTER);
         root.add(progressBar, BorderLayout.SOUTH);
 
-        setContentPane(root);
+        return root;
+    }
 
-        // Undecorated window needs manual drag support
+    private JLabel createLabel(String text, Color color, int style, int size) {
+        JLabel label = new JLabel(text);
+        label.setForeground(color);
+        label.setFont(new Font("SansSerif", style, size));
+        return label;
+    }
+
+    /**
+     * Undecorated windows have no title bar, so drag-to-move must be
+     * implemented manually via mouse press/drag listeners.
+     */
+    private void installDragSupport() {
         addMouseListener(new java.awt.event.MouseAdapter() {
             @Override
             public void mousePressed(java.awt.event.MouseEvent e) {
@@ -107,31 +158,19 @@ final class LauncherWindow extends JFrame {
         });
     }
 
-    void setStatus(String text) {
-        pendingStatus = text;
-        scheduleFlush();
-    }
-
-    void setDetail(String text) {
-        pendingDetail = text;
-        scheduleFlush();
-    }
+    // =====================================================================
+    // EDT Coalescing
+    // =====================================================================
 
     /**
-     * @param ratio 0.0 to 1.0 for determinate, or negative for indeterminate pulse
-     */
-    void setProgress(double ratio) {
-        pendingProgress = ratio;
-        scheduleFlush();
-    }
-
-    /**
-     * Schedules a single EDT flush. Multiple rapid calls coalesce into one
-     * repaint, capped at ~30fps. This prevents Swing from drowning in
-     * repaint events during fast Ollama/download output.
+     * Schedules a single EDT flush. If a flush is already pending, this is a
+     * no-op — the pending flush will pick up the latest volatile values.
+     * The flush is delayed by the remaining time in the current frame interval
+     * to cap repaints at ~30 fps.
      */
     private void scheduleFlush() {
-        if (flushScheduled) return;
+        if (flushScheduled)
+            return;
         flushScheduled = true;
 
         long elapsed = System.currentTimeMillis() - lastFlushTime;
@@ -148,6 +187,10 @@ final class LauncherWindow extends JFrame {
         });
     }
 
+    /**
+     * Applies all pending state to the Swing components in one atomic EDT pass.
+     * Each field is only consumed if a new value was set since the last flush.
+     */
     private void flush() {
         String status = pendingStatus;
         String detail = pendingDetail;
@@ -157,16 +200,15 @@ final class LauncherWindow extends JFrame {
             statusLabel.setText(status);
             pendingStatus = null;
         }
+
+        // Detail uses a space placeholder when null to maintain consistent line height
         detailLabel.setText(detail != null ? detail : " ");
         pendingDetail = null;
 
         if (!Double.isNaN(progress)) {
-            if (progress < 0) {
-                progressBar.setIndeterminate(true);
-            } else {
-                progressBar.setIndeterminate(false);
+            progressBar.setIndeterminate(progress < 0);
+            if (progress >= 0)
                 progressBar.setValue(progress);
-            }
             pendingProgress = Double.NaN;
         }
 
@@ -174,8 +216,14 @@ final class LauncherWindow extends JFrame {
         flushScheduled = false;
     }
 
+    // =====================================================================
+    // Progress Bar
+    // =====================================================================
+
     /**
-     * Custom painted progress bar — avoids the default Swing LAF that looks platform-inconsistent.
+     * Custom-painted progress bar with rounded caps and an indeterminate pulse
+     * animation. Avoids the default Swing LAF which looks different on every
+     * platform — this provides a consistent dark-theme appearance everywhere.
      */
     private static final class ProgressBar extends JComponent {
 
@@ -197,13 +245,15 @@ final class LauncherWindow extends JFrame {
         }
 
         void setIndeterminate(boolean b) {
-            if (this.indeterminate == b) return;
+            if (this.indeterminate == b)
+                return;
             this.indeterminate = b;
 
             if (b) {
                 pulseTimer = new Timer(30, _ -> {
                     pulseOffset += 0.015f;
-                    if (pulseOffset > 1f) pulseOffset = 0f;
+                    if (pulseOffset > 1f)
+                        pulseOffset = 0f;
                     repaint();
                 });
                 pulseTimer.start();

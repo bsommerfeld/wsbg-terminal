@@ -4,26 +4,40 @@ import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditComment;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
 import de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.TriggerAgentAnalysisEvent;
-import de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.TerminalBlinkEvent;
+import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
+import de.bsommerfeld.wsbg.terminal.ui.event.UiEvents.TerminalBlinkEvent;
+import de.bsommerfeld.wsbg.terminal.ui.event.UiEvents.SearchEvent;
+import de.bsommerfeld.wsbg.terminal.ui.view.graph.GraphLayoutEngine.LayoutNode;
 import de.bsommerfeld.wsbg.terminal.ui.view.graph.GraphSimulation.Node;
 import de.bsommerfeld.wsbg.terminal.ui.view.graph.GraphSimulation.Edge;
 
 import javafx.animation.AnimationTimer;
 import javafx.application.Platform;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Pane;
 import javafx.scene.layout.Priority;
 import javafx.scene.paint.Color;
 
 import com.google.common.eventbus.Subscribe;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
+
+import java.awt.Desktop;
+import java.net.URI;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Queue;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ForkJoinPool;
 import java.util.stream.Collectors;
 
 /**
@@ -41,7 +55,7 @@ public class GraphController {
     private final GraphView graphView;
     private final GraphSimulation simulation;
     private final ApplicationEventBus eventBus;
-    private final de.bsommerfeld.wsbg.terminal.db.RedditRepository repository;
+    private final RedditRepository repository;
     private AnimationTimer timer;
     private boolean isRunning = false;
 
@@ -50,13 +64,13 @@ public class GraphController {
     private final HBox containerView;
 
     // Dynamic State
-    private final java.util.Queue<Node> pendingNodes = new java.util.concurrent.ConcurrentLinkedQueue<>();
-    private final java.util.Queue<Edge> pendingEdges = new java.util.concurrent.ConcurrentLinkedQueue<>();
-    private final java.util.Queue<String> pendingRemovals = new java.util.concurrent.ConcurrentLinkedQueue<>();
+    private final Queue<Node> pendingNodes = new ConcurrentLinkedQueue<>();
+    private final Queue<Edge> pendingEdges = new ConcurrentLinkedQueue<>();
+    private final Queue<String> pendingRemovals = new ConcurrentLinkedQueue<>();
 
     // Tracking
-    private final Set<String> knownNodeIds = java.util.concurrent.ConcurrentHashMap.newKeySet();
-    private final Set<String> knownEdgeIds = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private final Set<String> knownNodeIds = ConcurrentHashMap.newKeySet();
+    private final Set<String> knownEdgeIds = ConcurrentHashMap.newKeySet();
 
     // Center Node
     private static final String CENTER_ID = "CENTER_WSBG";
@@ -65,13 +79,9 @@ public class GraphController {
     // Currently displayed thread in sidebar
     private String currentSidebarThreadId;
 
-    // Comment color palette: bright blue -> deep sea blue
-    private static final Color COMMENT_BLUE_SHALLOW = Color.web("#4488FF");
-    private static final Color COMMENT_BLUE_DEEP = Color.web("#0A2A55");
-
     @Inject
     public GraphController(ApplicationEventBus eventBus,
-            de.bsommerfeld.wsbg.terminal.db.RedditRepository repository) {
+            RedditRepository repository) {
         this.eventBus = eventBus;
         this.repository = repository;
         this.graphView = new GraphView();
@@ -95,7 +105,7 @@ public class GraphController {
         // Wire open-in-browser
         sidebar.setOpenUrlHandler(url -> {
             try {
-                java.awt.Desktop.getDesktop().browse(java.net.URI.create(url));
+                Desktop.getDesktop().browse(URI.create(url));
             } catch (Exception ex) {
                 System.err.println("Failed to open browser: " + ex.getMessage());
             }
@@ -117,14 +127,14 @@ public class GraphController {
         if (threadId == null)
             return;
 
-        java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+        CompletableFuture.supplyAsync(() -> {
             RedditThread thread = repository.getThread(threadId);
             List<RedditComment> comments = repository.getCommentsForThread(threadId, 500);
-            return new javafx.util.Pair<>(thread, comments);
-        }).thenAccept(pair -> {
+            return new Object[] { thread, comments };
+        }).thenAccept(arr -> {
             Platform.runLater(() -> {
                 currentSidebarThreadId = threadId;
-                sidebar.showThread(pair.getKey(), pair.getValue(), null);
+                sidebar.showThread((RedditThread) arr[0], (List<RedditComment>) arr[1], null);
                 graphView.setSelectedThreadId(threadId);
             });
         });
@@ -135,36 +145,36 @@ public class GraphController {
             return;
 
         // Load thread for analysis
-        java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+        CompletableFuture.supplyAsync(() -> {
             RedditThread thread = repository.getThread(currentSidebarThreadId);
             List<RedditComment> comments = repository.getCommentsForThread(currentSidebarThreadId, 500);
-            return new javafx.util.Pair<>(thread, comments);
-        }).thenAccept(pair -> {
+            return new Object[] { thread, comments };
+        }).thenAccept(arr -> {
             Platform.runLater(() -> {
-                RedditThread thread = pair.getKey();
-                List<RedditComment> comments = pair.getValue();
+                RedditThread thread = (RedditThread) arr[0];
+                List<RedditComment> comments = (List<RedditComment>) arr[1];
                 if (thread == null)
                     return;
 
                 // Build analysis prompt
                 StringBuilder prompt = new StringBuilder();
                 prompt.append("Analysiere den folgenden Reddit-Thread und fasse zusammen:\n\n");
-                prompt.append("Titel: ").append(thread.getTitle()).append("\n");
-                if (thread.getTextContent() != null && !thread.getTextContent().isEmpty()) {
-                    prompt.append("Inhalt: ").append(thread.getTextContent()).append("\n");
+                prompt.append("Titel: ").append(thread.title()).append("\n");
+                if (thread.textContent() != null && !thread.textContent().isEmpty()) {
+                    prompt.append("Inhalt: ").append(thread.textContent()).append("\n");
                 }
-                prompt.append("Score: ").append(thread.getScore())
-                        .append(" | Kommentare: ").append(thread.getNumComments()).append("\n\n");
+                prompt.append("Score: ").append(thread.score())
+                        .append(" | Kommentare: ").append(thread.numComments()).append("\n\n");
 
                 if (comments != null && !comments.isEmpty()) {
                     prompt.append("Kommentare:\n");
                     int limit = Math.min(comments.size(), 30);
                     for (int i = 0; i < limit; i++) {
                         RedditComment c = comments.get(i);
-                        prompt.append("- u/").append(c.getAuthor() != null ? c.getAuthor() : "[deleted]")
-                                .append(" (↑").append(c.getScore()).append("): ")
-                                .append(c.getBody().length() > 200 ? c.getBody().substring(0, 200) + "..."
-                                        : c.getBody())
+                        prompt.append("- u/").append(c.author() != null ? c.author() : "[deleted]")
+                                .append(" (↑").append(c.score()).append("): ")
+                                .append(c.body().length() > 200 ? c.body().substring(0, 200) + "..."
+                                        : c.body())
                                 .append("\n");
                     }
                 }
@@ -179,15 +189,15 @@ public class GraphController {
     }
 
     @Subscribe
-    public void onSearchEvent(de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.SearchEvent event) {
-        String query = (event.query == null) ? "" : event.query.trim();
+    public void onSearchEvent(SearchEvent event) {
+        String query = (event.query() == null) ? "" : event.query().trim();
 
         if (query.isEmpty()) {
-            graphView.setHighlightedNodeIds(java.util.Collections.emptySet());
+            graphView.setHighlightedNodeIds(Collections.emptySet());
             return;
         }
 
-        java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+        CompletableFuture.supplyAsync(() -> {
             Set<String> matches = new HashSet<>();
             String effectiveQuery = query.toLowerCase();
 
@@ -199,16 +209,16 @@ public class GraphController {
                 }
             }
             return matches;
-        }, java.util.concurrent.ForkJoinPool.commonPool())
+        }, ForkJoinPool.commonPool())
                 .thenAccept(matches -> Platform.runLater(() -> graphView.setHighlightedNodeIds(matches)));
     }
 
     private void recalculateGraph() {
-        java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+        CompletableFuture.supplyAsync(() -> {
             List<RedditThread> threads = repository.getAllThreads();
             List<RedditComment> comments = repository.getAllComments();
-            return new javafx.util.Pair<>(threads, comments);
-        }).thenAccept(pair -> initializeGraphData(pair.getKey(), pair.getValue()))
+            return new Object[] { threads, comments };
+        }).thenAccept(arr -> initializeGraphData((List<RedditThread>) arr[0], (List<RedditComment>) arr[1]))
                 .exceptionally(ex -> {
                     System.err.println("Graph Data Load Failed: " + ex.getMessage());
                     return null;
@@ -217,11 +227,11 @@ public class GraphController {
 
     private void initializeGraphData(List<RedditThread> threads, List<RedditComment> comments) {
         Map<String, RedditComment> commentMap = comments.stream()
-                .collect(Collectors.toMap(RedditComment::getId, c -> c, (a, b) -> a));
+                .collect(Collectors.toMap(RedditComment::id, c -> c, (a, b) -> a));
 
         Map<String, List<RedditComment>> commentsByParent = new HashMap<>();
         for (RedditComment c : comments) {
-            String pStr = c.getParentId();
+            String pStr = c.parentId();
             if (pStr == null || pStr.isEmpty() || pStr.equals("null"))
                 continue;
 
@@ -257,7 +267,7 @@ public class GraphController {
 
         // Sort threads by fetchedAt / createdUtc for temporal ordering
         List<RedditThread> sortedThreads = new ArrayList<>(threads);
-        sortedThreads.sort(Comparator.comparingLong(RedditThread::getCreatedUtc));
+        sortedThreads.sort(Comparator.comparingLong(RedditThread::createdUtc));
 
         // Pre-build layout trees to know subtree sizes for angular budget
         List<LayoutNode> threadLayouts = new ArrayList<>();
@@ -265,27 +275,27 @@ public class GraphController {
         int totalSubtreeWeight = 0;
 
         for (RedditThread t : sortedThreads) {
-            String tId = t.getId();
+            String tId = t.id();
             validIds.add(tId);
 
             Node tn = findNode(tId);
             if (tn == null) {
-                tn = new Node(tId, t.getTitle(), 0, 0);
+                tn = new Node(tId, t.title(), 0, 0);
                 tn.isThread = true;
                 tn.color = Color.web("#FF8C00");
                 tn.mass = 20;
             }
             tn.threadId = tId;
 
-            String authorText = t.getAuthor() != null ? " u/" + t.getAuthor() : "";
-            tn.fullText = t.getTitle() + " " + (t.getTextContent() != null ? t.getTextContent() : "") + authorText;
-            tn.author = t.getAuthor();
-            tn.score = t.getScore();
+            String authorText = t.author() != null ? " u/" + t.author() : "";
+            tn.fullText = t.title() + " " + (t.textContent() != null ? t.textContent() : "") + authorText;
+            tn.author = t.author();
+            tn.score = t.score();
             tn.commentDepth = 0;
 
             LayoutNode rootLayout = new LayoutNode(tn, null);
-            buildLayoutTree(rootLayout, commentsByParent, commentMap, tId);
-            calculateSubtreeSizes(rootLayout);
+            GraphLayoutEngine.buildLayoutTree(rootLayout, commentsByParent, commentMap, tId, this::findNode);
+            GraphLayoutEngine.calculateSubtreeSizes(rootLayout);
 
             totalSubtreeWeight += 1 + rootLayout.subtreeSize;
 
@@ -304,7 +314,6 @@ public class GraphController {
             LayoutNode rootLayout = threadLayouts.get(i);
             int weight = 1 + rootLayout.subtreeSize;
 
-            // Spiral position: angle and radius both increase with index
             double branchAngle = baseAngle + i * angleStep;
             double branchRadius = 300.0 + i * 25.0;
 
@@ -321,22 +330,19 @@ public class GraphController {
                 finalEdges.add(ce);
             }
 
-            int maxDepth = calculateMaxDepth(rootLayout);
+            int maxDepth = GraphLayoutEngine.calculateMaxDepth(rootLayout);
             tn.maxSubtreeLevel = maxDepth;
 
-            // Comment angular budget: proportional to subtree weight, strictly capped to
-            // the
-            // thread's own spiral slot. 1.2x caused neighbor overlap — 1.0x ensures each
-            // thread's comments stay within their allocated sector.
+            // Angular budget proportional to subtree weight, capped to the thread's
+            // spiral slot. 1.0x prevents neighbor overlap.
             double rawBudget = (2.0 * Math.PI) * weight / Math.max(totalSubtreeWeight, 1);
             double angularBudget = Math.min(rawBudget, angleStep);
 
-            // Level spacing: higher floor forces dense threads to extend radially outward
-            // rather than clustering. 150px minimum prevents the "tight ball" effect.
+            // Higher floor forces dense threads outward. 150px minimum prevents clustering.
             double levelSpacing = Math.max(150, 220.0 / (1.0 + Math.log1p(rootLayout.subtreeSize) * 0.12));
 
-            applyBranchLayout(rootLayout, branchAngle, branchRadius, levelSpacing,
-                    angularBudget, finalNodes, finalEdges, validIds, maxDepth, tn.id);
+            GraphLayoutEngine.applyBranchLayout(rootLayout, branchAngle, branchRadius, levelSpacing,
+                    angularBudget, finalNodes, finalEdges, validIds, maxDepth, tn.id, knownEdgeIds);
 
             tn.commentCount = rootLayout.subtreeSize;
         }
@@ -362,168 +368,6 @@ public class GraphController {
         for (String id : toRemove) {
             pendingRemovals.add(id);
         }
-    }
-
-    // --- LAYOUT HELPERS ---
-
-    private static class LayoutNode {
-        Node node;
-        RedditComment rawComment;
-        List<LayoutNode> children = new ArrayList<>();
-        int subtreeSize = 0;
-
-        LayoutNode(Node node, RedditComment c) {
-            this.node = node;
-            this.rawComment = c;
-        }
-    }
-
-    /**
-     * Caps children per parent at MAX_CHILDREN_PER_NODE (by score).
-     * All comments remain in the sidebar — the cap only affects graph density
-     * by preventing a single node from spawning a dense fan-out cluster.
-     */
-    private static final int MAX_CHILDREN_PER_NODE = 15;
-
-    private void buildLayoutTree(LayoutNode parent, Map<String, List<RedditComment>> map,
-            Map<String, RedditComment> allComments, String threadId) {
-        String pId = parent.rawComment == null ? parent.node.id : parent.rawComment.getId();
-        List<RedditComment> kids = map.get(pId);
-        if (kids == null)
-            return;
-
-        kids.sort(Comparator.comparingInt(RedditComment::getScore).reversed());
-
-        int added = 0;
-        for (RedditComment c : kids) {
-            if (added >= MAX_CHILDREN_PER_NODE)
-                break;
-
-            String cId = "CMT_" + c.getId();
-            Node cn = findNode(cId);
-            if (cn == null) {
-                String bodySnippet = c.getBody().length() > 100 ? c.getBody().substring(0, 100) + "..." : c.getBody();
-                cn = new Node(cId, bodySnippet, 0, 0);
-                cn.isThread = false;
-                cn.mass = 5;
-            }
-
-            String authorText = c.getAuthor() != null ? " u/" + c.getAuthor() : "";
-            cn.fullText = c.getBody() + authorText;
-            cn.author = c.getAuthor();
-            cn.score = c.getScore();
-            cn.isThread = false;
-            cn.parent = parent.node;
-            cn.rootNode = parent.node.rootNode != null ? parent.node.rootNode : parent.node;
-            cn.level = parent.node.level + 1;
-            cn.commentDepth = parent.node.commentDepth + 1;
-            cn.threadId = threadId;
-
-            LayoutNode childLayout = new LayoutNode(cn, c);
-            parent.children.add(childLayout);
-
-            buildLayoutTree(childLayout, map, allComments, threadId);
-            added++;
-        }
-    }
-
-    private void calculateSubtreeSizes(LayoutNode node) {
-        node.subtreeSize = 0;
-        for (LayoutNode child : node.children) {
-            calculateSubtreeSizes(child);
-            node.subtreeSize += 1 + child.subtreeSize;
-        }
-    }
-
-    private int calculateMaxDepth(LayoutNode node) {
-        int max = node.node.commentDepth;
-        for (LayoutNode child : node.children) {
-            max = Math.max(max, calculateMaxDepth(child));
-        }
-        return max;
-    }
-
-    /**
-     * Lays out comments along a branch. Angular budget is distributed
-     * proportionally to each child's subtree weight, ensuring sparse branches
-     * don't steal space from dense ones.
-     */
-    private void applyBranchLayout(LayoutNode layoutNode, double branchAngle, double parentRadius,
-            double levelSpacing, double angularBudget, List<Node> nodesOut, List<Edge> edgesOut,
-            Set<String> validIds, int maxDepth, String threadId) {
-
-        if (layoutNode.children.isEmpty())
-            return;
-
-        int childCount = layoutNode.children.size();
-
-        // Total weight of all children (each child weighs 1 + its subtree)
-        int totalChildWeight = 0;
-        for (LayoutNode child : layoutNode.children) {
-            totalChildWeight += 1 + child.subtreeSize;
-        }
-
-        // Cap angular spread per level. Deep nodes must stay narrow to avoid fan-out.
-        // The 0.6 decay (down from 0.7) forces each level to use at most 60% of the
-        // parent's budget, pushing growth radially outward instead of laterally.
-        double effectiveBudget = Math.min(angularBudget * 0.6, Math.PI * 0.4);
-
-        // For very many children at one level, limit spread per child
-        double maxPerChild = Math.PI * 0.15;
-        if (childCount > 1) {
-            double totalIfMaxed = maxPerChild * childCount;
-            if (totalIfMaxed < effectiveBudget) {
-                effectiveBudget = totalIfMaxed;
-            }
-        }
-
-        // Bias angular start outward: 30% of budget center-facing, 70% outward.
-        // Symmetric centering (50/50) caused comments to spill between thread and
-        // center.
-        double childAngleStart = branchAngle - effectiveBudget * 0.3;
-
-        for (int i = 0; i < childCount; i++) {
-            LayoutNode child = layoutNode.children.get(i);
-            int childWeight = 1 + child.subtreeSize;
-
-            // This child's angular slice, proportional to its subtree
-            double childSlice = effectiveBudget * childWeight / Math.max(totalChildWeight, 1);
-            double childAngle = childAngleStart + childSlice / 2.0;
-
-            double childRadius = parentRadius + levelSpacing;
-
-            child.node.targetX = Math.cos(childAngle) * childRadius;
-            child.node.targetY = Math.sin(childAngle) * childRadius;
-
-            child.node.color = getCommentColor(child.node.commentDepth, maxDepth);
-            child.node.maxSubtreeLevel = maxDepth;
-            child.node.threadId = threadId;
-
-            validIds.add(child.node.id);
-            nodesOut.add(child.node);
-
-            String edgeId = "E_" + child.node.id;
-            if (!knownEdgeIds.contains(edgeId)) {
-                Edge e = new Edge(edgeId, layoutNode.node, child.node);
-                e.length = levelSpacing;
-                edgesOut.add(e);
-            }
-
-            applyBranchLayout(child, childAngle, childRadius, levelSpacing,
-                    childSlice, nodesOut, edgesOut, validIds, maxDepth, threadId);
-
-            childAngleStart += childSlice;
-        }
-    }
-
-    /**
-     * Interpolates between bright blue and deep sea blue based on comment depth.
-     */
-    private Color getCommentColor(int depth, int maxDepth) {
-        if (maxDepth <= 1)
-            return COMMENT_BLUE_SHALLOW;
-        double t = Math.min(1.0, (double) (depth - 1) / Math.max(1, maxDepth - 1));
-        return COMMENT_BLUE_SHALLOW.interpolate(COMMENT_BLUE_DEEP, t);
     }
 
     private Node findNode(String id) {
@@ -643,62 +487,16 @@ public class GraphController {
             removalsProcessed++;
         }
 
-        // Reap nodes (Death Animation Complete)
+        // Reap fully dead nodes and their edges in one pass.
+        // The iterator approach ensures edge cleanup happens atomically per node,
+        // unlike a bulk removeIf which would orphan edges.
         long reapThreshold = System.nanoTime() - 2_500_000_000L;
         synchronized (simulation.getNodes()) {
-            simulation.getNodes().removeIf(n -> n.deathNano > 0 && n.deathNano < reapThreshold);
-        }
-
-        // Clean edges for removed nodes (Safe iterator removal)
-        // We do this separately or let the removeIf logic handle it?
-        // Original code removed directly. Let's do a safe clean pass.
-        // It's expensive to iterate edges every tick.
-        // Optimization: Only scan if we actually reaped nodes?
-        // For safety, let's replicate the original logic, but more efficiently if
-        // possible.
-        // Original: removeNodeAndEdges(n.id) for ONE node at a time.
-        // Here we bulk removed nodes. So we should bulk remove edges.
-
-        // Efficient Edge Cleanup: Remove edges where source or target is not in node
-        // list?
-        // Or simpler: Iterate edges and check if source/target are dead/removed.
-
-        // However, simulation.tick() needs valid nodes.
-        // If we removed nodes above, we MUST remove edges NOW to avoid NPEs or ghost
-        // edges.
-        synchronized (simulation.getEdges()) {
-            simulation.getEdges().removeIf(e -> {
-                // Check if source/target are still in the live node list?
-                // That's O(E * N). Too slow.
-                // Better: Check if source/target have the 'removed' state or are just gone.
-                // Since we removed them from the list, we can't check 'contains'.
-
-                // Alternative: Rely on the fact that if we removed the node, we should have
-                // removed the edge.
-                // Let's stick to the queue-based removal for single nodes which handles edges
-                // implicitly.
-                return false;
-            });
-        }
-
-        // Actually, the original code called `removeNodeAndEdges(n.id)` inside the
-        // loop.
-        // We should restore that beahvior for correctness.
-        // The block above `simulation.getNodes().removeIf` is correct for nodes,
-        // but it doesn't clean edges.
-
-        // Let's rewrite the reaper manually to match original behavior exactly for
-        // safety
-        synchronized (simulation.getNodes()) {
-            java.util.Iterator<Node> it = simulation.getNodes().iterator();
+            Iterator<Node> it = simulation.getNodes().iterator();
             while (it.hasNext()) {
                 Node n = it.next();
                 if (n.deathNano > 0 && n.deathNano < reapThreshold) {
-                    // Node is dead. Remove it.
                     it.remove();
-
-                    // Remove associated edges
-                    // We must lock edges to remove safely
                     synchronized (simulation.getEdges()) {
                         simulation.getEdges().removeIf(e -> (e.source != null && e.source.id.equals(n.id)) ||
                                 (e.target != null && e.target.id.equals(n.id)));
@@ -709,7 +507,7 @@ public class GraphController {
         }
     }
 
-    public javafx.scene.layout.Pane getView() {
+    public Pane getView() {
         return containerView;
     }
 
@@ -719,13 +517,8 @@ public class GraphController {
             try {
                 physicsThread.start();
             } catch (IllegalThreadStateException e) {
-                // Thread already started, ignore or recreate if needed.
-                // Simple restart logic: usually create new thread in start() or use pool.
-                // For this simple implementation, if it died, we might need to recreate
-                // setupLoop().
-                // But typically start() is called once.
-                // Better safety:
-                setupLoop(); // Recreates the thread object
+                // Thread already terminated — recreate and start fresh
+                setupLoop();
                 physicsThread.start();
             }
         } else if (physicsThread == null) {
@@ -741,21 +534,5 @@ public class GraphController {
         if (physicsThread != null) {
             physicsThread.interrupt();
         }
-    }
-
-    private void removeNodeAndEdges(String nodeId) {
-        synchronized (simulation.getNodes()) {
-            simulation.getNodes().removeIf(n -> n.id.equals(nodeId));
-        }
-        synchronized (simulation.getEdges()) {
-            simulation.getEdges().removeIf(e -> {
-                boolean match = (e.source != null && e.source.id.equals(nodeId)) ||
-                        (e.target != null && e.target.id.equals(nodeId));
-                if (match)
-                    knownEdgeIds.remove(e.id);
-                return match;
-            });
-        }
-        knownNodeIds.remove(nodeId);
     }
 }

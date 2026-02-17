@@ -3,72 +3,83 @@ package de.bsommerfeld.wsbg.terminal.db;
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditComment;
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
+import de.bsommerfeld.wsbg.terminal.core.util.TestDataGenerator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Collections;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * No-Op Implementation of DatabaseService for TEST mode.
- * Does not persist anything. Returns empty lists.
+ * In-memory {@link DatabaseService} for TEST mode — no disk I/O, no SQLite,
+ * no schema migration. Bound by Guice when the application starts with the
+ * {@code --test} flag.
+ *
+ * <h3>Startup behavior</h3>
+ * The constructor pre-seeds the store with 20 threads (24h time spread) and
+ * 10–30 nested comments per thread. This means the graph view, sidebar, and
+ * passive monitor all see a populated dataset immediately — no waiting for
+ * scrape cycles.
+ *
+ * <h3>Runtime behavior</h3>
+ * <ul>
+ * <li>{@link #saveThread} eagerly generates comments for new threads so that
+ * {@link #getAllComments()} returns them on the next graph refresh without
+ * requiring a separate {@link #getCommentsForThread} call first</li>
+ * <li>{@link #getCommentsForThread} lazily generates comments on first access
+ * if none exist yet (fallback for threads that bypassed
+ * {@code saveThread})</li>
+ * <li>{@link #cleanupOldThreads} is a no-op — test data is ephemeral
+ * anyway</li>
+ * </ul>
+ *
+ * <h3>What the output looks like</h3>
+ * See {@link TestDataGenerator} for exact data distributions (subreddits,
+ * score ranges, nesting depth, image probabilities).
  */
 @Singleton
 public class TestDatabaseService implements DatabaseService {
 
     private static final Logger LOG = LoggerFactory.getLogger(TestDatabaseService.class);
-    private final java.util.Map<String, RedditThread> memoryStore = new java.util.concurrent.ConcurrentHashMap<>();
-    // Map<ThreadID, List<RedditComment>>
-    private final java.util.Map<String, List<RedditComment>> commentStore = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private final Map<String, RedditThread> memoryStore = new ConcurrentHashMap<>();
+    private final Map<String, List<RedditComment>> commentStore = new ConcurrentHashMap<>();
 
     public TestDatabaseService() {
         LOG.warn("#######################################################");
         LOG.warn("#  TEST MODE ENABLED: Database persistence is DISABLED #");
-        LOG.warn("#  Using In-Memory Stub with Random Data Generation   #");
         LOG.warn("#######################################################");
 
-        // Pre-fill with some random data
-        List<RedditThread> initData = de.bsommerfeld.wsbg.terminal.core.util.TestDataGenerator.generateThreads(20);
-        for (RedditThread t : initData) {
-            memoryStore.put(t.getId(), t);
-
-            // Generate initial comments for this thread (10-30 comments)
-            int commentCount = 10 + (int) (Math.random() * 20);
-            List<RedditComment> threadComments = de.bsommerfeld.wsbg.terminal.core.util.TestDataGenerator
-                    .generateCommentsRecursive(t.getId(), commentCount);
-
-            commentStore.put(t.getId(), threadComments);
+        for (RedditThread t : TestDataGenerator.generateThreads(20)) {
+            memoryStore.put(t.id(), t);
+            int count = 10 + (int) (Math.random() * 20);
+            commentStore.put(t.id(), TestDataGenerator.generateCommentsRecursive(t.id(), count));
         }
     }
 
     @Override
     public void saveThread(RedditThread thread) {
-        LOG.debug("[TEST] Stub saveThread: {}", thread.getId());
-        memoryStore.put(thread.getId(), thread);
+        memoryStore.put(thread.id(), thread);
 
-        // Eagerly generate comments so getAllComments() returns them on the
-        // next graph refresh, instead of waiting for a lazy getCommentsForThread call.
-        if (!commentStore.containsKey(thread.getId())) {
+        // Eager comment generation ensures getAllComments() returns data
+        // on the next graph refresh, instead of requiring a lazy
+        // getCommentsForThread call first.
+        commentStore.computeIfAbsent(thread.id(), id -> {
             int count = 10 + (int) (Math.random() * 20);
-            List<RedditComment> generated = de.bsommerfeld.wsbg.terminal.core.util.TestDataGenerator
-                    .generateCommentsRecursive(thread.getId(), count);
-            commentStore.put(thread.getId(), generated);
-        }
+            return TestDataGenerator.generateCommentsRecursive(id, count);
+        });
     }
 
     @Override
     public void saveThreadsBatch(List<RedditThread> threads) {
-        LOG.debug("[TEST] Stub saveThreadsBatch: {} items", threads.size());
-        for (RedditThread t : threads) {
-            saveThread(t);
-        }
+        threads.forEach(this::saveThread);
     }
 
     @Override
     public void saveComment(RedditComment comment) {
-        LOG.debug("[TEST] Stub saveComment: {}", comment.getId());
-        commentStore.computeIfAbsent(comment.getThreadId(), k -> new java.util.ArrayList<>())
-                .add(comment);
+        commentStore.computeIfAbsent(comment.threadId(), k -> new ArrayList<>()).add(comment);
     }
 
     @Override
@@ -78,56 +89,44 @@ public class TestDatabaseService implements DatabaseService {
 
     @Override
     public List<RedditThread> getAllThreads() {
-        return new java.util.ArrayList<>(memoryStore.values());
+        return new ArrayList<>(memoryStore.values());
     }
 
     @Override
     public List<RedditComment> getCommentsForThread(String threadId, int limit) {
-        LOG.debug("[TEST] Fetching comments for thread: {}", threadId);
-
-        List<RedditComment> comments = commentStore.get(threadId);
-
-        // Lazy generation if missing (e.g. for new dynamic threads)
-        if (comments == null || comments.isEmpty()) {
-            LOG.warn("Thread {} has no comments in stub DB, generating fresh batch...", threadId);
+        List<RedditComment> comments = commentStore.computeIfAbsent(threadId, id -> {
             int count = (limit > 0) ? limit : 20;
-            comments = de.bsommerfeld.wsbg.terminal.core.util.TestDataGenerator.generateCommentsRecursive(threadId,
-                    count);
-            commentStore.put(threadId, comments);
-        }
+            return TestDataGenerator.generateCommentsRecursive(id, count);
+        });
 
-        // Apply limit if needed (simplified)
         if (limit > 0 && comments.size() > limit) {
             return comments.subList(0, limit);
         }
-
         return comments;
     }
 
     @Override
     public List<RedditComment> getAllComments() {
-        List<RedditComment> all = new java.util.ArrayList<>();
-        for (List<RedditComment> list : commentStore.values()) {
-            all.addAll(list);
-        }
+        List<RedditComment> all = new ArrayList<>();
+        commentStore.values().forEach(all::addAll);
         return all;
     }
 
     @Override
     public List<RedditThread> getRecentThreads(int limit) {
-        List<RedditThread> all = new java.util.ArrayList<>(memoryStore.values());
-        // Sort by Last Activity Desc
-        all.sort((a, b) -> Long.compare(b.getLastActivityUtc(), a.getLastActivityUtc()));
-
-        if (limit > 0 && all.size() > limit) {
+        List<RedditThread> all = new ArrayList<>(memoryStore.values());
+        all.sort((a, b) -> Long.compare(b.lastActivityUtc(), a.lastActivityUtc()));
+        if (limit > 0 && all.size() > limit)
             return all.subList(0, limit);
-        }
         return all;
     }
 
+    /**
+     * No-op — test data is ephemeral and does not accumulate enough to require
+     * cleanup.
+     */
     @Override
     public int cleanupOldThreads(long maxAgeSeconds) {
-        LOG.debug("[TEST] Stub cleanupOldThreads");
         return 0;
     }
 }

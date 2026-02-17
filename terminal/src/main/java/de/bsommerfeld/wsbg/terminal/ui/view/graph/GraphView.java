@@ -2,6 +2,7 @@ package de.bsommerfeld.wsbg.terminal.ui.view.graph;
 
 import de.bsommerfeld.wsbg.terminal.ui.view.graph.GraphSimulation.Edge;
 import de.bsommerfeld.wsbg.terminal.ui.view.graph.GraphSimulation.Node;
+import javafx.scene.Cursor;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.input.MouseEvent;
@@ -12,11 +13,14 @@ import javafx.scene.paint.CycleMethod;
 import javafx.scene.paint.RadialGradient;
 import javafx.scene.paint.Stop;
 
-import java.util.List;
-import java.util.Set;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 /**
@@ -73,7 +77,7 @@ public class GraphView extends Pane {
         }
     }
 
-    private final java.util.concurrent.atomic.AtomicReference<RenderState> renderState = new java.util.concurrent.atomic.AtomicReference<>(
+    private final AtomicReference<RenderState> renderState = new AtomicReference<>(
             new RenderState(new ArrayList<>(), new ArrayList<>()));
 
     public void setSelectedThreadId(String id) {
@@ -154,7 +158,7 @@ public class GraphView extends Pane {
             // Only show drag cursor when panning is actually possible.
             // At minimum zoom the offset is locked — CLOSED_HAND would be misleading.
             if (isPanningAllowed()) {
-                setCursor(javafx.scene.Cursor.CLOSED_HAND);
+                setCursor(Cursor.CLOSED_HAND);
             }
         });
 
@@ -185,7 +189,7 @@ public class GraphView extends Pane {
             }
             validInteraction = false;
             dragged = false;
-            setCursor(javafx.scene.Cursor.DEFAULT);
+            setCursor(Cursor.DEFAULT);
         });
 
         this.setOnMouseMoved((MouseEvent e) -> {
@@ -224,7 +228,7 @@ public class GraphView extends Pane {
         double worldRadiusSq = worldRadius * worldRadius;
 
         // Count nodes per thread inside the lens
-        Map<String, Integer> threadHits = new java.util.HashMap<>();
+        Map<String, Integer> threadHits = new HashMap<>();
 
         // No Sync needed on snapshot
         for (Node n : nodesRefInteraction) {
@@ -422,7 +426,7 @@ public class GraphView extends Pane {
         }
     }
 
-    private final List<VisualEffect> activeEffects = new java.util.concurrent.CopyOnWriteArrayList<>();
+    private final List<VisualEffect> activeEffects = new CopyOnWriteArrayList<>();
 
     public void addNodeCleanupEffect(double x, double y, boolean isThread) {
         if (350 * scale > 60)
@@ -551,7 +555,8 @@ public class GraphView extends Pane {
 
         gc.clearRect(0, 0, w, h);
         drawGrid(w, h);
-        drawAmbientGlow(w, h);
+        MagnifierRenderer.drawAmbientGlow(gc, w, h, offsetX, offsetY,
+                nodesSnapshot != null && !nodesSnapshot.isEmpty());
 
         gc.save();
         gc.translate(w / 2.0 + offsetX, h / 2.0 + offsetY);
@@ -672,199 +677,13 @@ public class GraphView extends Pane {
 
         // Magnifier is drawn in screen space, always follows cursor
         if (mouseInView) {
-            drawIceMagnifier(nodesSnapshot, edgesSnapshot, w, h, now);
+            MagnifierRenderer.CameraState cam = new MagnifierRenderer.CameraState(
+                    scale, offsetX, offsetY, MAGNIFIER_RADIUS, MAGNIFIER_ZOOM,
+                    highlightedNodeIds, selectedThreadId,
+                    this::liveliness, this::displayPosition);
+            MagnifierRenderer.drawIceMagnifier(gc, nodesSnapshot, edgesSnapshot, w, h, now,
+                    mouseScreenX, mouseScreenY, cam);
         }
-    }
-
-    // --- VOLUMETRIC AMBIENT GLOW ---
-
-    /**
-     * Radial ambient glow centered on the content centroid. Purple-blue
-     * gradient that extends toward the window edges, giving depth to the
-     * dark background.
-     */
-    private void drawAmbientGlow(double w, double h) {
-        if (nodesRefInteraction == null || nodesRefInteraction.isEmpty())
-            return;
-
-        double cx = w / 2.0 + offsetX;
-        double cy = h / 2.0 + offsetY;
-        double maxDim = Math.max(w, h);
-        double glowRadius = maxDim * 0.9;
-
-        RadialGradient glow = new RadialGradient(0, 0,
-                cx, cy, glowRadius, false, CycleMethod.NO_CYCLE,
-                new Stop(0.0, Color.rgb(30, 10, 50, 0.25)),
-                new Stop(0.2, Color.rgb(15, 15, 45, 0.20)),
-                new Stop(0.5, Color.rgb(8, 8, 25, 0.12)),
-                new Stop(0.8, Color.rgb(3, 3, 10, 0.06)),
-                new Stop(1.0, Color.TRANSPARENT));
-
-        gc.setFill(glow);
-        gc.fillRect(0, 0, w, h);
-    }
-
-    /**
-     * Glass disc magnifier at cursor position.
-     * Renders a 1:1 view inside a simple, clean glass pane.
-     * Minimalist design: Uniform rim, subtle gradient, no complex 3D effects.
-     */
-    private void drawIceMagnifier(List<Node> nodes, List<Edge> edges,
-            double w, double h, long now) {
-        double mx = mouseScreenX;
-        double my = mouseScreenY;
-
-        if (mx < 0 || my < 0 || mx > w || my > h)
-            return;
-
-        double r = MAGNIFIER_RADIUS;
-
-        // 0. Drop Shadow (Soft, centered)
-        gc.save();
-        gc.setGlobalAlpha(0.3);
-        gc.setFill(new RadialGradient(0, 0, mx, my + 2, r * 1.1, false, CycleMethod.NO_CYCLE,
-                new Stop(0, Color.BLACK), new Stop(1, Color.TRANSPARENT)));
-        gc.fillOval(mx - r, my - r, r * 2.2, r * 2.2);
-        gc.setGlobalAlpha(1.0);
-        gc.restore();
-
-        gc.save();
-
-        // 1. Clip content to circle
-        gc.beginPath();
-        gc.arc(mx, my, r, r, 0, 360);
-        gc.closePath();
-        gc.clip();
-
-        // 2. Simple Glass Body
-        // Linear gradient: Subtle white tint Top-Left -> Transparent Bottom-Right
-        javafx.scene.paint.LinearGradient glassBody = new javafx.scene.paint.LinearGradient(
-                mx - r, my - r, mx + r, my + r,
-                false, CycleMethod.NO_CYCLE,
-                new Stop(0.0, Color.rgb(255, 255, 255, 0.08)),
-                new Stop(1.0, Color.rgb(200, 220, 255, 0.02)));
-
-        gc.setFill(glassBody);
-        gc.fillOval(mx - r, my - r, r * 2, r * 2);
-
-        // 3. Render Graph Content (1:1 scale)
-        double magScale = scale * MAGNIFIER_ZOOM;
-        double ox = w / 2.0 + offsetX;
-        double oy = h / 2.0 + offsetY;
-
-        double worldX = (mx - ox) / scale;
-        double worldY = (my - oy) / scale;
-
-        gc.save();
-        gc.translate(mx, my);
-        gc.scale(magScale, magScale);
-        gc.translate(-worldX, -worldY);
-
-        // Edges in magnifier
-        gc.setLineWidth(1.0 / magScale);
-        for (Edge e : edges) {
-            if (e.source == null || e.target == null)
-                continue;
-
-            double targetLife = liveliness(e.target, now);
-            if (targetLife <= 0.001)
-                continue;
-
-            double[] targetPos = displayPosition(e.target, now);
-
-            // High visible edges in magnifier
-            gc.setGlobalAlpha(Math.max(0.4, Math.min(targetLife, 0.8)));
-            gc.setStroke(Color.rgb(200, 200, 220, 0.6)); // Brighter edges
-            gc.setLineWidth(1.5 / magScale); // Slightly thicker
-            gc.strokeLine(e.source.x, e.source.y, targetPos[0], targetPos[1]);
-        }
-
-        // Nodes in magnifier
-        gc.setGlobalAlpha(1.0);
-        for (Node n : nodes) {
-            double life = liveliness(n, now);
-            if (life <= 0.001)
-                continue;
-
-            double[] pos = displayPosition(n, now);
-            double dotAlpha = Math.max(0, (life - 0.2) / 0.8);
-            double dotRadius = n.isCenterNode ? 20.0 : n.isThread ? 20.0 : 8.0;
-            double activeR = dotRadius * (0.4 + 0.6 * dotAlpha);
-
-            // SIZE BOOST: Ensure nodes are visible as targets even when small
-            // Inside the magnifier, we want them to look like "clickable targets"
-            activeR = Math.max(activeR, 5.0);
-
-            // Refined "High Visibility" Glass Nodes (Performance Optimized)
-            Color baseColor;
-            if (n.isCenterNode) {
-                baseColor = Color.RED;
-            } else if (n.isThread) {
-                baseColor = Color.web("#FF8C00");
-            } else {
-                baseColor = n.color != null ? n.color : Color.web("#4488FF");
-            }
-
-            boolean isHighlighted = highlightedNodeIds.contains(n.id);
-            boolean isSelected = selectedThreadId != null && n.threadId != null && n.threadId.equals(selectedThreadId);
-
-            // Boost visibility inside magnifier
-            gc.setGlobalAlpha(1.0); // Full opacity for "Target" indicators
-
-            // 0. SELECTION INDICATOR (The "Glow" you requested)
-            // A large, soft halo behind the node to say "I am in the lens"
-            gc.setFill(Color.rgb(255, 255, 255, 0.25));
-            gc.fillOval(pos[0] - activeR * 1.6, pos[1] - activeR * 1.6, activeR * 3.2, activeR * 3.2);
-
-            // Replicate specific highlighting glow (Golden for search hits)
-            if (isHighlighted) {
-                gc.setFill(Color.web("#FFD700", 0.6));
-                gc.fillOval(pos[0] - activeR * 1.8, pos[1] - activeR * 1.8, activeR * 3.6, activeR * 3.6);
-            } else if (isSelected) {
-                gc.setFill(Color.web("#FFFFFF", 0.5));
-                gc.fillOval(pos[0] - activeR * 1.6, pos[1] - activeR * 1.6, activeR * 3.2, activeR * 3.2);
-            }
-
-            // 1. Base Body (Solid Color)
-            gc.setFill(baseColor);
-            gc.fillOval(pos[0] - activeR, pos[1] - activeR, activeR * 2, activeR * 2);
-
-            // 2. Inner "Lit" Glow
-            gc.setFill(Color.rgb(255, 255, 255, 0.2));
-            gc.fillOval(pos[0] - activeR, pos[1] - activeR, activeR * 2, activeR * 2);
-
-            // 3. Sharp Specular Highlight
-            gc.setFill(Color.rgb(255, 255, 255, 0.9));
-            double shineR = activeR * 0.45;
-            gc.fillOval(pos[0] - activeR * 0.5, pos[1] - activeR * 0.6, shineR, shineR * 0.7);
-
-            // 4. Glass Rim / Border
-            gc.setStroke(Color.rgb(200, 240, 255, 0.8)); // Very bright rim
-            gc.setLineWidth(1.5);
-            gc.strokeOval(pos[0] - activeR, pos[1] - activeR, activeR * 2, activeR * 2);
-        }
-
-        gc.setGlobalAlpha(1.0);
-        gc.restore(); // restore local transform
-        gc.restore(); // restore clip/save
-
-        // --- Simple Glass Rim (Screen Space) ---
-
-        // 1. Uniform Clean Rim
-        // A single, elegant line to define the circle.
-        gc.setLineWidth(1.5);
-        gc.setStroke(Color.rgb(200, 230, 255, 0.25)); // Subtle Ice/White
-        gc.strokeOval(mx - r, my - r, r * 2, r * 2);
-
-        // 2. Subtle Reflection Gradient (Top-Left)
-        // A very faint arc to hint at glossiness without being a distinct "feature".
-        gc.setLineWidth(1.0);
-        gc.setStroke(new javafx.scene.paint.LinearGradient(
-                mx - r, my - r, mx, my,
-                false, CycleMethod.NO_CYCLE,
-                new Stop(0.0, Color.rgb(255, 255, 255, 0.4)),
-                new Stop(1.0, Color.TRANSPARENT)));
-        gc.strokeArc(mx - r, my - r, r * 2, r * 2, 110, 80, javafx.scene.shape.ArcType.OPEN);
     }
 
     private void drawGrid(double w, double h) {

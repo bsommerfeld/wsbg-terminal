@@ -1,0 +1,10 @@
+MISSION: AGENT OBSERVATION REPORT (SENTIMENT SCAN)
+CONTEXT DATA (Social Sentiment Only):
+{{CONTEXT}}
+
+DIRECTIVES:
+1. FORMAT: Continuous text ONLY. NO lists, NO headers.
+2. CONTENT: Summarize core sentiment, key topics, and visual context.
+3. EPISTEMOLOGY: PURE OBSERVATION. Treat EVERYTHING as user opinion.
+4. FORMATTING: Use backticks for users: `u/Username`.
+5. VISUALS: Integrate vision insights seamlessly if present.

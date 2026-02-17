@@ -1,0 +1,263 @@
+:root {
+    --source-width: 40px;
+}
+
+{{FONT_FACES}}
+
+body {
+    box-sizing: border-box;
+    font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
+    font-size: 14px;
+    width: 100%;
+    max-width: 100%;
+    color: #e0e0e0;
+    background-color: transparent;
+    margin: 0;
+    padding: 10px;
+    overflow-x: hidden;
+    overflow-y: scroll;
+}
+
+/* Entry Animations */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes slideInLeft {
+    0% {
+        opacity: 0;
+        transform: translateX(-100px);
+    }
+
+    100% {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+
+
+.log-entry {
+    margin-bottom: 4px;
+    line-height: 1.4;
+    display: flex;
+    align-items: flex-start;
+    animation: fadeInUp 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+/* Column 1: Timestamp */
+.timestamp {
+    color: #a0a0a0;
+    font-weight: normal;
+    flex: 0 0 70px;
+    font-size: 11px;
+    user-select: none;
+    padding-top: 2px;
+    margin-right: 4px;
+}
+
+/* Column 2: Source */
+.log-source {
+    font-weight: bold;
+    flex: 0 0 var(--source-width);
+    text-align: right;
+    margin-right: 10px;
+    user-select: none;
+}
+
+/* Column 3: Content */
+.content {
+    color: #e0e0e0;
+    white-space: pre-wrap;
+    flex: 1;
+    overflow-wrap: break-word;
+}
+
+/* Source Colors */
+.source-SYSTEM {
+    color: #5c7cfa;
+}
+
+.source-USER {
+    color: #69db7c;
+    font-weight: bold;
+}
+
+.source-AI {
+    color: #ffa94d;
+    font-weight: bold;
+}
+
+.source-ERROR {
+    color: #ff6b6b;
+    font-weight: bold;
+}
+
+.source-CLEANUP {
+    color: #555555;
+}
+
+.source-REDDIT {
+    color: #555555;
+}
+
+/* Status Line */
+#status {
+    color: #888;
+    font-style: italic;
+    margin-top: 4px;
+    display: flex;
+    align-items: center;
+    padding-left: calc(80px + var(--source-width));
+}
+
+#spinner {
+    color: #4CAF50;
+    font-weight: bold;
+    margin-left: 8px;
+    font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
+}
+
+/* Inline Formatting */
+.subject {
+    color: #ffb86c;
+    font-weight: bold;
+}
+
+.bullish {
+    color: #50fa7b;
+    background-color: rgba(80, 250, 123, 0.15);
+    padding: 2px 0px;
+    border-radius: 4px;
+}
+
+.bearish {
+    color: #ff5555;
+    background-color: rgba(255, 85, 85, 0.15);
+    padding: 2px 0px;
+    border-radius: 4px;
+}
+
+.interactive-report {
+    cursor: pointer !important;
+    display: inline-block;
+}
+
+/* Liquid Glass hover for EILMELDUNG entries */
+.eilmeldung {
+    position: relative;
+    overflow: hidden;
+    border-radius: 8px;
+    padding: 6px 10px;
+    margin: 2px -10px;
+    transition: transform 0.35s cubic-bezier(0.2, 0.9, 0.1, 1),
+        box-shadow 0.35s cubic-bezier(0.2, 0.9, 0.1, 1),
+        background-color 0.35s ease;
+}
+
+.eilmeldung::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(ellipse at 30% 30%, rgba(255, 255, 255, 0.12), transparent 60%);
+    opacity: 0;
+    transition: opacity 0.4s ease;
+    pointer-events: none;
+}
+
+.eilmeldung:hover {
+    transform: scale(1.025) translateY(-1px);
+    background-color: rgba(255, 159, 0, 0.06);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3),
+        0 0 0 1px rgba(255, 255, 255, 0.08) inset,
+        0 1px 0 rgba(255, 255, 255, 0.06) inset;
+    cursor: pointer;
+}
+
+.eilmeldung:hover::before {
+    opacity: 1;
+}
+
+.eilmeldung:hover .content {
+    color: #f0f0f0;
+}
+
+.eilmeldung:active {
+    transform: scale(0.985);
+    transition-duration: 0.1s;
+}
+
+.search-highlight {
+    background-color: #ffd700;
+    color: #000000;
+    font-weight: bold;
+}
+
+/* Passive Agent Priority Colors */
+.source-passive-low {
+    color: rgba(110, 74, 46, 0.6);
+    font-weight: bold;
+}
+
+.source-passive-med {
+    color: rgba(214, 143, 0, 0.85);
+    font-weight: bold;
+}
+
+.source-passive-high {
+    color: #ff9f00;
+    font-weight: bold;
+    text-shadow: 0 0 10px rgba(255, 159, 0, 0.7);
+}
+
+/* Dimmed Content Styles */
+.log-dimmed .content {
+    color: #666;
+}
+
+/* Assistant Background (Subtle) */
+.log-type-source-AI {
+    background-color: rgba(255, 255, 255, 0.015);
+    border-radius: 6px;
+    padding: 4px 8px;
+    margin: 0 -8px;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+    width: 10px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background-color: rgba(68, 68, 68, 0.0);
+    border-radius: 4px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+    transition: none;
+}
+
+body.scrolling ::-webkit-scrollbar-thumb,
+body.scrolling::-webkit-scrollbar-thumb {
+    background-color: rgba(68, 68, 68, 0.8) !important;
+    transition: none;
+}
+
+#sentinel {
+    height: 1px;
+    width: 1px;
+}

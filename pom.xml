@@ -28,8 +28,7 @@
         <maven.compiler.source>25</maven.compiler.source>
         <maven.compiler.target>25</maven.compiler.target>
         <maven.compiler.release>25</maven.compiler.release>
-        <!-- Dependency Versions -->
-        <javafx.version>25-ea+1</javafx.version> <!-- Preview Version Placeholder - check availability -->
+        <javafx.version>25-ea+1</javafx.version>
 
         <langchain4j.version>0.36.1</langchain4j.version>
         <slf4j.version>2.0.9</slf4j.version>
@@ -47,7 +46,7 @@
 
     <dependencyManagement>
         <dependencies>
-            <!-- Project Modules -->
+
             <dependency>
                 <groupId>de.bsommerfeld</groupId>
                 <artifactId>core</artifactId>
@@ -75,14 +74,14 @@
                 <version>${project.version}</version>
             </dependency>
 
-            <!-- UI Libraries -->
+
             <dependency>
                 <groupId>de.bsommerfeld</groupId>
                 <artifactId>jfx-frameless</artifactId>
                 <version>${jfx-frameless.version}</version>
             </dependency>
 
-            <!-- JavaFX -->
+
             <dependency>
                 <groupId>org.openjfx</groupId>
                 <artifactId>javafx-controls</artifactId>
@@ -104,14 +103,14 @@
                 <version>${javafx.version}</version>
             </dependency>
 
-            <!-- DI -->
+
             <dependency>
                 <groupId>com.google.inject</groupId>
                 <artifactId>guice</artifactId>
                 <version>${guice.version}</version>
             </dependency>
 
-            <!-- AI / ML -->
+
             <dependency>
                 <groupId>dev.langchain4j</groupId>
                 <artifactId>langchain4j</artifactId>
@@ -124,7 +123,7 @@
             </dependency>
 
 
-            <!-- Utils -->
+
 
              <dependency>
                 <groupId>org.eclipse.collections</groupId>
@@ -207,7 +206,7 @@
                         </compilerArgs>
                     </configuration>
                 </plugin>
-                <!-- jpackage plugin placeholder -->
+
             </plugins>
         </pluginManagement>
     </build>

@@ -2,18 +2,47 @@ package de.bsommerfeld.wsbg.terminal.core.util;
 
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditComment;
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
+
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Random;
 import java.util.UUID;
-import java.util.concurrent.ThreadLocalRandom;
 
 /**
- * Utility for generating realistic dummy data for Reddit threads and comments.
- * Used exclusively in TEST mode to populate UI and test features without real
- * API calls.
+ * Generates realistic dummy Reddit data for offline development and TEST mode.
+ *
+ * <p>
+ * The generated data mirrors the structure and metrics of real WallStreetBets
+ * content — including nested comment trees, score distributions, image
+ * attachments,
+ * and temporal spread — so the entire application stack (graph view, sidebar,
+ * passive monitor, headline generation) behaves identically to production
+ * without requiring Reddit API access.
+ *
+ * <h3>What the output looks like</h3>
+ * <ul>
+ * <li><strong>Threads</strong>: 5 subreddits, randomly composed three-part
+ * titles
+ * (ticker + sentiment + emoji qualifier), scores 0–5000, upvote ratios 60–99%,
+ * comment counts 0–500, ~50% chance of a placeholder image</li>
+ * <li><strong>Batch threads</strong>: timestamps spread across the last 24h to
+ * simulate
+ * pre-existing history; sorted descending by creation time</li>
+ * <li><strong>Comments</strong>: flat list with parentId linking that encodes a
+ * tree structure. ~40% root comments (parentId = threadId), remainder are
+ * replies to random existing comments. Scores range from −50 to +450.
+ * ~30% chance of 1–4 image attachments per comment</li>
+ * </ul>
+ *
+ * <h3>Intended consumers</h3>
+ * <ul>
+ * <li>{@link de.bsommerfeld.wsbg.terminal.core.util.TestDataGenerator} itself
+ * is
+ * a pure data factory with no side effects</li>
+ * <li>{@code TestDatabaseService} uses it to seed the in-memory database</li>
+ * <li>{@code TestRedditScraper} uses it to simulate live scraping results</li>
+ * </ul>
  */
 public class TestDataGenerator {
 
@@ -24,7 +53,6 @@ public class TestDataGenerator {
     private static final String[] SUBREDDITS = { "wallstreetbets", "wallstreetbetsGER", "Finanzen", "Aktien",
             "CryptoMoonShots" };
 
-    // Structure: [Stock] [Action/Sentiment] [Qualifier]
     private static final String[] TITLES_PART_1 = { "GME", "AMC", "NVIDIA", "Tesla", "Bitcoin", "Rheinmetall",
             "MicroStrategy", "Palantir" };
     private static final String[] TITLES_PART_2 = { "to the moon!", "is crashing hard", "short squeeze imminent?",
@@ -50,6 +78,13 @@ public class TestDataGenerator {
 
     // --- Generator Methods ---
 
+    /**
+     * Generates a single thread with the current timestamp, random metrics,
+     * and a ~50% chance of an attached placeholder image.
+     *
+     * @return a fully populated {@link RedditThread} with a unique {@code t3_}
+     *         prefixed ID
+     */
     public static RedditThread generateThread() {
         String id = "t3_" + UUID.randomUUID().toString().substring(0, 8);
         String sub = randomElement(SUBREDDITS);
@@ -60,12 +95,10 @@ public class TestDataGenerator {
 
         long now = System.currentTimeMillis() / 1000;
 
-        // Realistic metrics
         int score = RND.nextInt(5000);
         int comments = RND.nextInt(500);
-        double ratio = 0.60 + (RND.nextDouble() * 0.39); // 60-99%
+        double ratio = 0.60 + (RND.nextDouble() * 0.39);
 
-        // Random Image (Cat placeholder or null)
         String image = (RND.nextBoolean()) ? "https://placekitten.com/500/300" : null;
 
         return new RedditThread(id, sub, title, author, text, now, "/r/" + sub + "/comments/" + id, score, ratio,
@@ -73,32 +106,48 @@ public class TestDataGenerator {
     }
 
     /**
-     * Generates a batch of threads. Uses time spread over the last 24h
-     * to simulate a pre-existing history. New threads generated at runtime
-     * via single generateThread() calls always use the current timestamp.
+     * Generates a batch of threads with timestamps spread linearly across the
+     * last 24 hours. The first thread in the returned list is the newest.
+     *
+     * <p>
+     * This temporal spread ensures the graph view, cleanup logic, and
+     * investigation clustering see a realistic age distribution on startup
+     * rather than all threads arriving at {@code now}.
+     *
+     * @param count number of threads to generate
+     * @return threads sorted descending by {@code createdUtc}
      */
     public static List<RedditThread> generateThreads(int count) {
         long now = System.currentTimeMillis() / 1000;
         List<RedditThread> list = new ArrayList<>();
         for (int i = 0; i < count; i++) {
             RedditThread t = generateThread();
-            // Spread initial batch across last 24h for realistic history
             long spread = now - (long) ((i / (double) count) * 3600 * 24);
-            list.add(new RedditThread(t.getId(), t.getSubreddit(), t.getTitle(), t.getAuthor(),
-                    t.getTextContent(), spread, t.getPermalink(), t.getScore(), t.getUpvoteRatio(),
-                    t.getNumComments(), spread, t.getImageUrl()));
+            list.add(new RedditThread(t.id(), t.subreddit(), t.title(), t.author(),
+                    t.textContent(), spread, t.permalink(), t.score(), t.upvoteRatio(),
+                    t.numComments(), spread, t.imageUrl()));
         }
-        // Sort by created desc
-        list.sort((a, b) -> Long.compare(b.getCreatedUtc(), a.getCreatedUtc()));
+        list.sort((a, b) -> Long.compare(b.createdUtc(), a.createdUtc()));
         return list;
     }
 
+    /**
+     * Generates a single comment for the given thread. Scores range from
+     * −50 to +450 (negative scores are realistic for controversial takes).
+     * ~50% of comments have an appended second sentence for varied body lengths.
+     * ~30% carry 1–4 placeholder image URLs.
+     *
+     * @param threadId the owning thread's ID (used for hierarchy resolution)
+     * @param parentId the parent entity — equals {@code threadId} for root
+     *                 comments, or another comment's ID for replies
+     * @return a fully populated {@link RedditComment} with a unique {@code t1_}
+     *         prefixed ID
+     */
     public static RedditComment generateComment(String threadId, String parentId) {
         String id = "t1_" + UUID.randomUUID().toString().substring(0, 8);
         String author = randomElement(AUTHORS);
         String body = randomElement(COMMENTS);
 
-        // Sometimes longer text
         if (RND.nextBoolean()) {
             body += " Also, " + randomElement(COMMENTS).toLowerCase();
         }
@@ -111,7 +160,7 @@ public class TestDataGenerator {
                 parentId,
                 author,
                 body,
-                RND.nextInt(500) - 50, // Score can be negative
+                RND.nextInt(500) - 50,
                 now - RND.nextInt(3600),
                 now,
                 now,
@@ -119,7 +168,6 @@ public class TestDataGenerator {
     }
 
     private static List<String> generateRandomImageUrls() {
-        // ~30% chance of having images, 1-4 images when present
         if (RND.nextInt(10) < 3) {
             int count = 1 + RND.nextInt(4);
             List<String> urls = new ArrayList<>();
@@ -134,45 +182,49 @@ public class TestDataGenerator {
     }
 
     /**
-     * Generates a list of comments, including nested replies.
-     * Note: The standard RedditComment flat structure implies parentId linking.
-     * This method creates a flat list where some comments are replies to others.
+     * Generates a flat comment list that encodes a realistic tree structure
+     * via {@code parentId} linking.
+     *
+     * <p>
+     * The algorithm works in two phases:
+     * <ol>
+     * <li><strong>Root comments</strong> (~40% of {@code count}): {@code parentId}
+     * is set to {@code threadId}, marking them as top-level replies</li>
+     * <li><strong>Nested replies</strong> (remaining ~60%): each picks a random
+     * parent from an ever-growing pool. With 50% probability, the new reply
+     * itself is added to the pool — this produces naturally varying nesting
+     * depths (typically 3–6 levels) without artificial limits</li>
+     * </ol>
+     *
+     * <p>
+     * The resulting structure mirrors Reddit's actual comment trees where a few
+     * root comments attract deep discussion chains while most remain shallow.
+     *
+     * @param threadId the owning thread's ID
+     * @param count    total number of comments to generate (roots + replies)
+     * @return flat list of comments; reconstruct the tree by grouping on
+     *         {@code parentId}
      */
     public static List<RedditComment> generateCommentsRecursive(String threadId, int count) {
         List<RedditComment> allComments = new ArrayList<>();
 
-        // 1. Generate Root Comments (approx 40% of count)
         int rootCount = Math.max(1, (int) (count * 0.4));
         List<RedditComment> roots = new ArrayList<>();
 
         for (int i = 0; i < rootCount; i++) {
-            // Parent ID same as Thread ID (t3_...) means Top Level in some schemas,
-            // or we use the specific convention. Here: parentId = threadId
             RedditComment root = generateComment(threadId, threadId);
             roots.add(root);
             allComments.add(root);
         }
 
-        // 2. Distribute remaining count as replies
         int remaining = count - rootCount;
-
-        // Use a simple probability distribution to attach replies to existing comments
-        // We iterate and keep adding to the 'possible parents' pool (which includes new
-        // replies)
-        // to simulate deep nesting.
         List<RedditComment> potentialParents = new ArrayList<>(roots);
 
         while (remaining > 0 && !potentialParents.isEmpty()) {
-            // Pick a random parent
             RedditComment parent = potentialParents.get(RND.nextInt(potentialParents.size()));
-
-            // Create reply
-            RedditComment reply = generateComment(threadId, parent.getId());
-
-            // Add to list
+            RedditComment reply = generateComment(threadId, parent.id());
             allComments.add(reply);
 
-            // Add reply as a potential parent for deeper nesting (50% chance)
             if (RND.nextBoolean()) {
                 potentialParents.add(reply);
             }

@@ -1,3 +1,16 @@
+# =============================================================================
+#  Package Native Launcher
+#
+#  Builds platform-specific installers (msi, dmg, deb) via JPackage.
+#  The Launcher is the ONLY module packaged natively — the application itself
+#  is delivered via OTA update (see release.yml).
+#
+#  Robustness notes:
+#  - The launcher JAR filename is discovered dynamically (no hardcoded version)
+#  - The release tag's "v" prefix is stripped for JPackage compatibility
+#  - The shaded JAR is identified explicitly to avoid picking the un-shaded original
+# =============================================================================
+
 name: Package Native Launcher
 
 on:
@@ -40,11 +53,33 @@ jobs:
       - name: Build Launcher JAR
         run: mvn clean package -pl launcher -am -DskipTests
 
-      - name: Create JPackage input directory
+      - name: Prepare JPackage Input
         shell: bash
         run: |
           mkdir -p jpackage-input
-          cp launcher/target/launcher-*.jar jpackage-input/
+
+          # The shade plugin produces both the shaded JAR and an "original-" prefixed
+          # copy. We need exactly the shaded one — it's the only file without "original-".
+          SHADED_JAR=$(find launcher/target -maxdepth 1 -name 'launcher-*.jar' ! -name 'original-*' | head -1)
+
+          if [ -z "$SHADED_JAR" ]; then
+            echo "::error::No shaded launcher JAR found in launcher/target/"
+            exit 1
+          fi
+
+          JAR_NAME=$(basename "$SHADED_JAR")
+          echo "Discovered launcher JAR: $JAR_NAME"
+
+          cp "$SHADED_JAR" jpackage-input/
+
+          # Strip "v" prefix from tag for JPackage — it only accepts numeric versions
+          # (e.g. "1.2.0"), not "v1.2.0". Falls back to "1.0.0" if tag is empty.
+          RAW_TAG="${{ github.event.release.tag_name }}"
+          APP_VERSION="${RAW_TAG#v}"
+          APP_VERSION="${APP_VERSION:-1.0.0}"
+
+          echo "JAR_NAME=$JAR_NAME" >> $GITHUB_ENV
+          echo "APP_VERSION=$APP_VERSION" >> $GITHUB_ENV
 
       - name: Package with JPackage
         shell: bash
@@ -52,11 +87,11 @@ jobs:
           jpackage \
             --type ${{ matrix.jpackage-type }} \
             --name "WSBG Terminal" \
-            --app-version "${{ github.event.release.tag_name }}" \
+            --app-version "$APP_VERSION" \
             --vendor "bsommerfeld" \
             --description "WSBG Terminal Launcher" \
             --input jpackage-input \
-            --main-jar launcher-1.0.0.jar \
+            --main-jar "$JAR_NAME" \
             --main-class de.bsommerfeld.updater.launcher.LauncherMain \
             --java-options "--enable-preview" \
             --icon ${{ matrix.icon-file }} \

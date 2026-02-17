@@ -24,7 +24,27 @@
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
         </dependency>
-        <!-- For HttpClient, Java 11+ is standard, no dependency needed -->
     </dependencies>
+
+    <build>
+        <resources>
+            <!-- Filter only the version properties file — binary resources
+                 (e.g. bundled images) must stay unfiltered to avoid corruption -->
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+                <includes>
+                    <include>reddit-version.properties</include>
+                </includes>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+                <excludes>
+                    <exclude>reddit-version.properties</exclude>
+                </excludes>
+            </resource>
+        </resources>
+    </build>
 
 </project>

@@ -2,7 +2,6 @@ package de.bsommerfeld.updater.launcher;
 
 import de.bsommerfeld.updater.api.GitHubRepository;
 import de.bsommerfeld.updater.api.TinyUpdateClient;
-import de.bsommerfeld.updater.api.UpdateProgress;
 
 import javax.swing.*;
 import java.io.IOException;
@@ -15,27 +14,35 @@ import java.time.format.DateTimeFormatter;
 
 /**
  * Native launcher entry point. Orchestrates the full startup sequence:
- * update → environment setup → application launch.
+ * <strong>update → environment setup → application launch</strong>.
  *
- * <p>The window is only shown if an update is needed. If the app is up-to-date
- * and environment is ready, the launcher is invisible.
+ * <h3>Visibility</h3>
+ * The launcher window stays hidden when everything is up-to-date and no
+ * setup work is needed. It only becomes visible when an actual download
+ * starts or an error occurs — first-run users always see it.
+ *
+ * <h3>Error handling philosophy</h3>
+ * The launcher must <strong>never crash silently</strong>. Every failure path
+ * either recovers gracefully (launching a cached version) or presents a
+ * visible error dialog before exiting. This is the first thing users see;
+ * a blank screen with no feedback is unacceptable.
+ *
+ * <h3>Thread model</h3>
+ * The update/setup/launch pipeline runs on a virtual thread to keep the
+ * Swing EDT responsive. All window updates go through {@link SwingUtilities}.
  */
 public final class LauncherMain {
 
     private static final GitHubRepository REPO = GitHubRepository.of("bsommerfeld/wsbg-terminal");
 
-    private LauncherMain() {}
+    private LauncherMain() {
+    }
 
     public static void main(String[] args) {
         Path appDir = StorageResolver.resolve();
 
-        try {
-            Files.createDirectories(appDir);
-            Files.createDirectories(appDir.resolve("logs"));
-        } catch (IOException e) {
-            showFatalError("Cannot create app directory: " + appDir, e);
+        if (!ensureDirectories(appDir))
             return;
-        }
 
         initLogging(appDir);
         log(appDir, "Launcher started");
@@ -51,29 +58,28 @@ public final class LauncherMain {
                 runEnvironmentPhase(appDir, window);
                 runLaunchPhase(appDir, window, args);
             } catch (Exception e) {
-                log(appDir, "Fatal: " + e.getMessage());
-                SwingUtilities.invokeLater(() -> {
-                    window.setVisible(true);
-                    window.setStatus("Error: " + e.getMessage());
-                    window.setDetail(null);
-                    window.setProgress(0);
-                });
-                showFatalError("Update failed", e);
-                // AWT EDT keeps JVM alive after the dialog is dismissed — exit explicitly
-                System.exit(1);
+                handleFatalError(appDir, window, e);
             }
         });
     }
 
+    // =====================================================================
+    // Pipeline Phases
+    // =====================================================================
+
+    /**
+     * Checks for updates and downloads them if available. On network failure,
+     * falls back to the cached version — unless this is the first run, in
+     * which case there is nothing to fall back to.
+     */
     private static void runUpdatePhase(TinyUpdateClient client, LauncherWindow window,
-                                       Path appDir, boolean showWindow) {
+            Path appDir, boolean showWindow) {
         try {
             if (showWindow) {
                 SwingUtilities.invokeLater(() -> window.setVisible(true));
             }
 
             boolean updated = client.update(progress -> {
-                // Show window only when an actual download is in progress (not "Up to date" at 1.0)
                 if (!window.isVisible() && progress.progressRatio() >= 0 && progress.progressRatio() < 1.0) {
                     SwingUtilities.invokeLater(() -> window.setVisible(true));
                 }
@@ -82,25 +88,29 @@ public final class LauncherMain {
                 window.setProgress(progress.progressRatio());
             });
 
-            if (updated) {
-                log(appDir, "Updated to " + client.currentVersion());
-            } else {
-                log(appDir, "Already up to date: " + client.currentVersion());
-            }
+            log(appDir, updated
+                    ? "Updated to " + client.currentVersion()
+                    : "Already up to date: " + client.currentVersion());
+
         } catch (Exception e) {
             log(appDir, "Update check failed: " + e.getMessage());
-            // Non-fatal if we have a previous version — launch cached
             if (client.currentVersion() != null) {
                 window.setStatus("Update check failed");
                 window.setDetail("launching cached version");
-                try { Thread.sleep(2000); } catch (InterruptedException ignored) {}
+                sleep(2000);
             } else {
-                throw new RuntimeException("First run requires network — no cached version available", e);
+                throw new RuntimeException(
+                        "First run requires network — no cached version available", e);
             }
         }
     }
 
-    private static void runEnvironmentPhase(Path appDir, LauncherWindow window) throws IOException, InterruptedException {
+    /**
+     * Runs the environment setup script (installs/updates ollama, pulls models).
+     * Non-zero exit is logged but not fatal — the application may still work.
+     */
+    private static void runEnvironmentPhase(Path appDir, LauncherWindow window)
+            throws IOException, InterruptedException {
         window.setStatus("Checking environment...");
         window.setDetail(null);
         window.setProgress(-1);
@@ -116,11 +126,16 @@ public final class LauncherMain {
             log(appDir, "Environment setup returned non-zero — proceeding anyway");
             window.setStatus("Setup completed with warnings");
             window.setDetail(null);
-            Thread.sleep(2000);
+            sleep(2000);
         }
     }
 
-    private static void runLaunchPhase(Path appDir, LauncherWindow window, String[] args) throws IOException {
+    /**
+     * Spawns the application process and exits the launcher. A brief delay
+     * ensures the user sees "Launching..." before the window disappears.
+     */
+    private static void runLaunchPhase(Path appDir, LauncherWindow window, String[] args)
+            throws IOException {
         window.setStatus("Launching application...");
         window.setDetail(null);
         window.setProgress(1.0);
@@ -129,8 +144,7 @@ public final class LauncherMain {
         AppLauncher launcher = new AppLauncher(appDir);
         launcher.launch(args);
 
-        // Brief delay so the user sees "Launching..." before the window disappears
-        try { Thread.sleep(800); } catch (InterruptedException ignored) {}
+        sleep(800);
 
         SwingUtilities.invokeLater(() -> {
             window.setVisible(false);
@@ -141,20 +155,68 @@ public final class LauncherMain {
         System.exit(0);
     }
 
-    private static void showFatalError(String message, Exception e) {
+    // =====================================================================
+    // Error Handling
+    // =====================================================================
+
+    /**
+     * Shows the launcher window with the error and presents a modal dialog.
+     * Ensures the user is never left staring at a blank screen.
+     */
+    private static void handleFatalError(Path appDir, LauncherWindow window, Exception e) {
+        log(appDir, "Fatal: " + e.getMessage());
+        SwingUtilities.invokeLater(() -> {
+            window.setVisible(true);
+            window.setStatus("Error: " + e.getMessage());
+            window.setDetail(null);
+            window.setProgress(0);
+        });
+        showErrorDialog("Launcher failed", e);
+        System.exit(1);
+    }
+
+    /**
+     * Presents a Swing error dialog with the exception's stack trace, truncated
+     * to 500 characters to avoid overflowing the dialog bounds.
+     */
+    private static void showErrorDialog(String message, Exception e) {
         StringWriter sw = new StringWriter();
         e.printStackTrace(new PrintWriter(sw));
+        String trace = sw.toString();
         JOptionPane.showMessageDialog(null,
-                message + "\n\n" + sw.toString().substring(0, Math.min(sw.toString().length(), 500)),
+                message + "\n\n" + trace.substring(0, Math.min(trace.length(), 500)),
                 "WSBG Terminal — Error",
-                JOptionPane.ERROR_MESSAGE
-        );
+                JOptionPane.ERROR_MESSAGE);
+    }
+
+    // =====================================================================
+    // Infrastructure
+    // =====================================================================
+
+    /**
+     * Creates required directories. Returns {@code false} and shows an error
+     * dialog if creation fails — the launcher cannot continue without a
+     * writable data directory.
+     */
+    private static boolean ensureDirectories(Path appDir) {
+        try {
+            Files.createDirectories(appDir);
+            Files.createDirectories(appDir.resolve("logs"));
+            return true;
+        } catch (IOException e) {
+            showErrorDialog("Cannot create app directory: " + appDir, e);
+            return false;
+        }
     }
 
     private static void initLogging(Path appDir) {
         log(appDir, "--- Launcher session ---");
     }
 
+    /**
+     * Appends a timestamped line to {@code logs/launcher.log}. Logging failures
+     * are silently ignored — the launcher must never crash because of a log write.
+     */
     private static void log(Path appDir, String message) {
         try {
             Path logFile = appDir.resolve("logs/launcher.log");
@@ -164,7 +226,15 @@ public final class LauncherMain {
                     java.nio.file.StandardOpenOption.CREATE,
                     java.nio.file.StandardOpenOption.APPEND);
         } catch (IOException ignored) {
-            // Logging failure should never crash the launcher
+            // Logging failure must never crash the launcher
+        }
+    }
+
+    /** Interruptible sleep that silently swallows the exception. */
+    private static void sleep(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException ignored) {
         }
     }
 }

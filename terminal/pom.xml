@@ -12,7 +12,7 @@
     <artifactId>terminal</artifactId>
 
     <dependencies>
-        <!-- Internal Modules -->
+
          <dependency>
             <groupId>de.bsommerfeld</groupId>
             <artifactId>core</artifactId>
@@ -31,7 +31,7 @@
             <artifactId>database</artifactId>
         </dependency>
 
-        <!-- JavaFX -->
+
         <dependency>
             <groupId>org.openjfx</groupId>
             <artifactId>javafx-controls</artifactId>
@@ -53,7 +53,7 @@
             <artifactId>javafx-graphics</artifactId>
         </dependency>
 
-        <!-- Configuration & DI -->
+
          <dependency>
             <groupId>de.bsommerfeld.jshepherd</groupId>
             <artifactId>core</artifactId>

@@ -1,0 +1,7 @@
+MISSION: SINGLE THREAD SENTIMENT SCAN
+DIRECTIVES:
+1. FORMAT: Continuous text ONLY. NO lists, NO headers.
+2. CONTENT: Summarize the poster's statement and community reaction.
+3. EPISTEMOLOGY: PURE OBSERVATION. Treat all claims as sentiment.
+4. FORMATTING: Use backticks for users: `u/Username`.
+5. GOAL: Dense, rapid summary of this conversation.

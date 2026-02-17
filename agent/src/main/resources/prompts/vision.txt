@@ -1,0 +1,1 @@
+Analyze this image comprehensively. 1. Transcribe all visible text and numbers (OCR). 2. Describe the visual scene, objects, and context. 3. If it's a chart/graph, detail the trends and data points. 4. If it's a meme or symbolic, explain the meaning. Be detailed.

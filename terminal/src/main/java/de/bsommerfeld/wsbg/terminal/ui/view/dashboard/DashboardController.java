@@ -1,53 +1,47 @@
 package de.bsommerfeld.wsbg.terminal.ui.view.dashboard;
 
-import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
 import com.google.common.eventbus.Subscribe;
 import de.bsommerfeld.wsbg.terminal.agent.ChatService;
-import de.bsommerfeld.wsbg.terminal.agent.ChatService.AgentResponseEvent;
-import de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.OpenTabEvent;
-import de.bsommerfeld.wsbg.terminal.ui.view.graph.GraphController;
-import de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.ToggleGraphViewEvent;
-
-import de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.TriggerAgentAnalysisEvent;
-import jakarta.inject.Inject;
-import com.google.inject.Injector;
-import de.bsommerfeld.wsbg.terminal.ui.view.news.NewsViewModel;
-import javafx.fxml.FXML;
-import javafx.scene.control.ListView;
-import javafx.scene.control.ListCell;
-import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
-
-import javafx.scene.layout.VBox;
-import javafx.scene.web.WebView;
-import javafx.scene.web.WebEngine;
-import javafx.collections.ListChangeListener;
+import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
 import de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.LogEvent;
+import de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.TriggerAgentAnalysisEvent;
+import de.bsommerfeld.wsbg.terminal.ui.event.UiEvents.ToggleGraphViewEvent;
+import de.bsommerfeld.wsbg.terminal.ui.event.UiEvents.ClearTerminalEvent;
+import de.bsommerfeld.wsbg.terminal.ui.event.UiEvents.SearchEvent;
+import de.bsommerfeld.wsbg.terminal.ui.event.UiEvents.SearchNextEvent;
+import de.bsommerfeld.wsbg.terminal.core.i18n.I18nService;
+import de.bsommerfeld.wsbg.terminal.ui.view.graph.GraphController;
+import jakarta.inject.Inject;
 import javafx.animation.FadeTransition;
 import javafx.animation.PauseTransition;
-import javafx.scene.input.ScrollEvent;
 import javafx.application.Platform;
-import javafx.scene.control.ScrollBar;
-import javafx.util.Duration;
+import javafx.collections.ListChangeListener;
+import javafx.fxml.FXML;
 import javafx.geometry.Orientation;
 import javafx.scene.Node;
-import java.util.Set;
-import de.bsommerfeld.wsbg.terminal.core.i18n.I18nService;
+import javafx.scene.control.ScrollBar;
+import javafx.scene.web.WebEngine;
+import javafx.scene.web.WebView;
+import javafx.scene.paint.Color;
+import javafx.util.Duration;
+import java.time.LocalTime;
+import javafx.scene.layout.StackPane;
 
 public class DashboardController {
 
-    @FXML
-    private javafx.scene.control.SplitPane rootSplitPane;
+
 
     @FXML
-    private javafx.scene.control.Label liveFeedLabel;
+    private StackPane mainContentStack;
 
     @FXML
-    private javafx.scene.layout.StackPane mainContentStack;
+    private WebView logWebView;
+    private WebEngine webEngine;
 
     private final DashboardViewModel viewModel;
-    private final NewsViewModel newsViewModel;
     private final ApplicationEventBus eventBus;
-    private boolean isAnimating = false;
+    private final I18nService i18n;
+    private final GraphController graphController;
 
     // Log Aggregation State
     private boolean lastLogWasReddit = false;
@@ -55,28 +49,13 @@ public class DashboardController {
     private int accRedditUpvotes = 0;
     private int accRedditComments = 0;
 
-    @FXML
-    private WebView logWebView;
-    private WebEngine webEngine;
-
-    private final Injector injector;
-    private final I18nService i18n;
-    private final de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig globalConfig;
-    private final GraphController graphController;
-
     @Inject
     public DashboardController(DashboardViewModel viewModel,
-            NewsViewModel newsViewModel,
             ApplicationEventBus eventBus,
-            Injector injector,
-            de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig globalConfig,
             I18nService i18n,
             GraphController graphController) {
         this.viewModel = viewModel;
-        this.newsViewModel = newsViewModel;
         this.eventBus = eventBus;
-        this.injector = injector;
-        this.globalConfig = globalConfig;
         this.i18n = i18n;
         this.graphController = graphController;
     }
@@ -89,331 +68,32 @@ public class DashboardController {
         // Initialize WebView
         if (logWebView != null) {
             webEngine = logWebView.getEngine();
-            // Transparent background
-            logWebView.setPageFill(javafx.scene.paint.Color.TRANSPARENT);
+            logWebView.setPageFill(Color.TRANSPARENT);
             logWebView.setContextMenuEnabled(false);
 
-            // Load Font URLs for WebView
+            // Build @font-face CSS pointing to bundled font resources
             String fontUrlRegular = getClass().getResource("/fonts/FiraCode-Regular.ttf").toExternalForm();
             String fontUrlBold = getClass().getResource("/fonts/FiraCode-Bold.ttf").toExternalForm();
             String fontUrlRetina = getClass().getResource("/fonts/FiraCode-Retina.ttf").toExternalForm();
 
             String fontFaceCss = "@font-face { font-family: 'Fira Code'; src: url('" + fontUrlRegular
-                    + "'); font-weight: normal; font-style: normal; }" +
-                    "@font-face { font-family: 'Fira Code Retina'; src: url('" + fontUrlRetina
-                    + "'); font-weight: normal; font-style: normal; }" +
-                    "@font-face { font-family: 'Fira Code'; src: url('" + fontUrlBold
+                    + "'); font-weight: normal; font-style: normal; }"
+                    + "@font-face { font-family: 'Fira Code Retina'; src: url('" + fontUrlRetina
+                    + "'); font-weight: normal; font-style: normal; }"
+                    + "@font-face { font-family: 'Fira Code'; src: url('" + fontUrlBold
                     + "'); font-weight: bold; font-style: normal; }";
 
-            String initialHtml = "<html><head><style>" +
-                    ":root { --source-width: 40px; }" +
-                    fontFaceCss +
-                    "body { box-sizing: border-box; font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace; font-size: 14px; width: 100%; max-width: 100%; color: #e0e0e0; background-color: transparent; margin: 0; padding: 10px; overflow-x: hidden; overflow-y: scroll; }"
-                    +
-                    // Hardware accelerate entries to prevent repaint lag
-                    "@keyframes fadeInUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }"
-                    +
-                    "@keyframes slideInLeft { 0% { opacity: 0; transform: translateX(-100px); } 100% { opacity: 1; transform: translateX(0); } }"
-                    +
-                    "@keyframes bounceIn { 0% { opacity: 0; transform: scale(0.3); } 50% { opacity: 1; transform: scale(1.05); } 70% { transform: scale(0.9); } 100% { transform: scale(1); } }"
-                    +
-                    ".log-entry { margin-bottom: 4px; line-height: 1.4; display: flex; align-items: flex-start; animation: fadeInUp 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }"
-                    +
-
-                    // Column 1: Timestamp
-                    ".timestamp { color: #a0a0a0; font-weight: normal; flex: 0 0 70px; font-size: 11px; user-select: none; padding-top: 2px; margin-right: 4px; }"
-                    +
-
-                    // Column 2: Source
-                    ".log-source { font-weight: bold; flex: 0 0 var(--source-width); text-align: right; margin-right: 10px; user-select: none; }"
-                    +
-
-                    // Column 3: Content
-                    ".content { color: #e0e0e0; white-space: pre-wrap; flex: 1; overflow-wrap: break-word; }" +
-
-                    // Source Colors
-                    ".source-SYSTEM { color: #5c7cfa; }" +
-                    ".source-USER { color: #69db7c; font-weight: bold; }" +
-                    ".source-AI { color: #ffa94d; font-weight: bold; }" +
-                    ".source-ERROR { color: #ff6b6b; font-weight: bold; }" +
-                    ".source-CLEANUP { color: #555555; }" +
-                    ".source-REDDIT { color: #555555; }" +
-
-                    // Status Line
-                    "#status { color: #888; font-style: italic; margin-top: 4px; display: flex; align-items: center; padding-left: calc(80px + var(--source-width)); }"
-                    +
-                    "#spinner { color: #4CAF50; font-weight: bold; margin-left: 8px; font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace; }"
-                    +
-                    ".subject { color: #ffb86c; font-weight: bold; }" +
-                    ".bullish { color: #50fa7b; background-color: rgba(80, 250, 123, 0.15); padding: 2px 0px; border-radius: 4px; }"
-                    +
-                    ".bearish { color: #ff5555; background-color: rgba(255, 85, 85, 0.15); padding: 2px 0px; border-radius: 4px; }"
-                    +
-                    ".interactive-report { cursor: pointer !important; display: inline-block; }" +
-
-                    // Liquid Glass hover for EILMELDUNG entries
-                    ".eilmeldung { position: relative; overflow: hidden; border-radius: 8px; padding: 6px 10px; margin: 2px -10px; transition: transform 0.35s cubic-bezier(0.2, 0.9, 0.1, 1), box-shadow 0.35s cubic-bezier(0.2, 0.9, 0.1, 1), background-color 0.35s ease; }"
-                    +
-                    ".eilmeldung::before { content: ''; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; background: radial-gradient(ellipse at 30% 30%, rgba(255,255,255,0.12), transparent 60%); opacity: 0; transition: opacity 0.4s ease; pointer-events: none; }"
-                    +
-                    ".eilmeldung:hover { transform: scale(1.025) translateY(-1px); background-color: rgba(255, 159, 0, 0.06); box-shadow: 0 4px 24px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.08) inset, 0 1px 0 rgba(255,255,255,0.06) inset; cursor: pointer; }"
-                    +
-                    ".eilmeldung:hover::before { opacity: 1; }" +
-                    ".eilmeldung:hover .content { color: #f0f0f0; }" +
-                    ".eilmeldung:active { transform: scale(0.985); transition-duration: 0.1s; }" +
-                    ".search-highlight { background-color: #ffd700; color: #000000; font-weight: bold; }" +
-
-                    // Passive Agent Priority Colors
-                    ".source-passive-low { color: rgba(110, 74, 46, 0.6); font-weight: bold; }" +
-                    ".source-passive-med { color: rgba(214, 143, 0, 0.85); font-weight: bold; }" +
-                    ".source-passive-high { color: #ff9f00; font-weight: bold; text-shadow: 0 0 10px rgba(255, 159, 0, 0.7); }"
-                    +
-
-                    // Dimmed Content Styles
-                    ".log-dimmed .content { color: #666; }" +
-
-                    // Assistant Background (Subtle)
-                    ".log-type-source-AI { background-color: rgba(255, 255, 255, 0.015); border-radius: 6px; padding: 4px 8px; margin: 0 -8px; }"
-                    +
-
-                    // Revert to EXACT original CSS (proven to work)
-                    "::-webkit-scrollbar { width: 10px; }" +
-                    "::-webkit-scrollbar-track { background: transparent; }" +
-                    // Default State (Invisible)
-                    "::-webkit-scrollbar-thumb { background-color: rgba(68, 68, 68, 0.0); border-radius: 4px; border: 2px solid transparent; background-clip: content-box; transition: none; }"
-                    +
-                    // Active Scrolling (Instant Visible)
-                    "body.scrolling ::-webkit-scrollbar-thumb, body.scrolling::-webkit-scrollbar-thumb { background-color: rgba(68, 68, 68, 0.8) !important; transition: none; }"
-                    +
-
-                    "#sentinel { height: 1px; width: 1px; }" +
-                    "</style>" +
-                    "<script>" +
-                    "var maxSourceWidth = 40;" +
-                    "function checkWidth(text) {" +
-                    "   var tester = document.getElementById('width-tester');" +
-                    "   if (!tester) return;" +
-                    "   tester.textContent = text;" +
-                    "   var w = tester.getBoundingClientRect().width;" +
-                    "   var req = Math.ceil(w);" +
-                    "   if (req > maxSourceWidth) {" +
-                    "       maxSourceWidth = req;" +
-                    "       document.documentElement.style.setProperty('--source-width', maxSourceWidth + 'px');" +
-                    "   }" +
-                    "}" +
-                    "var spinnerFrames = ['|', '/', '-', '\\\\'];" +
-                    "var frameIndex = 0;" +
-                    "var spinnerInterval = null;" +
-                    "var isAtBottom = true;" +
-                    "var scrollTimeout = null;" +
-
-                    // Keep IntersectionObserver (This fixes the 'lag'/'hinterher' issue)
-                    "var observer = new IntersectionObserver(function(entries) {" +
-                    "   isAtBottom = entries[0].isIntersecting;" +
-                    "});" +
-
-                    "window.addEventListener('load', function() {" +
-                    "   var sentinel = document.getElementById('sentinel');" +
-                    "   if(sentinel) observer.observe(sentinel);" +
-                    "});" +
-
-                    // Scroll Listener maintains the 'scrolling' class but works passively
-                    "window.addEventListener('scroll', function() {" +
-                    "   document.body.classList.add('scrolling');" +
-                    "   if (scrollTimeout) clearTimeout(scrollTimeout);" +
-                    "   scrollTimeout = setTimeout(function() {" +
-                    "       document.body.classList.remove('scrolling');" +
-                    "   }, 1000);" +
-                    "}, { passive: true });" +
-
-                    "function startSpinner() {" +
-                    "   if (spinnerInterval) return;" +
-                    "   spinnerInterval = setInterval(function() {" +
-                    "       var el = document.getElementById('spinner');" +
-                    "       if (el) {" +
-                    "           el.innerText = spinnerFrames[frameIndex];" +
-                    "           frameIndex = (frameIndex + 1) % spinnerFrames.length;" +
-                    "       }" +
-                    "   }, 100);" +
-                    "}" +
-                    "function stopSpinner() {" +
-                    "   if (spinnerInterval) {" +
-                    "       clearInterval(spinnerInterval);" +
-                    "       spinnerInterval = null;" +
-                    "   }" +
-                    "}" +
-                    "var activeSearchTerm = '';" +
-                    "function highlightTextInNode(rootNode, term) {" +
-                    "   if (!term || term.trim() === '') return;" +
-                    "   var safeTerm = term.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');" +
-                    "   var walker = document.createTreeWalker(rootNode, NodeFilter.SHOW_TEXT, null, false);" +
-                    "   var textNodes = [];" +
-                    "   while(walker.nextNode()) textNodes.push(walker.currentNode);" +
-                    "   var regex = new RegExp('(' + safeTerm + ')', 'gi');" +
-                    "   textNodes.forEach(function(node) {" +
-                    "       if (node.parentNode.classList.contains('timestamp') || node.parentNode.classList.contains('source')) return;"
-                    +
-                    "       var text = node.nodeValue;" +
-                    "       if (text.match(regex)) {" +
-                    "           var span = document.createElement('span');" +
-                    "           span.innerHTML = text.replace(regex, '<span class=\"search-highlight\">$1</span>');" +
-                    "           node.parentNode.replaceChild(span, node);" +
-                    "       }" +
-                    "   });" +
-                    "}" +
-                    "function appendLog(html, extraClass) {" +
-                    "   var content = document.getElementById('content');" +
-                    "   var div = document.createElement('div');" +
-                    "   div.className = 'log-entry ' + (extraClass || '');" +
-                    "   div.innerHTML = html;" +
-                    "   var src = div.querySelector('.log-source');" +
-                    "   if (src) checkWidth(src.textContent);" +
-                    "   if (activeSearchTerm) highlightTextInNode(div, activeSearchTerm);" +
-                    "   content.appendChild(div);" +
-                    "   if (isAtBottom) window.scrollTo(0, document.body.scrollHeight);" +
-                    "}" +
-                    "var currentStreamDiv = null;" +
-                    "function startStreamLog(headerHtml, extraClass) {" +
-                    "   var content = document.getElementById('content');" +
-                    "   currentStreamDiv = document.createElement('div');" +
-                    "   currentStreamDiv.className = 'log-entry stream-active ' + (extraClass || '');" +
-                    "   currentStreamDiv.innerHTML = headerHtml + '<span class=\"content\"></span>';" +
-                    "   var src = currentStreamDiv.querySelector('.log-source');" +
-                    "   if (src) checkWidth(src.textContent);" +
-                    "   content.appendChild(currentStreamDiv);" +
-                    "   if (isAtBottom) window.scrollTo(0, document.body.scrollHeight);" +
-                    "}" +
-                    "function appendStreamToken(tokenHtml) {" +
-                    "   if (currentStreamDiv) {" +
-                    "       var contentSpan = currentStreamDiv.querySelector('.content');" +
-                    "       if (contentSpan) contentSpan.innerHTML += tokenHtml;" +
-                    "       if (isAtBottom) window.scrollTo(0, document.body.scrollHeight);" +
-                    "   }" +
-                    "}" +
-                    "function endStreamLog() { currentStreamDiv = null; }" +
-                    "function removeCurrentStream() {" +
-                    "   if (currentStreamDiv) { currentStreamDiv.remove(); currentStreamDiv = null; }" +
-                    "   var zombies = document.querySelectorAll('.stream-active');" +
-                    "   zombies.forEach(function(el) { el.remove(); });" +
-                    "}"
-                    +
-                    "function updateLastRedditLog(htmlContent) {" +
-                    "   var content = document.getElementById('content');" +
-                    "   var last = content.lastElementChild;" +
-                    "   if (last && last.classList.contains('log-type-source-REDDIT')) {" +
-                    "       var contentSpan = last.querySelector('.content');" +
-                    "       if (contentSpan) {" +
-                    "           var oldVals = [];" +
-                    "           contentSpan.querySelectorAll('.animated-val').forEach(function(s) { oldVals.push(parseInt(s.innerText)); });"
-                    +
-                    "           contentSpan.innerHTML = htmlContent;" +
-                    "           var newSpans = contentSpan.querySelectorAll('.animated-val');" +
-                    "           newSpans.forEach(function(span, i) {" +
-                    "               if (i < oldVals.length) {" +
-                    "                   var start = oldVals[i];" +
-                    "                   var end = parseInt(span.innerText);" +
-                    "                   if (!isNaN(start) && !isNaN(end) && start !== end) {" +
-                    "                       animateValue(span, start, end);" +
-                    "                   }" +
-                    "               }" +
-                    "           });" +
-                    "       }" +
-                    "   }" +
-                    "}" +
-                    "function animateValue(obj, start, end) {" +
-                    "   var delta = end - start;" +
-                    "   if (delta === 0) return;" +
-                    "   var duration = Math.min(Math.abs(delta) * 100, 2500);" + // 100ms per unit, max 2.5s
-                    "   if (duration < 600) duration = 600;" + // Min duration for effect
-                    "   var startTime = null;" +
-                    "   function step(timestamp) {" +
-                    "       if (!startTime) startTime = timestamp;" +
-                    "       var progress = timestamp - startTime;" +
-                    "       var pct = Math.min(progress / duration, 1.0);" +
-                    "       obj.innerText = Math.floor(start + (delta * pct));" +
-                    "       if (progress < duration) {" +
-                    "           window.requestAnimationFrame(step);" +
-                    "       } else {" +
-                    "           obj.innerText = end;" +
-                    "       }" +
-                    "   }" +
-                    "   window.requestAnimationFrame(step);" +
-                    "}"
-                    +
-                    "function setStatus(text) {" +
-                    "   var st = document.getElementById('status');" +
-                    "   if (!text) {" +
-                    "       st.innerHTML = '';" +
-                    "       stopSpinner();" +
-                    "   } else {" +
-                    "       st.innerHTML = text + '<span id=\"spinner\">|</span>';" +
-                    "       startSpinner();" +
-                    "   }" +
-                    "   if (isAtBottom) window.scrollTo(0, document.body.scrollHeight);" +
-                    "}" +
-                    "function clearLogs() {" +
-                    "   document.getElementById('content').innerHTML = '';" +
-                    "   setStatus('');" +
-                    "}" +
-                    "var currentMatchIndex = -1;" +
-                    "function findNextSearchTerm() {" +
-                    "   var content = document.getElementById('content');" +
-                    "   if (!content) return;" +
-                    "   var highlights = content.querySelectorAll('.search-highlight');" +
-                    "   if (highlights.length === 0) return;" +
-                    "   if (currentMatchIndex >= 0 && currentMatchIndex < highlights.length) {" +
-                    "       highlights[currentMatchIndex].style.outline = 'none';" +
-                    "       highlights[currentMatchIndex].style.backgroundColor = '#ffd700';" +
-                    "   }" +
-                    "   currentMatchIndex = (currentMatchIndex + 1) % highlights.length;" +
-                    "   var el = highlights[currentMatchIndex];" +
-                    "   el.scrollIntoView({behavior: 'smooth', block: 'center'});" +
-                    "   el.style.backgroundColor = '#ffd700';" +
-                    "   el.style.outline = 'none';" +
-                    "}" +
-                    "function highlightSearchTerms(term) {" +
-                    "   var content = document.getElementById('content');" +
-                    "   if (!content) return;" +
-                    "   var highlights = content.querySelectorAll('.search-highlight');" +
-                    "   highlights.forEach(function(el) {" +
-                    "      var parent = el.parentNode;" +
-                    "      if (parent) { parent.replaceChild(document.createTextNode(el.textContent), el); parent.normalize(); }"
-                    +
-                    "   });" +
-                    "   currentMatchIndex = -1;" +
-                    "   activeSearchTerm = term;" +
-                    "   if (!term || term.trim() === '') return;" +
-                    "   highlightTextInNode(content, term);" +
-                    "   findNextSearchTerm();" +
-                    "}" +
-                    "function analyzeRef(ref) {" +
-                    "   alert('CMD:ANALYZE_REF:' + ref);" +
-                    "}" +
-                    "</script></head><body>" +
-                    "<div id='content'></div>" +
-                    "<div id='status'></div>" +
-                    "<div id='sentinel'></div>" +
-                    "<div id='width-tester' style='position:absolute; visibility:hidden; white-space:nowrap; font-family: \"Fira Code\", \"Fira Code Retina\", \"JetBrains Mono\", \"Consolas\", monospace; font-size: 13px; font-weight: bold;'></div>"
-                    +
-                    "</body></html>";
-
-            webEngine.loadContent(initialHtml);
+            webEngine.loadContent(WebViewLoader.buildTerminalHtml(fontFaceCss));
 
             // Handle Clicks via Alert Interception
             webEngine.setOnAlert(event -> {
                 String data = event.getData();
-                if (data != null) {
-                    if (data.startsWith("CMD:ANALYZE_REF:")) {
-                        String ref = data.substring(16);
-                        // Trigger analysis using the reference (Permalink)
-                        eventBus.post(new TriggerAgentAnalysisEvent("analyze-ref:" + ref));
-                    }
+                if (data != null && data.startsWith("CMD:ANALYZE_REF:")) {
+                    String ref = data.substring(16);
+                    eventBus.post(new TriggerAgentAnalysisEvent("analyze-ref:" + ref));
                 }
             });
         }
-
-        // Initialize Reddit List - REMOVED
-        filteredThreads = new javafx.collections.transformation.FilteredList<>(newsViewModel.getThreads(), p -> true);
 
         // Log Flow Binding
         viewModel.getLogs().addListener((ListChangeListener<LogMessage>) change -> {
@@ -426,61 +106,35 @@ public class DashboardController {
             }
         });
 
-        // Register for events
         eventBus.register(this);
 
-        // Initial Visibility State
-        // Store reference to the sidebar (2nd item)
-        if (rootSplitPane.getItems().size() > 1) {
-            // Remove sidebar if present (Reddit List is gone)
-            rootSplitPane.getItems().remove(1);
-        }
 
-        // Initialize Graph View
-        if (mainContentStack != null && globalConfig.getAgent().isAllowGraphView()) {
+
+        // Graph View — always initialized, toggleable via ToggleGraphViewEvent
+        if (mainContentStack != null) {
             mainContentStack.getChildren().add(graphController.getView());
-            graphController.getView().setVisible(false); // Default OFF (Terminal first)
-            graphController.start(); // Start immediately to pre-load and settle
-            // GraphController self-manages loops. It will run in background initially.
-
-            // Ensure WebView is visible
-            if (logWebView != null) {
-                logWebView.setVisible(true);
-            }
-        } else if (logWebView != null) {
+            graphController.getView().setVisible(false);
+            graphController.start();
+        }
+        if (logWebView != null) {
             logWebView.setVisible(true);
         }
     }
 
     @Subscribe
     public void onToggleGraphView(ToggleGraphViewEvent event) {
-        if (!globalConfig.getAgent().isAllowGraphView())
-            return; // Ignore if disabled
-
-        javafx.application.Platform.runLater(() -> {
+        Platform.runLater(() -> {
             boolean isGraphVisible = graphController.getView().isVisible();
             if (isGraphVisible) {
-                // Hide Graph, Show Terminal
                 graphController.stop();
                 graphController.getView().setVisible(false);
-                if (logWebView != null)
-                    logWebView.setVisible(true);
+                if (logWebView != null) logWebView.setVisible(true);
             } else {
-                // Show Graph, Hide Terminal
-                if (logWebView != null)
-                    logWebView.setVisible(false);
+                if (logWebView != null) logWebView.setVisible(false);
                 graphController.getView().setVisible(true);
                 graphController.start();
             }
         });
-    }
-
-    private Node sidebarNode;
-
-    @Subscribe
-    public void onToggleRedditPanelEvent(
-            de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.ToggleRedditPanelEvent event) {
-        // No-op: Reddit List removed
     }
 
     private void setupGhostScrollBar(ScrollBar bar) {
@@ -516,8 +170,8 @@ public class DashboardController {
     }
 
     @Subscribe
-    public void onClearTerminalEvent(de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.ClearTerminalEvent event) {
-        javafx.application.Platform.runLater(() -> {
+    public void onClearTerminalEvent(ClearTerminalEvent event) {
+        Platform.runLater(() -> {
             if (webEngine != null) {
                 webEngine.executeScript("clearLogs()");
             }
@@ -529,9 +183,9 @@ public class DashboardController {
 
     @Subscribe
     public void onAgentStreamStart(ChatService.AgentStreamStartEvent event) {
-        javafx.application.Platform.runLater(() -> {
+        Platform.runLater(() -> {
             // Prepare Header
-            java.time.LocalTime now = java.time.LocalTime.now();
+            LocalTime now = LocalTime.now();
             String timestamp = String.format("[%02d:%02d:%02d]", now.getHour(), now.getMinute(), now.getSecond());
 
             // Default Source
@@ -539,10 +193,10 @@ public class DashboardController {
             String sourceClass = "source-AI";
 
             // Override from Event
-            if (event.source != null)
-                source = event.source;
-            if (event.cssClass != null)
-                sourceClass = event.cssClass;
+            if (event.source() != null)
+                source = event.source();
+            if (event.cssClass() != null)
+                sourceClass = event.cssClass();
 
             String headerHtml = "<span class=\"timestamp\">" + timestamp + "</span> " +
                     "<span class=\"log-source " + sourceClass + "\">[" + source + "]:</span> ";
@@ -563,22 +217,22 @@ public class DashboardController {
 
     @Subscribe
     public void onAgentToken(ChatService.AgentTokenEvent event) {
-        javafx.application.Platform.runLater(() -> {
+        Platform.runLater(() -> {
             // Check null or empty
-            if (event.token != null) {
+            if (event.token() != null) {
                 // Must double escape: First for HTML content, then for JS string
-                webEngine.executeScript("appendStreamToken('" + escapeJs(escapeHtml(event.token)) + "')");
+                webEngine.executeScript("appendStreamToken('" + escapeJs(escapeHtml(event.token())) + "')");
             }
         });
     }
 
     @Subscribe
     public void onAgentStatus(ChatService.AgentStatusEvent event) {
-        javafx.application.Platform.runLater(() -> {
-            if (event.status == null || event.status.isEmpty()) {
+        Platform.runLater(() -> {
+            if (event.status() == null || event.status().isEmpty()) {
                 webEngine.executeScript("setStatus('')");
             } else {
-                webEngine.executeScript("setStatus('" + escapeJs(event.status) + "')");
+                webEngine.executeScript("setStatus('" + escapeJs(event.status()) + "')");
             }
         });
 
@@ -586,8 +240,8 @@ public class DashboardController {
 
     @Subscribe
     public void onAgentStreamEnd(ChatService.AgentStreamEndEvent event) {
-        javafx.application.Platform.runLater(() -> {
-            boolean isPassive = event.fullMessage.contains("||PASSIVE||");
+        Platform.runLater(() -> {
+            boolean isPassive = event.fullMessage().contains("||PASSIVE||");
 
             webEngine.executeScript("removeCurrentStream()");
 
@@ -601,58 +255,42 @@ public class DashboardController {
             // Add to history, and allow display (replacing the removed stream)
             ignoreStreamedLog = false;
             // Use LogType.DEFAULT to ensure validity and persistence
-            viewModel.appendToConsole("||AI_FINAL||" + event.fullMessage, LogType.DEFAULT);
+            viewModel.appendToConsole("||AI_FINAL||" + event.fullMessage(), LogType.DEFAULT);
         });
     }
 
-    @Subscribe
-    public void onAgentResponse(AgentResponseEvent event) {
-        // Marker for internal detection to strip "AI:"
-        // Only handle if not covered by StreamEnd (but ChatService doesn't send this
-        // anymore for streams)
-        viewModel.appendToConsole("||AI_FINAL||" + event.message);
-        javafx.application.Platform.runLater(() -> {
-            // Re-enable UI on error/completion
 
-        });
-    }
 
-    @Subscribe
-    public void onOpenTab(OpenTabEvent event) {
-        javafx.application.Platform.runLater(() -> {
-            viewModel.appendToConsole(i18n.get("system.nav_disabled"));
-        });
-    }
 
     @Subscribe
     public void onLogEvent(LogEvent event) {
-        javafx.application.Platform.runLater(() -> {
+        Platform.runLater(() -> {
             LogType type = LogType.DEFAULT;
             try {
-                type = LogType.valueOf(event.type);
+                type = LogType.valueOf(event.type());
             } catch (IllegalArgumentException e) {
                 // Keep default
             }
-            processLogEntry(new LogMessage(event.message, type));
+            processLogEntry(new LogMessage(event.message(), type));
         });
     }
 
     // --- Smart Terminal Logic (WebView) ---
 
     private void processLogEntry(LogMessage log) {
-        javafx.application.Platform.runLater(() -> {
+        Platform.runLater(() -> {
             if (webEngine == null)
                 return;
 
             // Handle Streamed Replay Prevention
-            if (log.getType() == LogType.STREAMED) {
+            if (log.type() == LogType.STREAMED) {
                 if (ignoreStreamedLog) {
                     ignoreStreamedLog = false;
                     return; // Skip visual append
                 }
             }
 
-            String originalMsg = log.getMessage().trim();
+            String originalMsg = log.message().trim();
 
             // Banner Logic
             if (originalMsg.startsWith("||BANNER||")) {
@@ -735,7 +373,6 @@ public class DashboardController {
 
             // Suppress specialized messages - Feed updates
             if (originalMsg.contains("News Feed Updated")) {
-                animateLiveFeedHeader();
                 return;
             }
 
@@ -780,7 +417,7 @@ public class DashboardController {
             }
 
             // Format Log
-            java.time.LocalTime now = java.time.LocalTime.now();
+            LocalTime now = LocalTime.now();
             String timestamp = String.format("[%02d:%02d:%02d]", now.getHour(), now.getMinute(), now.getSecond());
 
             String source = i18n.get("log.source.system");
@@ -829,11 +466,11 @@ public class DashboardController {
                 }
 
             } else {
-                if (log.getType() == LogType.ERROR) {
+                if (log.type() == LogType.ERROR) {
                     lastLogWasReddit = false;
                     source = i18n.get("log.source.error");
                     sourceClass = "source-ERROR";
-                } else if (log.getType() == LogType.CLEANUP) {
+                } else if (log.type() == LogType.CLEANUP) {
                     lastLogWasReddit = false;
                     source = i18n.get("log.source.cleanup");
                     sourceClass = "source-CLEANUP";
@@ -841,7 +478,7 @@ public class DashboardController {
                         displayMsg = i18n.get("log.cleanup.message", displayMsg);
                     } catch (Exception e) {
                     }
-                } else if (log.getType() == LogType.REDDIT) {
+                } else if (log.type() == LogType.REDDIT) {
                     source = i18n.get("log.source.reddit");
                     sourceClass = "source-REDDIT";
                     try {
@@ -1063,130 +700,23 @@ public class DashboardController {
         return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
     }
 
-    // --- Search Logic ---
-    private String currentSearchQuery = "";
-    private javafx.collections.transformation.FilteredList<RedditThread> filteredThreads;
-
     @Subscribe
-    public void onSearchEvent(de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.SearchEvent event) {
-        javafx.application.Platform.runLater(() -> {
-            this.currentSearchQuery = event.query == null ? "" : event.query.toLowerCase().trim();
-
-            // 1. Filter Reddit List
-            if (filteredThreads != null) {
-                filteredThreads.setPredicate(thread -> {
-                    if (currentSearchQuery.isEmpty())
-                        return true;
-                    // Search Title and Content
-                    boolean matchTitle = thread.getTitle().toLowerCase().contains(currentSearchQuery);
-                    boolean matchContent = thread.getTextContent() != null
-                            && thread.getTextContent().toLowerCase().contains(currentSearchQuery);
-
-                    // Technically we can't search comments here as they aren't loaded in the model
-                    // efficiently yet.
-                    // But user request implies it. For now, we search what we have.
-                    return matchTitle || matchContent;
-                });
-                // Notify Search Results Status
-                boolean hasResults = !currentSearchQuery.isEmpty() && !filteredThreads.isEmpty();
-                eventBus.post(
-                        new de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.RedditSearchResultsEvent(hasResults));
-            }
-
-            // 2. Highlight in Terminal
+    public void onSearchEvent(SearchEvent event) {
+        Platform.runLater(() -> {
+            String query = event.query() == null ? "" : event.query().toLowerCase().trim();
             if (webEngine != null) {
-                webEngine.executeScript("highlightSearchTerms('" + escapeJs(currentSearchQuery) + "')");
+                webEngine.executeScript("highlightSearchTerms('" + escapeJs(query) + "')");
             }
         });
     }
 
     @Subscribe
-    public void onSearchNextEvent(de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.SearchNextEvent event) {
-        javafx.application.Platform.runLater(() -> {
+    public void onSearchNextEvent(SearchNextEvent event) {
+        Platform.runLater(() -> {
             if (webEngine != null) {
                 webEngine.executeScript("findNextSearchTerm()");
             }
         });
     }
 
-    private void animateLiveFeedHeader() {
-        if (liveFeedLabel == null)
-            return;
-
-        javafx.animation.FadeTransition fadeOut = new javafx.animation.FadeTransition(javafx.util.Duration.millis(300),
-                liveFeedLabel);
-        fadeOut.setFromValue(1.0);
-        fadeOut.setToValue(0.4);
-
-        javafx.animation.FadeTransition fadeIn = new javafx.animation.FadeTransition(javafx.util.Duration.millis(300),
-                liveFeedLabel);
-        fadeIn.setFromValue(0.4);
-        fadeIn.setToValue(1.0);
-
-        javafx.animation.SequentialTransition sequence = new javafx.animation.SequentialTransition(fadeOut, fadeIn);
-        sequence.play();
-    }
-
-    private void applyScanEffect(double frac, javafx.scene.paint.Color trailColor,
-            javafx.scene.paint.Color futureColor) {
-        try {
-            String text = liveFeedLabel.getText();
-            int totalChars = (text != null) ? text.length() : 0;
-            if (totalChars < 1)
-                return;
-
-            // Width relative to text length (3 chars)
-            double scanWidth = 3.0 / (double) totalChars;
-
-            // Map frac (0..1) to a wider range so scanner fully enters and fully exits
-            // We want center to travel from roughly (-scanWidth) to (1 + scanWidth)
-            // Adding a buffer ensures the orange block completely clears the text
-            double rangeMult = 1.0 + (3.0 * scanWidth);
-            double offset = 1.5 * scanWidth;
-
-            double center = (frac * rangeMult) - offset;
-
-            double start = center - (scanWidth / 2.0);
-            double end = center + (scanWidth / 2.0);
-
-            java.util.List<javafx.scene.paint.Stop> stops = new java.util.ArrayList<>();
-
-            // 1. Trail Section (0 to start)
-            stops.add(new javafx.scene.paint.Stop(0, trailColor));
-
-            double clampedStart = Math.min(1, Math.max(0, start));
-            double clampedEnd = Math.min(1, Math.max(0, end));
-
-            // Transition Trail -> Scanner
-            if (clampedStart > 0) {
-                stops.add(new javafx.scene.paint.Stop(clampedStart, trailColor));
-            }
-
-            // Scannner Section
-            if (clampedEnd > clampedStart) {
-                stops.add(new javafx.scene.paint.Stop(clampedStart, javafx.scene.paint.Color.ORANGE));
-                stops.add(new javafx.scene.paint.Stop(clampedEnd, javafx.scene.paint.Color.ORANGE));
-            }
-
-            // Transition Scanner -> Future
-            if (clampedEnd < 1) {
-                stops.add(new javafx.scene.paint.Stop(clampedEnd, futureColor));
-                stops.add(new javafx.scene.paint.Stop(1, futureColor));
-            } else if (clampedEnd >= 1 && clampedStart < 1) {
-                // Scanner covers the end
-                // Implicitly handled by Scanner section reaching 1 (Stop(clampedEnd=1, Orange))
-            } else if (clampedStart >= 1) {
-                // Trail covers everything (handled by initial Stop(0, trail) + Stop(1, trail)
-                // implicitly?)
-                // If start >= 1, clampedStart=1. Stop(0, trail), Stop(1, trail).
-                // Gradient is flat Trail. Correct.
-            }
-
-            javafx.scene.paint.LinearGradient lg = new javafx.scene.paint.LinearGradient(
-                    0, 0, 1, 0, true, javafx.scene.paint.CycleMethod.NO_CYCLE, stops);
-            liveFeedLabel.setTextFill(lg);
-        } catch (Exception e) {
-            // e.printStackTrace();
-        }
-    }
 }

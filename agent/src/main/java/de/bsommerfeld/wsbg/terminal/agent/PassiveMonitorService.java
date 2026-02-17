@@ -2,111 +2,105 @@ package de.bsommerfeld.wsbg.terminal.agent;
 
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
+import de.bsommerfeld.wsbg.terminal.agent.ChatService.AgentStreamEndEvent;
+import de.bsommerfeld.wsbg.terminal.agent.ChatService.AgentStreamStartEvent;
+import de.bsommerfeld.wsbg.terminal.agent.ChatService.AgentTokenEvent;
+import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
+import de.bsommerfeld.wsbg.terminal.core.config.HeadlineConfig;
+import de.bsommerfeld.wsbg.terminal.core.config.RedditConfig;
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
+import de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.LogEvent;
+import de.bsommerfeld.wsbg.terminal.core.i18n.I18nService;
+import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
 import de.bsommerfeld.wsbg.terminal.reddit.RedditScraper;
+import de.bsommerfeld.wsbg.terminal.reddit.RedditScraper.ScrapeStats;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.ollama.OllamaEmbeddingModel;
+import dev.langchain4j.service.TokenStream;
 import dev.langchain4j.store.embedding.CosineSimilarity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import de.bsommerfeld.wsbg.terminal.core.i18n.I18nService;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
- * Passive Monitor Service (Time-Aware).
- * 
- * Capability:
- * - Vector Clustering: Groups related threads.
- * - Temporal Velocity: Detects "Heat" by analyzing the RATE of new content
- * (Threads/Comments per minute).
- * - Algorithmic Significance: Uses a weighted scoring system (Significance
- * Score) factoring in
- * Thread Count, Total Upvotes, and Keyword Volatility to decide when to wake
- * the AI.
+ * Passive Reddit monitor with vector-based clustering and significance scoring.
+ * Groups related threads, detects activity "heat" via temporal velocity,
+ * and triggers AI headline generation when a weighted significance threshold
+ * is reached.
  */
 @Singleton
 public class PassiveMonitorService {
 
     private static final Logger LOG = LoggerFactory.getLogger(PassiveMonitorService.class);
+
     private final RedditScraper scraper;
     private final AgentBrain brain;
     private final ApplicationEventBus eventBus;
-    private final de.bsommerfeld.wsbg.terminal.db.RedditRepository repository; // Changed
+    private final RedditRepository repository;
     private final I18nService i18n;
-    private final de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig config;
+    private final GlobalConfig config;
+    private final ReportBuilder reportBuilder;
 
-    // Vector Model (Ollama)
     private final EmbeddingModel embeddingModel;
-
-    // Execution
     private final ScheduledExecutorService scannerExecutor = Executors.newSingleThreadScheduledExecutor();
-    private final java.util.concurrent.ExecutorService analysisExecutor = Executors.newSingleThreadExecutor();
+    private final ExecutorService analysisExecutor = Executors.newSingleThreadExecutor();
+    private final List<InvestigationCluster> investigations = new CopyOnWriteArrayList<>();
 
-    // Memory: Active Investigations
-    private final List<Investigation> investigations = new CopyOnWriteArrayList<>();
-
-    // Tracking Global State for Deltas
-    private final java.util.Map<String, Integer> lastSeenScore = new java.util.concurrent.ConcurrentHashMap<>();
-    private final java.util.Map<String, Integer> lastSeenComments = new java.util.concurrent.ConcurrentHashMap<>();
+    // Tracking deltas between scan cycles
+    private final Map<String, Integer> lastSeenScore = new ConcurrentHashMap<>();
+    private final Map<String, Integer> lastSeenComments = new ConcurrentHashMap<>();
     private Instant lastCleanup = Instant.MIN;
 
-    // Users Model Preference
-    // private static final String EMBEDDING_MODEL_NAME =
-    // "nomic-embed-text-v2-moe:latest";
-    private static final String OLLAMA_URL = "http://localhost:11434";
-
-    // Config
-    // Config fields (initialized from Config)
-    private double similarityThreshold;
-    private Duration investigationTtl;
-    private double significanceThresholdReport;
-    private Duration cleanupInterval;
-    private long dataRetentionSeconds;
-    private long updateIntervalSeconds;
+    // Config values — loaded once from RedditConfig
+    private final double similarityThreshold;
+    private final Duration investigationTtl;
+    private final double significanceThresholdReport;
+    private final Duration cleanupInterval;
+    private final long dataRetentionSeconds;
+    private final long updateIntervalSeconds;
 
     @Inject
     public PassiveMonitorService(RedditScraper scraper, AgentBrain brain, ApplicationEventBus eventBus,
-            de.bsommerfeld.wsbg.terminal.db.RedditRepository repository, // Changed
-            de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig config,
-            I18nService i18n) {
+            RedditRepository repository, GlobalConfig config, I18nService i18n) {
         this.scraper = scraper;
         this.brain = brain;
         this.eventBus = eventBus;
-        this.repository = repository; // Changed
+        this.repository = repository;
         this.i18n = i18n;
+        this.config = config;
+        this.reportBuilder = new ReportBuilder(repository, brain);
 
-        // Load Config
-        var redditConfig = config.getReddit();
+        RedditConfig redditConfig = config.getReddit();
         this.similarityThreshold = redditConfig.getSimilarityThreshold();
         this.investigationTtl = Duration.ofMinutes(redditConfig.getInvestigationTtlMinutes());
         this.significanceThresholdReport = redditConfig.getSignificanceThreshold();
-        this.cleanupInterval = Duration.ofHours(1); // Enforced 1h interval per user request
+        this.cleanupInterval = Duration.ofHours(1);
         this.dataRetentionSeconds = Duration.ofHours(redditConfig.getDataRetentionHours()).toSeconds();
         this.updateIntervalSeconds = redditConfig.getUpdateIntervalSeconds();
 
-        // Also keep reference to config for runtime updates if needed, or subreddits
-        // list
-        this.config = config;
-
-        String embeddingModelName = config.getAgent().getEmbeddingModel();
-
-        LOG.info("Initializing Vector Embedding Model (Ollama: {})...", embeddingModelName);
+        String embeddingModelName = AgentBrain.EMBEDDING_MODEL;
+        LOG.info("Initializing Vector Embedding Model: {}", embeddingModelName);
 
         this.embeddingModel = OllamaEmbeddingModel.builder()
-                .baseUrl(OLLAMA_URL)
+                .baseUrl(AgentBrain.OLLAMA_BASE_URL)
                 .modelName(embeddingModelName)
                 .timeout(Duration.ofSeconds(60))
                 .build();
@@ -114,37 +108,55 @@ public class PassiveMonitorService {
         startMonitoring();
     }
 
+    /**
+     * Retrieves cached AI context for a given investigation cluster.
+     * Used by {@link ChatService} to perform follow-up analysis on a
+     * previously reported headline without re-fetching from Reddit.
+     *
+     * @param id cluster ID (8-char UUID prefix)
+     * @return cached context string, or {@code null} if the cluster expired
+     */
+    public String getInvestigationContext(String id) {
+        for (InvestigationCluster inv : investigations) {
+            if (inv.id.equals(id))
+                return inv.cachedContext;
+        }
+        return null;
+    }
+
+    // -- Monitoring Lifecycle --
+
     private void startMonitoring() {
-        LOG.info("Starting Passive Reddit Monitor (Weighted Significance Logic)...");
+        LOG.info("Starting Passive Reddit Monitor...");
         scannerExecutor.execute(this::performInitialStartup);
         scannerExecutor.scheduleAtFixedRate(this::scanCycle, 30, updateIntervalSeconds, TimeUnit.SECONDS);
     }
 
+    /**
+     * Runs a one-time initial cleanup and seed scan. Fires before the
+     * recurring scheduler kicks in — ensures the database is in a good
+     * state and the initial thread batch is loaded.
+     */
     private void performInitialStartup() {
-        LOG.info("Performing Initial Scan (Filling Gaps)...");
+        LOG.info("Performing initial scan...");
         try {
-            // 1. Initial Cleanup FIRST (Avoids rate-limiting on dead threads)
             repository.cleanupOldThreads(dataRetentionSeconds).thenAcceptAsync(count -> {
-                LOG.info("Initial cleanup: Removed {} old threads.", count);
-
-                // 2. Refresh w/ remaining threads
+                LOG.info("Initial cleanup: removed {} old threads.", count);
                 refreshLocalThreads();
             }, scannerExecutor);
-
         } catch (Exception e) {
-            LOG.error("Initial Startup Failed", e);
+            LOG.error("Initial startup failed", e);
         }
     }
 
     private void refreshLocalThreads() {
         try {
-            java.util.List<RedditThread> all = repository.getAllThreads();
-            java.util.List<String> ids = all.stream().map(RedditThread::getId).collect(Collectors.toList());
+            List<String> ids = repository.getAllThreads().stream()
+                    .map(RedditThread::id).collect(Collectors.toList());
             if (!ids.isEmpty()) {
-                LOG.debug("Refreshing {} local threads via batch update...", ids.size());
-                RedditScraper.ScrapeStats stats = scraper.updateThreadsBatch(ids);
+                ScrapeStats stats = scraper.updateThreadsBatch(ids);
                 if (stats.hasUpdates()) {
-                    LOG.info("Local Thread Refresh: {}", stats);
+                    LOG.info("Local thread refresh: {}", stats);
                     if (!stats.threadUpdates.isEmpty()) {
                         analysisExecutor.submit(() -> processUpdates(stats.threadUpdates));
                     }
@@ -155,164 +167,176 @@ public class PassiveMonitorService {
         }
     }
 
+    // -- Scan Cycle --
+
     private void scanCycle() {
         try {
             if (Duration.between(lastCleanup, Instant.now()).compareTo(cleanupInterval) > 0) {
                 lastCleanup = Instant.now();
-                repository.cleanupOldThreads(dataRetentionSeconds).thenAccept(count -> {
-                    eventBus.post(new de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.LogEvent(
-                            String.valueOf(count), "CLEANUP"));
-                });
+                repository.cleanupOldThreads(dataRetentionSeconds)
+                        .thenAccept(count -> eventBus.post(new LogEvent(String.valueOf(count), "CLEANUP")));
             }
 
-            RedditScraper.ScrapeStats stats = new RedditScraper.ScrapeStats();
+            ScrapeStats stats = new ScrapeStats();
             for (String sub : config.getReddit().getSubreddits()) {
                 stats.add(scraper.scanSubreddit(sub));
             }
 
-            // --- BATCH UPDATE EXISTING (Gap Fill) ---
-            java.util.List<RedditThread> allLocal = repository.getAllThreads();
-            java.util.List<String> idsToUpdate = allLocal.stream()
-                    .map(RedditThread::getId)
+            // Gap-fill: update threads not covered by the subreddit scan
+            List<String> idsToUpdate = repository.getAllThreads().stream()
+                    .map(RedditThread::id)
                     .filter(id -> !stats.scannedIds.contains(id))
                     .collect(Collectors.toList());
-
             if (!idsToUpdate.isEmpty()) {
                 stats.add(scraper.updateThreadsBatch(idsToUpdate));
             }
 
-            // Fetch updates from ScrapeStats to pass to analysis
-            List<RedditThread> updates = stats.threadUpdates;
-
-            // Always run analysis if we have active high-heat investigations, even if no
-            // *new* threads came in
-            // (e.g. comments/scores updating on existing ones)
-            if (updates.isEmpty() && investigations.isEmpty()) {
+            if (stats.threadUpdates.isEmpty() && investigations.isEmpty())
                 return;
-            }
-            analysisExecutor.submit(() -> processUpdates(updates));
+            analysisExecutor.submit(() -> processUpdates(stats.threadUpdates));
         } catch (Exception e) {
-            LOG.error("Passive Monitor Scan Failed", e);
+            LOG.error("Passive monitor scan failed", e);
         }
     }
 
+    // -- Vector Clustering --
+
     private void processUpdates(List<RedditThread> updates) {
+        HeadlineConfig headlineConfig = config.getHeadlines();
+        if (!headlineConfig.isEnabled())
+            return;
+
         try {
             boolean meaningfulChange = false;
 
             for (RedditThread t : updates) {
-                // Determine Deltas
-                int prevScore = lastSeenScore.getOrDefault(t.getId(), t.getScore());
-                int deltaScore = t.getScore() - prevScore;
-                lastSeenScore.put(t.getId(), t.getScore());
-
-                int prevComments = lastSeenComments.getOrDefault(t.getId(), t.getNumComments());
-                int deltaComments = t.getNumComments() - prevComments;
-                lastSeenComments.put(t.getId(), t.getNumComments());
-
-                if (deltaScore > 0 || deltaComments > 0) {
-                    LOG.info("[INTERNAL][REDDIT] Update for '{}': +{} Score, +{} Comments (Total: {}/{})",
-                            t.getTitle(), deltaScore, deltaComments, t.getScore(), t.getNumComments());
+                int[] deltas = computeDeltas(t);
+                if (deltas[0] > 0 || deltas[1] > 0) {
+                    LOG.info("Update '{}': +{} score, +{} comments", t.title(), deltas[0], deltas[1]);
                 }
-
-                // KEYWORD CHECK (Bonus Weight)
-                String titleUpper = t.getTitle().toUpperCase();
-                boolean isKeyword = titleUpper.contains("EARNINGS") ||
-                        titleUpper.contains("QUARTALSZAHLEN") ||
-                        titleUpper.contains("BERICHT") ||
-                        titleUpper.contains("FED") ||
-                        titleUpper.contains("ZINSEN") ||
-                        titleUpper.contains("INFLATION") ||
-                        titleUpper.contains("CPI") ||
-                        titleUpper.contains("EZB") ||
-                        titleUpper.contains("CRASH") ||
-                        titleUpper.contains("INSOLVENZ") ||
-                        titleUpper.contains("WAR") ||
-                        titleUpper.contains("KRIEG");
-
-                String content = t.getTitle() + " " + (t.getTextContent() != null ? t.getTextContent() : "");
-
-                Embedding threadEmbedding = embeddingModel.embed(content).content();
-
-                // Match Logic
-                Investigation bestMatch = null;
-                double bestScore = -1.0;
-
-                for (Investigation inv : investigations) {
-                    double score = CosineSimilarity.between(threadEmbedding, inv.centroid);
-                    if (score > bestScore) {
-                        bestScore = score;
-                        bestMatch = inv;
-                    }
-                }
-
-                if (bestMatch != null && bestScore >= similarityThreshold) {
-                    // Update: Only add event if something actually changed
-                    if (deltaScore > 0 || deltaComments > 0) {
-                        bestMatch.addUpdate(t, deltaScore, deltaComments);
-                        if (isKeyword)
-                            bestMatch.keywordBonus = true;
-                        meaningfulChange = true;
-                        LOG.info("UPDATE '{}': +{} Score, +{} Comments", bestMatch.initialTitle, deltaScore,
-                                deltaComments);
-                    }
-                } else {
-                    // New Investigation
-                    Investigation newInv = new Investigation(t, threadEmbedding);
-                    if (isKeyword)
-                        newInv.keywordBonus = true;
-                    investigations.add(newInv);
+                if (clusterThread(t, deltas[0], deltas[1])) {
                     meaningfulChange = true;
-                    LOG.info("NEW Investigation: '{}'", t.getTitle());
                 }
             }
 
             pruneInvestigations();
-
+            mergeConvergedClusters();
             if (meaningfulChange || !investigations.isEmpty()) {
                 analyzeInvestigations();
             }
-
         } catch (Exception e) {
-            LOG.error("Passive Monitor Processing Failed", e);
+            LOG.error("Processing failed", e);
         }
+    }
+
+    /**
+     * Tracks score/comment deltas between scan cycles.
+     * Returns [deltaScore, deltaComments].
+     */
+    private int[] computeDeltas(RedditThread t) {
+        int deltaScore = t.score() - lastSeenScore.getOrDefault(t.id(), t.score());
+        lastSeenScore.put(t.id(), t.score());
+
+        int deltaComments = t.numComments() - lastSeenComments.getOrDefault(t.id(), t.numComments());
+        lastSeenComments.put(t.id(), t.numComments());
+
+        return new int[] { deltaScore, deltaComments };
+    }
+
+    /**
+     * Embeds thread content and assigns it to the best matching cluster,
+     * or creates a new investigation if no cluster exceeds the similarity
+     * threshold.
+     * Returns true if this triggered a meaningful state change.
+     */
+    private boolean clusterThread(RedditThread t, int deltaScore, int deltaComments) {
+        String content = t.title() + " " + (t.textContent() != null ? t.textContent() : "");
+        Embedding embedding = embeddingModel.embed(content).content();
+
+        InvestigationCluster bestMatch = null;
+        double bestScore = -1.0;
+        for (InvestigationCluster inv : investigations) {
+            double score = CosineSimilarity.between(embedding, inv.centroid());
+            if (score > bestScore) {
+                bestScore = score;
+                bestMatch = inv;
+            }
+        }
+
+        if (bestMatch != null && bestScore >= similarityThreshold) {
+            if (deltaScore > 0 || deltaComments > 0) {
+                bestMatch.addUpdate(t, deltaScore, deltaComments, embedding);
+                return true;
+            }
+            return false;
+        }
+
+        InvestigationCluster newInv = new InvestigationCluster(t, embedding);
+        investigations.add(newInv);
+        LOG.info("New investigation: '{}'", t.title());
+        return true;
     }
 
     private void pruneInvestigations() {
         Instant now = Instant.now();
-        Iterator<Investigation> it = investigations.iterator();
+        Iterator<InvestigationCluster> it = investigations.iterator();
         while (it.hasNext()) {
-            Investigation inv = it.next();
-            if (Duration.between(inv.lastActivity, now).compareTo(investigationTtl) > 0) {
-                investigations.remove(inv);
+            if (Duration.between(it.next().lastActivity, now).compareTo(investigationTtl) > 0) {
+                it.remove();
             }
         }
     }
 
-    private void analyzeInvestigations() {
-        List<Investigation> candidates = new ArrayList<>();
+    /**
+     * Merges cluster pairs whose centroids have drifted into similarity.
+     * Uses a higher threshold than initial assignment to avoid premature merging.
+     */
+    private void mergeConvergedClusters() {
+        double mergeThreshold = similarityThreshold + 0.10;
+        List<InvestigationCluster> snapshot = new ArrayList<>(investigations);
 
-        for (Investigation inv : investigations) {
+        for (int i = 0; i < snapshot.size(); i++) {
+            InvestigationCluster a = snapshot.get(i);
+            if (!investigations.contains(a))
+                continue;
+
+            for (int j = i + 1; j < snapshot.size(); j++) {
+                InvestigationCluster b = snapshot.get(j);
+                if (!investigations.contains(b))
+                    continue;
+
+                double sim = CosineSimilarity.between(a.centroid(), b.centroid());
+                if (sim >= mergeThreshold) {
+                    // Absorb smaller into larger
+                    InvestigationCluster primary = a.threadCount >= b.threadCount ? a : b;
+                    InvestigationCluster secondary = primary == a ? b : a;
+
+                    primary.absorb(secondary);
+                    investigations.remove(secondary);
+                    LOG.info("Merged cluster '{}' into '{}' (sim={})",
+                            secondary.initialTitle, primary.initialTitle,
+                            String.format("%.3f", sim));
+                }
+            }
+        }
+    }
+
+    // -- AI Headline Generation --
+
+    private void analyzeInvestigations() {
+        HeadlineConfig headlineConfig = config.getHeadlines();
+        List<InvestigationCluster> candidates = new ArrayList<>();
+
+        for (InvestigationCluster inv : investigations) {
             if (inv.reported)
                 continue;
 
-            // --- WEIGHTED SIGNIFICANCE SCORE (The "AI Logic" Formula) ---
-            double score = 0.0;
-            score += inv.threadCount * 12.0;
-            score += inv.totalComments * 2.5;
-            score += inv.totalScore * 0.4;
-            if (inv.keywordBonus)
-                score += 50.0;
-            long eventsLast5Min = inv.countRecentEvents(Duration.ofMinutes(5));
-            score += eventsLast5Min * 5.0;
+            SignificanceScore result = SignificanceScorer.compute(inv);
+            inv.currentSignificance = result.score();
 
-            inv.currentSignificance = score;
-
-            LOG.info(
-                    inv.initialTitle, score, inv.threadCount, inv.totalComments, inv.totalScore, eventsLast5Min,
-                    significanceThresholdReport);
-
-            if (score >= significanceThresholdReport) {
+            if (result.meetsThreshold(significanceThresholdReport)) {
+                LOG.info("Cluster '{}' passes heuristic gate: {}",
+                        inv.initialTitle, result.score());
                 candidates.add(inv);
             }
         }
@@ -320,250 +344,84 @@ public class PassiveMonitorService {
         if (candidates.isEmpty())
             return;
 
-        // Process EACH investigation separately to ensure strictly scoped context
-        for (Investigation inv : candidates) {
-            // Smart Update Logic: We allow re-scanning with history awareness
-            boolean isUpdate = inv.reported;
+        for (InvestigationCluster inv : candidates) {
+            String reportData = reportBuilder.buildReportData(inv);
+            String combinedContext = reportBuilder.buildCombinedContext(inv, reportData);
+            inv.cachedContext = reportData;
 
-            // Build History Block
-            StringBuilder historyBlock = new StringBuilder();
-            if (inv.reportHistory.isEmpty()) {
-                historyBlock.append("NONE");
-            } else {
-                for (String h : inv.reportHistory) {
-                    historyBlock.append("- ").append(h).append("\n");
-                }
-            }
+            String historyBlock = inv.reportHistory.isEmpty() ? "NONE"
+                    : String.join("\n", inv.reportHistory.stream()
+                            .map(h -> "- " + h).collect(Collectors.toList()));
 
-            StringBuilder reportData = new StringBuilder();
-            reportData.append("--- CASE ID: ").append(inv.id).append(" ---\n");
-            reportData.append("Cluster Topic: ").append(inv.initialTitle).append("\n");
-
-            // Age Calculation
-            String ageStr = "Unknown";
-            if (inv.threadCreatedUTC > 0) {
-                long minutesOld = Duration.between(Instant.ofEpochSecond(inv.threadCreatedUTC), Instant.now())
-                        .toMinutes();
-                long hours = minutesOld / 60;
-                long mins = minutesOld % 60;
-                ageStr = String.format("%dh %dm", hours, mins);
-            }
-            reportData.append("Cluster Age: ").append(ageStr).append("\n");
-            reportData.append("Significance Score: ").append(String.format("%.1f", inv.currentSignificance))
-                    .append("\n");
-            reportData.append("Active Threads: ").append(inv.activeThreadIds.size()).append("\n\n");
-
-            // --- DEEP DIVE: Aggregate Context from Top Active Threads ---
-            // Fetch from DB strictly.
-            // We select up to 3 IDs to fetch.
-            java.util.Set<String> targets = new java.util.HashSet<>();
-            if (inv.bestThreadId != null)
-                targets.add(inv.bestThreadId);
-            // Add latest/others from list
-            for (String id : inv.activeThreadIds) {
-                if (targets.size() >= 3)
-                    break;
-                targets.add(id);
-            }
-
-            int threadIndex = 1;
-            for (String threadId : targets) {
-                try {
-                    // DB Lookup
-                    var thread = repository.getThread(threadId);
-                    if (thread == null)
-                        continue;
-
-                    reportData.append("=== THREAD SOURCE ").append(threadIndex++).append(" ===\n");
-                    reportData.append("Title: ").append(thread.getTitle()).append("\n");
-
-                    if (thread.getImageUrl() != null && !thread.getImageUrl().isEmpty()) {
-                        reportData.append(" [MAIN IMAGE]: ").append(thread.getImageUrl()).append("\n");
-
-                        // Active Vision Analysis during Passive Scan
-                        try {
-                            LOG.info("[INTERNAL][VISION] Passive Scan invoking Vision Model on: {}",
-                                    thread.getImageUrl());
-                            String visionResult = brain.see(thread.getImageUrl());
-                            LOG.info("[INTERNAL][VISION] Result: {}", visionResult);
-                            reportData.append("[VISION ANALYSIS]: ").append(visionResult).append("\n");
-                        } catch (Exception e) {
-                            LOG.error("[INTERNAL][VISION] Failed: {}", e.getMessage());
-                        }
-                    }
-
-                    if (thread.getTextContent() != null && !thread.getTextContent().isEmpty()) {
-                        String snippet = thread.getTextContent().length() > 500
-                                ? thread.getTextContent().substring(0, 500) + "..."
-                                : thread.getTextContent();
-                        reportData.append("Content Snippet: ").append(snippet).append("\n");
-                    }
-
-                    // Fetch Comments from DB
-                    var comments = repository.getCommentsForThread(threadId, 15);
-                    if (!comments.isEmpty()) {
-                        reportData.append("RELEVANT COMMENTS (Nested):\n");
-                        for (de.bsommerfeld.wsbg.terminal.core.domain.RedditComment c : comments) {
-                            String indent = "  "; // Since we flatten, just use generic indent. Or assume parent
-                                                  // relationship?
-                            // For simplicity in text report, simple list is often enough for LLM unless
-                            // structure is vital.
-                            // The domain object doesn't have easily resolved indentation without building a
-                            // tree locally.
-                            // We'll just prefix:
-                            reportData.append("- ").append(c.getAuthor()).append(" (Score: ").append(c.getScore())
-                                    .append("): ")
-                                    .append(c.getBody()).append("\n");
-
-                            // Images in Comments
-                            for (String img : c.getImageUrls()) {
-                                reportData.append("  [IMAGE]: ").append(img).append("\n");
-                            }
-                        }
-                    }
-
-                    reportData.append("\n");
-
-                } catch (Exception e) {
-                    LOG.warn("Failed to fetch deep-dive context for {}", threadId);
-                }
-            }
-
-            reportData.append("-----------------------------\n\n");
-
-            // Living Context: ACCUMULATE context instead of overwriting
-            // We append the new snapshot with a timestamp
-            java.time.LocalTime now = java.time.LocalTime.now();
-            String timeStr = String.format("[%02d:%02d]", now.getHour(), now.getMinute());
-
-            if (inv.cachedContext == null) {
-                inv.cachedContext = "";
-            }
-
-            // Limit context size to prevent explosion (keep last ~4000 chars + new)
-            if (inv.cachedContext.length() > 4000) {
-                inv.cachedContext = inv.cachedContext.substring(inv.cachedContext.length() - 4000);
-            }
-
-            // Append new update block
-            String newBlock = "\n\n=== UPDATE " + timeStr + " ===\n" + reportData.toString();
-            // Note: We don't commit to inv.cachedContext yet, we use the combined view for
-            // prompting
-            String combinedContext = inv.cachedContext + newBlock;
-
-            // Store strictly scoped context
-            inv.cachedContext = reportData.toString();
-
-            String prompt = "You are a Real-Time Market Intelligence AI.\n" +
-                    "Generate a SINGLE-LINE, STRICTLY FACTUAL financial headline from this CLUSTER of data.\n" +
-                    "REPORT HISTORY (Past Alerts):\n" + historyBlock.toString() + "\n" +
-                    "DATA (Chronological Updates):\n" + combinedContext + "\n" +
-                    "RULES:\n" +
-                    "1. SYNTHESIZE: Look for signals across ALL threads/comments.\n" +
-                    "   - A headline can emerge from a single highly-upvoted COMMENT, even if the post is generic.\n" +
-                    "   - Pay attention to nested comments (replies).\n" +
-                    "2. MAX 15 WORDS. Concise.\n" +
-                    "3. STYLE: Objective & Direct. Focus on the CONTENT, not the poster.\n" +
-                    "   - BAD: 'User predicts crash', 'Poster asks about potential dip'.\n" +
-                    "   - GOOD: 'Market crash predicted for tomorrow', 'Inquiry regarding potential dip'.\n" +
-                    "4. NO USERNAMES in headlines. NEVER.\n" +
-                    "5. CLASSIFY: [LOW] (Noise), [MED], [HIGH] (Breaking).\n" +
-                    "5. FILTER: Output strictly -1 (Do NOT use 'REPORT:' format) IF:\n" +
-                    "   - Content is Noise/Memes/Jokes.\n" +
-                    "   - Situation is unchanged from HISTORY.\n" +
-                    "   - Situation is just flipping back and forth (Loop/Volatility) without NEW CONFIRMED FACTS.\n"
-                    +
-                    "6. FORMAT: 'REASONING: [Your internal thought process]\\nREPORT: [PRIORITY] [Headline]' OR output '-1' if noise.\n";
-
-            LOG.info("[INTERNAL][AI-PROMPT] Generating Headline for '{}'. Context Length: {} chars. History: {}",
-                    inv.initialTitle, combinedContext.length(), historyBlock);
-
+            // Single AI call: significance + topic relevance + headline
+            String prompt = reportBuilder.buildHeadlinePrompt(historyBlock, combinedContext,
+                    headlineConfig.isShowAll(), headlineConfig.getTopics());
             String response = collectStreamBlocking(brain.ask("passive-monitor", prompt)).trim();
-            LOG.info("[INTERNAL][AI-RAW-RESPONSE] >>>\n{}", response);
+            LOG.info("[AI-RESPONSE] {}", response);
 
-            // Extract Reasoning
-            String reasoning = "";
-            if (response.contains("REASONING:")) {
-                int start = response.indexOf("REASONING:") + 10;
-                int end = response.indexOf("REPORT:");
-                if (end == -1)
-                    end = response.length();
-                reasoning = response.substring(start, end).trim();
-            } else if (!response.contains("REPORT:")) {
-                // If no report, maybe the whole thing is reasoning or -1
-                reasoning = response;
-            }
-
-            LOG.info("[INTERNAL][AI-THOUGHT] Context: {} chars | Reasoning: {}", combinedContext.length(), reasoning);
-
-            if (response.equals("-1") || response.contains("-1")) {
-                // Silence / Noise
+            if (response.contains("-1"))
                 continue;
-            }
+            if (!response.contains("REPORT:"))
+                continue;
 
-            if (response.contains("REPORT:")) {
-                String coreReport = "";
-                for (String line : response.split("\n")) {
-                    if (line.trim().startsWith("REPORT:")) {
-                        coreReport = line.substring(line.indexOf(":") + 1).trim();
-                        break;
-                    }
-                }
+            String headline = reportBuilder.extractHeadline(response);
+            if (headline.isEmpty())
+                continue;
 
-                if (!coreReport.isEmpty() && !coreReport.equals("-1") && !coreReport.contains("-1")) {
-                    inv.reported = true;
+            inv.reported = true;
+            inv.addToHistory(headline);
+            inv.cachedContext = combinedContext;
 
-                    // Add to History (Max 5 entries)
-                    java.time.LocalTime nowTime = java.time.LocalTime.now();
-                    String timeLabel = String.format("[%02d:%02d]", nowTime.getHour(), nowTime.getMinute());
-                    inv.reportHistory.add(timeLabel + " " + coreReport);
-                    if (inv.reportHistory.size() > 5) {
-                        inv.reportHistory.remove(0);
-                    }
-
-                    // Commit the new context block now that we have a valid report/update
-                    inv.cachedContext = combinedContext;
-
-                    // Stream Translation
-                    dev.langchain4j.service.TokenStream translationStream = brain.translate(coreReport, "English", "en",
-                            "German", "de");
-
-                    if (translationStream != null) {
-                        eventBus.post(new de.bsommerfeld.wsbg.terminal.agent.ChatService.AgentStreamStartEvent(
-                                i18n.get("log.source.passive_agent"), "source-AI"));
-                        StringBuilder germanBuilder = new StringBuilder();
-                        java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
-
-                        translationStream.onNext(token -> {
-                            germanBuilder.append(token);
-                            eventBus.post(new de.bsommerfeld.wsbg.terminal.agent.ChatService.AgentTokenEvent(token));
-                        }).onComplete(res -> latch.countDown()).onError(ex -> latch.countDown()).start();
-
-                        try {
-                            latch.await(30, TimeUnit.SECONDS);
-                        } catch (InterruptedException e) {
-                            Thread.currentThread().interrupt();
-                        }
-
-                        // Attach specific ID
-                        String fullPayload = "||PASSIVE||" + germanBuilder.toString() + "||REF||ID:" + inv.id;
-                        eventBus.post(
-                                new de.bsommerfeld.wsbg.terminal.agent.ChatService.AgentStreamEndEvent(fullPayload));
-
-                        try {
-                            Thread.sleep(500);
-                        } catch (InterruptedException ignored) {
-                        }
-                    }
-                }
-            }
+            translateAndStream(inv, headline);
         }
     }
 
-    private String collectStreamBlocking(dev.langchain4j.service.TokenStream stream) {
+    private void translateAndStream(InvestigationCluster inv, String headline) {
+        String targetLang = config.getUser().getLanguage();
+
+        // AI produces English headlines; skip translation when user language is English
+        if ("en".equalsIgnoreCase(targetLang)) {
+            String payload = "||PASSIVE||" + headline + "||REF||ID:" + inv.id;
+            eventBus.post(new AgentStreamStartEvent(i18n.get("log.source.passive_agent"), "source-AI"));
+            eventBus.post(new AgentStreamEndEvent(payload));
+            return;
+        }
+
+        Locale targetLocale = Locale.forLanguageTag(targetLang);
+        String targetName = targetLocale.getDisplayLanguage(Locale.ENGLISH);
+
+        TokenStream stream = brain.translate(headline, "English", "en", targetName, targetLang);
+        if (stream == null)
+            return;
+
+        eventBus.post(new AgentStreamStartEvent(i18n.get("log.source.passive_agent"), "source-AI"));
+        StringBuilder translated = new StringBuilder();
+        CountDownLatch latch = new CountDownLatch(1);
+
+        stream.onNext(token -> {
+            translated.append(token);
+            eventBus.post(new AgentTokenEvent(token));
+        }).onComplete(res -> latch.countDown()).onError(ex -> latch.countDown()).start();
+
+        try {
+            latch.await(30, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+
+        String payload = "||PASSIVE||" + translated + "||REF||ID:" + inv.id;
+        eventBus.post(new AgentStreamEndEvent(payload));
+
+        try {
+            Thread.sleep(500);
+        } catch (InterruptedException ignored) {
+        }
+    }
+
+    private String collectStreamBlocking(TokenStream stream) {
         if (stream == null)
             return "";
-        java.util.concurrent.CompletableFuture<String> future = new java.util.concurrent.CompletableFuture<>();
+        CompletableFuture<String> future = new CompletableFuture<>();
         stream.onNext(token -> {
         })
                 .onComplete(response -> future.complete(response.content().text()))
@@ -572,106 +430,8 @@ public class PassiveMonitorService {
         try {
             return future.get(60, TimeUnit.SECONDS);
         } catch (Exception e) {
-            LOG.error("Stream Collection Failed", e);
+            LOG.error("Stream collection failed", e);
             return "";
         }
-    }
-
-    public String getInvestigationContext(String id) {
-        for (Investigation inv : investigations) {
-            // Check current ID
-            if (inv.id.equals(id))
-                return inv.cachedContext;
-
-            // Allow looking up by old style permalink (fallback/backward compatibility)
-            // if (inv.latestPermalink.equals(id)) ...
-        }
-        return null;
-    }
-
-    private static class Investigation {
-        String id;
-        String initialTitle;
-        Instant firstSeen;
-        Instant lastActivity;
-        Embedding centroid;
-
-        // Cache the context used for the last report
-        String cachedContext;
-        // History of reports to detect loops
-        java.util.List<String> reportHistory = new java.util.ArrayList<>();
-
-        // Metrics
-        int threadCount = 0;
-        int totalScore = 0;
-        int totalComments = 0;
-        boolean keywordBonus = false;
-        double currentSignificance = 0.0;
-
-        boolean reported = false;
-
-        String latestThreadId; // Replaced Permalink with ID
-        String bestThreadId; // Replaced Permalink with ID
-        int bestThreadScore = -1;
-
-        long threadCreatedUTC = 0; // For Age Context
-        List<String> evidenceLog = new ArrayList<>(); // Re-added
-        // java.util.Set<String> activePermalinks = new java.util.HashSet<>();
-        java.util.Set<String> activeThreadIds = new java.util.HashSet<>();
-
-        public Investigation(RedditThread initialThread, Embedding embedding) {
-            this.id = java.util.UUID.randomUUID().toString().substring(0, 8);
-            this.initialTitle = initialThread.getTitle();
-            this.firstSeen = Instant.now();
-            this.lastActivity = Instant.now();
-            this.centroid = embedding;
-
-            // Init Metrics
-            this.threadCount = 1;
-            this.totalScore = initialThread.getScore();
-            this.totalComments = initialThread.getNumComments();
-            // this.latestPermalink = initialThread.getPermalink();
-            // this.bestPermalink = initialThread.getPermalink();
-            this.latestThreadId = initialThread.getId();
-            this.bestThreadId = initialThread.getId();
-
-            this.bestThreadScore = initialThread.getScore();
-            this.threadCreatedUTC = initialThread.getCreatedUtc();
-
-            this.evidenceLog.add("[" + LocalTime.now() + "] New Thread: " + initialThread.getTitle());
-            this.activeThreadIds.add(initialThread.getId());
-        }
-
-        public void addUpdate(RedditThread t, int deltaScore, int deltaComments) {
-            if (deltaComments > 0) {
-                this.lastActivity = Instant.now();
-            }
-            this.totalScore += deltaScore;
-            this.totalComments += deltaComments;
-            this.latestThreadId = t.getId();
-            this.activeThreadIds.add(t.getId());
-
-            if (t.getScore() > this.bestThreadScore) {
-                this.bestThreadScore = t.getScore();
-                this.bestThreadId = t.getId();
-            }
-
-            boolean isNewThread = !evidenceLog.stream().anyMatch(s -> s.contains(t.getTitle()));
-            if (isNewThread) {
-                this.threadCount++; // Rough heuristic
-                this.evidenceLog.add("[" + LocalTime.now() + "] Related Thread: " + t.getTitle());
-            } else {
-                this.evidenceLog.add("[" + LocalTime.now() + "] Activity: +" + deltaScore + " score, +" + deltaComments
-                        + " comments on '" + t.getTitle() + "'");
-            }
-        }
-
-        public long countRecentEvents(Duration window) {
-            Instant since = Instant.now().minus(window);
-            return lastActivity.isAfter(since) ? 1 : 0;
-        }
-
-        // Cache for Vision Results (URL -> Analysis Text)
-        java.util.Map<String, String> visionCache = new java.util.concurrent.ConcurrentHashMap<>();
     }
 }

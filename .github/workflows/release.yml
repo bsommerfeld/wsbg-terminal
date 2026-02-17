@@ -1,3 +1,15 @@
+# =============================================================================
+#  Release CI
+#
+#  Builds the full application, collects all runtime JARs (including cross-
+#  platform JavaFX natives), packages them via TinyUpdate, and uploads the
+#  OTA artifacts (update.json + files.zip) to the GitHub Release.
+#
+#  This workflow runs on ubuntu-latest only — the application JARs are
+#  platform-independent. JavaFX platform-specific JARs are fetched
+#  explicitly for all targets (mac, mac-aarch64, win, linux, linux-aarch64).
+# =============================================================================
+
 name: Release CI
 
 on:
@@ -31,18 +43,33 @@ jobs:
 
       # Collect all runtime dependencies into a single directory.
       # JavaFX is platform-specific — Maven on Linux only resolves linux JARs.
-      # We explicitly fetch all 3 platform classifiers so the zip works everywhere.
+      # We explicitly fetch all platform classifiers so the zip works everywhere.
+      #
+      # The JavaFX version is extracted from the root pom.xml — hardcoding it
+      # here would silently desync on version bumps and fail at runtime.
       - name: Collect Runtime Dependencies
         run: |
-          mvn dependency:copy-dependencies -pl terminal -DincludeScope=runtime -DoutputDirectory=target/deps
+          DEPS_DIR="terminal/target/deps"
 
-          JAVAFX_VERSION="25-ea+1"
+          mvn dependency:copy-dependencies \
+            -pl terminal \
+            -DincludeScope=runtime \
+            -DoutputDirectory="$DEPS_DIR"
+
+          JAVAFX_VERSION=$(mvn help:evaluate -Dexpression=javafx.version -q -DforceStdout)
+          echo "Resolved JavaFX version from pom.xml: $JAVAFX_VERSION"
+
+          if [ -z "$JAVAFX_VERSION" ]; then
+            echo "::error::Failed to resolve javafx.version from pom.xml"
+            exit 1
+          fi
+
           JAVAFX_MODULES="javafx-base javafx-controls javafx-fxml javafx-graphics javafx-media javafx-web"
           for mod in $JAVAFX_MODULES; do
             for classifier in mac-aarch64 mac win linux linux-aarch64; do
               mvn dependency:copy \
                 -Dartifact=org.openjfx:${mod}:${JAVAFX_VERSION}:jar:${classifier} \
-                -DoutputDirectory=terminal/target/deps \
+                -DoutputDirectory="$DEPS_DIR" \
                 -Dmdep.stripVersion=false || true
             done
           done
@@ -67,7 +94,6 @@ jobs:
           echo "build-badge=${BUILD_BADGE}" >> $GITHUB_OUTPUT
           echo "test-badge=${TEST_BADGE}" >> $GITHUB_OUTPUT
 
-      # Append changelog + badges to the existing release you created
       - name: Update Release with Changelog
         uses: bsommerfeld/release-changelog@v0.1
         with:
@@ -75,7 +101,6 @@ jobs:
           prepend-text: |
             ${{ steps.badges.outputs.build-badge }} ${{ steps.badges.outputs.test-badge }}
 
-      # Upload artifacts to YOUR release
       - name: Upload TinyUpdate Artifacts
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

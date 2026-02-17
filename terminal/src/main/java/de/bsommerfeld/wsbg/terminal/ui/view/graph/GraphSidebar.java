@@ -2,8 +2,15 @@ package de.bsommerfeld.wsbg.terminal.ui.view.graph;
 
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditComment;
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
+import de.bsommerfeld.wsbg.terminal.ui.view.LiquidGlass;
+import javafx.animation.Interpolator;
+import javafx.animation.KeyFrame;
+import javafx.animation.KeyValue;
+import javafx.animation.Timeline;
+import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
@@ -12,7 +19,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.util.Duration;
-import de.bsommerfeld.wsbg.terminal.ui.view.LiquidGlass;
+
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -34,7 +41,7 @@ public class GraphSidebar extends VBox {
     private Consumer<Void> summarizeHandler;
     private Consumer<String> openUrlHandler;
 
-    private final Map<String, javafx.scene.Node> commentNodeMap = new HashMap<>();
+    private final Map<String, Node> commentNodeMap = new HashMap<>();
     private final Map<String, Integer> replyCountMap = new HashMap<>();
 
     private final Button openBrowserBtn;
@@ -104,7 +111,7 @@ public class GraphSidebar extends VBox {
             return;
 
         // Store permalink for browser-open button
-        String permalink = thread.getPermalink();
+        String permalink = thread.permalink();
         if (permalink != null && !permalink.startsWith("http")) {
             permalink = "https://www.reddit.com" + permalink;
         }
@@ -125,7 +132,7 @@ public class GraphSidebar extends VBox {
         HBox titleRow = new HBox(8);
         titleRow.setAlignment(Pos.TOP_LEFT);
 
-        Label title = new Label(thread.getTitle());
+        Label title = new Label(thread.title());
         title.getStyleClass().add("graph-sidebar-thread-title");
         title.setWrapText(true);
         HBox.setHgrow(title, Priority.ALWAYS);
@@ -143,17 +150,17 @@ public class GraphSidebar extends VBox {
 
         HBox meta = new HBox(12);
         meta.setAlignment(Pos.CENTER_LEFT);
-        Label author = new Label("u/" + (thread.getAuthor() != null ? thread.getAuthor() : "[deleted]"));
+        Label author = new Label("u/" + (thread.author() != null ? thread.author() : "[deleted]"));
         author.getStyleClass().add("graph-sidebar-meta");
-        Label score = new Label("^" + thread.getScore());
+        Label score = new Label("^" + thread.score());
         score.getStyleClass().add("graph-sidebar-meta");
-        Label commentCount = new Label("*" + thread.getNumComments());
+        Label commentCount = new Label("*" + thread.numComments());
         commentCount.getStyleClass().add("graph-sidebar-meta");
         meta.getChildren().addAll(author, score, commentCount);
 
         // Thread's own image only — comment images belong to their respective nodes
         int imageCount = 0;
-        if (thread.getImageUrl() != null && !thread.getImageUrl().isEmpty()) {
+        if (thread.imageUrl() != null && !thread.imageUrl().isEmpty()) {
             imageCount++;
         }
 
@@ -172,8 +179,8 @@ public class GraphSidebar extends VBox {
 
         threadHeader.getChildren().addAll(titleRow, meta);
 
-        if (thread.getTextContent() != null && !thread.getTextContent().isEmpty()) {
-            Label body = new Label(thread.getTextContent());
+        if (thread.textContent() != null && !thread.textContent().isEmpty()) {
+            Label body = new Label(thread.textContent());
             body.getStyleClass().add("graph-sidebar-body");
             body.setWrapText(true);
             body.setPadding(new Insets(8, 0, 4, 0));
@@ -204,8 +211,8 @@ public class GraphSidebar extends VBox {
 
         // Build comment hierarchy with nested VBox indent guides
         if (byParent != null) {
-            List<RedditComment> topLevel = findTopLevel(comments, thread.getId());
-            topLevel.sort(Comparator.comparingInt(RedditComment::getScore).reversed());
+            List<RedditComment> topLevel = findTopLevel(comments, thread.id());
+            topLevel.sort(Comparator.comparingInt(RedditComment::score).reversed());
 
             for (RedditComment c : topLevel) {
                 contentBox.getChildren().add(buildCommentTree(c, byParent));
@@ -217,10 +224,10 @@ public class GraphSidebar extends VBox {
         }
 
         if (scrollToCommentId != null) {
-            javafx.application.Platform.runLater(() -> {
-                javafx.scene.Node target = commentNodeMap.get(scrollToCommentId);
+            Platform.runLater(() -> {
+                Node target = commentNodeMap.get(scrollToCommentId);
                 if (target != null) {
-                    javafx.application.Platform.runLater(() -> {
+                    Platform.runLater(() -> {
                         scrollPane.layout();
                         double contentHeight = contentBox.getBoundsInLocal().getHeight();
                         double targetY = target.getBoundsInParent().getMinY();
@@ -250,26 +257,26 @@ public class GraphSidebar extends VBox {
         HBox header = new HBox(8);
         header.setAlignment(Pos.CENTER_LEFT);
 
-        Label authorLabel = new Label("u/" + (comment.getAuthor() != null ? comment.getAuthor() : "[deleted]"));
+        Label authorLabel = new Label("u/" + (comment.author() != null ? comment.author() : "[deleted]"));
         authorLabel.getStyleClass().add("graph-sidebar-comment-author");
 
-        Label scoreLabel = new Label("^" + comment.getScore());
+        Label scoreLabel = new Label("^" + comment.score());
         scoreLabel.getStyleClass().add("graph-sidebar-comment-score");
 
         header.getChildren().addAll(authorLabel, scoreLabel);
 
-        Integer replies = replyCountMap.get(comment.getId());
+        Integer replies = replyCountMap.get(comment.id());
         if (replies != null && replies > 0) {
             Label replyLabel = new Label("*" + replies);
             replyLabel.getStyleClass().add("graph-sidebar-comment-replies");
             header.getChildren().add(replyLabel);
         }
 
-        if (comment.getImageUrls() != null && !comment.getImageUrls().isEmpty()) {
+        if (comment.imageUrls() != null && !comment.imageUrls().isEmpty()) {
             Region spacer = new Region();
             HBox.setHgrow(spacer, Priority.ALWAYS);
 
-            Label imgLabel = new Label(String.valueOf(comment.getImageUrls().size()));
+            Label imgLabel = new Label(String.valueOf(comment.imageUrls().size()));
             imgLabel.getStyleClass().add("graph-sidebar-comment-reply-count");
             Region imgIcon = new Region();
             imgIcon.getStyleClass().add("icon-image-small");
@@ -279,21 +286,21 @@ public class GraphSidebar extends VBox {
             header.getChildren().addAll(spacer, imgBox);
         }
 
-        Label bodyLabel = new Label(comment.getBody());
+        Label bodyLabel = new Label(comment.body());
         bodyLabel.getStyleClass().add("graph-sidebar-comment-body");
         bodyLabel.setWrapText(true);
 
         commentContent.getChildren().addAll(header, bodyLabel);
         commentBlock.getChildren().add(commentContent);
 
-        commentNodeMap.put(comment.getId(), commentBlock);
-        commentNodeMap.put("CMT_" + comment.getId(), commentBlock);
+        commentNodeMap.put(comment.id(), commentBlock);
+        commentNodeMap.put("CMT_" + comment.id(), commentBlock);
 
         // Children wrapped in a guide container. Margin pushes the border
         // inward to align with the parent comment's text column.
-        List<RedditComment> children = findChildren(comment.getId(), byParent);
+        List<RedditComment> children = findChildren(comment.id(), byParent);
         if (children != null && !children.isEmpty()) {
-            children.sort(Comparator.comparingInt(RedditComment::getScore).reversed());
+            children.sort(Comparator.comparingInt(RedditComment::score).reversed());
 
             VBox childContainer = new VBox(0);
             childContainer.getStyleClass().add("graph-sidebar-indent-guide");
@@ -322,7 +329,7 @@ public class GraphSidebar extends VBox {
     private List<RedditComment> findTopLevel(List<RedditComment> comments, String threadId) {
         List<RedditComment> topLevel = new ArrayList<>();
         for (RedditComment c : comments) {
-            String parentId = c.getParentId();
+            String parentId = c.parentId();
             if (parentId == null)
                 continue;
             String clean = parentId.startsWith("t3_") ? parentId.substring(3) : parentId;
@@ -345,7 +352,7 @@ public class GraphSidebar extends VBox {
 
     private void computeReplyCounts(List<RedditComment> comments, Map<String, List<RedditComment>> byParent) {
         for (RedditComment c : comments) {
-            replyCountMap.put(c.getId(), countReplies(c.getId(), byParent));
+            replyCountMap.put(c.id(), countReplies(c.id(), byParent));
         }
     }
 
@@ -356,7 +363,7 @@ public class GraphSidebar extends VBox {
 
         int total = direct.size();
         for (RedditComment child : direct) {
-            total += countReplies(child.getId(), byParent);
+            total += countReplies(child.id(), byParent);
         }
         return total;
     }
@@ -364,7 +371,7 @@ public class GraphSidebar extends VBox {
     private Map<String, List<RedditComment>> indexByParent(List<RedditComment> comments) {
         Map<String, List<RedditComment>> byParent = new HashMap<>();
         for (RedditComment c : comments) {
-            String parentId = c.getParentId();
+            String parentId = c.parentId();
             if (parentId == null || parentId.isEmpty())
                 continue;
             byParent.computeIfAbsent(parentId, k -> new ArrayList<>()).add(c);
@@ -386,18 +393,18 @@ public class GraphSidebar extends VBox {
         this.setVisible(true);
         this.setManaged(true);
 
-        javafx.animation.Timeline timeline = new javafx.animation.Timeline(
-                new javafx.animation.KeyFrame(Duration.ZERO,
-                        new javafx.animation.KeyValue(this.prefWidthProperty(), 0),
-                        new javafx.animation.KeyValue(this.maxWidthProperty(), 0),
-                        new javafx.animation.KeyValue(this.minWidthProperty(), 0)),
-                new javafx.animation.KeyFrame(Duration.millis(250),
-                        new javafx.animation.KeyValue(this.prefWidthProperty(), getTargetWidth(),
-                                javafx.animation.Interpolator.EASE_BOTH),
-                        new javafx.animation.KeyValue(this.maxWidthProperty(), getTargetWidth(),
-                                javafx.animation.Interpolator.EASE_BOTH),
-                        new javafx.animation.KeyValue(this.minWidthProperty(), getTargetWidth(),
-                                javafx.animation.Interpolator.EASE_BOTH)));
+        Timeline timeline = new Timeline(
+                new KeyFrame(Duration.ZERO,
+                        new KeyValue(this.prefWidthProperty(), 0),
+                        new KeyValue(this.maxWidthProperty(), 0),
+                        new KeyValue(this.minWidthProperty(), 0)),
+                new KeyFrame(Duration.millis(250),
+                        new KeyValue(this.prefWidthProperty(), getTargetWidth(),
+                                Interpolator.EASE_BOTH),
+                        new KeyValue(this.maxWidthProperty(), getTargetWidth(),
+                                Interpolator.EASE_BOTH),
+                        new KeyValue(this.minWidthProperty(), getTargetWidth(),
+                                Interpolator.EASE_BOTH)));
         timeline.play();
     }
 
@@ -415,18 +422,18 @@ public class GraphSidebar extends VBox {
             onCloseHandler.run();
         }
 
-        javafx.animation.Timeline timeline = new javafx.animation.Timeline(
-                new javafx.animation.KeyFrame(Duration.ZERO,
-                        new javafx.animation.KeyValue(this.prefWidthProperty(), getTargetWidth()),
-                        new javafx.animation.KeyValue(this.maxWidthProperty(), getTargetWidth()),
-                        new javafx.animation.KeyValue(this.minWidthProperty(), getTargetWidth())),
-                new javafx.animation.KeyFrame(Duration.millis(200),
-                        new javafx.animation.KeyValue(this.prefWidthProperty(), 0,
-                                javafx.animation.Interpolator.EASE_BOTH),
-                        new javafx.animation.KeyValue(this.maxWidthProperty(), 0,
-                                javafx.animation.Interpolator.EASE_BOTH),
-                        new javafx.animation.KeyValue(this.minWidthProperty(), 0,
-                                javafx.animation.Interpolator.EASE_BOTH)));
+        Timeline timeline = new Timeline(
+                new KeyFrame(Duration.ZERO,
+                        new KeyValue(this.prefWidthProperty(), getTargetWidth()),
+                        new KeyValue(this.maxWidthProperty(), getTargetWidth()),
+                        new KeyValue(this.minWidthProperty(), getTargetWidth())),
+                new KeyFrame(Duration.millis(200),
+                        new KeyValue(this.prefWidthProperty(), 0,
+                                Interpolator.EASE_BOTH),
+                        new KeyValue(this.maxWidthProperty(), 0,
+                                Interpolator.EASE_BOTH),
+                        new KeyValue(this.minWidthProperty(), 0,
+                                Interpolator.EASE_BOTH)));
         timeline.setOnFinished(e -> {
             this.setVisible(false);
             this.setManaged(false);

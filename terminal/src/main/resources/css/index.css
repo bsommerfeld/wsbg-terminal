@@ -1,11 +1,18 @@
-/* WSBG Terminal Main Styles - 'Digital Ether' / High-Fidelity Retro-Cozy */
+/* WSBG Terminal — JavaFX Stylesheet
+   'Digital Ether' / High-Fidelity Retro-Cozy Theme
+
+   NOTE: WebView content (terminal log) is styled separately
+   in webview/terminal.css using standard CSS.
+   This file targets only JavaFX CSS properties (-fx-*). */
+
+/* =====================================================================
+   Design Tokens
+   ===================================================================== */
 
 .root {
-    /* Color Palette - Dark, High Contrast, Amber/Orange Accents */
     -fx-background-color: transparent;
     -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
 
-    /* High-Fidelity Terminal Colors */
     color-bg-deep: #050505;
     color-bg-card: rgba(20, 20, 20, 0.6);
     color-text-primary: #e0e0e0;
@@ -18,33 +25,40 @@
     glass-border: rgba(255, 255, 255, 0.1);
 }
 
-/* JFX-Frameless Internal Root Container */
+/* =====================================================================
+   Window Shell (jfx-frameless)
+   ===================================================================== */
+
 .window-shell-root {
-    /* Main Background: Deep Black */
     -fx-background-color: #0a0a0a !important;
     -fx-background-radius: 16 !important;
-
-    /* Light Reflection Outline (Border) */
-    /* Uses standard border optimized for high-dpi displays */
     -fx-border-color: linear-gradient(to bottom, rgba(255, 255, 255, 0.35) 0%, rgba(255, 255, 255, 0.05) 40%, rgba(0, 0, 0, 0.3) 100%) !important;
     -fx-border-width: 1px !important;
     -fx-border-radius: 16 !important;
-    /* Ensure border fits strictly within bounds */
     -fx-border-insets: 0 !important;
 }
 
-/* Ensure the Inner Layout (BorderPane) is transparent so the Shell styling shows through */
 .window-shell-layout {
     -fx-background-color: transparent;
 }
 
-/* Base Text */
+/* =====================================================================
+   Base Typography
+   ===================================================================== */
+
 .label,
 .text {
     -fx-text-fill: color-text-primary;
 }
 
-/* Glassy Cards */
+.text {
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
+}
+
+/* =====================================================================
+   Glassy Cards
+   ===================================================================== */
+
 .glass-card {
     -fx-background-color: color-bg-card;
     -fx-background-radius: 12px;
@@ -54,7 +68,10 @@
     -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.5), 10, 0, 0, 4);
 }
 
-/* Buttons */
+/* =====================================================================
+   Buttons
+   ===================================================================== */
+
 .button {
     -fx-background-color: rgba(255, 159, 0, 0.1);
     -fx-text-fill: color-accent-orange;
@@ -70,12 +87,14 @@
     -fx-effect: null;
 }
 
-/* Title Bar */
+/* =====================================================================
+   Title Bar
+   ===================================================================== */
+
 .window-title-bar,
 .window-header,
 .title-bar {
     -fx-background-color: transparent;
-    /* Transparent to let Shell background/sheen show through */
     -fx-background-radius: 15 15 0 0;
     -fx-border-color: rgba(255, 255, 255, 0.08);
     -fx-border-width: 0 0 1px 0;
@@ -83,7 +102,6 @@
     -fx-min-height: 48px;
     -fx-alignment: center-left;
     -fx-effect: null;
-    /* Remove shadow on titlebar itself, let shell handle it */
     -fx-cursor: open-hand;
 }
 
@@ -98,38 +116,33 @@
     -fx-border-width: 0 0 1px 0;
 }
 
-.terminal-brand {
-    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
-    -fx-font-weight: 800;
-    -fx-font-size: 16px;
-    -fx-text-fill: white;
-    -fx-effect: dropshadow(gaussian, rgba(255, 255, 255, 0.3), 10, 0, 0, 0);
-    -fx-padding: 0 10 0 0;
-    -fx-letter-spacing: 1.5;
+/* =====================================================================
+   Traffic Light Buttons (macOS / Windows+Linux)
+   ===================================================================== */
+
+.custom-traffic-light {
+    -fx-background-radius: 50%;
+    -fx-min-width: 12px;
+    -fx-min-height: 12px;
+    -fx-max-width: 12px;
+    -fx-max-height: 12px;
+    -fx-padding: 0;
+    -fx-background-color: rgba(40, 40, 40, 0.5) !important;
+    -fx-text-fill: transparent !important;
+    -fx-border-color: transparent !important;
+    -fx-border-width: 0 !important;
+    -fx-effect: null !important;
+    -fx-cursor: hand;
+    -fx-background-insets: 0;
 }
 
-/* Ticker Text */
-.ticker-value {
-    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
-    -fx-font-size: 14px;
+/* macOS: hidden by default, shown per-button on hover */
+.os-mac .traffic-light-icon {
+    -fx-opacity: 0;
 }
 
-
-
-.app-title {
-    -fx-font-weight: bold;
-    -fx-text-fill: color-accent-orange;
-}
-
-
-.terminal-console {
-    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
-    -fx-control-inner-background: #000000;
-    -fx-text-fill: #00ff00;
-}
-
-.terminal-console .content {
-    -fx-background-color: #000000;
+.os-mac .custom-traffic-light:hover .traffic-light-icon {
+    -fx-opacity: 1.0 !important;
 }
 
 /* Close (Red) */
@@ -147,7 +160,23 @@
     -fx-background-color: #28C840 !important;
 }
 
-/* List View */
+/* Windows / Linux: always visible */
+.os-win-linux .traffic-light-icon {
+    -fx-opacity: 0.7 !important;
+}
+
+.os-win-linux .custom-traffic-light:hover .traffic-light-icon {
+    -fx-opacity: 1.0 !important;
+}
+
+.custom-traffic-light:pressed {
+    -fx-background-color: derive(-fx-background-color, -10%);
+}
+
+/* =====================================================================
+   List View
+   ===================================================================== */
+
 .list-view {
     -fx-background-color: transparent;
     -fx-padding: 5px;
@@ -175,7 +204,10 @@
     -fx-background-radius: 4px;
 }
 
-/* Text Inputs */
+/* =====================================================================
+   Text Inputs
+   ===================================================================== */
+
 .text-field,
 .text-area {
     -fx-background-color: rgba(20, 20, 30, 0.9);
@@ -201,27 +233,9 @@
     -fx-border-color: color-accent-orange;
 }
 
-/* ComboBox */
-/* ComboBox & TextArea variants */
-.terminal-input {
-    -fx-background-color: rgba(20, 20, 30, 0.9);
-    -fx-control-inner-background: rgba(20, 20, 30, 0.9);
-    -fx-background: rgba(20, 20, 30, 0.9);
-    -fx-border-color: rgba(255, 255, 255, 0.2);
-    -fx-border-radius: 4;
-    -fx-background-radius: 4;
-    -fx-text-fill: #00ff41;
-    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
-    -fx-padding: 8;
-}
-
-.terminal-input .viewport,
-.terminal-input .content {
-    -fx-background-color: transparent;
-    -fx-background: transparent;
-}
-
-
+/* =====================================================================
+   ComboBox
+   ===================================================================== */
 
 .combo-box-base {
     -fx-background-color: rgba(0, 0, 0, 0.3);
@@ -240,7 +254,10 @@
     -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.5), 10, 0, 0, 4);
 }
 
-/* Spinner */
+/* =====================================================================
+   Spinner
+   ===================================================================== */
+
 .spinner {
     -fx-background-color: transparent;
     -fx-border-color: glass-border;
@@ -257,7 +274,10 @@
     -fx-background-color: color-text-secondary;
 }
 
-/* Charts */
+/* =====================================================================
+   Charts
+   ===================================================================== */
+
 .chart {
     -fx-padding: 10px;
 }
@@ -283,297 +303,10 @@
     -fx-text-fill: color-text-secondary;
 }
 
-/* Log Colors */
-/* Log Colors - Retro/Modern High Contrast with Glow */
-.terminal-entry {
-    -fx-padding: 4px 0;
-}
+/* =====================================================================
+   ScrollBar — ghost style, managed by code animation
+   ===================================================================== */
 
-.log-timestamp {
-    -fx-fill: #666666;
-    -fx-font-size: 12px;
-    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
-}
-
-.log-agent {
-    -fx-fill: #00ff41;
-    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
-    -fx-effect: dropshadow(gaussian, rgba(0, 255, 65, 0.4), 5, 0, 0, 0);
-}
-
-.log-user {
-    -fx-fill: #00bcd4;
-    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
-    -fx-font-weight: bold;
-    -fx-effect: dropshadow(gaussian, rgba(0, 188, 212, 0.4), 5, 0, 0, 0);
-}
-
-.log-system {
-    -fx-fill: #a0a0a0;
-    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
-}
-
-.log-info {
-    -fx-fill: #00e676;
-    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
-}
-
-.log-error {
-    -fx-fill: #ff1744;
-    -fx-font-weight: bold;
-    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
-    -fx-effect: dropshadow(gaussian, rgba(255, 23, 68, 0.6), 8, 0, 0, 0);
-}
-
-.log-warn {
-    -fx-fill: #ff9f00;
-    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
-}
-
-/* Passive Agent Priority Levels (Applied to Source Label) */
-.source-passive-low {
-    -fx-fill: #805500;
-    /* Noise - Dark Orange */
-    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
-    -fx-font-weight: bold;
-}
-
-.source-passive-med {
-    -fx-fill: #cc8800;
-    /* Neutral - Medium Orange */
-    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
-    -fx-font-weight: bold;
-}
-
-.source-passive-high {
-    -fx-fill: #ff9f00;
-    /* Relevant - Bright Orange */
-    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
-    -fx-font-weight: bold;
-    -fx-effect: dropshadow(gaussian, rgba(255, 159, 0, 0.5), 8, 0, 0, 0);
-}
-
-
-/* Flat Log Layout */
-.log-header-base {
-    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
-    -fx-font-size: 14px;
-    /* Larger Header */
-    -fx-font-weight: bold;
-}
-
-.log-content-text {
-    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
-    /* Retro Mono */
-    -fx-font-size: 15px;
-    /* Larger Content */
-    -fx-fill: #ffffff;
-    /* High Contrast White */
-    -fx-effect: dropshadow(gaussian, rgba(255, 255, 255, 0.15), 4, 0, 0, 0);
-    /* Subtle Text Glow */
-}
-
-/* Header Colors (Text Nodes use -fx-fill) */
-.log-header-agent {
-    -fx-fill: #00e676;
-    -fx-effect: dropshadow(gaussian, rgba(0, 230, 118, 0.4), 5, 0, 0, 0);
-}
-
-.log-header-vision {
-    -fx-fill: #d500f9;
-}
-
-.log-header-user {
-    -fx-fill: #00bcd4;
-    -fx-effect: dropshadow(gaussian, rgba(0, 188, 212, 0.4), 5, 0, 0, 0);
-}
-
-.log-header-error {
-    -fx-fill: #ff1744;
-}
-
-.log-header-system {
-    -fx-fill: #888888;
-}
-
-.log-header-search {
-    -fx-fill: #00e5ff;
-    -fx-font-weight: bold;
-    -fx-effect: dropshadow(gaussian, rgba(0, 229, 255, 0.5), 6, 0, 0, 0);
-}
-
-
-
-/* Navigation Tabs in Title Bar */
-.button-tab {
-    -fx-background-color: transparent;
-    -fx-text-fill: #666666;
-    -fx-font-weight: bold;
-    -fx-border-color: transparent;
-    -fx-cursor: hand;
-    -fx-font-size: 11px;
-    -fx-padding: 4 8;
-}
-
-.button-tab:hover {
-    -fx-text-fill: #e0e0e0;
-    -fx-background-color: transparent;
-}
-
-/* ScrollBar Styling */
-.scroll-bar {
-    -fx-background-color: transparent;
-    -fx-pref-width: 10px;
-    -fx-pref-height: 10px;
-}
-
-.scroll-bar .track {
-    -fx-background-color: rgba(0, 0, 0, 0.3);
-    -fx-background-radius: 4px;
-}
-
-.scroll-bar .thumb {
-    -fx-background-color: rgba(255, 255, 255, 0.2);
-    -fx-background-radius: 4px;
-}
-
-.scroll-bar .thumb:hover {
-    -fx-background-color: rgba(255, 255, 255, 0.3);
-}
-
-.scroll-bar .thumb:pressed {
-    -fx-background-color: color-accent-orange;
-}
-
-.scroll-bar .increment-button,
-.scroll-bar .decrement-button {
-    -fx-padding: 0;
-    -fx-pref-width: 0;
-    -fx-pref-height: 0;
-    -fx-shape: " ";
-}
-
-.scroll-bar .increment-arrow,
-.scroll-bar .decrement-arrow {
-    -fx-padding: 0;
-    -fx-shape: " ";
-}
-
-/* Custom Traffic Light Buttons (Stealth Mode) */
-/* Classes injected by WsbgTerminalApp.java: .custom-traffic-light .close/.minimize/.maximize */
-
-.custom-traffic-light {
-    -fx-background-radius: 50%;
-    -fx-min-width: 12px;
-    -fx-min-height: 12px;
-    -fx-max-width: 12px;
-    -fx-max-height: 12px;
-    -fx-padding: 0;
-
-    /* Base State: Nice Neutral Grey - OVERRIDE EVERYTHING */
-    -fx-background-color: rgba(40, 40, 40, 0.5) !important;
-    -fx-text-fill: transparent !important;
-    /* Prevent orange text spill */
-    -fx-border-color: transparent !important;
-    -fx-border-width: 0 !important;
-
-    -fx-effect: null !important;
-    /* No glow */
-    -fx-cursor: hand;
-    -fx-background-insets: 0;
-}
-
-/* MAC OS: Stealth Mode (Hidden by default) */
-.os-mac .traffic-light-icon {
-    -fx-opacity: 0;
-}
-
-/* REMOVED container hover effect to match requirement: */
-/* "NUR angezeigt werden beim dem Knopf den ich hovere" */
-
-.os-mac .custom-traffic-light:hover .traffic-light-icon {
-    -fx-opacity: 1.0 !important;
-}
-
-/* WINDOWS / LINUX: Always Visible */
-.os-win-linux .traffic-light-icon {
-    -fx-opacity: 0.7 !important;
-}
-
-.os-win-linux .custom-traffic-light:hover .traffic-light-icon {
-    -fx-opacity: 1.0 !important;
-}
-
-/* Pressed State */
-.custom-traffic-light:pressed {
-    -fx-background-color: derive(-fx-background-color, -10%);
-}
-
-/* SplitPane Styling */
-.split-pane {
-    -fx-background-color: transparent;
-    -fx-padding: 0;
-}
-
-
-/* TUI Style SplitPane */
-/* Integrated Terminal Style SplitPane */
-.split-pane>.split-pane-divider {
-    -fx-background-color: transparent;
-    -fx-border-color: #222;
-    /* Subtle separation line */
-    -fx-border-width: 0 0 0 1px;
-    -fx-padding: 0 1px;
-}
-
-.split-pane>.split-pane-divider:hover {
-    -fx-background-color: transparent;
-    -fx-border-color: #444;
-    /* Slightly lighter on hover */
-    -fx-cursor: open-hand;
-}
-
-.split-pane>.split-pane-divider:pressed {
-    -fx-background-color: transparent;
-    -fx-border-color: color-accent-orange;
-    -fx-cursor: closed-hand;
-}
-
-/* Integrated Header */
-.section-header {
-    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
-    -fx-font-size: 11px;
-    -fx-font-weight: bold;
-    -fx-text-fill: #666;
-    -fx-background-color: transparent;
-    -fx-padding: 6 0 6 10;
-    -fx-border-color: #333;
-    -fx-border-width: 0 0 1px 0;
-}
-
-.section-header-small {
-    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
-    -fx-font-size: 12px;
-    -fx-text-fill: #888;
-    /* Brighter Terminal Grey */
-    -fx-background-color: transparent;
-    -fx-border-color: #222;
-    -fx-border-width: 0 0 1px 0;
-    /* Discrete separator */
-    -fx-padding: 8 10;
-}
-
-.integrated-split-pane {
-    /* Match top titlebar spacing for uniformity */
-    -fx-padding: 0;
-}
-
-.scroll-pane>.corner {
-    -fx-background-color: transparent;
-}
-
-/* Hide Scrollbars */
-/* Ghost Scrollbars - Managed by Code/Animation */
 .scroll-bar {
     -fx-background-color: transparent;
     -fx-block-increment: 20;
@@ -589,14 +322,20 @@
     -fx-padding: 0;
 }
 
-.scroll-bar:vertical .track,
-.scroll-bar:vertical .thumb {
+.scroll-bar .increment-arrow,
+.scroll-bar .decrement-arrow {
+    -fx-padding: 0;
+    -fx-shape: " ";
+}
+
+.scroll-bar:vertical .track {
     -fx-background-color: transparent;
     -fx-background-radius: 4px;
 }
 
 .scroll-bar:vertical .thumb {
     -fx-background-color: rgba(120, 120, 120, 0.6);
+    -fx-background-radius: 4px;
 }
 
 .scroll-bar:horizontal .track,
@@ -604,229 +343,75 @@
     -fx-background-color: transparent;
 }
 
-.scroll-pane>.viewport {
-    -fx-background-color: transparent;
+.scroll-bar .thumb:hover {
+    -fx-background-color: rgba(255, 255, 255, 0.3);
 }
+
+.scroll-bar .thumb:pressed {
+    -fx-background-color: color-accent-orange;
+}
+
+/* =====================================================================
+   ScrollPane
+   ===================================================================== */
 
 .scroll-pane {
     -fx-background-color: transparent;
 }
 
-.text {
-    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
-}
-
-/* Reddit Thread Terminal Style - High Contrast & Crisp */
-.reddit-thread-root {
-    -fx-padding: 8 10 9 10;
-    -fx-background-color: transparent;
-    -fx-border-color: #333;
-    -fx-border-width: 0 0 1 0;
-    -fx-cursor: hand;
-}
-
-.reddit-thread-root:hover {
-    -fx-background-color: #1a1a1a;
-    -fx-border-color: #555;
-}
-
-.reddit-thread-title {
-    -fx-fill: #555;
-    /* Stealth Mode: Dark Grey */
-    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
-    -fx-font-size: 13px;
-    -fx-font-weight: bold;
-    -fx-effect: null;
-}
-
-.reddit-thread-root:hover .reddit-thread-title {
-    -fx-fill: #e0e0e0;
-    /* Brighten on hover via parent trigger */
-}
-
-.reddit-thread-score {
-    -fx-fill: #555;
-    /* Stealth Mode */
-    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
-    -fx-font-size: 12px;
-    -fx-font-weight: normal;
-}
-
-.reddit-thread-root:hover .reddit-thread-score {
-    -fx-fill: #ccc;
-}
-
-.reddit-thread-comments {
-    -fx-fill: #555;
-    /* Stealth Mode */
-    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
-    -fx-font-size: 12px;
-    -fx-font-weight: normal;
-}
-
-.reddit-thread-root:hover .reddit-thread-comments {
-    -fx-fill: #ccc;
-}
-
-.reddit-thread-arrow {
-    -fx-fill: #555;
-    /* Stealth Mode: Grey default */
-    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
-    -fx-font-size: 14px;
-    -fx-font-weight: bold;
-}
-
-.reddit-thread-root:hover .reddit-thread-arrow {
-    -fx-fill: #ff5500;
-}
-
-.reddit-thread-bubble {
-    -fx-fill: #555;
-    /* Stealth Mode */
-    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
-    -fx-font-size: 14px;
-    -fx-font-weight: bold;
-}
-
-.reddit-thread-root:hover .reddit-thread-bubble {
-    -fx-fill: #777;
-}
-
-/* ASCII Button in Titlebar/Header */
-.ascii-button {
-    -fx-background-color: transparent;
-    -fx-text-fill: #666666;
-    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
-    -fx-font-size: 12px;
-    -fx-border-width: 0;
-    -fx-padding: 0 8;
-    -fx-min-height: 24px;
-    -fx-cursor: hand;
-    -fx-alignment: center;
-}
-
-.ascii-button:hover {
-    -fx-text-fill: #e0e0e0;
+.scroll-pane>.viewport {
     -fx-background-color: transparent;
 }
 
-.ascii-button:hover .icon-broom {
-    -fx-background-color: #e0e0e0;
+.scroll-pane>.corner {
+    -fx-background-color: transparent;
 }
 
-.icon-broom {
-    -fx-shape: "M440-520h80v-280q0-17-11.5-28.5T480-840q-17 0-28.5 11.5T440-800v280ZM200-360h560v-80H200v80Zm-58 240h98v-80q0-17 11.5-28.5T280-240q17 0 28.5 11.5T320-200v80h120v-80q0-17 11.5-28.5T480-240q17 0 28.5 11.5T520-200v80h120v-80q0-17 11.5-28.5T680-240q17 0 28.5 11.5T720-200v80h98l-40-160H182l-40 160Zm676 80H142q-39 0-63-31t-14-69l55-220v-80q0-33 23.5-56.5T200-520h160v-280q0-50 35-85t85-35q50 0 85 35t35 85v280h160q33 0 56.5 23.5T840-440v80l55 220q13 38-11.5 69T818-40Zm-58-400H200h560Zm-240-80h-80 80Z";
-    -fx-background-color: #666666;
-    -fx-min-width: 16px;
-    -fx-min-height: 16px;
-    -fx-max-width: 16px;
-    -fx-max-height: 16px;
-    -fx-scale-shape: true;
+/* =====================================================================
+   SplitPane
+   ===================================================================== */
+
+.split-pane {
+    -fx-background-color: transparent;
+    -fx-padding: 0;
 }
 
-.icon-panel-open {
-    -fx-shape: "M460-320v-320L300-480l160 160ZM200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm440-80h120v-560H640v560Zm-80 0v-560H200v560h360Zm80 0h120-120Z";
-    -fx-background-color: #666666;
-    -fx-min-width: 16px;
-    -fx-min-height: 16px;
-    -fx-max-width: 16px;
-    -fx-max-height: 16px;
-    -fx-scale-shape: true;
+.split-pane>.split-pane-divider {
+    -fx-background-color: transparent;
+    -fx-border-color: #222;
+    -fx-border-width: 0 0 0 1px;
+    -fx-padding: 0 1px;
 }
 
-.icon-panel-close {
-    -fx-shape: "M300-640v320l160-160-160-160ZM200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm440-80h120v-560H640v560Zm-80 0v-560H200v560h360Zm80 0h120-120Z";
-    -fx-background-color: #666666;
-    -fx-min-width: 16px;
-    -fx-min-height: 16px;
-    -fx-max-width: 16px;
-    -fx-max-height: 16px;
-    -fx-scale-shape: true;
+.split-pane>.split-pane-divider:hover {
+    -fx-background-color: transparent;
+    -fx-border-color: #444;
+    -fx-cursor: open-hand;
 }
 
-.ascii-button:hover .icon-panel-open,
-.ascii-button:hover .icon-panel-close,
-.ascii-button:hover .icon-graph,
-.ascii-button:hover .icon-view-terminal {
-    -fx-background-color: #e0e0e0;
+.split-pane>.split-pane-divider:pressed {
+    -fx-background-color: transparent;
+    -fx-border-color: color-accent-orange;
+    -fx-cursor: closed-hand;
 }
 
-.icon-graph {
-    -fx-shape: "M280-80q-50 0-85-35t-35-85q0-39 22.5-70t57.5-43v-334q-35-12-57.5-43T160-760q0-50 35-85t85-35q50 0 85 35t35 85q0 39-22.5 70T320-647v7q0 50 35 85t85 35h80q83 0 141.5 58.5T720-320v7q35 12 57.5 43t22.5 70q0 50-35 85t-85 35q-50 0-85-35t-35-85q0-39 22.5-70t57.5-43v-7q0-50-35-85t-85-35h-80q-34 0-64.5-10.5T320-480v167q35 12 57.5 43t22.5 70q0 50-35 85t-85 35Zm0-80q17 0 28.5-11.5T320-200q0-17-11.5-28.5T280-240q-17 0-28.5 11.5T240-200q0 17 11.5 28.5T280-160Zm400 0q17 0 28.5-11.5T720-200q0-17-11.5-28.5T680-240q-17 0-28.5 11.5T640-200q0 17 11.5 28.5T680-160ZM280-720q17 0 28.5-11.5T320-760q0-17-11.5-28.5T280-800q-17 0-28.5 11.5T240-760q0 17 11.5 28.5T280-720Z";
-    -fx-background-color: #666666;
-    -fx-min-width: 16px;
-    -fx-min-height: 16px;
-    -fx-max-width: 16px;
-    -fx-max-height: 16px;
-    -fx-scale-shape: true;
-}
+/* =====================================================================
+   Title Bar — Search Box (Chrome/Safari pill style)
+   ===================================================================== */
 
-.icon-view-terminal {
-    -fx-shape: "M160-160q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h640q33 0 56.5 23.5T880-720v480q0 33-23.5 56.5T800-160H160Zm0-80h640v-400H160v400Zm140-40-56-56 103-104-104-104 57-56 160 160-160 160Zm180 0v-80h240v80H480Z";
-    -fx-background-color: #666666;
-    -fx-min-width: 16px;
-    -fx-min-height: 16px;
-    -fx-max-width: 16px;
-    -fx-max-height: 16px;
-    -fx-scale-shape: true;
-}
-
-/* Highlight state for sidebar icon when search results exist but sidebar is closed */
-.icon-search-match {
-    -fx-background-color: #ffd700 !important;
-    /* Match text highlight (Gold) */
-    -fx-effect: dropshadow(gaussian, rgba(255, 215, 0, 0.6), 8, 0, 0, 0);
-}
-
-.ascii-button:hover .icon-search-match {
-    -fx-background-color: #ffd700 !important;
-    -fx-effect: dropshadow(gaussian, rgba(255, 215, 0, 1.0), 12, 0.5, 0, 0);
-}
-
-/* Utility Controls Box (Broom + Toggle) */
-.utility-controls-box {
-    /* Recessed but Lighter */
-    -fx-background-color: rgba(40, 40, 40, 0.5);
-    -fx-background-radius: 100px;
-    -fx-padding: 4px 6px;
-    /* Match search bar height for visual consistency */
-    -fx-min-height: 32px;
-    -fx-max-height: 32px;
-
-    /* Strong inner shadow for depth */
-    -fx-effect: innershadow(gaussian, rgba(0, 0, 0, 0.8), 10, 0, 0, 2);
-
-    /* Subtle bottom lip highlight */
-    -fx-border-color: transparent transparent rgba(255, 255, 255, 0.1) transparent;
-    -fx-border-width: 1px;
-    -fx-border-radius: 100px;
-
-    -fx-alignment: center;
-}
-
-/* Hover effect removed — Liquid Glass blob highlights controls */
-
-/* Title Bar Search - Chrome/Safari Style */
 .title-search-box {
     -fx-alignment: center-left;
-    /* Recessed but Lighter */
     -fx-background-color: rgba(40, 40, 40, 0.5);
     -fx-background-radius: 100px;
-    /* Fully rounded/Pill */
-
-    /* Subtle bottom lip highlight */
     -fx-border-color: transparent transparent rgba(255, 255, 255, 0.1) transparent;
     -fx-border-radius: 100px;
     -fx-border-width: 1px;
-
     -fx-padding: 0 6 0 0;
     -fx-min-width: 250px;
     -fx-max-width: 400px;
     -fx-min-height: 32px;
     -fx-max-height: 32px;
     -fx-cursor: text;
-
-    /* Strong inner shadow for depth */
     -fx-effect: innershadow(gaussian, rgba(0, 0, 0, 0.8), 10, 0, 0, 2);
 }
 
@@ -871,7 +456,90 @@
     -fx-background-color: transparent;
 }
 
-/* Power Button */
+/* =====================================================================
+   Title Bar — Utility Controls (pill containers)
+   ===================================================================== */
+
+.utility-controls-box {
+    -fx-background-color: rgba(40, 40, 40, 0.5);
+    -fx-background-radius: 100px;
+    -fx-padding: 4px 6px;
+    -fx-min-height: 32px;
+    -fx-max-height: 32px;
+    -fx-effect: innershadow(gaussian, rgba(0, 0, 0, 0.8), 10, 0, 0, 2);
+    -fx-border-color: transparent transparent rgba(255, 255, 255, 0.1) transparent;
+    -fx-border-width: 1px;
+    -fx-border-radius: 100px;
+    -fx-alignment: center;
+}
+
+/* Hover effect removed — Liquid Glass blob highlights controls */
+
+/* =====================================================================
+   ASCII Icon Buttons (used in title bar + sidebar)
+   ===================================================================== */
+
+.ascii-button {
+    -fx-background-color: transparent;
+    -fx-text-fill: #666666;
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
+    -fx-font-size: 12px;
+    -fx-border-width: 0;
+    -fx-padding: 0 8;
+    -fx-min-height: 24px;
+    -fx-cursor: hand;
+    -fx-alignment: center;
+}
+
+.ascii-button:hover {
+    -fx-text-fill: #e0e0e0;
+    -fx-background-color: transparent;
+}
+
+/* =====================================================================
+   SVG Icons (Material Symbols via -fx-shape)
+   ===================================================================== */
+
+.icon-broom {
+    -fx-shape: "M440-520h80v-280q0-17-11.5-28.5T480-840q-17 0-28.5 11.5T440-800v280ZM200-360h560v-80H200v80Zm-58 240h98v-80q0-17 11.5-28.5T280-240q17 0 28.5 11.5T320-200v80h120v-80q0-17 11.5-28.5T480-240q17 0 28.5 11.5T520-200v80h120v-80q0-17 11.5-28.5T680-240q17 0 28.5 11.5T720-200v80h98l-40-160H182l-40 160Zm676 80H142q-39 0-63-31t-14-69l55-220v-80q0-33 23.5-56.5T200-520h160v-280q0-50 35-85t85-35q50 0 85 35t35 85v280h160q33 0 56.5 23.5T840-440v80l55 220q13 38-11.5 69T818-40Zm-58-400H200h560Zm-240-80h-80 80Z";
+    -fx-background-color: #666666;
+    -fx-min-width: 16px;
+    -fx-min-height: 16px;
+    -fx-max-width: 16px;
+    -fx-max-height: 16px;
+    -fx-scale-shape: true;
+}
+
+.ascii-button:hover .icon-broom {
+    -fx-background-color: #e0e0e0;
+}
+
+.icon-graph {
+    -fx-shape: "M280-80q-50 0-85-35t-35-85q0-39 22.5-70t57.5-43v-334q-35-12-57.5-43T160-760q0-50 35-85t85-35q50 0 85 35t35 85q0 39-22.5 70T320-647v7q0 50 35 85t85 35h80q83 0 141.5 58.5T720-320v7q35 12 57.5 43t22.5 70q0 50-35 85t-85 35q-50 0-85-35t-35-85q0-39 22.5-70t57.5-43v-7q0-50-35-85t-85-35h-80q-34 0-64.5-10.5T320-480v167q35 12 57.5 43t22.5 70q0 50-35 85t-85 35Zm0-80q17 0 28.5-11.5T320-200q0-17-11.5-28.5T280-240q-17 0-28.5 11.5T240-200q0 17 11.5 28.5T280-160Zm400 0q17 0 28.5-11.5T720-200q0-17-11.5-28.5T680-240q-17 0-28.5 11.5T640-200q0 17 11.5 28.5T680-160ZM280-720q17 0 28.5-11.5T320-760q0-17-11.5-28.5T280-800q-17 0-28.5 11.5T240-760q0 17 11.5 28.5T280-720Z";
+    -fx-background-color: #666666;
+    -fx-min-width: 16px;
+    -fx-min-height: 16px;
+    -fx-max-width: 16px;
+    -fx-max-height: 16px;
+    -fx-scale-shape: true;
+}
+
+.icon-view-terminal {
+    -fx-shape: "M160-160q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h640q33 0 56.5 23.5T880-720v480q0 33-23.5 56.5T800-160H160Zm0-80h640v-400H160v400Zm140-40-56-56 103-104-104-104 57-56 160 160-160 160Zm180 0v-80h240v80H480Z";
+    -fx-background-color: #666666;
+    -fx-min-width: 16px;
+    -fx-min-height: 16px;
+    -fx-max-width: 16px;
+    -fx-max-height: 16px;
+    -fx-scale-shape: true;
+}
+
+.ascii-button:hover .icon-graph,
+.ascii-button:hover .icon-view-terminal {
+    -fx-background-color: #e0e0e0;
+}
+
+/* Power button — outline (off) and filled (on) variants */
 .icon-power {
     -fx-shape: "m480-336 128-184H494l80-280H360v320h120v144ZM400-80v-320H280v-480h400l-80 280h160L400-80Zm80-400H360h120Z";
     -fx-background-color: #666666;
@@ -902,14 +570,22 @@
     -fx-effect: dropshadow(gaussian, rgba(255, 215, 0, 0.8), 10, 0, 0, 0);
 }
 
-/* --- Graph Sidebar --- */
+/* Blink state — toggled by WsbgTerminalApp when graph view receives new data */
+.icon-terminal-blink {
+    -fx-background-color: #ffd700 !important;
+    -fx-effect: dropshadow(gaussian, rgba(255, 215, 0, 0.6), 8, 0, 0, 0);
+}
+
+/* =====================================================================
+   Graph Sidebar
+   ===================================================================== */
+
 .graph-sidebar {
     -fx-background-color: #0a0a0a;
     -fx-border-color: #222;
     -fx-border-width: 0 0 0 1px;
 }
 
-/* Compact action footer below thread body — visually lighter than title bar controls */
 .sidebar-action-footer {
     -fx-padding: 4 0 0 0;
 }
@@ -931,7 +607,6 @@
     -fx-background-color: rgba(60, 60, 60, 0.6);
     -fx-border-color: transparent transparent rgba(255, 255, 255, 0.15) transparent;
 }
-
 
 .graph-sidebar-scroll {
     -fx-background-color: transparent;
@@ -1008,7 +683,6 @@
     -fx-text-fill: #ccc;
 }
 
-/* IntelliJ-style indent guide: continuous vertical line spanning child group */
 .graph-sidebar-indent-guide {
     -fx-border-color: rgba(255, 255, 255, 0.10);
     -fx-border-width: 0 0 0 1px;
@@ -1018,12 +692,12 @@
     -fx-background-color: #222;
 }
 
-/* Sidebar Close Icon (X) */
+/* Sidebar action icons */
 .icon-sidebar-close {
     -fx-shape: "M256-200l-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z";
     -fx-background-color: #666666;
-    /* Smaller than other icons to match its visual weight — X fills its
-       bounding box fully, unlike globe/summarize with internal whitespace. */
+    /* Smaller than other icons — X fills its bounding box fully,
+       unlike globe/summarize with internal whitespace */
     -fx-min-width: 10px;
     -fx-min-height: 10px;
     -fx-max-width: 10px;
@@ -1031,11 +705,6 @@
     -fx-scale-shape: true;
 }
 
-.ascii-button:hover .icon-sidebar-close {
-    -fx-background-color: #e0e0e0;
-}
-
-/* Summarize Icon */
 .icon-summarize {
     -fx-shape: "M348.5-611.5Q360-623 360-640t-11.5-28.5Q337-680 320-680t-28.5 11.5Q280-657 280-640t11.5 28.5Q303-600 320-600t28.5-11.5Zm0 160Q360-463 360-480t-11.5-28.5Q337-520 320-520t-28.5 11.5Q280-497 280-480t11.5 28.5Q303-440 320-440t28.5-11.5Zm0 160Q360-303 360-320t-11.5-28.5Q337-360 320-360t-28.5 11.5Q280-337 280-320t11.5 28.5Q303-280 320-280t28.5-11.5ZM200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h440l200 200v440q0 33-23.5 56.5T760-120H200Zm0-80h560v-400H600v-160H200v560Zm0-560v160-160 560-560Z";
     -fx-background-color: #666666;
@@ -1046,11 +715,6 @@
     -fx-scale-shape: true;
 }
 
-.ascii-button:hover .icon-summarize {
-    -fx-background-color: #e0e0e0;
-}
-
-/* Globe Icon (open in browser) */
 .icon-globe {
     -fx-shape: "M480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-7-.5-14.5T799-507q-5 29-27 48t-52 19h-80q-33 0-56.5-23.5T560-520v-40H400v-80q0-33 23.5-56.5T480-720h40q0-23 12.5-40.5T563-789q-20-5-40.5-8t-42.5-3q-134 0-227 93t-93 227h200q66 0 113 47t47 113v40H400v110q20 5 39.5 7.5T480-160Z";
     -fx-background-color: #666666;
@@ -1061,11 +725,6 @@
     -fx-scale-shape: true;
 }
 
-.ascii-button:hover .icon-globe {
-    -fx-background-color: #e0e0e0;
-}
-
-/* Small image icon for image count indicator in sidebar */
 .icon-image-small {
     -fx-shape: "M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm40-80h480L570-480 450-320l-90-120-120 160Zm-40 80v-560 560Z";
     -fx-background-color: #555555;
@@ -1076,31 +735,18 @@
     -fx-scale-shape: true;
 }
 
-/* Terminal Blink Animation */
-@keyframes terminal-blink {
-    0% {
-        -fx-opacity: 1.0;
-    }
-
-    50% {
-        -fx-opacity: 0.2;
-    }
-
-    100% {
-        -fx-opacity: 1.0;
-    }
+.ascii-button:hover .icon-sidebar-close,
+.ascii-button:hover .icon-summarize,
+.ascii-button:hover .icon-globe {
+    -fx-background-color: #e0e0e0;
 }
 
-.icon-terminal-blink {
-    -fx-background-color: #ffd700 !important;
-    -fx-effect: dropshadow(gaussian, rgba(255, 215, 0, 0.6), 8, 0, 0, 0);
-}
+/* =====================================================================
+   Liquid Glass — cursor hide only.
+   Effect chain is managed by LiquidGlass.java effectProperty listener.
+   Setting -fx-effect: null here caused per-frame fights with the
+   listener (CSS pulse → null → listener re-chains → ...). */
 
-/* Liquid Glass — applied/removed dynamically by LiquidGlass.java.
-   Only cursor hiding. No -fx-effect: null — the Java effectProperty
-   listener handles CSS overwrites. Setting null here caused a
-   per-frame fight with the listener (CSS pulse → null → listener
-   re-chains → next pulse → null → ...). */
 .liquid-glass-hover,
 .liquid-glass-hover * {
     -fx-cursor: none;

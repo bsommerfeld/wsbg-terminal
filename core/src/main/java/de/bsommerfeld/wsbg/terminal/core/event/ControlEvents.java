@@ -1,85 +1,17 @@
 package de.bsommerfeld.wsbg.terminal.core.event;
 
 /**
- * Events for controlling the Application UI/System from the Agent.
+ * Cross-module events bridging the agent layer and the UI layer.
+ * Only events that both modules need to produce or consume belong here.
  */
 public class ControlEvents {
 
-    public static class OpenTabEvent {
-        public final String tabName;
-
-        public OpenTabEvent(String tabName) {
-            this.tabName = tabName;
-        }
+    public record TriggerAgentAnalysisEvent(String prompt) {
     }
 
-    public static class TriggerAgentAnalysisEvent {
-        public final String prompt;
-
-        public TriggerAgentAnalysisEvent(String prompt) {
-            this.prompt = prompt;
-        }
-    }
-
-    public static class LogEvent {
-        public final String message;
-        public final String type; // INFO, ERROR, WARN
-
-        public LogEvent(String message, String type) {
-            this.message = message;
-            this.type = type;
-        }
-
+    public record LogEvent(String message, String type) {
         public LogEvent(String message) {
             this(message, "INFO");
-        }
-    }
-
-    public static class ClearTerminalEvent {
-        public ClearTerminalEvent() {
-        }
-    }
-
-    public static class SearchEvent {
-        public final String query;
-
-        public SearchEvent(String query) {
-            this.query = query;
-        }
-    }
-
-    public static class SearchNextEvent {
-        public SearchNextEvent() {
-        }
-    }
-
-    public static class ToggleRedditPanelEvent {
-        public final boolean visible;
-
-        public ToggleRedditPanelEvent(boolean visible) {
-            this.visible = visible;
-        }
-    }
-
-    public static class RedditSearchResultsEvent {
-        public final boolean hasResults;
-
-        public RedditSearchResultsEvent(boolean hasResults) {
-            this.hasResults = hasResults;
-        }
-    }
-
-    public static class ToggleGraphViewEvent {
-        public ToggleGraphViewEvent() {
-        }
-    }
-
-    /** Signals the terminal button in the titlebar to blink, drawing attention. */
-    public static class TerminalBlinkEvent {
-        public final boolean active;
-
-        public TerminalBlinkEvent(boolean active) {
-            this.active = active;
         }
     }
 }

@@ -1,102 +1,57 @@
 package de.bsommerfeld.wsbg.terminal.core.domain;
 
-public class RedditThread {
-    private final String id;
-    private final String subreddit;
-    private final String title;
-    private final String author;
-    private final String textContent;
-    private final long createdUtc;
-    private final String permalink;
-    private final int score;
-    private final double upvoteRatio;
-    private final int numComments;
-    private final String imageUrl;
-    private final long lastActivityUtc;
+/**
+ * Immutable snapshot of a Reddit thread at the time of scraping.
+ * Carries all metadata required for clustering, significance evaluation,
+ * and UI display. Timestamps are Unix epoch seconds (UTC).
+ *
+ * @param id              Reddit's internal fullname (e.g. {@code t3_abc123})
+ * @param subreddit       subreddit name without {@code r/} prefix
+ * @param title           thread title as posted by the author
+ * @param author          Reddit username of the thread author
+ * @param textContent     self-text body, {@code null} for link-only posts
+ * @param createdUtc      creation timestamp in epoch seconds
+ * @param permalink       relative permalink path (e.g.
+ *                        {@code /r/wsb/comments/...})
+ * @param score           net upvote count at time of scraping
+ * @param upvoteRatio     upvote ratio as a 0.0–1.0 fraction
+ * @param numComments     total comment count at time of scraping
+ * @param lastActivityUtc most recent activity timestamp in epoch seconds
+ * @param imageUrl        URL of the thread's primary image, {@code null} if
+ *                        absent
+ */
+public record RedditThread(
+        String id,
+        String subreddit,
+        String title,
+        String author,
+        String textContent,
+        long createdUtc,
+        String permalink,
+        int score,
+        double upvoteRatio,
+        int numComments,
+        long lastActivityUtc,
+        String imageUrl) {
 
-    public RedditThread(String id, String subreddit, String title, String author, String textContent,
-            long createdUtc, String permalink, int score, double upvoteRatio, int numComments, long lastActivityUtc,
-            String imageUrl) {
-        this.id = id;
-        this.subreddit = subreddit;
-        this.title = title;
-        this.author = author;
-        this.textContent = textContent;
-        this.createdUtc = createdUtc;
-        this.permalink = permalink;
-        this.score = score;
-        this.upvoteRatio = upvoteRatio;
-        this.numComments = numComments;
-        this.lastActivityUtc = lastActivityUtc;
-        this.imageUrl = imageUrl;
+    /**
+     * Convenience constructor for threads without image or explicit
+     * last-activity timestamp. Sets {@code lastActivityUtc} to {@code createdUtc}.
+     */
+    public RedditThread(String id, String subreddit, String title, String author,
+            String textContent, long createdUtc, String permalink, int score,
+            double upvoteRatio, int numComments) {
+        this(id, subreddit, title, author, textContent, createdUtc, permalink,
+                score, upvoteRatio, numComments, createdUtc, null);
     }
 
-    // Constructor for backward compatibility (defaults lastActivityUtc to
-    // createdUtc, no image)
-    public RedditThread(String id, String subreddit, String title, String author, String textContent,
-            long createdUtc, String permalink, int score, double upvoteRatio, int numComments) {
-        this(id, subreddit, title, author, textContent, createdUtc, permalink, score, upvoteRatio, numComments,
-                createdUtc, null);
-    }
-
-    // Constructor with lastActivity but no image
-    public RedditThread(String id, String subreddit, String title, String author, String textContent,
-            long createdUtc, String permalink, int score, double upvoteRatio, int numComments, long lastActivityUtc) {
-        this(id, subreddit, title, author, textContent, createdUtc, permalink, score, upvoteRatio, numComments,
-                lastActivityUtc, null);
-    }
-
-    public String getId() {
-        return id;
-    }
-
-    public String getSubreddit() {
-        return subreddit;
-    }
-
-    public String getTitle() {
-        return title;
-    }
-
-    public String getAuthor() {
-        return author;
-    }
-
-    public String getTextContent() {
-        return textContent;
-    }
-
-    public long getCreatedUtc() {
-        return createdUtc;
-    }
-
-    public String getPermalink() {
-        return permalink;
-    }
-
-    public int getScore() {
-        return score;
-    }
-
-    public double getUpvoteRatio() {
-        return upvoteRatio;
-    }
-
-    public int getNumComments() {
-        return numComments;
-    }
-
-    public long getLastActivityUtc() {
-        return lastActivityUtc;
-    }
-
-    public String getImageUrl() {
-        return imageUrl;
-    }
-
-    @Override
-    public String toString() {
-        return String.format("RedditThread{id='%s', title='%s', comments=%d, image=%s}", id, title, numComments,
-                imageUrl != null);
+    /**
+     * Convenience constructor for threads without an image.
+     */
+    public RedditThread(String id, String subreddit, String title, String author,
+            String textContent, long createdUtc, String permalink, int score,
+            double upvoteRatio, int numComments, long lastActivityUtc) {
+        this(id, subreddit, title, author, textContent, createdUtc, permalink,
+                score, upvoteRatio, numComments, lastActivityUtc, null);
     }
 }

@@ -23,7 +23,7 @@
          <dependency>
             <groupId>com.google.guava</groupId>
             <artifactId>guava</artifactId>
-            <version>33.0.0-jre</version> <!-- Added explicitly here as it was missing in root -->
+            <version>33.0.0-jre</version>
         </dependency>
         <dependency>
             <groupId>de.bsommerfeld.jshepherd</groupId>

@@ -2,7 +2,6 @@ package de.bsommerfeld.wsbg.terminal.ui.view.dashboard;
 
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.agent.ChatService;
-import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.core.config.ApplicationMode;
 
 import jakarta.inject.Inject;
@@ -19,16 +18,11 @@ public class DashboardViewModel {
     private static final Logger LOG = LoggerFactory.getLogger(DashboardViewModel.class);
 
     private final ChatService chatService;
-    private final GlobalConfig config;
-
-    // Properties bound to UI
-
     private final ObservableList<LogMessage> logs = FXCollections.observableArrayList();
 
     @Inject
-    public DashboardViewModel(ChatService chatService, GlobalConfig config) {
+    public DashboardViewModel(ChatService chatService) {
         this.chatService = chatService;
-        this.config = config;
 
         initialize();
     }
