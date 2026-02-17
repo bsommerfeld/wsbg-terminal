@@ -39,24 +39,26 @@ if (Get-Command "ollama" -ErrorAction SilentlyContinue) {
 if (!(Get-Process "ollama*" -ErrorAction SilentlyContinue)) {
     Write-Host "[*] Starting Ollama server (headless)..."
     Start-Process "ollama" "serve" -WindowStyle Hidden
-}
 
-Write-Host "    Waiting for Ollama to be ready..."
-$ollamaReady = $false
-for ($i = 0; $i -lt 30; $i++) {
-    try {
-        $null = Invoke-WebRequest -Uri "http://localhost:11434/api/tags" -UseBasicParsing -TimeoutSec 2
-        $ollamaReady = $true
-        break
-    } catch {
-        Start-Sleep -Seconds 1
+    Write-Host "    Waiting for Ollama to be ready..."
+    $ollamaReady = $false
+    for ($i = 0; $i -lt 30; $i++) {
+        try {
+            $null = Invoke-WebRequest -Uri "http://localhost:11434/api/tags" -UseBasicParsing -TimeoutSec 2
+            $ollamaReady = $true
+            break
+        } catch {
+            Start-Sleep -Seconds 1
+        }
     }
+    if (-not $ollamaReady) {
+        Write-Host "    Error: Ollama failed to start within 30 seconds." -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "    Ollama is ready." -ForegroundColor Green
+} else {
+    Write-Host "[*] Ollama is already running." -ForegroundColor Green
 }
-if (-not $ollamaReady) {
-    Write-Host "    Error: Ollama failed to start within 30 seconds." -ForegroundColor Red
-    exit 1
-}
-Write-Host "    Ollama is ready." -ForegroundColor Green
 
 # 2. Check Configuration & Determine Mode
 $appDataPath = $env:APPDATA
