@@ -293,7 +293,7 @@ public class GraphSidebar extends VBox {
             header.getChildren().addAll(spacer, imgBox);
         }
 
-        Label bodyLabel = new Label(comment.body());
+        Label bodyLabel = new Label(comment.body() != null ? comment.body() : "[deleted]");
         bodyLabel.getStyleClass().add("graph-sidebar-comment-body");
         bodyLabel.setWrapText(true);
 

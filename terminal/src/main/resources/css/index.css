@@ -533,6 +533,27 @@
     -fx-scale-shape: true;
 }
 
+.icon-settings {
+    -fx-shape: "M433-80q-27 0-46.5-18T367-143l-10-69q-13-5-24.5-12T309-237l-64 31q-25 11-50 2t-36-32l-47-82q-11-25-3-49t29-38l53-40q-1-7-1.5-13.5T189-472q0-7 .5-13.5T191-499l-53-40q-21-14-29-38t3-49l47-82q11-23 36-32t50 2l64 31q12-7 24-14t25-12l10-69q3-27 22.5-45T433-880h94q27 0 46.5 18t22.5 45l10 69q13 5 25 12t23 14l64-31q25-11 50-2t36 32l47 82q11 25 3 49t-29 38l-53 40q1 7 1.5 13.5t.5 13.5q0 7-.5 13.5T772-499l53 40q21 14 29 38t-3 49l-47 82q-11 23-36 32t-50-2l-64-31q-11 7-23 14t-25 12l-10 69q-3 27-22.5 45T527-80h-94Zm47-260q58 0 99-41t41-99q0-58-41-99t-99-41q-58 0-99 41t-41 99q0 58 41 99t99 41Z";
+    -fx-background-color: #666666;
+    -fx-min-width: 16px;
+    -fx-min-height: 16px;
+    -fx-max-width: 16px;
+    -fx-max-height: 16px;
+    -fx-scale-shape: true;
+}
+
+/* Alert dot overlay via radial gradient — gear stays gray, dot glows orange */
+.icon-settings-alert {
+    -fx-shape: "M433-80q-27 0-46.5-18T367-143l-10-69q-13-5-24.5-12T309-237l-64 31q-25 11-50 2t-36-32l-47-82q-11-25-3-49t29-38l53-40q-1-7-1.5-13.5T189-472q0-7 .5-13.5T191-499l-53-40q-21-14-29-38t3-49l47-82q11-23 36-32t50 2l64 31q12-7 24-14t25-12l10-69q3-27 22.5-45T433-880h94q27 0 46.5 18t22.5 45l10 69q13 5 25 12t23 14l64-31q25-11 50-2t36 32l47 82q11 25 3 49t-29 38l-53 40q1 7 1.5 13.5t.5 13.5q0 7-.5 13.5T772-499l53 40q21 14 29 38t-3 49l-47 82q-11 23-36 32t-50-2l-64-31q-11 7-23 14t-25 12l-10 69q-3 27-22.5 45T527-80h-94Zm47-260q58 0 99-41t41-99q0-58-41-99t-99-41q-58 0-99 41t-41 99q0 58 41 99t99 41Z";
+    -fx-background-color: #ff9f00;
+    -fx-min-width: 16px;
+    -fx-min-height: 16px;
+    -fx-max-width: 16px;
+    -fx-max-height: 16px;
+    -fx-scale-shape: true;
+}
+
 .icon-view-terminal {
     -fx-shape: "M160-160q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h640q33 0 56.5 23.5T880-720v480q0 33-23.5 56.5T800-160H160Zm0-80h640v-400H160v400Zm140-40-56-56 103-104-104-104 57-56 160 160-160 160Zm180 0v-80h240v80H480Z";
     -fx-background-color: #666666;
@@ -545,8 +566,10 @@
 
 .ascii-button:hover .icon-graph,
 .ascii-button:hover .icon-view-terminal,
+.ascii-button:hover .icon-settings,
 .ascii-button.blob-hover .icon-graph,
-.ascii-button.blob-hover .icon-view-terminal {
+.ascii-button.blob-hover .icon-view-terminal,
+.ascii-button.blob-hover .icon-settings {
     -fx-background-color: #e0e0e0;
 }
 
@@ -755,6 +778,250 @@
 .ascii-button.blob-hover .icon-summarize,
 .ascii-button.blob-hover .icon-globe {
     -fx-background-color: #e0e0e0;
+}
+
+/* =====================================================================
+   Settings PopOver
+   ===================================================================== */
+
+.settings-popover {
+    -fx-background-color: rgba(12, 12, 12, 0.96);
+    -fx-background-radius: 12;
+    -fx-border-color: rgba(255, 255, 255, 0.08);
+    -fx-border-radius: 12;
+    -fx-border-width: 1;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.7), 30, 0, 0, 8);
+}
+
+.settings-header {
+    -fx-text-fill: #e0e0e0;
+    -fx-font-family: 'Fira Code', monospace;
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+    -fx-padding: 18 20 14 20;
+}
+
+/* ── Glass Cards ─────────────────────────────────────────────── */
+
+.settings-glass-card {
+    -fx-background-color: rgba(255, 255, 255, 0.03);
+    -fx-background-radius: 10;
+    -fx-border-color: rgba(255, 255, 255, 0.06);
+    -fx-border-radius: 10;
+    -fx-border-width: 1;
+}
+
+/* ── Section Titles ──────────────────────────────────────────── */
+
+.settings-section-title {
+    -fx-text-fill: #555;
+    -fx-font-family: 'Fira Code', monospace;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+}
+
+/* ── Rows / Labels / Hints ───────────────────────────────────── */
+
+.settings-row {
+    -fx-padding: 2 0;
+}
+
+.settings-label {
+    -fx-text-fill: #e0e0e0;
+    -fx-font-family: 'Fira Code', monospace;
+    -fx-font-size: 12px;
+}
+
+.settings-hint {
+    -fx-text-fill: #444;
+    -fx-font-family: 'Fira Code', monospace;
+    -fx-font-size: 10px;
+}
+
+/* ── Pill Toggle ─────────────────────────────────────────────── */
+
+.settings-toggle {
+    -fx-background-color: rgba(255, 255, 255, 0.06);
+    -fx-background-radius: 10;
+    -fx-border-color: rgba(255, 255, 255, 0.1);
+    -fx-border-radius: 10;
+    -fx-border-width: 1;
+    -fx-min-width: 36;
+    -fx-max-width: 36;
+    -fx-min-height: 20;
+    -fx-max-height: 20;
+    -fx-pref-width: 36;
+    -fx-pref-height: 20;
+    -fx-padding: 0 3;
+    -fx-cursor: hand;
+    -fx-alignment: CENTER_LEFT;
+    -fx-mark-color: transparent;
+    -fx-focus-color: transparent;
+    -fx-faint-focus-color: transparent;
+}
+
+.settings-toggle .thumb {
+    -fx-background-color: #555;
+    -fx-background-radius: 7;
+}
+
+.settings-toggle:selected {
+    -fx-background-color: rgba(255, 159, 0, 0.35);
+    -fx-border-color: rgba(255, 159, 0, 0.5);
+    -fx-alignment: CENTER_RIGHT;
+}
+
+.settings-toggle:selected .thumb {
+    -fx-background-color: #ff9f00;
+}
+
+.settings-toggle:disabled {
+    -fx-opacity: 0.35;
+}
+
+/* ── Topic Chips ─────────────────────────────────────────────── */
+
+.settings-chip-pane {
+    -fx-padding: 0;
+}
+
+.settings-chip {
+    -fx-background-color: rgba(255, 159, 0, 0.1);
+    -fx-border-color: rgba(255, 159, 0, 0.25);
+    -fx-background-radius: 6;
+    -fx-border-radius: 6;
+    -fx-padding: 5 10 5 12;
+}
+
+.settings-chip-label {
+    -fx-text-fill: #ff9f00;
+    -fx-font-family: 'Fira Code', monospace;
+    -fx-font-size: 12px;
+}
+
+.settings-chip-remove {
+    -fx-text-fill: #666;
+    -fx-font-family: 'Fira Code', monospace;
+    -fx-font-size: 11px;
+    -fx-cursor: hand;
+}
+
+.settings-chip-remove:hover {
+    -fx-text-fill: #ff9f00;
+}
+
+/* ── Topics Text Field ───────────────────────────────────────── */
+
+.settings-topics-field {
+    -fx-background-color: rgba(255, 255, 255, 0.04);
+    -fx-text-fill: #e0e0e0;
+    -fx-prompt-text-fill: #444;
+    -fx-background-radius: 6;
+    -fx-border-color: rgba(255, 255, 255, 0.08);
+    -fx-border-radius: 6;
+    -fx-border-width: 1;
+    -fx-font-family: 'Fira Code', monospace;
+    -fx-font-size: 12px;
+    -fx-padding: 6 10;
+    -fx-focus-color: transparent;
+    -fx-faint-focus-color: transparent;
+}
+
+.settings-topics-field:focused {
+    -fx-border-color: rgba(255, 159, 0, 0.3);
+}
+
+/* ── ComboBox ────────────────────────────────────────────────── */
+
+.settings-combo {
+    -fx-background-color: rgba(255, 255, 255, 0.04);
+    -fx-border-color: rgba(255, 255, 255, 0.08);
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-font-family: 'Fira Code', monospace;
+    -fx-font-size: 12px;
+    -fx-mark-color: #888;
+    -fx-focus-color: transparent;
+    -fx-faint-focus-color: transparent;
+    -fx-pref-width: 120;
+}
+
+.settings-combo .list-cell {
+    -fx-text-fill: #e0e0e0;
+    -fx-font-family: 'Fira Code', monospace;
+    -fx-font-size: 12px;
+    -fx-background-color: transparent;
+}
+
+.settings-combo .combo-box-popup .list-view {
+    -fx-background-color: rgba(20, 20, 20, 0.95);
+    -fx-border-color: rgba(255, 255, 255, 0.08);
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+}
+
+.settings-combo .combo-box-popup .list-view .list-cell {
+    -fx-background-color: transparent;
+    -fx-text-fill: #e0e0e0;
+    -fx-padding: 6 10;
+}
+
+.settings-combo .combo-box-popup .list-view .list-cell:hover {
+    -fx-background-color: rgba(255, 159, 0, 0.15);
+}
+
+/* ── Banners ─────────────────────────────────────────────────── */
+
+.settings-banner-box {
+    -fx-padding: 0;
+}
+
+.settings-banner {
+    -fx-background-color: rgba(255, 159, 0, 0.08);
+    -fx-border-color: rgba(255, 159, 0, 0.2);
+    -fx-border-radius: 8;
+    -fx-background-radius: 8;
+    -fx-padding: 8 12;
+    -fx-cursor: hand;
+}
+
+.settings-banner:hover {
+    -fx-background-color: rgba(255, 159, 0, 0.14);
+}
+
+.settings-banner-icon {
+    -fx-text-fill: #ff9f00;
+    -fx-font-family: 'Fira Code', monospace;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+    -fx-min-width: 18;
+    -fx-alignment: center;
+}
+
+.settings-banner-text {
+    -fx-text-fill: #ff9f00;
+    -fx-font-family: 'Fira Code', monospace;
+    -fx-font-size: 11px;
+}
+
+.settings-banner-action {
+    -fx-text-fill: #888;
+    -fx-font-family: 'Fira Code', monospace;
+    -fx-font-size: 10px;
+    -fx-underline: true;
+}
+
+/* ── Tooltip ─────────────────────────────────────────────────── */
+
+.settings-tooltip {
+    -fx-background-color: rgba(20, 20, 20, 0.95);
+    -fx-text-fill: #e0e0e0;
+    -fx-font-family: 'Fira Code', monospace;
+    -fx-font-size: 10px;
+    -fx-border-color: rgba(255, 255, 255, 0.08);
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-padding: 6 10;
 }
 
 /* =====================================================================

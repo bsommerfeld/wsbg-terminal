@@ -3,6 +3,7 @@ package de.bsommerfeld.wsbg.terminal.ui;
 import com.google.common.eventbus.Subscribe;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
+import de.bsommerfeld.wsbg.terminal.core.i18n.I18nService;
 import de.bsommerfeld.wsbg.terminal.ui.event.UiEvents.ClearTerminalEvent;
 import de.bsommerfeld.wsbg.terminal.ui.event.UiEvents.SearchEvent;
 import de.bsommerfeld.wsbg.terminal.ui.event.UiEvents.SearchNextEvent;
@@ -32,8 +33,6 @@ import javafx.stage.Stage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ResourceBundle;
-
 /**
  * Builds and injects the custom title bar overlay that replaces the
  * default WindowShell header.
@@ -42,8 +41,8 @@ import java.util.ResourceBundle;
  * Layout (all platforms, only traffic lights position varies):
  *
  * <pre>
- * macOS:         [ traffic lights | broom ]  [ ── search ── ]  [ power | graph ]
- * Windows/Linux: [ broom ]  [ ── search ── ]  [ power | graph | traffic lights ]
+ * macOS:         [ traffic lights | broom ]  [ ── search ── ]  [ settings | graph ]
+ * Windows/Linux: [ broom ]  [ ── search ── ]  [ settings | graph | traffic lights ]
  * </pre>
  *
  * <p>
@@ -64,7 +63,7 @@ final class TitleBarFactory {
      *
      * @return the graph toggle button for blink animation, or null on failure
      */
-    static Button inject(Stage stage, ApplicationEventBus eventBus, GlobalConfig config) {
+    static Button inject(Stage stage, ApplicationEventBus eventBus, GlobalConfig config, I18nService i18n) {
         Node titleBarNode = stage.getScene().lookup(".title-bar");
 
         if (!(titleBarNode instanceof Pane bar)) {
@@ -74,9 +73,9 @@ final class TitleBarFactory {
 
         boolean isMac = System.getProperty("os.name").toLowerCase().contains("mac");
 
-        HBox searchBox = buildSearchBox(eventBus);
+        HBox searchBox = buildSearchBox(eventBus, i18n);
         HBox trafficLights = buildTrafficLights(stage, isMac);
-        HBox utilityControls = buildUtilityControls(eventBus, config);
+        HBox utilityControls = buildUtilityControls(eventBus, config, i18n);
         HBox broomContainer = buildBroomButton(eventBus);
 
         Button graphBtn = (Button) utilityControls.getChildren().get(1);
@@ -109,18 +108,25 @@ final class TitleBarFactory {
 
     // ── Component builders ──────────────────────────────────────────
 
-    private static HBox buildSearchBox(ApplicationEventBus eventBus) {
+    private static HBox buildSearchBox(ApplicationEventBus eventBus, I18nService i18n) {
         HBox box = new HBox(0);
         box.getStyleClass().add("title-search-box");
         box.setAlignment(Pos.CENTER_LEFT);
         consumeDragEvents(box);
 
-        ResourceBundle bundle = ResourceBundle.getBundle("i18n.messages");
-
         TextField field = new TextField();
-        field.setPromptText(bundle.getString("ui.search.prompt"));
+        field.setPromptText(i18n.get("ui.search.prompt"));
         field.getStyleClass().add("title-search-field");
         HBox.setHgrow(field, Priority.ALWAYS);
+
+        // Update prompt text when language changes at runtime
+        eventBus.register(new Object() {
+            @Subscribe
+            public void onLanguageChanged(
+                    de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.LanguageChangedEvent e) {
+                Platform.runLater(() -> field.setPromptText(i18n.get("ui.search.prompt")));
+            }
+        });
 
         Button clear = new Button("x");
         clear.getStyleClass().add("title-search-clear-btn");
@@ -170,25 +176,23 @@ final class TitleBarFactory {
         return controls;
     }
 
-    private static HBox buildUtilityControls(ApplicationEventBus eventBus, GlobalConfig config) {
+    private static HBox buildUtilityControls(ApplicationEventBus eventBus, GlobalConfig config, I18nService i18n) {
         HBox controls = new HBox(0);
         controls.getStyleClass().add("utility-controls-box");
         controls.setAlignment(Pos.CENTER);
         consumeDragEvents(controls);
 
-        Button powerBtn = iconButton(
-                config.getAgent().isPowerMode() ? "icon-power-active" : "icon-power");
-        powerBtn.setOnAction(e -> {
-            boolean next = !config.getAgent().isPowerMode();
-            config.getAgent().setPowerMode(next);
-            Region icon = (Region) powerBtn.getGraphic();
+        SettingsViewModel settingsVm = new SettingsViewModel(config, i18n, eventBus);
+        SettingsPopOver settingsPopOver = new SettingsPopOver(settingsVm);
+
+        Button settingsBtn = iconButton("icon-settings");
+        settingsBtn.setOnAction(e -> settingsPopOver.toggle(settingsBtn));
+
+        // Swap icon to alert variant when any banner is active
+        settingsVm.alertActiveProperty().addListener((obs, o, n) -> {
+            Region icon = (Region) settingsBtn.getGraphic();
             icon.getStyleClass().clear();
-            icon.getStyleClass().add(next ? "icon-power-active" : "icon-power");
-            try {
-                config.save();
-            } catch (Exception ex) {
-                LOG.error("Failed to persist power mode", ex);
-            }
+            icon.getStyleClass().add(n ? "icon-settings-alert" : "icon-settings");
         });
 
         Button graphBtn = iconButton("icon-graph");
@@ -200,7 +204,7 @@ final class TitleBarFactory {
             eventBus.post(new ToggleGraphViewEvent());
         });
 
-        controls.getChildren().addAll(powerBtn, graphBtn);
+        controls.getChildren().addAll(settingsBtn, graphBtn);
         return controls;
     }
 
@@ -220,7 +224,7 @@ final class TitleBarFactory {
     // ── Layout assembly ─────────────────────────────────────────────
 
     /**
-     * Unified layout: broom always left, power|graph always right.
+     * Unified layout: broom always left, settings|graph always right.
      * Only the native traffic-light position differs per OS —
      * outermost left on macOS, outermost right on Windows/Linux.
      */

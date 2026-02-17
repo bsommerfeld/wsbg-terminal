@@ -28,11 +28,23 @@ public class HeadlineConfig {
         return enabled;
     }
 
+    public void setEnabled(boolean enabled) {
+        this.enabled = enabled;
+    }
+
     public boolean isShowAll() {
         return showAll;
     }
 
+    public void setShowAll(boolean showAll) {
+        this.showAll = showAll;
+    }
+
     public List<String> getTopics() {
         return topics;
+    }
+
+    public void setTopics(List<String> topics) {
+        this.topics = topics;
     }
 }

@@ -189,6 +189,8 @@ public class GraphController {
                     int limit = Math.min(comments.size(), 30);
                     for (int i = 0; i < limit; i++) {
                         RedditComment c = comments.get(i);
+                        if (c.body() == null)
+                            continue;
                         prompt.append("- u/").append(c.author() != null ? c.author() : "[deleted]")
                                 .append(" (↑").append(c.score()).append("): ")
                                 .append(c.body().length() > 200 ? c.body().substring(0, 200) + "..."

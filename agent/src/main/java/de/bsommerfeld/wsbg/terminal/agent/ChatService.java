@@ -98,19 +98,27 @@ public class ChatService {
         eventBus.post(new LogEvent("Agent thinking (English Analysis)...", "INFO"));
 
         String targetLang = config.getUser().getLanguage();
+        TokenStream reasoningStream = brain.ask(analysisId, prompt);
+        if (reasoningStream == null) {
+            eventBus.post(new LogEvent("Agent Error: Brain not ready", "ERROR"));
+            return;
+        }
 
-        collectStream(brain.ask(analysisId, prompt))
-                .thenApply(english -> {
-                    // Skip translation when user language is English
-                    if ("en".equalsIgnoreCase(targetLang))
-                        return null;
+        // English: stream reasoning tokens directly — no collection + translation
+        // overhead
+        if ("en".equalsIgnoreCase(targetLang)) {
+            streamToUi(reasoningStream);
+            return;
+        }
 
+        // Non-English: collect English reasoning, then translate and stream
+        collectStream(reasoningStream)
+                .thenAccept(english -> {
                     LOG.info("Translating response...");
                     Locale targetLocale = Locale.forLanguageTag(targetLang);
                     String targetName = targetLocale.getDisplayLanguage(Locale.ENGLISH);
-                    return brain.translate(english, "English", "en", targetName, targetLang);
-                })
-                .thenAccept(translationStream -> {
+                    TokenStream translationStream = brain.translate(
+                            english, "English", "en", targetName, targetLang);
                     if (translationStream == null)
                         return;
                     streamToUi(translationStream);

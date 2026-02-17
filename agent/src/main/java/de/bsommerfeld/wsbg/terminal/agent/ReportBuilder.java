@@ -166,8 +166,9 @@ final class ReportBuilder {
             return;
         sb.append("RELEVANT COMMENTS:\n");
         for (RedditComment c : comments) {
+            String body = c.body() != null ? c.body() : "[deleted]";
             sb.append("- ").append(c.author()).append(" (Score: ")
-                    .append(c.score()).append("): ").append(c.body()).append("\n");
+                    .append(c.score()).append("): ").append(body).append("\n");
             for (String img : c.imageUrls()) {
                 sb.append("  [IMAGE]: ").append(img).append("\n");
             }

@@ -7,6 +7,7 @@ import de.bsommerfeld.jfx.frameless.WindowShellBuilder;
 import de.bsommerfeld.wsbg.terminal.core.config.ApplicationMode;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
+import de.bsommerfeld.wsbg.terminal.core.i18n.I18nService;
 import de.bsommerfeld.wsbg.terminal.core.util.StorageUtils;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
 import de.bsommerfeld.wsbg.terminal.ui.config.AppModule;
@@ -154,10 +155,11 @@ public class WsbgTerminalApp extends Application {
     private void injectTitleBar(Stage stage) {
         ApplicationEventBus eventBus = injector.getInstance(ApplicationEventBus.class);
         GlobalConfig config = injector.getInstance(GlobalConfig.class);
+        I18nService i18n = injector.getInstance(I18nService.class);
 
         Platform.runLater(() -> {
             try {
-                this.graphToggleButton = TitleBarFactory.inject(stage, eventBus, config);
+                this.graphToggleButton = TitleBarFactory.inject(stage, eventBus, config, i18n);
             } catch (Exception e) {
                 LOG.error("Failed to inject title bar", e);
             }

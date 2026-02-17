@@ -1,8 +1,11 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
+import com.google.common.eventbus.Subscribe;
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.core.config.AgentConfig;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
+import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
+import de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.PowerModeChangedEvent;
 import dev.langchain4j.data.message.ImageContent;
 import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.data.message.UserMessage;
@@ -59,6 +62,8 @@ public class AgentBrain {
     private Assistant assistant;
     private TranslatorBot translatorBot;
     private ChatLanguageModel visionModel;
+    private String activeReasoningModel;
+    private String activeTranslatorModel;
 
     // FQN on @UserMessage required — name collision with
     // dev.langchain4j.data.message.UserMessage
@@ -68,8 +73,19 @@ public class AgentBrain {
                 @dev.langchain4j.service.UserMessage String text);
     }
 
+    private final GlobalConfig config;
+
     @Inject
-    public AgentBrain(GlobalConfig config) {
+    public AgentBrain(GlobalConfig config, ApplicationEventBus eventBus) {
+        this.config = config;
+        eventBus.register(this);
+        initialize(config.getAgent());
+    }
+
+    /** Reinitializes models when power mode is toggled at runtime. */
+    @Subscribe
+    public void onPowerModeChanged(PowerModeChangedEvent event) {
+        LOG.info("Power Mode changed — reinitializing models...");
         initialize(config.getAgent());
     }
 
@@ -81,7 +97,10 @@ public class AgentBrain {
         String translatorName = resolveModel(config.isPowerMode() ? "translategemma:12b" : "translategemma:4b",
                 "translategemma");
 
-        LOG.info("Initializing AgentBrain — Reasoning: {}, Translator: {}", reasoningName, translatorName);
+        this.activeReasoningModel = reasoningName;
+        this.activeTranslatorModel = translatorName;
+
+        LOG.info("Initializing AgentBrain -- Reasoning: {}, Translator: {}", reasoningName, translatorName);
 
         StreamingChatLanguageModel reasoningModel = OllamaStreamingChatModel.builder()
                 .baseUrl(OLLAMA_BASE_URL).modelName(reasoningName).temperature(0.2).build();
@@ -90,7 +109,8 @@ public class AgentBrain {
                 .baseUrl(OLLAMA_BASE_URL).modelName(translatorName).temperature(0.1).build();
 
         this.visionModel = OllamaChatModel.builder()
-                .baseUrl(OLLAMA_BASE_URL).modelName(VISION_MODEL).temperature(0.1).build();
+                .baseUrl(OLLAMA_BASE_URL).modelName(VISION_MODEL).temperature(0.1)
+                .maxRetries(1).build();
 
         this.assistant = AiServices.builder(Assistant.class)
                 .streamingChatLanguageModel(reasoningModel)
@@ -148,7 +168,7 @@ public class AgentBrain {
         if (assistant == null)
             return null;
         try {
-            LOG.info("Brain thinking [ID={}]: {}", memoryId, message);
+            LOG.info("Brain thinking [ID={}, model={}]: {}", memoryId, activeReasoningModel, message);
             return assistant.chat(memoryId, message);
         } catch (Exception e) {
             LOG.error("Brain failure", e);
@@ -164,6 +184,7 @@ public class AgentBrain {
         String prompt = PromptLoader.load("translation", Map.of(
                 "SOURCE_LANG", sourceLang, "SOURCE_CODE", sourceCode,
                 "TARGET_LANG", targetLang, "TARGET_CODE", targetCode));
+        LOG.info("Translating [model={}]: {} -> {}", activeTranslatorModel, sourceCode, targetCode);
         return translatorBot.translate(prompt, text);
     }
 
@@ -172,7 +193,7 @@ public class AgentBrain {
         if (visionModel == null)
             return "Vision Brain not ready.";
         try {
-            LOG.debug("Vision analyzing: {}", imageUrl);
+            LOG.debug("Vision analyzing [model={}]: {}", VISION_MODEL, imageUrl);
             ImagePayload payload = fetchAndOptimize(imageUrl);
 
             UserMessage msg = UserMessage.from(

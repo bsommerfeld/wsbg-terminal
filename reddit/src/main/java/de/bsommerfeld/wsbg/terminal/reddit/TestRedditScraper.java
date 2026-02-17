@@ -119,7 +119,7 @@ public class TestRedditScraper extends RedditScraper {
 
         List<RedditComment> comments = TestDataGenerator.generateCommentsRecursive("dummy", 10);
         for (RedditComment c : comments) {
-            ctx.comments.add(c.author() + ": " + c.body());
+            ctx.comments.add(c.author() + ": " + (c.body() != null ? c.body() : "[deleted]"));
         }
         return ctx;
     }

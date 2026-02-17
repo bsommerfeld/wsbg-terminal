@@ -59,18 +59,19 @@ class GraphLayoutEngine {
         for (RedditComment c : kids) {
             if (added >= MAX_CHILDREN_PER_NODE)
                 break;
-
             String cId = "CMT_" + c.id();
+            // Deleted comments retain their node so attached images aren't lost
+            String body = c.body() != null ? c.body() : "[deleted]";
             Node cn = resolver.find(cId);
             if (cn == null) {
-                String bodySnippet = c.body().length() > 100 ? c.body().substring(0, 100) + "..." : c.body();
+                String bodySnippet = body.length() > 100 ? body.substring(0, 100) + "..." : body;
                 cn = new Node(cId, bodySnippet, 0, 0);
                 cn.isThread = false;
                 cn.mass = 5;
             }
 
             String authorText = c.author() != null ? " u/" + c.author() : "";
-            cn.fullText = c.body() + authorText;
+            cn.fullText = body + authorText;
             cn.author = c.author();
             cn.score = c.score();
             cn.isThread = false;

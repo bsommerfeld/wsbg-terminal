@@ -245,7 +245,10 @@ public class RedditScraper {
 
         for (JsonNode child : node.get("data").get("children")) {
             JsonNode data = child.get("data");
-            if (!data.has("body"))
+            // Reddit returns no "body" field for non-comment children (e.g. "more"
+            // objects),
+            // and null body for deleted/removed comments — skip both
+            if (!data.has("body") || data.get("body").isNull())
                 continue;
 
             String indent = "  ".repeat(depth);

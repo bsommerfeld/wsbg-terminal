@@ -14,4 +14,18 @@ public class ControlEvents {
             this(message, "INFO");
         }
     }
+
+    /**
+     * Fired when the user toggles Power Mode in settings. AgentBrain reinitializes
+     * its models.
+     */
+    public record PowerModeChangedEvent() {
+    }
+
+    /**
+     * Fired when the UI language is changed. Components update their localized
+     * strings.
+     */
+    public record LanguageChangedEvent() {
+    }
 }
