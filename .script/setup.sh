@@ -90,11 +90,15 @@ echo "    - Embeddings:      $EMBED_MODEL"
 INSTALLED_MODELS=$(ollama list 2>/dev/null | tail -n +2 | awk '{print $1}')
 
 pull_if_missing() {
-    if echo "$INSTALLED_MODELS" | grep -q "^$1$"; then
-        echo "    [✓] $1 already available"
+    # Case-insensitive match — ollama list may return names in different casing
+    # than what we request (e.g. "GLM-OCR:latest" vs "glm-ocr:latest").
+    if echo "$INSTALLED_MODELS" | grep -qi "^$1$"; then
+        echo "    [OK] $1 already available"
     else
         echo "    > Pulling $1..."
-        ollama pull "$1"
+        if ! ollama pull "$1"; then
+            echo "    [WARN] Failed to pull $1 — continuing anyway"
+        fi
     fi
 }
 

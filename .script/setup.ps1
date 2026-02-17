@@ -111,6 +111,9 @@ function Pull-IfMissing($modelName) {
     } else {
         Write-Host "    > Pulling $modelName..."
         ollama pull $modelName
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "    [WARN] Failed to pull $modelName" -ForegroundColor Yellow
+        }
     }
 }
 
