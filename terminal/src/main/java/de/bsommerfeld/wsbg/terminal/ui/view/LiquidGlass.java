@@ -210,6 +210,9 @@ public final class LiquidGlass {
                         DropShadow elevation, GlassState state,
                         AnimationTimer timer, Timeline springBack,
                         Timeline exitSlide, MouseEvent e) {
+                if (node.isDisabled())
+                        return;
+
                 state.hovered = true;
                 state.mouseX = e.getX();
                 state.mouseY = e.getY();
@@ -796,6 +799,7 @@ public final class LiquidGlass {
                 double minDist = radius;
                 for (Node c : parent.getChildren()) {
                         if (!c.isManaged() || !c.isVisible() || c.isMouseTransparent()
+                                        || c.isDisabled()
                                         || c.getProperties().containsKey("liquid-glass-ignore"))
                                 continue;
                         double d = distToBounds(c.getBoundsInParent(), lx, ly);

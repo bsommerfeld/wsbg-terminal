@@ -1,5 +1,6 @@
 package de.bsommerfeld.wsbg.terminal.ui;
 
+import com.google.common.eventbus.Subscribe;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
 import de.bsommerfeld.wsbg.terminal.ui.event.UiEvents.ClearTerminalEvent;
@@ -7,6 +8,9 @@ import de.bsommerfeld.wsbg.terminal.ui.event.UiEvents.SearchEvent;
 import de.bsommerfeld.wsbg.terminal.ui.event.UiEvents.SearchNextEvent;
 import de.bsommerfeld.wsbg.terminal.ui.event.UiEvents.ToggleGraphViewEvent;
 import de.bsommerfeld.wsbg.terminal.ui.view.LiquidGlass;
+import javafx.application.Platform;
+import javafx.beans.property.BooleanProperty;
+import javafx.beans.property.SimpleBooleanProperty;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
@@ -35,17 +39,11 @@ import java.util.ResourceBundle;
  * default WindowShell header.
  *
  * <p>
- * Layout (macOS):
- * 
- * <pre>
- * [ traffic lights | broom ]  [ ── search ── ]  [ power | graph ]
- * </pre>
+ * Layout (all platforms, only traffic lights position varies):
  *
- * <p>
- * Layout (Windows/Linux):
- * 
  * <pre>
- * [ power | graph ]  [ ── search ── ]  [ broom | traffic lights ]
+ * macOS:         [ traffic lights | broom ]  [ ── search ── ]  [ power | graph ]
+ * Windows/Linux: [ broom ]  [ ── search ── ]  [ power | graph | traffic lights ]
  * </pre>
  *
  * <p>
@@ -83,6 +81,19 @@ final class TitleBarFactory {
 
         Button graphBtn = (Button) utilityControls.getChildren().get(1);
 
+        // Disable the entire broom container when graph is active — clearing
+        // the terminal while viewing the graph has no visible effect. Disabling
+        // at container level (not just the button) so Liquid Glass ignores it.
+        BooleanProperty graphActive = new SimpleBooleanProperty(false);
+        broomContainer.disableProperty().bind(graphActive);
+        eventBus.register(new Object() {
+            @Subscribe
+            @SuppressWarnings("unused")
+            public void onToggle(ToggleGraphViewEvent event) {
+                Platform.runLater(() -> graphActive.set(!graphActive.get()));
+            }
+        });
+
         HBox mainLayout = assembleLayout(bar, searchBox, trafficLights, utilityControls, broomContainer, isMac);
 
         LiquidGlass.apply(broomContainer);
@@ -109,7 +120,6 @@ final class TitleBarFactory {
         TextField field = new TextField();
         field.setPromptText(bundle.getString("ui.search.prompt"));
         field.getStyleClass().add("title-search-field");
-        field.setStyle("-fx-background-insets: 0; -fx-padding: 0 0 0 10;");
         HBox.setHgrow(field, Priority.ALWAYS);
 
         Button clear = new Button("x");
@@ -209,6 +219,11 @@ final class TitleBarFactory {
 
     // ── Layout assembly ─────────────────────────────────────────────
 
+    /**
+     * Unified layout: broom always left, power|graph always right.
+     * Only the native traffic-light position differs per OS —
+     * outermost left on macOS, outermost right on Windows/Linux.
+     */
     private static HBox assembleLayout(Pane bar, HBox searchBox, HBox trafficLights,
             HBox utilityControls, HBox broomContainer, boolean isMac) {
         bar.getChildren().clear();
@@ -223,14 +238,16 @@ final class TitleBarFactory {
             leftWrapper.setAlignment(Pos.CENTER_LEFT);
             HBox.setMargin(leftWrapper, new Insets(0, 0, 0, 13));
             left.getChildren().add(leftWrapper);
+        } else {
+            HBox.setMargin(broomContainer, new Insets(0, 0, 0, 10));
+            left.getChildren().add(broomContainer);
+        }
 
+        if (isMac) {
             HBox.setMargin(utilityControls, new Insets(0, 4, 0, 0));
             right.getChildren().add(utilityControls);
         } else {
-            HBox.setMargin(utilityControls, new Insets(0, 0, 0, 10));
-            left.getChildren().add(utilityControls);
-
-            HBox rightWrapper = new HBox(6, broomContainer, trafficLights);
+            HBox rightWrapper = new HBox(16, utilityControls, trafficLights);
             rightWrapper.setAlignment(Pos.CENTER_RIGHT);
             right.getChildren().add(rightWrapper);
         }

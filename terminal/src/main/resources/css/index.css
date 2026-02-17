@@ -426,12 +426,13 @@
 
 .title-search-field {
     -fx-background-color: transparent;
+    -fx-background-insets: 0;
     -fx-border-width: 0;
     -fx-text-fill: #e0e0e0;
     -fx-prompt-text-fill: #666;
     -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
     -fx-font-size: 13px;
-    -fx-padding: 0;
+    -fx-padding: 0 0 0 10;
 }
 
 .title-search-field:focused {
@@ -445,7 +446,7 @@
     -fx-font-size: 10px;
     -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
     -fx-cursor: hand;
-    -fx-padding: 2 6;
+    -fx-padding: 2 6 2 12;
     -fx-min-width: 20px;
     -fx-border-color: transparent;
     -fx-border-width: 0;
@@ -496,6 +497,11 @@
 .ascii-button.blob-hover {
     -fx-text-fill: #e0e0e0;
     -fx-background-color: transparent;
+}
+
+.ascii-button:disabled {
+    -fx-opacity: 0.3;
+    -fx-cursor: default;
 }
 
 /* =====================================================================
