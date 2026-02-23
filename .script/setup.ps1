@@ -11,15 +11,21 @@ if (Get-Command "ollama" -ErrorAction SilentlyContinue) {
 } else {
     Write-Host "    Ollama not found. Attempting to install via Winget..." -ForegroundColor Yellow
     try {
-        winget install -e --id Ollama.Ollama --accept-source-agreements --accept-package-agreements
+        # --silent suppresses the Ollama installer GUI that pops up during
+        # winget install — without it, users see an unwanted desktop window.
+        winget install -e --id Ollama.Ollama --silent --accept-source-agreements --accept-package-agreements
         if ($LASTEXITCODE -ne 0) {
             throw "Winget installation failed."
         }
 
-        # Winget install auto-launches the Desktop GUI and registers autostart.
-        # We only need the headless server — kill the GUI and remove the entry.
-        Start-Sleep -Seconds 3
-        Get-Process "Ollama" -ErrorAction SilentlyContinue | Stop-Process -Force
+        # Winget triggers the Ollama desktop app post-install (GUI + autostart).
+        # We only need the headless CLI server. Kill all Ollama processes with a
+        # retry loop — the single-attempt approach was unreliable because the
+        # GUI spawns asynchronously after winget returns.
+        for ($attempt = 0; $attempt -lt 5; $attempt++) {
+            Start-Sleep -Seconds 2
+            Get-Process "Ollama*" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        }
         Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "Ollama" -ErrorAction SilentlyContinue
         Write-Host "    Ollama installed (headless mode)." -ForegroundColor Green
 
@@ -35,10 +41,12 @@ if (Get-Command "ollama" -ErrorAction SilentlyContinue) {
 }
 
 # Start headless server if no ollama process is serving yet.
+# `ollama serve` is inherently headless — no tray icon. The Desktop GUI
+# process was already killed above, so only the CLI server remains.
 # If the user already has Ollama Desktop running, it serves the API too — leave it.
 if (!(Get-Process "ollama*" -ErrorAction SilentlyContinue)) {
     Write-Host "[*] Starting Ollama server (headless)..."
-    Start-Process "ollama" "serve" -WindowStyle Hidden
+    Start-Process "ollama" "serve" -WindowStyle Hidden -PassThru | Out-Null
 
     Write-Host "    Waiting for Ollama to be ready..."
     $ollamaReady = $false

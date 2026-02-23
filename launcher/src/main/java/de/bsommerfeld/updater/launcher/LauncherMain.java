@@ -51,11 +51,19 @@ public final class LauncherMain {
 
         boolean firstRun = updateClient.currentVersion() == null;
         LauncherWindow window = new LauncherWindow();
+        EnvironmentSetup envSetup = new EnvironmentSetup(appDir);
+
+        // Ensures child processes (winget, ollama pull) are killed when the
+        // launcher exits — not just on timeout. Without this, closing the
+        // window leaves orphaned downloads consuming resources indefinitely.
+        Runtime.getRuntime().addShutdownHook(Thread.ofVirtual()
+                .name("cleanup")
+                .unstarted(envSetup::killActiveProcess));
 
         Thread.ofVirtual().name("update-thread").start(() -> {
             try {
                 runUpdatePhase(updateClient, window, appDir, firstRun);
-                runEnvironmentPhase(appDir, window);
+                runEnvironmentPhase(envSetup, window, appDir);
                 runLaunchPhase(appDir, window, args);
             } catch (Exception e) {
                 handleFatalError(appDir, window, e);
@@ -108,14 +116,21 @@ public final class LauncherMain {
     /**
      * Runs the environment setup script (installs/updates ollama, pulls models).
      * Non-zero exit is logged but not fatal — the application may still work.
+     *
+     * <p>
+     * Always makes the window visible before entering this phase. The previous
+     * approach only showed the window during the update download — on re-runs
+     * where no update was needed but Ollama install or model pulls were
+     * pending, the user saw nothing for minutes. The correct flow is:
+     * CHECK → SHOW INSTALLER → INSTALL, not CHECK+INSTALL → SHOW.
      */
-    private static void runEnvironmentPhase(Path appDir, LauncherWindow window)
-            throws IOException, InterruptedException {
+    private static void runEnvironmentPhase(EnvironmentSetup setup, LauncherWindow window,
+            Path appDir) throws IOException, InterruptedException {
+        SwingUtilities.invokeLater(() -> window.setVisible(true));
         window.setStatus("Checking environment...");
         window.setDetail(null);
         window.setProgress(-1);
 
-        EnvironmentSetup setup = new EnvironmentSetup(appDir);
         boolean success = setup.run((phase, detail) -> {
             log(appDir, "[setup] " + phase + (detail != null ? " — " + detail : ""));
             window.setStatus(phase);

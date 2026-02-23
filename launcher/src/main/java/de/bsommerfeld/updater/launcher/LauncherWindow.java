@@ -98,9 +98,17 @@ final class LauncherWindow extends JFrame {
         setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
         setShape(new RoundRectangle2D.Double(0, 0, WIDTH, HEIGHT, CORNER_ARC, CORNER_ARC));
 
+        // Windows picks the closest size from iconImages for taskbar/alt-tab.
+        // A single 512px source gets downscaled poorly by the Windows WM —
+        // providing pre-scaled sizes avoids that blur.
         java.net.URL iconUrl = getClass().getResource("/images/app-icon.png");
         if (iconUrl != null) {
-            setIconImage(new ImageIcon(iconUrl).getImage());
+            Image source = new ImageIcon(iconUrl).getImage();
+            setIconImages(java.util.List.of(
+                    source.getScaledInstance(16, 16, Image.SCALE_SMOOTH),
+                    source.getScaledInstance(32, 32, Image.SCALE_SMOOTH),
+                    source.getScaledInstance(48, 48, Image.SCALE_SMOOTH),
+                    source));
         }
     }
 

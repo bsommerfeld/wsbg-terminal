@@ -6,6 +6,7 @@ import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -43,15 +44,31 @@ final class EnvironmentSetup {
             .compile("(\\d+)%.*?(\\d+(?:\\.\\d+)?\\s*(?:MB|GB|KB|B))");
 
     /**
-     * Matches raw progress bars (###, ▕██▏) and bare percentages that carry no
-     * useful info.
+     * Matches raw progress bars, spinner characters, and bare percentages.
+     * Winget emits single-char spinners (\, |, /, -) and block-character
+     * progress bars (███▒▒▒) that carry no useful semantic info.
      */
-    private static final Pattern NOISE_PATTERN = Pattern.compile("^[#=\\-\\s▕▏█░]+$|^[\\d.]+%$");
+    private static final Pattern NOISE_PATTERN = Pattern.compile(
+            "^[#=\\-\\s▕▏█░▒]+$|^[\\d.]+%$|^[/\\\\|\\-]$|\\d+\\s*[KMG]?B\\s*/\\s*\\d|^[▕▏█░▒\\s]+\\d+%");
 
     private final Path appDirectory;
+    private final AtomicReference<Process> activeProcess = new AtomicReference<>();
 
     EnvironmentSetup(Path appDirectory) {
         this.appDirectory = appDirectory;
+    }
+
+    /**
+     * Forcefully terminates the running setup process. Called by the launcher's
+     * shutdown hook to prevent orphaned child processes (e.g. winget, ollama
+     * pull) from running indefinitely after the user closes the window.
+     */
+    void killActiveProcess() {
+        Process p = activeProcess.getAndSet(null);
+        if (p != null && p.isAlive()) {
+            p.descendants().forEach(ProcessHandle::destroyForcibly);
+            p.destroyForcibly();
+        }
     }
 
     /**
@@ -76,10 +93,14 @@ final class EnvironmentSetup {
 
         ProcessBuilder pb = createProcessBuilder(script);
         Process process = pb.start();
+        activeProcess.set(process);
 
-        streamOutput(process, outputConsumer);
-
-        return awaitCompletion(process, outputConsumer);
+        try {
+            streamOutput(process, outputConsumer);
+            return awaitCompletion(process, outputConsumer);
+        } finally {
+            activeProcess.set(null);
+        }
     }
 
     // =====================================================================
@@ -184,10 +205,13 @@ final class EnvironmentSetup {
     }
 
     /**
-     * Returns {@code true} for raw progress bar noise that should be suppressed.
+     * Uses find() because the pattern mixes full-line anchored segments
+     * (^...$) with prefix-only segments (^...) — matches() would require
+     * every alternative to cover the entire string, silently breaking
+     * prefix patterns like the KB/MB size detection.
      */
     private boolean isNoise(String line) {
-        return NOISE_PATTERN.matcher(line).matches();
+        return NOISE_PATTERN.matcher(line).find();
     }
 
     private String stripAnsi(String input) {
