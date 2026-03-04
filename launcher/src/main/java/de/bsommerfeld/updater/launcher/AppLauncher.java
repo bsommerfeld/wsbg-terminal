@@ -176,10 +176,26 @@ final class AppLauncher {
                     .filter(p -> !p.getFileName().toString().startsWith("javafx-"))
                     .toList();
 
+            // Prefer our terminal jar over third-party jars that might have a Main-Class
+            // (like opennlp)
+            List<Path> orderedCandidates = new ArrayList<>();
             for (Path jar : candidates) {
+                if (jar.getFileName().toString().startsWith("terminal-")) {
+                    orderedCandidates.add(0, jar);
+                } else {
+                    orderedCandidates.add(jar);
+                }
+            }
+
+            for (Path jar : orderedCandidates) {
                 String mainClass = readMainClassFromManifest(jar);
-                if (mainClass != null)
+                if (mainClass != null) {
+                    // Ignore known third-party CLI entry points
+                    if (!mainClass.contains(".wsbg.")) {
+                        continue;
+                    }
                     return mainClass;
+                }
             }
         }
 
