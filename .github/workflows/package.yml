@@ -105,6 +105,7 @@ jobs:
           if [ "${{ matrix.jpackage-type }}" = "exe" ]; then
             # Desktop shortcut + Start Menu entry so the app is immediately visible
             EXTRA_ARGS="--win-shortcut --win-menu --win-menu-group WSBG"
+          fi
           if [ "${{ matrix.os }}" = "macos-latest" ] && [ -n "${{ secrets.APPLE_CERT_BASE64 }}" ]; then
             EXTRA_ARGS="$EXTRA_ARGS --mac-sign"
           fi
