@@ -7,7 +7,7 @@ assignees: ''
 
 ---
 
-**Den Dip gekauft? (Was hast du kaputt gemacht?)**
+**Den "Dip" gekauft? (Was hast du kaputt gemacht?)**
 Kurz und knapp: Was ist passiert? Nein ehrlich, was ist passiert? Lass mich nicht so lange warten, die FOMO kickt alter.
 
 **Reproduktion (Wie verbrenne ich Geld?)**

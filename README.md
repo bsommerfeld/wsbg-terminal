@@ -4,9 +4,9 @@
 
 Willkommen im **WSBG Terminal** – dem einzigen Tool, das ihr braucht, bevor ihr eure Studienkredite in 200er Hebel auf NVIDIA yolo’t. 
 
-Seien wir ehrlich: Keiner von uns kann sich das echte Bloomberg-Terminal leisten (das Abo kostet mehr als euer Portfolio wert ist). Deswegen haben wir dieses Ding gebaut. Es sieht professionell aus, blinkt wichtig und hilft euch dabei, euer Geld noch effizienter zu verbrennen.
+Seien wir ehrlich: Keiner von uns kann sich das echte Bloomberg-Terminal leisten (das Abo kostet mehr als unser Portfolio wert ist). Deswegen haben wir dieses Ding gebaut. Es sieht professionell aus, blinkt wichtig und hilft euch dabei, euer Geld noch effizienter zu verbrennen.
 
-Wir wissen, dass keiner von euch Lust hat, echte DD zu lesen. Texte sind für Boomer. Wir wollen Headlines, Ticker und KI, die uns bestätigt, dass der Lambo bestellt werden kann.
+Wir wissen, dass keiner von euch Lust hat, echte DD zu lesen. Texte sind für Boomer. Wir wollen Headlines, Ticker und KI, die uns bestätigt, dass der Döner zum Mittag sicher ist.
 
 ### 🦍 Was kann das Ding?
 
@@ -14,7 +14,7 @@ Das WSBG Terminal ist eure Kommandozentrale für **r/wallstreetbetsGER**. Statt 
 
 - **Auto-Fetch**: Der Algo zieht sich die neusten Threads automatisch rein. Nie wieder F5 drücken, während der Kurs fällt.
 - **KI-Zusammenfassungen**: Lest nicht den ganzen Müll. Das Terminal fasst das Affengeschrei zusammen, damit ihr wisst, ob *Long* oder *Short*.
-- **Eselmetall-Suche**: Wenn die FOMO wieder kickt, lasst euch sofort alle Beiträge zu euren liebsten Penny-Stocks oder Eselmetallen anzeigen.
+- **Eselmetall-Suche**: Wenn die FOMO wieder kickt, lasst euch sofort alle Beiträge zu euren liebsten Hebelsklaven oder Eselmetallen anzeigen.
 - **Watchlist & Benachrichtigungen**: Wählt eure favorisierten Geldverbrenner aus und werdet benachrichtigt, sobald ein Affe darüber postet. Oder aktiviert alles, wenn ihr Bock habt, mit Pennystocks bankrott zu gehen.
 - **Power Mode**: Aktiviert den **3x Hebel für die KI**. Maximale Analyse-Tiefe für maximale Verluste (oder Gewinne, aber eher nicht).
 
@@ -44,19 +44,6 @@ Deshalb ist unser *Software-Setup* komplett idiotensicher. Der Installer nimmt e
 
 *Einfach ausführen und zugucken, wie die Magie passiert.*
 
-#### Für die Dev-Affen unter euch (manuell bauen):
-
-```bash
-# Repo klonen (nicht screenshotten, eintippen!)
-git clone https://github.com/bsommerfeld/wsbg-terminal.git
-
-# Bauen (hoffentlich ohne rote Fehler, wir hassen rot)
-mvn clean install
-
-# Abfahrt (für die ganz Faulen)
-./.script/run.sh
-```
-
 ### 💻 Systemanforderungen (Der Gerät)
 
 Euer Computer sollte nicht nur schön blinken, sondern auch performen können. Ollama zieht gut was weg, besonders wenn ihr den Power Mode zündet.
@@ -69,5 +56,18 @@ Euer Computer sollte nicht nur schön blinken, sondern auch performen können. O
 ### 💎 Mitmachen
 
 Macht Pull Requests, fixet Bugs oder baut neue Features. Aber fasst euch kurz, wir haben keine Aufmerksamkeitsspanne.
+
+#### Für die Dev-Affen unter euch (manuell bauen):
+
+```bash
+# Repo klonen (nicht screenshotten, eintippen!)
+git clone https://github.com/bsommerfeld/wsbg-terminal.git
+
+# Bauen (hoffentlich ohne rote Fehler, wir hassen rot)
+mvn clean install
+
+# Abfahrt (für die ganz Faulen)
+./.script/run.sh
+```
 
 **Keine Anlageberatung.** Ich mag nur die Aktie. 🖍️
