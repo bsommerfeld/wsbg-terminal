@@ -54,7 +54,7 @@ jobs:
           mvn dependency:copy-dependencies \
             -pl terminal \
             -DincludeScope=runtime \
-            -DoutputDirectory="$DEPS_DIR"
+            -DoutputDirectory="${GITHUB_WORKSPACE}/${DEPS_DIR}"
 
           JAVAFX_VERSION=$(mvn help:evaluate -Dexpression=javafx.version -q -DforceStdout)
           echo "Resolved JavaFX version from pom.xml: $JAVAFX_VERSION"
@@ -69,7 +69,7 @@ jobs:
             for classifier in mac-aarch64 mac win linux linux-aarch64; do
               mvn dependency:copy \
                 -Dartifact=org.openjfx:${mod}:${JAVAFX_VERSION}:jar:${classifier} \
-                -DoutputDirectory="$DEPS_DIR" \
+                -DoutputDirectory="${GITHUB_WORKSPACE}/${DEPS_DIR}" \
                 -Dmdep.stripVersion=false || true
             done
           done

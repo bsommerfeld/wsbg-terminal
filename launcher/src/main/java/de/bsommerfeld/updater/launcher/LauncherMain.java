@@ -140,10 +140,11 @@ public final class LauncherMain {
 
             // Only show the window when actual work is happening — not for
             // instant "already available" checks that finish in milliseconds.
-            // "Pulling" = model downloads, "Setting up" with install keywords = Ollama
-            // install.
+            // "Pulling" = model downloads, "Installing" = Ollama setup.
+            // Ignore "already installed" to prevent the launcher from flashing when no work
+            // is needed.
             boolean isWork = phase.startsWith("Pulling")
-                    || (detail != null && detail.contains("install"));
+                    || (detail != null && detail.contains("install") && !detail.contains("already installed"));
             if (!window.isVisible() && isWork) {
                 SwingUtilities.invokeLater(() -> window.setVisible(true));
             }

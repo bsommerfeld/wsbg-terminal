@@ -67,6 +67,11 @@ final class EnvironmentSetup {
      */
     private String currentModelName;
 
+    /**
+     * Tracks the maximum layer size currently being processed.
+     */
+    private long maxTotalBytes;
+
     EnvironmentSetup(Path appDirectory) {
         this.appDirectory = appDirectory;
     }
@@ -194,6 +199,7 @@ final class EnvironmentSetup {
         Matcher m = OLLAMA_PULL_PATTERN.matcher(line);
         if (m.find()) {
             currentModelName = m.group(1).strip();
+            maxTotalBytes = 0; // Reset for new model
             consumer.accept("Pulling " + currentModelName, null);
             return true;
         }
@@ -204,26 +210,70 @@ final class EnvironmentSetup {
     private boolean tryEmitOllamaProgress(String line, BiConsumer<String, String> consumer) {
         Matcher m = OLLAMA_PROGRESS_PATTERN.matcher(line);
         if (m.find()) {
+            String percent = m.group(1);
+            String current = m.group(2);
+            String total = m.group(3);
+
+            long totalBytes = parseBytes(total);
+            if (totalBytes < maxTotalBytes) {
+                // Only the largest layer determines progress to prevent UI flickering.
+                // Emitting every layer's progress would cause erratic values, as Ollama
+                // downloads multiple layers concurrently.
+                return true;
+            }
+            maxTotalBytes = totalBytes;
+
             String phase = currentModelName != null ? "Pulling " + currentModelName : "Pulling model";
-            consumer.accept(phase, m.group(1) + "% — " + m.group(2) + " / " + m.group(3));
+            consumer.accept(phase, percent + "% — " + current + " / " + total);
             return true;
         }
         return false;
     }
 
+    private long parseBytes(String sizeStr) {
+        try {
+            String normalized = sizeStr.toUpperCase().replaceAll("\\s+", "");
+            double val = Double.parseDouble(normalized.replaceAll("[^0-9.]", ""));
+            if (normalized.endsWith("GB"))
+                return (long) (val * 1_000_000_000L);
+            if (normalized.endsWith("MB"))
+                return (long) (val * 1_000_000L);
+            if (normalized.endsWith("KB"))
+                return (long) (val * 1_000L);
+            return (long) val;
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
     /**
      * Matches ollama-internal status lines ("pulling manifest", "verifying",
-     * "writing manifest", "success"). Also catches bare "pulling <hash>..."
-     * lines that would otherwise corrupt {@link #currentModelName} if they
-     * reached the pull pattern.
+     * "writing manifest", "success").
      */
     private boolean tryEmitOllamaStatus(String line, BiConsumer<String, String> consumer) {
-        if (line.startsWith("pulling ") || line.startsWith("verifying")
-                || line.startsWith("writing manifest") || line.equals("success")) {
-            String phase = currentModelName != null ? "Pulling " + currentModelName : "Pulling model";
-            consumer.accept(phase, line);
+        String phase = currentModelName != null ? "Pulling " + currentModelName : "Pulling model";
+
+        if (line.contains("writing manifest")) {
+            consumer.accept(phase, "writing manifest");
+            return true;
+        } else if (line.contains("verifying sha256 digest")) {
+            consumer.accept(phase, "verifying sha256 digest");
+            return true;
+        } else if (line.contains("pulling manifest")) {
+            consumer.accept(phase, "pulling manifest");
+            return true;
+        } else if (line.equals("success") || line.contains("success")) {
+            consumer.accept(phase, "success");
             return true;
         }
+
+        // Unstructured pulling logs are silently consumed.
+        // Emitting them would overwrite the active progress detail, leading to UI
+        // flickering.
+        if (line.startsWith("pulling ")) {
+            return true;
+        }
+
         return false;
     }
 
