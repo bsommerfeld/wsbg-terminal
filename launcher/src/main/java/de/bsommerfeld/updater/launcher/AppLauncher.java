@@ -73,7 +73,7 @@ final class AppLauncher {
             throw new IOException("lib/ directory not found — update may have failed");
         }
 
-        Path logFile = appDirectory.resolve("logs/app.log");
+        Path logFile = appDirectory.resolve("logs/terminal-console.log");
         Files.createDirectories(logFile.getParent());
 
         String mainClass = resolveMainClass(libDir);
@@ -84,8 +84,8 @@ final class AppLauncher {
 
         ProcessBuilder pb = new ProcessBuilder(command);
         pb.directory(appDirectory.toFile());
-        pb.redirectOutput(ProcessBuilder.Redirect.appendTo(logFile.toFile()));
-        pb.redirectError(ProcessBuilder.Redirect.appendTo(logFile.toFile()));
+        pb.redirectOutput(ProcessBuilder.Redirect.to(logFile.toFile()));
+        pb.redirectError(ProcessBuilder.Redirect.to(logFile.toFile()));
 
         PathEnricher.enrich(pb);
 

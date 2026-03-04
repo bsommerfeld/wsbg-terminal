@@ -248,7 +248,7 @@ public final class LauncherMain {
     private static boolean ensureDirectories(Path appDir) {
         try {
             Files.createDirectories(appDir);
-            Files.createDirectories(appDir.resolve("logs"));
+            Files.createDirectories(appDir.resolve("logs/launcher"));
             return true;
         } catch (IOException e) {
             showErrorDialog("Cannot create app directory: " + appDir, e);
@@ -264,8 +264,8 @@ public final class LauncherMain {
      */
     private static void initLogging(Path appDir) {
         String name = LocalDateTime.now().format(LOG_FILENAME) + ".log";
-        sessionLogFile = appDir.resolve("logs/" + name);
-        purgeOldLogs(appDir.resolve("logs"));
+        sessionLogFile = appDir.resolve("logs/launcher/" + name);
+        purgeOldLogs(appDir.resolve("logs/launcher"));
         log(appDir, "--- Launcher session ---");
     }
 
