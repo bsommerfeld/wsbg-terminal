@@ -13,6 +13,10 @@ inputs:
     description: 'Output directory for files.zip and update.json'
     required: false
     default: 'updater-dist'
+  images-dir:
+    description: 'Directory containing application images to bundle'
+    required: false
+    default: 'terminal/src/main/resources/images'
 
 outputs:
   manifest-path:
@@ -39,6 +43,7 @@ runs:
 
         mkdir -p "$STAGING_DIR/lib"
         mkdir -p "$STAGING_DIR/bin"
+        mkdir -p "$STAGING_DIR/images"
 
         echo "=== TinyUpdate Packager ==="
         echo "Tag: $TAG_NAME"
@@ -88,6 +93,15 @@ runs:
             [ -f "$script" ] || continue
             cp "$script" "$STAGING_DIR/bin/"
             echo "Bundled script: $(basename "$script")"
+          done
+        fi
+
+        IMAGES_DIR="${{ inputs.images-dir }}"
+        if [ -d "$IMAGES_DIR" ]; then
+          for img in "$IMAGES_DIR"/*.png; do
+            [ -f "$img" ] || continue
+            cp "$img" "$STAGING_DIR/images/"
+            echo "Bundled image: $(basename "$img")"
           done
         fi
 
