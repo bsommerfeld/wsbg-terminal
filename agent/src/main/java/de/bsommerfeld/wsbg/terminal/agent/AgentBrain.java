@@ -4,6 +4,7 @@ import com.google.common.eventbus.Subscribe;
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.core.config.AgentConfig;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
+import de.bsommerfeld.wsbg.terminal.core.config.Model;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
 import de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.PowerModeChangedEvent;
 import dev.langchain4j.data.message.ImageContent;
@@ -50,11 +51,6 @@ public class AgentBrain {
 
     public static final String OLLAMA_BASE_URL = "http://localhost:11434";
 
-    // Model names — deployment constants, not user-configurable.
-    // Maintained alongside Ollama setup scripts.
-    public static final String VISION_MODEL = "glm-ocr:latest";
-    public static final String EMBEDDING_MODEL = "nomic-embed-text-v2-moe:latest";
-
     private static final String USER_AGENT = "java:de.bsommerfeld.wsbg.terminal:v1.0 (by /u/WsbgTerminal)";
 
     private final HttpClient httpClient = HttpClient.newHttpClient();
@@ -93,9 +89,9 @@ public class AgentBrain {
      * Initializes all Ollama model instances and wires the AI service proxies.
      */
     public void initialize(AgentConfig config) {
-        String reasoningName = resolveModel(config.isPowerMode() ? "gemma3:12b" : "gemma3:4b", "gemma3");
-        String translatorName = resolveModel(config.isPowerMode() ? "translategemma:12b" : "translategemma:4b",
-                "translategemma");
+        Model reasoningModelEnum = config.isPowerMode() ? Model.REASONING_POWER : Model.REASONING;
+        String reasoningName = resolveModel(reasoningModelEnum);
+        String translatorName = resolveModel(Model.TRANSLATOR);
 
         this.activeReasoningModel = reasoningName;
         this.activeTranslatorModel = translatorName;
@@ -103,13 +99,16 @@ public class AgentBrain {
         LOG.info("Initializing AgentBrain -- Reasoning: {}, Translator: {}", reasoningName, translatorName);
 
         StreamingChatLanguageModel reasoningModel = OllamaStreamingChatModel.builder()
-                .baseUrl(OLLAMA_BASE_URL).modelName(reasoningName).temperature(0.2).build();
+                .baseUrl(OLLAMA_BASE_URL).modelName(reasoningName).temperature(reasoningModelEnum.getTemperature())
+                .build();
 
         StreamingChatLanguageModel translatorModel = OllamaStreamingChatModel.builder()
-                .baseUrl(OLLAMA_BASE_URL).modelName(translatorName).temperature(0.1).build();
+                .baseUrl(OLLAMA_BASE_URL).modelName(translatorName).temperature(Model.TRANSLATOR.getTemperature())
+                .build();
 
         this.visionModel = OllamaChatModel.builder()
-                .baseUrl(OLLAMA_BASE_URL).modelName(VISION_MODEL).temperature(0.1)
+                .baseUrl(OLLAMA_BASE_URL).modelName(Model.VISION.getModelName())
+                .temperature(Model.VISION.getTemperature())
                 .maxRetries(1).build();
 
         this.assistant = AiServices.builder(Assistant.class)
@@ -126,7 +125,9 @@ public class AgentBrain {
      * Verifies the target model exists in Ollama, falling back to any installed
      * model from the same family to prevent crashes.
      */
-    private String resolveModel(String target, String familyPrefix) {
+    private String resolveModel(Model model) {
+        String target = model.getModelName();
+        String familyPrefix = model.getFamilyPrefix();
         try {
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(OLLAMA_BASE_URL + "/api/tags")).GET().build();
@@ -193,7 +194,7 @@ public class AgentBrain {
         if (visionModel == null)
             return "Vision Brain not ready.";
         try {
-            LOG.debug("Vision analyzing [model={}]: {}", VISION_MODEL, imageUrl);
+            LOG.debug("Vision analyzing [model={}]: {}", Model.VISION.getModelName(), imageUrl);
             ImagePayload payload = fetchAndOptimize(imageUrl);
 
             UserMessage msg = UserMessage.from(

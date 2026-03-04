@@ -22,7 +22,7 @@ import java.util.regex.Pattern;
  * <h3>Output parsing</h3>
  * Script output is streamed line-by-line and parsed into structured
  * {@code (phase, detail)} pairs. The phase always identifies the
- * concrete model being pulled (e.g. "Pulling gemma3:4b") so the
+ * concrete model being pulled (e.g. "Pulling model:version") so the
  * launcher UI can communicate transparently what it installs.
  * <ul>
  * <li><strong>Script pull announcements</strong> — "> Pulling model..." lines
@@ -88,7 +88,7 @@ final class EnvironmentSetup {
      * Runs the platform-specific setup script synchronously.
      *
      * @param outputConsumer receives {@code (phase, detail)} — phase identifies
-     *                       the concrete action (e.g. "Pulling gemma3:4b"),
+     *                       the concrete action (e.g. "Pulling model:version"),
      *                       detail is context like "42% — 739 MB / 3.3 GB".
      *                       Detail may be {@code null}.
      * @return {@code true} if the script exited with code 0
@@ -187,7 +187,7 @@ final class EnvironmentSetup {
     }
 
     /**
-     * Matches script-emitted "> Pulling gemma3:4b..." lines and tracks the
+     * Matches script-emitted "> Pulling model:version..." lines and tracks the
      * model name for subsequent progress/status emissions.
      */
     private boolean tryEmitOllamaPull(String line, BiConsumer<String, String> consumer) {

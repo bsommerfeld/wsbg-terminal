@@ -10,7 +10,7 @@ import de.bsommerfeld.jshepherd.annotation.Key;
 public class AgentConfig {
 
     @Key("agent.power-mode")
-    @Comment("Enable Power Mode (uses 12b models instead of 4b) (default: false)")
+    @Comment("Enable Power Mode (uses larger reasoning model) (default: false)")
     private boolean powerMode = false;
 
     public boolean isPowerMode() {

@@ -70,14 +70,14 @@ if (Test-Path $configFile) {
 $visionModel = "glm-ocr:latest"
 $embedModel = "nomic-embed-text-v2-moe:latest"
 
+$translatorModel = "translategemma:4b"
+
 if ($powerMode) {
-    Write-Host "[*] Power Mode: ON (Using 12b Models)" -ForegroundColor Magenta
-    $reasoningModel = "gemma3:12b"
-    $translatorModel = "translategemma:12b"
+    Write-Host "[*] Power Mode: ON" -ForegroundColor Magenta
+    $reasoningModel = "qwen3.5:9b"
 } else {
-    Write-Host "[*] Power Mode: OFF (Using 4b Models)" -ForegroundColor Cyan
-    $reasoningModel = "gemma3:4b"
-    $translatorModel = "translategemma:4b"
+    Write-Host "[*] Power Mode: OFF" -ForegroundColor Cyan
+    $reasoningModel = "qwen3.5:4b"
 }
 
 Write-Host "[*] Configuration Roadmap:" -ForegroundColor Gray

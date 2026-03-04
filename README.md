@@ -57,6 +57,15 @@ mvn clean install
 ./.script/run.sh
 ```
 
+### 💻 Systemanforderungen (Der Gerät)
+
+Euer Computer sollte nicht nur schön blinken, sondern auch performen können. Ollama zieht gut was weg, besonders wenn ihr den Power Mode zündet.
+
+- **OS**: Mac (Apple Silicon bevorzugt, M-Series fetzt), Windows (AMD/NVIDIA Long) oder Linux.
+- **RAM**: Mindestens **16 GB**, sonst läuft das Terminal genau wie eure Trades - nicht gut. Für den Power Mode sollte man [sich mehr RAM installieren](https://downloadmoreram.com/index.html) (**16 GB+**).
+- **Speicherplatz**: **≈ 15 GB frei** (das Terminal orchestriert einen multimodalen Ansatz mit verschiedenen Expertenmodellen, um die besten Ergebnisse zu erzielen).
+- **Prozessor**: M1/M2/M3/M4 aufwärts oder ein vernünftiger Mehrkerner mit GPU-Support. Ohne NPU/GPU ist die Textgenerierung langsamer als Trade Republic im Dip.
+
 ### 💎 Mitmachen
 
 Macht Pull Requests, fixet Bugs oder baut neue Features. Aber fasst euch kurz, wir haben keine Aufmerksamkeitsspanne.

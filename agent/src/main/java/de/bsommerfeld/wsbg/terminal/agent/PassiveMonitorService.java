@@ -7,6 +7,7 @@ import de.bsommerfeld.wsbg.terminal.agent.ChatService.AgentStreamStartEvent;
 import de.bsommerfeld.wsbg.terminal.agent.ChatService.AgentTokenEvent;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.core.config.HeadlineConfig;
+import de.bsommerfeld.wsbg.terminal.core.config.Model;
 import de.bsommerfeld.wsbg.terminal.core.config.RedditConfig;
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
@@ -96,7 +97,7 @@ public class PassiveMonitorService {
         this.dataRetentionSeconds = Duration.ofHours(redditConfig.getDataRetentionHours()).toSeconds();
         this.updateIntervalSeconds = redditConfig.getUpdateIntervalSeconds();
 
-        String embeddingModelName = AgentBrain.EMBEDDING_MODEL;
+        String embeddingModelName = Model.EMBEDDING.getModelName();
         LOG.info("Initializing Vector Embedding Model: {}", embeddingModelName);
 
         this.embeddingModel = OllamaEmbeddingModel.builder()

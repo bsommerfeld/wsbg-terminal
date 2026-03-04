@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.BiConsumer;
 import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -75,29 +76,29 @@ class EnvironmentSetupTest {
     void classifyAndEmit_shouldDetectOllamaPull() throws Exception {
         EnvironmentSetup setup = new EnvironmentSetup(appDir);
         Method m = EnvironmentSetup.class.getDeclaredMethod("classifyAndEmit", String.class,
-                java.util.function.BiConsumer.class);
+                BiConsumer.class);
         m.setAccessible(true);
 
         List<String[]> emissions = new ArrayList<>();
-        m.invoke(setup, "Pulling gemma3:4b...", (java.util.function.BiConsumer<String, String>) (phase, detail) -> {
+        m.invoke(setup, "> Pulling dummy-model:1b...", (BiConsumer<String, String>) (phase, detail) -> {
             emissions.add(new String[] { phase, detail });
         });
 
         assertFalse(emissions.isEmpty());
-        assertEquals("Pulling model", emissions.get(0)[0]);
-        assertTrue(emissions.get(0)[1].contains("gemma3:4b"));
+        assertEquals("Pulling dummy-model:1b", emissions.get(0)[0]);
+        assertNull(emissions.get(0)[1]);
     }
 
     @Test
     void classifyAndEmit_shouldDetectOllamaProgress() throws Exception {
         EnvironmentSetup setup = new EnvironmentSetup(appDir);
         Method m = EnvironmentSetup.class.getDeclaredMethod("classifyAndEmit", String.class,
-                java.util.function.BiConsumer.class);
+                BiConsumer.class);
         m.setAccessible(true);
 
         List<String[]> emissions = new ArrayList<>();
-        m.invoke(setup, "42% ▕██████████░░░░░░░░░░▏ 1.2 GB",
-                (java.util.function.BiConsumer<String, String>) (phase, detail) -> {
+        m.invoke(setup, "42% ▕██████████░░░░░░░░░░▏ 1.2 GB / 3.3 GB",
+                (BiConsumer<String, String>) (phase, detail) -> {
                     emissions.add(new String[] { phase, detail });
                 });
 
@@ -111,12 +112,12 @@ class EnvironmentSetupTest {
     void classifyAndEmit_shouldDetectOllamaStatusLines() throws Exception {
         EnvironmentSetup setup = new EnvironmentSetup(appDir);
         Method m = EnvironmentSetup.class.getDeclaredMethod("classifyAndEmit", String.class,
-                java.util.function.BiConsumer.class);
+                BiConsumer.class);
         m.setAccessible(true);
 
         for (String line : List.of("verifying sha256 digest", "writing manifest", "success")) {
             List<String[]> emissions = new ArrayList<>();
-            m.invoke(setup, line, (java.util.function.BiConsumer<String, String>) (phase, detail) -> {
+            m.invoke(setup, line, (BiConsumer<String, String>) (phase, detail) -> {
                 emissions.add(new String[] { phase, detail });
             });
             assertFalse(emissions.isEmpty(), "Should emit for: " + line);
@@ -128,11 +129,11 @@ class EnvironmentSetupTest {
     void classifyAndEmit_shouldDetectSetupComplete() throws Exception {
         EnvironmentSetup setup = new EnvironmentSetup(appDir);
         Method m = EnvironmentSetup.class.getDeclaredMethod("classifyAndEmit", String.class,
-                java.util.function.BiConsumer.class);
+                BiConsumer.class);
         m.setAccessible(true);
 
         List<String[]> emissions = new ArrayList<>();
-        m.invoke(setup, "Setup Complete!", (java.util.function.BiConsumer<String, String>) (phase, detail) -> {
+        m.invoke(setup, "Setup Complete!", (BiConsumer<String, String>) (phase, detail) -> {
             emissions.add(new String[] { phase, detail });
         });
 

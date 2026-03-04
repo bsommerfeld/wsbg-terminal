@@ -53,15 +53,14 @@ VISION_MODEL="glm-ocr:latest"
 EMBED_MODEL="nomic-embed-text-v2-moe:latest"
 
 # Variable models
-REASONING_MODEL="gemma3:4b"
+REASONING_MODEL="qwen3.5:4b"
 TRANSLATOR_MODEL="translategemma:4b"
 
 if [ "$POWER_MODE" = true ]; then
-    echo "[*] Power Mode: ON (Using 12b Models)"
-    REASONING_MODEL="gemma3:12b"
-    TRANSLATOR_MODEL="translategemma:12b"
+    echo "[*] Power Mode: ON"
+    REASONING_MODEL="qwen3.5:9b"
 else
-    echo "[*] Power Mode: OFF (Using 4b Models)"
+    echo "[*] Power Mode: OFF"
 fi
 
 echo "[*] Configuration Roadmap:"

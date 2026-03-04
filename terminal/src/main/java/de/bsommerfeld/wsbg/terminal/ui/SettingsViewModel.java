@@ -1,6 +1,7 @@
 package de.bsommerfeld.wsbg.terminal.ui;
 
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
+import de.bsommerfeld.wsbg.terminal.core.config.Model;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
 import de.bsommerfeld.wsbg.terminal.core.event.ControlEvents;
 import de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.PowerModeChangedEvent;
@@ -12,6 +13,7 @@ import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.beans.property.StringProperty;
 import javafx.collections.FXCollections;
+import javafx.collections.ListChangeListener;
 import javafx.collections.ObservableList;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,9 +47,6 @@ final class SettingsViewModel {
     private static final Logger LOG = LoggerFactory.getLogger(SettingsViewModel.class);
     private static final String GITHUB_RELEASES_API = "https://api.github.com/repos/bsommerfeld/wsbg-terminal/releases/latest";
     private static final String OLLAMA_TAGS_URL = "http://localhost:11434/api/tags";
-
-    /** The 12b model required by power mode (only gemma3 is upgraded). */
-    private static final String POWER_MODE_MODEL = "gemma3:12b";
 
     // ── Agent ───────────────────────────────────────────────────────
     private final BooleanProperty powerMode = new SimpleBooleanProperty();
@@ -124,7 +123,8 @@ final class SettingsViewModel {
         language.addListener((obs, o, n) -> {
             config.getUser().setLanguage(n);
             persist();
-            // Hot-swap: switch I18nService locale, notify external components, rebuild popover
+            // Hot-swap: switch I18nService locale, notify external components, rebuild
+            // popover
             i18n.setLocale(Locale.forLanguageTag(n));
             eventBus.post(new ControlEvents.LanguageChangedEvent());
             if (onLanguageChanged != null) {
@@ -138,8 +138,7 @@ final class SettingsViewModel {
         });
 
         // Alert state tracks banner list
-        banners.addListener((javafx.collections.ListChangeListener<Banner>) c ->
-                alertActive.set(!banners.isEmpty()));
+        banners.addListener((ListChangeListener<Banner>) c -> alertActive.set(!banners.isEmpty()));
 
         checkForUpdates();
     }
@@ -165,7 +164,6 @@ final class SettingsViewModel {
     StringProperty languageProperty() {
         return language;
     }
-                
 
     BooleanProperty autoUpdateProperty() {
         return autoUpdate;
@@ -258,7 +256,7 @@ final class SettingsViewModel {
                         HttpResponse.BodyHandlers.ofString());
                 if (response.statusCode() == 200) {
                     String body = response.body();
-                    if (!body.contains("\"" + POWER_MODE_MODEL + "\"")) {
+                    if (!body.contains("\"" + Model.REASONING_POWER.getModelName() + "\"")) {
                         Platform.runLater(() -> addBanner(new Banner(
                                 i18n.get("settings.banner.restart"),
                                 Banner.Action.RESTART)));
