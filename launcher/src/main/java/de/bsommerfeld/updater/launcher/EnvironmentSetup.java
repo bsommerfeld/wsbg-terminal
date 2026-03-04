@@ -21,14 +21,18 @@ import java.util.regex.Pattern;
  *
  * <h3>Output parsing</h3>
  * Script output is streamed line-by-line and parsed into structured
- * {@code (phase, detail)} pairs. The parser recognizes three categories:
+ * {@code (phase, detail)} pairs. The phase always identifies the
+ * concrete model being pulled (e.g. "Pulling gemma3:4b") so the
+ * launcher UI can communicate transparently what it installs.
  * <ul>
- * <li><strong>Ollama model pulls</strong> — model name, download percentage,
- * and transfer size are extracted and forwarded separately</li>
- * <li><strong>Ollama status lines</strong> — "verifying", "writing manifest",
- * "success" are forwarded as-is under the "Pulling model" phase</li>
- * <li><strong>Progress noise</strong> — bare progress bars and raw percentages
- * from curl/ollama install are suppressed</li>
+ * <li><strong>Script pull announcements</strong> — "> Pulling model..." lines
+ * set the active model name for all subsequent output</li>
+ * <li><strong>Ollama progress</strong> — percentage + downloaded/total
+ * sizes</li>
+ * <li><strong>Ollama status</strong> — "verifying", "writing manifest",
+ * "success" are forwarded under the active model phase</li>
+ * <li><strong>Progress noise</strong> — bare progress bars, spinners, and
+ * raw percentages from curl/ollama/winget are suppressed</li>
  * </ul>
  *
  * @see PathEnricher
@@ -39,9 +43,12 @@ final class EnvironmentSetup {
 
     private static final Pattern ANSI_PATTERN = Pattern.compile("\u001B\\[[0-9;?]*[a-zA-Z]");
 
-    private static final Pattern OLLAMA_PULL_PATTERN = Pattern.compile("(?:>\\s*)?[Pp]ulling\\s+(.+?)(?:\\.{2,3})?$");
+    // Only matches "> Pulling model..." from our script — not ollama-internal
+    // "pulling manifest" / "pulling <hash>" lines, which would overwrite the
+    // tracked model name with garbage.
+    private static final Pattern OLLAMA_PULL_PATTERN = Pattern.compile(">\\s*[Pp]ulling\\s+(.+?)(?:\\.{2,3})?$");
     private static final Pattern OLLAMA_PROGRESS_PATTERN = Pattern
-            .compile("(\\d+)%.*?(\\d+(?:\\.\\d+)?\\s*(?:MB|GB|KB|B))");
+            .compile("(\\d+)%.*?(\\d+(?:\\.\\d+)?\\s*(?:MB|GB|KB|B))\\s*/\\s*(\\d+(?:\\.\\d+)?\\s*(?:MB|GB|KB|B))");
 
     /**
      * Matches raw progress bars, spinner characters, and bare percentages.
@@ -53,6 +60,12 @@ final class EnvironmentSetup {
 
     private final Path appDirectory;
     private final AtomicReference<Process> activeProcess = new AtomicReference<>();
+
+    /**
+     * Tracks which model is currently being pulled so progress/status lines inherit
+     * the name.
+     */
+    private String currentModelName;
 
     EnvironmentSetup(Path appDirectory) {
         this.appDirectory = appDirectory;
@@ -74,10 +87,10 @@ final class EnvironmentSetup {
     /**
      * Runs the platform-specific setup script synchronously.
      *
-     * @param outputConsumer receives {@code (phase, detail)} — phase is the
-     *                       high-level step ("Pulling model"), detail is context
-     *                       like "gemma3:4b — 42% (1.2 GB)". Detail may be
-     *                       {@code null}.
+     * @param outputConsumer receives {@code (phase, detail)} — phase identifies
+     *                       the concrete action (e.g. "Pulling gemma3:4b"),
+     *                       detail is context like "42% — 739 MB / 3.3 GB".
+     *                       Detail may be {@code null}.
      * @return {@code true} if the script exited with code 0
      * @throws IOException          if the script cannot be started
      * @throws InterruptedException if the thread is interrupted while waiting
@@ -174,31 +187,41 @@ final class EnvironmentSetup {
     }
 
     /**
-     * Matches "Pulling gemma3:4b..." → phase "Pulling model", detail "gemma3:4b".
+     * Matches script-emitted "> Pulling gemma3:4b..." lines and tracks the
+     * model name for subsequent progress/status emissions.
      */
     private boolean tryEmitOllamaPull(String line, BiConsumer<String, String> consumer) {
         Matcher m = OLLAMA_PULL_PATTERN.matcher(line);
         if (m.find()) {
-            consumer.accept("Pulling model", m.group(1).strip());
+            currentModelName = m.group(1).strip();
+            consumer.accept("Pulling " + currentModelName, null);
             return true;
         }
         return false;
     }
 
-    /** Matches "42% ▕██▏ 1.2 GB" → phase "Pulling model", detail "42% — 1.2 GB". */
+    /** Matches "42% ▕██▏ 739 MB/3.3 GB" → detail "42% — 739 MB / 3.3 GB". */
     private boolean tryEmitOllamaProgress(String line, BiConsumer<String, String> consumer) {
         Matcher m = OLLAMA_PROGRESS_PATTERN.matcher(line);
         if (m.find()) {
-            consumer.accept("Pulling model", m.group(1) + "% — " + m.group(2));
+            String phase = currentModelName != null ? "Pulling " + currentModelName : "Pulling model";
+            consumer.accept(phase, m.group(1) + "% — " + m.group(2) + " / " + m.group(3));
             return true;
         }
         return false;
     }
 
-    /** Matches "verifying", "writing manifest", "success". */
+    /**
+     * Matches ollama-internal status lines ("pulling manifest", "verifying",
+     * "writing manifest", "success"). Also catches bare "pulling <hash>..."
+     * lines that would otherwise corrupt {@link #currentModelName} if they
+     * reached the pull pattern.
+     */
     private boolean tryEmitOllamaStatus(String line, BiConsumer<String, String> consumer) {
-        if (line.startsWith("verifying") || line.startsWith("writing manifest") || line.equals("success")) {
-            consumer.accept("Pulling model", line);
+        if (line.startsWith("pulling ") || line.startsWith("verifying")
+                || line.startsWith("writing manifest") || line.equals("success")) {
+            String phase = currentModelName != null ? "Pulling " + currentModelName : "Pulling model";
+            consumer.accept(phase, line);
             return true;
         }
         return false;

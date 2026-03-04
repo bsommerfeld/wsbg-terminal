@@ -27,16 +27,19 @@ import java.awt.geom.RoundRectangle2D;
 final class LauncherWindow extends JFrame {
 
     private static final int WIDTH = 420;
-    private static final int HEIGHT = 160;
+    private static final int HEIGHT = 180;
     private static final int CORNER_ARC = 16;
+    private static final int INFO_ARC = 10;
     private static final long UPDATE_INTERVAL_MS = 33;
 
     private static final Color BG = new Color(22, 22, 26);
+    private static final Color INFO_BG = new Color(14, 14, 18);
     private static final Color FG = Color.WHITE;
     private static final Color ACCENT = new Color(90, 130, 255);
     private static final Color TRACK = new Color(45, 45, 50);
     private static final Color SUBTLE = new Color(140, 140, 150);
     private static final Color DETAIL_COLOR = new Color(110, 110, 120);
+    private static final Color CLOSE_HOVER = new Color(200, 60, 60);
 
     private final JLabel statusLabel;
     private final JLabel detailLabel;
@@ -124,19 +127,70 @@ final class LauncherWindow extends JFrame {
             }
         };
         root.setOpaque(false);
-        root.setBorder(BorderFactory.createEmptyBorder(20, 24, 20, 24));
+        root.setBorder(BorderFactory.createEmptyBorder(18, 24, 14, 24));
 
-        JPanel textPanel = new JPanel(new GridLayout(3, 1, 0, 1));
-        textPanel.setOpaque(false);
-        textPanel.add(createLabel("WSBG Terminal", FG, Font.BOLD, 15));
-        textPanel.add(statusLabel);
-        textPanel.add(detailLabel);
+        // Darker inset container for status + detail labels
+        JPanel infoPanel = new JPanel(new GridLayout(2, 1, 0, 4)) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(INFO_BG);
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), INFO_ARC, INFO_ARC);
+                g2.dispose();
+            }
+        };
+        infoPanel.setOpaque(false);
+        infoPanel.setBorder(BorderFactory.createEmptyBorder(12, 14, 12, 14));
+        infoPanel.add(statusLabel);
+        infoPanel.add(detailLabel);
 
-        root.add(textPanel, BorderLayout.NORTH);
-        root.add(Box.createVerticalStrut(10), BorderLayout.CENTER);
-        root.add(progressBar, BorderLayout.SOUTH);
+        // Title + info container stacked vertically
+        JPanel topSection = new JPanel(new BorderLayout(0, 12));
+        topSection.setOpaque(false);
+        topSection.add(createLabel("WSBG Terminal", FG, Font.BOLD, 15), BorderLayout.NORTH);
+        topSection.add(infoPanel, BorderLayout.CENTER);
+
+        // Bottom row: progress bar + close button (right-aligned, non-standard)
+        JPanel bottomRow = new JPanel(new BorderLayout(8, 0));
+        bottomRow.setOpaque(false);
+        bottomRow.setBorder(BorderFactory.createEmptyBorder(10, 0, 0, 0));
+        bottomRow.add(progressBar, BorderLayout.CENTER);
+        bottomRow.add(createCloseButton(), BorderLayout.EAST);
+
+        root.add(topSection, BorderLayout.CENTER);
+        root.add(bottomRow, BorderLayout.SOUTH);
 
         return root;
+    }
+
+    private JButton createCloseButton() {
+        JButton btn = new JButton("✕");
+        btn.setFont(new Font("SansSerif", Font.PLAIN, 13));
+        btn.setForeground(SUBTLE);
+        btn.setBackground(BG);
+        btn.setBorder(BorderFactory.createEmptyBorder(2, 8, 2, 8));
+        btn.setFocusPainted(false);
+        btn.setContentAreaFilled(false);
+        btn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
+        btn.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseEntered(java.awt.event.MouseEvent e) {
+                btn.setForeground(FG);
+                btn.setContentAreaFilled(true);
+                btn.setBackground(CLOSE_HOVER);
+            }
+
+            @Override
+            public void mouseExited(java.awt.event.MouseEvent e) {
+                btn.setForeground(SUBTLE);
+                btn.setContentAreaFilled(false);
+            }
+        });
+
+        btn.addActionListener(e -> System.exit(0));
+        return btn;
     }
 
     private JLabel createLabel(String text, Color color, int style, int size) {

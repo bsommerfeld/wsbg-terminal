@@ -17,23 +17,8 @@ else
     echo "[*] Ollama is already installed."
 fi
 
-# Ensure Ollama is running
-if ! pgrep -x "ollama" > /dev/null; then
-    echo "[*] Starting Ollama server..."
-    ollama serve > /dev/null 2>&1 &
-    # Wait for it to respond
-    echo "    Waiting for Ollama to be ready..."
-    count=0
-    while ! curl -s http://localhost:11434/api/tags > /dev/null; do
-        sleep 1
-        count=$((count + 1))
-        if [ $count -gt 30 ]; then
-            echo "    Error: Ollama failed to start."
-            exit 1
-        fi
-    done
-    echo "    Ollama is ready."
-fi
+# Ollama CLI commands (pull, list) handle their own server lifecycle internally —
+# they start a temporary server on demand. No explicit 'ollama serve' needed.
 
 # 2. Check Configuration & Determine Mode
 OS="$(uname -s)"

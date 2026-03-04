@@ -40,33 +40,11 @@ if (Get-Command "ollama" -ErrorAction SilentlyContinue) {
     }
 }
 
-# Start headless server if no ollama process is serving yet.
-# `ollama serve` is inherently headless — no tray icon. The Desktop GUI
-# process was already killed above, so only the CLI server remains.
-# If the user already has Ollama Desktop running, it serves the API too — leave it.
-if (!(Get-Process "ollama*" -ErrorAction SilentlyContinue)) {
-    Write-Host "[*] Starting Ollama server (headless)..."
-    Start-Process "ollama" "serve" -WindowStyle Hidden -PassThru | Out-Null
-
-    Write-Host "    Waiting for Ollama to be ready..."
-    $ollamaReady = $false
-    for ($i = 0; $i -lt 30; $i++) {
-        try {
-            $null = Invoke-WebRequest -Uri "http://localhost:11434/api/tags" -UseBasicParsing -TimeoutSec 2
-            $ollamaReady = $true
-            break
-        } catch {
-            Start-Sleep -Seconds 1
-        }
-    }
-    if (-not $ollamaReady) {
-        Write-Host "    Error: Ollama failed to start within 30 seconds." -ForegroundColor Red
-        exit 1
-    }
-    Write-Host "    Ollama is ready." -ForegroundColor Green
-} else {
-    Write-Host "[*] Ollama is already running." -ForegroundColor Green
-}
+# Ollama CLI commands (pull, list) handle their own server lifecycle internally —
+# they start a temporary server on demand. An explicit 'ollama serve' + HTTP
+# readiness check was causing spurious failures: the first launch timed out
+# waiting for the server, but the second succeeded because the orphaned server
+# from the previous attempt was still running.
 
 # 2. Check Configuration & Determine Mode
 $appDataPath = $env:APPDATA

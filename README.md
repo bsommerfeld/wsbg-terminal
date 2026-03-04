@@ -34,9 +34,17 @@ Hier könnte Ihre Werbung stehen (wenn ihr noch Geld hättet).
 
 *Graph View: Verbindet alles, was keinen Sinn ergibt.*
 
-### 🚀 To the Moon (Installation)
+### 🚀 Das perfekte Setup (Buy High, Sell Low)
 
-Für die Dev-Affen unter euch:
+Sind wir mal ehrlich: Wenn euer *Trade-Setup* im Nachhinein mal wieder kompletter Müll war und der Hebel euer halbes Depot liquidiert hat, sollt ihr euch hier wenigstens nicht mit noch einem beschissenen Setup herumquälen müssen. 
+
+Deshalb ist unser *Software-Setup* komplett idiotensicher. Der Installer nimmt euch an die Hand, lädt im Hintergrund vollautomatisch **Ollama** runter und ballert euch direkt die passenden KI-Modelle auf die Platte. Welche genau? Ist egal, frisst einfach nur Speicherplatz, damit ihr euch nach dem Installieren voll und ganz auf eure Rachehebel konzentrieren könnt.
+
+![Placeholder: Screenshot vom Installer](https://via.placeholder.com/800x400.png?text=Installer+Screenshot+kommt+hier+rein)
+
+*Einfach ausführen und zugucken, wie die Magie passiert.*
+
+#### Für die Dev-Affen unter euch (manuell bauen):
 
 ```bash
 # Repo klonen (nicht screenshotten, eintippen!)

@@ -76,6 +76,21 @@
     
     <build>
         <plugins>
+            <!-- Embeds Main-Class in the JAR manifest so the launcher's
+                 resolveMainClass() scan finds the entry point automatically.
+                 The javafx-maven-plugin only uses mainClass for mvn javafx:run
+                 and does NOT write it into META-INF/MANIFEST.MF. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <configuration>
+                    <archive>
+                        <manifest>
+                            <mainClass>de.bsommerfeld.wsbg.terminal.ui.WsbgTerminalApp</mainClass>
+                        </manifest>
+                    </archive>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.openjfx</groupId>
                 <artifactId>javafx-maven-plugin</artifactId>

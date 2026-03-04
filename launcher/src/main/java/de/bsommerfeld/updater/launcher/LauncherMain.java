@@ -9,8 +9,11 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Comparator;
+import java.util.stream.Stream;
 
 /**
  * Native launcher entry point. Orchestrates the full startup sequence:
@@ -34,6 +37,12 @@ import java.time.format.DateTimeFormatter;
 public final class LauncherMain {
 
     private static final GitHubRepository REPO = GitHubRepository.of("bsommerfeld/wsbg-terminal");
+    private static final int MAX_LOG_FILES = 10;
+    private static final DateTimeFormatter LOG_TIMESTAMP = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final DateTimeFormatter LOG_FILENAME = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss");
+
+    /** Set once per session in {@link #initLogging}; all log calls write here. */
+    private static Path sessionLogFile;
 
     private LauncherMain() {
     }
@@ -118,23 +127,45 @@ public final class LauncherMain {
      * Non-zero exit is logged but not fatal — the application may still work.
      *
      * <p>
-     * Always makes the window visible before entering this phase. The previous
-     * approach only showed the window during the update download — on re-runs
-     * where no update was needed but Ollama install or model pulls were
-     * pending, the user saw nothing for minutes. The correct flow is:
-     * CHECK → SHOW INSTALLER → INSTALL, not CHECK+INSTALL → SHOW.
+     * The window only becomes visible once the script emits a phase that
+     * indicates real work (model pull, install). When everything is already
+     * present, the script finishes in under a second and the user never
+     * sees the launcher flash.
      */
     private static void runEnvironmentPhase(EnvironmentSetup setup, LauncherWindow window,
             Path appDir) throws IOException, InterruptedException {
-        SwingUtilities.invokeLater(() -> window.setVisible(true));
-        window.setStatus("Checking environment...");
-        window.setDetail(null);
-        window.setProgress(-1);
 
         boolean success = setup.run((phase, detail) -> {
             log(appDir, "[setup] " + phase + (detail != null ? " — " + detail : ""));
+
+            // Only show the window when actual work is happening — not for
+            // instant "already available" checks that finish in milliseconds.
+            // "Pulling" = model downloads, "Setting up" with install keywords = Ollama
+            // install.
+            boolean isWork = phase.startsWith("Pulling")
+                    || (detail != null && detail.contains("install"));
+            if (!window.isVisible() && isWork) {
+                SwingUtilities.invokeLater(() -> window.setVisible(true));
+            }
+
             window.setStatus(phase);
             window.setDetail(detail);
+
+            // Drive the progress bar from percentage in detail (format: "42% — ...")
+            if (detail != null && !detail.isEmpty() && Character.isDigit(detail.charAt(0))) {
+                int pctIdx = detail.indexOf('%');
+                if (pctIdx > 0) {
+                    try {
+                        int pct = Integer.parseInt(detail.substring(0, pctIdx).strip());
+                        window.setProgress(pct / 100.0);
+                        return;
+                    } catch (NumberFormatException ignored) {
+                    }
+                }
+            }
+            if (phase.startsWith("Pulling")) {
+                window.setProgress(-1);
+            }
         });
 
         if (!success) {
@@ -224,22 +255,55 @@ public final class LauncherMain {
         }
     }
 
+    /**
+     * Creates a new per-session log file named by execution timestamp
+     * (e.g. {@code 2026-03-04_21-32-39.log}) and purges old files beyond
+     * {@link #MAX_LOG_FILES}. Each launcher invocation gets its own file
+     * so sessions never bleed into each other.
+     */
     private static void initLogging(Path appDir) {
+        String name = LocalDateTime.now().format(LOG_FILENAME) + ".log";
+        sessionLogFile = appDir.resolve("logs/" + name);
+        purgeOldLogs(appDir.resolve("logs"));
         log(appDir, "--- Launcher session ---");
     }
 
     /**
-     * Appends a timestamped line to {@code logs/launcher.log}. Logging failures
-     * are silently ignored — the launcher must never crash because of a log write.
+     * Deletes the oldest {@code .log} files when the count exceeds
+     * {@link #MAX_LOG_FILES}. Sorted lexicographically — the timestamp
+     * format guarantees chronological order.
+     */
+    private static void purgeOldLogs(Path logsDir) {
+        try (Stream<Path> files = Files.list(logsDir)) {
+            var logs = files
+                    .filter(p -> p.toString().endsWith(".log"))
+                    .sorted(Comparator.comparing(Path::getFileName))
+                    .toList();
+
+            if (logs.size() >= MAX_LOG_FILES) {
+                for (int i = 0; i < logs.size() - MAX_LOG_FILES + 1; i++) {
+                    Files.deleteIfExists(logs.get(i));
+                }
+            }
+        } catch (IOException ignored) {
+            // Cleanup failure must never prevent the launcher from starting
+        }
+    }
+
+    /**
+     * Appends a timestamped line to the current session's log file. Logging
+     * failures are silently ignored — the launcher must never crash because
+     * of a log write.
      */
     private static void log(Path appDir, String message) {
+        if (sessionLogFile == null)
+            return;
         try {
-            Path logFile = appDir.resolve("logs/launcher.log");
-            String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+            String timestamp = LocalDateTime.now().format(LOG_TIMESTAMP);
             String line = "[" + timestamp + "] " + message + "\n";
-            Files.writeString(logFile, line,
-                    java.nio.file.StandardOpenOption.CREATE,
-                    java.nio.file.StandardOpenOption.APPEND);
+            Files.writeString(sessionLogFile, line,
+                    StandardOpenOption.CREATE,
+                    StandardOpenOption.APPEND);
         } catch (IOException ignored) {
             // Logging failure must never crash the launcher
         }
