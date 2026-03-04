@@ -30,7 +30,7 @@ jobs:
             jpackage-type: exe
             icon-file: .assets/icons/AppIcon.ico
           - os: macos-latest
-            jpackage-type: dmg
+            jpackage-type: pkg
             icon-file: .assets/icons/AppIcon.icns
           - os: ubuntu-latest
             jpackage-type: deb
