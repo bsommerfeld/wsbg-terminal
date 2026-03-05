@@ -22,17 +22,17 @@ Das WSBG Terminal ist eure Kommandozentrale für **r/wallstreetbetsGER**. Statt 
 
 Hier könnte Ihre Werbung stehen (wenn ihr noch Geld hättet).
 
-<img width="1227" height="827" alt="Bildschirmfoto 2026-02-17 um 22 52 28" src="https://github.com/user-attachments/assets/b0c4caa3-6374-4fdd-97f2-e3f36296d95c" />
+<p align="center">
+  <img width="850" alt="Dashboard" src="https://github.com/user-attachments/assets/b0c4caa3-6374-4fdd-97f2-e3f36296d95c" />
+  <br>
+  <em>Das Dashboard: Sieht aus, als wüsstet ihr, was ihr tut.</em>
+</p>
 
-*Das Dashboard: Sieht aus, als wüsstet ihr, was ihr tut.*
-
-
-<br>
-
-
-<img width="1227" height="827" alt="Bildschirmfoto 2026-02-17 um 22 52 13" src="https://github.com/user-attachments/assets/0f787837-3c2c-4037-8fa6-4396b92073d8" />
-
-*Graph View: Verbindet alles, was keinen Sinn ergibt.*
+<p align="center">
+  <img width="850" alt="Graph View" src="https://github.com/user-attachments/assets/0f787837-3c2c-4037-8fa6-4396b92073d8" />
+  <br>
+  <em>Graph View: Verbindet alles, was keinen Sinn ergibt.</em>
+</p>
 
 ### 🚀 Das perfekte Setup (Buy High, Sell Low)
 
@@ -40,9 +40,11 @@ Sind wir mal ehrlich: Wenn euer *Trade-Setup* im Nachhinein mal wieder komplette
 
 Deshalb ist unser *Software-Setup* komplett idiotensicher. Der Installer nimmt euch an die Hand, lädt im Hintergrund vollautomatisch **Ollama** runter und ballert euch direkt die passenden KI-Modelle auf die Platte. Welche genau? Ist egal, frisst einfach nur Speicherplatz, damit ihr euch nach dem Installieren voll und ganz auf eure Rachehebel konzentrieren könnt.
 
-<img src="https://github.com/user-attachments/assets/23e3d059-c03d-441a-bccc-edabbc90cf9b" width="350" alt="Screenshot vom Installer">
-
-*Einfach ausführen und zugucken, wie die Magie passiert.*
+<p align="center">
+  <img width="450" alt="Screenshot vom Installer" src="https://github.com/user-attachments/assets/23e3d059-c03d-441a-bccc-edabbc90cf9b">
+  <br>
+  <em>Einfach ausführen und zugucken, wie die Magie passiert.</em>
+</p>
 
 > **⚠️ Wichtiger Disclaimer für die Boomer-Betriebssysteme:**
 > Weil wir unser ganzes Geld in Optionen verzockt haben, statt die Apple- und Microsoft-Mafia für ihre teuren Developer-Zertifikate zu bezahlen (*Signing Culture ist Fettwerk*), werden eure Kisten beim Installieren erstmal meckern, dass das Terminal ein böser Virus sei. Keine Panik:
