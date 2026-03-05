@@ -110,14 +110,21 @@ public final class Downloader {
     private static void transferWithProgress(InputStream in, Path target, long totalBytes,
             DownloadProgressListener listener) throws IOException {
         try (var out = Files.newOutputStream(target)) {
-            byte[] buffer = new byte[8192];
+            byte[] buffer = new byte[65536];
             long transferred = 0;
             int read;
+            long lastUpdate = 0;
             while ((read = in.read(buffer)) != -1) {
                 out.write(buffer, 0, read);
                 transferred += read;
-                listener.onProgress(transferred, totalBytes);
+
+                long now = System.currentTimeMillis();
+                if (now - lastUpdate > 50 || transferred == totalBytes) {
+                    listener.onProgress(transferred, totalBytes);
+                    lastUpdate = now;
+                }
             }
+            listener.onProgress(transferred, totalBytes);
         }
     }
 
@@ -128,15 +135,22 @@ public final class Downloader {
      */
     private static byte[] readWithProgress(InputStream in, long totalBytes,
             DownloadProgressListener listener) throws IOException {
-        ByteArrayOutputStream buffer = new ByteArrayOutputStream(totalBytes > 0 ? (int) totalBytes : 8192);
-        byte[] chunk = new byte[8192];
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream(totalBytes > 0 ? (int) totalBytes : 65536);
+        byte[] chunk = new byte[65536];
         long transferred = 0;
         int read;
+        long lastUpdate = 0;
         while ((read = in.read(chunk)) != -1) {
             buffer.write(chunk, 0, read);
             transferred += read;
-            listener.onProgress(transferred, totalBytes);
+
+            long now = System.currentTimeMillis();
+            if (now - lastUpdate > 50 || transferred == totalBytes) {
+                listener.onProgress(transferred, totalBytes);
+                lastUpdate = now;
+            }
         }
+        listener.onProgress(transferred, totalBytes);
         return buffer.toByteArray();
     }
 
