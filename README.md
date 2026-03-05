@@ -6,6 +6,7 @@ Willkommen im **WSBG Terminal** – dem einzigen Tool, das ihr braucht, bevor ih
 
 Seien wir ehrlich: Keiner von uns kann sich das echte Bloomberg-Terminal leisten (das Abo kostet mehr als unser Portfolio wert ist). Deswegen haben wir dieses Ding gebaut. Es sieht professionell aus, blinkt wichtig und hilft euch dabei, euer Geld noch effizienter zu verbrennen.
 
+> [!TIP]
 > Wir wissen, dass keiner von euch Lust hat, echte DD zu lesen. Texte sind für Boomer. Wir wollen Headlines, Ticker und KI, die uns bestätigt, dass der Döner zum Mittag sicher ist.
 
 ### 🦍 Was kann das Ding?
