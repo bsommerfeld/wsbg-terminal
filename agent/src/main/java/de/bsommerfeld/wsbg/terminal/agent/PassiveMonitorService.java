@@ -422,10 +422,10 @@ public class PassiveMonitorService {
         StringBuilder translated = new StringBuilder();
         CountDownLatch latch = new CountDownLatch(1);
 
-        stream.onNext(token -> {
+        stream.onPartialResponse(token -> {
             translated.append(token);
             eventBus.post(new AgentTokenEvent(token));
-        }).onComplete(res -> latch.countDown()).onError(ex -> latch.countDown()).start();
+        }).onCompleteResponse(res -> latch.countDown()).onError(ex -> latch.countDown()).start();
 
         try {
             latch.await(30, TimeUnit.SECONDS);
@@ -454,9 +454,9 @@ public class PassiveMonitorService {
         if (stream == null)
             return "";
         CompletableFuture<String> future = new CompletableFuture<>();
-        stream.onNext(token -> {
+        stream.onPartialResponse(token -> {
         })
-                .onComplete(response -> future.complete(response.content().text()))
+                .onCompleteResponse(response -> future.complete(response.aiMessage().text()))
                 .onError(future::completeExceptionally)
                 .start();
         try {

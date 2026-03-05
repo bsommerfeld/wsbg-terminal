@@ -11,8 +11,8 @@ import dev.langchain4j.data.message.ImageContent;
 import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
-import dev.langchain4j.model.chat.ChatLanguageModel;
-import dev.langchain4j.model.chat.StreamingChatLanguageModel;
+import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.ollama.OllamaChatModel;
 import dev.langchain4j.model.ollama.OllamaStreamingChatModel;
 import dev.langchain4j.service.AiServices;
@@ -57,7 +57,7 @@ public class AgentBrain {
 
     private Assistant assistant;
     private TranslatorBot translatorBot;
-    private ChatLanguageModel visionModel;
+    private ChatModel visionModel;
     private String activeReasoningModel;
     private String activeTranslatorModel;
 
@@ -98,11 +98,15 @@ public class AgentBrain {
 
         LOG.info("Initializing AgentBrain -- Reasoning: {}, Translator: {}", reasoningName, translatorName);
 
-        StreamingChatLanguageModel reasoningModel = OllamaStreamingChatModel.builder()
+        // Non-thinking: Qwen 3.5 supports hybrid thinking — think(false) disables
+        // the internal reasoning trace, saving tokens and latency for tasks that
+        // don't benefit from chain-of-thought.
+        StreamingChatModel reasoningModel = OllamaStreamingChatModel.builder()
                 .baseUrl(OLLAMA_BASE_URL).modelName(reasoningName).temperature(reasoningModelEnum.getTemperature())
+                .think(false)
                 .build();
 
-        StreamingChatLanguageModel translatorModel = OllamaStreamingChatModel.builder()
+        StreamingChatModel translatorModel = OllamaStreamingChatModel.builder()
                 .baseUrl(OLLAMA_BASE_URL).modelName(translatorName).temperature(Model.TRANSLATOR.getTemperature())
                 .build();
 
@@ -112,12 +116,12 @@ public class AgentBrain {
                 .maxRetries(1).build();
 
         this.assistant = AiServices.builder(Assistant.class)
-                .streamingChatLanguageModel(reasoningModel)
+                .streamingChatModel(reasoningModel)
                 .chatMemoryProvider(memoryId -> MessageWindowChatMemory.withMaxMessages(20))
                 .build();
 
         this.translatorBot = AiServices.builder(TranslatorBot.class)
-                .streamingChatLanguageModel(translatorModel)
+                .streamingChatModel(translatorModel)
                 .build();
     }
 
@@ -201,7 +205,7 @@ public class AgentBrain {
                     TextContent.from(PromptLoader.load("vision")),
                     ImageContent.from(payload.base64, payload.mimeType));
 
-            String result = visionModel.generate(msg).content().text();
+            String result = visionModel.chat(msg).aiMessage().text();
             LOG.info("Vision result: {}", result);
             return result;
         } catch (Exception e) {

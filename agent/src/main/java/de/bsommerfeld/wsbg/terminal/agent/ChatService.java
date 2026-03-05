@@ -177,14 +177,14 @@ public class ChatService {
         eventBus.post(new AgentStreamStartEvent());
         AtomicBoolean firstToken = new AtomicBoolean(true);
 
-        stream.onNext(token -> {
+        stream.onPartialResponse(token -> {
             if (firstToken.getAndSet(false)) {
                 eventBus.post(new AgentStatusEvent(""));
             }
             eventBus.post(new AgentTokenEvent(token));
         })
-                .onComplete(response -> {
-                    String fullText = response.content().text();
+                .onCompleteResponse(response -> {
+                    String fullText = response.aiMessage().text();
                     LOG.info("[AI-RESPONSE] Stream complete: {}", fullText);
                     eventBus.post(new AgentStreamEndEvent(fullText));
                 })
@@ -206,9 +206,9 @@ public class ChatService {
             future.completeExceptionally(new RuntimeException("Brain returned null stream"));
             return future;
         }
-        stream.onNext(token -> {
+        stream.onPartialResponse(token -> {
         })
-                .onComplete(response -> future.complete(response.content().text()))
+                .onCompleteResponse(response -> future.complete(response.aiMessage().text()))
                 .onError(future::completeExceptionally)
                 .start();
         return future;
