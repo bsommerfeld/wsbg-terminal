@@ -134,12 +134,43 @@ runs:
 
         echo "Manifest generated with $(grep -c '"path"' "$MANIFEST") entries"
 
-        # --- 4. Create Zip ---
+        # --- 4. Create Zips ---
         echo "Creating files.zip..."
         cd "$STAGING_DIR"
         zip -r "../files.zip" . -x '.*'
-        cd -
+
+        echo "Splitting app.zip and deps.zip..."
+        mkdir -p "../app/lib" "../deps/lib"
+        [ -d "bin" ] && cp -r bin "../app/"
+        [ -d "images" ] && cp -r images "../app/"
+
+        # Sort first-party and third-party jars based on standard module prefixes
+        shopt -s nullglob
+        for jar in lib/*.jar; do
+            filename=$(basename "$jar")
+            
+            is_dep=true
+            for prefix in "wsbg-" "core-" "database-" "reddit-" "agent-" "terminal-" "launcher-" "updater-"; do
+                if [[ "$filename" == "$prefix"* ]]; then
+                    is_dep=false
+                    break
+                fi
+            done
+            
+            if [ "$is_dep" = true ]; then
+                cp "$jar" "../deps/lib/"
+            else
+                cp "$jar" "../app/lib/"
+            fi
+        done
+
+        cd "../app"
+        zip -r "../app.zip" . -x '.*'
+        cd "../deps"
+        zip -r "../deps.zip" . -x '.*'
 
         echo "=== Packaging Complete ==="
         echo "manifest-path=$OUTPUT_DIR/update.json" >> "$GITHUB_OUTPUT"
         echo "zip-path=$OUTPUT_DIR/files.zip" >> "$GITHUB_OUTPUT"
+        echo "app-zip-path=$OUTPUT_DIR/app.zip" >> "$GITHUB_OUTPUT"
+        echo "deps-zip-path=$OUTPUT_DIR/deps.zip" >> "$GITHUB_OUTPUT"

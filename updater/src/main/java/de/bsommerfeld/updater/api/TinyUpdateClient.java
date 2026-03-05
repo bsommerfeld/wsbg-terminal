@@ -129,31 +129,44 @@ public final class TinyUpdateClient implements UpdateClient {
      */
     private void applyUpdate(String releaseJson, UpdateCheckResult diff,
             Consumer<UpdateProgress> progress) throws Exception {
-        byte[] zipData = downloadZip(releaseJson, diff, progress);
 
-        progress.accept(UpdateProgress.indeterminate("Extracting files..."));
-        extractOutdatedFiles(zipData, diff, progress);
-
-        progress.accept(UpdateProgress.indeterminate("Verifying integrity..."));
         String manifestUrl = findAssetUrl(releaseJson, "update.json");
         UpdateManifest manifest = JsonParser.parseManifest(Downloader.toString(manifestUrl));
+
+        if (hasAsset(releaseJson, "app.zip") && hasAsset(releaseJson, "deps.zip")) {
+            progress.accept(UpdateProgress.indeterminate("Downloading app update..."));
+            byte[] appZipData = downloadZip(releaseJson, "app.zip", diff.outdated().size(), progress);
+            extractOutdatedFiles(appZipData, diff, progress);
+
+            UpdateCheckResult remainingDiff = updateManager.check(manifest);
+            if (!remainingDiff.outdated().isEmpty()) {
+                progress.accept(UpdateProgress.indeterminate("Downloading dependencies..."));
+                byte[] depsZipData = downloadZip(releaseJson, "deps.zip", remainingDiff.outdated().size(), progress);
+                extractOutdatedFiles(depsZipData, remainingDiff, progress);
+            }
+        } else {
+            byte[] zipData = downloadZip(releaseJson, "files.zip", diff.outdated().size(), progress);
+            extractOutdatedFiles(zipData, diff, progress);
+        }
+
+        progress.accept(UpdateProgress.indeterminate("Verifying integrity..."));
         updateManager.verify(manifest);
 
         cleanOrphans(diff, progress);
     }
 
     /**
-     * Downloads the files.zip with byte-level progress reporting.
+     * Downloads an archive with byte-level progress reporting.
      * The detail line shows transferred and total size in human-readable
      * format (e.g. "3.2 MB / 12.4 MB").
      */
-    private byte[] downloadZip(String releaseJson, UpdateCheckResult diff,
+    private byte[] downloadZip(String releaseJson, String assetName, int updateCount,
             Consumer<UpdateProgress> progress) throws Exception {
-        String zipUrl = findAssetUrl(releaseJson, "files.zip");
+        String zipUrl = findAssetUrl(releaseJson, assetName);
 
         progress.accept(UpdateProgress.of(
                 "Downloading update",
-                diff.outdated().size() + " files to update",
+                updateCount + " files to update",
                 0.0));
 
         return Downloader.toBytes(zipUrl, (read, total) -> {
@@ -257,6 +270,15 @@ public final class TinyUpdateClient implements UpdateClient {
             nameIdx = releaseJson.indexOf("\"name\"", valueEnd);
         }
         throw new IOException("Asset not found in release: " + assetName);
+    }
+
+    private static boolean hasAsset(String releaseJson, String assetName) {
+        try {
+            findAssetUrl(releaseJson, assetName);
+            return true;
+        } catch (IOException e) {
+            return false;
+        }
     }
 
     /**

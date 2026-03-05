@@ -108,4 +108,6 @@ jobs:
           gh release upload "${{ github.event.release.tag_name }}" \
             updater-dist/update.json \
             updater-dist/files.zip \
+            updater-dist/app.zip \
+            updater-dist/deps.zip \
             --clobber
