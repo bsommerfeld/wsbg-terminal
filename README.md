@@ -45,7 +45,7 @@ Weil wir unser ganzes Geld in Optionen verzockt haben, statt die Apple- und Micr
 - **Mac-Affen:** Oben rechts aufs **"?"** am Fenster klicken, dann auf den Link zu Datenschutz & Sicherheit. Runterscrollen und auf **"Trotzdem öffnen"** klicken (oder einfach in die Mac-Settings zu Datenschutz & Sicherheit scrollen). Im Zweifel: Google, lol.
 - **Windows-Degenerates:** Blauer SmartScreen poppt auf ➔ Klickt auf **"Weitere Informationen"** ➔ **"Trotzdem ausführen"**.
 
-![Placeholder: Screenshot vom Installer](https://via.placeholder.com/800x400.png?text=Installer+Screenshot+kommt+hier+rein)
+![Placeholder: Screenshot vom Installer](https://github.com/user-attachments/assets/23e3d059-c03d-441a-bccc-edabbc90cf9b)
 
 *Einfach ausführen und zugucken, wie die Magie passiert.*
 
