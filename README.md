@@ -40,9 +40,11 @@ Sind wir mal ehrlich: Wenn euer *Trade-Setup* im Nachhinein mal wieder komplette
 
 Deshalb ist unser *Software-Setup* komplett idiotensicher. Der Installer nimmt euch an die Hand, lädt im Hintergrund vollautomatisch **Ollama** runter und ballert euch direkt die passenden KI-Modelle auf die Platte. Welche genau? Ist egal, frisst einfach nur Speicherplatz, damit ihr euch nach dem Installieren voll und ganz auf eure Rachehebel konzentrieren könnt.
 
-![Placeholder: Screenshot vom Installer](https://github.com/user-attachments/assets/23e3d059-c03d-441a-bccc-edabbc90cf9b)
+<img src="https://github.com/user-attachments/assets/23e3d059-c03d-441a-bccc-edabbc90cf9b" align="right" width="350" alt="Screenshot vom Installer">
 
 *Einfach ausführen und zugucken, wie die Magie passiert.*
+
+<br clear="all">
 
 > **⚠️ Wichtiger Disclaimer für die Boomer-Betriebssysteme:**
 > Weil wir unser ganzes Geld in Optionen verzockt haben, statt die Apple- und Microsoft-Mafia für ihre teuren Developer-Zertifikate zu bezahlen (*Signing Culture ist Fettwerk*), werden eure Kisten beim Installieren erstmal meckern, dass das Terminal ein böser Virus sei. Keine Panik:
