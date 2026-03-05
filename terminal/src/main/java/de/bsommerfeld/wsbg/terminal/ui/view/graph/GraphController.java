@@ -24,7 +24,9 @@ import com.google.inject.Inject;
 import com.google.inject.Singleton;
 
 import java.awt.Desktop;
+import java.io.InputStream;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -175,32 +177,44 @@ public class GraphController {
                     return;
 
                 // Build analysis prompt
-                StringBuilder prompt = new StringBuilder();
-                prompt.append("Analysiere den folgenden Reddit-Thread und fasse zusammen:\n\n");
-                prompt.append("Titel: ").append(thread.title()).append("\n");
-                if (thread.textContent() != null && !thread.textContent().isEmpty()) {
-                    prompt.append("Inhalt: ").append(thread.textContent()).append("\n");
+                String template;
+                try (InputStream in = getClass().getResourceAsStream("/prompts/graph-analysis.txt")) {
+                    if (in != null) {
+                        template = new String(in.readAllBytes(), StandardCharsets.UTF_8).trim();
+                    } else {
+                        template = "Analyze the following Reddit thread and summarize:\n\nTitle: {{TITLE}}\nContent: {{CONTENT}}\nScore: {{SCORE}} | Comments: {{NUM_COMMENTS}}\n\nComments:\n{{COMMENT_LIST}}";
+                    }
+                } catch (Exception e) {
+                    template = "Analyze the following Reddit thread and summarize:\n\nTitle: {{TITLE}}\nContent: {{CONTENT}}\nScore: {{SCORE}} | Comments: {{NUM_COMMENTS}}\n\nComments:\n{{COMMENT_LIST}}";
                 }
-                prompt.append("Score: ").append(thread.score())
-                        .append(" | Kommentare: ").append(thread.numComments()).append("\n\n");
 
+                String contentStr = (thread.textContent() != null && !thread.textContent().isEmpty())
+                        ? thread.textContent()
+                        : "";
+
+                StringBuilder commentBuilder = new StringBuilder();
                 if (comments != null && !comments.isEmpty()) {
-                    prompt.append("Kommentare:\n");
                     int limit = Math.min(comments.size(), 30);
                     for (int i = 0; i < limit; i++) {
                         RedditComment c = comments.get(i);
                         if (c.body() == null)
                             continue;
-                        prompt.append("- u/").append(c.author() != null ? c.author() : "[deleted]")
+                        commentBuilder.append("- u/").append(c.author() != null ? c.author() : "[deleted]")
                                 .append(" (↑").append(c.score()).append("): ")
-                                .append(c.body().length() > 200 ? c.body().substring(0, 200) + "..."
-                                        : c.body())
+                                .append(c.body().length() > 200 ? c.body().substring(0, 200) + "..." : c.body())
                                 .append("\n");
                     }
                 }
 
+                String finalPrompt = template
+                        .replace("{{TITLE}}", thread.title())
+                        .replace("{{CONTENT}}", contentStr)
+                        .replace("{{SCORE}}", String.valueOf(thread.score()))
+                        .replace("{{NUM_COMMENTS}}", String.valueOf(thread.numComments()))
+                        .replace("{{COMMENT_LIST}}", commentBuilder.toString());
+
                 // Fire analysis event
-                eventBus.post(new TriggerAgentAnalysisEvent(prompt.toString()));
+                eventBus.post(new TriggerAgentAnalysisEvent(finalPrompt));
 
                 // Signal terminal icon to blink while user is on graph view
                 eventBus.post(new TerminalBlinkEvent(true));

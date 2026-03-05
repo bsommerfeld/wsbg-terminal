@@ -53,6 +53,7 @@ public class RedditRepository {
 
     private final Map<String, RedditThread> threadCache = new ConcurrentHashMap<>();
     private final Map<String, List<RedditComment>> threadCommentsCache = new ConcurrentHashMap<>();
+    private volatile boolean isCacheWarmedUp = false;
 
     @Inject
     public RedditRepository(DatabaseService databaseService) {
@@ -70,6 +71,7 @@ public class RedditRepository {
         for (RedditThread t : all) {
             threadCache.put(t.id(), t);
         }
+        isCacheWarmedUp = true;
         LOG.info("Cache warmed with {} threads.", all.size());
     }
 
@@ -171,7 +173,7 @@ public class RedditRepository {
      * triggers a full {@link #warmup()} first. Returns a defensive copy.
      */
     public List<RedditThread> getAllThreads() {
-        if (threadCache.isEmpty())
+        if (!isCacheWarmedUp)
             warmup();
         return new ArrayList<>(threadCache.values());
     }
