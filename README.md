@@ -9,7 +9,7 @@ Seien wir ehrlich: Keiner von uns kann sich das echte Bloomberg-Terminal leisten
 > [!TIP]
 > Wir wissen, dass keiner von euch Lust hat, echte DD zu lesen. Texte sind für Boomer. Wir wollen Headlines, Ticker und KI, die uns bestätigt, dass der Döner zum Mittag sicher ist.
 
-### 🦍 Was kann das Ding?
+### 🦍 Also, was kann das Ding?
 
 Das WSBG Terminal ist eure Kommandozentrale für **r/wallstreetbetsGER**. Statt alle 2 Sekunden F5 zu hämmern und euch durch tausende Kommentare voller Degeneration zu wühlen, liefert euch das Terminal die Fakten.
 
