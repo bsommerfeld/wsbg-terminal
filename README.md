@@ -45,7 +45,7 @@ Deshalb ist unser *Software-Setup* komplett idiotensicher. Der Installer nimmt e
 *Einfach ausführen und zugucken, wie die Magie passiert.*
 
 > **⚠️ Wichtiger Disclaimer für die Boomer-Betriebssysteme:**
-> Weil wir unser ganzes Geld in Optionen verzockt haben, statt die Apple- und Microsoft-Mafia für ihre teuren Developer-Zertifikate zu bezahlen (*Signing Culture ist 🌈🐻*), werden eure Kisten beim Installieren erstmal meckern, dass das Terminal ein böser Virus sei. Keine Panik:
+> Weil wir unser ganzes Geld in Optionen verzockt haben, statt die Apple- und Microsoft-Mafia für ihre teuren Developer-Zertifikate zu bezahlen (*Signing Culture ist reine Abzocke der Fetten*), werden eure Kisten beim Installieren erstmal meckern, dass das Terminal ein böser Virus sei. Keine Panik:
 > - **Mac-Affen:** Oben rechts aufs **"?"** am Fenster klicken, dann auf den Link zu Datenschutz & Sicherheit. Runterscrollen und auf **"Trotzdem öffnen"** klicken (oder einfach in die Mac-Settings zu Datenschutz & Sicherheit scrollen). Im Zweifel: Google, lol.
 > - **Windows-Degenerates:** Blauer SmartScreen poppt auf ➔ Klickt auf **"Weitere Informationen"** ➔ **"Trotzdem ausführen"**.
 
