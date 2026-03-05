@@ -40,14 +40,14 @@ Sind wir mal ehrlich: Wenn euer *Trade-Setup* im Nachhinein mal wieder komplette
 
 Deshalb ist unser *Software-Setup* komplett idiotensicher. Der Installer nimmt euch an die Hand, lädt im Hintergrund vollautomatisch **Ollama** runter und ballert euch direkt die passenden KI-Modelle auf die Platte. Welche genau? Ist egal, frisst einfach nur Speicherplatz, damit ihr euch nach dem Installieren voll und ganz auf eure Rachehebel konzentrieren könnt.
 
-**⚠️ Wichtiger Disclaimer für die Boomer-Betriebssysteme:**
-Weil wir unser ganzes Geld in Optionen verzockt haben, statt die Apple- und Microsoft-Mafia für ihre teuren Developer-Zertifikate zu bezahlen (*Signing Culture ist 🌈🐻*), werden eure Kisten beim Installieren erstmal meckern, dass das Terminal ein böser Virus sei. Keine Panik:
-- **Mac-Affen:** Oben rechts aufs **"?"** am Fenster klicken, dann auf den Link zu Datenschutz & Sicherheit. Runterscrollen und auf **"Trotzdem öffnen"** klicken (oder einfach in die Mac-Settings zu Datenschutz & Sicherheit scrollen). Im Zweifel: Google, lol.
-- **Windows-Degenerates:** Blauer SmartScreen poppt auf ➔ Klickt auf **"Weitere Informationen"** ➔ **"Trotzdem ausführen"**.
-
 ![Placeholder: Screenshot vom Installer](https://github.com/user-attachments/assets/23e3d059-c03d-441a-bccc-edabbc90cf9b)
 
 *Einfach ausführen und zugucken, wie die Magie passiert.*
+
+> **⚠️ Wichtiger Disclaimer für die Boomer-Betriebssysteme:**
+> Weil wir unser ganzes Geld in Optionen verzockt haben, statt die Apple- und Microsoft-Mafia für ihre teuren Developer-Zertifikate zu bezahlen (*Signing Culture ist 🌈🐻*), werden eure Kisten beim Installieren erstmal meckern, dass das Terminal ein böser Virus sei. Keine Panik:
+> - **Mac-Affen:** Oben rechts aufs **"?"** am Fenster klicken, dann auf den Link zu Datenschutz & Sicherheit. Runterscrollen und auf **"Trotzdem öffnen"** klicken (oder einfach in die Mac-Settings zu Datenschutz & Sicherheit scrollen). Im Zweifel: Google, lol.
+> - **Windows-Degenerates:** Blauer SmartScreen poppt auf ➔ Klickt auf **"Weitere Informationen"** ➔ **"Trotzdem ausführen"**.
 
 ### 💻 Systemanforderungen (Der Gerät)
 
