@@ -129,4 +129,27 @@ public class TestDatabaseService implements DatabaseService {
     public int cleanupOldThreads(long maxAgeSeconds) {
         return 0;
     }
+
+    @Override
+    public void saveHeadline(String clusterId, String headline, String context) {
+    }
+
+    @Override
+    public void saveTickerMentions(List<TickerMentionRecord> mentions) {
+    }
+
+    @Override
+    public int cleanupAgentData(long cutoffEpochSeconds) {
+        return 0;
+    }
+
+    @Override
+    public java.util.Map<String, Integer> getTickerCountsSince(long sinceEpochSeconds) {
+        return java.util.Map.of();
+    }
+
+    @Override
+    public List<HeadlineRecord> getHeadlinesSince(long sinceEpochSeconds) {
+        return List.of();
+    }
 }

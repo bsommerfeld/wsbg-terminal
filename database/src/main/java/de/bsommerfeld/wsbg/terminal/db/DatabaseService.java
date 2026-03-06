@@ -96,4 +96,34 @@ public interface DatabaseService {
      * @return number of threads deleted
      */
     int cleanupOldThreads(long maxAgeSeconds);
+
+    // -- Agent Data (Headlines + Tickers) --
+
+    /** Persists an AI-generated headline with its full cluster context. */
+    void saveHeadline(String clusterId, String headline, String context);
+
+    /** Persists a batch of ticker mentions from a single extraction. */
+    void saveTickerMentions(List<TickerMentionRecord> mentions);
+
+    /**
+     * Deletes agent data (headlines + ticker mentions) older than the given cutoff.
+     */
+    int cleanupAgentData(long cutoffEpochSeconds);
+
+    /**
+     * Returns ticker mention counts since the given epoch second, sorted by count
+     * descending.
+     */
+    java.util.Map<String, Integer> getTickerCountsSince(long sinceEpochSeconds);
+
+    /** Returns headlines created since the given epoch second, newest first. */
+    List<HeadlineRecord> getHeadlinesSince(long sinceEpochSeconds);
+
+    /** Immutable headline data from the database. */
+    record HeadlineRecord(String clusterId, String headline, String context, long createdAt) {
+    }
+
+    /** Immutable ticker mention for batch persistence. */
+    record TickerMentionRecord(String symbol, String instrumentType, String name) {
+    }
 }

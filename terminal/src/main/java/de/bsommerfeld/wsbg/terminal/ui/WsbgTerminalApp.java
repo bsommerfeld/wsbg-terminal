@@ -9,6 +9,7 @@ import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
 import de.bsommerfeld.wsbg.terminal.core.i18n.I18nService;
 import de.bsommerfeld.wsbg.terminal.core.util.StorageUtils;
+import de.bsommerfeld.wsbg.terminal.db.AgentRepository;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
 import de.bsommerfeld.wsbg.terminal.ui.config.AppModule;
 import de.bsommerfeld.wsbg.terminal.ui.event.UiEvents;
@@ -171,8 +172,9 @@ public class WsbgTerminalApp extends Application {
             return;
         try {
             injector.getInstance(RedditRepository.class).shutdown();
+            injector.getInstance(AgentRepository.class).shutdown();
         } catch (Exception e) {
-            LOG.warn("Failed to shutdown RedditRepository: " + e.getMessage());
+            LOG.warn("Failed to shutdown repositories: " + e.getMessage());
         }
     }
 

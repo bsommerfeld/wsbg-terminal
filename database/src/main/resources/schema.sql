@@ -67,3 +67,34 @@ CREATE TABLE IF NOT EXISTS reddit_images (
     image_url TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_reddit_images_entity ON reddit_images(entity_id);
+
+-- =============================================================================
+--  Agent Data — Headlines and Ticker Mentions
+-- =============================================================================
+--
+--  These tables store AI-generated analysis results for the dashboard.
+--  Both are TTL-managed: cleanup deletes entries older than 24 hours.
+
+-- AI-generated headlines with the full cluster context that produced them.
+-- Context is preserved so the UI can offer "deep dive" follow-up analysis
+-- without re-scraping Reddit.
+CREATE TABLE IF NOT EXISTS agent_headlines (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cluster_id TEXT NOT NULL,          -- InvestigationCluster UUID prefix
+    headline TEXT NOT NULL,
+    context TEXT,                      -- Full cluster context for follow-up analysis
+    created_at INTEGER NOT NULL        -- epoch seconds; TTL anchor
+);
+CREATE INDEX IF NOT EXISTS idx_agent_headlines_created ON agent_headlines(created_at);
+
+-- Individual financial instrument mentions extracted from cluster contexts.
+-- Aggregated hourly by the TickerTracker for the pie chart dashboard.
+CREATE TABLE IF NOT EXISTS agent_ticker_mentions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    symbol TEXT NOT NULL,              -- Ticker symbol or common name
+    instrument_type TEXT NOT NULL,     -- STOCK, ETF, ETC, INDEX, COMMODITY, CRYPTO, DERIVATIVE, UNKNOWN
+    name TEXT,                         -- Human-readable name if available
+    created_at INTEGER NOT NULL        -- epoch seconds; TTL anchor
+);
+CREATE INDEX IF NOT EXISTS idx_agent_ticker_mentions_created ON agent_ticker_mentions(created_at);
+CREATE INDEX IF NOT EXISTS idx_agent_ticker_mentions_symbol ON agent_ticker_mentions(symbol);

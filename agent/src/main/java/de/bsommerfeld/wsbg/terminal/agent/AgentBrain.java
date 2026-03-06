@@ -11,6 +11,7 @@ import dev.langchain4j.data.message.ImageContent;
 import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
+import dev.langchain4j.model.chat.Capability;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.ollama.OllamaChatModel;
@@ -57,6 +58,7 @@ public class AgentBrain {
 
     private Assistant assistant;
     private TranslatorBot translatorBot;
+    private TickerExtractor tickerExtractor;
     private ChatModel visionModel;
     private String activeReasoningModel;
     private String activeTranslatorModel;
@@ -122,6 +124,18 @@ public class AgentBrain {
 
         this.translatorBot = AiServices.builder(TranslatorBot.class)
                 .streamingChatModel(translatorModel)
+                .build();
+
+        // Structured output model for ticker extraction — uses non-streaming
+        // OllamaChatModel because JSON Schema is not supported in streaming mode.
+        ChatModel extractionModel = OllamaChatModel.builder()
+                .baseUrl(OLLAMA_BASE_URL).modelName(reasoningName)
+                .temperature(0.1)
+                .supportedCapabilities(Capability.RESPONSE_FORMAT_JSON_SCHEMA)
+                .build();
+
+        this.tickerExtractor = AiServices.builder(TickerExtractor.class)
+                .chatModel(extractionModel)
                 .build();
     }
 
@@ -191,6 +205,21 @@ public class AgentBrain {
                 "TARGET_LANG", targetLang, "TARGET_CODE", targetCode));
         LOG.info("Translating [model={}]: {} -> {}", activeTranslatorModel, sourceCode, targetCode);
         return translatorBot.translate(prompt, text);
+    }
+
+    /** Extracts financial instrument mentions from text via structured output. */
+    public TickerExtractionResult extractTickers(String context) {
+        if (tickerExtractor == null)
+            return TickerExtractionResult.EMPTY;
+        try {
+            String prompt = PromptLoader.load("ticker-extraction", Map.of("CONTEXT", context));
+            TickerExtractionResult result = tickerExtractor.extract(prompt);
+            LOG.info("Extracted {} ticker mentions", result.mentions().size());
+            return result;
+        } catch (Exception e) {
+            LOG.warn("Ticker extraction failed: {}", e.getMessage());
+            return TickerExtractionResult.EMPTY;
+        }
     }
 
     /** Performs blocking vision analysis on the given image URL. */

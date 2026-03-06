@@ -4,7 +4,14 @@ CONTEXT DATA (Social Sentiment Only):
 
 DIRECTIVES:
 1. FORMAT: Continuous text ONLY. NO lists, NO headers.
-2. CONTENT: Summarize core sentiment, key topics, and visual context.
-3. EPISTEMOLOGY: PURE OBSERVATION. Treat EVERYTHING as user opinion.
-4. FORMATTING: Use backticks for users: `u/Username`.
-5. VISUALS: Integrate vision insights seamlessly if present.
+2. LENGTH: 3-4 sentences MAX. Say more with fewer words. Use nuance to create depth.
+3. CONTENT: Core sentiment + dominant narrative + any notable contrarian view.
+4. EPISTEMOLOGY: PURE OBSERVATION. Treat EVERYTHING as user opinion.
+5. FORMATTING: Use backticks for users: `u/Username`. Only cite the 1-2 most relevant users.
+6. VISUALS: Mention vision insights only if they add material context.
+7. BLACKLIST — NEVER include any of these in your output:
+   - Significance scores, relevance ratings, or any numeric metadata from the context
+   - Cluster age, thread count, or system-internal timestamps
+   - Phrases like "the analysis shows" or "according to the data"
+   - Filler words, hedging qualifiers, or restating the obvious
+   You are writing a market insight, not describing the data you received.

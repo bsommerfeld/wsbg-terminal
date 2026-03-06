@@ -214,6 +214,104 @@ class SqlDatabaseServiceTest {
         assertTrue(db.getCommentsForThread("t3_old", 100).isEmpty());
     }
 
+    // -- Agent Data: Headlines --
+
+    @Test
+    void saveHeadline_shouldPersistAndRetrieve() {
+        db.saveHeadline("cluster-1", "Breaking: Market crash", "Full context here");
+
+        List<DatabaseService.HeadlineRecord> headlines = db.getHeadlinesSince(0);
+        assertEquals(1, headlines.size());
+        assertEquals("cluster-1", headlines.get(0).clusterId());
+        assertEquals("Breaking: Market crash", headlines.get(0).headline());
+        assertEquals("Full context here", headlines.get(0).context());
+    }
+
+    @Test
+    void getHeadlinesSince_shouldFilterByTimestamp() {
+        db.saveHeadline("c-1", "Old headline", "context");
+        db.saveHeadline("c-2", "New headline", "context");
+
+        long future = (System.currentTimeMillis() / 1000) + 3600;
+        List<DatabaseService.HeadlineRecord> none = db.getHeadlinesSince(future);
+        assertTrue(none.isEmpty());
+
+        List<DatabaseService.HeadlineRecord> all = db.getHeadlinesSince(0);
+        assertEquals(2, all.size());
+    }
+
+    // -- Agent Data: Ticker Mentions --
+
+    @Test
+    void saveTickerMentions_shouldPersistBatch() {
+        List<DatabaseService.TickerMentionRecord> mentions = List.of(
+                new DatabaseService.TickerMentionRecord("AAPL", "STOCK", "Apple Inc."),
+                new DatabaseService.TickerMentionRecord("DAX", "INDEX", "DAX 40"),
+                new DatabaseService.TickerMentionRecord("AAPL", "STOCK", "Apple Inc."));
+        db.saveTickerMentions(mentions);
+
+        var counts = db.getTickerCountsSince(0);
+        assertEquals(2, counts.get("AAPL"));
+        assertEquals(1, counts.get("DAX"));
+    }
+
+    @Test
+    void saveTickerMentions_shouldHandleNullGracefully() {
+        assertDoesNotThrow(() -> db.saveTickerMentions(null));
+        assertDoesNotThrow(() -> db.saveTickerMentions(List.of()));
+    }
+
+    @Test
+    void getTickerCountsSince_shouldReturnSortedDescending() {
+        List<DatabaseService.TickerMentionRecord> mentions = List.of(
+                new DatabaseService.TickerMentionRecord("GOLD", "COMMODITY", null),
+                new DatabaseService.TickerMentionRecord("SPY", "ETF", null),
+                new DatabaseService.TickerMentionRecord("SPY", "ETF", null),
+                new DatabaseService.TickerMentionRecord("SPY", "ETF", null));
+        db.saveTickerMentions(mentions);
+
+        var counts = db.getTickerCountsSince(0);
+        var keys = new java.util.ArrayList<>(counts.keySet());
+        assertEquals("SPY", keys.get(0));
+        assertEquals("GOLD", keys.get(1));
+    }
+
+    @Test
+    void getTickerCountsSince_shouldFilterByTimestamp() {
+        db.saveTickerMentions(List.of(
+                new DatabaseService.TickerMentionRecord("BTC", "CRYPTO", "Bitcoin")));
+
+        long future = (System.currentTimeMillis() / 1000) + 3600;
+        assertTrue(db.getTickerCountsSince(future).isEmpty());
+    }
+
+    // -- Agent Data: Cleanup --
+
+    @Test
+    void cleanupAgentData_shouldRemoveExpiredData() {
+        db.saveHeadline("c-1", "headline", "ctx");
+        db.saveTickerMentions(List.of(
+                new DatabaseService.TickerMentionRecord("TSLA", "STOCK", "Tesla")));
+
+        // Cutoff in the future → everything expires
+        long future = (System.currentTimeMillis() / 1000) + 3600;
+        int removed = db.cleanupAgentData(future);
+        assertTrue(removed >= 2);
+
+        assertTrue(db.getHeadlinesSince(0).isEmpty());
+        assertTrue(db.getTickerCountsSince(0).isEmpty());
+    }
+
+    @Test
+    void cleanupAgentData_shouldKeepRecentData() {
+        db.saveHeadline("c-1", "headline", "ctx");
+
+        // Cutoff in the past → nothing expires
+        int removed = db.cleanupAgentData(0);
+        assertEquals(0, removed);
+        assertEquals(1, db.getHeadlinesSince(0).size());
+    }
+
     // -- Helpers --
 
     private static RedditThread thread(String id, String sub, String title, int score, int comments) {

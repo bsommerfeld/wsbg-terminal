@@ -551,4 +551,117 @@ public class SqlDatabaseService implements DatabaseService {
         }
         return 0;
     }
+
+    // =====================================================================
+    // Agent Data (Headlines + Tickers)
+    // =====================================================================
+
+    @Override
+    public void saveHeadline(String clusterId, String headline, String context) {
+        try (Connection conn = getConnection();
+                PreparedStatement ps = conn.prepareStatement(SqlLoader.load("insert-headline"))) {
+            ps.setString(1, clusterId);
+            ps.setString(2, headline);
+            ps.setString(3, context);
+            ps.setLong(4, System.currentTimeMillis() / 1000);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            LOG.error("Failed to save headline for cluster {}", clusterId, e);
+        }
+    }
+
+    @Override
+    public void saveTickerMentions(List<TickerMentionRecord> mentions) {
+        if (mentions == null || mentions.isEmpty())
+            return;
+        try (Connection conn = getConnection()) {
+            conn.setAutoCommit(false);
+            try (PreparedStatement ps = conn.prepareStatement(SqlLoader.load("insert-ticker-mention"))) {
+                long now = System.currentTimeMillis() / 1000;
+                for (TickerMentionRecord m : mentions) {
+                    ps.setString(1, m.symbol());
+                    ps.setString(2, m.instrumentType());
+                    ps.setString(3, m.name());
+                    ps.setLong(4, now);
+                    ps.addBatch();
+                }
+                ps.executeBatch();
+                conn.commit();
+            } catch (SQLException e) {
+                conn.rollback();
+                throw e;
+            }
+        } catch (SQLException e) {
+            LOG.error("Failed to save ticker mentions", e);
+        }
+    }
+
+    @Override
+    public int cleanupAgentData(long cutoffEpochSeconds) {
+        String sql = SqlLoader.load("cleanup-agent-data");
+        int total = 0;
+        try (Connection conn = getConnection()) {
+            conn.setAutoCommit(false);
+            try {
+                // Headlines
+                try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                    ps.setLong(1, cutoffEpochSeconds);
+                    total += ps.executeUpdate();
+                }
+                // Ticker mentions — same cutoff, different table
+                try (PreparedStatement ps = conn.prepareStatement(
+                        "DELETE FROM agent_ticker_mentions WHERE created_at < ?")) {
+                    ps.setLong(1, cutoffEpochSeconds);
+                    total += ps.executeUpdate();
+                }
+                conn.commit();
+                if (total > 0)
+                    LOG.info("Agent data cleanup: removed {} stale rows.", total);
+            } catch (SQLException e) {
+                conn.rollback();
+                throw e;
+            }
+        } catch (SQLException e) {
+            LOG.error("Agent data cleanup failed", e);
+        }
+        return total;
+    }
+
+    @Override
+    public java.util.Map<String, Integer> getTickerCountsSince(long sinceEpochSeconds) {
+        java.util.Map<String, Integer> counts = new java.util.LinkedHashMap<>();
+        try (Connection conn = getConnection();
+                PreparedStatement ps = conn.prepareStatement(SqlLoader.load("select-ticker-counts"))) {
+            ps.setLong(1, sinceEpochSeconds);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    counts.put(rs.getString("symbol"), rs.getInt("mention_count"));
+                }
+            }
+        } catch (SQLException e) {
+            LOG.error("Failed to query ticker counts", e);
+        }
+        return counts;
+    }
+
+    @Override
+    public List<HeadlineRecord> getHeadlinesSince(long sinceEpochSeconds) {
+        List<HeadlineRecord> results = new ArrayList<>();
+        try (Connection conn = getConnection();
+                PreparedStatement ps = conn.prepareStatement(SqlLoader.load("select-recent-headlines"))) {
+            ps.setLong(1, sinceEpochSeconds);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    results.add(new HeadlineRecord(
+                            rs.getString("cluster_id"),
+                            rs.getString("headline"),
+                            rs.getString("context"),
+                            rs.getLong("created_at")));
+                }
+            }
+        } catch (SQLException e) {
+            LOG.error("Failed to query recent headlines", e);
+        }
+        return results;
+    }
 }

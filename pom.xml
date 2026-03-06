@@ -13,6 +13,7 @@
         <module>core</module>
         <module>database</module>
         <module>reddit</module>
+        <module>fj</module>
 
         <module>agent</module>
         <module>terminal</module>
@@ -60,6 +61,11 @@
             <dependency>
                 <groupId>de.bsommerfeld</groupId>
                 <artifactId>reddit</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>fj</artifactId>
                 <version>${project.version}</version>
             </dependency>
 

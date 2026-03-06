@@ -12,7 +12,10 @@ import de.bsommerfeld.wsbg.terminal.core.config.RedditConfig;
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
 import de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.LogEvent;
+import de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.TickerSnapshotEvent;
 import de.bsommerfeld.wsbg.terminal.core.i18n.I18nService;
+import de.bsommerfeld.wsbg.terminal.db.AgentRepository;
+import de.bsommerfeld.wsbg.terminal.db.DatabaseService.TickerMentionRecord;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
 import de.bsommerfeld.wsbg.terminal.reddit.RedditScraper;
 import de.bsommerfeld.wsbg.terminal.reddit.RedditScraper.ScrapeStats;
@@ -56,6 +59,7 @@ public class PassiveMonitorService {
     private final AgentBrain brain;
     private final ApplicationEventBus eventBus;
     private final RedditRepository repository;
+    private final AgentRepository agentRepository;
     private final I18nService i18n;
     private final GlobalConfig config;
     private final ReportBuilder reportBuilder;
@@ -80,11 +84,13 @@ public class PassiveMonitorService {
 
     @Inject
     public PassiveMonitorService(RedditScraper scraper, AgentBrain brain, ApplicationEventBus eventBus,
-            RedditRepository repository, GlobalConfig config, I18nService i18n) {
+            RedditRepository repository, AgentRepository agentRepository,
+            GlobalConfig config, I18nService i18n) {
         this.scraper = scraper;
         this.brain = brain;
         this.eventBus = eventBus;
         this.repository = repository;
+        this.agentRepository = agentRepository;
         this.i18n = i18n;
         this.config = config;
         this.reportBuilder = new ReportBuilder(repository, brain);
@@ -176,6 +182,7 @@ public class PassiveMonitorService {
                 lastCleanup = Instant.now();
                 repository.cleanupOldThreads(dataRetentionSeconds)
                         .thenAccept(count -> eventBus.post(new LogEvent(String.valueOf(count), "CLEANUP")));
+                agentRepository.cleanup();
             }
 
             ScrapeStats stats = new ScrapeStats();
@@ -396,7 +403,30 @@ public class PassiveMonitorService {
             inv.addToHistory(headline);
             inv.cachedContext = combinedContext;
 
+            agentRepository.saveHeadline(inv.id, headline, combinedContext);
+
             translateAndStream(inv, headline);
+        }
+
+        // Ticker extraction: runs on all candidates regardless of headline verdict.
+        // Headline-rejected clusters still contain valuable ticker references
+        // for the dashboard (e.g., penny stock questions).
+        for (InvestigationCluster inv : candidates) {
+            try {
+                TickerExtractionResult result = brain.extractTickers(inv.cachedContext);
+
+                List<TickerMentionRecord> records = result.mentions().stream()
+                        .map(m -> new TickerMentionRecord(m.symbol(), m.type(), m.name()))
+                        .toList();
+                agentRepository.saveTickerMentions(records);
+            } catch (Exception e) {
+                LOG.warn("Ticker extraction failed for cluster '{}'", inv.initialTitle, e);
+            }
+        }
+
+        Map<String, Integer> snapshot = agentRepository.getTickerCountsLastHour();
+        if (!snapshot.isEmpty()) {
+            eventBus.post(new TickerSnapshotEvent(snapshot));
         }
     }
 

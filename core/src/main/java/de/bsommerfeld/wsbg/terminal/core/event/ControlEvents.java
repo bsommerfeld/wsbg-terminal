@@ -28,4 +28,13 @@ public class ControlEvents {
      */
     public record LanguageChangedEvent() {
     }
+
+    /**
+     * Carries the current hourly ticker mention counts for the dashboard pie chart.
+     *
+     * @param mentionsPerTicker ticker symbol → number of cluster mentions in the
+     *                          current hour
+     */
+    public record TickerSnapshotEvent(java.util.Map<String, Integer> mentionsPerTicker) {
+    }
 }
