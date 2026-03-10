@@ -6,7 +6,6 @@ import de.bsommerfeld.updater.model.FileEntry;
 import de.bsommerfeld.updater.model.UpdateManifest;
 import de.bsommerfeld.updater.update.UpdateCheckResult;
 import de.bsommerfeld.updater.update.UpdateManager;
-import de.bsommerfeld.updater.util.ByteFormatter;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -64,19 +63,24 @@ public final class TinyUpdateClient implements UpdateClient {
      */
     @Override
     public boolean update(Consumer<UpdateProgress> progress) throws Exception {
-        progress.accept(UpdateProgress.indeterminate("Checking for updates..."));
+        progress.accept(UpdateProgress.indeterminate("Checking for updates"));
 
+        trace("Fetching release info from " + repository.latestReleaseUrl());
         String releaseJson = Downloader.toString(repository.latestReleaseUrl());
         String tagName = JsonParser.extractString(releaseJson, "tag_name");
+        trace("Remote tag: " + tagName + ", local: " + currentVersion());
 
         if (tagName.equals(currentVersion())) {
+            trace("Version match — skipping update");
             progress.accept(UpdateProgress.of("Up to date", 1.0));
             return false;
         }
 
         UpdateCheckResult diff = resolveChanges(releaseJson, progress);
+        trace("Diff: " + diff.outdated().size() + " outdated, " + diff.orphaned().size() + " orphaned");
 
         if (diff.isUpToDate()) {
+            trace("All files match despite version mismatch — recording version");
             recordVersion(tagName);
             progress.accept(UpdateProgress.of("Up to date", 1.0));
             return false;
@@ -85,7 +89,8 @@ public final class TinyUpdateClient implements UpdateClient {
         applyUpdate(releaseJson, diff, progress);
 
         recordVersion(tagName);
-        progress.accept(UpdateProgress.of("Update complete", tagName, 1.0));
+        trace("Update complete — recorded version " + tagName);
+        progress.accept(UpdateProgress.of("Update complete", 1.0));
         return true;
     }
 
@@ -105,19 +110,12 @@ public final class TinyUpdateClient implements UpdateClient {
     // Pipeline Phases
     // =====================================================================
 
-    /**
-     * Downloads the manifest and diffs it against the local file state.
-     * Returns the result containing which files need updating and which
-     * are orphaned.
-     */
     private UpdateCheckResult resolveChanges(String releaseJson,
             Consumer<UpdateProgress> progress) throws Exception {
-        progress.accept(UpdateProgress.indeterminate("Downloading manifest..."));
+        progress.accept(UpdateProgress.indeterminate("Checking for updates"));
         String manifestUrl = findAssetUrl(releaseJson, "update.json");
         String manifestJson = Downloader.toString(manifestUrl);
         UpdateManifest manifest = JsonParser.parseManifest(manifestJson);
-
-        progress.accept(UpdateProgress.indeterminate("Comparing files..."));
         return updateManager.check(manifest);
     }
 
@@ -126,6 +124,11 @@ public final class TinyUpdateClient implements UpdateClient {
      * and cleans up orphans. The zip is downloaded fully into memory
      * before extraction — either the entire zip is available or nothing
      * is written to disk, preventing partial-file states on network failures.
+     *
+     * <p>Pipeline steps use Discord-style status: "Downloading update 1/4".
+     * The progress ratio represents overall pipeline position, not
+     * per-step byte ratios — this prevents confusing jumps when
+     * a step with few items (e.g. 3 app files) finishes quickly.
      */
     private void applyUpdate(String releaseJson, UpdateCheckResult diff,
             Consumer<UpdateProgress> progress) throws Exception {
@@ -133,62 +136,93 @@ public final class TinyUpdateClient implements UpdateClient {
         String manifestUrl = findAssetUrl(releaseJson, "update.json");
         UpdateManifest manifest = JsonParser.parseManifest(Downloader.toString(manifestUrl));
 
-        if (hasAsset(releaseJson, "app.zip") && hasAsset(releaseJson, "deps.zip")) {
-            progress.accept(UpdateProgress.indeterminate("Downloading app update..."));
-            byte[] appZipData = downloadZip(releaseJson, "app.zip", diff.outdated().size(), progress);
-            extractOutdatedFiles(appZipData, diff, progress);
+        boolean hasSplitZips = hasAsset(releaseJson, "app.zip") && hasAsset(releaseJson, "deps.zip");
+        boolean hasOrphans = !diff.orphaned().isEmpty();
+
+        // Step count: download + extract (×2 if split) + verify + cleanup (if orphans)
+        int totalSteps = hasSplitZips ? 4 : 2;
+        totalSteps++; // verify
+        if (hasOrphans) totalSteps++;
+        int step = 0;
+
+        if (hasSplitZips) {
+            step++;
+            final int dlAppStep = step;
+            byte[] appZipData = downloadZip(releaseJson, "app.zip", "Downloading update", dlAppStep, totalSteps, progress);
+            step++;
+            extractOutdatedFiles(appZipData, diff, "Extracting files", step, totalSteps, progress);
 
             UpdateCheckResult remainingDiff = updateManager.check(manifest);
             if (!remainingDiff.outdated().isEmpty()) {
-                progress.accept(UpdateProgress.indeterminate("Downloading dependencies..."));
-                byte[] depsZipData = downloadZip(releaseJson, "deps.zip", remainingDiff.outdated().size(), progress);
-                extractOutdatedFiles(depsZipData, remainingDiff, progress);
+                step++;
+                final int dlDepsStep = step;
+                byte[] depsZipData = downloadZip(releaseJson, "deps.zip", "Downloading dependencies", dlDepsStep, totalSteps, progress);
+                step++;
+                extractOutdatedFiles(depsZipData, remainingDiff, "Extracting dependencies", step, totalSteps, progress);
             }
         } else {
-            byte[] zipData = downloadZip(releaseJson, "files.zip", diff.outdated().size(), progress);
-            extractOutdatedFiles(zipData, diff, progress);
+            step++;
+            final int dlStep = step;
+            byte[] zipData = downloadZip(releaseJson, "files.zip", "Downloading update", dlStep, totalSteps, progress);
+            step++;
+            extractOutdatedFiles(zipData, diff, "Extracting files", step, totalSteps, progress);
         }
 
-        progress.accept(UpdateProgress.indeterminate("Verifying integrity..."));
+        step++;
+        progress.accept(UpdateProgress.of("Verifying integrity", step + "/" + totalSteps, (double) step / totalSteps));
         updateManager.verify(manifest);
 
-        cleanOrphans(diff, progress);
+        if (hasOrphans) {
+            step++;
+            progress.accept(UpdateProgress.of("Cleaning up", step + "/" + totalSteps, (double) step / totalSteps));
+            updateManager.deleteOrphans(diff.orphaned());
+        }
     }
 
     /**
-     * Downloads an archive with byte-level progress reporting.
-     * The detail line shows transferred and total size in human-readable
-     * format (e.g. "3.2 MB / 12.4 MB").
+     * Downloads an archive with byte-level progress mapped to the
+     * overall pipeline position. For step 1/5 with 50% downloaded,
+     * the ratio is (1-1 + 0.5) / 5 = 0.1.
      */
-    private byte[] downloadZip(String releaseJson, String assetName, int updateCount,
+    private byte[] downloadZip(String releaseJson, String assetName,
+            String phaseName, int step, int totalSteps,
             Consumer<UpdateProgress> progress) throws Exception {
         String zipUrl = findAssetUrl(releaseJson, assetName);
+        trace("Downloading " + assetName + " from " + zipUrl);
 
-        progress.accept(UpdateProgress.of(
-                "Downloading update",
-                updateCount + " files to update",
-                0.0));
+        progress.accept(UpdateProgress.of(phaseName, step + "/" + totalSteps, (step - 1.0) / totalSteps));
 
-        return Downloader.toBytes(zipUrl, (read, total) -> {
-            double ratio = total > 0 ? (double) read / total : -1;
-            String detail = ByteFormatter.format(read);
-            if (total > 0) {
-                detail += " / " + ByteFormatter.format(total);
+        // [0]=lastLogTime, [1]=lastLogBytes
+        long startTime = System.currentTimeMillis();
+        long[] tracker = {startTime, 0};
+
+        byte[] data = Downloader.toBytes(zipUrl, (read, total) -> {
+            double subRatio = total > 0 ? (double) read / total : 0;
+            double overallRatio = (step - 1.0 + subRatio) / totalSteps;
+
+            // Speed from total bytes / total elapsed — inherently race-free
+            // because `read` is backed by AtomicLong (globalTransferred)
+            // and `startTime` is a constant. No locks needed.
+            long elapsed = System.currentTimeMillis() - startTime;
+            long speed = elapsed > 500 ? (read * 1000) / elapsed : -1;
+
+            progress.accept(UpdateProgress.download(phaseName, step + "/" + totalSteps, overallRatio,
+                    speed >= 0 ? speed : UpdateProgress.SPEED_UNCHANGED));
+
+            long now = System.currentTimeMillis();
+            if (now - tracker[0] >= 2000) {
+                long logElapsed = now - tracker[0];
+                long logSpeed = logElapsed > 0 ? ((read - tracker[1]) * 1000) / logElapsed : 0;
+                trace(assetName + ": " + formatBytes(read) + " / "
+                        + (total > 0 ? formatBytes(total) : "?")
+                        + " (" + formatBytes(logSpeed) + "/s)");
+                tracker[0] = now;
+                tracker[1] = read;
             }
-            progress.accept(UpdateProgress.of("Downloading update", detail, ratio));
         });
-    }
 
-    /** Deletes orphaned files if any exist, reporting count to the UI. */
-    private void cleanOrphans(UpdateCheckResult diff,
-            Consumer<UpdateProgress> progress) throws IOException {
-        if (diff.orphaned().isEmpty())
-            return;
-
-        progress.accept(UpdateProgress.indeterminate(
-                "Cleaning up",
-                diff.orphaned().size() + " orphaned files"));
-        updateManager.deleteOrphans(diff.orphaned());
+        trace("Downloaded " + assetName + ": " + data.length + " bytes");
+        return data;
     }
 
     // =====================================================================
@@ -198,9 +232,11 @@ public final class TinyUpdateClient implements UpdateClient {
     /**
      * Extracts only the files flagged as outdated from the zip — unchanged
      * files in the archive are skipped entirely. Reports per-file progress
-     * with filename and extraction count.
+     * as a detail label (e.g. "launcher.jar 2/3") while keeping the
+     * overall pipeline ratio from the step counter.
      */
     private void extractOutdatedFiles(byte[] zipData, UpdateCheckResult diff,
+            String phaseName, int step, int totalSteps,
             Consumer<UpdateProgress> progress) throws IOException {
         Set<String> outdatedPaths = diff.outdated().stream()
                 .map(FileEntry::path)
@@ -208,6 +244,7 @@ public final class TinyUpdateClient implements UpdateClient {
 
         int total = outdatedPaths.size();
         int extracted = 0;
+        trace("Extracting " + total + " files from " + phaseName);
 
         try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(zipData))) {
             ZipEntry entry;
@@ -222,17 +259,19 @@ public final class TinyUpdateClient implements UpdateClient {
 
                 extracted++;
                 String fileName = name.contains("/") ? name.substring(name.lastIndexOf('/') + 1) : name;
-                double ratio = (double) extracted / total;
-                progress.accept(UpdateProgress.of(
-                        "Extracting files",
-                        fileName + " (" + extracted + "/" + total + ")",
-                        ratio));
+                String detail = fileName + " " + extracted + "/" + total;
+
+                // Interpolate within step: ratio moves from (step-1)/total to step/total
+                double subRatio = (double) extracted / total;
+                double overallRatio = (step - 1.0 + subRatio) / totalSteps;
+                progress.accept(UpdateProgress.of(phaseName, detail, overallRatio));
 
                 Path target = appDirectory.resolve(name);
                 Files.createDirectories(target.getParent());
                 Files.copy(zis, target, StandardCopyOption.REPLACE_EXISTING);
             }
         }
+        trace("Extraction complete: " + extracted + "/" + total + " files");
     }
 
     // =====================================================================
@@ -289,5 +328,15 @@ public final class TinyUpdateClient implements UpdateClient {
         Path versionFile = appDirectory.resolve("version.txt");
         Files.createDirectories(versionFile.getParent());
         Files.writeString(versionFile, version);
+    }
+
+    private static void trace(String message) {
+        System.err.println("[updater] " + message);
+    }
+
+    private static String formatBytes(long bytes) {
+        if (bytes < 1024) return bytes + " B";
+        if (bytes < 1024 * 1024) return (bytes / 1024) + " KB";
+        return String.format("%.1f MB", bytes / (1024.0 * 1024.0));
     }
 }

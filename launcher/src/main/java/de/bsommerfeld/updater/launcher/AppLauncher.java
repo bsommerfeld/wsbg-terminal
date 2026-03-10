@@ -4,7 +4,10 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.jar.JarFile;
 import java.util.jar.Manifest;
@@ -52,6 +55,7 @@ final class AppLauncher {
 
     private static final String APP_ICON_NAME = "app-icon.png";
     private static final String APP_NAME = "WSBG Terminal";
+    private static final int MAX_LOG_FILES = 10;
 
     private final Path appDirectory;
 
@@ -73,8 +77,13 @@ final class AppLauncher {
             throw new IOException("lib/ directory not found — update may have failed");
         }
 
-        Path logFile = appDirectory.resolve("logs/terminal-console.log");
-        Files.createDirectories(logFile.getParent());
+        Path logDir = appDirectory.resolve("logs/terminal");
+        Files.createDirectories(logDir);
+        purgeOldLogs(logDir);
+
+        String timestamp = LocalDateTime.now()
+                .format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"));
+        Path logFile = logDir.resolve(timestamp + ".log");
 
         String mainClass = resolveMainClass(libDir);
         String modulePath = buildJavaFxModulePath(libDir);
@@ -93,6 +102,28 @@ final class AppLauncher {
     }
 
     /**
+     * Deletes the oldest {@code .log} files in the terminal log directory
+     * when the count exceeds {@link #MAX_LOG_FILES}. Mirrors the launcher's
+     * rotation strategy — lexicographic sort on timestamp-named files
+     * guarantees chronological order.
+     */
+    private void purgeOldLogs(Path logDir) {
+        try (Stream<Path> files = Files.list(logDir)) {
+            var logs = files
+                    .filter(p -> p.toString().endsWith(".log"))
+                    .sorted(Comparator.comparing(Path::getFileName))
+                    .toList();
+
+            if (logs.size() >= MAX_LOG_FILES) {
+                for (int i = 0; i < logs.size() - MAX_LOG_FILES + 1; i++) {
+                    Files.deleteIfExists(logs.get(i));
+                }
+            }
+        } catch (IOException ignored) {
+        }
+    }
+
+    /**
      * Assembles the full JVM command line. Separated from {@link #launch} to
      * keep the orchestration method focused on I/O and process lifecycle.
      */
@@ -104,6 +135,7 @@ final class AppLauncher {
         addDockIconFlags(cmd);
 
         cmd.add("--enable-preview");
+        cmd.add("-Djavafx.enablePreview=true");
 
         cmd.add("--module-path");
         cmd.add(modulePath);

@@ -14,42 +14,35 @@ import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
-import javafx.scene.Node;
-import javafx.scene.Parent;
+import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.TextField;
 import javafx.scene.input.MouseEvent;
-import javafx.scene.layout.Background;
-import javafx.scene.layout.BackgroundFill;
-import javafx.scene.layout.CornerRadii;
+import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
-import javafx.scene.layout.Pane;
+import javafx.scene.layout.HeaderBar;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
-import javafx.scene.layout.StackPane;
-import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.stage.Stage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Builds and injects the custom title bar overlay that replaces the
- * default WindowShell header.
+ * Builds the custom HeaderBar for StageStyle.EXTENDED windows.
  *
  * <p>
- * Layout (all platforms, only traffic lights position varies):
+ * Layout uses the HeaderBar's three slots:
  *
  * <pre>
- * macOS:         [ traffic lights | broom ]  [ ── search ── ]  [ settings | graph ]
- * Windows/Linux: [ broom ]  [ ── search ── ]  [ settings | graph | traffic lights ]
+ * [ leading: broom ]  [ center: ── search ── ]  [ trailing: settings | graph ]
  * </pre>
  *
  * <p>
- * The overlay is placed on top of the hidden original title bar via
- * a {@link StackPane} so it receives mouse events while the underlying
- * bar still drives the frameless window‑drag logic.
+ * Native window controls (min/max/close) are provided by the OS automatically
+ * via the EXTENDED stage style. On macOS they appear left, on Windows right.
  */
+@SuppressWarnings("deprecation")
 final class TitleBarFactory {
 
     private static final Logger LOG = LoggerFactory.getLogger(TitleBarFactory.class);
@@ -58,31 +51,25 @@ final class TitleBarFactory {
     }
 
     /**
-     * Injects the title bar into the running stage. Must be called on the
-     * JavaFX Application Thread after the scene is realized.
+     * Creates the HeaderBar, sets up the Scene with a BorderPane root,
+     * and attaches the stylesheet. Must be called before stage.show().
      *
      * @return the graph toggle button for blink animation, or null on failure
      */
-    static Button inject(Stage stage, ApplicationEventBus eventBus, GlobalConfig config, I18nService i18n) {
-        Node titleBarNode = stage.getScene().lookup(".title-bar");
-
-        if (!(titleBarNode instanceof Pane bar)) {
-            LOG.warn("TitleBar not found or unknown type");
-            return null;
-        }
-
-        boolean isMac = System.getProperty("os.name").toLowerCase().contains("mac");
+    static Button buildHeaderBar(Stage stage, ApplicationEventBus eventBus,
+            GlobalConfig config, I18nService i18n) {
+        HeaderBar headerBar = new HeaderBar();
+        headerBar.getStyleClass().add("custom-header-bar");
 
         HBox searchBox = buildSearchBox(eventBus, i18n);
-        HBox trafficLights = buildTrafficLights(stage, isMac);
         HBox utilityControls = buildUtilityControls(eventBus, config, i18n);
         HBox broomContainer = buildBroomButton(eventBus);
 
         Button graphBtn = (Button) utilityControls.getChildren().get(1);
 
-        // Disable the entire broom container when graph is active — clearing
-        // the terminal while viewing the graph has no visible effect. Disabling
-        // at container level (not just the button) so Liquid Glass ignores it.
+        // Disable broom when graph is active — clearing the terminal while
+        // viewing the graph has no visible effect. Container-level disable
+        // lets Liquid Glass ignore it entirely.
         BooleanProperty graphActive = new SimpleBooleanProperty(false);
         broomContainer.disableProperty().bind(graphActive);
         eventBus.register(new Object() {
@@ -93,16 +80,29 @@ final class TitleBarFactory {
             }
         });
 
-        HBox mainLayout = assembleLayout(bar, searchBox, trafficLights, utilityControls, broomContainer, isMac);
+        headerBar.setLeading(broomContainer);
+        headerBar.setCenter(searchBox);
+        headerBar.setTrailing(utilityControls);
 
         LiquidGlass.apply(broomContainer);
         LiquidGlass.apply(utilityControls);
         LiquidGlass.apply(searchBox);
 
-        installDragHandler(stage, mainLayout);
-        overlayOntoShell(stage, bar, mainLayout);
+        BorderPane root = new BorderPane();
+        root.setTop(headerBar);
 
+        // Deep charcoal background — Bloomberg-professional aesthetic.
+        // Slightly lighter than pure black for depth perception in future
+        // dashboard tile layouts.
+        Scene scene = new Scene(root);
+        scene.setFill(Color.web("#0f0f0f"));
+
+        scene.getStylesheets().add(
+                TitleBarFactory.class.getResource("/css/index.css").toExternalForm());
+
+        stage.setScene(scene);
         stage.setTitle("");
+
         return graphBtn;
     }
 
@@ -119,7 +119,6 @@ final class TitleBarFactory {
         field.getStyleClass().add("title-search-field");
         HBox.setHgrow(field, Priority.ALWAYS);
 
-        // Update prompt text when language changes at runtime
         eventBus.register(new Object() {
             @Subscribe
             public void onLanguageChanged(
@@ -144,39 +143,8 @@ final class TitleBarFactory {
         return box;
     }
 
-    private static HBox buildTrafficLights(Stage stage, boolean isMac) {
-        HBox controls = new HBox(8);
-        controls.setAlignment(Pos.CENTER);
-        controls.getStyleClass().addAll("macos-controls-box", isMac ? "os-mac" : "os-win-linux");
-        consumeDragEvents(controls);
-
-        Button closeBtn = trafficLightButton("close");
-        closeBtn.setOnAction(e -> stage.close());
-
-        Button minBtn = trafficLightButton("minimize");
-        minBtn.setOnAction(e -> stage.setIconified(true));
-
-        Button maxBtn = trafficLightButton("maximize");
-        maxBtn.setOnAction(e -> stage.setMaximized(!stage.isMaximized()));
-
-        stage.maximizedProperty().addListener((obs, oldVal, newVal) -> {
-            if (newVal) {
-                if (!maxBtn.getStyleClass().contains("is-maximized"))
-                    maxBtn.getStyleClass().add("is-maximized");
-            } else {
-                maxBtn.getStyleClass().remove("is-maximized");
-            }
-        });
-
-        if (isMac) {
-            controls.getChildren().addAll(closeBtn, minBtn, maxBtn);
-        } else {
-            controls.getChildren().addAll(minBtn, maxBtn, closeBtn);
-        }
-        return controls;
-    }
-
-    private static HBox buildUtilityControls(ApplicationEventBus eventBus, GlobalConfig config, I18nService i18n) {
+    private static HBox buildUtilityControls(ApplicationEventBus eventBus,
+            GlobalConfig config, I18nService i18n) {
         HBox controls = new HBox(0);
         controls.getStyleClass().add("utility-controls-box");
         controls.setAlignment(Pos.CENTER);
@@ -188,7 +156,6 @@ final class TitleBarFactory {
         Button settingsBtn = iconButton("icon-settings");
         settingsBtn.setOnAction(e -> settingsPopOver.toggle(settingsBtn));
 
-        // Swap icon to alert variant when any banner is active
         settingsVm.alertActiveProperty().addListener((obs, o, n) -> {
             Region icon = (Region) settingsBtn.getGraphic();
             icon.getStyleClass().clear();
@@ -221,78 +188,6 @@ final class TitleBarFactory {
         return container;
     }
 
-    // ── Layout assembly ─────────────────────────────────────────────
-
-    /**
-     * Unified layout: broom always left, settings|graph always right.
-     * Only the native traffic-light position differs per OS —
-     * outermost left on macOS, outermost right on Windows/Linux.
-     */
-    private static HBox assembleLayout(Pane bar, HBox searchBox, HBox trafficLights,
-            HBox utilityControls, HBox broomContainer, boolean isMac) {
-        bar.getChildren().clear();
-        bar.setOnMousePressed(null);
-        bar.setOnMouseDragged(null);
-
-        HBox left = growContainer(Pos.CENTER_LEFT);
-        HBox right = growContainer(Pos.CENTER_RIGHT);
-
-        if (isMac) {
-            HBox leftWrapper = new HBox(16, trafficLights, broomContainer);
-            leftWrapper.setAlignment(Pos.CENTER_LEFT);
-            HBox.setMargin(leftWrapper, new Insets(0, 0, 0, 13));
-            left.getChildren().add(leftWrapper);
-        } else {
-            HBox.setMargin(broomContainer, new Insets(0, 0, 0, 10));
-            left.getChildren().add(broomContainer);
-        }
-
-        if (isMac) {
-            HBox.setMargin(utilityControls, new Insets(0, 4, 0, 0));
-            right.getChildren().add(utilityControls);
-        } else {
-            HBox rightWrapper = new HBox(16, utilityControls, trafficLights);
-            rightWrapper.setAlignment(Pos.CENTER_RIGHT);
-            right.getChildren().add(rightWrapper);
-        }
-
-        searchBox.setMaxWidth(450);
-
-        HBox layout = new HBox();
-        layout.getStyleClass().add("custom-title-bar-overlay");
-        layout.setAlignment(Pos.CENTER);
-        layout.setPickOnBounds(true);
-        layout.setBackground(new Background(new BackgroundFill(Color.TRANSPARENT, CornerRadii.EMPTY, Insets.EMPTY)));
-        layout.prefWidthProperty().bind(bar.widthProperty());
-        layout.prefHeightProperty().bind(bar.heightProperty());
-        layout.getChildren().addAll(left, searchBox, right);
-
-        return layout;
-    }
-
-    /**
-     * Ghosts the original title bar and overlays the custom layout.
-     * Falls back to direct injection if the scene root is not a StackPane.
-     */
-    private static void overlayOntoShell(Stage stage, Pane bar, HBox layout) {
-        bar.setMouseTransparent(true);
-        bar.setOpacity(0);
-
-        Parent root = stage.getScene().getRoot();
-        if (root instanceof StackPane shell) {
-            VBox overlay = new VBox();
-            overlay.setPickOnBounds(false);
-            overlay.setAlignment(Pos.TOP_CENTER);
-            overlay.getChildren().add(layout);
-            shell.getChildren().add(overlay);
-        } else {
-            LOG.warn("Shell root is not StackPane — falling back to direct injection");
-            bar.setMouseTransparent(false);
-            bar.setOpacity(1);
-            bar.getChildren().add(layout);
-        }
-    }
-
     // ── Reusable primitives ─────────────────────────────────────────
 
     /** Creates an ascii-button with a styled Region icon. */
@@ -305,52 +200,9 @@ final class TitleBarFactory {
         return btn;
     }
 
-    /** Creates a traffic-light dot with a mouse-transparent icon overlay. */
-    private static Button trafficLightButton(String type) {
-        Button btn = new Button();
-        btn.getStyleClass().addAll("custom-traffic-light", type);
-        Region icon = new Region();
-        icon.getStyleClass().add("traffic-light-icon");
-        icon.setMouseTransparent(true);
-        btn.setGraphic(icon);
-        return btn;
-    }
-
-    /** Creates an HBox that stretches to fill available space. */
-    private static HBox growContainer(Pos alignment) {
-        HBox box = new HBox();
-        box.setAlignment(alignment);
-        box.setMinWidth(0);
-        box.setPrefWidth(1);
-        box.setPickOnBounds(false);
-        HBox.setHgrow(box, Priority.ALWAYS);
-        return box;
-    }
-
-    /** Prevents mouse events from bubbling up to the window-drag handler. */
+    /** Prevents mouse events from bubbling past interactive controls. */
     private static void consumeDragEvents(HBox box) {
         box.addEventHandler(MouseEvent.MOUSE_PRESSED, MouseEvent::consume);
         box.addEventHandler(MouseEvent.MOUSE_DRAGGED, MouseEvent::consume);
-    }
-
-    /** Installs a window-drag handler on the layout's empty areas. */
-    private static void installDragHandler(Stage stage, HBox layout) {
-        double[] dragDelta = new double[2];
-        layout.setOnMousePressed(event -> {
-            Node target = (Node) event.getTarget();
-            if (target == layout || target.getParent() == layout) {
-                dragDelta[0] = stage.getX() - event.getScreenX();
-                dragDelta[1] = stage.getY() - event.getScreenY();
-                event.consume();
-            }
-        });
-        layout.setOnMouseDragged(event -> {
-            Node target = (Node) event.getTarget();
-            if (target == layout || target.getParent() == layout) {
-                stage.setX(event.getScreenX() + dragDelta[0]);
-                stage.setY(event.getScreenY() + dragDelta[1]);
-                event.consume();
-            }
-        });
     }
 }

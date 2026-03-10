@@ -72,11 +72,16 @@ public class AgentBrain {
     }
 
     private final GlobalConfig config;
+    private final OllamaServerManager serverManager;
 
     @Inject
-    public AgentBrain(GlobalConfig config, ApplicationEventBus eventBus) {
+    public AgentBrain(GlobalConfig config, ApplicationEventBus eventBus,
+            OllamaServerManager serverManager) {
         this.config = config;
+        this.serverManager = serverManager;
         eventBus.register(this);
+
+        serverManager.ensureRunning(OLLAMA_BASE_URL);
         initialize(config.getAgent());
     }
 

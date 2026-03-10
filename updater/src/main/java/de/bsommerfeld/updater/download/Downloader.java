@@ -10,14 +10,15 @@ import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.time.Duration;
 
 /**
  * HTTP download utility built on {@link HttpClient}.
  *
  * <p>
- * Supports three modes: streaming to file (with atomic rename),
- * in-memory byte download, and convenience string download. All modes
- * report progress via {@link DownloadProgressListener} when applicable.
+ * Supports in-memory byte downloads, streaming to file, and string
+ * downloads. Large files are automatically accelerated via
+ * {@link ChunkedDownload} (parallel Range-Requests).
  *
  * <h3>Redirect handling</h3>
  * The shared {@link HttpClient} follows redirects automatically. This is
@@ -26,33 +27,31 @@ import java.nio.file.StandardCopyOption;
  */
 public final class Downloader {
 
-    private static final HttpClient HTTP = HttpClient.newBuilder()
+    static final HttpClient HTTP = HttpClient.newBuilder()
             .followRedirects(HttpClient.Redirect.NORMAL)
+            .connectTimeout(Duration.ofSeconds(30))
             .build();
+
+    static final String USER_AGENT = "WSBG-Terminal-Updater/1.0";
 
     private Downloader() {
     }
 
     /**
-     * Downloads a URL to the given target file.
+     * Downloads a URL to the given target file with atomic rename.
      *
      * <p>
-     * The download streams into a {@code .tmp} sibling first, then
-     * atomically renames it to the target path. This prevents partially
-     * downloaded files from being picked up by hash checks or the
-     * application classloader.
+     * Streams into a {@code .tmp} sibling first, then atomically
+     * renames. This prevents partially downloaded files from being
+     * picked up by hash checks or the application classloader.
      */
     public static void toFile(String url, Path target, DownloadProgressListener listener) throws IOException {
         try {
-            HttpRequest request = HttpRequest.newBuilder(URI.create(url)).GET().build();
+            HttpRequest request = newRequest(url).build();
             HttpResponse<InputStream> response = HTTP.send(request, HttpResponse.BodyHandlers.ofInputStream());
-
             validateStatus(response.statusCode(), url);
 
-            long totalBytes = response.headers()
-                    .firstValueAsLong("Content-Length")
-                    .orElse(-1);
-
+            long totalBytes = contentLength(response);
             Files.createDirectories(target.getParent());
 
             try (InputStream in = response.body()) {
@@ -67,23 +66,38 @@ public final class Downloader {
     }
 
     /**
-     * Downloads a URL entirely into memory and returns the raw bytes.
+     * Downloads a URL entirely into memory.
      *
      * <p>
-     * Pre-allocates the buffer to Content-Length when known to avoid
-     * repeated array resizing during large downloads.
+     * Performs an initial GET to discover Content-Length. If the file
+     * is large enough for parallel acceleration, the initial connection
+     * is closed and re-downloaded via {@link ChunkedDownload}. The
+     * ~200ms wasted on the probe is negligible against the minutes
+     * saved by 8× throughput.
      */
     public static byte[] toBytes(String url, DownloadProgressListener listener) throws IOException {
         try {
-            HttpRequest request = HttpRequest.newBuilder(URI.create(url)).GET().build();
+            HttpRequest request = newRequest(url).build();
             HttpResponse<InputStream> response = HTTP.send(request, HttpResponse.BodyHandlers.ofInputStream());
-
             validateStatus(response.statusCode(), url);
 
-            long totalBytes = response.headers()
-                    .firstValueAsLong("Content-Length")
-                    .orElse(-1);
+            long totalBytes = contentLength(response);
+            int connections = ChunkedDownload.calculateConnections(totalBytes);
 
+            if (connections > 1) {
+                // Close probe connection — parallel path opens N new ones
+                response.body().close();
+
+                // Use the final URL after redirects so Range requests
+                // hit the CDN directly, not the redirect origin.
+                String finalUrl = response.uri().toString();
+                log("Parallel download: " + connections + " connections for "
+                        + formatBytes(totalBytes) + " → " + response.uri().getHost());
+
+                return ChunkedDownload.execute(finalUrl, totalBytes, connections, listener);
+            }
+
+            if (totalBytes > 0) log("Single connection download: " + formatBytes(totalBytes));
             try (InputStream in = response.body()) {
                 return readWithProgress(in, totalBytes, listener);
             }
@@ -94,19 +108,18 @@ public final class Downloader {
     }
 
     /**
-     * Downloads a URL as a UTF-8 string. Progress is not reported since
-     * this is used for small payloads (manifest JSON, release metadata).
+     * Downloads a URL as a UTF-8 string. No progress reporting — used
+     * for small payloads (manifest JSON, release metadata).
      */
     public static String toString(String url) throws IOException {
         return new String(toBytes(url, (_, _) -> {
         }));
     }
 
-    /**
-     * Streams bytes from the input to the target file while reporting
-     * progress. Uses an 8 KB buffer — large enough for throughput,
-     * small enough for responsive progress updates.
-     */
+    // =====================================================================
+    // Streaming helpers
+    // =====================================================================
+
     private static void transferWithProgress(InputStream in, Path target, long totalBytes,
             DownloadProgressListener listener) throws IOException {
         try (var out = Files.newOutputStream(target)) {
@@ -128,11 +141,6 @@ public final class Downloader {
         }
     }
 
-    /**
-     * Reads the entire input stream into a byte array while reporting
-     * progress. Pre-allocates to Content-Length when available to avoid
-     * repeated internal array copies in the output stream.
-     */
     private static byte[] readWithProgress(InputStream in, long totalBytes,
             DownloadProgressListener listener) throws IOException {
         ByteArrayOutputStream buffer = new ByteArrayOutputStream(totalBytes > 0 ? (int) totalBytes : 65536);
@@ -154,10 +162,33 @@ public final class Downloader {
         return buffer.toByteArray();
     }
 
-    /** Validates that the HTTP status code is in the 2xx success range. */
+    // =====================================================================
+    // Shared utilities
+    // =====================================================================
+
+    static HttpRequest.Builder newRequest(String url) {
+        return HttpRequest.newBuilder(URI.create(url))
+                .header("User-Agent", USER_AGENT)
+                .GET();
+    }
+
+    private static long contentLength(HttpResponse<?> response) {
+        return response.headers().firstValueAsLong("Content-Length").orElse(-1);
+    }
+
     private static void validateStatus(int status, String url) throws IOException {
         if (status < 200 || status >= 300) {
             throw new IOException("HTTP " + status + " for " + url);
         }
+    }
+
+    private static String formatBytes(long bytes) {
+        if (bytes < 1024) return bytes + " B";
+        if (bytes < 1024 * 1024) return (bytes / 1024) + " KB";
+        return String.format("%.1f MB", bytes / (1024.0 * 1024.0));
+    }
+
+    private static void log(String msg) {
+        System.out.println("[downloader] " + msg);
     }
 }

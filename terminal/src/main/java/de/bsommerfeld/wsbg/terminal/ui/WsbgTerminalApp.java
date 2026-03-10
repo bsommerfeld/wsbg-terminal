@@ -3,7 +3,6 @@ package de.bsommerfeld.wsbg.terminal.ui;
 import com.google.common.eventbus.Subscribe;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
-import de.bsommerfeld.jfx.frameless.WindowShellBuilder;
 import de.bsommerfeld.wsbg.terminal.core.config.ApplicationMode;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
@@ -11,6 +10,7 @@ import de.bsommerfeld.wsbg.terminal.core.i18n.I18nService;
 import de.bsommerfeld.wsbg.terminal.core.util.StorageUtils;
 import de.bsommerfeld.wsbg.terminal.db.AgentRepository;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
+import de.bsommerfeld.wsbg.terminal.agent.OllamaServerManager;
 import de.bsommerfeld.wsbg.terminal.ui.config.AppModule;
 import de.bsommerfeld.wsbg.terminal.ui.event.UiEvents;
 import javafx.animation.Animation;
@@ -19,10 +19,14 @@ import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
+import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.image.Image;
+import javafx.scene.layout.BorderPane;
+import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.stage.Stage;
+import javafx.stage.StageStyle;
 import javafx.util.Duration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,13 +36,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
- * JavaFX entry point. Sets up DI, loads the dashboard view into a
- * frameless {@link de.bsommerfeld.jfx.frameless.WindowShell}, and
- * injects the custom title bar overlay.
+ * JavaFX entry point. Sets up DI, loads the dashboard view into an
+ * extended-style window with a custom {@code HeaderBar}, and subscribes
+ * to {@link UiEvents.TerminalBlinkEvent} for the graph toggle pulse.
  *
  * <p>
- * Also subscribes to {@link UiEvents.TerminalBlinkEvent} to
- * pulse the graph toggle button when an AI analysis is in progress.
+ * Uses {@code StageStyle.EXTENDED} for native window controls, resize,
+ * and snap layouts on all platforms. The custom header bar overlay from
+ * jfx-frameless is replaced by the native {@code HeaderBar} API.
  */
 public class WsbgTerminalApp extends Application {
 
@@ -79,9 +84,8 @@ public class WsbgTerminalApp extends Application {
                 getClass().getResourceAsStream("/images/app-icon.png")));
 
         try {
-            Parent root = loadDashboard();
-            showWindow(primaryStage, root);
-            injectTitleBar(primaryStage);
+            Parent content = loadDashboard();
+            showWindow(primaryStage, content);
 
             LOG.info("WSBG-TERMINAL BEREIT. (MODE: {})", ApplicationMode.get());
 
@@ -139,32 +143,28 @@ public class WsbgTerminalApp extends Application {
         return loader.load();
     }
 
+    /**
+     * Builds the window using StageStyle.EXTENDED — native window controls,
+     * resize, and snap layouts on all platforms. The HeaderBar is injected
+     * by TitleBarFactory into leading/center/trailing slots.
+     */
     private void showWindow(Stage stage, Parent content) {
-        WindowShellBuilder
-                .create(stage)
-                .defaultTitleBar()
-                .resizable()
-                .minSize(800, 600)
-                .size(1200, 800)
-                .cornerRadius(16)
-                .content(content)
-                .stylesheet(getClass().getResource("/css/index.css").toExternalForm())
-                .build()
-                .show();
-    }
+        stage.initStyle(StageStyle.EXTENDED);
 
-    private void injectTitleBar(Stage stage) {
         ApplicationEventBus eventBus = injector.getInstance(ApplicationEventBus.class);
         GlobalConfig config = injector.getInstance(GlobalConfig.class);
         I18nService i18n = injector.getInstance(I18nService.class);
 
-        Platform.runLater(() -> {
-            try {
-                this.graphToggleButton = TitleBarFactory.inject(stage, eventBus, config, i18n);
-            } catch (Exception e) {
-                LOG.error("Failed to inject title bar", e);
-            }
-        });
+        this.graphToggleButton = TitleBarFactory.buildHeaderBar(stage, eventBus, config, i18n);
+
+        BorderPane root = (BorderPane) stage.getScene().getRoot();
+        root.setCenter(content);
+
+        stage.setMinWidth(800);
+        stage.setMinHeight(600);
+        stage.setWidth(1200);
+        stage.setHeight(800);
+        stage.show();
     }
 
     private void shutdownRepository() {
@@ -173,6 +173,7 @@ public class WsbgTerminalApp extends Application {
         try {
             injector.getInstance(RedditRepository.class).shutdown();
             injector.getInstance(AgentRepository.class).shutdown();
+            injector.getInstance(OllamaServerManager.class).shutdown();
         } catch (Exception e) {
             LOG.warn("Failed to shutdown repositories: " + e.getMessage());
         }

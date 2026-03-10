@@ -37,10 +37,6 @@
             <artifactId>javafx-controls</artifactId>
         </dependency>
         <dependency>
-            <groupId>de.bsommerfeld</groupId>
-            <artifactId>jfx-frameless</artifactId>
-        </dependency>
-        <dependency>
             <groupId>org.openjfx</groupId>
             <artifactId>javafx-fxml</artifactId>
         </dependency>
@@ -99,6 +95,7 @@
                     <mainClass>de.bsommerfeld.wsbg.terminal.ui.WsbgTerminalApp</mainClass>
                     <options>
                         <option>--enable-preview</option>
+                        <option>-Djavafx.enablePreview=true</option>
                         <option>-Xdock:name=WSBG</option>
                         <option>-Xdock:icon=${project.basedir}/src/main/resources/images/app-icon.png</option>
                     </options>

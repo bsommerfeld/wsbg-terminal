@@ -9,16 +9,12 @@ echo "=========================================="
 echo "   WSBG Terminal - Setup & Installation   "
 echo "=========================================="
 
-# 1. Install Ollama
-if ! command -v ollama &> /dev/null; then
-    echo "[*] Ollama not found. Installing..."
-    curl -fsSL https://ollama.com/install.sh | sh
-else
-    echo "[*] Ollama is already installed."
-fi
-
-# Ollama CLI commands (pull, list) handle their own server lifecycle internally —
-# they start a temporary server on demand. No explicit 'ollama serve' needed.
+# 1. Install/Update Ollama
+# The install script handles both fresh installs and in-place updates. Exits
+# quickly when already current. Keeping Ollama up-to-date prevents model pull
+# failures caused by version incompatibilities with newer model formats.
+echo "[*] Installing/updating Ollama..."
+curl -fsSL https://ollama.com/install.sh | sh || echo "    [WARN] Ollama install/update failed — continuing."
 
 # 2. Check Configuration & Determine Mode
 OS="$(uname -s)"

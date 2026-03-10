@@ -4,47 +4,58 @@ Write-Host "   WSBG Terminal - Setup & Installation   " -ForegroundColor Cyan
 Write-Host "=========================================="
 Write-Host ""
 
-# 1. Check/Install Ollama
-Write-Host "[*] Checking for Ollama..."
-if (Get-Command "ollama" -ErrorAction SilentlyContinue) {
-    Write-Host "    Ollama is already installed." -ForegroundColor Green
-} else {
-    Write-Host "    Ollama not found. Attempting to install via Winget..." -ForegroundColor Yellow
-    try {
-        # --silent suppresses the Ollama installer GUI that pops up during
-        # winget install — without it, users see an unwanted desktop window.
-        winget install -e --id Ollama.Ollama --silent --accept-source-agreements --accept-package-agreements
-        if ($LASTEXITCODE -ne 0) {
-            throw "Winget installation failed."
-        }
-
-        # Winget triggers the Ollama desktop app post-install (GUI + autostart).
-        # We only need the headless CLI server. Kill all Ollama processes with a
-        # retry loop — the single-attempt approach was unreliable because the
-        # GUI spawns asynchronously after winget returns.
-        for ($attempt = 0; $attempt -lt 5; $attempt++) {
-            Start-Sleep -Seconds 2
-            Get-Process "Ollama*" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-        }
-        Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "Ollama" -ErrorAction SilentlyContinue
-        Write-Host "    Ollama installed (headless mode)." -ForegroundColor Green
-
-        # Refresh PATH so the current session finds ollama.exe
-        $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
-        $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-        $env:Path = "$machinePath;$userPath"
-    } catch {
-        Write-Host "    Failed to install Ollama automatically." -ForegroundColor Red
-        Write-Host "    Please install it manually from https://ollama.com/download/windows"
-        exit 1
-    }
+# 1. Install/Update Ollama
+# winget install handles both fresh installs and in-place updates. Exits
+# quickly when already current. Keeping Ollama up-to-date prevents model pull
+# failures caused by version incompatibilities with newer model formats.
+Write-Host "[*] Installing/updating Ollama..."
+winget install -e --id Ollama.Ollama --silent --accept-source-agreements --accept-package-agreements 2>$null
+if ($LASTEXITCODE -ne 0 -and -not (Get-Command "ollama" -ErrorAction SilentlyContinue)) {
+    Write-Host "    Failed to install Ollama." -ForegroundColor Red
+    Write-Host "    Please install manually from https://ollama.com/download/windows"
+    exit 1
 }
 
-# Ollama CLI commands (pull, list) handle their own server lifecycle internally —
-# they start a temporary server on demand. An explicit 'ollama serve' + HTTP
-# readiness check was causing spurious failures: the first launch timed out
-# waiting for the server, but the second succeeded because the orphaned server
-# from the previous attempt was still running.
+# winget may trigger the Ollama desktop GUI. Kill it — we only need the
+# headless CLI server. Retry loop because the GUI spawns asynchronously.
+for ($attempt = 0; $attempt -lt 3; $attempt++) {
+    Start-Sleep -Seconds 1
+    Get-Process "Ollama*" -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -ne "ollama" } | Stop-Process -Force -ErrorAction SilentlyContinue
+}
+Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "Ollama" -ErrorAction SilentlyContinue
+
+# Refresh PATH so the current session finds ollama.exe
+$machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+$env:Path = "$machinePath;$userPath"
+
+Write-Host "    Ollama ready." -ForegroundColor Green
+
+# Windows Ollama CLI does NOT auto-start a temporary server like macOS/Linux.
+# Without a running server, every 'ollama pull' fails with "connection refused".
+# Start a background server and wait for readiness before pulling models.
+Write-Host "[*] Starting Ollama server..."
+$ollamaProcess = $null
+try {
+    $ollamaProcess = Start-Process -FilePath "ollama" -ArgumentList "serve" -PassThru -WindowStyle Hidden -ErrorAction Stop
+    # Poll /api/tags until the server accepts connections (max 15s)
+    $ready = $false
+    for ($i = 0; $i -lt 30; $i++) {
+        Start-Sleep -Milliseconds 500
+        try {
+            Invoke-RestMethod -Uri "http://127.0.0.1:11434/api/tags" -TimeoutSec 2 | Out-Null
+            $ready = $true
+            break
+        } catch {}
+    }
+    if ($ready) {
+        Write-Host "    Ollama server ready." -ForegroundColor Green
+    } else {
+        Write-Host "    [WARN] Ollama server did not respond in time — pulls may fail." -ForegroundColor Yellow
+    }
+} catch {
+    Write-Host "    [WARN] Could not start Ollama server: $_" -ForegroundColor Yellow
+}
 
 # 2. Check Configuration & Determine Mode
 $appDataPath = $env:APPDATA
@@ -142,6 +153,12 @@ if (!(Test-Path $configFile)) {
      Write-Host "[*] Configuration already exists. Skipping generation." -ForegroundColor Gray
 }
 
+
+# Stop the background Ollama server — it was only needed for model pulls.
+# The application manages its own Ollama connection at runtime.
+if ($ollamaProcess -ne $null -and -not $ollamaProcess.HasExited) {
+    Stop-Process -Id $ollamaProcess.Id -Force -ErrorAction SilentlyContinue
+}
 
 Write-Host "Setup Complete! Ready to Run." -ForegroundColor Green
 Exit 0

@@ -10,32 +10,34 @@ package de.bsommerfeld.updater.api;
  * A ratio of {@code -1} signals indeterminate progress — the UI
  * should show a pulsing bar instead of a filled one.
  *
- * @param phase         high-level phase name shown as the primary label
- *                      (e.g. "Downloading update", "Extracting files")
- * @param detail        optional secondary label with specifics
- *                      (e.g. "javafx-web-25.jar — 3.2 MB / 12.4 MB")
- * @param progressRatio 0.0–1.0 within the current phase, or -1 for
- *                      indeterminate
+ * @param phase            high-level phase name shown as the primary label
+ * @param detail           optional secondary label with specifics
+ * @param progressRatio    0.0–1.0 within the current phase, or -1 for indeterminate
+ * @param speedBytesPerSec current download speed in bytes/s, or -1 when not downloading
  */
-public record UpdateProgress(String phase, String detail, double progressRatio) {
+public record UpdateProgress(String phase, String detail, double progressRatio, long speedBytesPerSec) {
 
-    /** Creates an indeterminate progress event with no detail text. */
+    /** Speed not recalculated this tick — UI should keep previous value. */
+    public static final long SPEED_UNCHANGED = -2;
+
     public static UpdateProgress indeterminate(String phase) {
-        return new UpdateProgress(phase, null, -1);
+        return new UpdateProgress(phase, null, -1, -1);
     }
 
-    /** Creates a determinate progress event with no detail text. */
     public static UpdateProgress of(String phase, double ratio) {
-        return new UpdateProgress(phase, null, Math.clamp(ratio, 0.0, 1.0));
+        return new UpdateProgress(phase, null, Math.clamp(ratio, 0.0, 1.0), -1);
     }
 
-    /** Creates a determinate progress event with detail text. */
     public static UpdateProgress of(String phase, String detail, double ratio) {
-        return new UpdateProgress(phase, detail, Math.clamp(ratio, 0.0, 1.0));
+        return new UpdateProgress(phase, detail, Math.clamp(ratio, 0.0, 1.0), -1);
     }
 
-    /** Creates an indeterminate progress event with detail text. */
     public static UpdateProgress indeterminate(String phase, String detail) {
-        return new UpdateProgress(phase, detail, -1);
+        return new UpdateProgress(phase, detail, -1, -1);
+    }
+
+    /** Creates a download progress event carrying transfer speed. */
+    public static UpdateProgress download(String phase, String detail, double ratio, long speedBytesPerSec) {
+        return new UpdateProgress(phase, detail, Math.clamp(ratio, 0.0, 1.0), speedBytesPerSec);
     }
 }

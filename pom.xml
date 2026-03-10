@@ -29,7 +29,7 @@
         <maven.compiler.source>25</maven.compiler.source>
         <maven.compiler.target>25</maven.compiler.target>
         <maven.compiler.release>25</maven.compiler.release>
-        <javafx.version>25-ea+1</javafx.version>
+        <javafx.version>25.0.2</javafx.version>
 
         <langchain4j.version>1.11.0</langchain4j.version>
         <slf4j.version>2.0.9</slf4j.version>
@@ -40,9 +40,9 @@
 
         <eclipse-collections.version>11.1.0</eclipse-collections.version>
         <jshepherd.version>4.0.1</jshepherd.version>
-        <jfx-frameless.version>0.1.1</jfx-frameless.version>
         <logback.version>1.4.14</logback.version>
         <flatten-maven-plugin.version>1.6.0</flatten-maven-plugin.version>
+        <test.excludedGroups>integration</test.excludedGroups>
     </properties>
 
     <dependencyManagement>
@@ -81,11 +81,6 @@
             </dependency>
 
 
-            <dependency>
-                <groupId>de.bsommerfeld</groupId>
-                <artifactId>jfx-frameless</artifactId>
-                <version>${jfx-frameless.version}</version>
-            </dependency>
 
 
             <dependency>
@@ -237,6 +232,7 @@
                     <version>3.2.5</version>
                     <configuration>
                         <argLine>--enable-preview -Dnet.bytebuddy.experimental=true</argLine>
+                        <excludedGroups>${test.excludedGroups}</excludedGroups>
                     </configuration>
                 </plugin>
             </plugins>

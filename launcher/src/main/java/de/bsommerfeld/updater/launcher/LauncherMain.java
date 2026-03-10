@@ -56,6 +56,9 @@ public final class LauncherMain {
         initLogging(appDir);
         log(appDir, "Launcher started");
 
+        LauncherI18n i18n = new LauncherI18n(appDir);
+        log(appDir, "Language: " + i18n.language());
+
         TinyUpdateClient updateClient = new TinyUpdateClient(REPO, appDir);
 
         boolean firstRun = updateClient.currentVersion() == null;
@@ -71,10 +74,10 @@ public final class LauncherMain {
 
         Thread.ofVirtual().name("update-thread").start(() -> {
             try {
-                runUpdatePhase(updateClient, window, appDir, firstRun);
-                runEnvironmentPhase(envSetup, window, appDir);
-                runLaunchPhase(appDir, window, args);
-            } catch (Exception e) {
+                runUpdatePhase(updateClient, window, appDir, firstRun, i18n);
+                runEnvironmentPhase(envSetup, window, appDir, i18n);
+                runLaunchPhase(appDir, window, args, i18n);
+            } catch (Throwable e) {
                 handleFatalError(appDir, window, e);
             }
         });
@@ -90,19 +93,35 @@ public final class LauncherMain {
      * which case there is nothing to fall back to.
      */
     private static void runUpdatePhase(TinyUpdateClient client, LauncherWindow window,
-            Path appDir, boolean showWindow) {
+            Path appDir, boolean showWindow, LauncherI18n i18n) {
         try {
+            log(appDir, "Starting update check");
             if (showWindow) {
                 SwingUtilities.invokeLater(() -> window.setVisible(true));
             }
+
+            // Track last logged phase to avoid duplicate log lines
+            String[] lastPhase = {""};
 
             boolean updated = client.update(progress -> {
                 if (!window.isVisible() && progress.progressRatio() >= 0 && progress.progressRatio() < 1.0) {
                     SwingUtilities.invokeLater(() -> window.setVisible(true));
                 }
-                window.setStatus(progress.phase());
-                window.setDetail(progress.detail());
+
+                // Log phase transitions and meaningful detail changes
+                String phase = progress.phase();
+                String detail = progress.detail();
+                if (!phase.equals(lastPhase[0])) {
+                    String logMsg = "[update] " + phase;
+                    if (detail != null) logMsg += " — " + detail;
+                    log(appDir, logMsg);
+                    lastPhase[0] = phase;
+                }
+
+                window.setStatus(i18n.get(phase));
+                window.setDetail(detail);
                 window.setProgress(progress.progressRatio());
+                window.setSpeed(progress.speedBytesPerSec());
             });
 
             log(appDir, updated
@@ -111,9 +130,10 @@ public final class LauncherMain {
 
         } catch (Exception e) {
             log(appDir, "Update check failed: " + e.getMessage());
+            logStackTrace(appDir, e);
             if (client.currentVersion() != null) {
-                window.setStatus("Update check failed");
-                window.setDetail("launching cached version");
+                window.setStatus(i18n.get("Update check failed"));
+                window.setDetail(null);
                 sleep(2000);
             } else {
                 throw new RuntimeException(
@@ -133,7 +153,7 @@ public final class LauncherMain {
      * sees the launcher flash.
      */
     private static void runEnvironmentPhase(EnvironmentSetup setup, LauncherWindow window,
-            Path appDir) throws IOException, InterruptedException {
+            Path appDir, LauncherI18n i18n) throws IOException, InterruptedException {
 
         boolean success = setup.run((phase, detail) -> {
             log(appDir, "[setup] " + phase + (detail != null ? " — " + detail : ""));
@@ -171,32 +191,41 @@ public final class LauncherMain {
 
         if (!success) {
             log(appDir, "Environment setup returned non-zero — proceeding anyway");
-            window.setStatus("Setup completed with warnings");
+            window.setStatus(i18n.get("Setup completed with warnings"));
             window.setDetail(null);
             sleep(2000);
         }
     }
 
     /**
-     * Spawns the application process and exits the launcher. A brief delay
-     * ensures the user sees "Launching..." before the window disappears.
+     * Spawns the application process and exits the launcher. When the window
+     * was never shown (everything cached, no setup work), the launch is silent
+     * — no delay, no visible feedback. When visible, a brief delay ensures
+     * the user sees "Launching..." before the window disappears.
      */
-    private static void runLaunchPhase(Path appDir, LauncherWindow window, String[] args)
-            throws IOException {
-        window.setStatus("Launching application...");
-        window.setDetail(null);
-        window.setProgress(1.0);
+    private static void runLaunchPhase(Path appDir, LauncherWindow window, String[] args,
+            LauncherI18n i18n) throws IOException {
         log(appDir, "Launching application");
+
+        // Only show launch status when the user already sees the window.
+        // Flashing it for a cached no-op start is disruptive.
+        boolean wasVisible = window.isVisible();
+        if (wasVisible) {
+            window.setStatus(i18n.get("Launching application"));
+            window.setDetail(null);
+            window.setProgress(1.0);
+        }
 
         AppLauncher launcher = new AppLauncher(appDir);
         launcher.launch(args);
 
-        sleep(800);
-
-        SwingUtilities.invokeLater(() -> {
-            window.setVisible(false);
-            window.dispose();
-        });
+        if (wasVisible) {
+            sleep(800);
+            SwingUtilities.invokeLater(() -> {
+                window.setVisible(false);
+                window.dispose();
+            });
+        }
 
         log(appDir, "Launcher exiting");
         System.exit(0);
@@ -210,8 +239,13 @@ public final class LauncherMain {
      * Shows the launcher window with the error and presents a modal dialog.
      * Ensures the user is never left staring at a blank screen.
      */
-    private static void handleFatalError(Path appDir, LauncherWindow window, Exception e) {
-        log(appDir, "Fatal: " + e.getMessage());
+    private static void handleFatalError(Path appDir, LauncherWindow window, Throwable e) {
+        // Log to file and stderr — the file may not exist yet, so stderr is the fallback
+        String msg = "Fatal: " + e.getMessage();
+        log(appDir, msg);
+        logStackTrace(appDir, e);
+        e.printStackTrace(System.err);
+
         SwingUtilities.invokeLater(() -> {
             window.setVisible(true);
             window.setStatus("Error: " + e.getMessage());
@@ -222,11 +256,23 @@ public final class LauncherMain {
         System.exit(1);
     }
 
+    /** Writes the full stack trace to the session log file. */
+    private static void logStackTrace(Path appDir, Throwable e) {
+        StringBuilder sb = new StringBuilder();
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            sb.append(t.getClass().getName()).append(": ").append(t.getMessage()).append('\n');
+            for (StackTraceElement frame : t.getStackTrace()) {
+                sb.append("  at ").append(frame).append('\n');
+            }
+        }
+        log(appDir, sb.toString());
+    }
+
     /**
      * Presents a Swing error dialog with the exception's stack trace, truncated
      * to 500 characters to avoid overflowing the dialog bounds.
      */
-    private static void showErrorDialog(String message, Exception e) {
+    private static void showErrorDialog(String message, Throwable e) {
         StringWriter sw = new StringWriter();
         e.printStackTrace(new PrintWriter(sw));
         String trace = sw.toString();
@@ -302,6 +348,7 @@ public final class LauncherMain {
         try {
             String timestamp = LocalDateTime.now().format(LOG_TIMESTAMP);
             String line = "[" + timestamp + "] " + message + "\n";
+            System.err.print(line);
             Files.writeString(sessionLogFile, line,
                     StandardOpenOption.CREATE,
                     StandardOpenOption.APPEND);

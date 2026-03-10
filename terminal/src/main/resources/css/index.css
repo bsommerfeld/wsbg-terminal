@@ -1,19 +1,12 @@
-/* WSBG Terminal — JavaFX Stylesheet
-   'Digital Ether' / High-Fidelity Retro-Cozy Theme
-
-   NOTE: WebView content (terminal log) is styled separately
-   in webview/terminal.css using standard CSS.
-   This file targets only JavaFX CSS properties (-fx-*). */
-
 /* =====================================================================
    Design Tokens
    ===================================================================== */
 
 .root {
-    -fx-background-color: transparent;
+    -fx-background-color: #0f0f0f;
     -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
 
-    color-bg-deep: #050505;
+    color-bg-deep: #0f0f0f;
     color-bg-card: rgba(20, 20, 20, 0.6);
     color-text-primary: #e0e0e0;
     color-text-secondary: #a0a0a0;
@@ -26,20 +19,14 @@
 }
 
 /* =====================================================================
-   Window Shell (jfx-frameless)
+   HeaderBar (StageStyle.EXTENDED)
    ===================================================================== */
 
-.window-shell-root {
-    -fx-background-color: #0a0a0a !important;
-    -fx-background-radius: 16 !important;
-    -fx-border-color: linear-gradient(to bottom, rgba(255, 255, 255, 0.35) 0%, rgba(255, 255, 255, 0.05) 40%, rgba(0, 0, 0, 0.3) 100%) !important;
-    -fx-border-width: 1px !important;
-    -fx-border-radius: 16 !important;
-    -fx-border-insets: 0 !important;
-}
-
-.window-shell-layout {
-    -fx-background-color: transparent;
+.custom-header-bar {
+    -fx-background-color: #0f0f0f;
+    -fx-border-color: transparent transparent rgba(255, 255, 255, 0.06) transparent;
+    -fx-border-width: 0 0 1 0;
+    -fx-padding: 4 8 4 8;
 }
 
 /* =====================================================================
@@ -109,68 +96,6 @@
 .window-header:pressed,
 .title-bar:pressed {
     -fx-cursor: closed-hand;
-}
-
-.custom-title-bar-overlay {
-    -fx-border-color: #222;
-    -fx-border-width: 0 0 1px 0;
-}
-
-/* =====================================================================
-   Traffic Light Buttons (macOS / Windows+Linux)
-   ===================================================================== */
-
-.custom-traffic-light {
-    -fx-background-radius: 50%;
-    -fx-min-width: 12px;
-    -fx-min-height: 12px;
-    -fx-max-width: 12px;
-    -fx-max-height: 12px;
-    -fx-padding: 0;
-    -fx-background-color: rgba(40, 40, 40, 0.5) !important;
-    -fx-text-fill: transparent !important;
-    -fx-border-color: transparent !important;
-    -fx-border-width: 0 !important;
-    -fx-effect: null !important;
-    -fx-cursor: hand;
-    -fx-background-insets: 0;
-}
-
-/* macOS: hidden by default, shown per-button on hover */
-.os-mac .traffic-light-icon {
-    -fx-opacity: 0;
-}
-
-.os-mac .custom-traffic-light:hover .traffic-light-icon {
-    -fx-opacity: 1.0 !important;
-}
-
-/* Close (Red) */
-.custom-traffic-light.close:hover {
-    -fx-background-color: #FF5F57 !important;
-}
-
-/* Minimize (Yellow) */
-.custom-traffic-light.minimize:hover {
-    -fx-background-color: #FEBC2E !important;
-}
-
-/* Maximize (Green) */
-.custom-traffic-light.maximize:hover {
-    -fx-background-color: #28C840 !important;
-}
-
-/* Windows / Linux: always visible */
-.os-win-linux .traffic-light-icon {
-    -fx-opacity: 0.7 !important;
-}
-
-.os-win-linux .custom-traffic-light:hover .traffic-light-icon {
-    -fx-opacity: 1.0 !important;
-}
-
-.custom-traffic-light:pressed {
-    -fx-background-color: derive(-fx-background-color, -10%);
 }
 
 /* =====================================================================
@@ -407,12 +332,12 @@
     -fx-border-radius: 100px;
     -fx-border-width: 1px;
     -fx-padding: 0 6 0 0;
-    -fx-min-width: 250px;
-    -fx-max-width: 400px;
-    -fx-min-height: 32px;
-    -fx-max-height: 32px;
+    -fx-min-width: 200px;
+    -fx-max-width: 350px;
+    -fx-min-height: 22px;
+    -fx-max-height: 22px;
     -fx-cursor: text;
-    -fx-effect: innershadow(gaussian, rgba(0, 0, 0, 0.8), 10, 0, 0, 2);
+    -fx-effect: innershadow(gaussian, rgba(0, 0, 0, 0.8), 6, 0, 0, 1);
 }
 
 /* Hover effect removed — Liquid Glass blob highlights controls */
@@ -431,8 +356,8 @@
     -fx-text-fill: #e0e0e0;
     -fx-prompt-text-fill: #666;
     -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
-    -fx-font-size: 13px;
-    -fx-padding: 0 0 0 10;
+    -fx-font-size: 11px;
+    -fx-padding: 0 0 0 8;
 }
 
 .title-search-field:focused {
@@ -465,10 +390,10 @@
 .utility-controls-box {
     -fx-background-color: rgba(40, 40, 40, 0.5);
     -fx-background-radius: 100px;
-    -fx-padding: 4px 6px;
-    -fx-min-height: 32px;
-    -fx-max-height: 32px;
-    -fx-effect: innershadow(gaussian, rgba(0, 0, 0, 0.8), 10, 0, 0, 2);
+    -fx-padding: 2px 4px;
+    -fx-min-height: 22px;
+    -fx-max-height: 22px;
+    -fx-effect: innershadow(gaussian, rgba(0, 0, 0, 0.8), 6, 0, 0, 1);
     -fx-border-color: transparent transparent rgba(255, 255, 255, 0.1) transparent;
     -fx-border-width: 1px;
     -fx-border-radius: 100px;
@@ -485,10 +410,10 @@
     -fx-background-color: transparent;
     -fx-text-fill: #666666;
     -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
-    -fx-font-size: 12px;
+    -fx-font-size: 10px;
     -fx-border-width: 0;
-    -fx-padding: 0 8;
-    -fx-min-height: 24px;
+    -fx-padding: 0 5;
+    -fx-min-height: 18px;
     -fx-cursor: hand;
     -fx-alignment: center;
 }
@@ -511,10 +436,10 @@
 .icon-broom {
     -fx-shape: "M440-520h80v-280q0-17-11.5-28.5T480-840q-17 0-28.5 11.5T440-800v280ZM200-360h560v-80H200v80Zm-58 240h98v-80q0-17 11.5-28.5T280-240q17 0 28.5 11.5T320-200v80h120v-80q0-17 11.5-28.5T480-240q17 0 28.5 11.5T520-200v80h120v-80q0-17 11.5-28.5T680-240q17 0 28.5 11.5T720-200v80h98l-40-160H182l-40 160Zm676 80H142q-39 0-63-31t-14-69l55-220v-80q0-33 23.5-56.5T200-520h160v-280q0-50 35-85t85-35q50 0 85 35t35 85v280h160q33 0 56.5 23.5T840-440v80l55 220q13 38-11.5 69T818-40Zm-58-400H200h560Zm-240-80h-80 80Z";
     -fx-background-color: #666666;
-    -fx-min-width: 16px;
-    -fx-min-height: 16px;
-    -fx-max-width: 16px;
-    -fx-max-height: 16px;
+    -fx-min-width: 13px;
+    -fx-min-height: 13px;
+    -fx-max-width: 13px;
+    -fx-max-height: 13px;
     -fx-scale-shape: true;
 }
 
@@ -526,20 +451,20 @@
 .icon-graph {
     -fx-shape: "M280-80q-50 0-85-35t-35-85q0-39 22.5-70t57.5-43v-334q-35-12-57.5-43T160-760q0-50 35-85t85-35q50 0 85 35t35 85q0 39-22.5 70T320-647v7q0 50 35 85t85 35h80q83 0 141.5 58.5T720-320v7q35 12 57.5 43t22.5 70q0 50-35 85t-85 35q-50 0-85-35t-35-85q0-39 22.5-70t57.5-43v-7q0-50-35-85t-85-35h-80q-34 0-64.5-10.5T320-480v167q35 12 57.5 43t22.5 70q0 50-35 85t-85 35Zm0-80q17 0 28.5-11.5T320-200q0-17-11.5-28.5T280-240q-17 0-28.5 11.5T240-200q0 17 11.5 28.5T280-160Zm400 0q17 0 28.5-11.5T720-200q0-17-11.5-28.5T680-240q-17 0-28.5 11.5T640-200q0 17 11.5 28.5T680-160ZM280-720q17 0 28.5-11.5T320-760q0-17-11.5-28.5T280-800q-17 0-28.5 11.5T240-760q0 17 11.5 28.5T280-720Z";
     -fx-background-color: #666666;
-    -fx-min-width: 16px;
-    -fx-min-height: 16px;
-    -fx-max-width: 16px;
-    -fx-max-height: 16px;
+    -fx-min-width: 13px;
+    -fx-min-height: 13px;
+    -fx-max-width: 13px;
+    -fx-max-height: 13px;
     -fx-scale-shape: true;
 }
 
 .icon-settings {
     -fx-shape: "M433-80q-27 0-46.5-18T367-143l-10-69q-13-5-24.5-12T309-237l-64 31q-25 11-50 2t-36-32l-47-82q-11-25-3-49t29-38l53-40q-1-7-1.5-13.5T189-472q0-7 .5-13.5T191-499l-53-40q-21-14-29-38t3-49l47-82q11-23 36-32t50 2l64 31q12-7 24-14t25-12l10-69q3-27 22.5-45T433-880h94q27 0 46.5 18t22.5 45l10 69q13 5 25 12t23 14l64-31q25-11 50-2t36 32l47 82q11 25 3 49t-29 38l-53 40q1 7 1.5 13.5t.5 13.5q0 7-.5 13.5T772-499l53 40q21 14 29 38t-3 49l-47 82q-11 23-36 32t-50-2l-64-31q-11 7-23 14t-25 12l-10 69q-3 27-22.5 45T527-80h-94Zm47-260q58 0 99-41t41-99q0-58-41-99t-99-41q-58 0-99 41t-41 99q0 58 41 99t99 41Z";
     -fx-background-color: #666666;
-    -fx-min-width: 16px;
-    -fx-min-height: 16px;
-    -fx-max-width: 16px;
-    -fx-max-height: 16px;
+    -fx-min-width: 13px;
+    -fx-min-height: 13px;
+    -fx-max-width: 13px;
+    -fx-max-height: 13px;
     -fx-scale-shape: true;
 }
 
@@ -548,20 +473,20 @@
 .icon-settings-alert {
     -fx-shape: "M508.5-331.5Q520-343 520-360t-11.5-28.5Q497-400 480-400t-28.5 11.5Q440-377 440-360t11.5 28.5Q463-320 480-320t28.5-11.5ZM440-440h80v-200h-80v200ZM370-80l-16-128q-13-5-24.5-12T307-235l-119 50L78-375l103-78q-1-7-1-13.5v-27q0-6.5 1-13.5L78-585l110-190 119 50q11-8 23-15t24-12l16-128h220l16 128q13 5 24.5 12t22.5 15l119-50 110 190-103 78q1 7 1 13.5v27q0 6.5-2 13.5l103 78-110 190-118-50q-11 8-23 15t-24 12L590-80H370Zm70-80h79l14-106q31-8 57.5-23.5T639-327l99 41 39-68-86-65q5-14 7-29.5t2-31.5q0-16-2-31.5t-7-29.5l86-65-39-68-99 42q-22-23-48.5-38.5T533-694l-13-106h-79l-14 106q-31 8-57.5 23.5T321-633l-99-41-39 68 86 64q-5 15-7 30t-2 32q0 16 2 31t7 30l-86 65 39 68 99-42q22 23 48.5 38.5T427-266l13 106Zm40-320Z";
     -fx-background-color: #666666;
-    -fx-min-width: 16px;
-    -fx-min-height: 16px;
-    -fx-max-width: 16px;
-    -fx-max-height: 16px;
+    -fx-min-width: 13px;
+    -fx-min-height: 13px;
+    -fx-max-width: 13px;
+    -fx-max-height: 13px;
     -fx-scale-shape: true;
 }
 
 .icon-view-terminal {
     -fx-shape: "M160-160q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h640q33 0 56.5 23.5T880-720v480q0 33-23.5 56.5T800-160H160Zm0-80h640v-400H160v400Zm140-40-56-56 103-104-104-104 57-56 160 160-160 160Zm180 0v-80h240v80H480Z";
     -fx-background-color: #666666;
-    -fx-min-width: 16px;
-    -fx-min-height: 16px;
-    -fx-max-width: 16px;
-    -fx-max-height: 16px;
+    -fx-min-width: 13px;
+    -fx-min-height: 13px;
+    -fx-max-width: 13px;
+    -fx-max-height: 13px;
     -fx-scale-shape: true;
 }
 
