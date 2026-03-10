@@ -22,7 +22,7 @@ import java.util.zip.ZipInputStream;
  * GitHub Releases-backed implementation of {@link UpdateClient}.
  *
  * <h3>Update pipeline</h3>
- * 
+ *
  * <pre>
  * 1. Resolve latest release tag via GitHub API
  * 2. Compare tag against local version.txt → skip if equal
@@ -34,10 +34,9 @@ import java.util.zip.ZipInputStream;
  * </pre>
  *
  * <h3>Progress reporting</h3>
- * Every pipeline step emits {@link UpdateProgress} events via the consumer
- * callback, enabling the launcher UI to display phase names, detail text,
- * and a progress bar. Download progress includes formatted byte counts
- * (e.g. "3.2 MB / 12.4 MB").
+ * Each pipeline step reports its own 0.0→1.0 progress ratio independently.
+ * The step counter (step/totalSteps) tells the UI where in the overall
+ * pipeline we are, while the progress bar only reflects the current phase.
  */
 public final class TinyUpdateClient implements UpdateClient {
 
@@ -45,11 +44,28 @@ public final class TinyUpdateClient implements UpdateClient {
     private final Path appDirectory;
     private final UpdateManager updateManager;
 
+    // Extra steps beyond downloads (e.g. AI model install) —
+    // included in the total so the step counter is consistent
+    // across both update and environment phases.
+    private int extraSteps = 0;
+
     public TinyUpdateClient(GitHubRepository repository, Path appDirectory) {
         this.repository = repository;
         this.appDirectory = appDirectory;
         this.updateManager = new UpdateManager(appDirectory);
     }
+
+    /** Adds extra steps to the pipeline total (e.g. +1 for AI model install). */
+    public void setExtraSteps(int extraSteps) {
+        this.extraSteps = extraSteps;
+    }
+
+    /** Returns the number of download steps the last update had. */
+    public int lastDownloadStepCount() {
+        return lastDownloadSteps;
+    }
+
+    private int lastDownloadSteps = 0;
 
     /**
      * Runs the full update pipeline.
@@ -120,15 +136,10 @@ public final class TinyUpdateClient implements UpdateClient {
     }
 
     /**
-     * Downloads the zip, extracts outdated files, verifies integrity,
-     * and cleans up orphans. The zip is downloaded fully into memory
-     * before extraction — either the entire zip is available or nothing
-     * is written to disk, preventing partial-file states on network failures.
-     *
-     * <p>Pipeline steps use Discord-style status: "Downloading update 1/4".
-     * The progress ratio represents overall pipeline position, not
-     * per-step byte ratios — this prevents confusing jumps when
-     * a step with few items (e.g. 3 app files) finishes quickly.
+     * Downloads, extracts, verifies, and cleans up. Only downloads
+     * count as steps (with progress bar 0→100%). Extraction is shown
+     * as a status label with indeterminate dot but no step counter.
+     * Verify and cleanup run silently.
      */
     private void applyUpdate(String releaseJson, UpdateCheckResult diff,
             Consumer<UpdateProgress> progress) throws Exception {
@@ -137,52 +148,52 @@ public final class TinyUpdateClient implements UpdateClient {
         UpdateManifest manifest = JsonParser.parseManifest(Downloader.toString(manifestUrl));
 
         boolean hasSplitZips = hasAsset(releaseJson, "app.zip") && hasAsset(releaseJson, "deps.zip");
-        boolean hasOrphans = !diff.orphaned().isEmpty();
 
-        // Step count: download + extract (×2 if split) + verify + cleanup (if orphans)
-        int totalSteps = hasSplitZips ? 4 : 2;
-        totalSteps++; // verify
-        if (hasOrphans) totalSteps++;
+        // Only downloads count as steps
+        int downloadSteps = hasSplitZips ? 2 : 1;
+        int totalSteps = downloadSteps + extraSteps;
+        lastDownloadSteps = downloadSteps;
         int step = 0;
 
         if (hasSplitZips) {
             step++;
-            final int dlAppStep = step;
-            byte[] appZipData = downloadZip(releaseJson, "app.zip", "Downloading update", dlAppStep, totalSteps, progress);
-            step++;
-            extractOutdatedFiles(appZipData, diff, "Extracting files", step, totalSteps, progress);
+            byte[] appZipData = downloadZip(releaseJson, "app.zip",
+                    "Downloading update", step, totalSteps, progress);
+
+            progress.accept(UpdateProgress.indeterminate("Extracting files"));
+            extractOutdatedFiles(appZipData, diff);
 
             UpdateCheckResult remainingDiff = updateManager.check(manifest);
             if (!remainingDiff.outdated().isEmpty()) {
                 step++;
-                final int dlDepsStep = step;
-                byte[] depsZipData = downloadZip(releaseJson, "deps.zip", "Downloading dependencies", dlDepsStep, totalSteps, progress);
-                step++;
-                extractOutdatedFiles(depsZipData, remainingDiff, "Extracting dependencies", step, totalSteps, progress);
+                byte[] depsZipData = downloadZip(releaseJson, "deps.zip",
+                        "Downloading dependencies", step, totalSteps, progress);
+
+                progress.accept(UpdateProgress.indeterminate("Extracting dependencies"));
+                extractOutdatedFiles(depsZipData, remainingDiff);
             }
         } else {
             step++;
-            final int dlStep = step;
-            byte[] zipData = downloadZip(releaseJson, "files.zip", "Downloading update", dlStep, totalSteps, progress);
-            step++;
-            extractOutdatedFiles(zipData, diff, "Extracting files", step, totalSteps, progress);
+            byte[] zipData = downloadZip(releaseJson, "files.zip",
+                    "Downloading update", step, totalSteps, progress);
+
+            progress.accept(UpdateProgress.indeterminate("Extracting files"));
+            extractOutdatedFiles(zipData, diff);
         }
 
-        step++;
-        progress.accept(UpdateProgress.of("Verifying integrity", step + "/" + totalSteps, (double) step / totalSteps));
+        progress.accept(UpdateProgress.indeterminate("Verifying integrity"));
         updateManager.verify(manifest);
 
-        if (hasOrphans) {
-            step++;
-            progress.accept(UpdateProgress.of("Cleaning up", step + "/" + totalSteps, (double) step / totalSteps));
+        if (!diff.orphaned().isEmpty()) {
             updateManager.deleteOrphans(diff.orphaned());
         }
     }
 
     /**
-     * Downloads an archive with byte-level progress mapped to the
-     * overall pipeline position. For step 1/5 with 50% downloaded,
-     * the ratio is (1-1 + 0.5) / 5 = 0.1.
+     * Downloads an archive with per-phase progress (0.0→1.0).
+     * Speed is computed from total bytes / elapsed time — inherently
+     * race-free with parallel downloads since {@code read} is backed
+     * by an AtomicLong.
      */
     private byte[] downloadZip(String releaseJson, String assetName,
             String phaseName, int step, int totalSteps,
@@ -190,23 +201,18 @@ public final class TinyUpdateClient implements UpdateClient {
         String zipUrl = findAssetUrl(releaseJson, assetName);
         trace("Downloading " + assetName + " from " + zipUrl);
 
-        progress.accept(UpdateProgress.of(phaseName, step + "/" + totalSteps, (step - 1.0) / totalSteps));
+        progress.accept(UpdateProgress.of(phaseName, step, totalSteps, 0.0));
 
-        // [0]=lastLogTime, [1]=lastLogBytes
         long startTime = System.currentTimeMillis();
         long[] tracker = {startTime, 0};
 
         byte[] data = Downloader.toBytes(zipUrl, (read, total) -> {
-            double subRatio = total > 0 ? (double) read / total : 0;
-            double overallRatio = (step - 1.0 + subRatio) / totalSteps;
+            double ratio = total > 0 ? (double) read / total : 0;
 
-            // Speed from total bytes / total elapsed — inherently race-free
-            // because `read` is backed by AtomicLong (globalTransferred)
-            // and `startTime` is a constant. No locks needed.
             long elapsed = System.currentTimeMillis() - startTime;
             long speed = elapsed > 500 ? (read * 1000) / elapsed : -1;
 
-            progress.accept(UpdateProgress.download(phaseName, step + "/" + totalSteps, overallRatio,
+            progress.accept(UpdateProgress.download(phaseName, step, totalSteps, ratio,
                     speed >= 0 ? speed : UpdateProgress.SPEED_UNCHANGED));
 
             long now = System.currentTimeMillis();
@@ -230,21 +236,18 @@ public final class TinyUpdateClient implements UpdateClient {
     // =====================================================================
 
     /**
-     * Extracts only the files flagged as outdated from the zip — unchanged
-     * files in the archive are skipped entirely. Reports per-file progress
-     * as a detail label (e.g. "launcher.jar 2/3") while keeping the
-     * overall pipeline ratio from the step counter.
+     * Extracts only the files flagged as outdated from the zip.
+     * No per-file progress — extraction is brief and the UI shows
+     * an indeterminate dot during this phase.
      */
-    private void extractOutdatedFiles(byte[] zipData, UpdateCheckResult diff,
-            String phaseName, int step, int totalSteps,
-            Consumer<UpdateProgress> progress) throws IOException {
+    private void extractOutdatedFiles(byte[] zipData, UpdateCheckResult diff) throws IOException {
         Set<String> outdatedPaths = diff.outdated().stream()
                 .map(FileEntry::path)
                 .collect(Collectors.toSet());
 
         int total = outdatedPaths.size();
         int extracted = 0;
-        trace("Extracting " + total + " files from " + phaseName);
+        trace("Extracting " + total + " files");
 
         try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(zipData))) {
             ZipEntry entry;
@@ -252,20 +255,11 @@ public final class TinyUpdateClient implements UpdateClient {
                 if (entry.isDirectory())
                     continue;
 
-                // Normalize Windows backslashes so the path matches the manifest
                 String name = entry.getName().replace('\\', '/');
                 if (!outdatedPaths.contains(name))
                     continue;
 
                 extracted++;
-                String fileName = name.contains("/") ? name.substring(name.lastIndexOf('/') + 1) : name;
-                String detail = fileName + " " + extracted + "/" + total;
-
-                // Interpolate within step: ratio moves from (step-1)/total to step/total
-                double subRatio = (double) extracted / total;
-                double overallRatio = (step - 1.0 + subRatio) / totalSteps;
-                progress.accept(UpdateProgress.of(phaseName, detail, overallRatio));
-
                 Path target = appDirectory.resolve(name);
                 Files.createDirectories(target.getParent());
                 Files.copy(zis, target, StandardCopyOption.REPLACE_EXISTING);
@@ -281,12 +275,6 @@ public final class TinyUpdateClient implements UpdateClient {
     /**
      * Scans the GitHub release JSON for a named asset and returns its
      * {@code browser_download_url}.
-     *
-     * <p>
-     * GitHub's release API returns assets as an array of objects, each
-     * containing a {@code name} and a {@code browser_download_url} field.
-     * This method walks the JSON linearly looking for a matching name,
-     * then reads the download URL from the same asset object.
      *
      * @throws IOException if the asset is not found in the release
      */

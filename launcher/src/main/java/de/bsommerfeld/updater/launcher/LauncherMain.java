@@ -60,6 +60,8 @@ public final class LauncherMain {
         log(appDir, "Language: " + i18n.language());
 
         TinyUpdateClient updateClient = new TinyUpdateClient(REPO, appDir);
+        // AI model install counts as a step in the unified pipeline
+        updateClient.setExtraSteps(1);
 
         boolean firstRun = updateClient.currentVersion() == null;
         LauncherWindow window = new LauncherWindow();
@@ -75,7 +77,7 @@ public final class LauncherMain {
         Thread.ofVirtual().name("update-thread").start(() -> {
             try {
                 runUpdatePhase(updateClient, window, appDir, firstRun, i18n);
-                runEnvironmentPhase(envSetup, window, appDir, i18n);
+                runEnvironmentPhase(envSetup, updateClient, window, appDir, i18n);
                 runLaunchPhase(appDir, window, args, i18n);
             } catch (Throwable e) {
                 handleFatalError(appDir, window, e);
@@ -100,7 +102,6 @@ public final class LauncherMain {
                 SwingUtilities.invokeLater(() -> window.setVisible(true));
             }
 
-            // Track last logged phase to avoid duplicate log lines
             String[] lastPhase = {""};
 
             boolean updated = client.update(progress -> {
@@ -108,18 +109,20 @@ public final class LauncherMain {
                     SwingUtilities.invokeLater(() -> window.setVisible(true));
                 }
 
-                // Log phase transitions and meaningful detail changes
                 String phase = progress.phase();
-                String detail = progress.detail();
-                if (!phase.equals(lastPhase[0])) {
-                    String logMsg = "[update] " + phase;
-                    if (detail != null) logMsg += " — " + detail;
-                    log(appDir, logMsg);
-                    lastPhase[0] = phase;
+
+                // Format: "Translated Phase (2/5)"
+                String label = i18n.get(phase);
+                if (progress.step() > 0 && progress.totalSteps() > 0) {
+                    label += " (" + progress.step() + "/" + progress.totalSteps() + ")";
                 }
 
-                window.setStatus(i18n.get(phase));
-                window.setDetail(detail);
+                if (!label.equals(lastPhase[0])) {
+                    log(appDir, "[update] " + label);
+                    lastPhase[0] = label;
+                }
+
+                window.setStatus(label);
                 window.setProgress(progress.progressRatio());
                 window.setSpeed(progress.speedBytesPerSec());
             });
@@ -133,7 +136,6 @@ public final class LauncherMain {
             logStackTrace(appDir, e);
             if (client.currentVersion() != null) {
                 window.setStatus(i18n.get("Update check failed"));
-                window.setDetail(null);
                 sleep(2000);
             } else {
                 throw new RuntimeException(
@@ -144,43 +146,71 @@ public final class LauncherMain {
 
     /**
      * Runs the environment setup script (installs/updates ollama, pulls models).
-     * Non-zero exit is logged but not fatal — the application may still work.
-     *
-     * <p>
-     * The window only becomes visible once the script emits a phase that
-     * indicates real work (model pull, install). When everything is already
-     * present, the script finishes in under a second and the user never
-     * sees the launcher flash.
+     * Model downloads are bundled under a single "Installing AI models" phase
+     * with its own step counter entry. Logs periodically to avoid console spam.
      */
-    private static void runEnvironmentPhase(EnvironmentSetup setup, LauncherWindow window,
-            Path appDir, LauncherI18n i18n) throws IOException, InterruptedException {
+    private static void runEnvironmentPhase(EnvironmentSetup setup, TinyUpdateClient client,
+            LauncherWindow window, Path appDir, LauncherI18n i18n)
+            throws IOException, InterruptedException {
+
+        // AI models = next step after the download steps
+        int envStep = client.lastDownloadStepCount() + 1;
+        int totalSteps = envStep; // downloads + this env step
+
+        // Periodic logging — ollama emits many lines per second
+        long[] logTracker = {0}; // [0]=lastLogTime
+        // Speed tracking from ollama's size output
+        long[] speedTracker = {0, 0}; // [0]=lastBytes, [1]=lastTime
+        // Track last logged message to log transitions immediately
+        String[] lastLoggedPhase = {""};
 
         boolean success = setup.run((phase, detail) -> {
-            log(appDir, "[setup] " + phase + (detail != null ? " — " + detail : ""));
+            long now = System.currentTimeMillis();
 
-            // Only show the window when actual work is happening — not for
-            // instant "already available" checks that finish in milliseconds.
-            // "Pulling" = model downloads, "Installing" = Ollama setup.
-            // Ignore "already installed" to prevent the launcher from flashing when no work
-            // is needed.
+            // Log transitions immediately, everything else periodically
+            String logKey = phase + (detail != null && detail.contains("%") ? "" : detail);
+            boolean isTransition = !logKey.equals(lastLoggedPhase[0]);
+            if (isTransition || now - logTracker[0] >= 2000) {
+                log(appDir, "[setup] " + phase + (detail != null ? " — " + detail : ""));
+                logTracker[0] = now;
+                lastLoggedPhase[0] = logKey;
+            }
+
             boolean isWork = phase.startsWith("Pulling")
                     || (detail != null && detail.contains("install") && !detail.contains("already installed"));
             if (!window.isVisible() && isWork) {
                 SwingUtilities.invokeLater(() -> window.setVisible(true));
             }
 
-            window.setStatus(phase);
-            window.setDetail(detail);
+            // Bundle all model pulls under "Installing AI models (N/N)"
+            if (phase.startsWith("Pulling")) {
+                String label = i18n.get("Installing AI models")
+                        + " (" + envStep + "/" + totalSteps + ")";
+                window.setStatus(label);
+            } else {
+                window.setStatus(i18n.get(phase));
+            }
 
-            // Drive the progress bar from percentage in detail (format: "42% — ...")
+            // Drive progress bar + speed from percentage in detail
             if (detail != null && !detail.isEmpty() && Character.isDigit(detail.charAt(0))) {
                 int pctIdx = detail.indexOf('%');
                 if (pctIdx > 0) {
                     try {
                         int pct = Integer.parseInt(detail.substring(0, pctIdx).strip());
                         window.setProgress(pct / 100.0);
+
+                        int dashIdx = detail.indexOf('—');
+                        if (dashIdx > 0) {
+                            long currentBytes = parseByteSize(detail.substring(dashIdx + 1).strip().split("/")[0].strip());
+                            if (speedTracker[1] > 0 && now - speedTracker[1] >= 500) {
+                                long speed = ((currentBytes - speedTracker[0]) * 1000) / (now - speedTracker[1]);
+                                if (speed >= 0) window.setSpeed(speed);
+                            }
+                            speedTracker[0] = currentBytes;
+                            speedTracker[1] = now;
+                        }
                         return;
-                    } catch (NumberFormatException ignored) {
+                    } catch (NumberFormatException | ArrayIndexOutOfBoundsException ignored) {
                     }
                 }
             }
@@ -189,12 +219,26 @@ public final class LauncherMain {
             }
         });
 
+        window.setSpeed(-1);
+
         if (!success) {
             log(appDir, "Environment setup returned non-zero — proceeding anyway");
             window.setStatus(i18n.get("Setup completed with warnings"));
-            window.setDetail(null);
             sleep(2000);
         }
+    }
+
+    /**
+     * Parses a human-readable byte size like "739 MB" or "3.3 GB"
+     * into raw bytes for speed calculation.
+     */
+    private static long parseByteSize(String sizeStr) {
+        String normalized = sizeStr.toUpperCase().replaceAll("\\s+", "");
+        double val = Double.parseDouble(normalized.replaceAll("[^0-9.]", ""));
+        if (normalized.endsWith("GB")) return (long) (val * 1_000_000_000L);
+        if (normalized.endsWith("MB")) return (long) (val * 1_000_000L);
+        if (normalized.endsWith("KB")) return (long) (val * 1_000L);
+        return (long) val;
     }
 
     /**
@@ -212,7 +256,6 @@ public final class LauncherMain {
         boolean wasVisible = window.isVisible();
         if (wasVisible) {
             window.setStatus(i18n.get("Launching application"));
-            window.setDetail(null);
             window.setProgress(1.0);
         }
 
@@ -249,7 +292,6 @@ public final class LauncherMain {
         SwingUtilities.invokeLater(() -> {
             window.setVisible(true);
             window.setStatus("Error: " + e.getMessage());
-            window.setDetail(null);
             window.setProgress(0);
         });
         showErrorDialog("Launcher failed", e);

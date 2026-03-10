@@ -53,6 +53,11 @@ final class RollingCounterLabel extends JComponent {
     private boolean active = false;
     private long dismissRequestTime = 0;
 
+    // Require multiple consecutive slow readings before showing —
+    // prevents brief dips from flashing the label.
+    private static final int SLOW_SAMPLES_REQUIRED = 3;
+    private int slowSampleCount = 0;
+
     private final BufferedImage wifiIcon;
 
     RollingCounterLabel() {
@@ -78,16 +83,22 @@ final class RollingCounterLabel extends JComponent {
      */
     void setSpeed(long bytesPerSec) {
         if (bytesPerSec >= 0 && bytesPerSec < SLOW_THRESHOLD_BYTES) {
-            if (targetSpeed != bytesPerSec) {
-                startSpeed = displayedSpeed;
-                rollStartTime = System.currentTimeMillis();
-                targetSpeed = bytesPerSec;
+            slowSampleCount++;
+            if (slowSampleCount >= SLOW_SAMPLES_REQUIRED) {
+                if (targetSpeed != bytesPerSec) {
+                    startSpeed = displayedSpeed;
+                    rollStartTime = System.currentTimeMillis();
+                    targetSpeed = bytesPerSec;
+                }
+                activeMode = Mode.SPEED;
+                active = true;
+                dismissRequestTime = 0;
             }
-            activeMode = Mode.SPEED;
-            active = true;
-            dismissRequestTime = 0;
-        } else if (activeMode == Mode.SPEED) {
-            requestDismiss();
+        } else {
+            slowSampleCount = 0;
+            if (activeMode == Mode.SPEED) {
+                requestDismiss();
+            }
         }
     }
 
@@ -141,7 +152,12 @@ final class RollingCounterLabel extends JComponent {
             displayedSpeed = startSpeed + (targetSpeed - startSpeed) * eased;
         }
 
-        repaint();
+        // Only repaint when there's something to show — prevents
+        // 60fps paint cycles when the label is fully transparent.
+        // The parent.repaint() above handles the final clear frame.
+        if (opacity > 0f) {
+            repaint();
+        }
     }
 
     @Override

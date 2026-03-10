@@ -33,7 +33,7 @@ final class LauncherWindow extends JFrame {
 
     // Portrait rectangle — 1:1.2 ratio
     private static final int WIDTH = 320;
-    private static final int HEIGHT = 384;
+    private static final int HEIGHT = 330;
     private static final int CORNER_ARC = 20;
 
     private static final Color BG = new Color(0x1A, 0x1A, 0x1A);
@@ -50,7 +50,7 @@ final class LauncherWindow extends JFrame {
     private final RollingCounterLabel rollingCounter;
 
     private volatile String pendingStatus;
-    private volatile String pendingDetail;
+
     private volatile double pendingProgress = Double.NaN;
     private volatile long pendingSpeed = Long.MIN_VALUE;
     private volatile boolean flushScheduled;
@@ -77,11 +77,7 @@ final class LauncherWindow extends JFrame {
         scheduleFlush();
     }
 
-    /** Sets the secondary detail line — shown as status in this layout. */
-    void setDetail(String text) {
-        pendingDetail = text;
-        scheduleFlush();
-    }
+
 
     /**
      * Sets progress: 0.0–1.0 for determinate, negative for indeterminate,
@@ -178,7 +174,7 @@ final class LauncherWindow extends JFrame {
 
         // Bottom spacer
         gbc.gridy = 5;
-        gbc.weighty = 1.2;
+        gbc.weighty = 0.6;
         gbc.insets = new Insets(0, 0, 0, 0);
         root.add(Box.createGlue(), gbc);
 
@@ -285,43 +281,15 @@ final class LauncherWindow extends JFrame {
             pendingProgress = Double.NaN;
         }
 
-        // Parse rolling counter from detail: "filename X/Y" — the space
-        // before X distinguishes file counts from step counters ("1/5").
-        String detail = pendingDetail;
         long speed = pendingSpeed;
-        boolean counterUpdated = false;
 
-        // Speed indicator takes priority (only shows during downloads).
-        // SPEED_UNCHANGED (-2) is filtered by setSpeed() and never reaches here.
+        // Speed indicator — SPEED_UNCHANGED (-2) is filtered by setSpeed()
         if (speed != Long.MIN_VALUE) {
             rollingCounter.setSpeed(speed);
-            counterUpdated = speed >= 0;
             pendingSpeed = Long.MIN_VALUE;
-        }
-
-        // File count mode — only when no speed is active
-        if (!counterUpdated && detail != null && !detail.isBlank()) {
-            int slashIdx = detail.lastIndexOf('/');
-            if (slashIdx > 0) {
-                int spaceIdx = detail.lastIndexOf(' ', slashIdx);
-                if (spaceIdx >= 0) {
-                    try {
-                        int current = Integer.parseInt(detail.substring(spaceIdx + 1, slashIdx));
-                        int total = Integer.parseInt(detail.substring(slashIdx + 1));
-                        rollingCounter.setCount(current, total);
-                        counterUpdated = true;
-                    } catch (NumberFormatException ignored) {
-                    }
-                }
-            }
-        }
-
-        // Dismiss when neither speed nor count is active
-        if (!counterUpdated) {
+        } else {
             rollingCounter.dismiss();
         }
-
-        pendingDetail = null;
         lastFlushTime = System.currentTimeMillis();
         flushScheduled = false;
     }

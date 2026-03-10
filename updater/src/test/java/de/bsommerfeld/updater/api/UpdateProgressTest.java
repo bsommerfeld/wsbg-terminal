@@ -11,14 +11,15 @@ class UpdateProgressTest {
         var progress = UpdateProgress.indeterminate("Checking...");
         assertEquals(-1.0, progress.progressRatio(), 0.001);
         assertEquals("Checking...", progress.phase());
-        assertNull(progress.detail());
+        assertEquals(0, progress.step());
     }
 
     @Test
-    void indeterminateWithDetail_shouldSetMinusOneRatio() {
-        var progress = UpdateProgress.indeterminate("Cleaning up", "3 files");
+    void indeterminateWithStep_shouldSetMinusOneRatio() {
+        var progress = UpdateProgress.indeterminate("Cleaning up", 3, 5);
         assertEquals(-1.0, progress.progressRatio(), 0.001);
-        assertEquals("3 files", progress.detail());
+        assertEquals(3, progress.step());
+        assertEquals(5, progress.totalSteps());
     }
 
     @Test
@@ -37,23 +38,24 @@ class UpdateProgressTest {
     }
 
     @Test
-    void ofWithDetail_shouldStoreDetailText() {
-        var progress = UpdateProgress.of("Downloading", "3.2 MB / 12.4 MB", 0.26);
+    void ofWithStep_shouldStoreStepInfo() {
+        var progress = UpdateProgress.of("Downloading", 2, 5, 0.26);
         assertEquals("Downloading", progress.phase());
-        assertEquals("3.2 MB / 12.4 MB", progress.detail());
+        assertEquals(2, progress.step());
+        assertEquals(5, progress.totalSteps());
         assertEquals(0.26, progress.progressRatio(), 0.001);
     }
 
     @Test
-    void of_shouldClampWithDetail() {
-        var progress = UpdateProgress.of("Phase", "detail", 2.0);
+    void of_shouldClampWithStep() {
+        var progress = UpdateProgress.of("Phase", 1, 3, 2.0);
         assertEquals(1.0, progress.progressRatio(), 0.001);
     }
 
     @Test
     void equality_shouldMatchOnAllFields() {
-        var a = UpdateProgress.of("Phase", "detail", 0.5);
-        var b = UpdateProgress.of("Phase", "detail", 0.5);
+        var a = UpdateProgress.of("Phase", 1, 3, 0.5);
+        var b = UpdateProgress.of("Phase", 1, 3, 0.5);
         assertEquals(a, b);
     }
 }
