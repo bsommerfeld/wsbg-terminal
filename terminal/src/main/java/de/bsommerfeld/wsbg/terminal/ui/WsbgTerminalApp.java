@@ -7,7 +7,6 @@ import de.bsommerfeld.wsbg.terminal.core.config.ApplicationMode;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
 import de.bsommerfeld.wsbg.terminal.core.i18n.I18nService;
-import de.bsommerfeld.wsbg.terminal.core.util.StorageUtils;
 import de.bsommerfeld.wsbg.terminal.db.AgentRepository;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
 import de.bsommerfeld.wsbg.terminal.agent.OllamaServerManager;
@@ -23,7 +22,6 @@ import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.image.Image;
 import javafx.scene.layout.BorderPane;
-import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
@@ -32,8 +30,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
+
 
 /**
  * JavaFX entry point. Sets up DI, loads the dashboard view into an
@@ -47,18 +44,6 @@ import java.nio.file.Path;
  */
 public class WsbgTerminalApp extends Application {
 
-    static {
-        Path logDir = StorageUtils.getLogsDir("wsbg-terminal");
-        try {
-            if (!Files.exists(logDir)) {
-                Files.createDirectories(logDir);
-            }
-            System.setProperty("LOG_DIR", logDir.toAbsolutePath().toString());
-        } catch (Exception e) {
-            System.err.println("Failed to create log directory: " + logDir);
-            e.printStackTrace();
-        }
-    }
 
     private static final Logger LOG = LoggerFactory.getLogger(WsbgTerminalApp.class);
 

@@ -11,6 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.stream.Stream;
@@ -345,27 +346,45 @@ public final class LauncherMain {
     }
 
     /**
-     * Creates a new per-session log file named by execution timestamp
-     * (e.g. {@code 2026-03-04_21-32-39.log}) and purges old files beyond
-     * {@link #MAX_LOG_FILES}. Each launcher invocation gets its own file
-     * so sessions never bleed into each other.
+     * Archives any previous {@code latest.log}, then sets the session log file
+     * to a fresh {@code latest.log}. Old archived sessions beyond
+     * {@link #MAX_LOG_FILES} are purged.
      */
     private static void initLogging(Path appDir) {
-        String name = LocalDateTime.now().format(LOG_FILENAME) + ".log";
-        sessionLogFile = appDir.resolve("logs/launcher/" + name);
-        purgeOldLogs(appDir.resolve("logs/launcher"));
+        Path logsDir = appDir.resolve("logs/launcher");
+        archiveLatestLog(logsDir);
+        sessionLogFile = logsDir.resolve("latest.log");
+        purgeOldLogs(logsDir);
         log(appDir, "--- Launcher session ---");
     }
 
     /**
-     * Deletes the oldest {@code .log} files when the count exceeds
-     * {@link #MAX_LOG_FILES}. Sorted lexicographically — the timestamp
-     * format guarantees chronological order.
+     * Archives the previous session's {@code latest.log} by renaming it to a
+     * timestamp derived from its last-modified time. Called before each session
+     * so that {@code latest.log} always represents the current session alone.
+     */
+    private static void archiveLatestLog(Path logsDir) {
+        Path latest = logsDir.resolve("latest.log");
+        if (!Files.exists(latest)) return;
+        try {
+            String timestamp = Files.getLastModifiedTime(latest).toInstant()
+                    .atZone(ZoneId.systemDefault())
+                    .format(LOG_FILENAME);
+            Files.move(latest, logsDir.resolve(timestamp + ".log"));
+        } catch (IOException ignored) {
+        }
+    }
+
+    /**
+     * Deletes the oldest archived {@code .log} files when the count exceeds
+     * {@link #MAX_LOG_FILES}. {@code latest.log} is excluded — it is the
+     * active session, not an archive.
      */
     private static void purgeOldLogs(Path logsDir) {
         try (Stream<Path> files = Files.list(logsDir)) {
             var logs = files
                     .filter(p -> p.toString().endsWith(".log"))
+                    .filter(p -> !p.getFileName().toString().equals("latest.log"))
                     .sorted(Comparator.comparing(Path::getFileName))
                     .toList();
 
