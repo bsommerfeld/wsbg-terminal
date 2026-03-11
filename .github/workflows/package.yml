@@ -148,12 +148,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ github.event.release.tag_name }}"
-          REPO="${{ github.repository }}"
-          BASE_URL="${{ github.server_url }}/${REPO}/releases/download/${TAG}"
+          BASE_URL="${{ github.server_url }}/${{ github.repository }}/releases/download/${TAG}"
 
-          EXE=$(gh release view "${TAG}" --repo "${REPO}" --json assets --jq '.assets[].name | select(endswith(".exe"))')
-          DMG=$(gh release view "${TAG}" --repo "${REPO}" --json assets --jq '.assets[].name | select(endswith(".dmg"))')
-          DEB=$(gh release view "${TAG}" --repo "${REPO}" --json assets --jq '.assets[].name | select(endswith(".deb"))')
+          EXE=$(gh release view "${TAG}" --json assets --jq '.assets[].name | select(endswith(".exe"))')
+          DMG=$(gh release view "${TAG}" --json assets --jq '.assets[].name | select(endswith(".dmg"))')
+          DEB=$(gh release view "${TAG}" --json assets --jq '.assets[].name | select(endswith(".deb"))')
 
           INSTALL_SECTION="
 
@@ -177,7 +176,7 @@ jobs:
 🐧 **Linux** — [${DEB}](${BASE_URL}/${DEB// /%20})"
           fi
 
-          CURRENT_BODY=$(gh release view "${TAG}" --repo "${REPO}" --json body --jq '.body')
+          CURRENT_BODY=$(gh release view "${TAG}" --json body --jq '.body')
           UPDATED_BODY="${CURRENT_BODY}${INSTALL_SECTION}"
 
-          gh release edit "${TAG}" --repo "${REPO}" --notes "${UPDATED_BODY}"
+          gh release edit "${TAG}" --notes "${UPDATED_BODY}"
