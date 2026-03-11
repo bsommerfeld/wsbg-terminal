@@ -44,7 +44,7 @@ Sind wir mal ehrlich: Wenn euer *Trade-Setup* im Nachhinein mal wieder komplette
 Deshalb ist unser *Software-Setup* komplett idiotensicher. Der Installer nimmt euch an die Hand, lädt im Hintergrund vollautomatisch **Ollama** runter und ballert euch direkt die passenden KI-Modelle auf die Platte. Welche genau? Ist egal, frisst einfach nur Speicherplatz, damit ihr euch nach dem Installieren voll und ganz auf eure Rachehebel konzentrieren könnt.
 
 <p align="center">
-  <img width="450" alt="Screenshot vom Installer" src="https://github.com/user-attachments/assets/23e3d059-c03d-441a-bccc-edabbc90cf9b">
+  <img width="450" alt="Screenshot vom Installer" src="https://github.com/user-attachments/assets/8a5da510-4316-4445-bc07-ff393b7033f0">
   <br>
   <em>Einfach ausführen und zugucken, wie die Magie passiert.</em>
 </p>
