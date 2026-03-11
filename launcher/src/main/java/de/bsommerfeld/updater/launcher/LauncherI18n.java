@@ -28,6 +28,8 @@ final class LauncherI18n {
             Map.entry("Launching application", "Anwendung starten"),
             Map.entry("Setup completed with warnings", "Setup mit Warnungen abgeschlossen"),
             Map.entry("Starting without updates", "Starte ohne Updates"),
+            Map.entry("Setting up environment", "Umgebung einrichten"),
+            Map.entry("Installing AI platform", "KI-Plattform installieren"),
             Map.entry("Installing AI models", "KI-Modelle installieren")
     );
 

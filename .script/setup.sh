@@ -9,16 +9,82 @@ echo "=========================================="
 echo "   WSBG Terminal - Setup & Installation   "
 echo "=========================================="
 
-# 1. Install/Update Ollama
-# The install script handles both fresh installs and in-place updates. Exits
-# quickly when already current. Keeping Ollama up-to-date prevents model pull
-# failures caused by version incompatibilities with newer model formats.
-echo "[*] Installing/updating Ollama..."
-curl -fsSL https://ollama.com/install.sh | sh || echo "    [WARN] Ollama install/update failed — continuing."
+# 1. Install or update Ollama
+# macOS: Manual download+extract to avoid sudo (the official install script
+#        runs `sudo ln -sf` for /usr/local/bin — blocks in a launcher with no TTY).
+# Linux: Uses the official install.sh since there's no sudo-free alternative.
+# Windows: Handled via winget in setup.ps1 (no version check needed there).
+OLLAMA_BIN="/Applications/Ollama.app/Contents/Resources"
+export PATH="$OLLAMA_BIN:$PATH"
+OLLAMA_CHANGED=false
+
+install_ollama_mac() {
+    local DOWNLOAD_URL="https://ollama.com/download/Ollama-darwin.zip"
+    local TMP_ZIP="/tmp/ollama-darwin-$$.zip"
+    echo "    Downloading Ollama..."
+    curl -fL --progress-bar -o "$TMP_ZIP" "$DOWNLOAD_URL" || { echo "    [WARN] Download failed."; return 1; }
+    echo "    Extracting to /Applications..."
+    unzip -qo "$TMP_ZIP" -d /Applications/ || { echo "    [WARN] Extract failed."; return 1; }
+    rm -f "$TMP_ZIP"
+    OLLAMA_CHANGED=true
+    return 0
+}
+
+OS="$(uname -s)"
+if ! command -v ollama &> /dev/null; then
+    echo "[*] Installing Ollama..."
+    if [ "$OS" = "Darwin" ]; then
+        install_ollama_mac || echo "    [WARN] Ollama install failed — continuing."
+    else
+        curl -fsSL https://ollama.com/install.sh | sh || echo "    [WARN] Ollama install failed — continuing."
+        OLLAMA_CHANGED=true
+    fi
+else
+    LOCAL_VER=$(ollama --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+    echo "    Ollama local version: $LOCAL_VER"
+    REMOTE_VER=$(curl -fsSL -m 5 "https://api.github.com/repos/ollama/ollama/releases/latest" 2>/dev/null \
+        | grep -oE '"tag_name":\s*"v?([0-9]+\.[0-9]+\.[0-9]+)"' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+    if [ -z "$REMOTE_VER" ]; then
+        echo "    Remote version check failed (no network?) — skipping update."
+    else
+        echo "    Ollama remote version: $REMOTE_VER"
+        if [ "$LOCAL_VER" != "$REMOTE_VER" ]; then
+            echo "[*] Updating Ollama ($LOCAL_VER → $REMOTE_VER)..."
+            if [ "$OS" = "Darwin" ]; then
+                install_ollama_mac || echo "    [WARN] Ollama update failed — continuing."
+            else
+                curl -fsSL https://ollama.com/install.sh | sh || echo "    [WARN] Ollama update failed — continuing."
+                OLLAMA_CHANGED=true
+            fi
+        else
+            echo "[*] Ollama is up to date ($LOCAL_VER)."
+        fi
+    fi
+fi
+
+# After install/update, start the server explicitly. Using `ollama serve &`
+# instead of launching the .app avoids conflicts with other apps that bundle
+# Ollama (e.g. Kodex) and works without a GUI session.
+if [ "$OLLAMA_CHANGED" = true ] && command -v ollama &> /dev/null; then
+    echo "[*] Starting Ollama server..."
+    ollama serve > /dev/null 2>&1 &
+    READY=false
+    for i in $(seq 1 30); do
+        if curl -sf -m 2 "http://127.0.0.1:11434/api/tags" > /dev/null 2>&1; then
+            READY=true
+            break
+        fi
+        sleep 0.5
+    done
+    if [ "$READY" = true ]; then
+        echo "    Ollama server ready."
+    else
+        echo "    [WARN] Ollama server did not respond in time — pulls may fail."
+    fi
+fi
 
 # 2. Check Configuration & Determine Mode
-OS="$(uname -s)"
-# Detech AppData path (Matching StorageUtils logic)
+# Detect AppData path (matching StorageUtils logic)
 CONFIG_DIR=""
 if [ "$OS" = "Darwin" ]; then
     CONFIG_DIR="$HOME/Library/Application Support/wsbg-terminal"
@@ -45,7 +111,6 @@ fi
 
 # 3. Select Models based on Mode
 # Constant models
-VISION_MODEL="glm-ocr:latest"
 EMBED_MODEL="nomic-embed-text-v2-moe:latest"
 
 # Variable models
@@ -62,7 +127,6 @@ fi
 echo "[*] Configuration Roadmap:"
 echo "    - Reasoning Agent: $REASONING_MODEL"
 echo "    - Translator:      $TRANSLATOR_MODEL"
-echo "    - Vision/OCR:      $VISION_MODEL"
 echo "    - Embeddings:      $EMBED_MODEL"
 
 
@@ -70,8 +134,7 @@ echo "    - Embeddings:      $EMBED_MODEL"
 INSTALLED_MODELS=$(ollama list 2>/dev/null | tail -n +2 | awk '{print $1}')
 
 pull_if_missing() {
-    # Case-insensitive match — ollama list may return names in different casing
-    # than what we request (e.g. "GLM-OCR:latest" vs "glm-ocr:latest").
+    # Case-insensitive match — ollama list may return names in different casing.
     if echo "$INSTALLED_MODELS" | grep -qi "^$1$"; then
         echo "    [OK] $1 already available"
     else
@@ -84,7 +147,6 @@ pull_if_missing() {
 
 pull_if_missing "$REASONING_MODEL"
 pull_if_missing "$TRANSLATOR_MODEL"
-pull_if_missing "$VISION_MODEL"
 pull_if_missing "$EMBED_MODEL"
 
 # 5. Generate Configuration File (if strictly new)
@@ -103,7 +165,6 @@ ui-reddit-visible = true
 
 [agent]
 power-mode = false
-ollama.vision-model = "${VISION_MODEL}"
 ollama.embedding-model = "${EMBED_MODEL}"
 
 [reddit]

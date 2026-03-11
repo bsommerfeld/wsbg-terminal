@@ -78,7 +78,6 @@ if (Test-Path $configFile) {
 }
 
 # 3. Select Models based on Mode
-$visionModel = "glm-ocr:latest"
 $embedModel = "nomic-embed-text-v2-moe:latest"
 
 $translatorModel = "translategemma:4b"
@@ -94,7 +93,6 @@ if ($powerMode) {
 Write-Host "[*] Configuration Roadmap:" -ForegroundColor Gray
 Write-Host "    - Reasoning Agent: $reasoningModel" -ForegroundColor Gray
 Write-Host "    - Translator:      $translatorModel" -ForegroundColor Gray
-Write-Host "    - Vision/OCR:      $visionModel" -ForegroundColor Gray
 Write-Host "    - Embeddings:      $embedModel" -ForegroundColor Gray
 
 
@@ -118,7 +116,6 @@ function Pull-IfMissing($modelName) {
 
 Pull-IfMissing $reasoningModel
 Pull-IfMissing $translatorModel
-Pull-IfMissing $visionModel
 Pull-IfMissing $embedModel
 
 # 5. Generate Config (if strictly new)
@@ -140,7 +137,6 @@ if (!(Test-Path $configFile)) {
         "",
         "[agent]",
         "power-mode = false",
-        "ollama.vision-model = `"$visionModel`"",
         "ollama.embedding-model = `"$embedModel`"",
         "",
         "[reddit]",

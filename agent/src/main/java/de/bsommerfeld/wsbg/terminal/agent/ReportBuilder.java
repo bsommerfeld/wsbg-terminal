@@ -159,7 +159,7 @@ final class ReportBuilder {
         sb.append(" [MAIN IMAGE]: ").append(imageUrl).append("\n");
         try {
             String result = brain.see(imageUrl);
-            sb.append("[VISION ANALYSIS]: ").append(result).append("\n");
+            sb.append("[IMAGE ANALYSIS]: ").append(result).append("\n");
         } catch (Exception e) {
             LOG.error("Vision failed: {}", e.getMessage());
         }

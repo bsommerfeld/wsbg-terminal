@@ -253,7 +253,7 @@ public class ChatService {
 
         eventBus.post(new LogEvent("Performing on-demand vision analysis...", "INFO"));
         try {
-            return context + "\n[ON-DEMAND VISION ANALYSIS]: " + brain.see(url);
+            return context + "\n[ON-DEMAND IMAGE ANALYSIS]: " + brain.see(url);
         } catch (Exception e) {
             LOG.error("On-demand vision failed", e);
             return context;
@@ -296,7 +296,7 @@ public class ChatService {
             if (context.imageUrl != null && !context.imageUrl.isEmpty()) {
                 eventBus.post(new LogEvent("Performing on-demand vision analysis...", "INFO"));
                 try {
-                    sb.append("[VISION ANALYSIS DATA]: ").append(brain.see(context.imageUrl)).append("\n\n");
+                    sb.append("[IMAGE ANALYSIS DATA]: ").append(brain.see(context.imageUrl)).append("\n\n");
                 } catch (Exception e) {
                     LOG.error("Vision analysis failed", e);
                 }

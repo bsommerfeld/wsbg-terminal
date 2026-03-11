@@ -61,8 +61,8 @@ public final class LauncherMain {
         log(appDir, "Language: " + i18n.language());
 
         TinyUpdateClient updateClient = new TinyUpdateClient(REPO, appDir);
-        // AI model install counts as a step in the unified pipeline
-        updateClient.setExtraSteps(1);
+        // Platform install + model downloads = 2 extra steps after the update pipeline
+        updateClient.setExtraSteps(2);
 
         boolean firstRun = updateClient.currentVersion() == null;
         LauncherWindow window = new LauncherWindow();
@@ -118,13 +118,19 @@ public final class LauncherMain {
                     label += " (" + progress.step() + "/" + progress.totalSteps() + ")";
                 }
 
+                // Snap indicator to dot on phase transitions — prevents stale
+                // fill from flashing during the next phase's expand animation.
                 if (!label.equals(lastPhase[0])) {
                     log(appDir, "[update] " + label);
                     lastPhase[0] = label;
+                    window.resetProgress();
+                    window.setSpeed(-1);
                 }
 
                 window.setStatus(label);
-                window.setProgress(progress.progressRatio());
+                if (progress.progressRatio() >= 0) {
+                    window.setProgress(progress.progressRatio());
+                }
                 window.setSpeed(progress.speedBytesPerSec());
             });
 
@@ -154,9 +160,14 @@ public final class LauncherMain {
             LauncherWindow window, Path appDir, LauncherI18n i18n)
             throws IOException, InterruptedException {
 
-        // AI models = next step after the download steps
-        int envStep = client.lastDownloadStepCount() + 1;
-        int totalSteps = envStep; // downloads + this env step
+        // Snap to dot before environment setup — clean transition from update phase
+        window.resetProgress();
+        window.setSpeed(-1);
+
+        // Platform install + model downloads after the update download steps
+        int platformStep = client.lastDownloadStepCount() + 1;
+        int modelStep = platformStep + 1;
+        int totalSteps = modelStep;
 
         // Periodic logging — ollama emits many lines per second
         long[] logTracker = {0}; // [0]=lastLogTime
@@ -178,15 +189,19 @@ public final class LauncherMain {
             }
 
             boolean isWork = phase.startsWith("Pulling")
-                    || (detail != null && detail.contains("install") && !detail.contains("already installed"));
+                    || phase.equals("Installing AI platform");
             if (!window.isVisible() && isWork) {
                 SwingUtilities.invokeLater(() -> window.setVisible(true));
             }
 
-            // Bundle all model pulls under "Installing AI models (N/N)"
-            if (phase.startsWith("Pulling")) {
+            // Ollama platform install → step N, model pulls → step N+1
+            if (phase.equals("Installing AI platform")) {
+                String label = i18n.get("Installing AI platform")
+                        + " (" + platformStep + "/" + totalSteps + ")";
+                window.setStatus(label);
+            } else if (phase.startsWith("Pulling")) {
                 String label = i18n.get("Installing AI models")
-                        + " (" + envStep + "/" + totalSteps + ")";
+                        + " (" + modelStep + "/" + totalSteps + ")";
                 window.setStatus(label);
             } else {
                 window.setStatus(i18n.get(phase));
@@ -214,9 +229,6 @@ public final class LauncherMain {
                     } catch (NumberFormatException | ArrayIndexOutOfBoundsException ignored) {
                     }
                 }
-            }
-            if (phase.startsWith("Pulling")) {
-                window.setProgress(-1);
             }
         });
 

@@ -21,7 +21,9 @@ final class PathEnricher {
     private static final String[] EXTRA_PATHS = {
             "/usr/local/bin",
             "/opt/homebrew/bin",
-            "/opt/homebrew/sbin"
+            "/opt/homebrew/sbin",
+            // Ollama app bundle — needed when installed without the sudo symlink
+            "/Applications/Ollama.app/Contents/Resources"
     };
 
     private PathEnricher() {

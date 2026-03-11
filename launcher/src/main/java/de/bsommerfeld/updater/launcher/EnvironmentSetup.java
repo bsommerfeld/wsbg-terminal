@@ -50,6 +50,18 @@ final class EnvironmentSetup {
     private static final Pattern OLLAMA_PROGRESS_PATTERN = Pattern
             .compile("(\\d+)%.*?(\\d+(?:\\.\\d+)?\\s*(?:MB|GB|KB|B))\\s*/\\s*(\\d+(?:\\.\\d+)?\\s*(?:MB|GB|KB|B))");
 
+    // Detects the script's Ollama install/update announcement to separate
+    // platform setup from model downloads in the UI. Handles both the
+    // current format "[*] Installing Ollama" / "[*] Updating Ollama" and
+    // the legacy deployed format "[*] Installing/updating Ollama".
+    private static final Pattern OLLAMA_INSTALL_PATTERN = Pattern.compile(
+            "(?i)\\[\\*]\\s*(?:installing(?:/updating)?|updating)\\s+ollama");
+
+    // Extracts trailing percentage from curl-style progress lines
+    // (e.g. "####   8.8%" → group 1 = "8.8").
+    private static final Pattern CURL_PROGRESS_PATTERN = Pattern.compile(
+            "(\\d+(?:\\.\\d+)?)\\s*%\\s*$");
+
     /**
      * Matches raw progress bars, spinner characters, and bare percentages.
      * Winget emits single-char spinners (\, |, /, -) and block-character
@@ -71,6 +83,12 @@ final class EnvironmentSetup {
      * Tracks the maximum layer size currently being processed.
      */
     private long maxTotalBytes;
+
+    /**
+     * Active while the script installs/updates the Ollama binary. Cleared
+     * when the script transitions to model config/pulls.
+     */
+    private boolean installingOllama;
 
     EnvironmentSetup(Path appDirectory) {
         this.appDirectory = appDirectory;
@@ -174,6 +192,8 @@ final class EnvironmentSetup {
      * most frequent output during model pulls.
      */
     private void classifyAndEmit(String line, BiConsumer<String, String> consumer) {
+        if (tryEmitOllamaInstall(line, consumer))
+            return;
         if (tryEmitOllamaPull(line, consumer))
             return;
         if (tryEmitOllamaProgress(line, consumer))
@@ -188,7 +208,40 @@ final class EnvironmentSetup {
             return;
         }
 
+        // Config/mode lines end the Ollama install phase — they belong
+        // to the configuration section, not the platform download.
+        if (installingOllama && (line.contains("Mode") || line.contains("Configuration")
+                || line.contains("Roadmap"))) {
+            installingOllama = false;
+        }
+
+        if (installingOllama) {
+            Matcher cm = CURL_PROGRESS_PATTERN.matcher(line);
+            if (cm.find()) {
+                // Emit integer percentage so LauncherMain's progress parser handles it
+                int pct = (int) Double.parseDouble(cm.group(1));
+                consumer.accept("Installing AI platform", pct + "%");
+            } else {
+                consumer.accept("Installing AI platform", line);
+            }
+            return;
+        }
+
         consumer.accept("Setting up environment", line);
+    }
+
+    /**
+     * Activates the Ollama install phase when the script announces
+     * "[*] Installing/updating Ollama...". All subsequent lines are
+     * emitted under "Installing AI platform" until model pulls begin.
+     */
+    private boolean tryEmitOllamaInstall(String line, BiConsumer<String, String> consumer) {
+        if (OLLAMA_INSTALL_PATTERN.matcher(line).find()) {
+            installingOllama = true;
+            consumer.accept("Installing AI platform", null);
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -198,6 +251,7 @@ final class EnvironmentSetup {
     private boolean tryEmitOllamaPull(String line, BiConsumer<String, String> consumer) {
         Matcher m = OLLAMA_PULL_PATTERN.matcher(line);
         if (m.find()) {
+            installingOllama = false;
             currentModelName = m.group(1).strip();
             maxTotalBytes = 0; // Reset for new model
             consumer.accept("Pulling " + currentModelName, null);

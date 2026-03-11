@@ -89,6 +89,15 @@ final class LauncherWindow extends JFrame {
     }
 
     /**
+     * Snaps the indicator back to the idle dot immediately. Use on
+     * phase transitions instead of {@link #setProgress} to avoid
+     * the expand animation and stale fill from the previous phase.
+     */
+    void resetProgress() {
+        SwingUtilities.invokeLater(islandIndicator::reset);
+    }
+
+    /**
      * Sets download speed in bytes/sec. Ignores SPEED_UNCHANGED (-2)
      * to prevent it from overwriting valid pending values before the
      * EDT flush can read them.

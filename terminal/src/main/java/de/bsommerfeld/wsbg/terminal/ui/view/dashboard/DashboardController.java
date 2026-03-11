@@ -356,7 +356,7 @@ public class DashboardController {
 
             // Status messages are transient spinners — only if NOT a final AI report.
             // Only the three patterns the agent module actually emits are matched;
-            // stale matchers (Image Analysis Result, TranslateGemma, GLM-OCR,
+            // stale matchers (Image Analysis Result, TranslateGemma,
             // SEARCHING WEB, semantic highlighting, Translating to German) were
             // removed because nothing in the codebase produces them.
             boolean isStatus = !isAiFinal && (originalMsg.contains("Agent thinking") ||

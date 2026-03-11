@@ -117,9 +117,11 @@ public class AgentBrain {
                 .baseUrl(OLLAMA_BASE_URL).modelName(translatorName).temperature(Model.TRANSLATOR.getTemperature())
                 .build();
 
+        // Qwen 3.5 is natively multimodal (Early Fusion) — the reasoning
+        // model handles vision directly, eliminating the former GLM-OCR step.
         this.visionModel = OllamaChatModel.builder()
-                .baseUrl(OLLAMA_BASE_URL).modelName(Model.VISION.getModelName())
-                .temperature(Model.VISION.getTemperature())
+                .baseUrl(OLLAMA_BASE_URL).modelName(reasoningName)
+                .temperature(0.1)
                 .maxRetries(1).build();
 
         this.assistant = AiServices.builder(Assistant.class)
@@ -232,7 +234,7 @@ public class AgentBrain {
         if (visionModel == null)
             return "Vision Brain not ready.";
         try {
-            LOG.debug("Vision analyzing [model={}]: {}", Model.VISION.getModelName(), imageUrl);
+            LOG.debug("Vision analyzing [model={}]: {}", activeReasoningModel, imageUrl);
             ImagePayload payload = fetchAndOptimize(imageUrl);
 
             UserMessage msg = UserMessage.from(

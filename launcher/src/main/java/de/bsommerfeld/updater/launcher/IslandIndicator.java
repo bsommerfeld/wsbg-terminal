@@ -63,6 +63,19 @@ final class IslandIndicator extends JComponent {
         timer.start();
     }
 
+    /**
+     * Triggers a smooth collapse back to the idle dot. Fill is cleared
+     * immediately so stale progress isn't visible during the animation;
+     * {@code morphT} is left for {@link #tick()} to animate down at
+     * {@link #COLLAPSE_SPEED}.
+     */
+    void reset() {
+        state = State.IDLE;
+        targetFill = 0;
+        currentFill = 0;
+        completeRequested = false;
+    }
+
     void update(double progress) {
         lastUpdateTime = System.currentTimeMillis();
 
