@@ -104,9 +104,8 @@ jobs:
       - name: Upload TinyUpdate Artifacts
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          gh release upload "${RELEASE_TAG}" \
+          gh release upload "${{ github.event.release.tag_name }}" \
             updater-dist/update.json \
             updater-dist/files.zip \
             updater-dist/app.zip \
