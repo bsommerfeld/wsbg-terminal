@@ -13,15 +13,13 @@
         <module>core</module>
         <module>database</module>
         <module>reddit</module>
-        <module>fj</module>
+        <module>financial-juice</module>
 
         <module>agent</module>
         <module>terminal</module>
 
         <module>updater</module>
         <module>launcher</module>
-        
-        <module>sdock</module>
     </modules>
 
     <properties>
@@ -67,7 +65,7 @@
             </dependency>
             <dependency>
                 <groupId>de.bsommerfeld</groupId>
-                <artifactId>fj</artifactId>
+                <artifactId>financial-juice</artifactId>
                 <version>${project.version}</version>
             </dependency>
 

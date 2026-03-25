@@ -1,4 +1,4 @@
-package de.bsommerfeld.sdock;
+package de.bsommerfeld.wsbg.terminal.ui.view.dock;
 
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
