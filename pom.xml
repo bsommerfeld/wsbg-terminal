@@ -20,6 +20,8 @@
 
         <module>updater</module>
         <module>launcher</module>
+        
+        <module>sdock</module>
     </modules>
 
     <properties>
