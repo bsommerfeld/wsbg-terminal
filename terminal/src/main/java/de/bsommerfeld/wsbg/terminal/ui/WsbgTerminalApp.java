@@ -159,6 +159,7 @@ public class WsbgTerminalApp extends Application {
             injector.getInstance(RedditRepository.class).shutdown();
             injector.getInstance(AgentRepository.class).shutdown();
             injector.getInstance(OllamaServerManager.class).shutdown();
+            injector.getInstance(UserSessionTracker.class).shutdown();
         } catch (Exception e) {
             LOG.warn("Failed to shutdown repositories: " + e.getMessage());
         }

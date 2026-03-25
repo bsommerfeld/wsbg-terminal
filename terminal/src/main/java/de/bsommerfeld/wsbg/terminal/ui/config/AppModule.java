@@ -12,6 +12,7 @@ import de.bsommerfeld.wsbg.terminal.db.SqlDatabaseService;
 import de.bsommerfeld.wsbg.terminal.db.TestDatabaseService;
 import de.bsommerfeld.wsbg.terminal.reddit.RedditScraper;
 import de.bsommerfeld.wsbg.terminal.reddit.TestRedditScraper;
+import de.bsommerfeld.wsbg.terminal.ui.UserSessionTracker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.nio.file.Files;
@@ -53,6 +54,7 @@ public class AppModule extends AbstractModule {
             }
 
             bind(PassiveMonitorService.class).asEagerSingleton();
+            bind(UserSessionTracker.class).asEagerSingleton();
 
         } catch (Exception e) {
             throw new RuntimeException("Failed to load Application Configuration", e);
