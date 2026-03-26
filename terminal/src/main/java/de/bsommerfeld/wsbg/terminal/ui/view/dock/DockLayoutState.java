@@ -7,7 +7,7 @@ public class DockLayoutState {
     public List<WidgetState> windows;
 
     public static class WidgetState {
-        public String title;
+        public String identifier;
         public double x;
         public double y;
         public double width;

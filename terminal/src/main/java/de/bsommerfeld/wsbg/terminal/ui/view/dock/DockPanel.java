@@ -288,6 +288,9 @@ public class DockPanel extends Pane {
         for (DockWidget w : bottomY) maxdy = Math.min(maxdy, getPh(w) - 0.05);
         dy = Math.max(mindy, Math.min(maxdy, dy));
         
+        if (leftX.isEmpty() || rightX.isEmpty()) dx = 0;
+        if (topY.isEmpty() || bottomY.isEmpty()) dy = 0;
+        
         if (dx != 0 || dy != 0) {
             for (DockWidget w : leftX) setPw(w, getPw(w) + dx);
             for (DockWidget w : rightX) { setPx(w, getPx(w) + dx); setPw(w, getPw(w) - dx); }
@@ -446,7 +449,7 @@ public class DockPanel extends Pane {
             state.layoutMode = dockLayout.name();
             state.windows = windows.stream().map(w -> {
                 DockLayoutState.WidgetState ws = new DockLayoutState.WidgetState();
-                ws.title = w.getTitle();
+                ws.identifier = w.getIdentifier();
                 ws.x = getPx(w); ws.y = getPy(w); ws.width = getPw(w); ws.height = getPh(w);
                 return ws;
             }).toList();
@@ -464,12 +467,11 @@ public class DockPanel extends Pane {
             new java.util.ArrayList<>(windows).forEach(this::removeWindow);
             
             for(DockLayoutState.WidgetState ws : state.windows) {
-                DockWidget w = new DockWidget(ws.title);
-                javafx.scene.control.Label l = new javafx.scene.control.Label("Restored " + ws.title);
-                l.setStyle("-fx-text-fill: #dcddde;");
-                w.setCenter(l);
-                setPx(w, ws.x); setPy(w, ws.y); setPw(w, ws.width); setPh(w, ws.height);
-                addWindow(w);
+                DockWidget w = de.bsommerfeld.wsbg.terminal.ui.view.dock.widgets.WidgetRegistry.create(ws.identifier);
+                if (w != null) {
+                    setPx(w, ws.x); setPy(w, ws.y); setPw(w, ws.width); setPh(w, ws.height);
+                    addWindow(w);
+                }
             }
             this.setDockLayout(DockLayout.valueOf(state.layoutMode));
         } catch(Exception e) { e.printStackTrace(); }

@@ -1,94 +1,32 @@
 package de.bsommerfeld.wsbg.terminal.ui.view.dock;
 
-import javafx.geometry.Insets;
-import javafx.geometry.Pos;
 import javafx.scene.Cursor;
 import javafx.scene.Node;
-import javafx.scene.control.Label;
 import javafx.scene.layout.*;
-import javafx.scene.paint.Color;
-import javafx.scene.shape.SVGPath;
 
-public class DockWidget extends StackPane {
+/**
+ * Base abstract class for specific dock widgets.
+ * Implementations provide node elements for structural layout regions via
+ * explicit methods.
+ */
+public abstract class DockWidget extends StackPane {
 
-    private final String title;
-    private final VBox layoutContainer;
-    private final StackPane centerContent;
-    private final StackPane footerContent;
-    private final StackPane closeButtonPane;
-    
+    private final BorderPane layoutContainer;
+
     private double dragStartX;
     private double dragStartY;
-    private boolean closeable = true;
     private DockPanel parentPanel;
 
-    public DockWidget(String title) {
-        this.title = title;
+    public DockWidget() {
         this.getStyleClass().add("dock-widget");
-        // Modern 2026 aesthetics: lighter than panel background (#202225) -> #2b2d31
-        // Rounded corners for widgets. Dropshadow for depth.
-        this.setStyle("-fx-background-color: #2b2d31; -fx-background-radius: 12; -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.15), 15, 0, 0, 6);");
 
-        this.centerContent = new StackPane();
-        VBox.setVgrow(this.centerContent, Priority.ALWAYS);
-        this.centerContent.setPadding(new Insets(15)); // Good breathing room
-
-        this.footerContent = new StackPane();
-        this.footerContent.setPadding(new Insets(10));
-        this.footerContent.setStyle("-fx-background-color: transparent;");
-        this.footerContent.setVisible(false);
-        this.footerContent.setManaged(false);
-
-        this.layoutContainer = new VBox(this.centerContent, this.footerContent);
+        this.layoutContainer = new BorderPane();
         this.layoutContainer.setPickOnBounds(false);
-
-        this.closeButtonPane = createCloseButton();
-        StackPane.setAlignment(this.closeButtonPane, Pos.TOP_RIGHT);
-        StackPane.setMargin(this.closeButtonPane, new Insets(10, 10, 0, 0));
-        this.closeButtonPane.setVisible(false); // Hide until hover
+        this.layoutContainer.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
 
         this.getChildren().addAll(this.layoutContainer);
 
-        this.setOnMouseEntered(e -> {
-            if (closeable) {
-                this.closeButtonPane.setVisible(true);
-            }
-        });
-        
-        this.setOnMouseExited(e -> {
-            this.closeButtonPane.setVisible(false);
-        });
-
         setupDragging();
-    }
-
-    private StackPane createCloseButton() {
-        StackPane pane = new StackPane();
-        pane.setPadding(new Insets(6));
-        pane.setCursor(Cursor.HAND);
-        SVGPath svg = new SVGPath();
-        svg.setContent("M18.3 5.71a.9959.9959 0 00-1.41 0L12 10.59 7.11 5.7a.9959.9959 0 00-1.41 0c-.39.39-.39 1.02 0 1.41L10.59 12 5.7 16.89c-.39.39-.39 1.02 0 1.41.39.39 1.02.39 1.41 0L12 13.41l4.89 4.89c.39.39 1.02.39 1.41 0 .39-.39.39-1.02 0-1.41L13.41 12l4.89-4.89c.38-.38.38-1.02 0-1.4z");
-        svg.setFill(Color.web("#949ba4"));
-        svg.setScaleX(0.7);
-        svg.setScaleY(0.7);
-        pane.getChildren().add(svg);
-
-        pane.setStyle("-fx-background-color: transparent; -fx-background-radius: 6;");
-
-        pane.setOnMouseEntered(e -> {
-            pane.setStyle("-fx-background-color: #ed4245; -fx-background-radius: 6;");
-            svg.setFill(Color.WHITE);
-        });
-        pane.setOnMouseExited(e -> {
-            pane.setStyle("-fx-background-color: transparent; -fx-background-radius: 6;");
-            svg.setFill(Color.web("#949ba4"));
-        });
-        pane.setOnMouseClicked(e -> {
-            if (closeable && parentPanel != null) {
-                parentPanel.removeWindow(this);
-            }
-        });
-        return pane;
     }
 
     private boolean resizing = false;
@@ -106,20 +44,30 @@ public class DockWidget extends StackPane {
             boolean bot = e.getY() > getHeight() - edge;
             boolean left = e.getX() < edge;
             boolean right = e.getX() > getWidth() - edge;
-            
-            if (top && left) setCursor(Cursor.NW_RESIZE);
-            else if (top && right) setCursor(Cursor.NE_RESIZE);
-            else if (bot && left) setCursor(Cursor.SW_RESIZE);
-            else if (bot && right) setCursor(Cursor.SE_RESIZE);
-            else if (top) setCursor(Cursor.N_RESIZE);
-            else if (bot) setCursor(Cursor.S_RESIZE);
-            else if (left) setCursor(Cursor.W_RESIZE);
-            else if (right) setCursor(Cursor.E_RESIZE);
-            else setCursor(Cursor.DEFAULT);
+
+            if (top && left)
+                setCursor(Cursor.NW_RESIZE);
+            else if (top && right)
+                setCursor(Cursor.NE_RESIZE);
+            else if (bot && left)
+                setCursor(Cursor.SW_RESIZE);
+            else if (bot && right)
+                setCursor(Cursor.SE_RESIZE);
+            else if (top)
+                setCursor(Cursor.N_RESIZE);
+            else if (bot)
+                setCursor(Cursor.S_RESIZE);
+            else if (left)
+                setCursor(Cursor.W_RESIZE);
+            else if (right)
+                setCursor(Cursor.E_RESIZE);
+            else
+                setCursor(Cursor.DEFAULT);
         });
 
         this.setOnMousePressed(e -> {
-            if (parentPanel == null) return;
+            if (parentPanel == null)
+                return;
             dragStartX = e.getSceneX();
             dragStartY = e.getSceneY();
             startBoundsX = getLayoutX();
@@ -140,39 +88,60 @@ public class DockWidget extends StackPane {
         });
 
         this.setOnMouseDragged(e -> {
-            if (parentPanel == null || parentPanel.getLayout() != DockLayout.STACK) return;
-            
+            if (parentPanel == null || parentPanel.getLayout() != DockLayout.STACK)
+                return;
+
             if (resizing) {
                 double dx = e.getSceneX() - dragStartX;
                 double dy = e.getSceneY() - dragStartY;
                 double nx = startBoundsX, ny = startBoundsY, nw = startBoundsW, nh = startBoundsH;
-                
-                if (resizeCursor == Cursor.E_RESIZE || resizeCursor == Cursor.NE_RESIZE || resizeCursor == Cursor.SE_RESIZE) nw += dx;
-                if (resizeCursor == Cursor.S_RESIZE || resizeCursor == Cursor.SW_RESIZE || resizeCursor == Cursor.SE_RESIZE) nh += dy;
-                if (resizeCursor == Cursor.W_RESIZE || resizeCursor == Cursor.NW_RESIZE || resizeCursor == Cursor.SW_RESIZE) { nx += dx; nw -= dx; }
-                if (resizeCursor == Cursor.N_RESIZE || resizeCursor == Cursor.NW_RESIZE || resizeCursor == Cursor.NE_RESIZE) { ny += dy; nh -= dy; }
-                
+
+                if (resizeCursor == Cursor.E_RESIZE || resizeCursor == Cursor.NE_RESIZE
+                        || resizeCursor == Cursor.SE_RESIZE)
+                    nw += dx;
+                if (resizeCursor == Cursor.S_RESIZE || resizeCursor == Cursor.SW_RESIZE
+                        || resizeCursor == Cursor.SE_RESIZE)
+                    nh += dy;
+                if (resizeCursor == Cursor.W_RESIZE || resizeCursor == Cursor.NW_RESIZE
+                        || resizeCursor == Cursor.SW_RESIZE) {
+                    nx += dx;
+                    nw -= dx;
+                }
+                if (resizeCursor == Cursor.N_RESIZE || resizeCursor == Cursor.NW_RESIZE
+                        || resizeCursor == Cursor.NE_RESIZE) {
+                    ny += dy;
+                    nh -= dy;
+                }
+
                 // Bounds clamping
                 nw = Math.max(100, Math.min(nw, parentPanel.getWidth() - nx));
                 nh = Math.max(100, Math.min(nh, parentPanel.getHeight() - ny));
-                if (nx < 0) { nw += nx; nx = 0; }
-                if (ny < 0) { nh += ny; ny = 0; }
-                
-                setLayoutX(nx); setLayoutY(ny); setPrefSize(nw, nh);
+                if (nx < 0) {
+                    nw += nx;
+                    nx = 0;
+                }
+                if (ny < 0) {
+                    nh += ny;
+                    ny = 0;
+                }
+
+                setLayoutX(nx);
+                setLayoutY(ny);
+                setPrefSize(nw, nh);
             } else {
                 double newX = startBoundsX + (e.getSceneX() - dragStartX);
                 double newY = startBoundsY + (e.getSceneY() - dragStartY);
-                
+
                 newX = Math.max(0, Math.min(newX, parentPanel.getWidth() - getWidth()));
                 newY = Math.max(0, Math.min(newY, parentPanel.getHeight() - getHeight()));
-                
+
                 setLayoutX(newX);
                 setLayoutY(newY);
-                
+
                 parentPanel.handleWindowDrag(this, e.getSceneX(), e.getSceneY());
             }
         });
-        
+
         this.setOnMouseReleased(e -> {
             if (parentPanel != null && parentPanel.getLayout() == DockLayout.STACK) {
                 parentPanel.saveStackBounds(this);
@@ -186,26 +155,54 @@ public class DockWidget extends StackPane {
         this.parentPanel = panel;
     }
 
-    public void setCenter(Node content) {
-        this.centerContent.getChildren().clear();
-        this.centerContent.getChildren().add(content);
-    }
+    protected void buildWidget() {
+        Node top = topPane();
+        if (top != null) {
+            applyStretchConstraints(top, true, false);
+            this.layoutContainer.setTop(top);
+        }
 
-    public void setFooter(Node content) {
-        this.footerContent.getChildren().clear();
-        this.footerContent.getChildren().add(content);
-        this.footerContent.setVisible(true);
-        this.footerContent.setManaged(true);
-    }
+        Node left = leftPane();
+        if (left != null) {
+            applyStretchConstraints(left, false, true);
+            this.layoutContainer.setLeft(left);
+        }
 
-    public void setCloseable(boolean closeable) {
-        this.closeable = closeable;
-        if (!closeable) {
-            this.closeButtonPane.setVisible(false);
+        Node center = centerPane();
+        if (center != null) {
+            applyStretchConstraints(center, true, true);
+            this.layoutContainer.setCenter(center);
+        }
+
+        Node right = rightPane();
+        if (right != null) {
+            applyStretchConstraints(right, false, true);
+            this.layoutContainer.setRight(right);
+        }
+
+        Node bottom = bottomPane();
+        if (bottom != null) {
+            applyStretchConstraints(bottom, true, false);
+            this.layoutContainer.setBottom(bottom);
         }
     }
-    
-    public String getTitle() {
-        return title;
+
+    private void applyStretchConstraints(Node node, boolean hGrow, boolean vGrow) {
+        if (node instanceof Region region) {
+            if (hGrow) region.setMaxWidth(Double.MAX_VALUE);
+            if (vGrow) region.setMaxHeight(Double.MAX_VALUE);
+        }
     }
+
+    protected abstract Node topPane();
+
+    protected abstract Node leftPane();
+
+    protected abstract Node rightPane();
+
+    protected abstract Node bottomPane();
+
+    protected abstract Node centerPane();
+
+    public abstract String getIdentifier();
 }

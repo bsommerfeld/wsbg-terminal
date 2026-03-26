@@ -10,7 +10,9 @@ import de.bsommerfeld.wsbg.terminal.core.i18n.I18nService;
 import de.bsommerfeld.wsbg.terminal.db.AgentRepository;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
 import de.bsommerfeld.wsbg.terminal.agent.OllamaServerManager;
+
 import de.bsommerfeld.wsbg.terminal.ui.config.AppModule;
+import de.bsommerfeld.wsbg.terminal.ui.view.dock.widgets.WidgetRegistry;
 import de.bsommerfeld.wsbg.terminal.ui.event.UiEvents;
 import javafx.animation.Animation;
 import javafx.animation.FadeTransition;
@@ -18,7 +20,6 @@ import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
-import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.image.Image;
 import javafx.scene.layout.BorderPane;
@@ -30,7 +31,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-
 
 /**
  * JavaFX entry point. Sets up DI, loads the dashboard view into an
@@ -44,7 +44,6 @@ import java.io.IOException;
  */
 public class WsbgTerminalApp extends Application {
 
-
     private static final Logger LOG = LoggerFactory.getLogger(WsbgTerminalApp.class);
 
     private Injector injector;
@@ -57,7 +56,7 @@ public class WsbgTerminalApp extends Application {
         loadFont("/fonts/FiraCode-Regular.ttf");
         loadFont("/fonts/FiraCode-Bold.ttf");
         loadFont("/fonts/FiraCode-Retina.ttf");
-
+        
         this.injector = Guice.createInjector(new AppModule());
     }
 
@@ -75,8 +74,9 @@ public class WsbgTerminalApp extends Application {
             LOG.info("WSBG-TERMINAL BEREIT. (MODE: {})", ApplicationMode.get());
 
             injector.getInstance(ApplicationEventBus.class).register(this);
-        } catch (IOException e) {
-            LOG.error("Failed to load Dashboard View", e);
+        } catch (Throwable e) {
+            LOG.error("Failed to start application", e);
+            e.printStackTrace();
             throw new RuntimeException(e);
         }
     }
@@ -91,6 +91,13 @@ public class WsbgTerminalApp extends Application {
 
     public static void main(String[] args) {
         launch(args);
+        
+        // Prevent JVM from exiting if launch() returns immediately under -Djavafx.embed.singleThread=true
+        try {
+            Thread.currentThread().join();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
     }
 
     // ── Terminal Blink ──────────────────────────────────────────────

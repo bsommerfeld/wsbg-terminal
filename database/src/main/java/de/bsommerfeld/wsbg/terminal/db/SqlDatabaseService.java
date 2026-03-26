@@ -54,7 +54,7 @@ public class SqlDatabaseService implements DatabaseService {
     private final String dbUrl;
 
     public SqlDatabaseService() {
-        Path appData = StorageUtils.getAppDataDir("wsbg-terminal");
+        Path appData = StorageUtils.getAppDataDir();
         try {
             if (!Files.exists(appData))
                 Files.createDirectories(appData);

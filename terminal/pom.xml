@@ -48,9 +48,7 @@
             <groupId>org.openjfx</groupId>
             <artifactId>javafx-graphics</artifactId>
         </dependency>
-
-
-         <dependency>
+        <dependency>
             <groupId>de.bsommerfeld.jshepherd</groupId>
             <artifactId>core</artifactId>
         </dependency>

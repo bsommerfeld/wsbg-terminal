@@ -222,7 +222,7 @@ final class SettingsViewModel {
      */
     void restartViaLauncher(boolean forceUpdate) {
         try {
-            Path appDir = StorageUtils.getAppDataDir("wsbg-terminal");
+            Path appDir = StorageUtils.getAppDataDir();
             String[] command = buildLauncherCommand(appDir, forceUpdate);
             new ProcessBuilder(command)
                     .directory(appDir.toFile())
@@ -287,7 +287,7 @@ final class SettingsViewModel {
     private void checkForUpdates() {
         Thread.ofVirtual().name("update-check").start(() -> {
             try {
-                Path versionFile = StorageUtils.getAppDataDir("wsbg-terminal")
+                Path versionFile = StorageUtils.getAppDataDir()
                         .resolve("version.txt");
                 if (!Files.exists(versionFile))
                     return;

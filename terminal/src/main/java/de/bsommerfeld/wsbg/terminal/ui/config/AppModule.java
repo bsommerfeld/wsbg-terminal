@@ -28,7 +28,7 @@ public class AppModule extends AbstractModule {
     @Override
     protected void configure() {
         try {
-            Path appDataDir = StorageUtils.getAppDataDir("wsbg-terminal");
+            Path appDataDir = StorageUtils.getAppDataDir();
             if (!Files.exists(appDataDir)) {
                 Files.createDirectories(appDataDir);
             }

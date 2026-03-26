@@ -23,6 +23,8 @@ import java.util.Locale;
  */
 public final class StorageUtils {
 
+    private static final String APP_NAME = "wsbg-terminal";
+    
     private StorageUtils() {
     }
 
@@ -31,28 +33,27 @@ public final class StorageUtils {
      * name.
      * The directory is not guaranteed to exist.
      *
-     * @param appName application identifier used as the directory name
      * @return absolute path to the application's data directory
      */
-    public static Path getAppDataDir(String appName) {
+    public static Path getAppDataDir() {
         String os = System.getProperty("os.name", "generic").toLowerCase(Locale.ENGLISH);
         Path path;
 
         if ((os.contains("mac")) || (os.contains("darwin"))) {
-            path = Paths.get(System.getProperty("user.home"), "Library", "Application Support", appName);
+            path = Paths.get(System.getProperty("user.home"), "Library", "Application Support", APP_NAME);
         } else if (os.contains("win")) {
             String appData = System.getenv("APPDATA");
             if (appData != null) {
-                path = Paths.get(appData, appName);
+                path = Paths.get(appData, APP_NAME);
             } else {
-                path = Paths.get(System.getProperty("user.home"), "AppData", "Roaming", appName);
+                path = Paths.get(System.getProperty("user.home"), "AppData", "Roaming", APP_NAME);
             }
         } else {
             String xdgData = System.getenv("XDG_DATA_HOME");
             if (xdgData != null && !xdgData.isEmpty()) {
-                path = Paths.get(xdgData, appName);
+                path = Paths.get(xdgData, APP_NAME);
             } else {
-                path = Paths.get(System.getProperty("user.home"), ".local", "share", appName);
+                path = Paths.get(System.getProperty("user.home"), ".local", "share", APP_NAME);
             }
         }
         return path;
@@ -62,10 +63,9 @@ public final class StorageUtils {
      * Returns the log directory inside the application data directory.
      * Keeps logs co-located with app data for portability.
      *
-     * @param appName application identifier
      * @return absolute path to {@code {appDataDir}/logs}
      */
-    public static Path getLogsDir(String appName) {
-        return getAppDataDir(appName).resolve("logs");
+    public static Path getLogsDir() {
+        return getAppDataDir().resolve("logs");
     }
 }
