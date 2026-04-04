@@ -84,10 +84,10 @@ $translatorModel = "translategemma:4b"
 
 if ($powerMode) {
     Write-Host "[*] Power Mode: ON" -ForegroundColor Magenta
-    $reasoningModel = "qwen3.5:9b"
+    $reasoningModel = "gemma4:e4b"
 } else {
     Write-Host "[*] Power Mode: OFF" -ForegroundColor Cyan
-    $reasoningModel = "qwen3.5:4b"
+    $reasoningModel = "gemma4:e2b"
 }
 
 Write-Host "[*] Configuration Roadmap:" -ForegroundColor Gray

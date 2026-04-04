@@ -114,12 +114,12 @@ fi
 EMBED_MODEL="nomic-embed-text-v2-moe:latest"
 
 # Variable models
-REASONING_MODEL="qwen3.5:4b"
+REASONING_MODEL="gemma4:e2b"
 TRANSLATOR_MODEL="translategemma:4b"
 
 if [ "$POWER_MODE" = true ]; then
     echo "[*] Power Mode: ON"
-    REASONING_MODEL="qwen3.5:9b"
+    REASONING_MODEL="gemma4:e4b"
 else
     echo "[*] Power Mode: OFF"
 fi

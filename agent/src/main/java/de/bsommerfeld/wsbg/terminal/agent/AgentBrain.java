@@ -105,20 +105,19 @@ public class AgentBrain {
 
         LOG.info("Initializing AgentBrain -- Reasoning: {}, Translator: {}", reasoningName, translatorName);
 
-        // Non-thinking: Qwen 3.5 supports hybrid thinking — think(false) disables
-        // the internal reasoning trace, saving tokens and latency for tasks that
-        // don't benefit from chain-of-thought.
+        // Gemma 4 natively supports reasoning — we do not explicitly disable it
+        // because the edge variants behave correctly and standard models rely
+        // on system prompting.
         StreamingChatModel reasoningModel = OllamaStreamingChatModel.builder()
                 .baseUrl(OLLAMA_BASE_URL).modelName(reasoningName).temperature(reasoningModelEnum.getTemperature())
-                .think(false)
                 .build();
 
         StreamingChatModel translatorModel = OllamaStreamingChatModel.builder()
                 .baseUrl(OLLAMA_BASE_URL).modelName(translatorName).temperature(Model.TRANSLATOR.getTemperature())
                 .build();
 
-        // Qwen 3.5 is natively multimodal (Early Fusion) — the reasoning
-        // model handles vision directly, eliminating the former GLM-OCR step.
+        // Gemma 4 is natively multimodal — the reasoning
+        // model handles vision directly.
         this.visionModel = OllamaChatModel.builder()
                 .baseUrl(OLLAMA_BASE_URL).modelName(reasoningName)
                 .temperature(0.1)

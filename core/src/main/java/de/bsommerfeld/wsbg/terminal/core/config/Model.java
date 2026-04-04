@@ -4,8 +4,8 @@ package de.bsommerfeld.wsbg.terminal.core.config;
  * Registry of external (Ollama) AI models used by the terminal.
  */
 public enum Model {
-    REASONING("qwen3.5:4b", "qwen3.5", 0.2),
-    REASONING_POWER("qwen3.5:9b", "qwen3.5", 0.2),
+    REASONING("gemma4:e2b", "gemma4", 0.2),
+    REASONING_POWER("gemma4:e4b", "gemma4", 0.2),
     TRANSLATOR("translategemma:4b", "translategemma", 0.1),
     EMBEDDING("nomic-embed-text-v2-moe:latest", "nomic-embed-text-v2-moe", 0.0);
 
