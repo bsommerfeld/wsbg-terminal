@@ -7,6 +7,8 @@ import de.bsommerfeld.wsbg.terminal.core.i18n.I18nService;
 import javafx.scene.Scene;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HeaderBar;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
 import javafx.scene.paint.Color;
 import javafx.stage.Stage;
 
@@ -26,7 +28,7 @@ import javafx.stage.Stage;
 final class TitleBarFactory {
 
     // macOS compact title bar standard (matches Discord, Terminal.app)
-    private static final double MACOS_BUTTON_HEIGHT = 38;
+    private static final double MACOS_BUTTON_HEIGHT = 24;
 
     // Windows standard title bar height (matches Explorer, VS Code)
     private static final double WINDOWS_BUTTON_HEIGHT = 32;
@@ -52,8 +54,19 @@ final class TitleBarFactory {
         };
         HeaderBar.setPrefButtonHeight(stage, buttonHeight);
 
+        // The HeaderBar's own prefHeight(-1) reflects JavaFX layout, not the platform's
+        // actual rendered title bar height — making it an unreliable source for the
+        // BorderPane layout. A Region filler with an explicit size is the source of truth;
+        // the HeaderBar sits on top in z-order to own all drag events.
+        Region headerFiller = new Region();
+        headerFiller.setPrefHeight(buttonHeight);
+        headerFiller.setMaxHeight(buttonHeight);
+
+        StackPane topArea = new StackPane(headerFiller, headerBar);
+        topArea.setPrefHeight(buttonHeight);
+
         BorderPane root = new BorderPane();
-        root.setTop(headerBar);
+        root.setTop(topArea);
 
         Scene scene = new Scene(root);
         scene.setFill(Color.web("#171717"));
