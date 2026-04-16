@@ -47,13 +47,10 @@ class ConfigDefaultsTest {
     }
 
     @Test
-    void headlineConfig_shouldDefaultToEnabledAndShowAll() {
+    void headlineConfig_shouldDefaultToEnabled() {
         var config = new HeadlineConfig();
 
         assertTrue(config.isEnabled());
-        assertTrue(config.isShowAll());
-        assertNotNull(config.getTopics());
-        assertTrue(config.getTopics().isEmpty());
     }
 
     @Test

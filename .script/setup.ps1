@@ -141,10 +141,9 @@ if (Test-Path $configFile) {
 # ------------------------------------------------------------------------------
 # 3. Select Models based on Mode
 # ------------------------------------------------------------------------------
-# We map internal systems (Embeddings, Reasoning, Translation) to specific 
+# We map internal systems (Embeddings, Reasoning) to specific 
 # model definitions. The reasoning model is scaled alongside Power Mode.
 $embedModel = "nomic-embed-text-v2-moe:latest"
-$translatorModel = "translategemma:4b"
 
 if ($powerMode) {
     Write-Host "[*] Power Mode: ON" -ForegroundColor Magenta
@@ -156,7 +155,6 @@ if ($powerMode) {
 
 Write-Host "[*] Configuration Roadmap:" -ForegroundColor Gray
 Write-Host "    - Reasoning Agent: $reasoningModel" -ForegroundColor Gray
-Write-Host "    - Translator:      $translatorModel" -ForegroundColor Gray
 Write-Host "    - Embeddings:      $embedModel" -ForegroundColor Gray
 
 
@@ -184,7 +182,6 @@ function Pull-IfMissing($modelName) {
 }
 
 Pull-IfMissing $reasoningModel
-Pull-IfMissing $translatorModel
 Pull-IfMissing $embedModel
 
 # ------------------------------------------------------------------------------

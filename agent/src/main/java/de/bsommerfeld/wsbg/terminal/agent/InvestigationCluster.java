@@ -3,13 +3,13 @@ package de.bsommerfeld.wsbg.terminal.agent;
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
 import dev.langchain4j.data.embedding.Embedding;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.UUID;
 
 /**
  * Tracks a semantically clustered group of Reddit threads that share
@@ -39,7 +39,15 @@ class InvestigationCluster {
     int totalScore;
     int totalComments;
     double currentSignificance;
-    boolean reported;
+    int headlineCount;
+
+    // Activity-based gating for CHL: tracks significance at the time of the
+    // last AI evaluation (accept or reject). Re-evaluation only triggers
+    // when enough new context has accumulated (significance delta), not
+    // after a fixed time — hot stories with rapid context influx are
+    // never blocked from producing follow-up headlines.
+    double significanceAtLastEvaluation;
+    Instant lastEvaluatedAt;
 
     String latestThreadId;
     String bestThreadId;
@@ -53,7 +61,9 @@ class InvestigationCluster {
     private float[] centroidVector;
 
     InvestigationCluster(RedditThread initial, Embedding embedding) {
-        this.id = UUID.randomUUID().toString().substring(0, 8);
+        // Deterministic ID: initial thread's Reddit ID survives restarts and
+        // enables DB history lookup — random UUIDs cannot be matched after restart.
+        this.id = initial.id();
         this.initialTitle = initial.title();
         this.firstSeen = Instant.now();
         this.lastActivity = Instant.now();
@@ -138,8 +148,26 @@ class InvestigationCluster {
     void addToHistory(String headline) {
         LocalTime now = LocalTime.now();
         reportHistory.add(String.format("[%02d:%02d] %s", now.getHour(), now.getMinute(), headline));
-        if (reportHistory.size() > 5)
+        headlineCount++;
+        // Keep enough editorial history for the AI to build CHL narrative
+        if (reportHistory.size() > 10)
             reportHistory.remove(0);
+    }
+
+    /**
+     * Determines if this cluster warrants a new AI evaluation.
+     * Uses significance delta instead of time-based cooldown so that
+     * breaking stories with rapid context influx are never blocked.
+     * The 30s anti-spam gap only prevents re-calling within the exact
+     * same scan cycle.
+     */
+    boolean isEligibleForEvaluation(double currentSignificance, double minDelta) {
+        if (lastEvaluatedAt == null)
+            return true;
+        // Anti-spam: prevent re-evaluation within the same scan cycle
+        if (Duration.between(lastEvaluatedAt, Instant.now()).toSeconds() < 30)
+            return false;
+        return (currentSignificance - significanceAtLastEvaluation) >= minDelta;
     }
 
     /**

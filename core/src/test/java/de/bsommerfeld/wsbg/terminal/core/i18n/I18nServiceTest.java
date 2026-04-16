@@ -2,6 +2,7 @@ package de.bsommerfeld.wsbg.terminal.core.i18n;
 
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.core.config.UserConfig;
+import de.bsommerfeld.wsbg.terminal.core.config.UserLanguage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -19,7 +20,7 @@ class I18nServiceTest {
         GlobalConfig config = mock(GlobalConfig.class);
         UserConfig userConfig = mock(UserConfig.class);
         when(config.getUser()).thenReturn(userConfig);
-        when(userConfig.getLanguage()).thenReturn("en");
+        when(userConfig.getUserLanguage()).thenReturn(UserLanguage.of("en"));
         service = new I18nService(config);
     }
 

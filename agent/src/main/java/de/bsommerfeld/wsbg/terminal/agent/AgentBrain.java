@@ -5,21 +5,16 @@ import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.core.config.AgentConfig;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.core.config.Model;
+import de.bsommerfeld.wsbg.terminal.core.config.UserLanguage;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
 import de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.PowerModeChangedEvent;
 import dev.langchain4j.data.message.ImageContent;
 import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
-import dev.langchain4j.model.chat.Capability;
 import dev.langchain4j.model.chat.ChatModel;
-import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.ollama.OllamaChatModel;
-import dev.langchain4j.model.ollama.OllamaStreamingChatModel;
 import dev.langchain4j.service.AiServices;
-import dev.langchain4j.service.SystemMessage;
-import dev.langchain4j.service.TokenStream;
-import dev.langchain4j.service.V;
 import jakarta.inject.Inject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,14 +31,18 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
  * Central AI brain managing Ollama model interactions.
- * Coordinates reasoning, translation, and vision pipelines.
+ * Coordinates reasoning and vision pipelines. All responses are
+ * blocking — gemma4 handles both reasoning and language-appropriate
+ * output natively via system prompt injection.
  */
 @Singleton
 public class AgentBrain {
@@ -57,22 +56,12 @@ public class AgentBrain {
     private final HttpClient httpClient = HttpClient.newHttpClient();
 
     private Assistant assistant;
-    private TranslatorBot translatorBot;
-    private TickerExtractor tickerExtractor;
     private ChatModel visionModel;
     private String activeReasoningModel;
-    private String activeTranslatorModel;
-
-    // FQN on @UserMessage required — name collision with
-    // dev.langchain4j.data.message.UserMessage
-    interface TranslatorBot {
-        @SystemMessage("{{sysPrompt}}")
-        TokenStream translate(@V("sysPrompt") String system,
-                @dev.langchain4j.service.UserMessage String text);
-    }
 
     private final GlobalConfig config;
     private final OllamaServerManager serverManager;
+    private UserLanguage userLanguage;
 
     @Inject
     public AgentBrain(GlobalConfig config, ApplicationEventBus eventBus,
@@ -98,22 +87,16 @@ public class AgentBrain {
     public void initialize(AgentConfig config) {
         Model reasoningModelEnum = config.isPowerMode() ? Model.REASONING_POWER : Model.REASONING;
         String reasoningName = resolveModel(reasoningModelEnum);
-        String translatorName = resolveModel(Model.TRANSLATOR);
 
         this.activeReasoningModel = reasoningName;
-        this.activeTranslatorModel = translatorName;
+        this.userLanguage = this.config.getUser().getUserLanguage();
 
-        LOG.info("Initializing AgentBrain -- Reasoning: {}, Translator: {}", reasoningName, translatorName);
+        LOG.info("Initializing AgentBrain -- Reasoning: {}, Language: {}", reasoningName, userLanguage.displayName());
 
-        // Gemma 4 natively supports reasoning — we do not explicitly disable it
-        // because the edge variants behave correctly and standard models rely
-        // on system prompting.
-        StreamingChatModel reasoningModel = OllamaStreamingChatModel.builder()
-                .baseUrl(OLLAMA_BASE_URL).modelName(reasoningName).temperature(reasoningModelEnum.getTemperature())
-                .build();
-
-        StreamingChatModel translatorModel = OllamaStreamingChatModel.builder()
-                .baseUrl(OLLAMA_BASE_URL).modelName(translatorName).temperature(Model.TRANSLATOR.getTemperature())
+        // All models are non-streaming — the full response is returned as String
+        ChatModel reasoningModel = OllamaChatModel.builder()
+                .baseUrl(OLLAMA_BASE_URL).modelName(reasoningName)
+                .temperature(reasoningModelEnum.getTemperature())
                 .build();
 
         // Gemma 4 is natively multimodal — the reasoning
@@ -124,24 +107,8 @@ public class AgentBrain {
                 .maxRetries(1).build();
 
         this.assistant = AiServices.builder(Assistant.class)
-                .streamingChatModel(reasoningModel)
+                .chatModel(reasoningModel)
                 .chatMemoryProvider(memoryId -> MessageWindowChatMemory.withMaxMessages(20))
-                .build();
-
-        this.translatorBot = AiServices.builder(TranslatorBot.class)
-                .streamingChatModel(translatorModel)
-                .build();
-
-        // Structured output model for ticker extraction — uses non-streaming
-        // OllamaChatModel because JSON Schema is not supported in streaming mode.
-        ChatModel extractionModel = OllamaChatModel.builder()
-                .baseUrl(OLLAMA_BASE_URL).modelName(reasoningName)
-                .temperature(0.1)
-                .supportedCapabilities(Capability.RESPONSE_FORMAT_JSON_SCHEMA)
-                .build();
-
-        this.tickerExtractor = AiServices.builder(TickerExtractor.class)
-                .chatModel(extractionModel)
                 .build();
     }
 
@@ -184,48 +151,81 @@ public class AgentBrain {
     // -- Public API --
 
     /** Sends a chat message using the default memory scope. */
-    public TokenStream ask(String message) {
+    public String ask(String message) {
         return ask("default", message);
     }
 
     /** Sends a chat message with an isolated memory scope. */
-    public TokenStream ask(String memoryId, String message) {
+    public String ask(String memoryId, String message) {
         if (assistant == null)
             return null;
         try {
             LOG.info("Brain thinking [ID={}, model={}]: {}", memoryId, activeReasoningModel, message);
-            return assistant.chat(memoryId, message);
+            return assistant.chat(memoryId, message, userLanguage.displayName());
         } catch (Exception e) {
             LOG.error("Brain failure", e);
             return null;
         }
     }
 
-    /** Translates text between languages via the dedicated translator model. */
-    public TokenStream translate(String text, String sourceLang, String sourceCode,
-            String targetLang, String targetCode) {
-        if (translatorBot == null)
-            return null;
-        String prompt = PromptLoader.load("translation", Map.of(
-                "SOURCE_LANG", sourceLang, "SOURCE_CODE", sourceCode,
-                "TARGET_LANG", targetLang, "TARGET_CODE", targetCode));
-        LOG.info("Translating [model={}]: {} -> {}", activeTranslatorModel, sourceCode, targetCode);
-        return translatorBot.translate(prompt, text);
-    }
-
-    /** Extracts financial instrument mentions from text via structured output. */
+    /**
+     * Extracts financial instrument mentions from text.
+     * Uses a free-form JSON prompt parsed manually — more reliable than
+     * AiServices structured output which silently fails on most Ollama models
+     * that don't expose a JSON schema path.
+     */
     public TickerExtractionResult extractTickers(String context) {
-        if (tickerExtractor == null)
+        if (assistant == null)
             return TickerExtractionResult.EMPTY;
         try {
             String prompt = PromptLoader.load("ticker-extraction", Map.of("CONTEXT", context));
-            TickerExtractionResult result = tickerExtractor.extract(prompt);
+            String raw = assistant.chat("ticker-extraction", prompt, "English");
+            if (raw == null || raw.isBlank())
+                return TickerExtractionResult.EMPTY;
+            TickerExtractionResult result = parseTickerJson(raw);
             LOG.info("Extracted {} ticker mentions", result.mentions().size());
             return result;
         } catch (Exception e) {
             LOG.warn("Ticker extraction failed: {}", e.getMessage());
             return TickerExtractionResult.EMPTY;
         }
+    }
+
+    /**
+     * Parses ticker mentions from an AI response that contains a JSON array.
+     * Tolerates markdown fences and leading narrative text — only the JSON
+     * array block is extracted.
+     */
+    private TickerExtractionResult parseTickerJson(String raw) {
+        // Find first '[' ... last ']' to isolate the JSON array
+        int start = raw.indexOf('[');
+        int end = raw.lastIndexOf(']');
+        if (start == -1 || end == -1 || end <= start)
+            return TickerExtractionResult.EMPTY;
+
+        String json = raw.substring(start, end + 1);
+        List<TickerExtractionResult.TickerMention> mentions = new ArrayList<>();
+
+        // Match individual {"symbol":...,"type":...,"name":...} objects
+        Pattern obj = Pattern.compile("\\{[^}]+\\}");
+        Pattern sym = Pattern.compile("\"symbol\"\\s*:\\s*\"([^\"]+)\"");
+        Pattern typ = Pattern.compile("\"type\"\\s*:\\s*\"([^\"]+)\"");
+        Pattern nam = Pattern.compile("\"name\"\\s*:\\s*\"([^\"]+)\"");
+
+        Matcher objM = obj.matcher(json);
+        while (objM.find()) {
+            String block = objM.group();
+            Matcher sm = sym.matcher(block);
+            Matcher tm = typ.matcher(block);
+            Matcher nm = nam.matcher(block);
+            String symbol = sm.find() ? sm.group(1) : null;
+            if (symbol == null || symbol.isBlank())
+                continue;
+            String type = tm.find() ? tm.group(1) : "UNKNOWN";
+            String name = nm.find() ? nm.group(1) : symbol;
+            mentions.add(new TickerExtractionResult.TickerMention(symbol.toUpperCase(), type, name));
+        }
+        return new TickerExtractionResult(mentions);
     }
 
     /** Performs blocking vision analysis on the given image URL. */
@@ -248,6 +248,11 @@ public class AgentBrain {
             return "[SYSTEM ERROR: Image retrieval failed (" + e.getMessage()
                     + "). THE IMAGE IS INVISIBLE. DO NOT HALLUCINATE OR GUESS ITS CONTENT.]";
         }
+    }
+
+    /** Returns the resolved user language. */
+    public UserLanguage getUserLanguage() {
+        return userLanguage;
     }
 
     // -- Image Processing --

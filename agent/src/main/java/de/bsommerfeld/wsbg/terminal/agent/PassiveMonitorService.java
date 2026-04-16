@@ -2,11 +2,10 @@ package de.bsommerfeld.wsbg.terminal.agent;
 
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
-import de.bsommerfeld.wsbg.terminal.agent.ChatService.AgentStreamEndEvent;
-import de.bsommerfeld.wsbg.terminal.agent.ChatService.AgentStreamStartEvent;
-import de.bsommerfeld.wsbg.terminal.agent.ChatService.AgentTokenEvent;
+import de.bsommerfeld.wsbg.terminal.agent.event.AgentStreamEndEvent;
+import de.bsommerfeld.wsbg.terminal.agent.event.AgentStreamStartEvent;
+
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
-import de.bsommerfeld.wsbg.terminal.core.config.HeadlineConfig;
 import de.bsommerfeld.wsbg.terminal.core.config.Model;
 import de.bsommerfeld.wsbg.terminal.core.config.RedditConfig;
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
@@ -15,6 +14,7 @@ import de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.LogEvent;
 import de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.TickerSnapshotEvent;
 import de.bsommerfeld.wsbg.terminal.core.i18n.I18nService;
 import de.bsommerfeld.wsbg.terminal.db.AgentRepository;
+import de.bsommerfeld.wsbg.terminal.db.DatabaseService.HeadlineRecord;
 import de.bsommerfeld.wsbg.terminal.db.DatabaseService.TickerMentionRecord;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
 import de.bsommerfeld.wsbg.terminal.reddit.RedditScraper;
@@ -22,7 +22,6 @@ import de.bsommerfeld.wsbg.terminal.reddit.RedditScraper.ScrapeStats;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.ollama.OllamaEmbeddingModel;
-import dev.langchain4j.service.TokenStream;
 import dev.langchain4j.store.embedding.CosineSimilarity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,12 +31,9 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -81,6 +77,13 @@ public class PassiveMonitorService {
     private final Duration cleanupInterval;
     private final long dataRetentionSeconds;
     private final long updateIntervalSeconds;
+
+    // CHL re-evaluation gate: minimum significance delta since last AI call.
+    // ~8 points ≈ 1 new thread joining the cluster, or 3–4 new comments.
+    // Breaking stories naturally exceed this within seconds, so they are
+    // never blocked. Quiet clusters don't re-trigger because their
+    // significance plateaus.
+    private static final double CHL_SIGNIFICANCE_DELTA = 8.0;
 
     @Inject
     public PassiveMonitorService(RedditScraper scraper, AgentBrain brain, ApplicationEventBus eventBus,
@@ -210,8 +213,7 @@ public class PassiveMonitorService {
     // -- Vector Clustering --
 
     private void processUpdates(List<RedditThread> updates) {
-        HeadlineConfig headlineConfig = config.getHeadlines();
-        if (!headlineConfig.isEnabled())
+        if (!config.getHeadlines().isEnabled())
             return;
 
         try {
@@ -332,13 +334,9 @@ public class PassiveMonitorService {
     // -- AI Headline Generation --
 
     private void analyzeInvestigations() {
-        HeadlineConfig headlineConfig = config.getHeadlines();
         List<InvestigationCluster> candidates = new ArrayList<>();
 
         for (InvestigationCluster inv : investigations) {
-            if (inv.reported)
-                continue;
-
             // Maturity gate: don't evaluate clusters that were just created.
             // Single-thread clusters with no activity updates are noise —
             // wait for at least one update cycle to confirm real engagement.
@@ -350,11 +348,17 @@ public class PassiveMonitorService {
             SignificanceScore result = SignificanceScorer.compute(inv);
             inv.currentSignificance = result.score();
 
-            if (result.meetsThreshold(significanceThresholdReport)) {
-                LOG.info("Cluster '{}' passes heuristic gate: {}",
-                        inv.initialTitle, result.score());
-                candidates.add(inv);
-            }
+            // First-time evaluation: absolute threshold. CHL re-evaluation:
+            // activity-based delta — hot stories with rapid context influx
+            // are never blocked from producing follow-up headlines.
+            if (!result.meetsThreshold(significanceThresholdReport))
+                continue;
+            if (!inv.isEligibleForEvaluation(inv.currentSignificance, CHL_SIGNIFICANCE_DELTA))
+                continue;
+
+            LOG.info("Cluster '{}' passes heuristic gate: {}",
+                    inv.initialTitle, result.score());
+            candidates.add(inv);
         }
 
         if (candidates.isEmpty())
@@ -363,16 +367,49 @@ public class PassiveMonitorService {
         for (InvestigationCluster inv : candidates) {
             String reportData = reportBuilder.buildReportData(inv);
             String combinedContext = reportBuilder.buildCombinedContext(inv, reportData);
-            inv.cachedContext = reportData;
+
+            // Warm cluster state from DB when reportHistory is empty (restart scenario).
+            // With deterministic cluster IDs (= initial thread ID), we can reliably find
+            // the headlines this cluster produced before the restart and restore:
+            //   1. reportHistory — so the AI sees its own editorial history
+            //   2. lastEvaluatedAt — so the CHL anti-spam gate applies
+            //   3. significanceAtLastEvaluation = current significance — so the delta gate
+            //      requires real new activity before allowing a re-evaluation.
+            if (inv.reportHistory.isEmpty()) {
+                List<HeadlineRecord> past = agentRepository.getHeadlinesByClusterId(inv.id);
+                if (!past.isEmpty()) {
+                    past.forEach(h -> inv.reportHistory.add(h.headline()));
+                    inv.lastEvaluatedAt = Instant.ofEpochSecond(
+                            past.stream().mapToLong(HeadlineRecord::createdAt).max().orElse(0));
+                    inv.significanceAtLastEvaluation = inv.currentSignificance;
+                }
+            }
 
             String historyBlock = inv.reportHistory.isEmpty() ? "NONE"
-                    : String.join("\n", inv.reportHistory.stream()
-                            .map(h -> "- " + h).collect(Collectors.toList()));
+                    : inv.reportHistory.stream().map(h -> "- " + h).collect(Collectors.joining("\n"));
+
+            // Delta principle: on CHL re-evaluations, extract only lines that are new
+            // since the last evaluation and highlight them in the prompt. The AI
+            // receives the full context for history but a focused delta for its verdict —
+            // forcing it to ask "does this *new* data warrant a new headline?"
+            String deltaContext = inv.lastEvaluatedAt != null
+                    ? reportBuilder.buildDeltaContext(combinedContext, inv.cachedContext)
+                    : "";
 
             String prompt = reportBuilder.buildHeadlinePrompt(historyBlock, combinedContext,
-                    headlineConfig.isShowAll(), headlineConfig.getTopics());
-            String response = collectStreamBlocking(brain.ask("passive-monitor", prompt)).trim();
+                    deltaContext, brain.getUserLanguage().displayName());
+            String response = brain.ask("passive-monitor", prompt);
+            if (response == null) {
+                LOG.warn("Brain returned null for headline generation");
+                continue;
+            }
+            response = response.trim();
             LOG.info("[AI-RESPONSE] {}", response);
+
+            // Snapshot significance after every AI call so the delta
+            // gate knows when enough new context has accumulated.
+            inv.significanceAtLastEvaluation = inv.currentSignificance;
+            inv.lastEvaluatedAt = Instant.now();
 
             // Primary gate: VERDICT must be explicit ACCEPT.
             // The prompt structure forces the AI to choose ACCEPT or REJECT
@@ -380,13 +417,15 @@ public class PassiveMonitorService {
             // models never return bare "-1" but always generate REPORT: lines.
             if (!reportBuilder.isAccepted(response)) {
                 LOG.info("Cluster '{}' rejected by AI verdict", inv.initialTitle);
-                inv.reported = true;
+                inv.cachedContext = combinedContext;
                 continue;
             }
 
             String headline = reportBuilder.extractHeadline(response);
-            if (headline.isEmpty())
+            if (headline.isEmpty()) {
+                inv.cachedContext = combinedContext;
                 continue;
+            }
 
             // Safety net: catch headlines that describe irrelevance, meta-commentary
             // about the subreddit, or indirect non-news the AI shouldn't have accepted
@@ -395,17 +434,25 @@ public class PassiveMonitorService {
                     || lowerHeadline.contains("nicht relevant") || lowerHeadline.contains("not relevant")
                     || lowerHeadline.contains("subreddit")) {
                 LOG.info("Rejected meta/irrelevance headline: {}", headline);
-                inv.reported = true;
+                inv.cachedContext = combinedContext;
                 continue;
             }
 
-            inv.reported = true;
             inv.addToHistory(headline);
             inv.cachedContext = combinedContext;
 
             agentRepository.saveHeadline(inv.id, headline, combinedContext);
 
-            translateAndStream(inv, headline);
+            // Gemma4 already produces headlines in the user's language via
+            // prompt injection — no separate translation step needed.
+            String payload = "||PASSIVE||" + headline + "||REF||ID:" + inv.id;
+            eventBus.post(new AgentStreamStartEvent(i18n.get("log.source.passive_agent"), "source-AI"));
+            eventBus.post(new AgentStreamEndEvent(payload));
+
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException ignored) {
+            }
         }
 
         // Ticker extraction: runs on all candidates regardless of headline verdict.
@@ -413,6 +460,8 @@ public class PassiveMonitorService {
         // for the dashboard (e.g., penny stock questions).
         for (InvestigationCluster inv : candidates) {
             try {
+                if (inv.cachedContext == null || inv.cachedContext.isBlank())
+                    continue;
                 TickerExtractionResult result = brain.extractTickers(inv.cachedContext);
 
                 List<TickerMentionRecord> records = result.mentions().stream()
@@ -427,73 +476,6 @@ public class PassiveMonitorService {
         Map<String, Integer> snapshot = agentRepository.getTickerCountsLastHour();
         if (!snapshot.isEmpty()) {
             eventBus.post(new TickerSnapshotEvent(snapshot));
-        }
-    }
-
-    private void translateAndStream(InvestigationCluster inv, String headline) {
-        String targetLang = config.getUser().getLanguage();
-
-        // AI produces English headlines; skip translation when user language is English
-        if ("en".equalsIgnoreCase(targetLang)) {
-            String payload = "||PASSIVE||" + headline + "||REF||ID:" + inv.id;
-            eventBus.post(new AgentStreamStartEvent(i18n.get("log.source.passive_agent"), "source-AI"));
-            eventBus.post(new AgentStreamEndEvent(payload));
-            return;
-        }
-
-        Locale targetLocale = Locale.forLanguageTag(targetLang);
-        String targetName = targetLocale.getDisplayLanguage(Locale.ENGLISH);
-
-        TokenStream stream = brain.translate(headline, "English", "en", targetName, targetLang);
-        if (stream == null)
-            return;
-
-        eventBus.post(new AgentStreamStartEvent(i18n.get("log.source.passive_agent"), "source-AI"));
-        StringBuilder translated = new StringBuilder();
-        CountDownLatch latch = new CountDownLatch(1);
-
-        stream.onPartialResponse(token -> {
-            translated.append(token);
-            eventBus.post(new AgentTokenEvent(token));
-        }).onCompleteResponse(res -> latch.countDown()).onError(ex -> latch.countDown()).start();
-
-        try {
-            latch.await(30, TimeUnit.SECONDS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-
-        // Guard: do not emit an empty Eilmeldung if the translation
-        // produced no output (e.g. timeout or model error).
-        if (translated.isEmpty()) {
-            LOG.warn("Translation produced empty output, discarding headline");
-            eventBus.post(new AgentStreamEndEvent(""));
-            return;
-        }
-
-        String payload = "||PASSIVE||" + translated + "||REF||ID:" + inv.id;
-        eventBus.post(new AgentStreamEndEvent(payload));
-
-        try {
-            Thread.sleep(500);
-        } catch (InterruptedException ignored) {
-        }
-    }
-
-    private String collectStreamBlocking(TokenStream stream) {
-        if (stream == null)
-            return "";
-        CompletableFuture<String> future = new CompletableFuture<>();
-        stream.onPartialResponse(token -> {
-        })
-                .onCompleteResponse(response -> future.complete(response.aiMessage().text()))
-                .onError(future::completeExceptionally)
-                .start();
-        try {
-            return future.get(60, TimeUnit.SECONDS);
-        } catch (Exception e) {
-            LOG.error("Stream collection failed", e);
-            return "";
         }
     }
 }

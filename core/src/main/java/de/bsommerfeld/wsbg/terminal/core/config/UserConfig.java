@@ -33,6 +33,11 @@ public class UserConfig {
         return language;
     }
 
+    /** Returns a resolved {@link UserLanguage} with locale and display name. */
+    public UserLanguage getUserLanguage() {
+        return UserLanguage.of(language);
+    }
+
     public void setLanguage(String language) {
         this.language = language;
     }

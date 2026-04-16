@@ -78,9 +78,7 @@ class ApplicationEventBusTest {
     }
 
     @Test
-    void post_shouldFilterAgentTokenEventFromLogs() {
-        // Smoke test — the method should not throw when posting an event with
-        // "AgentTokenEvent" in the class name (it filters LOG output)
+    void post_shouldDeliverNonStringEvents() {
         var eventBus = new ApplicationEventBus();
         var received = new AtomicReference<Object>();
 
@@ -92,7 +90,6 @@ class ApplicationEventBusTest {
         };
         eventBus.register(listener);
 
-        // Post a regular event — just verifying no exception
         eventBus.post(42);
         assertEquals(42, received.get());
     }

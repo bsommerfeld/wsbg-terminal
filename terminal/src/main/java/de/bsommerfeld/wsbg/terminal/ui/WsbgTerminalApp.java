@@ -8,6 +8,7 @@ import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
 import de.bsommerfeld.wsbg.terminal.core.i18n.I18nService;
 import de.bsommerfeld.wsbg.terminal.db.AgentRepository;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
+import de.bsommerfeld.wsbg.terminal.agent.AgentBrain;
 import de.bsommerfeld.wsbg.terminal.agent.OllamaServerManager;
 
 import de.bsommerfeld.wsbg.terminal.ui.config.AppModule;
@@ -116,14 +117,17 @@ public class WsbgTerminalApp extends Application {
 
         BorderPane root = TitleBarFactory.buildHeaderBar(stage, eventBus, config, i18n);
 
+        AgentBrain agentBrain = injector.getInstance(AgentBrain.class);
+
         WidgetRegistry.register(FinancialJuiceWidget.IDENTIFIER, () -> new FinancialJuiceWidget(i18n));
-        WidgetRegistry.register(TickerChartWidget.IDENTIFIER, () -> new TickerChartWidget(eventBus, i18n));
-        WidgetRegistry.register(RedditHeadlineWidget.IDENTIFIER, () -> new RedditHeadlineWidget(agentRepository, i18n));
+        WidgetRegistry.register(TickerChartWidget.IDENTIFIER, () -> new TickerChartWidget(eventBus, i18n, agentRepository));
+        WidgetRegistry.register(RedditHeadlineWidget.IDENTIFIER,
+                () -> new RedditHeadlineWidget(agentRepository, eventBus, agentBrain, i18n));
 
         DockPanel dockPanel = new DockPanel();
-        dockPanel.addWidget(new RedditHeadlineWidget(agentRepository, i18n));
+        dockPanel.addWidget(new RedditHeadlineWidget(agentRepository, eventBus, agentBrain, i18n));
         dockPanel.addWidget(new FinancialJuiceWidget(i18n));
-        dockPanel.addWidget(new TickerChartWidget(eventBus, i18n));
+        dockPanel.addWidget(new TickerChartWidget(eventBus, i18n, agentRepository));
         root.setCenter(dockPanel);
 
         stage.setMinWidth(800);

@@ -21,10 +21,7 @@ public class ApplicationEventBus {
     }
 
     public void post(Object event) {
-        // Filter out high-frequency spam from logs
-        if (!event.getClass().getSimpleName().contains("AgentTokenEvent")) {
-            LOG.debug("Posting event: {}", event);
-        }
+        LOG.debug("Posting event: {}", event);
         eventBus.post(event);
     }
 

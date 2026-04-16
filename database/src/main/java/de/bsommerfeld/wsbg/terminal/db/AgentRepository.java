@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -111,6 +112,20 @@ public class AgentRepository {
         return headlineCache.stream()
                 .filter(h -> h.createdAt() >= cutoff)
                 .sorted((a, b) -> Long.compare(b.createdAt(), a.createdAt()))
+                .toList();
+    }
+
+    /**
+     * Returns all headlines for a specific cluster, oldest first.
+     * Used to restore {@code inv.reportHistory} after a restart so the
+     * AI does not re-report headlines it has already generated.
+     */
+    public List<HeadlineRecord> getHeadlinesByClusterId(String clusterId) {
+        warmupIfNeeded();
+        long cutoff = (System.currentTimeMillis() / 1000) - TTL_SECONDS;
+        return headlineCache.stream()
+                .filter(h -> h.createdAt() >= cutoff && h.clusterId().equals(clusterId))
+                .sorted(Comparator.comparingLong(HeadlineRecord::createdAt))
                 .toList();
     }
 

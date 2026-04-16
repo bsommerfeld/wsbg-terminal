@@ -29,24 +29,21 @@ class PromptLoaderTest {
 
     @Test
     void loadWithVariables_shouldSubstitutePlaceholders() {
-        // Use a known prompt that has placeholders
-        String result = PromptLoader.load("translation", Map.of(
-                "SOURCE_LANG", "English",
-                "SOURCE_CODE", "en",
-                "TARGET_LANG", "German",
-                "TARGET_CODE", "de"));
+        String result = PromptLoader.load("headline-generation", Map.of(
+                "CONTEXT", "Test context",
+                "HISTORY", "NONE",
+                "LANGUAGE", "German"));
 
         assertNotNull(result);
-        assertFalse(result.contains("{{SOURCE_LANG}}"), "Placeholder should be replaced");
-        assertTrue(result.contains("English"));
+        assertFalse(result.contains("{{CONTEXT}}"), "Placeholder should be replaced");
+        assertTrue(result.contains("Test context"));
         assertTrue(result.contains("German"));
     }
 
     @Test
     void loadWithVariables_shouldPreserveUnmatchedPlaceholders() {
-        // If a placeholder is not in the map, it should remain as-is
-        String raw = PromptLoader.load("translation");
-        assertTrue(raw.contains("{{SOURCE_LANG}}") || raw.contains("{{"),
+        String raw = PromptLoader.load("headline-generation");
+        assertTrue(raw.contains("{{CONTEXT}}") || raw.contains("{{"),
                 "Raw template should contain placeholders");
     }
 }

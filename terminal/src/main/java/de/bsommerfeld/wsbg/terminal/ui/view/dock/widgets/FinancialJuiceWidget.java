@@ -21,6 +21,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Circle;
+import javafx.scene.shape.SVGPath;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -46,6 +47,8 @@ public class FinancialJuiceWidget extends DockWidget {
 
     public static final String IDENTIFIER = "financial-juice";
 
+    // Simple bar-chart SVG icon used as a neutral market-data logo
+    private static final String CHART_SVG = "M3 3v18h18V3H3zm16 16H5V5h14v14zM7 14h2v3H7v-3zm4-4h2v7h-2v-7zm4-3h2v10h-2V7z";
     private static final Logger LOG = LoggerFactory.getLogger(FinancialJuiceWidget.class);
     // FJ returns 429 at intervals below ~30s, 60s is safe
     private static final long POLL_INTERVAL_SECONDS = 60;
@@ -120,12 +123,18 @@ public class FinancialJuiceWidget extends DockWidget {
 
     @Override
     protected Node topPane() {
+        SVGPath logo = new SVGPath();
+        logo.setContent(CHART_SVG);
+        logo.setFill(Color.web("#ff9f00"));
+        logo.setScaleX(0.75);
+        logo.setScaleY(0.75);
+
         Label title = new Label(i18n.get("widget.fj.title"));
         title.getStyleClass().add("fj-title");
 
         statusLabel.getStyleClass().add("fj-status");
 
-        HBox header = new HBox(title, statusLabel);
+        HBox header = new HBox(6, logo, title, statusLabel);
         header.setAlignment(Pos.CENTER_LEFT);
         header.setPadding(new Insets(8, 12, 6, 12));
         HBox.setHgrow(statusLabel, Priority.ALWAYS);

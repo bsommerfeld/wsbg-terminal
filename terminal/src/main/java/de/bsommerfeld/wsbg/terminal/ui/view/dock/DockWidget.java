@@ -1,9 +1,12 @@
 package de.bsommerfeld.wsbg.terminal.ui.view.dock;
 
-import javafx.animation.ScaleTransition;
+import javafx.animation.Interpolator;
+import javafx.animation.RotateTransition;
 import javafx.scene.Cursor;
 import javafx.scene.Node;
+import javafx.scene.PerspectiveCamera;
 import javafx.scene.layout.*;
+import javafx.scene.transform.Rotate;
 import javafx.util.Duration;
 
 /**
@@ -49,22 +52,36 @@ public abstract class DockWidget extends StackPane {
     }
 
     private void animateFlip(Node hideNode, Node showNode) {
-        ScaleTransition hideTransition = new ScaleTransition(Duration.millis(250), hideNode);
-        hideTransition.setFromX(1.0);
-        hideTransition.setToX(0.0);
-        
-        hideTransition.setOnFinished(e -> {
+        ensurePerspectiveCamera();
+
+        // Phase 1: rotate the StackPane 0→90 deg (card goes edge-on)
+        RotateTransition out = new RotateTransition(Duration.millis(180), this);
+        out.setAxis(Rotate.Y_AXIS);
+        out.setFromAngle(0);
+        out.setToAngle(90);
+        out.setInterpolator(Interpolator.EASE_IN);
+
+        out.setOnFinished(e -> {
             hideNode.setVisible(false);
-            showNode.setScaleX(0.0);
             showNode.setVisible(true);
 
-            ScaleTransition showTransition = new ScaleTransition(Duration.millis(250), showNode);
-            showTransition.setFromX(0.0);
-            showTransition.setToX(1.0);
-            showTransition.play();
+            // Phase 2: rotate 90→0 deg to reveal the other side
+            RotateTransition in = new RotateTransition(Duration.millis(180), this);
+            in.setAxis(Rotate.Y_AXIS);
+            in.setFromAngle(-90);
+            in.setToAngle(0);
+            in.setInterpolator(Interpolator.EASE_OUT);
+            in.play();
         });
 
-        hideTransition.play();
+        out.play();
+    }
+
+    /** Attaches a PerspectiveCamera to the scene on first flip so 3D rotations look correct. */
+    private void ensurePerspectiveCamera() {
+        if (getScene() != null && getScene().getCamera() == null) {
+            getScene().setCamera(new PerspectiveCamera());
+        }
     }
 
     private boolean resizing = false;
@@ -74,7 +91,7 @@ public abstract class DockWidget extends StackPane {
     private void setupDragging() {
         this.setOnMouseMoved(e -> {
             if (parentPanel == null || parentPanel.getLayout() != DockLayout.STACK) {
-                setCursor(null);
+                setCursor(Cursor.DEFAULT);
                 return;
             }
             double edge = 10;

@@ -37,7 +37,7 @@ public class I18nService {
 
     @Inject
     public I18nService(GlobalConfig config) {
-        this.currentLocale = Locale.forLanguageTag(config.getUser().getLanguage());
+        this.currentLocale = config.getUser().getUserLanguage().locale();
         loadBundle();
     }
 

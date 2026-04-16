@@ -7,7 +7,7 @@ import java.time.Instant;
  * Lightweight heuristic gate for {@link InvestigationCluster} significance.
  * This is NOT the final quality decision — it only determines whether a
  * cluster warrants an AI call. The AI itself makes the real significance
- * and topic-relevance judgment inside the consolidated headline prompt.
+ * judgment inside the consolidated headline prompt.
  */
 final class SignificanceScorer {
 

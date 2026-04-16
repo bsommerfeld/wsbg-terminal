@@ -4,6 +4,7 @@ import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
 import dev.langchain4j.data.embedding.Embedding;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.time.Instant;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -22,9 +23,9 @@ class InvestigationClusterTest {
     }
 
     @Test
-    void id_shouldBeEightCharacters() {
-        var cluster = createCluster("t3_1", "Title");
-        assertEquals(8, cluster.id.length());
+    void id_shouldMatchInitialThreadId() {
+        var cluster = createCluster("t3_abc123", "Title");
+        assertEquals("t3_abc123", cluster.id);
     }
 
     @Test
@@ -115,9 +116,41 @@ class InvestigationClusterTest {
     }
 
     @Test
-    void reported_shouldDefaultToFalse() {
+    void lastEvaluatedAt_shouldDefaultToNull() {
         var cluster = createCluster("t3_1", "Title");
-        assertFalse(cluster.reported);
+        assertNull(cluster.lastEvaluatedAt);
+    }
+
+    @Test
+    void isEligibleForEvaluation_shouldReturnTrueWhenNeverEvaluated() {
+        var cluster = createCluster("t3_1", "Title");
+        assertTrue(cluster.isEligibleForEvaluation(15.0, 8.0));
+    }
+
+    @Test
+    void isEligibleForEvaluation_shouldReturnFalseWithinAntiSpamGap() {
+        var cluster = createCluster("t3_1", "Title");
+        cluster.lastEvaluatedAt = Instant.now();
+        cluster.significanceAtLastEvaluation = 10.0;
+        // Even with high delta, anti-spam gap blocks immediate re-evaluation
+        assertFalse(cluster.isEligibleForEvaluation(100.0, 8.0));
+    }
+
+    @Test
+    void isEligibleForEvaluation_shouldReturnTrueWhenDeltaExceeded() {
+        var cluster = createCluster("t3_1", "Title");
+        cluster.lastEvaluatedAt = Instant.now().minus(Duration.ofMinutes(1));
+        cluster.significanceAtLastEvaluation = 10.0;
+        assertTrue(cluster.isEligibleForEvaluation(20.0, 8.0));
+    }
+
+    @Test
+    void isEligibleForEvaluation_shouldReturnFalseWhenDeltaInsufficient() {
+        var cluster = createCluster("t3_1", "Title");
+        cluster.lastEvaluatedAt = Instant.now().minus(Duration.ofMinutes(1));
+        cluster.significanceAtLastEvaluation = 10.0;
+        // Only 5.0 delta, but threshold is 8.0
+        assertFalse(cluster.isEligibleForEvaluation(15.0, 8.0));
     }
 
     @Test
@@ -133,12 +166,13 @@ class InvestigationClusterTest {
     }
 
     @Test
-    void addToHistory_shouldCapAtFiveEntries() {
+    void addToHistory_shouldCapAtTenEntries() {
         var cluster = createCluster("t3_1", "Title");
-        for (int i = 0; i < 7; i++) {
+        for (int i = 0; i < 12; i++) {
             cluster.addToHistory("H" + i);
         }
-        assertEquals(5, cluster.reportHistory.size());
+        assertEquals(10, cluster.reportHistory.size());
+        assertEquals(12, cluster.headlineCount);
     }
 
     @Test

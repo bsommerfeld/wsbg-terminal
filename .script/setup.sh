@@ -160,7 +160,6 @@ fi
 # ------------------------------------------------------------------------------
 # Establish default internal LLM associations
 EMBED_MODEL="nomic-embed-text-v2-moe:latest"
-TRANSLATOR_MODEL="translategemma:4b"
 REASONING_MODEL="gemma4:e2b"
 
 if [ "$POWER_MODE" = true ]; then
@@ -172,7 +171,6 @@ fi
 
 echo "[*] Configuration Roadmap:"
 echo "    - Reasoning Agent: $REASONING_MODEL"
-echo "    - Translator:      $TRANSLATOR_MODEL"
 echo "    - Embeddings:      $EMBED_MODEL"
 
 
@@ -197,7 +195,6 @@ pull_if_missing() {
 }
 
 pull_if_missing "$REASONING_MODEL"
-pull_if_missing "$TRANSLATOR_MODEL"
 pull_if_missing "$EMBED_MODEL"
 
 # ------------------------------------------------------------------------------

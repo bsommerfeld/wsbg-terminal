@@ -10,3 +10,13 @@ RULES:
 - Do NOT invent tickers. If you cannot determine the symbol, use the common name as-is.
 - Each mention counts once per thread, not per comment.
 - Ignore generic market commentary without a specific instrument.
+
+Respond ONLY with a valid JSON array. No explanation, no markdown, no prose.
+Example format:
+[
+  {"symbol": "AAPL", "type": "STOCK", "name": "Apple Inc."},
+  {"symbol": "DAX", "type": "INDEX", "name": "DAX Index"},
+  {"symbol": "BTC", "type": "CRYPTO", "name": "Bitcoin"}
+]
+
+If no instruments are found, respond with an empty array: []

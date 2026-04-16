@@ -3,22 +3,23 @@ package de.bsommerfeld.wsbg.terminal.agent;
 import com.google.common.eventbus.Subscribe;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
+import de.bsommerfeld.wsbg.terminal.agent.event.AgentStatusEvent;
+import de.bsommerfeld.wsbg.terminal.agent.event.AgentStreamEndEvent;
+import de.bsommerfeld.wsbg.terminal.agent.event.AgentStreamStartEvent;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
+import de.bsommerfeld.wsbg.terminal.core.config.UserLanguage;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
 import de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.LogEvent;
 import de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.TriggerAgentAnalysisEvent;
 import de.bsommerfeld.wsbg.terminal.core.i18n.I18nService;
 import de.bsommerfeld.wsbg.terminal.reddit.RedditScraper;
 import de.bsommerfeld.wsbg.terminal.reddit.RedditScraper.ThreadAnalysisContext;
-import dev.langchain4j.service.TokenStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Orchestrates user-facing chat, analysis pipelines, and vision requests.
@@ -27,14 +28,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * <p>
  * Three interaction modes:
  * <ul>
- * <li><strong>Chat</strong> — {@link #sendUserMessage} streams AI responses
- * directly to the UI</li>
- * <li><strong>Analysis</strong> — {@link #analyzeText} runs an English
- * reasoning pass, then
- * translates to the user's configured language before streaming</li>
+ * <li><strong>Chat</strong> — {@link #sendUserMessage} sends user input and
+ * delivers the complete AI response to the UI</li>
+ * <li><strong>Analysis</strong> — {@link #analyzeText} runs a reasoning pass
+ * and delivers the result in the user's configured language</li>
  * <li><strong>Vision</strong> — {@link #analyzeVision} delegates image
- * interpretation to
- * the vision model</li>
+ * interpretation to the vision model</li>
  * </ul>
  */
 @Singleton
@@ -45,9 +44,9 @@ public class ChatService {
     private final AgentBrain brain;
     private final ApplicationEventBus eventBus;
     private final I18nService i18n;
-    private final GlobalConfig config;
     private final RedditScraper scraper;
     private final PassiveMonitorService passiveMonitor;
+    private final UserLanguage userLanguage;
 
     @Inject
     public ChatService(AgentBrain brain, ApplicationEventBus eventBus, I18nService i18n,
@@ -55,17 +54,17 @@ public class ChatService {
         this.brain = brain;
         this.eventBus = eventBus;
         this.i18n = i18n;
-        this.config = config;
         this.scraper = scraper;
         this.passiveMonitor = passiveMonitor;
+        this.userLanguage = config.getUser().getUserLanguage();
         this.eventBus.register(this);
     }
 
     // -- Public API --
 
     /**
-     * Handles a direct user chat message. Streams the AI response to the UI
-     * in real time via {@link AgentTokenEvent} events.
+     * Handles a direct user chat message. Runs the AI reasoning asynchronously
+     * and delivers the complete response to the UI.
      *
      * @param message the user's raw input text
      */
@@ -74,20 +73,19 @@ public class ChatService {
         eventBus.post(new LogEvent("User: " + message, "INFO"));
         eventBus.post(new LogEvent("Agent thinking...", "INFO"));
 
-        TokenStream stream = brain.ask("default", message);
-        if (stream == null) {
-            eventBus.post(new LogEvent("Agent Error: Brain not ready", "ERROR"));
-            return;
-        }
-
-        streamToUi(stream);
+        CompletableFuture.supplyAsync(() -> brain.ask("default", message))
+                .thenAccept(response -> {
+                    if (response == null) {
+                        eventBus.post(new LogEvent("Agent Error: Brain not ready", "ERROR"));
+                        return;
+                    }
+                    deliverToUi(response);
+                });
     }
 
     /**
-     * Runs a two-phase analysis: first collects the AI's English reasoning,
-     * then translates to the user's language and streams the result.
-     * The two-phase approach forces the AI to reason in English (higher quality
-     * for most models) while presenting the result in the user's language.
+     * Runs a single-pass analysis. Gemma4 reasons and responds directly
+     * in the user's language — no separate translation step required.
      *
      * @param prompt the analysis prompt (typically enriched with thread/market
      *               context)
@@ -95,39 +93,21 @@ public class ChatService {
     public void analyzeText(String prompt) {
         String analysisId = "analysis-" + UUID.randomUUID();
         LOG.info("Analyzing [ID={}]: {}", analysisId, prompt);
-        eventBus.post(new LogEvent("Agent thinking (English Analysis)...", "INFO"));
+        eventBus.post(new LogEvent("Agent thinking...", "INFO"));
 
-        String targetLang = config.getUser().getLanguage();
-        TokenStream reasoningStream = brain.ask(analysisId, prompt);
-        if (reasoningStream == null) {
-            eventBus.post(new LogEvent("Agent Error: Brain not ready", "ERROR"));
-            return;
-        }
-
-        // English: stream reasoning tokens directly — no collection + translation
-        // overhead
-        if ("en".equalsIgnoreCase(targetLang)) {
-            streamToUi(reasoningStream);
-            return;
-        }
-
-        // Non-English: collect English reasoning, then translate and stream
-        collectStream(reasoningStream)
-                .thenAccept(english -> {
-                    LOG.info("Translating response...");
-                    Locale targetLocale = Locale.forLanguageTag(targetLang);
-                    String targetName = targetLocale.getDisplayLanguage(Locale.ENGLISH);
-                    TokenStream translationStream = brain.translate(
-                            english, "English", "en", targetName, targetLang);
-                    if (translationStream == null)
+        CompletableFuture.supplyAsync(() -> brain.ask(analysisId, prompt))
+                .thenAccept(response -> {
+                    if (response == null) {
+                        eventBus.post(new LogEvent("Agent Error: Brain not ready", "ERROR"));
                         return;
-                    streamToUi(translationStream);
+                    }
+                    deliverToUi(response);
                 });
     }
 
     /**
-     * Returns the raw AI response without UI streaming or translation.
-     * Used by internal subsystems that need the unprocessed English output.
+     * Returns the raw AI response without UI delivery.
+     * Used by internal subsystems that need the unprocessed output.
      *
      * @param prompt the prompt to send
      * @return future completing with the full response text
@@ -135,7 +115,7 @@ public class ChatService {
     public CompletableFuture<String> askRaw(String prompt) {
         String id = "raw-" + UUID.randomUUID();
         LOG.info("Raw query [ID={}]: {}", id, prompt);
-        return collectStream(brain.ask(id, prompt));
+        return CompletableFuture.supplyAsync(() -> brain.ask(id, prompt));
     }
 
     /**
@@ -170,48 +150,13 @@ public class ChatService {
     // -- Internal --
 
     /**
-     * Streams AI tokens to the UI in real time. Posts start/token/end events
-     * that the UI layer consumes for live rendering.
+     * Delivers a complete AI response to the UI. Posts start and end
+     * events so the UI layer can render the result.
      */
-    private void streamToUi(TokenStream stream) {
+    private void deliverToUi(String response) {
+        LOG.info("[AI-RESPONSE] {}", response);
         eventBus.post(new AgentStreamStartEvent());
-        AtomicBoolean firstToken = new AtomicBoolean(true);
-
-        stream.onPartialResponse(token -> {
-            if (firstToken.getAndSet(false)) {
-                eventBus.post(new AgentStatusEvent(""));
-            }
-            eventBus.post(new AgentTokenEvent(token));
-        })
-                .onCompleteResponse(response -> {
-                    String fullText = response.aiMessage().text();
-                    LOG.info("[AI-RESPONSE] Stream complete: {}", fullText);
-                    eventBus.post(new AgentStreamEndEvent(fullText));
-                })
-                .onError(ex -> {
-                    LOG.error("Agent stream failed", ex);
-                    eventBus.post(new LogEvent("Agent Error: " + ex.getMessage(), "ERROR"));
-                })
-                .start();
-    }
-
-    /**
-     * Collects an entire token stream into a single string. Discards individual
-     * tokens during collection — use {@link #streamToUi} when live output is
-     * needed.
-     */
-    private CompletableFuture<String> collectStream(TokenStream stream) {
-        CompletableFuture<String> future = new CompletableFuture<>();
-        if (stream == null) {
-            future.completeExceptionally(new RuntimeException("Brain returned null stream"));
-            return future;
-        }
-        stream.onPartialResponse(token -> {
-        })
-                .onCompleteResponse(response -> future.complete(response.aiMessage().text()))
-                .onError(future::completeExceptionally)
-                .start();
-        return future;
+        eventBus.post(new AgentStreamEndEvent(response));
     }
 
     /**
@@ -288,7 +233,8 @@ public class ChatService {
                 return "ERROR:EMPTY_CONTEXT";
 
             StringBuilder sb = new StringBuilder();
-            sb.append(PromptLoader.load("thread-analysis")).append("\n\nTHREAD DATA:\n");
+            sb.append(PromptLoader.load("thread-analysis", Map.of(
+                    "LANGUAGE", userLanguage.displayName()))).append("\n\nTHREAD DATA:\n");
 
             if (context.title != null)
                 sb.append("Title: ").append(context.title).append("\n\n");
@@ -318,33 +264,8 @@ public class ChatService {
     }
 
     private String buildObservationPrompt(String context) {
-        return PromptLoader.load("observation-report", Map.of("CONTEXT", context));
-    }
-
-    // -- Events --
-
-    /**
-     * Posted when an AI response stream begins. Optional source label and CSS class
-     * for UI styling.
-     */
-    public record AgentStreamStartEvent(String source, String cssClass) {
-        public AgentStreamStartEvent() {
-            this(null, null);
-        }
-    }
-
-    /** Posted for each token received from the AI stream. */
-    public record AgentTokenEvent(String token) {
-    }
-
-    /**
-     * Posted when an AI response stream completes with the full concatenated
-     * message.
-     */
-    public record AgentStreamEndEvent(String fullMessage) {
-    }
-
-    /** Posted to update the status indicator in the UI (e.g., "Translating..."). */
-    public record AgentStatusEvent(String status) {
+        return PromptLoader.load("observation-report", Map.of(
+                "CONTEXT", context,
+                "LANGUAGE", userLanguage.displayName()));
     }
 }

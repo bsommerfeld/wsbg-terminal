@@ -6,7 +6,6 @@ package de.bsommerfeld.wsbg.terminal.core.config;
 public enum Model {
     REASONING("gemma4:e2b", "gemma4", 0.2),
     REASONING_POWER("gemma4:e4b", "gemma4", 0.2),
-    TRANSLATOR("translategemma:4b", "translategemma", 0.1),
     EMBEDDING("nomic-embed-text-v2-moe:latest", "nomic-embed-text-v2-moe", 0.0);
 
     private final String modelName;

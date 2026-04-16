@@ -266,6 +266,9 @@
     -fx-border-color: glass-border;
     -fx-border-radius: 8px;
     -fx-border-width: 1px;
+    /* Subtle elevation: ambient shadow (large, soft) + cast shadow (small, crisp) */
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.55), 24, 0.1, 0, 6),
+                dropshadow(gaussian, rgba(0, 0, 0, 0.25), 6, 0, 0, 2);
 }
 
 /* =====================================================================
@@ -346,3 +349,50 @@
     -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', 'Consolas', monospace;
     -fx-font-size: 11px;
 }
+
+/* =====================================================================
+   Reddit Headline Widget — Structured Analysis Back Side
+   ===================================================================== */
+
+.analysis-row {
+    -fx-padding: 6px 0px 6px 0px;
+    -fx-border-color: transparent transparent rgba(255, 255, 255, 0.04) transparent;
+    -fx-border-width: 0 0 1px 0;
+}
+
+.analysis-key {
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', monospace;
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-padding: 3px 8px 3px 8px;
+    -fx-background-radius: 3px;
+    -fx-text-fill: white;
+    -fx-min-width: 80px;
+    -fx-max-width: 80px;
+    -fx-alignment: center;
+}
+
+/* Per-field badge colors */
+.analysis-row-asset     { -fx-background-color: #c8933a; }
+.analysis-row-sentiment { -fx-background-color: #4a7fbf; }
+.analysis-row-signal    { -fx-background-color: #3a7a5c; }
+.analysis-row-risk      { -fx-background-color: #9c4040; }
+.analysis-row-note      { -fx-background-color: #5a4a7a; }
+
+.analysis-value {
+    -fx-font-family: 'Fira Code', 'Fira Code Retina', 'JetBrains Mono', monospace;
+    -fx-font-size: 12px;
+    -fx-text-fill: color-text-primary;
+}
+
+/* Edge-to-edge scroll pane — no border, no background bleed */
+.edge-to-edge {
+    -fx-background: transparent;
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-padding: 0;
+}
+.edge-to-edge > .viewport {
+    -fx-background-color: transparent;
+}
+

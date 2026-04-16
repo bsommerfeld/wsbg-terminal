@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalTime;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -75,57 +76,111 @@ final class ReportBuilder {
     }
 
     /**
-     * Merges the new report data with any previously cached context, creating
-     * a rolling window. Older context is trimmed to 4000 chars to keep the
-     * prompt within token limits while preserving temporal continuity.
+     * Merges the new report data with previously cached context using
+     * a section-aware rolling window. Each scan cycle appends a timestamped
+     * UPDATE section. When the combined context exceeds the budget, older
+     * sections are condensed to their header line only — preserving the
+     * temporal narrative arc for CHL (Continuing Headlines) while giving
+     * the most recent evidence full detail.
      */
     String buildCombinedContext(InvestigationCluster inv, String reportData) {
-        String existing = inv.cachedContext != null ? inv.cachedContext : "";
-        if (existing.length() > 4000) {
-            existing = existing.substring(existing.length() - 4000);
-        }
         LocalTime now = LocalTime.now();
         String timeStr = String.format("[%02d:%02d]", now.getHour(), now.getMinute());
-        return existing + "\n\n=== UPDATE " + timeStr + " ===\n" + reportData;
+        String newSection = "=== UPDATE " + timeStr + " ===\n" + reportData;
+
+        String existing = inv.cachedContext != null ? inv.cachedContext : "";
+        String combined = existing + "\n\n" + newSection;
+
+        // Budget: keep the full context under 6000 chars. If over budget,
+        // compress oldest sections to header-only until it fits.
+        if (combined.length() <= 6000)
+            return combined;
+
+        return compressSections(combined, 6000);
     }
 
     /**
-     * Assembles the headline prompt with a binary VERDICT gate.
-     * The prompt forces the AI to explicitly ACCEPT or REJECT before
-     * generating any headline — small models (4b) reliably fail to
-     * return bare "-1" but can handle structured VERDICT responses.
-     *
-     * @param historyBlock previous headlines to prevent repetition
-     * @param context      combined cluster evidence
-     * @param showAll      whether topic filtering is disabled
-     * @param topics       user-defined topic keywords (may be null/empty)
+     * Splits context into UPDATE sections and compresses oldest ones
+     * to their header line until the total fits within the char budget.
+     * The most recent section is never compressed — the AI always sees
+     * full evidence for the current evaluation.
      */
-    String buildHeadlinePrompt(String historyBlock, String context,
-            boolean showAll, List<String> topics) {
+    private String compressSections(String context, int budget) {
+        String delimiter = "=== UPDATE";
+        List<String> sections = new ArrayList<>();
 
-        String topicFilter;
-        String topicInstruction;
+        int pos = 0;
+        int nextIdx;
+        while ((nextIdx = context.indexOf(delimiter, pos + 1)) != -1) {
+            sections.add(context.substring(pos, nextIdx));
+            pos = nextIdx;
+        }
+        sections.add(context.substring(pos));
 
-        if (showAll || topics == null || topics.isEmpty()) {
-            topicFilter = "";
-            topicInstruction = "No topic restriction — all financial content is relevant.";
-        } else {
-            topicFilter = "USER TOPICS: " + String.join(", ", topics) + "\n"
-                    + "JARGON: 'Eselmetalle'/'Edelmetalle' = precious metals (Gold, Silber). "
-                    + "'die Fetten' = US market. "
-                    + "'Hebel' = leveraged derivative. "
-                    + "'KO'/'Knockout' = barrier option.";
-            topicInstruction = "Is this cluster DIRECTLY about one of the user's topics? "
-                    + "Use semantic understanding (e.g., 'Zinsen' = interest rates). "
-                    + "Indirect connections do NOT count — 'stocks fell so gold might move' is NOT relevant. "
-                    + "If NOT directly relevant, output VERDICT: REJECT";
+        // Compress from oldest to newest, skip the last (most recent) section
+        for (int i = 0; i < sections.size() - 1; i++) {
+            if (totalLength(sections) <= budget)
+                break;
+
+            String section = sections.get(i);
+            int headerEnd = section.indexOf("\n");
+            if (headerEnd > 0) {
+                // Keep only the header line as a temporal anchor
+                sections.set(i, section.substring(0, headerEnd) + "\n[condensed]\n");
+            }
         }
 
+        return String.join("", sections);
+    }
+
+    private int totalLength(List<String> sections) {
+        int total = 0;
+        for (String s : sections)
+            total += s.length();
+        return total;
+    }
+
+    /**
+     * Assembles the headline prompt. For first-time evaluations, the full
+     * combined context is supplied. For CHL re-evaluations, only the
+     * delta (new evidence since the last headline) is passed as
+     * {@code deltaContext} — the AI receives the compressed old context
+     * summary plus the highlighted new data, reducing noise and forcing
+     * focus on what actually changed.
+     *
+     * @param historyBlock  previous headlines for this cluster
+     * @param context       full combined cluster context
+     * @param deltaContext  new lines since last evaluation, or empty string for first eval
+     * @param language      response language
+     */
+    String buildHeadlinePrompt(String historyBlock, String context,
+            String deltaContext, String language) {
+        String effectiveContext = deltaContext.isBlank() ? context
+                : context + "\n\n=== NEW SINCE LAST HEADLINE ===\n" + deltaContext;
         return PromptLoader.load("headline-generation", Map.of(
                 "HISTORY", historyBlock,
-                "CONTEXT", context,
-                "TOPIC_FILTER", topicFilter,
-                "TOPIC_INSTRUCTION", topicInstruction));
+                "CONTEXT", effectiveContext,
+                "LANGUAGE", language));
+    }
+
+    /**
+     * Extracts lines from {@code newContext} that are absent in {@code oldContext}.
+     * Used to pass only incremental evidence to the AI on CHL re-evaluations,
+     * preventing re-analysis of already-evaluated content.
+     */
+    String buildDeltaContext(String newContext, String oldContext) {
+        if (oldContext == null || oldContext.isBlank())
+            return "";
+        Set<String> oldLines = new HashSet<>();
+        for (String line : oldContext.split("\n"))
+            oldLines.add(line.trim());
+
+        StringBuilder delta = new StringBuilder();
+        for (String line : newContext.split("\n")) {
+            if (!line.isBlank() && !oldLines.contains(line.trim()))
+                delta.append(line).append("\n");
+        }
+        return delta.toString().trim();
     }
 
     /**
@@ -139,7 +194,7 @@ final class ReportBuilder {
 
     /**
      * Extracts the headline text from the AI's structured response.
-     * Expects the format {@code REPORT: [PRIORITY] headline text}.
+     * Expects the format {@code REPORT: headline text}.
      * Returns empty string if no valid headline is found.
      */
     String extractHeadline(String response) {

@@ -91,15 +91,23 @@ class ReportBuilderTest {
     }
 
     @Test
-    void buildCombinedContext_shouldTrimOldContextBeyond4000Chars() {
+    void buildCombinedContext_shouldCompressOldestSectionsWhenOverBudget() {
         var cluster = createCluster("t3_1", "Title");
-        cluster.cachedContext = "X".repeat(5000);
+        // Simulate accumulated context with multiple UPDATE sections
+        StringBuilder existing = new StringBuilder();
+        for (int i = 0; i < 10; i++) {
+            existing.append("=== UPDATE [0").append(i).append(":00] ===\n");
+            existing.append("X".repeat(800)).append("\n");
+        }
+        cluster.cachedContext = existing.toString();
 
-        String combined = builder.buildCombinedContext(cluster, "new");
+        String combined = builder.buildCombinedContext(cluster, "new report");
 
-        // Old context should be trimmed to last 4000 chars
-        int oldPartLength = combined.indexOf("\n\n=== UPDATE");
-        assertTrue(oldPartLength <= 4000);
+        // Oldest sections should be condensed to header + [condensed]
+        assertTrue(combined.contains("[condensed]"));
+        // Most recent section should survive in full
+        assertTrue(combined.contains("new report"));
+        assertTrue(combined.length() <= 6500);
     }
 
     @Test
@@ -114,31 +122,17 @@ class ReportBuilderTest {
     }
 
     @Test
-    void buildHeadlinePrompt_shouldIncludeTopicFilterAndJargon() {
-        String prompt = builder.buildHeadlinePrompt("history", "context", false, List.of("Gold", "Silber"));
+    void buildHeadlinePrompt_shouldContainHistoryAndContext() {
+        String prompt = builder.buildHeadlinePrompt("history", "context", "", "German");
 
-        assertTrue(prompt.contains("Gold"));
-        assertTrue(prompt.contains("Silber"));
-        assertTrue(prompt.contains("Eselmetalle"));
-    }
-
-    @Test
-    void buildHeadlinePrompt_shouldSkipTopicFilterWhenShowAll() {
-        String prompt = builder.buildHeadlinePrompt("history", "context", true, List.of("GME"));
-
-        assertTrue(prompt.contains("No topic restriction"));
-    }
-
-    @Test
-    void buildHeadlinePrompt_shouldSkipTopicFilterWhenTopicsEmpty() {
-        String prompt = builder.buildHeadlinePrompt("history", "context", false, List.of());
-
-        assertTrue(prompt.contains("No topic restriction"));
+        assertTrue(prompt.contains("history"));
+        assertTrue(prompt.contains("context"));
+        assertTrue(prompt.contains("German"));
     }
 
     @Test
     void isAccepted_shouldAcceptExplicitVerdict() {
-        assertTrue(builder.isAccepted("VERDICT: ACCEPT\nREPORT: [HIGH] Gold rises 5%"));
+        assertTrue(builder.isAccepted("VERDICT: ACCEPT\nREPORT: Gold rises 5%"));
     }
 
     @Test
@@ -148,12 +142,12 @@ class ReportBuilderTest {
 
     @Test
     void isAccepted_shouldRejectNoVerdict() {
-        assertFalse(builder.isAccepted("REPORT: [LOW] Some headline"));
+        assertFalse(builder.isAccepted("REPORT: Some headline"));
     }
 
     @Test
     void extractHeadline_shouldReturnHeadlineText() {
-        String response = "Some preamble\nREPORT: [HIGH] GME surges 200% on retail momentum\nExtra text";
+        String response = "Some preamble\nREPORT: GME surges 200% on retail momentum\nExtra text";
 
         String headline = builder.extractHeadline(response);
 
