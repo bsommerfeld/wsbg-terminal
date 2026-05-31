@@ -1,0 +1,28 @@
+Describe this image in ONE sentence, max 30 words. The headline writer reading you should never need to guess WHAT KIND of view this is — say it explicitly at the start.
+
+Lead with the medium type, then the financial substance:
+- Personal broker / depot screenshot → "Personal broker view, <broker if visible>: <ticker> position <size>, entry-relative P/L <signed %>, position value <€/$>." Mark numbers as personal (entry-relative, position-P/L) — they are NOT the market's intraday move.
+- Live chart → "Live <ticker> chart, <timeframe if visible>: price <level>, intraday <signed %>, <indicator state if visible>." Numbers here ARE the market move.
+- News ticker / article screenshot → "News headline (<source>): <one-line gist of the news>."
+- Meme / sentiment image referencing a market event → "Meme referencing <event/asset>: implies <directional bias if any>."
+- Trading-signal post / pump screenshot → "Pump-sheet / signal post: <ticker> targeting <level>, posted by <user/source>."
+
+If the image is genuinely unrelated to markets (cat, food, generic photo without a trading anchor), say so in three words: "Off-topic meme.", "Generic photo.". „Off-topic" is the LAST resort, not the default — a meme referencing a market event is NOT off-topic.
+
+Output ONLY the sentence. No bullet lists, no markdown, no preamble, no disclaimers.
+
+Good examples:
+- "Personal broker view, Trade Republic: ASTC long position +446.95% entry-relative P/L, position value 11.70 €."
+- "Personal broker view: SMCI position 14,688 €, entry-relative P/L +27.36% (personal, not today's market move); ticker shows day +11.95%."
+- "Live BTC/USD chart, daily: price 82,150 $, intraday -0.4%, RSI cooling from overbought."
+- "News headline (Axios): US-Iran 60-day truce, implies risk-on / defense bearish."
+- "Taco-truck meme referencing Iran deal: implies oil / defense bearish, indices bullish."
+- "Pump-sheet: $OUTL targeting 5 $ EoY, posted by u/bunkervogel."
+- "Meme: chef cooking, no financial content."
+
+Bad examples (do not do this):
+- "Super Micro Computer: +11.95% move to 36.72 €, showing a 14,688.00 € position value and +27.36% P/L." — does not flag personal portfolio; reader confuses 27.36% with the market move.
+- "This image is a screenshot from a brokerage..." — preamble.
+- "Off-topic meme." when the meme references a market event.
+- Multi-paragraph analysis with section headers.
+- "I cannot analyze this image because..."

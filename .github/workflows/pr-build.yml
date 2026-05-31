@@ -1,0 +1,171 @@
+# =============================================================================
+#  PR Build — Test Artifacts
+#
+#  Builds the project on every PR and uploads executable JARs for both the
+#  Launcher and Terminal module so reviewers can live-test changes without
+#  building locally.
+#
+#  Artifacts are uploaded as GitHub Actions artifacts (downloadable via the
+#  Actions tab) and a comment with download links is posted on the PR.
+#
+#  Note: GitHub does not allow attaching files directly to a PR. The workflow
+#  uses actions/upload-artifact to store them and posts a convenience comment.
+# =============================================================================
+
+name: PR Build
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+# Only one build per PR at a time — fast pushes cancel the previous run
+# instead of wasting resources on an already-outdated commit.
+concurrency:
+  group: pr-build-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  build:
+    name: Build & Upload Test JARs
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: 'zulu'
+          cache: maven
+
+      - name: Build with Maven
+        run: mvn clean package -DskipTests -U
+
+      # ── Launcher JAR ──────────────────────────────────────────────────
+      # The shade plugin produces the fat JAR we need. The "original-"
+      # prefixed file is the un-shaded copy — we skip it.
+      - name: Prepare Launcher JAR
+        shell: bash
+        run: |
+          SHADED_JAR=$(find launcher/target -maxdepth 1 -name 'launcher-*.jar' ! -name 'original-*' | head -1)
+
+          if [ -z "$SHADED_JAR" ]; then
+            echo "::error::No shaded launcher JAR found — build is broken"
+            exit 1
+          fi
+
+          mkdir -p pr-artifacts/launcher
+          cp "$SHADED_JAR" pr-artifacts/launcher/wsbg-launcher.jar
+
+      # ── Terminal JAR (with dependencies) ──────────────────────────────
+      # Terminal doesn't use shade — we collect the module JAR plus all
+      # runtime dependencies (incl. jcefmaven + Java-WebSocket) into a
+      # single directory. No JavaFX: the terminal UI runs in JCEF now,
+      # no JavaFX classifiers needed.
+      - name: Prepare Terminal JARs
+        shell: bash
+        run: |
+          TERMINAL_JAR=$(find terminal/target -maxdepth 1 -name 'terminal-*.jar' | head -1)
+
+          if [ -z "$TERMINAL_JAR" ]; then
+            echo "::error::No terminal JAR found — build is broken"
+            exit 1
+          fi
+
+          mkdir -p pr-artifacts/terminal
+
+          mvn dependency:copy-dependencies \
+            -pl terminal \
+            -DincludeScope=runtime \
+            -DoutputDirectory=terminal/target/deps
+
+          cp "$TERMINAL_JAR" pr-artifacts/terminal/
+          cp terminal/target/deps/*.jar pr-artifacts/terminal/
+
+          # JCEF needs --add-opens into a handful of java.desktop internals
+          # to attach the Chromium NSWindow. Keep flag set in sync with
+          # launcher/AppLauncher#JCEF_OPENS — the launcher in production
+          # passes the same flags. sun.lwawt.macosx is a no-op on Win/Linux
+          # (the module doesn't exist there) but harmless.
+          cat > pr-artifacts/terminal/run.sh <<'EOF'
+          #!/usr/bin/env bash
+          DIR="$(cd "$(dirname "$0")" && pwd)"
+          exec java \
+              --enable-preview \
+              --enable-native-access=ALL-UNNAMED \
+              --add-opens=java.desktop/sun.awt=ALL-UNNAMED \
+              --add-opens=java.desktop/sun.lwawt=ALL-UNNAMED \
+              --add-opens=java.desktop/sun.lwawt.macosx=ALL-UNNAMED \
+              --add-opens=java.desktop/java.awt.peer=ALL-UNNAMED \
+              -cp "$DIR/*" \
+              de.bsommerfeld.wsbg.terminal.ui.AppMain "$@"
+          EOF
+          chmod +x pr-artifacts/terminal/run.sh
+
+          cat > pr-artifacts/terminal/run.bat <<'EOF'
+          @echo off
+          java ^
+              --enable-preview ^
+              --enable-native-access=ALL-UNNAMED ^
+              --add-opens=java.desktop/sun.awt=ALL-UNNAMED ^
+              --add-opens=java.desktop/sun.lwawt=ALL-UNNAMED ^
+              --add-opens=java.desktop/sun.lwawt.macosx=ALL-UNNAMED ^
+              --add-opens=java.desktop/java.awt.peer=ALL-UNNAMED ^
+              -cp "%~dp0*" ^
+              de.bsommerfeld.wsbg.terminal.ui.AppMain %*
+          EOF
+
+      - name: Upload Launcher Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: launcher-jar
+          path: pr-artifacts/launcher/
+          retention-days: 14
+
+      - name: Upload Terminal Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: terminal-jars
+          path: pr-artifacts/terminal/
+          retention-days: 14
+
+      - name: PR-Kommentar
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const MARKER = '<!-- pr-build-artifacts -->';
+            const runId = context.runId;
+            const repo = context.repo;
+            const runUrl = `https://github.com/${repo.owner}/${repo.repo}/actions/runs/${runId}`;
+
+            const body = `${MARKER}\n📦 [Test-Artefakte herunterladen](${runUrl}#artifacts)`;
+
+            const comments = await github.rest.issues.listComments({
+              owner: repo.owner,
+              repo: repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const existing = comments.data.find(c => c.body.includes(MARKER));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: repo.owner,
+                repo: repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: repo.owner,
+                repo: repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }

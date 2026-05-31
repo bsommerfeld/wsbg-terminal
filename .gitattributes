@@ -1,0 +1,5 @@
+# PowerShell and Batch scripts must have CRLF line endings on checkout.
+# Windows PowerShell 5.1 fails to parse .ps1 files with LF-only endings.
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf

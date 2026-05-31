@@ -1,0 +1,131 @@
+/* Stadium-banner footer: market chips + the donate-ad slide. */
+
+.footer {
+  display: flex; align-items: center;
+  height: var(--footer-h);
+  border-top: 1px solid var(--line); background: var(--bg);
+  overflow: hidden;
+}
+
+.feed { flex: 1; position: relative; height: 100%; overflow: hidden; }
+
+/* 3-position state machine: slides only ever travel right → center → left. */
+.slide {
+  position: absolute; inset: 0;
+  display: flex; align-items: center;
+  transform: translateX(100%);
+}
+.slide[data-pos="right"]  { transform: translateX(100%);  }
+.slide[data-pos="center"] { transform: translateX(0);     }
+.slide[data-pos="left"]   { transform: translateX(-100%); }
+.slide.animate { transition: transform .8s cubic-bezier(.65,.02,.2,1); }
+
+/* Exchange chips evenly spread the full strip width. */
+.cell {
+  flex: 1 1 0; min-width: 0;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 0 16px; height: 100%;
+  border-right: 1px solid var(--line-soft);
+  font-size: var(--font-chrome); letter-spacing: .08em;
+}
+.cell:last-child { border-right: 0; }
+
+.cell.exch .sym { color: var(--txt); font-weight: 600; letter-spacing: .18em; }
+.cell.exch .dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--red); flex-shrink: 0;
+  transition: background .3s, box-shadow .3s;
+}
+.cell.exch .cd { color: var(--red); font-variant-numeric: tabular-nums; }
+
+.cell.exch.pre  .dot,
+.cell.exch.post .dot {
+  background: var(--amber); box-shadow: 0 0 6px var(--amber);
+  animation: pulse-amber 2.4s infinite;
+}
+.cell.exch.pre  .cd,
+.cell.exch.post .cd { color: var(--amber); }
+
+.cell.exch.main .dot {
+  background: var(--green); box-shadow: 0 0 6px var(--green);
+  animation: pulse 2s infinite;
+}
+.cell.exch.main .cd { color: var(--green); }
+
+/* CRT re-lock on phase transitions (closed → pre → main → post → …).
+   The countdown number resets at each switch; this brief blur + opacity
+   dip makes the jump read as a state change rather than a glitch. */
+.cell.exch.phase-shift .cd {
+  animation: phase-flicker .55s ease-out;
+}
+@keyframes phase-flicker {
+  0%   { filter: blur(3px); opacity: 0.15; }
+  40%  { filter: blur(0);   opacity: 1; }
+  100% { filter: blur(0);   opacity: 1; }
+}
+
+/* Donate ad slide. */
+.slide.ad { padding: 0; gap: 0; }
+.ad-inner {
+  flex: 1;
+  display: flex; align-items: center; justify-content: center;
+  gap: 12px;
+  padding: 0 24px;
+  color: var(--txt-2); font-size: var(--font-chrome); letter-spacing: .04em;
+  position: relative; overflow: hidden;
+}
+.ad-inner .heart {
+  color: var(--red); display: inline-flex;
+  animation: beat 1.6s ease-in-out infinite;
+}
+.ad-inner .heart svg { width: 12px; height: 12px; fill: currentColor; }
+@keyframes beat {
+  0%, 100% { transform: scale(1); }
+  30%      { transform: scale(1.18); }
+  60%      { transform: scale(.96); }
+}
+.ad-inner .star {
+  color: var(--amber); display: inline-flex;
+  animation: spin-pause 1.4s linear infinite;
+}
+.ad-inner .star svg { width: 12px; height: 12px; fill: currentColor; }
+/* Wind up from a standstill (ease-in: slow → fast), snap back to the start
+   position (360deg ≡ 0deg), hold briefly, then wind up again. */
+@keyframes spin-pause {
+  0%   { transform: rotate(0deg);   animation-timing-function: ease-in; }
+  70%  { transform: rotate(360deg); }
+  100% { transform: rotate(360deg); }
+}
+.ad-inner a {
+  color: var(--amber); text-decoration: none;
+  border-bottom: 1px dashed oklch(0.82 0.14 75 / .45);
+  padding-bottom: 1px;
+}
+.ad-inner a:hover { border-bottom-color: var(--amber); }
+.ad-inner .arrow { display: inline-block; margin-left: 4px; transition: transform .2s; }
+.ad-inner a:hover .arrow { transform: translateX(3px); }
+
+/* Shimmer sweep across the donate text.
+   Pseudo-element is 200% wide and absolutely positioned, swept by transform
+   (not background-position) — overflow:hidden on .ad-inner clips it cleanly
+   at both edges. The left offset is -150% (not -100%) so the gradient peak
+   starts off-screen left by 50% of the parent width, giving the shimmer room
+   to fade in symmetrically with how it fades out on the right. */
+.ad-inner::after {
+  content: "";
+  position: absolute;
+  top: 0; bottom: 0; left: -150%;
+  width: 200%;
+  pointer-events: none;
+  background: linear-gradient(
+      90deg,
+      transparent 35%,
+      oklch(0.82 0.14 75 / .08) 50%,
+      transparent 65%);
+  animation: shimmer 5s linear infinite;
+}
+@keyframes shimmer {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(100%); }
+}
+

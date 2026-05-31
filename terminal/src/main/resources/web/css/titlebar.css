@@ -1,0 +1,106 @@
+/* Titlebar: window-controls (traffic lights) at one edge, theme-toggle
+   at the other edge, title centered.
+
+   macOS keeps its native NSWindow chrome — the JFrame is decorated and
+   the OS draws its own traffic lights top-left. Our HTML duplicates are
+   hidden on that platform; the theme button still sits on the opposite
+   (right) edge for symmetry.
+
+   Windows/Linux launch undecorated, so the HTML traffic lights are the
+   only window controls. OS convention puts them top-right there, and the
+   theme button mirrors to the left. The grid columns auto-swap via
+   row-reverse keyed on [data-platform]. */
+
+.titlebar {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+  user-select: none;
+  cursor: default;
+}
+
+.tb-controls,
+.tb-actions {
+  display: flex; align-items: center;
+  padding: 0 10px;
+  gap: 6px;
+}
+.tb-controls { justify-content: flex-start; }
+.tb-actions  { justify-content: flex-end; }
+
+/* Win/Linux: swap which side hosts the window controls vs. the theme
+   toggle. The markup order stays the same; only the grid placement
+   and flex justification flip. */
+html[data-platform="other"] .tb-controls {
+  grid-column: 3;
+  justify-content: flex-end;
+}
+html[data-platform="other"] .tb-actions {
+  grid-column: 1;
+  justify-content: flex-start;
+}
+
+/* Window-control buttons (red/yellow/green). */
+.lights { display: flex; gap: 8px; align-items: center; }
+.light {
+  width: 11px; height: 11px; border-radius: 50%;
+  display: inline-block; border: 0; padding: 0;
+  cursor: pointer;
+}
+.light.r { background: #ff5f56; }
+.light.y { background: #ffbd2e; }
+.light.g { background: #27c93f; }
+.light:hover { filter: brightness(1.1); }
+
+/* macOS: hide our HTML lights, the native NSWindow buttons sit there
+   already. Reserve their slot so the title doesn't shift. */
+html[data-platform="mac"] .lights { display: none; }
+html[data-platform="mac"] .tb-controls { padding-left: 78px; }
+
+/* App title with German flag G. */
+.tb-title {
+  display: flex; align-items: center; gap: 10px; color: var(--txt);
+  font-family: "Inter", sans-serif; font-weight: 600; font-size: var(--font-title);
+  letter-spacing: .22em; text-transform: uppercase;
+}
+.tb-title .flag {
+  background: linear-gradient(180deg,
+              #4a4a4a 0, #4a4a4a 33%,
+              #dd0000 33%, #dd0000 66%,
+              #ffce00 66%, #ffce00 100%);
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent; font-weight: 800;
+  -webkit-text-stroke: 0.4px oklch(0.55 0.006 70 / .4);
+}
+html[data-theme="light"] .tb-title .flag {
+  background: linear-gradient(180deg,
+              #1a1a1a 0, #1a1a1a 33%,
+              #c00 33%, #c00 66%,
+              #f5b400 66%, #f5b400 100%);
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent;
+}
+.tb-title .sep { color: var(--mute-2); font-weight: 400; }
+
+/* Icon buttons (currently just the theme toggle). */
+.iconbtn {
+  width: 30px; height: 26px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--mute); border-radius: 5px;
+  transition: color .12s, background .12s;
+}
+.iconbtn:hover { background: var(--bg-1); color: var(--txt); }
+.iconbtn svg {
+  width: 17px; height: 17px;
+  stroke: currentColor; stroke-width: 1.6; fill: none;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+
+/* Theme toggle: show the icon for the target theme — sun in dark mode
+   (clicking switches to light), moon in light mode (switches to dark). */
+#btn-theme .icon-sun,
+#btn-theme .icon-moon { display: none; }
+html[data-theme="dark"]  #btn-theme .icon-sun  { display: inline; }
+html[data-theme="light"] #btn-theme .icon-moon { display: inline; }

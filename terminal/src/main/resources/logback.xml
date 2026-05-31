@@ -1,0 +1,19 @@
+<!-- stdout/stderr is redirected to per-session log files by the launcher's
+     ProcessBuilder, so a Logback FILE appender would create a redundant
+     duplicate outside the session directories. Console-only is correct. -->
+<configuration>
+
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %highlight(%-5level) %cyan(%logger{36}) - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <logger name="de.bsommerfeld" level="DEBUG" />
+
+    <root level="INFO">
+        <appender-ref ref="STDOUT" />
+    </root>
+
+</configuration>
+

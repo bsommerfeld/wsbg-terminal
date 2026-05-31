@@ -1,0 +1,192 @@
+package de.bsommerfeld.wsbg.terminal.currency;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.inject.Singleton;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.util.Optional;
+
+/**
+ * Fetches the EUR&rarr;USD rate from two unauthenticated public APIs.
+ *
+ * <p>
+ * Both endpoints return the rate in EUR-base form, i.e. "1 EUR = X USD",
+ * so the value falls through directly into {@link EurUsdQuote#rate}.
+ *
+ * <h3>Endpoints</h3>
+ * <ul>
+ *   <li><b>Primary</b> — Yahoo Finance
+ *       {@code https://query1.finance.yahoo.com/v8/finance/chart/EURUSD=X}.
+ *       Intraday updates throughout the FX trading week (Sun 22:00 UTC &rarr;
+ *       Fri 22:00 UTC). Free, no API key, undocumented but stable in
+ *       practice — relied on by yfinance and dozens of mirrors. Sends a
+ *       browser-shaped User-Agent to avoid the bot block.
+ *       <p>
+ *       Note: the older {@code /v7/finance/quote} endpoint was deliberately
+ *       <em>not</em> used. Since Yahoo's mid-2024 lockdown it hard-requires a
+ *       session cookie + crumb token and returns {@code 401} on every
+ *       unauthenticated request — regardless of poll rate. The {@code /v8/chart}
+ *       endpoint carries the same price in {@code meta.regularMarketPrice}
+ *       without that handshake.</li>
+ *   <li><b>Fallback</b> — Frankfurter
+ *       {@code https://api.frankfurter.dev/v1/latest?base=EUR&symbols=USD}.
+ *       Official ECB reference rate, updated once per business day around
+ *       16:00 CET. Free, no API key, no rate limits, very stable. Slower
+ *       update cadence but rock-solid availability for when Yahoo flakes.</li>
+ * </ul>
+ *
+ * <h3>Failure model</h3>
+ * Each call returns {@link Optional#empty()} on any failure (network, non-200,
+ * parse error, missing field) and logs at WARN. The orchestrating
+ * {@link EurUsdMonitorService} uses that to decide whether to fall through
+ * from primary to fallback.
+ */
+@Singleton
+public class EurUsdClient {
+
+    private static final Logger LOG = LoggerFactory.getLogger(EurUsdClient.class);
+
+    private static final String YAHOO_URL =
+            "https://query1.finance.yahoo.com/v8/finance/chart/EURUSD=X";
+    private static final String FRANKFURTER_URL =
+            "https://api.frankfurter.dev/v1/latest?base=EUR&symbols=USD";
+
+    private static final String USER_AGENT =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36";
+
+    private static final ObjectMapper JSON = new ObjectMapper();
+
+    private final HttpClient http;
+    private final Duration requestTimeout;
+
+    public EurUsdClient() {
+        this(10);
+    }
+
+    public EurUsdClient(int requestTimeoutSeconds) {
+        int t = Math.max(2, requestTimeoutSeconds);
+        this.http = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_2)
+                .connectTimeout(Duration.ofSeconds(t))
+                .build();
+        this.requestTimeout = Duration.ofSeconds(t);
+    }
+
+    /** Fetches the EUR/USD rate from Yahoo Finance. */
+    public Optional<Double> fetchYahoo() {
+        return fetch(YAHOO_URL, "Yahoo", this::parseYahoo);
+    }
+
+    /** Fetches the EUR/USD rate from Frankfurter (ECB reference). */
+    public Optional<Double> fetchFrankfurter() {
+        return fetch(FRANKFURTER_URL, "Frankfurter", this::parseFrankfurter);
+    }
+
+    private Optional<Double> fetch(String url, String label, Parser parser) {
+        try {
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .header("User-Agent", USER_AGENT)
+                    .header("Accept", "application/json")
+                    .timeout(requestTimeout)
+                    .GET()
+                    .build();
+
+            HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
+            if (resp.statusCode() != 200) {
+                LOG.warn("{} EUR/USD returned HTTP {}", label, resp.statusCode());
+                return Optional.empty();
+            }
+            return parser.parse(resp.body());
+
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return Optional.empty();
+        } catch (Exception e) {
+            LOG.warn("{} EUR/USD request failed: {}", label, e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * Yahoo {@code /v8/chart} response shape:
+     * <pre>{@code
+     * {
+     *   "chart": {
+     *     "result": [{ "meta": { "regularMarketPrice": 1.0876, ... }, ... }],
+     *     "error": null
+     *   }
+     * }
+     * }</pre>
+     */
+    Optional<Double> parseYahoo(String body) {
+        try {
+            JsonNode root = JSON.readTree(body);
+            JsonNode result = root.path("chart").path("result");
+            if (!result.isArray() || result.isEmpty()) {
+                LOG.warn("Yahoo EUR/USD: empty result array");
+                return Optional.empty();
+            }
+            JsonNode price = result.get(0).path("meta").path("regularMarketPrice");
+            if (!price.isNumber()) {
+                LOG.warn("Yahoo EUR/USD: regularMarketPrice missing or non-numeric");
+                return Optional.empty();
+            }
+            return validateRate(price.asDouble(), "Yahoo");
+        } catch (Exception e) {
+            LOG.warn("Yahoo EUR/USD parse failure: {}", e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * Frankfurter response shape:
+     * <pre>{@code
+     * {
+     *   "amount": 1.0,
+     *   "base": "EUR",
+     *   "date": "2024-05-23",
+     *   "rates": { "USD": 1.0832 }
+     * }
+     * }</pre>
+     */
+    Optional<Double> parseFrankfurter(String body) {
+        try {
+            JsonNode root = JSON.readTree(body);
+            JsonNode usd = root.path("rates").path("USD");
+            if (!usd.isNumber()) {
+                LOG.warn("Frankfurter EUR/USD: rates.USD missing or non-numeric");
+                return Optional.empty();
+            }
+            return validateRate(usd.asDouble(), "Frankfurter");
+        } catch (Exception e) {
+            LOG.warn("Frankfurter EUR/USD parse failure: {}", e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * Sanity-checks a rate value. EUR/USD has historically traded in the
+     * 0.85–1.60 band — anything outside that range is almost certainly a
+     * parsing accident (wrong field, inverted pair, etc.).
+     */
+    private Optional<Double> validateRate(double rate, String label) {
+        if (!Double.isFinite(rate) || rate < 0.5 || rate > 2.0) {
+            LOG.warn("{} EUR/USD: rate {} outside sanity band [0.5, 2.0]", label, rate);
+            return Optional.empty();
+        }
+        return Optional.of(rate);
+    }
+
+    @FunctionalInterface
+    private interface Parser {
+        Optional<Double> parse(String body);
+    }
+}

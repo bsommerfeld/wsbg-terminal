@@ -1,0 +1,92 @@
+/* Design tokens: colours, sizes, densities. Everything visual descends from here.
+   Fonts are installed at /fonts/ by the setup script (setup.sh/ps1) — no CDN
+   round-trip on launch. If a file is missing the rule falls back through the
+   system stack listed in font-family. */
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: url("/fonts/jetbrains-mono-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+  src: url("/fonts/jetbrains-mono-500.woff2") format("woff2");
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+  src: url("/fonts/jetbrains-mono-600.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: url("/fonts/inter-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+  src: url("/fonts/inter-600.woff2") format("woff2");
+}
+
+:root {
+  --bg:           oklch(0.155 0.006 60);
+  --bg-1:         oklch(0.185 0.006 60);
+  --bg-hover:     oklch(0.21 0.008 60);
+  --line:         oklch(0.27 0.006 60);
+  --line-soft:    oklch(0.225 0.006 60);
+  --txt:          oklch(0.93 0.005 80);
+  --txt-2:        oklch(0.78 0.005 80);
+  --mute:         oklch(0.55 0.006 70);
+  --mute-2:       oklch(0.42 0.006 70);
+  --amber:        oklch(0.82 0.14 75);
+  --amber-soft:   oklch(0.82 0.14 75 / .12);
+  --green:        oklch(0.78 0.16 150);
+  --red:          oklch(0.72 0.19 28);
+  --red-soft:     oklch(0.72 0.19 28 / .10);
+  --blue:         oklch(0.78 0.12 230);
+
+  --titlebar-h:   38px;
+  --footer-h:     32px;
+  --pad-x:        24px;
+  --row-pad-y:    13px;
+
+  /* Base 16px per user request. Secondary sizes scale via em so density
+     and base bumps cascade without touching every rule. Chrome stays
+     a hair smaller than body (Bloomberg-style data-over-chrome) but
+     visually balanced — not the previous tiny 11-12px. */
+  --font-base:    16px;
+  --font-meta:    0.85em;
+  --font-time:    0.85em;
+  --font-chrome:  0.86em;  /* widget head, live tag, footer chips */
+  --font-title:   0.88em;  /* WSBG · TERMINAL title */
+}
+
+html[data-theme="light"] {
+  --bg:           oklch(0.985 0.003 80);
+  --bg-1:         oklch(0.965 0.003 80);
+  --bg-hover:     oklch(0.94 0.004 80);
+  --line:         oklch(0.86 0.005 80);
+  --line-soft:    oklch(0.92 0.004 80);
+  --txt:          oklch(0.22 0.006 60);
+  --txt-2:        oklch(0.36 0.006 60);
+  --mute:         oklch(0.55 0.006 70);
+  --mute-2:       oklch(0.68 0.006 70);
+  --amber:        oklch(0.58 0.16 60);
+  --amber-soft:   oklch(0.58 0.16 60 / .10);
+  --green:        oklch(0.55 0.16 150);
+  --red:          oklch(0.55 0.19 28);
+  --red-soft:     oklch(0.55 0.19 28 / .10);
+  --blue:         oklch(0.55 0.14 240);
+}
+

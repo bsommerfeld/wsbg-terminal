@@ -1,0 +1,57 @@
+/* Reset + global typography + app grid + shared keyframes. */
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--txt);
+  font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  font-size: var(--font-base);
+  line-height: 1.55;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  transition: background .2s, color .2s;
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+::selection { background: var(--amber-soft); color: var(--amber); }
+
+.app {
+  display: grid;
+  grid-template-rows: var(--titlebar-h) 1fr var(--footer-h);
+  height: 100vh;
+  width: 100vw;
+}
+
+.main {
+  display: grid;
+  grid-template-columns: 1fr 1px 1fr;
+  overflow: hidden;
+  min-height: 0;
+}
+.vdivider { background: var(--line); }
+
+@keyframes pulse {
+  0%   { box-shadow: 0 0 0 0 oklch(0.78 0.16 150 / .55); }
+  70%  { box-shadow: 0 0 0 7px oklch(0.78 0.16 150 / 0); }
+  100% { box-shadow: 0 0 0 0 oklch(0.78 0.16 150 / 0); }
+}
+@keyframes pulse-amber {
+  0%   { box-shadow: 0 0 0 0 oklch(0.82 0.14 75 / .55); }
+  70%  { box-shadow: 0 0 0 7px oklch(0.82 0.14 75 / 0); }
+  100% { box-shadow: 0 0 0 0 oklch(0.82 0.14 75 / 0); }
+}
+
+@media (max-width: 900px) {
+  .main { grid-template-columns: 1fr; grid-template-rows: 1fr 1px 1fr; }
+  .vdivider { height: 1px; width: 100%; }
+}

@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="de" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <title>WSBG Terminal</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="/css/tokens.css">
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/titlebar.css">
+  <link rel="stylesheet" href="/css/widgets.css">
+  <link rel="stylesheet" href="/css/footer.css">
+</head>
+<body>
+<div class="app">
+
+  <header class="titlebar" id="titlebar">
+    <!-- Window controls (close / minimize / maximize-toggle).
+         Conventionally rendered top-left on macOS and top-right on
+         Windows/Linux — the slot order is unchanged in markup; CSS
+         reorders [data-platform!="mac"] to flex-direction:row-reverse. -->
+    <div class="tb-controls">
+      <div class="lights">
+        <button class="light r" data-window="close"  aria-label="Close"></button>
+        <button class="light y" data-window="minimize" aria-label="Minimize"></button>
+        <button class="light g" data-window="maximize-toggle" aria-label="Maximize"></button>
+      </div>
+    </div>
+
+    <div class="tb-title">
+      <span>WSB<span class="flag">G</span></span>
+      <span class="sep">·</span>
+      <span>Terminal</span>
+    </div>
+
+    <!-- Theme toggle. Always lives at the opposite end of the window
+         controls so the chrome looks symmetric. Icon swaps to a moon
+         in light theme / sun in dark theme via CSS. -->
+    <div class="tb-actions">
+      <button class="iconbtn" id="btn-theme" title="Theme umschalten" aria-label="Toggle theme">
+        <svg class="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+        <svg class="icon-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main class="main">
+    <section class="widget" id="widget-reddit">
+      <header class="widget-head">
+        <div class="ident"><span class="glyph glyph-reddit"></span>Reddit · Schlagzeilen</div>
+        <!--
+          Reddit pull-status label. Hidden by default; fades in when the
+          scraper hits 403/429/timeouts, fades out when polling recovers.
+          TODO(oauth-login): when degraded > N min, swap textContent for an
+          interactive "Sign in to Reddit" CTA wired to the OAuth flow.
+        -->
+        <span class="reddit-status" id="reddit-status" data-state="OK"
+              aria-live="polite">Rate Limited</span>
+        <span class="live">Live</span>
+      </header>
+      <div class="widget-body" data-rows></div>
+    </section>
+
+    <div class="vdivider"></div>
+
+    <section class="widget" id="widget-fj">
+      <header class="widget-head">
+        <div class="ident"><span class="glyph glyph-fj"></span>Financial Juice</div>
+        <span class="eurusd" id="eurusd-badge" title="EUR/USD"></span>
+        <span class="live">Live</span>
+      </header>
+      <div class="widget-body" data-rows></div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="feed" id="feed">
+      <div class="slide markets" id="markets" data-pos="center"></div>
+      <div class="slide ad" id="ad" data-pos="right">
+        <div class="ad-inner"></div>
+      </div>
+    </div>
+  </footer>
+</div>
+
+<script type="module" src="/js/main.js"></script>
+</body>
+</html>
