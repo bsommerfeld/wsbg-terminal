@@ -31,6 +31,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -60,8 +61,10 @@ public class PassiveMonitorService {
     private final GlobalConfig config;
 
     private final EmbeddingModel embeddingModel;
-    private final ScheduledExecutorService scannerExecutor = Executors.newSingleThreadScheduledExecutor();
-    private final ExecutorService analysisExecutor = Executors.newSingleThreadExecutor();
+    private final ScheduledExecutorService scannerExecutor =
+            Executors.newSingleThreadScheduledExecutor(daemonFactory("reddit-scanner"));
+    private final ExecutorService analysisExecutor =
+            Executors.newSingleThreadExecutor(daemonFactory("reddit-analysis"));
     /**
      * Vision pre-fetch pool — a single worker. By default vision shares the
      * editorial agent's model + num_ctx, so both hit ONE Ollama runner with
@@ -140,6 +143,28 @@ public class PassiveMonitorService {
             scannerExecutor.scheduleAtFixedRate(this::saveSnapshot, 5, 5, TimeUnit.MINUTES);
             Runtime.getRuntime().addShutdownHook(new Thread(this::saveSnapshot, "reddit-snapshot-save"));
         }
+    }
+
+    /** Daemon thread factory so a dangling scan/analysis task never holds the JVM open. */
+    private static ThreadFactory daemonFactory(String name) {
+        return r -> {
+            Thread t = new Thread(r, name);
+            t.setDaemon(true);
+            return t;
+        };
+    }
+
+    /**
+     * Stops the scan + analysis + vision pools. Called from {@code AppMain}'s
+     * shutdown sequence BEFORE Ollama/the repositories go down, so the scan loop
+     * doesn't fire fresh embedding/vision calls against services that are tearing
+     * down. The periodic snapshot save still runs from its own shutdown hook.
+     */
+    public void shutdown() {
+        scannerExecutor.shutdownNow();
+        analysisExecutor.shutdownNow();
+        visionExecutor.shutdownNow();
+        LOG.info("PassiveMonitorService stopped.");
     }
 
     /** Writes the full session (Reddit data + vision cache + headlines) to disk. */

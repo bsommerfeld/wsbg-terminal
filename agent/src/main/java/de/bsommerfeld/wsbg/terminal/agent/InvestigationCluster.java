@@ -6,10 +6,10 @@ import dev.langchain4j.data.embedding.Embedding;
 import java.time.Instant;
 import java.time.LocalTime;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * Tracks a semantically clustered group of Reddit threads that share a common
@@ -33,8 +33,13 @@ public class InvestigationCluster {
     public final String id;
     public final String initialTitle;
     public final Instant firstSeen;
-    public final Set<String> activeThreadIds = new HashSet<>();
-    final List<String> evidenceLog = new ArrayList<>();
+    // Concurrent + lock-free: mutated by the scan thread (addUpdate) and the
+    // rebalancer thread (absorb) while the editorial/coordinator thread and the
+    // snapshot writer iterate them. Same discipline as tickers / shownImageUrls
+    // below — a plain HashSet/ArrayList here would throw
+    // ConcurrentModificationException on those concurrent reads.
+    public final Set<String> activeThreadIds = ConcurrentHashMap.newKeySet();
+    final List<String> evidenceLog = new CopyOnWriteArrayList<>();
 
     /**
      * Ticker symbols mentioned in any thread of this cluster (canonical

@@ -5,6 +5,7 @@ import com.google.inject.Injector;
 import de.bsommerfeld.wsbg.terminal.agent.AgentCoordinator;
 import de.bsommerfeld.wsbg.terminal.agent.ClusterRebalancer;
 import de.bsommerfeld.wsbg.terminal.agent.OllamaServerManager;
+import de.bsommerfeld.wsbg.terminal.agent.PassiveMonitorService;
 import de.bsommerfeld.wsbg.terminal.core.config.ApplicationMode;
 import de.bsommerfeld.wsbg.terminal.db.AgentRepository;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
@@ -76,6 +77,9 @@ public final class AppMain {
 
     private static void shutdown(Injector injector) {
         LOG.info("Shutting down services...");
+        // Stop the scan loop first so no fresh embedding/vision/cluster work is
+        // submitted while the services it depends on are torn down below.
+        safeStop(() -> injector.getInstance(PassiveMonitorService.class).shutdown(), "PassiveMonitorService");
         safeStop(() -> injector.getInstance(AgentCoordinator.class).shutdown(), "AgentCoordinator");
         safeStop(() -> injector.getInstance(ClusterRebalancer.class).shutdown(), "ClusterRebalancer");
         safeStop(() -> injector.getInstance(RedditRepository.class).shutdown(), "RedditRepository");
