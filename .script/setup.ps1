@@ -96,7 +96,10 @@ Write-Host "    Ollama ready." -ForegroundColor Green
 Write-Host "[*] Starting Ollama server..."
 $ollamaProcess = $null
 try {
-    $ollamaProcess = Start-Process -FilePath "ollama" -ArgumentList "serve" -PassThru -WindowStyle Hidden -ErrorAction Stop
+    # -WorkingDirectory $env:TEMP: setup.bat runs us from wsbg-terminal\bin, and
+    # a child process inheriting that CWD locks the install folder on Windows
+    # (an orphaned ollama then makes the folder undeletable). Pin it to TEMP.
+    $ollamaProcess = Start-Process -FilePath "ollama" -ArgumentList "serve" -WorkingDirectory $env:TEMP -PassThru -WindowStyle Hidden -ErrorAction Stop
     $ready = $false
     # Poll /api/tags until the server accepts connections (max 15s)
     for ($i = 0; $i -lt 30; $i++) {
@@ -315,8 +318,12 @@ if (!(Test-Path $configFile)) {
 # We stop the background Ollama server forcefully now, as it was only started
 # temporarily to accomplish model pulls during the launch setup. The primary Java
 # application will launch its own managed Ollama process.
+#
+# taskkill /T targets ONLY our process tree (our serve PID + the 'ollama runner'
+# children it spawned during pulls) — it does not touch a separately-running
+# Ollama the user may have started. /F forces, since serve ignores soft signals.
 if ($ollamaProcess -ne $null -and -not $ollamaProcess.HasExited) {
-    Stop-Process -Id $ollamaProcess.Id -Force -ErrorAction SilentlyContinue
+    taskkill /PID $ollamaProcess.Id /T /F 2>$null | Out-Null
 }
 
 Write-Host "Setup Complete! Ready to Run." -ForegroundColor Green

@@ -4,11 +4,13 @@ import com.google.inject.Singleton;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -61,6 +63,15 @@ public final class OllamaServerManager {
 
         long pid = serverProcess.pid();
         LOG.info("Shutting down managed Ollama server (PID: {})...", pid);
+
+        // Snapshot the process tree *before* destroying the root. 'ollama serve'
+        // spawns 'ollama runner' children that hold the model in memory and keep
+        // file handles open; destroying only the parent orphans them (there is no
+        // parent→child kill propagation on Windows). After the parent dies its
+        // descendants are reparented, so descendants() would return nothing —
+        // hence we capture them up front and reap them at the end.
+        List<ProcessHandle> tree = serverProcess.descendants().toList();
+
         serverProcess.destroy();
         try {
             // Grace period before force-kill — Ollama needs time to flush model
@@ -76,6 +87,15 @@ public final class OllamaServerManager {
             serverProcess.destroyForcibly();
             Thread.currentThread().interrupt();
         }
+
+        // Reap any runner children that outlived the parent.
+        for (ProcessHandle child : tree) {
+            if (child.isAlive()) {
+                LOG.warn("Force killing orphaned Ollama child process (PID: {})", child.pid());
+                child.destroyForcibly();
+            }
+        }
+
         serverProcess = null;
     }
 
@@ -92,6 +112,16 @@ public final class OllamaServerManager {
             // Discard output — Ollama logs to stderr internally, and we don't
             // need its output polluting our logs.
             pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+
+            // Run ollama from a neutral directory. By default a child process
+            // inherits our working directory (the app data folder); on Windows
+            // that folder is then locked for the server's lifetime, so an
+            // orphaned/crashed ollama makes the install undeletable. The temp
+            // dir is always writable and outside the install tree.
+            File neutralDir = new File(System.getProperty("java.io.tmpdir"));
+            if (neutralDir.isDirectory()) {
+                pb.directory(neutralDir);
+            }
 
             // Two concurrent slots per model. KV cache scales with
             // num_ctx × num_parallel, and we just raised num_ctx to 8192,
