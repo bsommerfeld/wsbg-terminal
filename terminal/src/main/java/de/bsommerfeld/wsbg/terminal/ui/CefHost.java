@@ -90,6 +90,13 @@ public final class CefHost {
             builder.setAppHandler(new MavenCefAppHandlerAdapter() {
                 @Override
                 public void stateHasChanged(CefAppState state) {
+                    // Sole owner of the clean-close JVM exit. The window's
+                    // close gesture only triggers cefApp.dispose() (async);
+                    // CEF reaches TERMINATED once every Chromium subprocess
+                    // is gone, and only then do we exit. This System.exit(0)
+                    // runs AppMain's shutdown hook, which tears down the
+                    // remaining services. Nothing else calls System.exit on
+                    // the close path, so there's no race against this.
                     if (state == CefAppState.TERMINATED) {
                         LOG.info("CefApp terminated; exiting JVM.");
                         System.exit(0);

@@ -68,7 +68,17 @@ public final class BrowserWindow {
         Toolkit.getDefaultToolkit().setDynamicLayout(true);
 
         frame = new JFrame("WSBG Terminal");
-        frame.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
+        // DO_NOTHING — not EXIT_ON_CLOSE. JCEF's native teardown is
+        // asynchronous: CefApp.dispose() only *starts* the multi-stage
+        // shutdown of the Chromium subprocesses (GPU/renderer/network
+        // "jcef Helper") and signals completion later via
+        // stateHasChanged(TERMINATED). If EXIT_ON_CLOSE fired its own
+        // System.exit(0) here, the JVM would race that teardown and could
+        // exit first — orphaning the helper processes and leaving the
+        // remote-debugging port (localhost:9222) momentarily bound. So the
+        // close gesture only kicks off the dispose; the TERMINATED handler
+        // in CefHost owns the single System.exit(0) once CEF is truly gone.
+        frame.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         frame.setMinimumSize(new java.awt.Dimension(800, 600));
         loadIcon().ifPresent(icon -> frame.setIconImages(scaledIconSet(icon)));
 
@@ -127,9 +137,19 @@ public final class BrowserWindow {
         frame.addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosing(WindowEvent e) {
-                LOG.info("Window closing.");
+                LOG.info("Window closing — disposing JCEF (async); JVM exits on TERMINATED.");
+                // Force the browser shut, then dispose the CefApp. This is
+                // fire-and-forget on purpose: cefApp.dispose() returns
+                // immediately and the native shutdown finishes later, at
+                // which point CefHost's TERMINATED handler calls
+                // System.exit(0) — the *only* place the JVM is torn down on
+                // a clean close. We deliberately do NOT call System.exit
+                // here (that would re-introduce the race this pattern
+                // exists to avoid). frame.dispose() releases the native
+                // window so it visually closes right away.
                 try { browser.close(true); } catch (Throwable ignored) {}
                 cefHost.dispose();
+                frame.dispose();
             }
         });
 
