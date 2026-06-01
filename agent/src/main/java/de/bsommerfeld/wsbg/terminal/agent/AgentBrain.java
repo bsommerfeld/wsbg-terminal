@@ -145,11 +145,14 @@ public class AgentBrain {
         // Vision — image description. Low temperature is critical: the agent
         // trusts these numbers (percent moves, € amounts, price levels), so a
         // hallucinated figure poisons the headline. Faithful read-out, not
-        // creative caption.
+        // creative caption. numPredict is 2048 (not 1024): the prompt now asks
+        // for a full per-row transcription of dense screenshots (a 10–12 line
+        // depot), and a real one measured ~1300 output tokens — 1024 truncated
+        // it mid-table, dropping positions the desk needs.
         this.visionModel = OllamaChatModel.builder()
                 .baseUrl(OLLAMA_BASE_URL).modelName(visionName)
                 .temperature(0.2).topP(0.9).topK(40)
-                .numCtx(visionCtxTokens).numPredict(1024)
+                .numCtx(visionCtxTokens).numPredict(2048)
                 .timeout(timeout)
                 .maxRetries(1).build();
     }
