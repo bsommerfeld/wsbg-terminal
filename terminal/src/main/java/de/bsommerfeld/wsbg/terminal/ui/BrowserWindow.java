@@ -57,7 +57,7 @@ public final class BrowserWindow {
         frame = new JFrame("WSBG Terminal");
         frame.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
         frame.setMinimumSize(new java.awt.Dimension(800, 600));
-        loadIcon().ifPresent(frame::setIconImage);
+        loadIcon().ifPresent(icon -> frame.setIconImages(scaledIconSet(icon)));
 
         // On macOS, JCEF reparents its Chromium NSWindow into the JFrame's
         // NSWindow via sun.lwawt.macosx internals. That reparenting fails
@@ -180,5 +180,24 @@ public final class BrowserWindow {
         } catch (IOException e) {
             return java.util.Optional.empty();
         }
+    }
+
+    /**
+     * Builds a multi-resolution icon set from the 1024px source. Handing AWT a
+     * single oversized image makes Windows pick a poor downscale for the small
+     * taskbar/title-bar slots; supplying explicit small sizes lets it choose a
+     * crisp match per slot. The full-size source stays in the list for the
+     * large Alt+Tab / window-switcher rendering.
+     */
+    private static java.util.List<Image> scaledIconSet(Image source) {
+        return java.util.List.of(
+                source.getScaledInstance(16, 16, Image.SCALE_SMOOTH),
+                source.getScaledInstance(24, 24, Image.SCALE_SMOOTH),
+                source.getScaledInstance(32, 32, Image.SCALE_SMOOTH),
+                source.getScaledInstance(48, 48, Image.SCALE_SMOOTH),
+                source.getScaledInstance(64, 64, Image.SCALE_SMOOTH),
+                source.getScaledInstance(128, 128, Image.SCALE_SMOOTH),
+                source.getScaledInstance(256, 256, Image.SCALE_SMOOTH),
+                source);
     }
 }
