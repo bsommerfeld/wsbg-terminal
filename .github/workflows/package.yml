@@ -129,6 +129,25 @@ jobs:
           security import "$CERT_PATH" -P "$MAC_CERTS_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "actions" "$KEYCHAIN_PATH"
 
+      # Build the bundled runtime ourselves. jpackage's own jlink run adds
+      # --strip-native-commands, which REMOVES bin/java(.exe) from the runtime.
+      # That breaks us: the launcher starts the terminal as a child "java"
+      # process (AppLauncher#resolveJava → java.home/bin/java), so a stripped
+      # runtime leaves end users with no java → "CreateProcess error=2". Plain
+      # jlink keeps the launchers; we then bundle this image verbatim via
+      # --runtime-image (jpackage does not re-strip a provided image).
+      # ALL-MODULE-PATH = the full JDK module set, so the spawned terminal has
+      # every module it needs (JCEF, java.net.http, crypto, …).
+      - name: Build bundled runtime (keeps the java launcher)
+        shell: bash
+        run: |
+          rm -rf runtime-image
+          jlink --add-modules ALL-MODULE-PATH \
+            --no-header-files --no-man-pages \
+            --output runtime-image
+          # Sanity: the launcher MUST exist in the bundled runtime.
+          ls "runtime-image/bin/java"* || { echo "::error::jlink runtime has no java launcher"; exit 1; }
+
       - name: Package with JPackage
         shell: bash
         run: |
@@ -141,12 +160,9 @@ jobs:
             EXTRA_ARGS="$EXTRA_ARGS --mac-sign"
           fi
 
-          # The launcher spawns the terminal as a separate JVM process using
-          # the runtime bundled here (AppLauncher#resolveJava → java.home).
-          # jpackage's default jlink image is sized to the Swing launcher's
-          # own deps and lacks modules the terminal needs (JCEF, java.net.http,
-          # crypto, …). --add-modules ALL-MODULE-PATH bundles the full JDK
-          # module set so the spawned terminal has everything it requires.
+          # --runtime-image: bundle OUR jlink image (with bin/java) verbatim, so
+          # AppLauncher can spawn the terminal with the shipped runtime even on a
+          # machine that has no system Java.
           jpackage \
             --type ${{ matrix.jpackage-type }} \
             --name "WSBG Terminal" \
@@ -156,7 +172,7 @@ jobs:
             --input jpackage-input \
             --main-jar "$JAR_NAME" \
             --main-class de.bsommerfeld.updater.launcher.LauncherMain \
-            --add-modules ALL-MODULE-PATH \
+            --runtime-image runtime-image \
             --java-options "--enable-preview" \
             --icon ${{ matrix.icon-file }} \
             --dest jpackage-output \
