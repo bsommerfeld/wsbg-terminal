@@ -1,16 +1,32 @@
 # ==============================================================================
 # WSBG Terminal - Windows Setup Script (setup.ps1)
 # ==============================================================================
-# This script handles the automated configuration and environment preparation
-# for the WSBG Terminal on Windows platforms.
-# It is executed by the Launcher and performs the following core steps:
-# 1. Installs or updates Ollama via winget.
-# 2. Starts a headless Ollama server instance if needed.
-# 3. Downloads missing AI models.
-# 4. Generates a default `config.toml` structure for new setups.
+# Executed by the Launcher to prepare the runtime environment:
+# 1. Installs our OWN, isolated Ollama binary under <appData>\ai (pinned).
+# 2. Starts a private Ollama server (own port + own model store).
+# 3. Downloads the AI models into that isolated store.
+# 4. Pre-installs JCEF + fonts and scaffolds the config.
 #
-# Model strategy: gemma4:e4b multimodal handles chat + vision + agent on
-# Windows/Linux. Embeddings come from embeddinggemma (Google, 308M, 768d).
+# Full isolation: we never touch a user's existing Ollama (binary, models, or
+# the server on the default port 11434). Everything lives under <appData>\ai,
+# so uninstalling is just deleting the app data folder.
+# ==============================================================================
+
+# ==============================================================================
+# CONFIG -- bump these to upgrade Ollama or change the models
+# ==============================================================================
+# Pinned Ollama version = the GitHub release tag WITHOUT the leading "v".
+# Bump -> the isolated binary under <appData>\ai re-downloads on next launch
+# (downloaded models are kept). Releases: https://github.com/ollama/ollama/releases
+$OllamaVersion = "0.24.0"
+
+# Models pulled into our ISOLATED store (<appData>\ai\models). Edit freely.
+# One multimodal gemma4:e4b serves agent + vision; embeddinggemma does vectors.
+$ReasoningModel = "gemma4:e4b"             # editorial agent + vision (multimodal)
+$EmbedModel     = "embeddinggemma:latest"  # 768d cluster embeddings
+
+# Private endpoint -- our instance binds here, NEVER the user's default 11434.
+$OllamaPort = "11500"
 # ==============================================================================
 
 Write-Host "==========================================" -ForegroundColor Cyan
@@ -19,159 +35,137 @@ Write-Host "=========================================="
 Write-Host ""
 
 # ------------------------------------------------------------------------------
-# 1. Install/Update Ollama
+# Resolve the application data directory + the isolated ai\ layout
 # ------------------------------------------------------------------------------
-# Keeping Ollama up-to-date prevents model pull failures caused by version
-# incompatibilities with newer model formats. We first check if Ollama is
-# installed, then compare the local version to the latest GitHub release.
-# We only trigger the intensive `winget` update process if an update is required.
-
-$updateRequired = $false
-if (Get-Command "ollama" -ErrorAction SilentlyContinue) {
-    $localOutput = (ollama --version 2>$null)
-    if ($localOutput -match "(\d+\.\d+\.\d+)") { $localVer = $matches[1] }
-
-    $remoteVer = $null
-    try {
-        $githubRelease = Invoke-RestMethod -Uri "https://api.github.com/repos/ollama/ollama/releases/latest" -TimeoutSec 3 -ErrorAction Stop
-        if ($githubRelease.tag_name -match "(\d+\.\d+\.\d+)") { $remoteVer = $matches[1] }
-    } catch {}
-
-    if (-not [string]::IsNullOrEmpty($remoteVer) -and $localVer -ne $remoteVer) {
-        Write-Host "    Update available: $localVer -> $remoteVer"
-        $updateRequired = $true
-    } else {
-        Write-Host "[*] Ollama is up to date ($localVer)"
-    }
-} else {
-    # If the ollama command is missing, we must install it.
-    $updateRequired = $true
+# Mirrors StorageUtils. LOCALAPPDATA (not Roaming) on purpose: the bundled AI
+# runtime + models under ai\ are multiple GB and must not sync with a roaming
+# profile.
+$localAppData = $env:LOCALAPPDATA
+if ([string]::IsNullOrEmpty($localAppData)) {
+    $localAppData = [System.IO.Path]::Combine($env:USERPROFILE, "AppData", "Local")
 }
-
-if ($updateRequired) {
-    Write-Host "[*] Installing/updating Ollama..."
-
-    # Windows strictly locks files that are in use. If the Ollama system tray
-    # app is running in the background, a silent winget update will fail to
-    # cleanly overwrite the executable. Thus, we forcefully stop any running
-    # Ollama instances prior to launching the update.
-    Write-Host "    Stopping running Ollama instances..."
-    Get-Process "Ollama*", "ollama*" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-    Start-Sleep -Seconds 1
-
-    # Using winget handles both fresh installs and in-place updates.
-    winget install -e --id Ollama.Ollama --silent --accept-source-agreements --accept-package-agreements 2>$null
-    if ($LASTEXITCODE -ne 0 -and -not (Get-Command "ollama" -ErrorAction SilentlyContinue)) {
-        Write-Host "    Failed to install Ollama." -ForegroundColor Red
-        Write-Host "    Please install manually from https://ollama.com/download/windows"
-        exit 1
-    }
-}
-
-# winget may automatically trigger the Ollama desktop GUI after the update.
-# We kill it because the launcher only requires the headless CLI server to
-# pull models and operate. A retry loop is utilized because the GUI spawns
-# asynchronously after winget concludes.
-for ($attempt = 0; $attempt -lt 3; $attempt++) {
-    Start-Sleep -Seconds 1
-    Get-Process "Ollama*" -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -ne "ollama" } | Stop-Process -Force -ErrorAction SilentlyContinue
-}
-
-# Remove Ollama from Windows autostart to prevent background bloat when the
-# terminal is not actively in use.
-Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "Ollama" -ErrorAction SilentlyContinue
-
-# Refresh the shell's PATH variable so the current session finds `ollama.exe`
-# immediately after a fresh installation.
-$machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
-$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-$env:Path = "$machinePath;$userPath"
-
-Write-Host "    Ollama ready." -ForegroundColor Green
-
-# The Windows Ollama CLI does NOT automatically start a temporary server
-# (unlike macOS/Linux). Without an active server, every `ollama pull` will
-# fail with "connection refused".
-# Here, we spawn a background server and poll it for readiness before pulling.
-Write-Host "[*] Starting Ollama server..."
-$ollamaProcess = $null
-try {
-    # -WorkingDirectory $env:TEMP: setup.bat runs us from wsbg-terminal\bin, and
-    # a child process inheriting that CWD locks the install folder on Windows
-    # (an orphaned ollama then makes the folder undeletable). Pin it to TEMP.
-    $ollamaProcess = Start-Process -FilePath "ollama" -ArgumentList "serve" -WorkingDirectory $env:TEMP -PassThru -WindowStyle Hidden -ErrorAction Stop
-    $ready = $false
-    # Poll /api/tags until the server accepts connections (max 15s)
-    for ($i = 0; $i -lt 30; $i++) {
-        Start-Sleep -Milliseconds 500
-        try {
-            Invoke-RestMethod -Uri "http://127.0.0.1:11434/api/tags" -TimeoutSec 2 | Out-Null
-            $ready = $true
-            break
-        } catch {}
-    }
-    if ($ready) {
-        Write-Host "    Ollama server ready." -ForegroundColor Green
-    } else {
-        Write-Host "    [WARN] Ollama server did not respond in time - pulls may fail." -ForegroundColor Yellow
-    }
-} catch {
-    Write-Host "    [WARN] Could not start Ollama server: $_" -ForegroundColor Yellow
-}
-
-# ------------------------------------------------------------------------------
-# 2. Locate the application data directory
-# ------------------------------------------------------------------------------
-# Mirrors the Java backend's StorageUtils logic precisely.
-$appDataPath = $env:APPDATA
-if ([string]::IsNullOrEmpty($appDataPath)) {
-    $appDataPath = [System.IO.Path]::Combine($env:USERPROFILE, "AppData", "Roaming")
-}
-$configDir = [System.IO.Path]::Combine($appDataPath, "wsbg-terminal")
+$configDir = [System.IO.Path]::Combine($localAppData, "wsbg-terminal")
 $configFile = [System.IO.Path]::Combine($configDir, "config.toml")
 
+# Everything AI lives under <appData>\ai, isolated from any Ollama the user
+# already has. The Windows zip extracts ollama.exe (+ lib\) at the root.
+$aiDir = [System.IO.Path]::Combine($configDir, "ai")
+$aiModels = [System.IO.Path]::Combine($aiDir, "models")
+$ollamaExe = [System.IO.Path]::Combine($aiDir, "ollama.exe")
+if (-not (Test-Path $ollamaExe)) {
+    $alt = [System.IO.Path]::Combine($aiDir, "bin", "ollama.exe")
+    if (Test-Path $alt) { $ollamaExe = $alt }
+}
+
+# Isolation env -- applies to every ollama invocation below (version check,
+# serve, pulls). Pins our port + model store away from the user's instance.
+$env:OLLAMA_HOST = "127.0.0.1:$OllamaPort"
+$env:OLLAMA_MODELS = $aiModels
+New-Item -ItemType Directory -Force -Path $aiModels | Out-Null
+
 # ------------------------------------------------------------------------------
-# 3. Model selection - one multimodal model for chat + vision + agent
+# 1. Install / update OUR isolated Ollama binary (pinned; never the system one)
 # ------------------------------------------------------------------------------
-# Windows uses the standard multimodal gemma4:e4b for chat + vision +
-# agent. Embeddings use Google's embeddinggemma (308M, multilingual).
+$haveVer = $null
+if (Test-Path $ollamaExe) {
+    $out = (& $ollamaExe --version 2>$null)
+    if ($out -match "(\d+\.\d+\.\d+)") { $haveVer = $matches[1] }
+}
 
-$embedModel = "embeddinggemma:latest"
-$reasoningModel = "gemma4:e4b"
+if ($haveVer -eq $OllamaVersion) {
+    Write-Host "[*] Isolated Ollama $OllamaVersion already present." -ForegroundColor Gray
+} else {
+    Write-Host "[*] Installing isolated Ollama $OllamaVersion into $aiDir ..." -ForegroundColor Cyan
+    $arch = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "arm64" } else { "amd64" }
+    $url = "https://github.com/ollama/ollama/releases/download/v$OllamaVersion/ollama-windows-$arch.zip"
+    $tmpZip = Join-Path $env:TEMP "ollama-windows-$PID.zip"
+    try {
+        # Remove only the runtime (keep downloaded models under $aiModels).
+        Remove-Item (Join-Path $aiDir "ollama.exe"), (Join-Path $aiDir "lib") -Recurse -Force -ErrorAction SilentlyContinue
+        if (-not (Test-Path $aiDir)) { New-Item -ItemType Directory -Force -Path $aiDir | Out-Null }
 
-Write-Host "[*] Configuration Roadmap:" -ForegroundColor Gray
-Write-Host "    - Reasoning / Vision / Agent: $reasoningModel" -ForegroundColor Gray
-Write-Host "    - Embeddings:                 $embedModel" -ForegroundColor Gray
+        Invoke-WebRequest -Uri $url -OutFile $tmpZip -UseBasicParsing -ErrorAction Stop
+        Expand-Archive -Path $tmpZip -DestinationPath $aiDir -Force
+        Remove-Item $tmpZip -Force -ErrorAction SilentlyContinue
 
-
-# ------------------------------------------------------------------------------
-# 4. Pull Models (only if not already present)
-# ------------------------------------------------------------------------------
-# To optimize load times, we fetch a list of currently installed models
-# and only invoke `ollama pull` for datasets that are missing on disk.
-
-$installedModels = @()
-try {
-    $installedModels = (ollama list 2>$null | Select-Object -Skip 1 | ForEach-Object { ($_ -split '\s+')[0] })
-} catch {}
-
-function Pull-IfMissing($modelName) {
-    if ($installedModels -contains $modelName) {
-        Write-Host "    [OK] $modelName already available" -ForegroundColor Green
-    } else {
-        Write-Host "    > Pulling $modelName..."
-        ollama pull $modelName
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "    [WARN] Failed to pull $modelName" -ForegroundColor Yellow
+        # Re-resolve the binary location after extraction.
+        $ollamaExe = [System.IO.Path]::Combine($aiDir, "ollama.exe")
+        if (-not (Test-Path $ollamaExe)) {
+            $alt = [System.IO.Path]::Combine($aiDir, "bin", "ollama.exe")
+            if (Test-Path $alt) { $ollamaExe = $alt }
         }
+        if (Test-Path $ollamaExe) {
+            Write-Host "    Isolated Ollama ready at $ollamaExe" -ForegroundColor Green
+        } else {
+            Write-Host "    [WARN] ollama.exe not found after extraction -- check archive layout." -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Host "    [WARN] Isolated Ollama install failed: $_ -- continuing." -ForegroundColor Yellow
+        Remove-Item $tmpZip -Force -ErrorAction SilentlyContinue
     }
 }
 
-Pull-IfMissing $reasoningModel
-Pull-IfMissing $embedModel
+# ------------------------------------------------------------------------------
+# 2. Start OUR server on the private port (stopped again at the end of setup)
+# ------------------------------------------------------------------------------
+# -WorkingDirectory $env:TEMP: setup.bat runs us from wsbg-terminal\bin, and a
+# child inheriting that CWD locks the install folder on Windows (an orphaned
+# ollama then makes the folder undeletable). Pin it to TEMP.
+$ollamaProcess = $null
+if (Test-Path $ollamaExe) {
+    Write-Host "[*] Starting isolated Ollama server on $($env:OLLAMA_HOST) ..."
+    try {
+        $ollamaProcess = Start-Process -FilePath $ollamaExe -ArgumentList "serve" -WorkingDirectory $env:TEMP -PassThru -WindowStyle Hidden -ErrorAction Stop
+        $ready = $false
+        for ($i = 0; $i -lt 30; $i++) {
+            Start-Sleep -Milliseconds 500
+            try {
+                Invoke-RestMethod -Uri "http://$($env:OLLAMA_HOST)/api/tags" -TimeoutSec 2 | Out-Null
+                $ready = $true
+                break
+            } catch {}
+        }
+        if ($ready) {
+            Write-Host "    Server ready." -ForegroundColor Green
+        } else {
+            Write-Host "    [WARN] Server did not respond in time - pulls may fail." -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Host "    [WARN] Could not start isolated Ollama server: $_" -ForegroundColor Yellow
+    }
+}
 
 # ------------------------------------------------------------------------------
-# 5. Pre-install JCEF (embedded Chromium) native bundle
+# 3. Pull models into the isolated store (only if missing)
+# ------------------------------------------------------------------------------
+Write-Host "[*] Models (isolated store: $aiModels):" -ForegroundColor Gray
+Write-Host "    - Reasoning / Vision / Agent: $ReasoningModel" -ForegroundColor Gray
+Write-Host "    - Embeddings:                 $EmbedModel" -ForegroundColor Gray
+
+if (Test-Path $ollamaExe) {
+    $installedModels = @()
+    try {
+        $installedModels = (& $ollamaExe list 2>$null | Select-Object -Skip 1 | ForEach-Object { ($_ -split '\s+')[0] })
+    } catch {}
+
+    function Pull-IfMissing($modelName) {
+        if ($installedModels -contains $modelName) {
+            Write-Host "    [OK] $modelName already available" -ForegroundColor Green
+        } else {
+            Write-Host "    > Pulling $modelName..."
+            & $ollamaExe pull $modelName
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "    [WARN] Failed to pull $modelName" -ForegroundColor Yellow
+            }
+        }
+    }
+
+    Pull-IfMissing $ReasoningModel
+    Pull-IfMissing $EmbedModel
+}
+
+# ------------------------------------------------------------------------------
+# 4. Pre-install JCEF (embedded Chromium) native bundle
 # ------------------------------------------------------------------------------
 # Without this, the terminal downloads ~120 MB of Chromium on the first
 # real run, blocking the UI for several seconds. Doing it here means the
@@ -233,7 +227,7 @@ if (Test-Path $jcefMarker) {
 }
 
 # ------------------------------------------------------------------------------
-# 6. Install JetBrains Mono + Inter fonts for the terminal UI
+# 5. Install JetBrains Mono + Inter fonts for the terminal UI
 # ------------------------------------------------------------------------------
 # Web fonts served locally by the terminal's AssetServer at /fonts/.
 # Without them, the page falls back to the system mono/sans stack.
@@ -278,7 +272,7 @@ if (Test-Path $fontMarker) {
 }
 
 # ------------------------------------------------------------------------------
-# 7. Generate Configuration File (if strictly new)
+# 6. Generate Configuration File (if strictly new)
 # ------------------------------------------------------------------------------
 # We initialize a base `config.toml` structure if the app is
 # running for the very first time.
@@ -315,12 +309,14 @@ if (!(Test-Path $configFile)) {
      Write-Host "[*] Configuration already exists. Skipping generation." -ForegroundColor Gray
 }
 
-# We stop the background Ollama server forcefully now, as it was only started
-# temporarily to accomplish model pulls during the launch setup. The primary Java
-# application will launch its own managed Ollama process.
+# ------------------------------------------------------------------------------
+# 7. Stop the temporary setup server
+# ------------------------------------------------------------------------------
+# The terminal app starts and OWNS its own isolated instance, so we shut down
+# the server we spun up for the pulls.
 #
 # taskkill /T targets ONLY our process tree (our serve PID + the 'ollama runner'
-# children it spawned during pulls) — it does not touch a separately-running
+# children it spawned during pulls) -- it does not touch a separately-running
 # Ollama the user may have started. /F forces, since serve ignores soft signals.
 if ($ollamaProcess -ne $null -and -not $ollamaProcess.HasExited) {
     taskkill /PID $ollamaProcess.Id /T /F 2>$null | Out-Null
