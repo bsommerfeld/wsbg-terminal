@@ -126,22 +126,23 @@ public final class BrowserWindow {
 
         frame.setVisible(true);
 
-        // First-paint kick — deferred 250 ms so the reparenting that
-        // fires inside addNotify is fully done before we perturb the
-        // layout. JCEF on macOS lazily initialises the Chromium NSView
-        // and doesn't render until something invalidates its bounds;
-        // the page stays white until the user resizes manually.
-        // A Swing Timer (rather than invokeLater) lets the EDT run
-        // other queued work first.
-        if (isMac()) {
-            javax.swing.Timer kick = new javax.swing.Timer(250, e -> {
-                Dimension size = frame.getSize();
-                frame.setSize(size.width + 1, size.height);
-                frame.setSize(size.width, size.height);
-            });
-            kick.setRepeats(false);
-            kick.start();
-        }
+        // First-paint kick — a one-shot resize nudge that forces JCEF to
+        // realise and paint its heavyweight surface. Without it the embedded
+        // Chromium stays blank until the user manually resizes:
+        //   - macOS: the Chromium NSView is lazily initialised and only renders
+        //     once its bounds are invalidated (after the addNotify reparenting).
+        //   - Windows/Linux: the windowed heavyweight canvas likewise doesn't
+        //     complete its first layout/paint until the surface is perturbed,
+        //     leaving a white, chrome-less (un-draggable) window.
+        // Deferred 250 ms so any addNotify cascade is fully done first; a Swing
+        // Timer (not invokeLater) lets the EDT drain other queued work first.
+        javax.swing.Timer kick = new javax.swing.Timer(250, e -> {
+            Dimension size = frame.getSize();
+            frame.setSize(size.width + 1, size.height);
+            frame.setSize(size.width, size.height);
+        });
+        kick.setRepeats(false);
+        kick.start();
 
         LOG.info("Browser window opened.");
     }
