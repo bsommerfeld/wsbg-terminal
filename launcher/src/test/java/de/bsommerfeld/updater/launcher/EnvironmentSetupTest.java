@@ -179,6 +179,28 @@ class EnvironmentSetupTest {
     }
 
     @Test
+    void parseDownloadPercent_readsCurlDefaultMeterLeadingColumn() {
+        // Real curl no-TTY meter rows (leading "% Total" column = download %).
+        assertEquals(2, EnvironmentSetup.parseDownloadPercent(
+                "2  1.92G    2 52.78M    0     0  50.27M      0  0:00:39  0:00:01  0:00:38 52.83M"));
+        assertEquals(100, EnvironmentSetup.parseDownloadPercent(
+                "100  1.92G  100  1.92G    0     0  94.27M      0  0:00:20  0:00:20 --:--:-- 98.72M"));
+    }
+
+    @Test
+    void parseDownloadPercent_ignoresHeaderAndNonProgressLines() {
+        assertEquals(-1, EnvironmentSetup.parseDownloadPercent(
+                "% Total    % Received % Xferd  Average Speed   Time    Time     Time  Current"));
+        assertEquals(-1, EnvironmentSetup.parseDownloadPercent("Dload  Upload   Total   Spent    Left  Speed"));
+        assertEquals(-1, EnvironmentSetup.parseDownloadPercent("Extracting..."));
+    }
+
+    @Test
+    void parseDownloadPercent_alsoReadsProgressBarTrailingPercent() {
+        assertEquals(45, EnvironmentSetup.parseDownloadPercent("######            45.0%"));
+    }
+
+    @Test
     void classifyAndEmit_shouldDetectIsolatedOllamaInstall() throws Exception {
         // The isolated-install line carries an extra word ("isolated") and a
         // version/path tail; the phase detector must still recognise it so the

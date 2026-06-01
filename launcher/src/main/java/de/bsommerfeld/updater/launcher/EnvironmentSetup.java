@@ -64,6 +64,15 @@ final class EnvironmentSetup {
     private static final Pattern CURL_PROGRESS_PATTERN = Pattern.compile(
             "(\\d+(?:\\.\\d+)?)\\s*%\\s*$");
 
+    // curl's DEFAULT transfer meter, which it prints line-by-line (one row per
+    // update) when stdout/stderr is a pipe rather than a TTY — exactly how it
+    // runs under the launcher. The leading "% Total" column is the download
+    // percentage, e.g. "  2 1.92G    2 52.78M    0     0  50.2M ..." → 2%.
+    // The header rows ("% Total..." / "Dload Upload...") start with '%'/a letter
+    // and are skipped. Used to drive the bar during the Ollama binary download.
+    private static final Pattern CURL_METER_PATTERN = Pattern.compile(
+            "^(\\d{1,3})\\s+[\\d.]+\\s*[KMGTP]?B?\\b");
+
     /**
      * Matches raw progress bars, spinner characters, and bare percentages.
      * Winget emits single-char spinners (\, |, /, -) and block-character
@@ -218,10 +227,9 @@ final class EnvironmentSetup {
         }
 
         if (installingOllama) {
-            Matcher cm = CURL_PROGRESS_PATTERN.matcher(line);
-            if (cm.find()) {
+            int pct = parseDownloadPercent(line);
+            if (pct >= 0) {
                 // Emit integer percentage so LauncherMain's progress parser handles it
-                int pct = (int) Double.parseDouble(cm.group(1));
                 consumer.accept("Installing AI platform", pct + "%");
             } else {
                 consumer.accept("Installing AI platform", line);
@@ -230,6 +238,26 @@ final class EnvironmentSetup {
         }
 
         consumer.accept("Setting up environment", line);
+    }
+
+    /**
+     * Extracts a download percentage (0–100) from a curl progress line during the
+     * Ollama install phase, or {@code -1} if the line carries no percentage.
+     * Handles both curl's default transfer meter (leading "% Total" column) and
+     * the {@code --progress-bar} style (trailing "45.0%").
+     */
+    static int parseDownloadPercent(String line) {
+        Matcher meter = CURL_METER_PATTERN.matcher(line);
+        if (meter.find()) {
+            int pct = Integer.parseInt(meter.group(1));
+            return pct <= 100 ? pct : -1;
+        }
+        Matcher trailing = CURL_PROGRESS_PATTERN.matcher(line);
+        if (trailing.find()) {
+            int pct = (int) Double.parseDouble(trailing.group(1));
+            return Math.min(pct, 100);
+        }
+        return -1;
     }
 
     /**
