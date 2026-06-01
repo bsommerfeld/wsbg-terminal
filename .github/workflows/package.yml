@@ -141,6 +141,12 @@ jobs:
             EXTRA_ARGS="$EXTRA_ARGS --mac-sign"
           fi
 
+          # The launcher spawns the terminal as a separate JVM process using
+          # the runtime bundled here (AppLauncher#resolveJava → java.home).
+          # jpackage's default jlink image is sized to the Swing launcher's
+          # own deps and lacks modules the terminal needs (JCEF, java.net.http,
+          # crypto, …). --add-modules ALL-MODULE-PATH bundles the full JDK
+          # module set so the spawned terminal has everything it requires.
           jpackage \
             --type ${{ matrix.jpackage-type }} \
             --name "WSBG Terminal" \
@@ -150,6 +156,7 @@ jobs:
             --input jpackage-input \
             --main-jar "$JAR_NAME" \
             --main-class de.bsommerfeld.updater.launcher.LauncherMain \
+            --add-modules ALL-MODULE-PATH \
             --java-options "--enable-preview" \
             --icon ${{ matrix.icon-file }} \
             --dest jpackage-output \
