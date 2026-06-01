@@ -14,8 +14,11 @@ import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Frame;
+import java.awt.Graphics2D;
 import java.awt.Image;
+import java.awt.RenderingHints;
 import java.awt.Toolkit;
+import java.awt.image.BufferedImage;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.IOException;
@@ -176,10 +179,47 @@ public final class BrowserWindow {
     private static java.util.Optional<Image> loadIcon() {
         try (InputStream in = BrowserWindow.class.getResourceAsStream("/images/app-icon.png")) {
             if (in == null) return java.util.Optional.empty();
-            return java.util.Optional.of(ImageIO.read(in));
+            BufferedImage raw = ImageIO.read(in);
+            return java.util.Optional.ofNullable(raw == null ? null : trimToContent(raw));
         } catch (IOException e) {
             return java.util.Optional.empty();
         }
+    }
+
+    /**
+     * Crops the source icon's transparent border and re-centres it on a square
+     * canvas with a small (~6%) margin. The shared art carries ~20% macOS-style
+     * padding, which renders the Windows/Linux taskbar icon visibly smaller than
+     * its neighbours (those fill the square). Trimming makes our icon fill its
+     * slot the same way. macOS is unaffected — its dock icon comes from the
+     * {@code -Xdock:icon} flag, not this {@code setIconImages} call.
+     */
+    private static BufferedImage trimToContent(BufferedImage img) {
+        int w = img.getWidth(), h = img.getHeight();
+        int minX = w, minY = h, maxX = -1, maxY = -1;
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                if ((img.getRGB(x, y) >>> 24) > 8) { // alpha above a tiny threshold
+                    if (x < minX) minX = x;
+                    if (x > maxX) maxX = x;
+                    if (y < minY) minY = y;
+                    if (y > maxY) maxY = y;
+                }
+            }
+        }
+        if (maxX < minX) return img; // fully transparent — nothing to trim
+
+        int cw = maxX - minX + 1, ch = maxY - minY + 1;
+        BufferedImage content = img.getSubimage(minX, minY, cw, ch);
+
+        int side = (int) (Math.max(cw, ch) / 0.88); // ~6% margin per side
+        BufferedImage square = new BufferedImage(side, side, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = square.createGraphics();
+        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
+                RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+        g.drawImage(content, (side - cw) / 2, (side - ch) / 2, null);
+        g.dispose();
+        return square;
     }
 
     /**
