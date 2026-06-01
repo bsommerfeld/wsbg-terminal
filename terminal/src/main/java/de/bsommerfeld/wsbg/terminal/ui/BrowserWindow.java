@@ -60,7 +60,14 @@ public final class BrowserWindow {
         frame = new JFrame("WSBG Terminal");
         frame.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
         frame.setMinimumSize(new java.awt.Dimension(800, 600));
-        loadIcon().ifPresent(icon -> frame.setIconImages(scaledIconSet(icon)));
+        // Never let an icon hiccup block the window from loading the page —
+        // a thrown RuntimeException here would leave an empty, undecorated
+        // (un-draggable) frame, i.e. the "white screen" failure mode.
+        try {
+            loadIcon().ifPresent(icon -> frame.setIconImages(scaledIconSet(icon)));
+        } catch (RuntimeException e) {
+            LOG.warn("Window icon setup failed; continuing without a custom icon", e);
+        }
 
         // On macOS, JCEF reparents its Chromium NSWindow into the JFrame's
         // NSWindow via sun.lwawt.macosx internals. That reparenting fails
