@@ -79,14 +79,14 @@ public final class BrowserWindow {
             frame.setUndecorated(true);
         }
 
-        // Swing-side repaint suppression keeps the heavyweight Canvas
-        // free of double-buffer fills during live resize. The Canvas
-        // itself is intentionally NOT in this list — that flag breaks
-        // JCEF's macOS reparenting (addNotify path).
-        frame.setIgnoreRepaint(true);
-        frame.getRootPane().setIgnoreRepaint(true);
-        frame.getContentPane().setIgnoreRepaint(true);
-
+        // NOTE: do NOT call setIgnoreRepaint(true) on the frame / rootPane /
+        // contentPane here. JCEF's windowed browser (CefBrowserWr) only creates
+        // its native Chromium window the first time its UI JPanel receives a
+        // paint(Graphics) — that paint is what starts the delayedUpdate timer
+        // which calls createBrowserIfRequired(). Suppressing repaints on the
+        // ancestors starves that first paint, so the browser (and its renderer
+        // process) is never created and the canvas stays permanently white.
+        // Smoother live-resize is not worth a window that never renders.
         frame.getContentPane().setLayout(new BorderLayout());
 
         // Order matters for JCEF on macOS:
