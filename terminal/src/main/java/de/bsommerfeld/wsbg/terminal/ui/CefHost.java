@@ -121,6 +121,19 @@ public final class CefHost {
                 jcefArgs.add("--disable-gpu-vsync");            // lower input latency
                 jcefArgs.add("--enable-features=UseOzonePlatform");
                 jcefArgs.add("--enable-begin-frame-control");   // smoother frame pacing
+            } else {
+                // Windows, especially in a VM / RDP session, frequently has no
+                // usable GPU and a restricted renderer sandbox. Either makes the
+                // Chromium GPU/renderer process fail to start, so the page never
+                // runs (its JS never connects our WebSocket — "no clients" in the
+                // logs) and the window stays permanently white. Force software
+                // rendering and relax the sandbox. Safe here: we only ever load
+                // local loopback content, never untrusted web pages. A dashboard
+                // doesn't need the GPU, so real-hardware Windows is unaffected
+                // beyond marginally less smooth resize.
+                jcefArgs.add("--disable-gpu");
+                jcefArgs.add("--disable-gpu-compositing");
+                jcefArgs.add("--no-sandbox");
             }
 
             builder.addJcefArgs(jcefArgs.toArray(new String[0]));
