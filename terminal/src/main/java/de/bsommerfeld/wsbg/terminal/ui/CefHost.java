@@ -97,46 +97,21 @@ public final class CefHost {
                 }
             });
 
-            // Chromium command-line flags.
-            // These are safe and wanted on every platform:
-            //   - timer-throttling / renderer-backgrounding off: keep our JS
-            //     intervals (sockets, tickers) firing when the window is in back.
-            //   - CalculateNativeWinOcclusion off: the classic Windows fix for a
-            //     blank window Chromium wrongly considers "occluded".
-            //   - remote-debugging-port: DevTools over loopback at
-            //     http://localhost:9222 for inspecting the page.
-            java.util.List<String> jcefArgs = new java.util.ArrayList<>(java.util.List.of(
-                    "--disable-background-timer-throttling",
+            // Chromium command-line flags. Tuned for low-latency desktop
+            // rendering and smooth live resize on macOS.
+            builder.addJcefArgs(
+                    "--disable-gpu-vsync",                       // lower input latency
+                    "--enable-features=UseOzonePlatform",
+                    "--enable-begin-frame-control",              // smoother frame pacing
+                    "--disable-background-timer-throttling",     // keep our intervals firing
                     "--disable-renderer-backgrounding",
                     "--disable-features=CalculateNativeWinOcclusion",
-                    "--remote-debugging-port=9222"));
-
-            // macOS/Linux low-latency + smooth-resize tuning. These break the
-            // windowed render surface on Windows, leaving a white page:
-            // UseOzonePlatform is a Linux-only platform abstraction, and
-            // begin-frame-control starves Chromium's automatic frame production
-            // when we don't drive frames externally (which we don't). Keep them
-            // off Windows; macOS/Linux behaviour is unchanged.
-            if (!isWindows()) {
-                jcefArgs.add("--disable-gpu-vsync");            // lower input latency
-                jcefArgs.add("--enable-features=UseOzonePlatform");
-                jcefArgs.add("--enable-begin-frame-control");   // smoother frame pacing
-            } else {
-                // Windows, especially in a VM / RDP session, frequently has no
-                // usable GPU and a restricted renderer sandbox. Either makes the
-                // Chromium GPU/renderer process fail to start, so the page never
-                // runs (its JS never connects our WebSocket — "no clients" in the
-                // logs) and the window stays permanently white. Force software
-                // rendering and relax the sandbox. Safe here: we only ever load
-                // local loopback content, never untrusted web pages. A dashboard
-                // doesn't need the GPU, so real-hardware Windows is unaffected
-                // beyond marginally less smooth resize.
-                jcefArgs.add("--disable-gpu");
-                jcefArgs.add("--disable-gpu-compositing");
-                jcefArgs.add("--no-sandbox");
-            }
-
-            builder.addJcefArgs(jcefArgs.toArray(new String[0]));
+                    // Expose DevTools over HTTP on the loopback so we can
+                    // inspect the page from any browser at:
+                    //     http://localhost:9222
+                    // Cheaper than wiring a right-click context menu and
+                    // doesn't require the user to remember a shortcut.
+                    "--remote-debugging-port=9222");
 
             cefApp = builder.build();
             cefClient = cefApp.createClient();
@@ -191,10 +166,6 @@ public final class CefHost {
             cefApp = null;
             cefClient = null;
         }
-    }
-
-    private static boolean isWindows() {
-        return System.getProperty("os.name", "").toLowerCase().contains("win");
     }
 
     private static File resolveInstallDir() {
