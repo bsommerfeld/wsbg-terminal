@@ -46,10 +46,10 @@ jobs:
             icon-file: .assets/icons/AppIcon.icns
           - os: ubuntu-latest
             jpackage-type: deb
-            icon-file: .assets/icons/AppIcon.png
+            icon-file: .assets/icons/AppIcon-fullbleed.png
           - os: ubuntu-latest
             jpackage-type: rpm
-            icon-file: .assets/icons/AppIcon.png
+            icon-file: .assets/icons/AppIcon-fullbleed.png
 
     runs-on: ${{ matrix.os }}
     name: Build ${{ matrix.jpackage-type }}
