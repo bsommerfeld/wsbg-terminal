@@ -29,11 +29,13 @@ import java.awt.Toolkit;
  * {@code -stop} arrives.
  *
  * <p>
- * Resize only matters on Windows/Linux: there the frame is undecorated
- * ({@code setUndecorated(true)}), which strips the native resize border,
- * so the page paints invisible edge hit-zones and forwards the gesture
- * here. macOS keeps a decorated NSWindow and resizes natively, so the
- * page never sends {@code resize-start} on that platform.
+ * <b>Currently dormant:</b> every platform now uses native window chrome
+ * (macOS keeps a decorated NSWindow; Windows/Linux use the native OS
+ * title bar — see {@link BrowserWindow}), so the OS handles drag, resize
+ * and the min/max/close buttons itself and the page no longer sends any
+ * {@code window} command. This handler is kept intact behind the
+ * {@code window} channel in case the HTML chrome is ever re-enabled for
+ * a platform that needs emulated drag/resize again.
  */
 @Singleton
 public final class WindowDragHandler {

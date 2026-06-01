@@ -36,7 +36,7 @@
          controls so the chrome looks symmetric. Icon swaps to a moon
          in light theme / sun in dark theme via CSS. -->
     <div class="tb-actions">
-      <button class="iconbtn" id="btn-theme" title="Theme umschalten" aria-label="Toggle theme">
+      <button class="iconbtn js-theme-toggle" title="Theme umschalten" aria-label="Toggle theme">
         <svg class="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
         <svg class="icon-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
       </button>
@@ -79,6 +79,13 @@
         <div class="ad-inner"></div>
       </div>
     </div>
+    <!-- Theme toggle lives here on Win/Linux, where the HTML titlebar
+         (its usual home) is hidden in favour of the native OS title bar.
+         Hidden on macOS via CSS — there it stays in the titlebar. -->
+    <button class="iconbtn js-theme-toggle footer-theme" title="Theme umschalten" aria-label="Toggle theme">
+      <svg class="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+      <svg class="icon-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    </button>
   </footer>
 </div>
 

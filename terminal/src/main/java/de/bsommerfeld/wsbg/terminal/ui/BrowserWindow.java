@@ -26,15 +26,25 @@ import java.io.InputStream;
 import java.util.Objects;
 
 /**
- * Top-level frameless Swing window. The HTML provides its own titlebar
- * (macOS-style traffic lights, app title, refresh/settings/fullscreen
- * buttons); the OS-level chrome is intentionally hidden so the page can
- * own the entire surface.
+ * Top-level Swing window hosting the JCEF browser.
  *
  * <p>
- * Window drag and the close/minimize/maximize buttons are wired through
- * {@link WindowDragHandler}, which receives commands from the page via
- * the WebSocket push hub.
+ * Window chrome is platform-split:
+ * <ul>
+ *   <li><b>macOS</b> — the {@code JFrame} stays decorated (JCEF
+ *   reparenting requires a standard NSWindow) but the OS title bar is
+ *   made transparent via {@code apple.awt.*} root-pane properties, so the
+ *   HTML titlebar (app title + theme toggle) sits flush over the native
+ *   traffic lights.</li>
+ *   <li><b>Windows/Linux</b> — the frame keeps its full native OS title
+ *   bar (real min/max/close, native drag/resize/snap). On Windows it is
+ *   themed dark via {@link WindowsChrome}. The page hides its HTML
+ *   titlebar there to avoid duplicate chrome.</li>
+ * </ul>
+ *
+ * <p>
+ * {@link WindowDragHandler} remains wired to the {@code window} command
+ * channel but is dormant now that all platforms use native chrome.
  */
 @Singleton
 public final class BrowserWindow {
@@ -71,12 +81,18 @@ public final class BrowserWindow {
         // Workaround: keep the JFrame decorated and hide the OS title
         // bar via macOS-only root pane client properties. The HTML's
         // custom titlebar then sits flush at the top of the content.
+        //
+        // Windows/Linux keep the *native* OS decoration — real min/max/
+        // close buttons, native drag, native edge-resize and Aero snap,
+        // which is what users expect there (and what IntelliJ-style apps
+        // provide). The page hides its own HTML titlebar on those
+        // platforms (data-platform="other"), so there's no duplicate
+        // chrome. The only thing the OS won't do by itself is theme the
+        // title bar dark; that is applied post-show via WindowsChrome.
         if (isMac()) {
             frame.getRootPane().putClientProperty("apple.awt.fullWindowContent", true);
             frame.getRootPane().putClientProperty("apple.awt.transparentTitleBar", true);
             frame.getRootPane().putClientProperty("apple.awt.windowTitleVisible", false);
-        } else {
-            frame.setUndecorated(true);
         }
 
         // NOTE: do NOT call setIgnoreRepaint(true) on the frame / rootPane /
@@ -128,6 +144,20 @@ public final class BrowserWindow {
         // other queued work first.
         if (isMac()) {
             javax.swing.Timer kick = new javax.swing.Timer(250, e -> {
+                Dimension size = frame.getSize();
+                frame.setSize(size.width + 1, size.height);
+                frame.setSize(size.width, size.height);
+            });
+            kick.setRepeats(false);
+            kick.start();
+        } else {
+            // Windows: theme the native title bar dark to match the UI.
+            // Deferred a tick so the native peer is fully realised, then a
+            // 1px resize nudge forces the non-client area to repaint with
+            // the new theme (and kicks JCEF's first paint, like the macOS
+            // branch). No-op on Linux — WindowsChrome guards on the OS.
+            javax.swing.Timer kick = new javax.swing.Timer(100, e -> {
+                WindowsChrome.applyDarkTitleBar(frame);
                 Dimension size = frame.getSize();
                 frame.setSize(size.width + 1, size.height);
                 frame.setSize(size.width, size.height);

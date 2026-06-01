@@ -4,12 +4,13 @@
    macOS keeps its native NSWindow chrome — the JFrame is decorated and
    the OS draws its own traffic lights top-left. Our HTML duplicates are
    hidden on that platform; the theme button still sits on the opposite
-   (right) edge for symmetry.
+   (right) edge for symmetry. So in practice this HTML titlebar is only
+   ever visible on macOS.
 
-   Windows/Linux launch undecorated, so the HTML traffic lights are the
-   only window controls. OS convention puts them top-right there, and the
-   theme button mirrors to the left. The grid columns auto-swap via
-   row-reverse keyed on [data-platform]. */
+   Windows/Linux now use the *native* OS title bar (decorated frame +
+   native min/max/close/drag/resize; dark-themed via DWM on Windows).
+   The whole HTML titlebar is hidden there to avoid duplicate chrome, and
+   the theme toggle relocates to the footer (see footer.css). */
 
 .titlebar {
   display: grid;
@@ -27,20 +28,19 @@
   padding: 0 10px;
   gap: 6px;
 }
-.tb-controls { justify-content: flex-start; }
-.tb-actions  { justify-content: flex-end; }
+/* Pin every child to an explicit column so the title is always centred.
+   When a sibling carried an explicit grid-column but .tb-title was left
+   auto-placed, the sparse auto-placement cursor skipped the centre track
+   — the title slid into an implicit column and spawned a second row that
+   shoved the theme toggle down. Explicit columns on all three remove that
+   ambiguity for good. */
+.tb-controls { grid-column: 1; justify-content: flex-start; }
+.tb-title    { grid-column: 2; }
+.tb-actions  { grid-column: 3; justify-content: flex-end; }
 
-/* Win/Linux: swap which side hosts the window controls vs. the theme
-   toggle. The markup order stays the same; only the grid placement
-   and flex justification flip. */
-html[data-platform="other"] .tb-controls {
-  grid-column: 3;
-  justify-content: flex-end;
-}
-html[data-platform="other"] .tb-actions {
-  grid-column: 1;
-  justify-content: flex-start;
-}
+/* Win/Linux: the OS draws the title bar natively, so the HTML one is
+   hidden outright. The grid row it occupied collapses in base.css. */
+html[data-platform="other"] .titlebar { display: none; }
 
 /* Window-control buttons (red/yellow/green). */
 .lights { display: flex; gap: 8px; align-items: center; }
@@ -100,7 +100,7 @@ html[data-theme="light"] .tb-title .flag {
 
 /* Theme toggle: show the icon for the target theme — sun in dark mode
    (clicking switches to light), moon in light mode (switches to dark). */
-#btn-theme .icon-sun,
-#btn-theme .icon-moon { display: none; }
-html[data-theme="dark"]  #btn-theme .icon-sun  { display: inline; }
-html[data-theme="light"] #btn-theme .icon-moon { display: inline; }
+.js-theme-toggle .icon-sun,
+.js-theme-toggle .icon-moon { display: none; }
+html[data-theme="dark"]  .js-theme-toggle .icon-sun  { display: inline; }
+html[data-theme="light"] .js-theme-toggle .icon-moon { display: inline; }

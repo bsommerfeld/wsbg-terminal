@@ -43,6 +43,7 @@
 
         <eclipse-collections.version>11.1.0</eclipse-collections.version>
         <jshepherd.version>4.0.1</jshepherd.version>
+        <jna.version>5.14.0</jna.version>
         <logback.version>1.4.14</logback.version>
         <flatten-maven-plugin.version>1.6.0</flatten-maven-plugin.version>
         <test.excludedGroups>integration</test.excludedGroups>
@@ -209,6 +210,14 @@
                 <artifactId>mockito-junit-jupiter</artifactId>
                 <version>5.11.0</version>
                 <scope>test</scope>
+            </dependency>
+            <!-- JNA: native window-chrome calls on Windows (DWM dark title bar).
+                 Core jar only; the dwmapi binding is hand-rolled, so jna-platform
+                 isn't needed. -->
+            <dependency>
+                <groupId>net.java.dev.jna</groupId>
+                <artifactId>jna</artifactId>
+                <version>${jna.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

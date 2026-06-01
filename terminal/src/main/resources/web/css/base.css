@@ -32,6 +32,12 @@ button {
   width: 100vw;
 }
 
+/* Win/Linux render the native OS title bar instead of the HTML one
+   (which is display:none there), so its grid row collapses away. */
+html[data-platform="other"] .app {
+  grid-template-rows: 1fr var(--footer-h);
+}
+
 .main {
   display: grid;
   grid-template-columns: 1fr 1px 1fr;

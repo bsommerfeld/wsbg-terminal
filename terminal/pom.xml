@@ -49,6 +49,13 @@
             <artifactId>Java-WebSocket</artifactId>
         </dependency>
 
+        <!-- Native window chrome on Windows: DWM dark title bar via dwmapi.
+             No-op / unused on macOS (native NSWindow) and Linux. -->
+        <dependency>
+            <groupId>net.java.dev.jna</groupId>
+            <artifactId>jna</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>de.bsommerfeld.jshepherd</groupId>
             <artifactId>core</artifactId>

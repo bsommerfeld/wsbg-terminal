@@ -3,7 +3,6 @@
 
 import { Socket } from './bridge/socket.js';
 import { initTitlebar } from './chrome/titlebar.js';
-import { initResize } from './chrome/resize.js';
 import { initTheme } from './chrome/theme.js';
 import { initFooter } from './chrome/footer.js';
 import { initKeyboardCopy } from './chrome/copy-fx.js';
@@ -12,11 +11,12 @@ import { renderFjNews } from './widgets/financial-juice.js';
 import { renderEurUsd } from './widgets/eurusd.js';
 import { setMarketCalendar } from './markets/state.js';
 
-// macOS keeps its native NSWindow chrome (traffic lights + drag region)
-// because JCEF reparenting requires a standard NSWindow. The CSS below
-// uses [data-platform] to hide the HTML fake lights on macOS and to
-// reserve space for the native ones; on Windows/Linux the frame is
-// undecorated and the HTML lights are the only chrome.
+// Window chrome is native on every platform: macOS keeps its NSWindow
+// traffic lights (the HTML titlebar's transparent region sits over them
+// and carries the title + theme toggle); Windows/Linux use the native
+// OS title bar and hide the HTML titlebar entirely. [data-platform]
+// drives that split in CSS — "mac" reserves space for the native lights,
+// "other" hides the HTML titlebar and moves the theme toggle to the footer.
 const isMac = /mac|darwin/i.test(navigator.platform || navigator.userAgent || '');
 document.documentElement.dataset.platform = isMac ? 'mac' : 'other';
 
@@ -57,7 +57,6 @@ socket.on('reddit-status', payload => {
 
 initTheme();
 initTitlebar(socket);
-initResize(socket);
 initFooter();
 initKeyboardCopy();
 
