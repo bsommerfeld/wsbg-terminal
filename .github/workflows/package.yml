@@ -75,13 +75,14 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y rpm
 
       # jpackage shells out to the WiX Toolset (candle.exe/light.exe) to build
-      # the .exe installer. Recent windows-latest images no longer ship WiX 3,
-      # so install it explicitly. jpackage requires WiX 3.x — it does not
-      # support WiX 4/5. choco adds the tools to PATH; the GitHub runner
-      # refreshes env between steps, so the jpackage step below sees them.
+      # the .exe installer. current windows-latest images ship WiX 3.14, so
+      # this is normally a no-op — it's a safety net for any future image that
+      # drops it. No version pin: pinning an older version than the preinstalled
+      # one makes choco fail with a downgrade error. The choco `wixtoolset`
+      # package is the WiX 3.x line; jpackage requires WiX 3 (not WiX 4/5).
       - name: Install WiX Toolset
         if: matrix.jpackage-type == 'exe'
-        run: choco install wixtoolset --version=3.14.1 --no-progress -y
+        run: choco install wixtoolset --no-progress -y
 
       - name: Prepare JPackage Input
         shell: bash
