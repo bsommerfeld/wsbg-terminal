@@ -4,13 +4,13 @@
 # WSBG Terminal - macOS/Linux Setup Script (setup.sh)
 # ==============================================================================
 # Prepares the runtime environment on app start:
-# 1. Installs our OWN, isolated Ollama binary under <appData>/ai/bin.
+# 1. Installs our OWN, isolated Ollama binary under <appData>/ollama/bin.
 # 2. Starts a private Ollama server (own port + own model store).
 # 3. Pulls the LLMs into that isolated store.
 # 4. Pre-installs JCEF + fonts and scaffolds the config.
 #
 # Full isolation: we never touch a user's existing Ollama (binary, models, or
-# the server on the default port 11434). Everything lives under <appData>/ai,
+# the server on the default port 11434). Everything lives under <appData>/ollama,
 # so uninstalling is just deleting the app data folder.
 # ==============================================================================
 
@@ -21,11 +21,11 @@ set -e
 # ==============================================================================
 # Pinned Ollama version = the GitHub release tag WITHOUT the leading "v".
 # To upgrade: set the new version here. On the next launch the isolated binary
-# under <appData>/ai is re-downloaded automatically (downloaded models kept).
+# under <appData>/ollama is re-downloaded automatically (downloaded models kept).
 #   Releases: https://github.com/ollama/ollama/releases
 OLLAMA_VERSION="0.24.0"
 
-# Models pulled into our ISOLATED store (<appData>/ai/models). Edit freely.
+# Models pulled into our ISOLATED store (<appData>/ollama/models). Edit freely.
 # One multimodal gemma4:e4b serves agent + vision; embeddinggemma does vectors.
 # (The gemma4:e4b-mlx build is text-only -- no vision encoder -- so we avoid it.)
 REASONING_MODEL="gemma4:e4b"          # editorial agent + vision (multimodal)
@@ -56,10 +56,10 @@ else
 fi
 CONFIG_FILE="$CONFIG_DIR/config.toml"
 
-# Everything AI lives under <appData>/ai, fully isolated from any Ollama the
+# Everything AI lives under <appData>/ollama, fully isolated from any Ollama the
 # user already has. Our binary lands at ai/bin/ollama (linux tarball) or
 # ai/ollama (macOS tgz); we resolve both.
-AI_DIR="$CONFIG_DIR/ai"
+AI_DIR="$CONFIG_DIR/ollama"
 AI_MODELS="$AI_DIR/models"
 if [ -x "$AI_DIR/bin/ollama" ]; then
     OLLAMA="$AI_DIR/bin/ollama"

@@ -25,7 +25,7 @@ class OllamaServerManagerTest {
 
     @Test
     void modelsDir_isUnderIsolatedAiFolder() {
-        assertEquals(appData.resolve("ai").resolve("models"),
+        assertEquals(appData.resolve("ollama").resolve("models"),
                 OllamaServerManager.modelsDir(appData));
     }
 
@@ -34,8 +34,8 @@ class OllamaServerManagerTest {
         List<Path> candidates = OllamaServerManager.candidateBinaries(appData, "Windows 11");
 
         assertEquals(List.of(
-                appData.resolve("ai").resolve("ollama.exe"),
-                appData.resolve("ai").resolve("bin").resolve("ollama.exe")), candidates);
+                appData.resolve("ollama").resolve("ollama.exe"),
+                appData.resolve("ollama").resolve("bin").resolve("ollama.exe")), candidates);
     }
 
     @Test
@@ -44,8 +44,8 @@ class OllamaServerManagerTest {
         List<Path> linux = OllamaServerManager.candidateBinaries(appData, "Linux");
 
         List<Path> expected = List.of(
-                appData.resolve("ai").resolve("bin").resolve("ollama"),
-                appData.resolve("ai").resolve("ollama"));
+                appData.resolve("ollama").resolve("bin").resolve("ollama"),
+                appData.resolve("ollama").resolve("ollama"));
         assertEquals(expected, mac);
         assertEquals(expected, linux);
     }
@@ -53,7 +53,7 @@ class OllamaServerManagerTest {
     @Test
     void candidateBinaries_alwaysLiveUnderTheAiSubdir() {
         OllamaServerManager.candidateBinaries(appData, "Linux")
-                .forEach(p -> assertTrue(p.startsWith(appData.resolve("ai")),
+                .forEach(p -> assertTrue(p.startsWith(appData.resolve("ollama")),
                         () -> p + " must be under the isolated ai/ folder"));
     }
 }

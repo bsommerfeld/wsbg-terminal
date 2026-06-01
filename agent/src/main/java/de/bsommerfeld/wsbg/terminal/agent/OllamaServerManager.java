@@ -22,8 +22,8 @@ import java.util.concurrent.TimeUnit;
  * <p>
  * We never use the user's system Ollama. Instead we run a private server bound
  * to {@link #PORT} (not the default 11434) from the standalone binary the setup
- * script installs under {@code <appData>/ai/bin}, reading and writing models in
- * {@code <appData>/ai/models} via the {@code OLLAMA_MODELS} env var. This keeps a
+ * script installs under {@code <appData>/ollama/bin}, reading and writing models
+ * in {@code <appData>/ollama/models} via the {@code OLLAMA_MODELS} env var. This keeps a
  * user's existing Ollama — binary, models, and any server on 11434 — completely
  * untouched, and means uninstalling is just deleting the app data folder.
  *
@@ -47,7 +47,7 @@ public final class OllamaServerManager {
     public static final String BASE_URL = "http://" + HOST + ":" + PORT;
 
     /** Sub-directory of the app data dir holding the isolated runtime + models. */
-    static final String AI_DIR = "ai";
+    static final String OLLAMA_DIR = "ollama";
 
     static final int MAX_RETRIES = 15;
     static final Duration RETRY_INTERVAL = Duration.ofSeconds(1);
@@ -68,14 +68,14 @@ public final class OllamaServerManager {
     }
 
     /**
-     * Ordered candidate locations of the {@code ollama} binary inside {@code ai/},
+     * Ordered candidate locations of the {@code ollama} binary inside {@code ollama/},
      * accounting for the differing internal layouts of the per-platform archives
      * (linux {@code .tar.zst} → {@code bin/ollama}; macOS {@code .tgz} → bare
      * {@code ollama}; Windows {@code .zip} → {@code ollama.exe} at the root). The
      * lib/ folder always stays next to the binary, so we never move it apart.
      */
     static List<Path> candidateBinaries(Path appDataDir, String osName) {
-        Path ai = appDataDir.resolve(AI_DIR);
+        Path ai = appDataDir.resolve(OLLAMA_DIR);
         if (osName.toLowerCase().contains("win")) {
             return List.of(ai.resolve("ollama.exe"), ai.resolve("bin").resolve("ollama.exe"));
         }
@@ -84,7 +84,7 @@ public final class OllamaServerManager {
 
     /** Our isolated model store ({@code OLLAMA_MODELS}). */
     static Path modelsDir(Path appDataDir) {
-        return appDataDir.resolve(AI_DIR).resolve("models");
+        return appDataDir.resolve(OLLAMA_DIR).resolve("models");
     }
 
     /**
@@ -173,7 +173,7 @@ public final class OllamaServerManager {
             }
         }
         LOG.warn("Bundled ollama binary not found under {}/{} — falling back to PATH. "
-                + "Isolation (own port + model store) still applies.", appDataDir, AI_DIR);
+                + "Isolation (own port + model store) still applies.", appDataDir, OLLAMA_DIR);
         return "ollama";
     }
 
@@ -229,7 +229,7 @@ public final class OllamaServerManager {
                     binary, HOST, PORT, models, serverProcess.pid());
         } catch (Exception e) {
             LOG.error("Failed to start isolated 'ollama serve' — was the bundled binary "
-                    + "installed under {}/{}/bin by the setup script?", appDataDir, AI_DIR, e);
+                    + "installed under {}/{}/bin by the setup script?", appDataDir, OLLAMA_DIR, e);
             throw new IllegalStateException(
                     "Failed to start isolated 'ollama serve' — bundled binary missing?", e);
         }

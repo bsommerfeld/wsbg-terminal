@@ -2,13 +2,13 @@
 # WSBG Terminal - Windows Setup Script (setup.ps1)
 # ==============================================================================
 # Executed by the Launcher to prepare the runtime environment:
-# 1. Installs our OWN, isolated Ollama binary under <appData>\ai (pinned).
+# 1. Installs our OWN, isolated Ollama binary under <appData>\ollama (pinned).
 # 2. Starts a private Ollama server (own port + own model store).
 # 3. Downloads the AI models into that isolated store.
 # 4. Pre-installs JCEF + fonts and scaffolds the config.
 #
 # Full isolation: we never touch a user's existing Ollama (binary, models, or
-# the server on the default port 11434). Everything lives under <appData>\ai,
+# the server on the default port 11434). Everything lives under <appData>\ollama,
 # so uninstalling is just deleting the app data folder.
 # ==============================================================================
 
@@ -16,11 +16,11 @@
 # CONFIG -- bump these to upgrade Ollama or change the models
 # ==============================================================================
 # Pinned Ollama version = the GitHub release tag WITHOUT the leading "v".
-# Bump -> the isolated binary under <appData>\ai re-downloads on next launch
+# Bump -> the isolated binary under <appData>\ollama re-downloads on next launch
 # (downloaded models are kept). Releases: https://github.com/ollama/ollama/releases
 $OllamaVersion = "0.24.0"
 
-# Models pulled into our ISOLATED store (<appData>\ai\models). Edit freely.
+# Models pulled into our ISOLATED store (<appData>\ollama\models). Edit freely.
 # One multimodal gemma4:e4b serves agent + vision; embeddinggemma does vectors.
 $ReasoningModel = "gemma4:e4b"             # editorial agent + vision (multimodal)
 $EmbedModel     = "embeddinggemma:latest"  # 768d cluster embeddings
@@ -47,9 +47,9 @@ if ([string]::IsNullOrEmpty($localAppData)) {
 $configDir = [System.IO.Path]::Combine($localAppData, "wsbg-terminal")
 $configFile = [System.IO.Path]::Combine($configDir, "config.toml")
 
-# Everything AI lives under <appData>\ai, isolated from any Ollama the user
+# Everything AI lives under <appData>\ollama, isolated from any Ollama the user
 # already has. The Windows zip extracts ollama.exe (+ lib\) at the root.
-$aiDir = [System.IO.Path]::Combine($configDir, "ai")
+$aiDir = [System.IO.Path]::Combine($configDir, "ollama")
 $aiModels = [System.IO.Path]::Combine($aiDir, "models")
 $ollamaExe = [System.IO.Path]::Combine($aiDir, "ollama.exe")
 if (-not (Test-Path $ollamaExe)) {
@@ -68,7 +68,11 @@ New-Item -ItemType Directory -Force -Path $aiModels | Out-Null
 # ------------------------------------------------------------------------------
 $haveVer = $null
 if (Test-Path $ollamaExe) {
-    $out = (& $ollamaExe --version 2>$null)
+    # Out-String collapses the multi-line output into ONE string. Without it,
+    # 'ollama --version' returns a string[] and '-match' acts as an array filter
+    # that never populates $matches -> '$matches[1]' threw "index into a null
+    # array", $haveVer stayed null, and we re-downloaded ollama on every launch.
+    $out = (& $ollamaExe --version 2>$null | Out-String)
     if ($out -match "(\d+\.\d+\.\d+)") { $haveVer = $matches[1] }
 }
 
