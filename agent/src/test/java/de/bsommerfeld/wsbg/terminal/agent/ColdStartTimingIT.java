@@ -31,7 +31,7 @@ class ColdStartTimingIT {
 
     @Test
     void firstClusterFormsWithinTwoMinutes() throws Exception {
-        Path appDir = StorageUtils.getAppDataDir();
+        Path appDir = StorageUtils.getSnapshotsDir();
         List<Path> parked = park(appDir);
         try {
             GlobalConfig config = new GlobalConfig();

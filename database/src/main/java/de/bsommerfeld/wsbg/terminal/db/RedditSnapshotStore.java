@@ -46,7 +46,7 @@ public final class RedditSnapshotStore {
 
     @Inject
     public RedditSnapshotStore() {
-        this.file = StorageUtils.getAppDataDir().resolve(FILE_NAME);
+        this.file = StorageUtils.getSnapshotsDir().resolve(FILE_NAME);
     }
 
     /** Writes the current repository contents to disk, stamped with "now". */

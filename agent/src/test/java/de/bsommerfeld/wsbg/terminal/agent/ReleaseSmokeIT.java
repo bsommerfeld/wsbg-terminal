@@ -97,7 +97,7 @@ class ReleaseSmokeIT {
 
     @Test
     void snapshot_savesAndRestoresFromDisk_andExpiresPastTtl() throws Exception {
-        Path appDir = StorageUtils.getAppDataDir();
+        Path appDir = StorageUtils.getSnapshotsDir();
         Path redditFile = appDir.resolve("reddit-snapshot.json");
         Path backup = appDir.resolve("reddit-snapshot.json.smoke-bak");
 
@@ -131,7 +131,7 @@ class ReleaseSmokeIT {
     /** Live agent-side snapshot: vision cache + headlines + a full cluster, on disk. */
     @Test
     void agentSnapshot_persistsClusterVerbatimToDisk() throws Exception {
-        Path appDir = StorageUtils.getAppDataDir();
+        Path appDir = StorageUtils.getSnapshotsDir();
         Path file = appDir.resolve("agent-snapshot.json");
         Path backup = appDir.resolve("agent-snapshot.json.smoke-bak");
         boolean hadExisting = Files.exists(file);

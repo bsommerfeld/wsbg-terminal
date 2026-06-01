@@ -67,7 +67,7 @@ class PipelineSmokeIT {
     @Test
     void liveEditorialPipeline_clusterAndHeadlineQuality() throws Exception {
         // --- force a fresh cold-start fetch: move any session snapshots aside ---
-        Path appDir = StorageUtils.getAppDataDir();
+        Path appDir = StorageUtils.getSnapshotsDir();
         List<Path> parked = parkSnapshots(appDir);
         try {
             GlobalConfig config = new GlobalConfig();

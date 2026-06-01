@@ -79,4 +79,15 @@ public final class StorageUtils {
     public static Path getLogsDir() {
         return getAppDataDir().resolve("logs");
     }
+
+    /**
+     * Returns the snapshot directory inside the application data directory.
+     * Keeps the short-TTL session snapshots out of the app data root, alongside
+     * (but not mixed with) the config file.
+     *
+     * @return absolute path to {@code {appDataDir}/snapshots}
+     */
+    public static Path getSnapshotsDir() {
+        return getAppDataDir().resolve("snapshots");
+    }
 }

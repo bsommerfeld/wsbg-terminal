@@ -45,7 +45,7 @@ public final class AgentSnapshotStore {
 
     @Inject
     public AgentSnapshotStore() {
-        this.file = StorageUtils.getAppDataDir().resolve(FILE_NAME);
+        this.file = StorageUtils.getSnapshotsDir().resolve(FILE_NAME);
     }
 
     public synchronized void save(Map<String, String> visionCache,
