@@ -110,7 +110,7 @@ try {
     if ($ready) {
         Write-Host "    Ollama server ready." -ForegroundColor Green
     } else {
-        Write-Host "    [WARN] Ollama server did not respond in time — pulls may fail." -ForegroundColor Yellow
+        Write-Host "    [WARN] Ollama server did not respond in time - pulls may fail." -ForegroundColor Yellow
     }
 } catch {
     Write-Host "    [WARN] Could not start Ollama server: $_" -ForegroundColor Yellow
@@ -128,7 +128,7 @@ $configDir = [System.IO.Path]::Combine($appDataPath, "wsbg-terminal")
 $configFile = [System.IO.Path]::Combine($configDir, "config.toml")
 
 # ------------------------------------------------------------------------------
-# 3. Model selection — one multimodal model for chat + vision + agent
+# 3. Model selection - one multimodal model for chat + vision + agent
 # ------------------------------------------------------------------------------
 # Windows uses the standard multimodal gemma4:e4b for chat + vision +
 # agent. Embeddings use Google's embeddinggemma (308M, multilingual).
@@ -175,11 +175,11 @@ Pull-IfMissing $embedModel
 # launcher progress UI shows what's happening instead.
 #
 # Skipped when the install marker exists. The JCEF Maven version is
-# coupled to jcefbuild release 1.0.65 — bump together.
+# coupled to jcefbuild release 1.0.65 - bump together.
 
 $jcefDir = Join-Path $env:USERPROFILE "jcef-bundle"
 $jcefMarker = Join-Path $jcefDir "install.lock"
-# Coupled to jcefmaven 132.3.1 — bump together with the Maven version.
+# Coupled to jcefmaven 132.3.1 - bump together with the Maven version.
 $jcefNativeVersion = "jcef-1770317+cef-132.3.1+g144febe+chromium-132.0.6834.83"
 
 if (Test-Path $jcefMarker) {
@@ -192,11 +192,11 @@ if (Test-Path $jcefMarker) {
     } else { $null }
 
     if (-not $arch) {
-        Write-Host "    [WARN] Unsupported arch for JCEF — skipping." -ForegroundColor Yellow
+        Write-Host "    [WARN] Unsupported arch for JCEF - skipping." -ForegroundColor Yellow
     } else {
         $platform = "windows-$arch"
         Write-Host "[*] Installing browser runtime ($platform)..." -ForegroundColor Cyan
-        # Pull the jcefmaven native artifact — that JAR contains an inner
+        # Pull the jcefmaven native artifact - that JAR contains an inner
         # tar.gz with the flat install layout the runtime library expects.
         # The GitHub jcefbuild releases use a different (bundle-wrapped)
         # layout that would need per-platform flattening.
@@ -209,7 +209,7 @@ if (Test-Path $jcefMarker) {
         }
         try {
             Invoke-WebRequest -Uri $url -OutFile $tmpJar -UseBasicParsing -ErrorAction Stop
-            # The JAR is a regular ZIP — pull the inner .tar.gz out.
+            # The JAR is a regular ZIP - pull the inner .tar.gz out.
             Add-Type -AssemblyName System.IO.Compression.FileSystem
             $zip = [System.IO.Compression.ZipFile]::OpenRead($tmpJar)
             $tarEntry = $zip.Entries | Where-Object { $_.FullName -like "*.tar.gz" } | Select-Object -First 1
@@ -223,7 +223,7 @@ if (Test-Path $jcefMarker) {
             "" | Out-File -FilePath $jcefMarker -Encoding ascii
             Write-Host "    Browser runtime ready." -ForegroundColor Green
         } catch {
-            Write-Host "    [WARN] JCEF install failed: $_ — falling back to runtime download." -ForegroundColor Yellow
+            Write-Host "    [WARN] JCEF install failed: $_ - falling back to runtime download." -ForegroundColor Yellow
             Remove-Item $tmpJar, $tmpTar -Force -ErrorAction SilentlyContinue
         }
     }
@@ -270,7 +270,7 @@ if (Test-Path $fontMarker) {
         "" | Out-File -FilePath $fontMarker -Encoding ascii
         Write-Host "    Fonts ready." -ForegroundColor Green
     } else {
-        Write-Host "    [WARN] Font install partial — UI will use system fallback for missing weights." -ForegroundColor Yellow
+        Write-Host "    [WARN] Font install partial - UI will use system fallback for missing weights." -ForegroundColor Yellow
     }
 }
 
@@ -298,7 +298,7 @@ if (!(Test-Path $configFile)) {
         "ui-reddit-visible = true",
         "",
         "[agent]",
-        "# Editorial agent reasoning model. REASONING_POWER (gemma4:e4b) — one",
+        "# Editorial agent reasoning model. REASONING_POWER (gemma4:e4b) - one",
         "# multimodal model serving agent + vision. Managed centrally; leave as-is.",
         "agent.editorial-model = `"REASONING_POWER`"",
         "",
