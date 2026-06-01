@@ -97,6 +97,19 @@ public final class TinyUpdateClient implements UpdateClient {
         // (auto-repair). When everything already matches, the diff is empty and
         // we no-op below — so the cost of always checking is one small manifest
         // download plus hashing the local files.
+
+        // Race guard: a release can be *published* before its CI has finished
+        // uploading the artifacts (update.json / *.zip). In that window the tag
+        // is newer but the assets don't exist yet. Treat that as "nothing to do
+        // yet" and run the cached version, instead of erroring — the next launch
+        // retries once the upload completes.
+        if (!hasAsset(releaseJson, "update.json")) {
+            trace("Release " + tagName + " has no update.json yet (still building?) — "
+                    + "keeping current version");
+            progress.accept(UpdateProgress.of("Up to date", 1.0));
+            return false;
+        }
+
         UpdateCheckResult diff = resolveChanges(releaseJson, progress);
         trace("Diff: " + diff.outdated().size() + " outdated, " + diff.orphaned().size() + " orphaned");
 
