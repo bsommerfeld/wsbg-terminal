@@ -142,7 +142,11 @@ jobs:
         shell: bash
         run: |
           rm -rf runtime-image
-          jlink --add-modules ALL-MODULE-PATH \
+          # ALL-MODULE-PATH needs an explicit --module-path for jlink (jpackage
+          # defaults it, plain jlink does not). Point it at the JDK's own jmods
+          # so the image contains the full module set.
+          jlink --module-path "$JAVA_HOME/jmods" \
+            --add-modules ALL-MODULE-PATH \
             --no-header-files --no-man-pages \
             --output runtime-image
           # Sanity: the launcher MUST exist in the bundled runtime.
