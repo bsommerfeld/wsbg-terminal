@@ -44,7 +44,9 @@ public class AgentBrain {
 
     private static final Logger LOG = LoggerFactory.getLogger(AgentBrain.class);
 
-    public static final String OLLAMA_BASE_URL = "http://localhost:11434";
+    // Our isolated instance's endpoint (private port, own model store) — never
+    // the user's default-port Ollama. See OllamaServerManager.
+    public static final String OLLAMA_BASE_URL = OllamaServerManager.BASE_URL;
 
     private static final String USER_AGENT = "java:de.bsommerfeld.wsbg.terminal:v1.0 (by /u/WsbgTerminal)";
 

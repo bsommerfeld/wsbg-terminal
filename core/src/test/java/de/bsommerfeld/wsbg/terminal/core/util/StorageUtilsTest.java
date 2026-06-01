@@ -1,12 +1,58 @@
 package de.bsommerfeld.wsbg.terminal.core.util;
 
+import de.bsommerfeld.wsbg.terminal.core.config.OperatingSystem;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class StorageUtilsTest {
+
+    // ── Cross-platform resolution via the test seam ────────────────────────
+
+    @Test
+    void windows_usesLocalAppData_andNeverRoaming() {
+        Path dir = StorageUtils.getAppDataDir(OperatingSystem.WINDOWS,
+                Map.of("LOCALAPPDATA", "/win/local"), "/win/home");
+
+        assertEquals(Paths.get("/win/local", "wsbg-terminal"), dir);
+        assertFalse(dir.toString().toLowerCase().contains("roaming"),
+                "Windows must use Local, not Roaming (multi-GB ai/ must not sync)");
+    }
+
+    @Test
+    void windows_prefersLocalAppData_evenWhenRoamingAppDataPresent() {
+        // A leftover APPDATA must not win — we deliberately ignore Roaming.
+        Path dir = StorageUtils.getAppDataDir(OperatingSystem.WINDOWS,
+                Map.of("APPDATA", "/win/roaming", "LOCALAPPDATA", "/win/local"), "/win/home");
+
+        assertEquals(Paths.get("/win/local", "wsbg-terminal"), dir);
+    }
+
+    @Test
+    void windows_fallsBackToLocalUnderHome_whenEnvMissing() {
+        Path dir = StorageUtils.getAppDataDir(OperatingSystem.WINDOWS, Map.of(), "/win/home");
+
+        assertEquals(Paths.get("/win/home", "AppData", "Local", "wsbg-terminal"), dir);
+    }
+
+    @Test
+    void macos_usesApplicationSupport() {
+        Path dir = StorageUtils.getAppDataDir(OperatingSystem.MACOS, Map.of(), "/Users/x");
+
+        assertEquals(Paths.get("/Users/x", "Library", "Application Support", "wsbg-terminal"), dir);
+    }
+
+    @Test
+    void linux_prefersXdgDataHome_elseLocalShare() {
+        assertEquals(Paths.get("/xdg", "wsbg-terminal"),
+                StorageUtils.getAppDataDir(OperatingSystem.LINUX, Map.of("XDG_DATA_HOME", "/xdg"), "/home/x"));
+        assertEquals(Paths.get("/home/x", ".local", "share", "wsbg-terminal"),
+                StorageUtils.getAppDataDir(OperatingSystem.LINUX, Map.of(), "/home/x"));
+    }
 
     @Test
     void getAppDataDir_shouldReturnNonNullPath() {

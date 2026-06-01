@@ -1,6 +1,7 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
 import com.google.inject.Singleton;
+import de.bsommerfeld.wsbg.terminal.core.util.StorageUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -9,49 +10,104 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Ensures an Ollama server is running before models are used.
- * Starts {@code ollama serve} as a managed subprocess if no server
- * is reachable, and destroys it on shutdown.
+ * Manages our <strong>own, isolated</strong> Ollama instance.
  *
  * <p>
- * The subprocess is only started when the server is unreachable.
- * If the user already runs Ollama (GUI or CLI), the existing
- * instance is used without interference.
+ * We never use the user's system Ollama. Instead we run a private server bound
+ * to {@link #PORT} (not the default 11434) from the standalone binary the setup
+ * script installs under {@code <appData>/ai/bin}, reading and writing models in
+ * {@code <appData>/ai/models} via the {@code OLLAMA_MODELS} env var. This keeps a
+ * user's existing Ollama — binary, models, and any server on 11434 — completely
+ * untouched, and means uninstalling is just deleting the app data folder.
+ *
+ * <p>
+ * The only "reuse" that happens is reconnecting to <em>our own</em> server on
+ * {@link #PORT} if it survived a previous crash — never the user's.
+ *
+ * @see StorageUtils
  */
 @Singleton
 public final class OllamaServerManager {
 
     private static final Logger LOG = LoggerFactory.getLogger(OllamaServerManager.class);
 
+    /**
+     * Private port for our isolated instance — deliberately not Ollama's default
+     * 11434, so we never collide with or hijack a server the user is running.
+     */
+    public static final int PORT = 11500;
+    public static final String HOST = "127.0.0.1";
+    public static final String BASE_URL = "http://" + HOST + ":" + PORT;
+
+    /** Sub-directory of the app data dir holding the isolated runtime + models. */
+    static final String AI_DIR = "ai";
+
     static final int MAX_RETRIES = 15;
     static final Duration RETRY_INTERVAL = Duration.ofSeconds(1);
     static final Duration HEALTH_TIMEOUT = Duration.ofSeconds(2);
 
+    private final Path appDataDir;
+
     private Process serverProcess;
 
+    /** Production constructor — resolves the OS-native app data directory. */
+    public OllamaServerManager() {
+        this(StorageUtils.getAppDataDir());
+    }
+
+    /** Test seam: inject the app data directory explicitly. */
+    OllamaServerManager(Path appDataDir) {
+        this.appDataDir = appDataDir;
+    }
+
     /**
-     * Ensures an Ollama server is reachable. Starts one if needed.
+     * Ordered candidate locations of the {@code ollama} binary inside {@code ai/},
+     * accounting for the differing internal layouts of the per-platform archives
+     * (linux {@code .tar.zst} → {@code bin/ollama}; macOS {@code .tgz} → bare
+     * {@code ollama}; Windows {@code .zip} → {@code ollama.exe} at the root). The
+     * lib/ folder always stays next to the binary, so we never move it apart.
+     */
+    static List<Path> candidateBinaries(Path appDataDir, String osName) {
+        Path ai = appDataDir.resolve(AI_DIR);
+        if (osName.toLowerCase().contains("win")) {
+            return List.of(ai.resolve("ollama.exe"), ai.resolve("bin").resolve("ollama.exe"));
+        }
+        return List.of(ai.resolve("bin").resolve("ollama"), ai.resolve("ollama"));
+    }
+
+    /** Our isolated model store ({@code OLLAMA_MODELS}). */
+    static Path modelsDir(Path appDataDir) {
+        return appDataDir.resolve(AI_DIR).resolve("models");
+    }
+
+    /**
+     * Ensures our isolated Ollama server on {@link #PORT} is reachable, starting
+     * it from the bundled binary if needed.
      *
-     * @param baseUrl the Ollama HTTP endpoint (e.g. {@code http://localhost:11434})
+     * @param baseUrl our private endpoint ({@link #BASE_URL}); a reachable server
+     *                here is always one we started, never the user's (which runs
+     *                on the default 11434)
      * @throws IllegalStateException if the server cannot be reached after retries
      */
     public void ensureRunning(String baseUrl) {
-        LOG.info("Checking Ollama server at {}...", baseUrl);
+        LOG.info("Checking our Ollama server at {}...", baseUrl);
 
         if (isReachable(baseUrl)) {
-            LOG.info("Ollama server already running at {} — using existing instance", baseUrl);
+            LOG.info("Our Ollama server already running at {} — reusing it", baseUrl);
             return;
         }
 
-        LOG.warn("Ollama server not reachable at {} — starting managed instance", baseUrl);
+        LOG.warn("Our Ollama server not reachable at {} — starting isolated instance", baseUrl);
         startServer();
         waitForServer(baseUrl);
-        LOG.info("Managed Ollama server is ready at {}", baseUrl);
+        LOG.info("Isolated Ollama server is ready at {}", baseUrl);
     }
 
     /** Destroys the managed subprocess if we started one. */
@@ -104,14 +160,42 @@ public final class OllamaServerManager {
         return serverProcess != null && serverProcess.isAlive();
     }
 
+    /**
+     * Resolves the path to our bundled ollama binary. Falls back to a bare
+     * {@code "ollama"} (PATH lookup) only if the bundle is missing — even then
+     * isolation holds, because the OLLAMA_HOST/OLLAMA_MODELS env still pins the
+     * port and model store away from the user's instance.
+     */
+    private String resolveBinary() {
+        for (Path candidate : candidateBinaries(appDataDir, System.getProperty("os.name", ""))) {
+            if (Files.isExecutable(candidate)) {
+                return candidate.toString();
+            }
+        }
+        LOG.warn("Bundled ollama binary not found under {}/{} — falling back to PATH. "
+                + "Isolation (own port + model store) still applies.", appDataDir, AI_DIR);
+        return "ollama";
+    }
+
     private void startServer() {
         try {
-            ProcessBuilder pb = new ProcessBuilder("ollama", "serve");
+            String binary = resolveBinary();
+            Path models = modelsDir(appDataDir);
+
+            ProcessBuilder pb = new ProcessBuilder(binary, "serve");
             pb.redirectErrorStream(true);
 
             // Discard output — Ollama logs to stderr internally, and we don't
             // need its output polluting our logs.
             pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+
+            // ── Isolation env ──────────────────────────────────────────────
+            // OLLAMA_HOST pins our server to the private port so it never
+            // collides with a user's default-port (11434) instance.
+            // OLLAMA_MODELS points at our own model store, so we never read or
+            // write the user's ~/.ollama models.
+            pb.environment().put("OLLAMA_HOST", HOST + ":" + PORT);
+            pb.environment().put("OLLAMA_MODELS", models.toString());
 
             // Run ollama from a neutral directory. By default a child process
             // inherits our working directory (the app data folder); on Windows
@@ -140,12 +224,14 @@ public final class OllamaServerManager {
             pb.environment().putIfAbsent("OLLAMA_KV_CACHE_TYPE", "q8_0");
 
             serverProcess = pb.start();
-            LOG.info("Started 'ollama serve' (PID: {}, OLLAMA_NUM_PARALLEL=2, "
-                    + "FLASH_ATTENTION=1, KV_CACHE_TYPE=q8_0)", serverProcess.pid());
+            LOG.info("Started isolated '{} serve' on {}:{} (models={}, NUM_PARALLEL=2, "
+                            + "FLASH_ATTENTION=1, KV_CACHE_TYPE=q8_0, PID={})",
+                    binary, HOST, PORT, models, serverProcess.pid());
         } catch (Exception e) {
-            LOG.error("Failed to start 'ollama serve' — is Ollama installed and on PATH?", e);
+            LOG.error("Failed to start isolated 'ollama serve' — was the bundled binary "
+                    + "installed under {}/{}/bin by the setup script?", appDataDir, AI_DIR, e);
             throw new IllegalStateException(
-                    "Failed to start 'ollama serve' — is Ollama installed?", e);
+                    "Failed to start isolated 'ollama serve' — bundled binary missing?", e);
         }
     }
 
