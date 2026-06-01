@@ -86,17 +86,22 @@ public final class TinyUpdateClient implements UpdateClient {
         String tagName = JsonParser.extractString(releaseJson, "tag_name");
         trace("Remote tag: " + tagName + ", local: " + currentVersion());
 
-        if (tagName.equals(currentVersion())) {
-            trace("Version match — skipping update");
-            progress.accept(UpdateProgress.of("Up to date", 1.0));
-            return false;
-        }
-
+        // We deliberately do NOT skip on tag equality. The tag is not
+        // authoritative about the on-disk state:
+        //   - a re-release under the same tag (common during testing) changes
+        //     the artifacts while the tag stays the same, and
+        //   - a locally deleted/corrupt file (e.g. someone wiped lib/) leaves
+        //     the tag intact but the install broken.
+        // The manifest hash diff is the source of truth, so it both applies
+        // same-tag content changes AND self-heals missing/corrupt files
+        // (auto-repair). When everything already matches, the diff is empty and
+        // we no-op below — so the cost of always checking is one small manifest
+        // download plus hashing the local files.
         UpdateCheckResult diff = resolveChanges(releaseJson, progress);
         trace("Diff: " + diff.outdated().size() + " outdated, " + diff.orphaned().size() + " orphaned");
 
         if (diff.isUpToDate()) {
-            trace("All files match despite version mismatch — recording version");
+            trace("All files present and matching — nothing to do");
             recordVersion(tagName);
             progress.accept(UpdateProgress.of("Up to date", 1.0));
             return false;
