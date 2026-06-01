@@ -84,20 +84,33 @@ if ($haveVer -eq $OllamaVersion) {
         Remove-Item (Join-Path $aiDir "ollama.exe"), (Join-Path $aiDir "lib") -Recurse -Force -ErrorAction SilentlyContinue
         if (-not (Test-Path $aiDir)) { New-Item -ItemType Directory -Force -Path $aiDir | Out-Null }
 
-        Invoke-WebRequest -Uri $url -OutFile $tmpZip -UseBasicParsing -ErrorAction Stop
-        Expand-Archive -Path $tmpZip -DestinationPath $aiDir -Force
-        Remove-Item $tmpZip -Force -ErrorAction SilentlyContinue
-
-        # Re-resolve the binary location after extraction.
-        $ollamaExe = [System.IO.Path]::Combine($aiDir, "ollama.exe")
-        if (-not (Test-Path $ollamaExe)) {
-            $alt = [System.IO.Path]::Combine($aiDir, "bin", "ollama.exe")
-            if (Test-Path $alt) { $ollamaExe = $alt }
-        }
-        if (Test-Path $ollamaExe) {
-            Write-Host "    Isolated Ollama ready at $ollamaExe" -ForegroundColor Green
+        # Use curl.exe + tar.exe (both ship with Windows 10+). Invoke-WebRequest
+        # buffers the whole ~1 GB response in memory and is glacially slow (the
+        # earlier 9-minute "hang"); Expand-Archive is likewise very slow/flaky on
+        # large zips. curl streams to disk; bsdtar (tar.exe) extracts the zip.
+        Write-Host "    Downloading $url ..."
+        & curl.exe -fL --retry 3 --retry-delay 2 -o $tmpZip $url
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "    [WARN] Ollama download failed (curl exit $LASTEXITCODE) -- continuing." -ForegroundColor Yellow
         } else {
-            Write-Host "    [WARN] ollama.exe not found after extraction -- check archive layout." -ForegroundColor Yellow
+            Write-Host "    Extracting..."
+            & tar.exe -xf $tmpZip -C $aiDir
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "    [WARN] Ollama extract failed (tar exit $LASTEXITCODE) -- continuing." -ForegroundColor Yellow
+            }
+            Remove-Item $tmpZip -Force -ErrorAction SilentlyContinue
+
+            # Re-resolve the binary location after extraction.
+            $ollamaExe = [System.IO.Path]::Combine($aiDir, "ollama.exe")
+            if (-not (Test-Path $ollamaExe)) {
+                $alt = [System.IO.Path]::Combine($aiDir, "bin", "ollama.exe")
+                if (Test-Path $alt) { $ollamaExe = $alt }
+            }
+            if (Test-Path $ollamaExe) {
+                Write-Host "    Isolated Ollama ready at $ollamaExe" -ForegroundColor Green
+            } else {
+                Write-Host "    [WARN] ollama.exe not found after extraction -- check archive layout." -ForegroundColor Yellow
+            }
         }
     } catch {
         Write-Host "    [WARN] Isolated Ollama install failed: $_ -- continuing." -ForegroundColor Yellow

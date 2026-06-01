@@ -179,6 +179,24 @@ class EnvironmentSetupTest {
     }
 
     @Test
+    void classifyAndEmit_shouldDetectIsolatedOllamaInstall() throws Exception {
+        // The isolated-install line carries an extra word ("isolated") and a
+        // version/path tail; the phase detector must still recognise it so the
+        // UI shows "Installing AI platform", not the raw line.
+        EnvironmentSetup setup = new EnvironmentSetup(appDir);
+        Method m = EnvironmentSetup.class.getDeclaredMethod("classifyAndEmit", String.class,
+                BiConsumer.class);
+        m.setAccessible(true);
+
+        List<String[]> emissions = new ArrayList<>();
+        m.invoke(setup, "[*] Installing isolated Ollama 0.24.0 into C:\\Users\\x\\AppData\\Local\\wsbg-terminal\\ai ...",
+                (BiConsumer<String, String>) (phase, detail) -> emissions.add(new String[] { phase, detail }));
+
+        assertFalse(emissions.isEmpty());
+        assertEquals("Installing AI platform", emissions.get(0)[0]);
+    }
+
+    @Test
     void classifyAndEmit_shouldDetectOllamaInstallLegacyFormat() throws Exception {
         EnvironmentSetup setup = new EnvironmentSetup(appDir);
         Method m = EnvironmentSetup.class.getDeclaredMethod("classifyAndEmit", String.class,

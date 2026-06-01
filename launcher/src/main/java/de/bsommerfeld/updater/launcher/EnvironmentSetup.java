@@ -51,11 +51,13 @@ final class EnvironmentSetup {
             .compile("(\\d+)%.*?(\\d+(?:\\.\\d+)?\\s*(?:MB|GB|KB|B))\\s*/\\s*(\\d+(?:\\.\\d+)?\\s*(?:MB|GB|KB|B))");
 
     // Detects the script's Ollama install/update announcement to separate
-    // platform setup from model downloads in the UI. Handles both the
-    // current format "[*] Installing Ollama" / "[*] Updating Ollama" and
-    // the legacy deployed format "[*] Installing/updating Ollama".
+    // platform setup from model downloads in the UI. Matches all wordings used
+    // over time: "[*] Installing Ollama", "[*] Updating Ollama", the legacy
+    // "[*] Installing/updating Ollama", and the isolated-install line
+    // "[*] Installing isolated Ollama 0.24.0 into ..." — any "installing/
+    // updating ... ollama" on a "[*]" status line.
     private static final Pattern OLLAMA_INSTALL_PATTERN = Pattern.compile(
-            "(?i)\\[\\*]\\s*(?:installing(?:/updating)?|updating)\\s+ollama");
+            "(?i)\\[\\*]\\s*(?:installing|updating)\\b.*\\bollama");
 
     // Extracts trailing percentage from curl-style progress lines
     // (e.g. "####   8.8%" → group 1 = "8.8").
