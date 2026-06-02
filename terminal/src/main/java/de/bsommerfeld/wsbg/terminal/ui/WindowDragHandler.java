@@ -35,8 +35,13 @@ public final class WindowDragHandler {
         if (frame == null) return;
         switch (command) {
             case "close" -> SwingUtilities.invokeLater(frame::dispose);
-            case "minimize" -> SwingUtilities.invokeLater(
-                    () -> frame.setExtendedState(frame.getExtendedState() | Frame.ICONIFIED));
+            case "minimize" -> SwingUtilities.invokeLater(() -> {
+                // SC_MINIMIZE animates natively; setExtendedState(ICONIFIED) on a
+                // caption-less window skips the genie/slide. Fall back if not Win.
+                if (!WindowsCustomChrome.minimize(frame)) {
+                    frame.setExtendedState(frame.getExtendedState() | Frame.ICONIFIED);
+                }
+            });
             case "maximize-toggle" -> SwingUtilities.invokeLater(this::toggleMaximize);
             default -> { /* drag/resize are native via WM_NCHITTEST */ }
         }

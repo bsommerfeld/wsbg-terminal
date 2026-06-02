@@ -267,6 +267,14 @@ public class SwingCefBrowser extends CefBrowser_N implements CefRenderHandler {
             public void mouseMoved(MouseEvent e) { sendMouseEvent(e); }
             public void mouseDragged(MouseEvent e) { sendMouseEvent(e); }
         });
+        // NOTE(scroll): wheel is forwarded as-is. OSR scrolling on Windows feels
+        // slow and ignores third-party "reverse scroll" tools (jcef's native
+        // sendMouseWheelEvent uses a fixed per-event delta and reads only the
+        // rotation sign; AWT delivers the raw HID wheel, not the OS FlipFlopWheel
+        // setting). Tried: re-sending N× for speed + a FlipFlopWheel registry
+        // read for direction — but the user's reverse comes from a tool, not the
+        // OS, so it can't be auto-detected. Revisit with the virtual scroll work
+        // (a manual config toggle is the realistic fix for tool-based reverse).
         panel_.addMouseWheelListener(new MouseWheelListener() {
             public void mouseWheelMoved(MouseWheelEvent e) { sendMouseWheelEvent(e); }
         });
@@ -387,7 +395,17 @@ public class SwingCefBrowser extends CefBrowser_N implements CefRenderHandler {
             super.paintComponent(g); // fills the (black) background
             synchronized (lock) {
                 if (image_ != null) {
-                    g.drawImage(image_, 0, 0, getWidth(), getHeight(), null);
+                    // image_ is a device-pixel buffer; its intended on-screen
+                    // size is bufferPx / deviceScale. Never draw it LARGER than
+                    // that — on a big jump (maximize) stretching the stale buffer
+                    // to the new bounds balloons the text for a frame until CEF
+                    // repaints. Cap to the native logical size (the freshly-sized
+                    // frame arrives in a tick and fills the rest of the bg).
+                    double s = scaleFactor_ <= 0 ? 1.0 : scaleFactor_;
+                    int logW = (int) Math.round(image_.getWidth() / s);
+                    int logH = (int) Math.round(image_.getHeight() / s);
+                    g.drawImage(image_, 0, 0,
+                            Math.min(getWidth(), logW), Math.min(getHeight(), logH), null);
                 }
                 if (popupVisible_ && popupImage_ != null) {
                     g.drawImage(popupImage_, popupRect_.x, popupRect_.y,
