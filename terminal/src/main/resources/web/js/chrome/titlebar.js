@@ -1,15 +1,14 @@
-// Wires the titlebar window-control buttons.
+// Wires the title-bar window-control buttons (minimize / maximize / close).
 //
-// Window drag is handled natively on every platform now: macOS keeps a
-// decorated NSWindow (the transparent title-bar region drags for free),
-// and Windows/Linux use the native OS title bar (decorated frame). So
-// there is no JS drag forwarding here anymore — it only ever existed to
-// emulate drag on the old undecorated Win/Linux frame.
+// Everything else — dragging the window, edge-resize, Aero Snap and
+// double-click-to-maximize — is handled NATIVELY by Windows. The native window
+// proc (WindowsCustomChrome) reports the title-bar strip as HTCAPTION and the
+// top edge as HTTOP via WM_NCHITTEST, and the single same-thread GLCanvas (OSR)
+// forwards those hits through with HTTRANSPARENT. So there is no JS drag/resize
+// emulation here anymore.
 //
-// The HTML traffic-light buttons are hidden on every platform (native
-// controls take over), so the click handlers below are effectively
-// dormant; they're kept harmlessly in case the HTML chrome is ever
-// re-enabled for a platform.
+// macOS keeps its own native NSWindow caption (the HTML lights are hidden);
+// Linux uses the native OS title bar (the whole HTML bar is hidden).
 
 export function initTitlebar(socket) {
   document.querySelectorAll('.light').forEach(b => {

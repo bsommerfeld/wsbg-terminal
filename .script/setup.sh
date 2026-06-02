@@ -201,7 +201,10 @@ pull_if_missing "$EMBED_MODEL"
 # Skipped when the install marker exists. The JCEF maven version is
 # coupled to jcefbuild release 1.0.65 -- bump together.
 
-JCEF_DIR="$HOME/jcef-bundle"
+# Under <appData>/wsbg-terminal so the whole footprint (Ollama, models, fonts,
+# config, JCEF) stays in one uninstall-clean directory. Keep aligned with
+# CefHost.resolveInstallDir().
+JCEF_DIR="$CONFIG_DIR/jcef-bundle"
 # Coupled to jcefmaven 132.3.1 -- bump together with the Maven version in pom.xml.
 JCEF_NATIVE_VERSION="jcef-1770317+cef-132.3.1+g144febe+chromium-132.0.6834.83"
 

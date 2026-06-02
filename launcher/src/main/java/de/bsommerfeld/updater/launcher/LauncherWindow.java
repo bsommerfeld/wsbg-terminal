@@ -8,6 +8,8 @@ import java.awt.event.MouseMotionAdapter;
 import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BufferedImage;
 import java.net.URL;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.List;
 
 /**
@@ -47,9 +49,24 @@ final class LauncherWindow extends JFrame {
 
     private static final long UPDATE_INTERVAL_MS = 33;
 
+    // Short warm-up before the ETA is trusted — just enough samples for a
+    // stable velocity fit, not a "hide until late" gate. Whether a phase is
+    // "taking long" is conveyed by the ETA turning orange, not by appearing.
+    private static final long ETA_SHOW_AFTER_MS = 4_000;
+    // Sliding window the velocity is regressed over. Wide enough to smooth the
+    // 1%-granularity of ollama's model-pull output, short enough to track real
+    // rate changes (a download throttling) within a few seconds.
+    private static final long ETA_WINDOW_MS = 10_000;
+
     private final JLabel statusLabel;
     private final IslandIndicator islandIndicator;
-    private final RollingCounterLabel rollingCounter;
+    private final ProgressInfoLine infoLine;
+
+    // Progress-ratio samples for the ETA velocity fit. EDT-only — touched solely
+    // from flush()/resetProgress(), both of which run on the Swing thread.
+    private final Deque<long[]> etaSamples = new ArrayDeque<>(); // [time, ratioBits]
+    private long etaPhaseStart;
+    private double etaLastRatio = -1;
 
     private volatile String pendingStatus;
 
@@ -64,7 +81,7 @@ final class LauncherWindow extends JFrame {
         configureFrame();
         statusLabel = createStatusLabel();
         islandIndicator = new IslandIndicator();
-        rollingCounter = new RollingCounterLabel();
+        infoLine = new ProgressInfoLine();
         setContentPane(buildLayout());
         installDragSupport();
     }
@@ -96,7 +113,14 @@ final class LauncherWindow extends JFrame {
      * the expand animation and stale fill from the previous phase.
      */
     void resetProgress() {
-        SwingUtilities.invokeLater(islandIndicator::reset);
+        SwingUtilities.invokeLater(() -> {
+            islandIndicator.reset();
+            // New phase — discard the old velocity fit so the next phase's ETA
+            // starts fresh instead of inheriting the previous slope.
+            etaSamples.clear();
+            etaLastRatio = -1;
+            infoLine.clear();
+        });
     }
 
     /**
@@ -174,10 +198,10 @@ final class LauncherWindow extends JFrame {
         gbc.insets = new Insets(0, 20, 2, 20);
         root.add(statusLabel, gbc);
 
-        // Rolling counter below status
+        // Remaining-time + speed, side by side, centered directly under status.
         gbc.gridy = 4;
         gbc.insets = new Insets(0, 20, 0, 20);
-        root.add(rollingCounter, gbc);
+        root.add(infoLine, gbc);
 
         // Bottom spacer — absorbs remaining height so the stack stays top-weighted
         gbc.gridy = 5;
@@ -294,19 +318,99 @@ final class LauncherWindow extends JFrame {
 
         if (!Double.isNaN(progress)) {
             islandIndicator.update(progress);
+            updateEta(progress);
             pendingProgress = Double.NaN;
         }
 
         long speed = pendingSpeed;
 
-        // Speed indicator — SPEED_UNCHANGED (-2) is filtered by setSpeed()
+        // Speed group — SPEED_UNCHANGED (-2) is filtered by setSpeed(). The
+        // value persists between updates (no dismiss on a speed-less flush);
+        // it's only hidden when an explicit -1 arrives at a phase boundary.
         if (speed != Long.MIN_VALUE) {
-            rollingCounter.setSpeed(speed);
+            infoLine.setSpeed(speed);
             pendingSpeed = Long.MIN_VALUE;
-        } else {
-            rollingCounter.dismiss();
         }
         lastFlushTime = System.currentTimeMillis();
         flushScheduled = false;
+    }
+
+    // =====================================================================
+    // ETA estimation (EDT-only)
+    // =====================================================================
+
+    /**
+     * Feeds a progress ratio into the remaining-time estimator and updates the
+     * {@link ProgressInfoLine}'s ETA group. The estimate is the linear-regression
+     * slope of the most recent {@link #ETA_WINDOW_MS} of (time, ratio) samples —
+     * i.e. the observed velocity — extrapolated to ratio 1.0. It is surfaced once
+     * the phase has past the brief {@link #ETA_SHOW_AFTER_MS} warm-up and the
+     * velocity is positive, so a stall or a not-yet-moving phase shows no guess.
+     */
+    private void updateEta(double ratio) {
+        long now = System.currentTimeMillis();
+
+        // Indeterminate or finished — nothing meaningful to extrapolate. Hide
+        // only the ETA group; the speed group lives on its own.
+        if (ratio < 0 || ratio >= 1.0) {
+            etaSamples.clear();
+            etaLastRatio = -1;
+            infoLine.setEta(-1);
+            return;
+        }
+
+        // Start of a phase, or a backwards jump (a new sub-step reusing the bar)
+        // restarts the fit and the warm-up clock.
+        if (etaSamples.isEmpty() || ratio + 0.0005 < etaLastRatio) {
+            etaSamples.clear();
+            etaPhaseStart = now;
+        }
+        etaLastRatio = ratio;
+        etaSamples.addLast(new long[]{now, Double.doubleToRawLongBits(ratio)});
+
+        // Drop samples outside the sliding window, always keeping a minimum
+        // spread to regress over.
+        while (etaSamples.size() > 2 && now - etaSamples.peekFirst()[0] > ETA_WINDOW_MS) {
+            etaSamples.removeFirst();
+        }
+
+        if (now - etaPhaseStart < ETA_SHOW_AFTER_MS) {
+            infoLine.setEta(-1);
+            return;
+        }
+
+        double slope = ratioSlopePerMs(); // ratio units per millisecond
+        if (slope <= 1e-9) {              // stalled or not yet moving
+            infoLine.setEta(-1);
+            return;
+        }
+
+        double remainingMs = (1.0 - ratio) / slope;
+        infoLine.setEta(Math.round(remainingMs / 1000.0));
+    }
+
+    /**
+     * Least-squares slope of ratio over time across the current sample window.
+     * Time is taken relative to the first sample to keep the sums well-scaled.
+     *
+     * @return ratio increase per millisecond, or 0 if it can't be determined
+     */
+    private double ratioSlopePerMs() {
+        int n = etaSamples.size();
+        if (n < 2) return 0;
+
+        long t0 = etaSamples.peekFirst()[0];
+        double sx = 0, sy = 0, sxx = 0, sxy = 0;
+        for (long[] s : etaSamples) {
+            double x = s[0] - t0;
+            double y = Double.longBitsToDouble(s[1]);
+            sx += x;
+            sy += y;
+            sxx += x * x;
+            sxy += x * y;
+        }
+        double denom = n * sxx - sx * sx;
+        if (denom == 0) return 0;
+        return (n * sxy - sx * sy) / denom;
     }
 }

@@ -2,6 +2,7 @@ package de.bsommerfeld.wsbg.terminal.ui;
 
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
+import de.bsommerfeld.wsbg.terminal.core.util.StorageUtils;
 import me.friwi.jcefmaven.CefAppBuilder;
 import me.friwi.jcefmaven.MavenCefAppHandlerAdapter;
 import me.friwi.jcefmaven.impl.progress.ConsoleProgressHandler;
@@ -20,7 +21,6 @@ import java.awt.Desktop;
 import java.io.File;
 import java.net.URI;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -28,9 +28,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * process-wide singletons; only one instance per JVM is permitted.
  *
  * <p>
- * The native binaries live in {@code ~/jcef-bundle}; jcefmaven downloads
- * them on first launch and reuses them thereafter. The progress is logged
- * via {@link ConsoleProgressHandler}.
+ * The native binaries live in {@code <appData>/jcef-bundle} (under the same
+ * {@link StorageUtils#getAppDataDir() app-data root} as the bundled Ollama
+ * runtime, models, fonts, and config — so the entire footprint sits in one
+ * uninstall-clean directory). jcefmaven downloads them on first launch and
+ * reuses them thereafter. The progress is logged via
+ * {@link ConsoleProgressHandler}.
  */
 @Singleton
 public final class CefHost {
@@ -74,14 +77,12 @@ public final class CefHost {
             builder.setProgressHandler(new ConsoleProgressHandler());
 
             CefSettings settings = builder.getCefSettings();
-            // OSR mode (windowless_rendering_enabled=true) gives perfect
-            // live resize: Chromium paints into a JOGL GLCanvas we own,
-            // instead of a heavyweight native child window the OS only
-            // recomposites after the resize gesture ends. The old blocker
-            // — jcefmaven's JOGL v2.4.0-rc natives being x86_64-only and
-            // crashing the arm64 renderer with UnsatisfiedLinkError — is
-            // resolved by substituting jogamp JOGL 2.6.0 (real arm64 fat-
-            // binary natives) via the terminal pom.
+            // Software OSR: our SwingCefBrowser (created in createBrowser) paints
+            // CEF's onPaint buffer into a lightweight Swing component — no JOGL,
+            // no GL-clear flicker, and a single native window (no heavyweight
+            // child). windowless rendering must be enabled for the browser to run
+            // off-screen. The single window is what lets the native custom title
+            // bar (WindowsCustomChrome) hit-test the whole frame directly.
             settings.windowless_rendering_enabled = true;
             settings.cache_path = resolveCacheDir().toAbsolutePath().toString();
             settings.persist_session_cookies = false;
@@ -167,11 +168,12 @@ public final class CefHost {
 
     public CefBrowser createBrowser(String url) {
         // Our own software OSR browser (SwingCefBrowser) instead of jcef's
-        // stock CefBrowserOsr: CEF's onPaint buffer is blitted into a Swing
-        // component — no JOGL, no GL-clear flicker, clean shutdown, and live
-        // resize tracks. Needs windowless_rendering_enabled (set above).
-        // createImmediately() does the native create now (there is no
-        // paint-triggered lazy init like the GLCanvas had).
+        // stock CefBrowserOsr: CEF's onPaint buffer is blitted into a lightweight
+        // Swing component — no JOGL, no GL-clear flicker, clean shutdown, and
+        // live resize tracks. A single window (no heavyweight child) is exactly
+        // what WindowsCustomChrome needs to hit-test the title bar natively.
+        // createImmediately() does the native create now (no paint-triggered
+        // lazy init like the GLCanvas had).
         org.cef.browser.SwingCefBrowser browser =
                 new org.cef.browser.SwingCefBrowser(client(), url, false, null);
         browser.createImmediately();
@@ -189,12 +191,10 @@ public final class CefHost {
     }
 
     private static File resolveInstallDir() {
-        String home = System.getProperty("user.home", ".");
-        return Paths.get(home, "jcef-bundle").toFile();
+        return StorageUtils.getAppDataDir().resolve("jcef-bundle").toFile();
     }
 
     private static Path resolveCacheDir() {
-        String home = System.getProperty("user.home", ".");
-        return Paths.get(home, ".cache", "wsbg-terminal", "cef");
+        return StorageUtils.getAppDataDir().resolve("cef");
     }
 }

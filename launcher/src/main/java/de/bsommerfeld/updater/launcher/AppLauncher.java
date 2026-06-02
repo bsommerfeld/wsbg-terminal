@@ -155,8 +155,6 @@ final class AppLauncher {
 
         addDockIconFlags(cmd);
 
-        cmd.add("--enable-preview");
-
         // JCEF native bridge needs unrestricted access to OS APIs (Cocoa,
         // GDI, etc.). Required for the embedded Chromium browser to
         // initialise; without it, the JNI helpers log a warning and the

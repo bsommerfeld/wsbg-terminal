@@ -36,10 +36,13 @@ import java.util.Objects;
  *   made transparent via {@code apple.awt.*} root-pane properties, so the
  *   HTML titlebar (app title + theme toggle) sits flush over the native
  *   traffic lights.</li>
- *   <li><b>Windows/Linux</b> — the frame keeps its full native OS title
- *   bar (real min/max/close, native drag/resize/snap). On Windows it is
- *   themed dark via {@link WindowsChrome}. The page hides its HTML
- *   titlebar there to avoid duplicate chrome.</li>
+ *   <li><b>Windows</b> — the frame keeps the native resize border,
+ *   Aero Snap and drop shadow, but {@link WindowsCustomChrome} strips the
+ *   OS caption so the HTML titlebar draws flush at the top (same look as
+ *   macOS, window controls on the right). The remaining frame is themed
+ *   dark via {@link WindowsChrome}.</li>
+ *   <li><b>Linux</b> — keeps the full native OS title bar; the page hides
+ *   its HTML titlebar there to avoid duplicate chrome.</li>
  * </ul>
  *
  * <p>
@@ -198,12 +201,15 @@ public final class BrowserWindow {
             kick.setRepeats(false);
             kick.start();
         } else {
-            // Windows: theme the native title bar dark to match the UI.
-            // Deferred a tick so the native peer is fully realised, then a
-            // 1px resize nudge forces the non-client area to repaint with
-            // the new theme (and kicks JCEF's first paint, like the macOS
-            // branch). No-op on Linux — WindowsChrome guards on the OS.
+            // Windows: remove the native caption (keeping native resize/snap)
+            // so the HTML title bar draws flush like macOS, then theme the
+            // remaining frame dark. Deferred a tick so the native peer is fully
+            // realised; the 1px resize nudge forces the non-client area to
+            // recompute/repaint (and kicks JCEF's first paint, like the macOS
+            // branch). Both calls are no-ops on Linux — they guard on the OS,
+            // and the page keeps its native title bar there (data-platform).
             javax.swing.Timer kick = new javax.swing.Timer(100, e -> {
+                WindowsCustomChrome.install(frame);
                 WindowsChrome.applyDarkTitleBar(frame);
                 Dimension size = frame.getSize();
                 frame.setSize(size.width + 1, size.height);
@@ -211,6 +217,12 @@ public final class BrowserWindow {
             });
             kick.setRepeats(false);
             kick.start();
+
+            // The OSR GLCanvas child is realised lazily; re-run install once it
+            // exists so its window proc gets bridged (idempotent for the frame).
+            javax.swing.Timer bridge = new javax.swing.Timer(1500, e -> WindowsCustomChrome.install(frame));
+            bridge.setRepeats(false);
+            bridge.start();
         }
 
         LOG.info("Browser window opened.");

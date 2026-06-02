@@ -73,6 +73,13 @@ final class EnvironmentSetup {
     private static final Pattern CURL_METER_PATTERN = Pattern.compile(
             "^(\\d{1,3})\\s+[\\d.]+\\s*[KMGTP]?B?\\b");
 
+    // Same curl default meter, but also capturing the Total (group 2) and
+    // Received (group 3) size columns so the install phase can report a rich
+    // "pct% — downloaded / total" detail — driving the speed + ETA readouts
+    // exactly like an ollama model pull. Layout: "<%tot> <total> <%recv> <recv>".
+    private static final Pattern CURL_METER_BYTES_PATTERN = Pattern.compile(
+            "^(\\d{1,3})\\s+([\\d.]+[KMGTP]?B?)\\s+\\d{1,3}\\s+([\\d.]+[KMGTP]?B?)\\b");
+
     /**
      * Matches raw progress bars, spinner characters, and bare percentages.
      * Winget emits single-char spinners (\, |, /, -) and block-character
@@ -227,13 +234,10 @@ final class EnvironmentSetup {
         }
 
         if (installingOllama) {
-            int pct = parseDownloadPercent(line);
-            if (pct >= 0) {
-                // Emit integer percentage so LauncherMain's progress parser handles it
-                consumer.accept("Installing AI platform", pct + "%");
-            } else {
-                consumer.accept("Installing AI platform", line);
-            }
+            // Prefer the rich "pct% — downloaded / total" detail so the UI shows
+            // speed + ETA for the (large) Ollama binary download, not just a bar.
+            String detail = parseDownloadDetail(line);
+            consumer.accept("Installing AI platform", detail != null ? detail : line);
             return;
         }
 
@@ -258,6 +262,54 @@ final class EnvironmentSetup {
             return Math.min(pct, 100);
         }
         return -1;
+    }
+
+    /**
+     * Builds the progress detail for the Ollama binary download from a curl
+     * progress line. Prefers the rich {@code "pct% — downloaded / total"} form
+     * (so {@code LauncherMain} can derive speed and a remaining-time estimate,
+     * exactly like a model pull); falls back to a bare {@code "pct%"} for curl's
+     * {@code --progress-bar} style, or {@code null} when the line carries no
+     * progress at all.
+     */
+    static String parseDownloadDetail(String line) {
+        Matcher meter = CURL_METER_BYTES_PATTERN.matcher(line);
+        if (meter.find()) {
+            int pct = Integer.parseInt(meter.group(1));
+            if (pct > 100) return null;
+            String total = normalizeCurlSize(meter.group(2));
+            String downloaded = normalizeCurlSize(meter.group(3));
+            if (total != null && downloaded != null) {
+                return pct + "% — " + downloaded + " / " + total;
+            }
+            return pct + "%";
+        }
+        int pct = parseDownloadPercent(line);
+        return pct >= 0 ? pct + "%" : null;
+    }
+
+    /**
+     * Normalizes a curl-meter size token ("1.92G", "52.78M", "739K", optionally
+     * with a trailing 'B') into the spaced "{@code 1.92 GB}" form that
+     * {@code LauncherMain.parseByteSize} understands. Returns {@code null} for
+     * empty input.
+     */
+    static String normalizeCurlSize(String s) {
+        if (s == null) return null;
+        String t = s.toUpperCase().strip();
+        if (t.endsWith("B")) t = t.substring(0, t.length() - 1); // tolerate "1.92GB"
+        if (t.isEmpty()) return null;
+        char unit = t.charAt(t.length() - 1);
+        if (Character.isLetter(unit)) {
+            String num = t.substring(0, t.length() - 1);
+            return switch (unit) {
+                case 'G' -> num + " GB";
+                case 'M' -> num + " MB";
+                case 'K' -> num + " KB";
+                default -> num + " B";
+            };
+        }
+        return t + " B";
     }
 
     /**
