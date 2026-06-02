@@ -60,6 +60,8 @@ public final class BrowserWindow {
     private JFrame frame;
     private CefBrowser browser;
     private Runnable onClose = () -> {};
+    private final java.util.concurrent.atomic.AtomicBoolean shuttingDown =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
 
     @Inject
     public BrowserWindow(CefHost cefHost, WindowDragHandler dragHandler) {
@@ -156,32 +158,21 @@ public final class BrowserWindow {
         frame.addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosing(WindowEvent e) {
-                LOG.info("Window closing — graceful service shutdown, then CEF teardown.");
-                // ORDER IS LOAD-BEARING. CEF's native shutdown hard-exits the
-                // process before setState(TERMINATED), so CefHost's
-                // System.exit(0) and every JVM shutdown hook are skipped. We
-                // therefore stop the services that must die with us — above
-                // all the spawned Ollama — synchronously HERE, first, while
-                // the JVM is still ours. Only then do we tear CEF down.
-                try { onClose.run(); } catch (Throwable ignored) {}
-
-                // setCloseAllowed() before close(true): CEF's close handshake
-                // calls doClose(), which otherwise vetoes the close and
-                // re-posts WINDOW_CLOSING (the second close(true) is a no-op),
-                // stalling CefApp for a ~100s internal timeout. Pre-approving
-                // makes onBeforeClose fire immediately.
-                try { browser.setCloseAllowed(); } catch (Throwable ignored) {}
-                try { browser.close(true); } catch (Throwable ignored) {}
-                cefHost.dispose();
-                frame.dispose();
-
-                // Guaranteed exit. Services are already down, so it is safe to
-                // force the JVM out even if CEF's flaky TERMINATED callback
-                // never arrives. If CEF's native shutdown beats us to it, this
-                // line simply never runs.
-                System.exit(0);
+                gracefulShutdown();
             }
         });
+
+        // macOS: Cmd+Q (and the app-menu Quit) goes through the application
+        // quit path, NOT windowClosing — so route it to the same teardown, else
+        // it would skip the CEF dispose + Ollama kill and leak processes. Best-
+        // effort; the OS / Java version may not support a quit handler.
+        if (isMac()) {
+            try {
+                java.awt.Desktop.getDesktop().setQuitHandler((evt, response) -> gracefulShutdown());
+            } catch (Throwable t) {
+                LOG.debug("Could not install macOS quit handler: {}", t.toString());
+            }
+        }
 
         frame.setVisible(true);
 
@@ -226,6 +217,32 @@ public final class BrowserWindow {
         }
 
         LOG.info("Browser window opened.");
+    }
+
+    /**
+     * The single graceful-teardown path, shared by the window-close gesture
+     * (HTML close button / native title-bar X → windowClosing) and the macOS
+     * app-quit (Cmd+Q → quit handler). Idempotent: only the first caller runs it.
+     *
+     * <p>
+     * ORDER IS LOAD-BEARING. CEF's native shutdown hard-exits the process before
+     * {@code setState(TERMINATED)}, so a JVM shutdown hook never fires — the
+     * services that must die with us (above all the spawned Ollama) are stopped
+     * synchronously HERE first, then CEF is torn down, then we force the exit.
+     */
+    private void gracefulShutdown() {
+        if (!shuttingDown.compareAndSet(false, true)) return;
+        LOG.info("Graceful service shutdown, then CEF teardown.");
+        try { onClose.run(); } catch (Throwable ignored) {}
+        // setCloseAllowed() before close(true): CEF's close handshake calls
+        // doClose(), which otherwise vetoes the close and re-posts WINDOW_CLOSING,
+        // stalling CefApp for a ~100s internal timeout. Pre-approving makes
+        // onBeforeClose fire immediately.
+        try { browser.setCloseAllowed(); } catch (Throwable ignored) {}
+        try { browser.close(true); } catch (Throwable ignored) {}
+        try { cefHost.dispose(); } catch (Throwable ignored) {}
+        try { if (frame != null) frame.dispose(); } catch (Throwable ignored) {}
+        System.exit(0);
     }
 
     private static boolean isMac() {
