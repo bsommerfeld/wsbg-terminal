@@ -50,7 +50,8 @@ public class AgentBrain {
 
     private static final String USER_AGENT = "java:de.bsommerfeld.wsbg.terminal:v1.0 (by /u/WsbgTerminal)";
 
-    private final HttpClient httpClient = HttpClient.newHttpClient();
+    private final HttpClient httpClient = HttpClient.newBuilder()
+            .followRedirects(HttpClient.Redirect.NORMAL).build();
 
     private ChatModel visionModel;
     private ChatModel agentModel;

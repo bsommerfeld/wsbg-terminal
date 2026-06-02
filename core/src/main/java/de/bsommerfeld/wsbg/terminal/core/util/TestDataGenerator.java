@@ -100,7 +100,7 @@ public class TestDataGenerator {
         double ratio = 0.60 + (RND.nextDouble() * 0.39);
 
         List<String> images = RND.nextBoolean()
-                ? List.of("https://placekitten.com/500/300")
+                ? List.of("https://picsum.photos/500/300")
                 : List.of();
 
         return new RedditThread(id, sub, title, author, text, now, "/r/" + sub + "/comments/" + id, score, ratio,
@@ -176,7 +176,7 @@ public class TestDataGenerator {
             for (int i = 0; i < count; i++) {
                 int w = 200 + RND.nextInt(600);
                 int h = 200 + RND.nextInt(400);
-                urls.add("https://placekitten.com/" + w + "/" + h);
+                urls.add("https://picsum.photos/" + w + "/" + h);
             }
             return urls;
         }

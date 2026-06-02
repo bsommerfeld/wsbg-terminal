@@ -2,6 +2,7 @@ package de.bsommerfeld.wsbg.terminal.agent;
 
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
+import de.bsommerfeld.wsbg.terminal.core.config.ApplicationMode;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.core.config.Model;
 import de.bsommerfeld.wsbg.terminal.core.config.RedditConfig;
@@ -95,6 +96,13 @@ public class PassiveMonitorService {
     private final long updateIntervalSeconds;
     private final long snapshotTtlMinutes;
 
+    /**
+     * Snapshot persistence is disabled entirely in TEST mode: synthetic data
+     * must never leak onto disk where a later PROD run would restore it as if
+     * it were real (ghost threads from fake subreddits/IDs, placeholder images).
+     */
+    private final boolean snapshotsEnabled;
+
     @Inject
     public PassiveMonitorService(RedditSource scraper, AgentBrain brain, ApplicationEventBus eventBus,
             RedditRepository repository, AgentRepository agentRepository,
@@ -117,6 +125,7 @@ public class PassiveMonitorService {
         this.dataRetentionSeconds = Duration.ofHours(redditConfig.getDataRetentionHours()).toSeconds();
         this.updateIntervalSeconds = redditConfig.getUpdateIntervalSeconds();
         this.snapshotTtlMinutes = redditConfig.getSnapshotTtlMinutes();
+        this.snapshotsEnabled = snapshotTtlMinutes > 0 && !ApplicationMode.get().isTest();
 
         String embeddingModelName = Model.EMBEDDING.getModelName();
         LOG.info("Initializing Vector Embedding Model: {}", embeddingModelName);
@@ -137,7 +146,7 @@ public class PassiveMonitorService {
         scannerExecutor.execute(this::performInitialStartup);
         scannerExecutor.scheduleAtFixedRate(this::scanCycle, 30, updateIntervalSeconds, TimeUnit.SECONDS);
 
-        if (snapshotTtlMinutes > 0) {
+        if (snapshotsEnabled) {
             // Persist a fresh snapshot periodically and on exit so a quick
             // restart restores instead of re-fetching (see RedditSnapshotStore).
             scannerExecutor.scheduleAtFixedRate(this::saveSnapshot, 5, 5, TimeUnit.MINUTES);
@@ -169,6 +178,7 @@ public class PassiveMonitorService {
 
     /** Writes the full session (Reddit data + vision cache + headlines) to disk. */
     private void saveSnapshot() {
+        if (!snapshotsEnabled) return;
         try {
             snapshotStore.save(repository.getAllThreads(), repository.getAllComments());
             List<InvestigationCluster.Snapshot> clusterSnapshots = clusterRegistry.getAllClusters()
@@ -217,7 +227,7 @@ public class PassiveMonitorService {
      * so the caller can skip the cold-start network fetch.
      */
     private boolean restoreSnapshotIfFresh() {
-        if (snapshotTtlMinutes <= 0) return false;
+        if (!snapshotsEnabled) return false;
         var snapshot = snapshotStore.loadIfFresh(snapshotTtlMinutes);
         if (snapshot.isEmpty()) return false;
 
