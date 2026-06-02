@@ -26,7 +26,23 @@ When the Yahoo news + a related instrument's move genuinely line up with what th
 Set it only for an actual price move of the named instrument — today's change or an intraday reaction — and sign it. Prefer the day% from the resolved market data over a Reddit-claimed number. Keep short interest, position P&L, portfolio allocation and forecasts out of it. A money amount beside a huge % usually means P&L — leave priceMovePercent unset there.
 
 ## highlight
-NORMAL by default. IMPORTANT when money moves today — a concrete ≥10% move, a pennystock rocket, breaking M&A, a sharp reversal, or a sharp macro/geopolitical catalyst the desk would flag in red even without a ticker.
+Red answers ONE question for the apes: **"Wo kann ich schnell Geld machen?"** It is not a market-mover gauge, not a measure of loudness or engagement. It marks a **concrete, actionable opportunity a degen could act on** — the kind of lead that, days later, turns out to have been the ticket. NORMAL is everything else, and NORMAL is most lines.
+
+This can be **ANY instrument and ANY kind of play** — a small-cap or a blue-chip, an option, a crypto, a commodity, an FX pair, an index; a fresh runner, a squeeze, a breakout, a catalyst, a dip to buy, a DD thesis, a pooled call the room is forming. Don't anchor on one asset type — anchor on *opportunity*.
+
+The signal is **not** how big the post is. A throwaway one-liner from a nobody can be the best lead on the wire, and a heavily-upvoted thread can be pure noise. Engagement is irrelevant to red; **concreteness and opportunity are everything.** If a line points at something tradeable with an angle to make money, it's IMPORTANT even if it came in quiet, downvoted, or as a single offhand question.
+
+The test: *after reading this line, would an ape immediately go look at that instrument to get in?* If yes → IMPORTANT.
+
+NORMAL — do NOT light red — for any of these, no matter how loud or upvoted:
+- generic market mood, macro/index chatter, sentiment with no specific tradeable handle to act on
+- memes, shitposts, rants, "wie ist die Stimmung" with no concrete play
+- past-gain bragging and loss porn — the money is already made or lost; there's no entry left for the reader
+- an instrument merely mentioned in passing inside a discussion, not surfaced as an opportunity
+- routine talk on an established name with no fresh angle (daily AAPL/NVDA chatter)
+- a question with no concrete instrument named ("Was kauft ihr morgen?" stays NORMAL — until the comments name actual plays, then those names carry the red)
+
+A number is NOT required and NOT the point — a quiet "Meinung zu X?" has no percent and can still be the most important line on the wire. The point of red is that an ape trusts it as a "look here, money's to be made" pointer: if half the wire is red it means nothing, so reserve it for genuine leads — but never bury a concrete opportunity under NORMAL just because it arrived quiet.
 
 ## Output
 Return ONLY a JSON object, nothing else. One entry per named instrument (a multi-asset cluster yields several **separate** lines — never one line welding two unrelated instruments/themes together); a macro/person line stands alone with no ticker. If two instruments are genuinely one story (a sector the room is pumping), one line is fine; if they're just both in the brief, split them:
