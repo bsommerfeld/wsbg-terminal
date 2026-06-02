@@ -34,7 +34,13 @@ public final class WindowDragHandler {
     public void handle(String command, String edge) {
         if (frame == null) return;
         switch (command) {
-            case "close" -> SwingUtilities.invokeLater(frame::dispose);
+            // Dispatch WINDOW_CLOSING (not frame.dispose()) so the HTML close
+            // button runs BrowserWindow's full graceful shutdown — CEF teardown,
+            // CefApp dispose, the spawned Ollama, System.exit. A bare dispose()
+            // skips windowClosing and leaks the JVM + jcef helpers + Ollama.
+            case "close" -> SwingUtilities.invokeLater(() ->
+                    frame.dispatchEvent(new java.awt.event.WindowEvent(
+                            frame, java.awt.event.WindowEvent.WINDOW_CLOSING)));
             case "minimize" -> SwingUtilities.invokeLater(() -> {
                 // SC_MINIMIZE animates natively; setExtendedState(ICONIFIED) on a
                 // caption-less window skips the genie/slide. Fall back if not Win.

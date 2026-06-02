@@ -194,6 +194,20 @@
   border-bottom: 1px solid var(--line-soft);
   position: relative;
   transition: background .12s ease;
+
+  /* Virtual rendering: the browser skips layout/paint for rows that aren't on
+     screen (only what's visible is rendered). `contain-intrinsic-size: auto …`
+     reserves a placeholder height and then REMEMBERS each row's real measured
+     height, so variable-height rows and the scrollbar stay correct. Big win for
+     the long Financial Juice list. (Chromium 132 — fine in JCEF.)
+
+     SCROLL BEHAVIOUR — REVISIT: wheel scrolling under OSR feels slow and does
+     not follow a third-party "reverse scroll" tool. That's jcef's native OSR
+     wheel forwarding, not this CSS — see the NOTE(scroll) in SwingCefBrowser.
+     The realistic fix is a manual config toggle for reverse + a speed factor;
+     deferred by request. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 64px;
 }
 .row:hover { background: var(--bg-hover); }
 
