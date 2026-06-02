@@ -191,7 +191,10 @@ if (Test-Path $ollamaExe) {
 # Skipped when the install marker exists. The JCEF Maven version is
 # coupled to jcefbuild release 1.0.65 - bump together.
 
-$jcefDir = Join-Path $env:USERPROFILE "jcef-bundle"
+# Under <appData>\wsbg-terminal so the whole footprint (Ollama, models, fonts,
+# config, JCEF) stays in one uninstall-clean directory. Keep aligned with
+# CefHost.resolveInstallDir().
+$jcefDir = Join-Path $configDir "jcef-bundle"
 $jcefMarker = Join-Path $jcefDir "install.lock"
 # Coupled to jcefmaven 132.3.1 - bump together with the Maven version.
 $jcefNativeVersion = "jcef-1770317+cef-132.3.1+g144febe+chromium-132.0.6834.83"

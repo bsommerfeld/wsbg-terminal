@@ -11,14 +11,19 @@ import { renderFjNews } from './widgets/financial-juice.js';
 import { renderEurUsd } from './widgets/eurusd.js';
 import { setMarketCalendar } from './markets/state.js';
 
-// Window chrome is native on every platform: macOS keeps its NSWindow
-// traffic lights (the HTML titlebar's transparent region sits over them
-// and carries the title + theme toggle); Windows/Linux use the native
-// OS title bar and hide the HTML titlebar entirely. [data-platform]
-// drives that split in CSS — "mac" reserves space for the native lights,
-// "other" hides the HTML titlebar and moves the theme toggle to the footer.
-const isMac = /mac|darwin/i.test(navigator.platform || navigator.userAgent || '');
-document.documentElement.dataset.platform = isMac ? 'mac' : 'other';
+// [data-platform] drives the title-bar split in CSS:
+//   "mac"   — HTML titlebar over the native NSWindow traffic lights (title +
+//             theme toggle); the OS draws the real lights top-left.
+//   "win"   — custom flush titlebar; the native caption is stripped
+//             (WindowsCustomChrome) so our HTML controls sit top-RIGHT and the
+//             HTML traffic lights ARE the window buttons (wired to the window
+//             command channel).
+//   "other" — Linux: native OS title bar; the HTML titlebar is hidden and the
+//             theme toggle moves to the footer.
+const sig = (navigator.platform || '') + ' ' + (navigator.userAgent || '');
+const isMac = /mac|darwin/i.test(sig);
+const isWin = /win/i.test(sig);
+document.documentElement.dataset.platform = isMac ? 'mac' : (isWin ? 'win' : 'other');
 
 const wsPort = new URLSearchParams(location.search).get('ws');
 const socket = new Socket(`ws://127.0.0.1:${wsPort}`);

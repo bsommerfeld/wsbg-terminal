@@ -260,9 +260,6 @@
                         <source>25</source>
                         <target>25</target>
                         <release>25</release>
-                        <compilerArgs>
-                            <arg>--enable-preview</arg>
-                        </compilerArgs>
                     </configuration>
                 </plugin>
 
@@ -271,7 +268,7 @@
                     <artifactId>maven-surefire-plugin</artifactId>
                     <version>3.2.5</version>
                     <configuration>
-                        <argLine>--enable-preview -Dnet.bytebuddy.experimental=true</argLine>
+                        <argLine>-Dnet.bytebuddy.experimental=true</argLine>
                         <excludedGroups>${test.excludedGroups}</excludedGroups>
                     </configuration>
                 </plugin>

@@ -403,4 +403,54 @@ class EnvironmentSetupTest {
         assertEquals("Pulling model", emissions.get(0)[0]);
         assertEquals("pulling manifest", emissions.get(0)[1]);
     }
+
+    @Test
+    void parseDownloadDetail_buildsRichDetailFromCurlMeter() {
+        // Original curl no-TTY meter rows captured from the Ollama binary download.
+        assertEquals("2% — 52.78 MB / 1.92 GB", EnvironmentSetup.parseDownloadDetail(
+                "2  1.92G    2 52.78M    0     0  50.27M      0  0:00:39  0:00:01  0:00:38 52.83M"));
+        assertEquals("100% — 1.92 GB / 1.92 GB", EnvironmentSetup.parseDownloadDetail(
+                "100  1.92G  100  1.92G    0     0  94.27M      0  0:00:20  0:00:20 --:--:-- 98.72M"));
+    }
+
+    @Test
+    void parseDownloadDetail_fallsBackToBarePercentForProgressBar() {
+        assertEquals("45%", EnvironmentSetup.parseDownloadDetail("######            45.0%"));
+    }
+
+    @Test
+    void parseDownloadDetail_returnsNullForHeaderAndNonProgress() {
+        assertNull(EnvironmentSetup.parseDownloadDetail(
+                "% Total    % Received % Xferd  Average Speed   Time    Time     Time  Current"));
+        assertNull(EnvironmentSetup.parseDownloadDetail("Extracting..."));
+    }
+
+    @Test
+    void classifyAndEmit_emitsRichDetailDuringInstallPhase() throws Exception {
+        EnvironmentSetup setup = new EnvironmentSetup(appDir);
+        Method classify = EnvironmentSetup.class.getDeclaredMethod("classifyAndEmit", String.class,
+                BiConsumer.class);
+        classify.setAccessible(true);
+
+        List<String[]> emissions = new ArrayList<>();
+        BiConsumer<String, String> collector = (phase, detail) -> emissions.add(new String[] { phase, detail });
+
+        classify.invoke(setup, "[*] Installing Ollama", collector);
+        emissions.clear();
+
+        classify.invoke(setup,
+                "2  1.92G    2 52.78M    0     0  50.27M      0  0:00:39  0:00:01  0:00:38 52.83M", collector);
+
+        assertFalse(emissions.isEmpty());
+        assertEquals("Installing AI platform", emissions.get(0)[0]);
+        assertEquals("2% — 52.78 MB / 1.92 GB", emissions.get(0)[1]);
+    }
+
+    @Test
+    void normalizeCurlSize_handlesUnits() {
+        assertEquals("1.92 GB", EnvironmentSetup.normalizeCurlSize("1.92G"));
+        assertEquals("52.78 MB", EnvironmentSetup.normalizeCurlSize("52.78M"));
+        assertEquals("739 KB", EnvironmentSetup.normalizeCurlSize("739K"));
+        assertEquals("1.92 GB", EnvironmentSetup.normalizeCurlSize("1.92GB"));
+    }
 }

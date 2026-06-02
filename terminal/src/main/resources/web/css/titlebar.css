@@ -38,9 +38,25 @@
 .tb-title    { grid-column: 2; }
 .tb-actions  { grid-column: 3; justify-content: flex-end; }
 
-/* Win/Linux: the OS draws the title bar natively, so the HTML one is
-   hidden outright. The grid row it occupied collapses in base.css. */
+/* Pin the row too. Pinning only columns is enough while the DOM order
+   matches ascending columns (default/macOS). On Windows the columns are
+   reversed (controls→3, actions→1) — descending vs DOM order — and sparse
+   auto-placement, which never moves the cursor backwards, would otherwise
+   drop each later item into a fresh implicit row (title + theme slid below
+   the bar). An explicit row removes the ambiguity for every platform. */
+.tb-controls, .tb-title, .tb-actions { grid-row: 1; }
+
+/* Linux: the OS draws the title bar natively, so the HTML one is hidden
+   outright. The grid row it occupied collapses in base.css. */
 html[data-platform="other"] .titlebar { display: none; }
+
+/* Windows: custom flush title bar — the native caption is stripped
+   (WindowsCustomChrome), so the HTML titlebar is the chrome. Mirror of
+   macOS: window controls on the RIGHT (OS convention), theme toggle on the
+   left, title centered. The traffic lights stay visible here (no native
+   ones) and act as the real min/max/close buttons. */
+html[data-platform="win"] .tb-controls { grid-column: 3; justify-content: flex-end; }
+html[data-platform="win"] .tb-actions  { grid-column: 1; justify-content: flex-start; }
 
 /* Window-control buttons (red/yellow/green). */
 .lights { display: flex; gap: 8px; align-items: center; }
@@ -58,6 +74,36 @@ html[data-platform="other"] .titlebar { display: none; }
    already. Reserve their slot so the title doesn't shift. */
 html[data-platform="mac"] .lights { display: none; }
 html[data-platform="mac"] .tb-controls { padding-left: 78px; }
+
+/* Windows: the caption is stripped, so these ARE the window buttons — drawn
+   as native-style min / max / close instead of macOS traffic lights. Full
+   titlebar height, flush to the top-right corner, ordered minimize → maximize
+   → close, with the conventional red close-hover. (Linux never shows the HTML
+   titlebar at all, so it needs no equivalent.) */
+html[data-platform="win"] .lights { gap: 0; }
+html[data-platform="win"] .tb-controls { padding: 0; }
+html[data-platform="win"] .light {
+  position: relative;
+  width: 46px; height: var(--titlebar-h);
+  border-radius: 0; background: transparent;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--mute); transition: background .1s, color .1s;
+}
+html[data-platform="win"] .light:hover { background: var(--bg-1); color: var(--txt); filter: none; }
+html[data-platform="win"] .light.r:hover { background: #c42b1c; color: #fff; }
+/* Visual order: minimize, maximize, close (DOM order is close, min, max). */
+html[data-platform="win"] .light.y { order: 1; } /* minimize */
+html[data-platform="win"] .light.g { order: 2; } /* maximize */
+html[data-platform="win"] .light.r { order: 3; } /* close    */
+/* Glyphs, drawn with the box model so they stay crisp at any DPI. */
+html[data-platform="win"] .light.y::before { content: ""; width: 11px; height: 1px; background: currentColor; }
+html[data-platform="win"] .light.g::before { content: ""; width: 9px; height: 9px; border: 1px solid currentColor; }
+html[data-platform="win"] .light.r::before,
+html[data-platform="win"] .light.r::after {
+  content: ""; position: absolute; width: 13px; height: 1px; background: currentColor;
+}
+html[data-platform="win"] .light.r::before { transform: rotate(45deg); }
+html[data-platform="win"] .light.r::after  { transform: rotate(-45deg); }
 
 /* App title with German flag G. */
 .tb-title {

@@ -2,6 +2,7 @@ package de.bsommerfeld.wsbg.terminal.ui;
 
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
+import de.bsommerfeld.wsbg.terminal.core.util.StorageUtils;
 import me.friwi.jcefmaven.CefAppBuilder;
 import me.friwi.jcefmaven.MavenCefAppHandlerAdapter;
 import me.friwi.jcefmaven.impl.progress.ConsoleProgressHandler;
@@ -20,7 +21,6 @@ import java.awt.Desktop;
 import java.io.File;
 import java.net.URI;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -28,14 +28,26 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * process-wide singletons; only one instance per JVM is permitted.
  *
  * <p>
- * The native binaries live in {@code ~/jcef-bundle}; jcefmaven downloads
- * them on first launch and reuses them thereafter. The progress is logged
- * via {@link ConsoleProgressHandler}.
+ * The native binaries live in {@code <appData>/jcef-bundle} (under the same
+ * {@link StorageUtils#getAppDataDir() app-data root} as the bundled Ollama
+ * runtime, models, fonts, and config — so the entire footprint sits in one
+ * uninstall-clean directory). jcefmaven downloads them on first launch and
+ * reuses them thereafter. The progress is logged via
+ * {@link ConsoleProgressHandler}.
  */
 @Singleton
 public final class CefHost {
 
     private static final Logger LOG = LoggerFactory.getLogger(CefHost.class);
+
+    // Off-screen (windowless) rendering — Windows only. Renders into a single,
+    // same-thread JOGL GLCanvas instead of a nested Chromium child, which is the
+    // foundation the native custom title bar needs (its WM_NCHITTEST forwards
+    // HTTRANSPARENT to the frame → native drag/snap/maximize). Requires a
+    // **JDK ≤ 25**: JOGL's GLCanvas references java.applet.Applet, removed in
+    // JDK 26 (NoClassDefFoundError on addNotify). macOS/Linux stay windowed.
+    private static final boolean OSR =
+            System.getProperty("os.name", "").toLowerCase().contains("win");
 
     private final AtomicBoolean started = new AtomicBoolean(false);
     private CefApp cefApp;
@@ -74,15 +86,16 @@ public final class CefHost {
             builder.setProgressHandler(new ConsoleProgressHandler());
 
             CefSettings settings = builder.getCefSettings();
-            // OSR mode (windowless_rendering_enabled=true) would give us
-            // perfect live resize but it routes painting through JOGL,
-            // and the JOGL natives jcefmaven ships do not include an
-            // arm64 build — the renderer crashes on Apple Silicon with
-            // an UnsatisfiedLinkError. Until JCEF/jcefmaven update their
-            // JOGL bundle we stay in windowed (heavy-weight) mode and
-            // accept that the page snaps to the new size after the
-            // resize gesture ends instead of tracking live.
-            settings.windowless_rendering_enabled = false;
+            // OSR (windowless) on Windows: the browser renders into a single
+            // JOGL GLCanvas instead of a nested Chromium child window. That
+            // single, same-thread (AWT) child is what makes the native custom
+            // title bar work — its WM_NCHITTEST can forward HTTRANSPARENT to the
+            // frame, which then drives native drag/snap/maximize (see
+            // WindowsCustomChrome). macOS/Linux stay windowed: OSR routes through
+            // JOGL whose jcefmaven natives have no arm64 build (Apple Silicon
+            // crashes with UnsatisfiedLinkError), and the native chrome is
+            // Windows-only anyway.
+            settings.windowless_rendering_enabled = OSR;
             settings.cache_path = resolveCacheDir().toAbsolutePath().toString();
             settings.persist_session_cookies = false;
             settings.log_severity = CefSettings.LogSeverity.LOGSEVERITY_WARNING;
@@ -155,7 +168,9 @@ public final class CefHost {
     }
 
     public CefBrowser createBrowser(String url) {
-        return client().createBrowser(url, false, false);
+        // 2nd arg = off-screen rendered (OSR). On Windows this yields a single
+        // GLCanvas child the native title-bar chrome can work with.
+        return client().createBrowser(url, OSR, false);
     }
 
     public synchronized void dispose() {
@@ -169,12 +184,10 @@ public final class CefHost {
     }
 
     private static File resolveInstallDir() {
-        String home = System.getProperty("user.home", ".");
-        return Paths.get(home, "jcef-bundle").toFile();
+        return StorageUtils.getAppDataDir().resolve("jcef-bundle").toFile();
     }
 
     private static Path resolveCacheDir() {
-        String home = System.getProperty("user.home", ".");
-        return Paths.get(home, ".cache", "wsbg-terminal", "cef");
+        return StorageUtils.getAppDataDir().resolve("cef");
     }
 }

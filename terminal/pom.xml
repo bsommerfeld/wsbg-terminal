@@ -119,7 +119,6 @@
                 <configuration>
                     <executable>java</executable>
                     <arguments>
-                        <argument>--enable-preview</argument>
                         <argument>--enable-native-access=ALL-UNNAMED</argument>
                         <argument>--add-opens=java.desktop/sun.awt=ALL-UNNAMED</argument>
                         <argument>--add-opens=java.desktop/sun.lwawt=ALL-UNNAMED</argument>
