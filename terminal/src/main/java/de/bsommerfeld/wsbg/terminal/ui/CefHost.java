@@ -74,15 +74,15 @@ public final class CefHost {
             builder.setProgressHandler(new ConsoleProgressHandler());
 
             CefSettings settings = builder.getCefSettings();
-            // OSR mode (windowless_rendering_enabled=true) would give us
-            // perfect live resize but it routes painting through JOGL,
-            // and the JOGL natives jcefmaven ships do not include an
-            // arm64 build — the renderer crashes on Apple Silicon with
-            // an UnsatisfiedLinkError. Until JCEF/jcefmaven update their
-            // JOGL bundle we stay in windowed (heavy-weight) mode and
-            // accept that the page snaps to the new size after the
-            // resize gesture ends instead of tracking live.
-            settings.windowless_rendering_enabled = false;
+            // OSR mode (windowless_rendering_enabled=true) gives perfect
+            // live resize: Chromium paints into a JOGL GLCanvas we own,
+            // instead of a heavyweight native child window the OS only
+            // recomposites after the resize gesture ends. The old blocker
+            // — jcefmaven's JOGL v2.4.0-rc natives being x86_64-only and
+            // crashing the arm64 renderer with UnsatisfiedLinkError — is
+            // resolved by substituting jogamp JOGL 2.6.0 (real arm64 fat-
+            // binary natives) via the terminal pom.
+            settings.windowless_rendering_enabled = true;
             settings.cache_path = resolveCacheDir().toAbsolutePath().toString();
             settings.persist_session_cookies = false;
             settings.log_severity = CefSettings.LogSeverity.LOGSEVERITY_WARNING;
@@ -104,12 +104,16 @@ public final class CefHost {
                 }
             });
 
-            // Chromium command-line flags. Tuned for low-latency desktop
-            // rendering and smooth live resize on macOS.
+            // Chromium command-line flags.
+            //
+            // NOTE: --disable-gpu-vsync and --enable-begin-frame-control are
+            // deliberately NOT set. They were harmless in windowed mode, but
+            // under OSR they cause heavy flicker: begin-frame-control makes
+            // Chromium produce frames only on an external BeginFrame we don't
+            // drive (→ black/half frames), and vsync-off tears the GLCanvas
+            // present. Letting Chromium pace its own frames renders cleanly.
             builder.addJcefArgs(
-                    "--disable-gpu-vsync",                       // lower input latency
                     "--enable-features=UseOzonePlatform",
-                    "--enable-begin-frame-control",              // smoother frame pacing
                     "--disable-background-timer-throttling",     // keep our intervals firing
                     "--disable-renderer-backgrounding",
                     "--disable-features=CalculateNativeWinOcclusion",
@@ -162,7 +166,16 @@ public final class CefHost {
     }
 
     public CefBrowser createBrowser(String url) {
-        return client().createBrowser(url, false, false);
+        // Our own software OSR browser (SwingCefBrowser) instead of jcef's
+        // stock CefBrowserOsr: CEF's onPaint buffer is blitted into a Swing
+        // component — no JOGL, no GL-clear flicker, clean shutdown, and live
+        // resize tracks. Needs windowless_rendering_enabled (set above).
+        // createImmediately() does the native create now (there is no
+        // paint-triggered lazy init like the GLCanvas had).
+        org.cef.browser.SwingCefBrowser browser =
+                new org.cef.browser.SwingCefBrowser(client(), url, false, null);
+        browser.createImmediately();
+        return browser;
     }
 
     public synchronized void dispose() {

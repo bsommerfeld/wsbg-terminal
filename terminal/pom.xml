@@ -43,6 +43,12 @@
         <dependency>
             <groupId>me.friwi</groupId>
             <artifactId>jcefmaven</artifactId>
+            <!-- jcefmaven pulls JOGL/GlueGen transitively for jcef's stock
+                 GLCanvas-based OSR browser (CefBrowserOsr). We never use that
+                 path — our SwingCefBrowser does software OSR with zero OpenGL
+                 — so JOGL is never class-loaded and its (x86_64-only) natives
+                 are never dlopen'd. Left as-is; the transitive jars are dead
+                 weight, not a runtime hazard. -->
         </dependency>
         <dependency>
             <groupId>org.java-websocket</groupId>

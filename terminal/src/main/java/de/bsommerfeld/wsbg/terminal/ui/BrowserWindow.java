@@ -56,11 +56,22 @@ public final class BrowserWindow {
 
     private JFrame frame;
     private CefBrowser browser;
+    private Runnable onClose = () -> {};
 
     @Inject
     public BrowserWindow(CefHost cefHost, WindowDragHandler dragHandler) {
         this.cefHost = cefHost;
         this.dragHandler = dragHandler;
+    }
+
+    /**
+     * Graceful service shutdown to run on the close gesture, BEFORE the CEF
+     * teardown. Set by {@code AppMain}. CEF's native shutdown hard-exits the
+     * JVM, so anything that must stop cleanly (notably the spawned Ollama)
+     * has to run here, not in a JVM shutdown hook that never fires.
+     */
+    public void setOnClose(Runnable onClose) {
+        this.onClose = onClose;
     }
 
     public void open(String url) {
@@ -127,6 +138,11 @@ public final class BrowserWindow {
         // confusing the reparenting code.
         browser = cefHost.createBrowser(url);
         Component browserUi = browser.getUIComponent();
+        // NOTE: do NOT setIgnoreRepaint(true) on the OSR GLCanvas — like the
+        // windowed CefBrowserWr, the OSR browser only finishes initialising
+        // after its component takes its first paint; suppressing it starves
+        // the browser so the page never loads (no devtools target, no socket).
+        // Flicker is handled via sun.awt.noerasebackground (AppMain) instead.
         frame.getContentPane().add(browserUi, BorderLayout.CENTER);
 
         frame.setSize(1280, 820);
@@ -137,19 +153,30 @@ public final class BrowserWindow {
         frame.addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosing(WindowEvent e) {
-                LOG.info("Window closing — disposing JCEF (async); JVM exits on TERMINATED.");
-                // Force the browser shut, then dispose the CefApp. This is
-                // fire-and-forget on purpose: cefApp.dispose() returns
-                // immediately and the native shutdown finishes later, at
-                // which point CefHost's TERMINATED handler calls
-                // System.exit(0) — the *only* place the JVM is torn down on
-                // a clean close. We deliberately do NOT call System.exit
-                // here (that would re-introduce the race this pattern
-                // exists to avoid). frame.dispose() releases the native
-                // window so it visually closes right away.
+                LOG.info("Window closing — graceful service shutdown, then CEF teardown.");
+                // ORDER IS LOAD-BEARING. CEF's native shutdown hard-exits the
+                // process before setState(TERMINATED), so CefHost's
+                // System.exit(0) and every JVM shutdown hook are skipped. We
+                // therefore stop the services that must die with us — above
+                // all the spawned Ollama — synchronously HERE, first, while
+                // the JVM is still ours. Only then do we tear CEF down.
+                try { onClose.run(); } catch (Throwable ignored) {}
+
+                // setCloseAllowed() before close(true): CEF's close handshake
+                // calls doClose(), which otherwise vetoes the close and
+                // re-posts WINDOW_CLOSING (the second close(true) is a no-op),
+                // stalling CefApp for a ~100s internal timeout. Pre-approving
+                // makes onBeforeClose fire immediately.
+                try { browser.setCloseAllowed(); } catch (Throwable ignored) {}
                 try { browser.close(true); } catch (Throwable ignored) {}
                 cefHost.dispose();
                 frame.dispose();
+
+                // Guaranteed exit. Services are already down, so it is safe to
+                // force the JVM out even if CEF's flaky TERMINATED callback
+                // never arrives. If CEF's native shutdown beats us to it, this
+                // line simply never runs.
+                System.exit(0);
             }
         });
 

@@ -30,6 +30,13 @@ public final class AppMain {
     private static final Logger LOG = LoggerFactory.getLogger(AppMain.class);
 
     public static void main(String[] args) {
+        // Must be set before ANY AWT/Toolkit init. Stops AWT from erasing
+        // the heavyweight JCEF OSR GLCanvas background to the frame colour
+        // on every live-resize step — that erase-then-repaint is the flash
+        // that makes continuous resizing flicker. With it off, the canvas
+        // keeps the last Chromium frame until the next one is presented.
+        System.setProperty("sun.awt.noerasebackground", "true");
+
         System.setProperty("apple.awt.application.name", "WSBG Terminal");
         System.setProperty("apple.laf.useScreenMenuBar", "true");
 
@@ -62,7 +69,20 @@ public final class AppMain {
             throw new RuntimeException("Failed to start local servers", e);
         }
 
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> shutdown(injector), "wsbg-shutdown"));
+        // The window's close gesture runs the graceful service shutdown
+        // SYNCHRONOUSLY before it tears CEF down. This matters because CEF's
+        // native shutdown (N_Shutdown) hard-exits the process — it never
+        // reaches setState(TERMINATED), so CefHost's System.exit(0) and any
+        // JVM shutdown hook do NOT run. If we left Ollama's stop to the hook,
+        // the spawned `ollama serve` would be orphaned (the model keeps
+        // running in the background after the window is gone). Running it up
+        // front, before cefHost.dispose(), guarantees the child dies with us.
+        // The JVM hook stays as a fallback for SIGTERM/kill; SERVICES_DOWN
+        // makes the work idempotent so it never runs twice.
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            shutdownServices(injector);
+            safeStop(() -> injector.getInstance(CefHost.class).dispose(), "CefHost");
+        }, "wsbg-shutdown"));
 
         String entryUrl = String.format("http://127.0.0.1:%d/?ws=%d",
                 assetServer.port(), pushHub.port());
@@ -70,12 +90,23 @@ public final class AppMain {
 
         SwingUtilities.invokeLater(() -> {
             BrowserWindow window = injector.getInstance(BrowserWindow.class);
+            window.setOnClose(() -> shutdownServices(injector));
             window.open(entryUrl);
             windowRef[0] = window;  // hand to the raise listener
         });
     }
 
-    private static void shutdown(Injector injector) {
+    private static final java.util.concurrent.atomic.AtomicBoolean SERVICES_DOWN =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    /**
+     * Stops every service that must die with the app — most importantly the
+     * spawned Ollama process — but NOT CefHost (the caller drives the CEF
+     * teardown afterwards). Idempotent: the first caller wins, later calls
+     * (e.g. the JVM shutdown hook after the window already ran it) are no-ops.
+     */
+    private static void shutdownServices(Injector injector) {
+        if (!SERVICES_DOWN.compareAndSet(false, true)) return;
         LOG.info("Shutting down services...");
         // Stop the scan loop first so no fresh embedding/vision/cluster work is
         // submitted while the services it depends on are torn down below.
@@ -88,7 +119,6 @@ public final class AppMain {
         safeStop(() -> injector.getInstance(UserSessionTracker.class).shutdown(), "UserSessionTracker");
         safeStop(() -> injector.getInstance(PushHub.class).stop(), "PushHub");
         safeStop(() -> injector.getInstance(AssetServer.class).stop(), "AssetServer");
-        safeStop(() -> injector.getInstance(CefHost.class).dispose(), "CefHost");
         safeStop(SingleInstance::release, "SingleInstance");
     }
 
