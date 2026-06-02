@@ -488,11 +488,20 @@ html[data-theme="dark"] .row .yahoo-mark:hover {
 .row.new-row {
   animation: new-row-flash 1.2s ease-out;
 }
-/* Mover + new-row: flash dominates briefly, then settles back to the
-   red wash. */
+/* Mover + new-row: the gold flash must settle INTO the red wash, not
+   into transparent. The base keyframe ends transparent, so reusing it
+   with `forwards` would freeze a red row transparent until the next
+   re-render — making a row that's red from birth look NORMAL, then
+   "suddenly" turn red when the next headline pushes it down. A dedicated
+   keyframe that ends on --red-soft keeps the red visible from the first
+   paint. */
+@keyframes new-row-flash-important {
+  0%   { background-color: oklch(0.82 0.14 75 / .14); }
+  100% { background-color: var(--red-soft); }
+}
 .row.mover.new-row,
 .row.highlight-important.new-row {
-  animation: new-row-flash 1.2s ease-out forwards;
+  animation: new-row-flash-important 1.2s ease-out;
 }
 
 /* Empty-state placeholder. */

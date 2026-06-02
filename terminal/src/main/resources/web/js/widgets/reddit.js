@@ -1,10 +1,12 @@
 // Renders the AI-generated headline list.
 //
 // Driven entirely by the `headlines` payload pushed from
-// HeadlinePublisher. New entries (clusterIds not seen in the previous
+// HeadlinePublisher. New entries (headlines not seen in the previous
 // render) get the .new-row class so the gold flash animation plays
-// once — same visual cue the refresh button used to trigger
-// repository-wide.
+// once — the "frisch aufgetaucht" cue. Keyed per-headline
+// (clusterId + createdAt), NOT per-cluster: a cluster publishes many
+// headlines over its life, so keying on clusterId alone would flash
+// only the first one and silently skip every follow-up.
 
 import { highlightTickers } from '../format/ticker.js';
 import { colorizeSignedNumbers } from '../format/numbers.js';
@@ -34,9 +36,16 @@ export function renderHeadlines(host, items) {
 
   // Suppress the "new" flash on first paint — every row would flash
   // simultaneously, which is more chaotic than communicative.
-  host.innerHTML = items.map(h => toRow(h, !isFirstRender && !prev.has(h.clusterId))).join('');
+  host.innerHTML = items.map(h => toRow(h, !isFirstRender && !prev.has(rowKey(h)))).join('');
 
-  seenKeys.set(host, new Set(items.map(h => h.clusterId)));
+  seenKeys.set(host, new Set(items.map(rowKey)));
+}
+
+// Per-headline identity for new-row diffing. clusterId alone is not
+// unique — a cluster yields many headlines — so we pair it with the
+// createdAt timestamp, the same fingerprint HeadlinePublisher uses.
+function rowKey(h) {
+  return h.clusterId + '@' + h.createdAt;
 }
 
 function toRow(h, isNew) {
