@@ -121,7 +121,7 @@ public class YahooFinanceClient {
     private final Map<String, CachedArticle> articleCache = new ConcurrentHashMap<>();
 
     public YahooFinanceClient() {
-        this(10, 300);
+        this(10, 60);
     }
 
     @Inject
@@ -136,7 +136,7 @@ public class YahooFinanceClient {
 
     private static long resolveTtl(GlobalConfig config) {
         YahooFinanceConfig y = config == null ? null : config.getYahoo();
-        return y == null ? 300 : y.getCacheTtlSeconds();
+        return y == null ? 60 : y.getCacheTtlSeconds();
     }
 
     public YahooFinanceClient(int requestTimeoutSeconds, long cacheTtlSeconds) {
