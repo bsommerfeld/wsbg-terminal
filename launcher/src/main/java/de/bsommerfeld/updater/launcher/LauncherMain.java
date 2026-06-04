@@ -1,5 +1,6 @@
 package de.bsommerfeld.updater.launcher;
 
+import de.bsommerfeld.updater.api.ConnectivityProbe;
 import de.bsommerfeld.updater.api.GitHubRepository;
 import de.bsommerfeld.updater.api.TinyUpdateClient;
 
@@ -110,12 +111,36 @@ public final class LauncherMain {
     // =====================================================================
 
     /**
-     * Checks for updates and downloads them if available. On network failure,
-     * falls back to the cached version — unless this is the first run, in
-     * which case there is nothing to fall back to.
+     * Checks for updates and downloads them if available. On any failure —
+     * no internet, repository/release missing, or a mid-download error — the
+     * launcher falls back to the cached install and starts it, so an offline
+     * user is never locked out of an already-installed version. The only hard
+     * stop is a first run with nothing cached to fall back to.
+     *
+     * <p>
+     * An upfront connectivity probe handles the common offline case cleanly:
+     * it lets us skip straight to the cached version instead of waiting out a
+     * 30 s connect timeout. The {@code try/catch} below remains the safety net
+     * for everything the probe can't foresee (repo 404, no published release,
+     * a connection that drops mid-update).
      */
     private static void runUpdatePhase(TinyUpdateClient client, LauncherWindow window,
             Path appDir, boolean showWindow, LauncherI18n i18n) {
+        boolean hasCachedVersion = client.currentVersion() != null;
+
+        if (!ConnectivityProbe.isOnline()) {
+            if (hasCachedVersion) {
+                log(appDir, "No internet connection — skipping update, launching cached version "
+                        + client.currentVersion());
+                return;
+            }
+            // First run with no network: nothing is installed yet, so there is
+            // genuinely nothing to launch. Fail loudly with a clear message.
+            throw new IllegalStateException(
+                    "No internet connection and no installed version available. "
+                    + "Connect to the internet and restart to complete the first-time setup.");
+        }
+
         try {
             log(appDir, "Starting update check");
             if (showWindow) {
@@ -158,14 +183,19 @@ public final class LauncherMain {
                     : "Already up to date: " + client.currentVersion());
 
         } catch (Exception e) {
+            // Covers everything past the connectivity probe: repository not
+            // found, no published release, malformed release JSON, or a
+            // connection that dropped mid-update. In all of these the right
+            // move is to run whatever is already installed.
             log(appDir, "Update check failed: " + e.getMessage());
             logStackTrace(appDir, e);
             if (client.currentVersion() != null) {
                 window.setStatus(i18n.get("Update check failed"));
                 sleep(2000);
             } else {
-                throw new RuntimeException(
-                        "First run requires network — no cached version available", e);
+                throw new IllegalStateException(
+                        "Update check failed and no installed version is available to launch "
+                        + "(first run needs a reachable release): " + e.getMessage(), e);
             }
         }
     }

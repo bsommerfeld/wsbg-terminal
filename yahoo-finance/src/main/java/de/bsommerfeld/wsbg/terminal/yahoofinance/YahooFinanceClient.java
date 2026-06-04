@@ -7,6 +7,7 @@ import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.core.config.YahooFinanceConfig;
 import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
+import de.bsommerfeld.wsbg.terminal.core.util.HostReachability;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -92,9 +93,28 @@ public class YahooFinanceClient {
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
+    /**
+     * Host probed by the offline gate. Both {@code query1} (chart) and
+     * {@code query2} (search) live behind the same Yahoo edge, so probing one
+     * is a faithful proxy for "can we reach Yahoo / do we have internet".
+     */
+    private static final String REACHABILITY_HOST = "query1.finance.yahoo.com";
+    private static final Duration REACHABILITY_PROBE_TIMEOUT = Duration.ofSeconds(2);
+    private static final Duration REACHABILITY_CACHE_TTL = Duration.ofSeconds(30);
+
     private final HttpClient http;
     private final Duration requestTimeout;
     private final long cacheTtlSeconds;
+
+    /**
+     * Offline gate. When the network (or Yahoo) is unreachable, every fetch
+     * short-circuits to an empty result instead of hanging for a full connect
+     * timeout — Yahoo enrichment is simply skipped and the editorial pipeline
+     * publishes on the cluster's own sentiment. Cached responses are still
+     * served regardless, since they don't need the network.
+     */
+    private final HostReachability online =
+            new HostReachability(REACHABILITY_HOST, 443, REACHABILITY_PROBE_TIMEOUT, REACHABILITY_CACHE_TTL);
 
     private final Map<String, CachedSearch> searchCache = new ConcurrentHashMap<>();
     private final Map<String, CachedSnapshot> snapshotCache = new ConcurrentHashMap<>();
@@ -147,6 +167,11 @@ public class YahooFinanceClient {
         long now = Instant.now().getEpochSecond();
         if (cached != null && now - cached.storedAt < cacheTtlSeconds) {
             return cached.result;
+        }
+
+        if (!online.isReachable()) {
+            LOG.debug("Offline — skipping Yahoo search '{}'", trimmed);
+            return SearchResult.empty();
         }
 
         try {
@@ -227,6 +252,11 @@ public class YahooFinanceClient {
             return Optional.ofNullable(cached.snapshot);
         }
 
+        if (!online.isReachable()) {
+            LOG.debug("Offline — skipping Yahoo chart '{}'", sym);
+            return Optional.empty();
+        }
+
         try {
             String url = CHART_URL + URLEncoder.encode(sym, StandardCharsets.UTF_8)
                     + "?interval=" + CHART_INTERVAL + "&range=" + CHART_RANGE;
@@ -280,6 +310,10 @@ public class YahooFinanceClient {
         CachedArticle cached = articleCache.get(key);
         if (cached != null && now - cached.storedAt < cacheTtlSeconds) {
             return Optional.ofNullable(cached.text);
+        }
+        if (!online.isReachable()) {
+            LOG.debug("Offline — skipping Yahoo article fetch '{}'", key);
+            return Optional.empty();
         }
         try {
             HttpRequest req = HttpRequest.newBuilder()
