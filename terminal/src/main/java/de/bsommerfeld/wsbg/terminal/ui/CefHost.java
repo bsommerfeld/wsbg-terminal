@@ -3,11 +3,13 @@ package de.bsommerfeld.wsbg.terminal.ui;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.core.util.StorageUtils;
+import de.bsommerfeld.wsbg.terminal.ui.scroll.WheelScrollPolicy;
 import me.friwi.jcefmaven.CefAppBuilder;
 import me.friwi.jcefmaven.MavenCefAppHandlerAdapter;
 import me.friwi.jcefmaven.impl.progress.ConsoleProgressHandler;
 import org.cef.CefApp;
 import org.cef.CefApp.CefAppState;
+import org.cef.CefBrowserSettings;
 import org.cef.CefClient;
 import org.cef.CefSettings;
 import org.cef.browser.CefBrowser;
@@ -41,11 +43,14 @@ public final class CefHost {
     private static final Logger LOG = LoggerFactory.getLogger(CefHost.class);
 
     private final AtomicBoolean started = new AtomicBoolean(false);
+    private final WheelScrollPolicy wheelScrollPolicy;
     private CefApp cefApp;
     private CefClient cefClient;
 
     @Inject
-    public CefHost() {}
+    public CefHost(WheelScrollPolicy wheelScrollPolicy) {
+        this.wheelScrollPolicy = wheelScrollPolicy;
+    }
 
     /**
      * Initializes JCEF on first call. Subsequent calls are no-ops.
@@ -115,6 +120,10 @@ public final class CefHost {
             // present. Letting Chromium pace its own frames renders cleanly.
             builder.addJcefArgs(
                     "--enable-features=UseOzonePlatform",
+                    // Blink animates wheel scrolling, decoupling the visual motion
+                    // from our discrete wheel-event cadence and the 60fps OSR cap.
+                    // Verified to noticeably smooth trackpad scrolling under OSR.
+                    "--enable-smooth-scrolling",
                     "--disable-background-timer-throttling",     // keep our intervals firing
                     "--disable-renderer-backgrounding",
                     "--disable-features=CalculateNativeWinOcclusion",
@@ -174,8 +183,16 @@ public final class CefHost {
         // what WindowsCustomChrome needs to hit-test the title bar natively.
         // createImmediately() does the native create now (no paint-triggered
         // lazy init like the GLCanvas had).
-        org.cef.browser.SwingCefBrowser browser =
-                new org.cef.browser.SwingCefBrowser(client(), url, false, null);
+        // OSR paints at windowless_frame_rate (CEF default 30, hard max 60). Set
+        // it to the cap at creation via CefBrowserSettings — the dynamic
+        // setWindowlessFrameRate() setter no-ops right after createImmediately()
+        // because the native browser isn't created yet. 120Hz is not reachable:
+        // it would need external begin-frame control, which JCEF exposes no Java
+        // API to drive (so enabling it only yields black frames — see initialize()).
+        CefBrowserSettings settings = new CefBrowserSettings();
+        settings.windowless_frame_rate = 60;
+        org.cef.browser.SwingCefBrowser browser = new org.cef.browser.SwingCefBrowser(
+                client(), url, false, null, wheelScrollPolicy, settings);
         browser.createImmediately();
         return browser;
     }

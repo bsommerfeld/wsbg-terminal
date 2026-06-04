@@ -29,6 +29,36 @@ public class UserConfig {
     @Comment("Total time spent in the software (in minutes)")
     private long openMinutes = 0;
 
+    @Key("scroll-speed")
+    @Comment("Mouse/trackpad scroll speed inside the terminal: pixels per OS "
+            + "scroll-line (default: 12.0). The browser renders off-screen, so the "
+            + "OS wheel delta is re-scaled here; the OS speed/acceleration setting "
+            + "still rides along. Higher = faster. Try 9-10 for slower, ~16 for faster.")
+    private double scrollSpeed = 12.0;
+
+    @Key("scroll-invert")
+    @Comment("Invert scroll direction (default: true). The default corrects the "
+            + "fixed AWT-to-Chromium wheel-sign convention; the OS 'natural "
+            + "scrolling' setting is already followed automatically. Flip this only "
+            + "if a third-party reverse-scroll tool makes the direction wrong.")
+    private boolean scrollInvert = true;
+
+    public double getScrollSpeed() {
+        return scrollSpeed;
+    }
+
+    public void setScrollSpeed(double scrollSpeed) {
+        this.scrollSpeed = scrollSpeed;
+    }
+
+    public boolean isScrollInvert() {
+        return scrollInvert;
+    }
+
+    public void setScrollInvert(boolean scrollInvert) {
+        this.scrollInvert = scrollInvert;
+    }
+
     public String getLanguage() {
         return language;
     }
