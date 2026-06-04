@@ -21,6 +21,9 @@
 
 package org.cef.browser;
 
+import de.bsommerfeld.wsbg.terminal.ui.scroll.PassthroughWheelScrollPolicy;
+import de.bsommerfeld.wsbg.terminal.ui.scroll.WheelScroll;
+import de.bsommerfeld.wsbg.terminal.ui.scroll.WheelScrollPolicy;
 import org.cef.CefBrowserSettings;
 import org.cef.CefClient;
 import org.cef.callback.CefDragData;
@@ -48,6 +51,7 @@ import java.awt.event.FocusEvent;
 import java.awt.event.FocusListener;
 import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
+import java.awt.event.InputEvent;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseListener;
 import java.awt.event.MouseMotionListener;
@@ -75,20 +79,26 @@ public class SwingCefBrowser extends CefBrowser_N implements CefRenderHandler {
     private Point screenPoint_ = new Point(0, 0);
     private double scaleFactor_ = 1.0;
     private final boolean isTransparent_;
+    // The wheel-scroll seam. OSR has no native window, so AWT wheel events are
+    // re-scaled here before being handed to CEF — see WheelScrollPolicy.
+    private final WheelScrollPolicy wheelScrollPolicy_;
 
     private final CopyOnWriteArrayList<Consumer<CefPaintEvent>> onPaintListeners =
             new CopyOnWriteArrayList<>();
 
     public SwingCefBrowser(CefClient client, String url, boolean transparent,
-            CefRequestContext context) {
-        this(client, url, transparent, context, null, null, null);
+            CefRequestContext context, WheelScrollPolicy wheelScrollPolicy,
+            CefBrowserSettings settings) {
+        this(client, url, transparent, context, null, null, settings, wheelScrollPolicy);
     }
 
     private SwingCefBrowser(CefClient client, String url, boolean transparent,
             CefRequestContext context, SwingCefBrowser parent, Point inspectAt,
-            CefBrowserSettings settings) {
+            CefBrowserSettings settings, WheelScrollPolicy wheelScrollPolicy) {
         super(client, url, context, parent, inspectAt, settings);
         isTransparent_ = transparent;
+        wheelScrollPolicy_ = wheelScrollPolicy != null
+                ? wheelScrollPolicy : new PassthroughWheelScrollPolicy();
         panel_ = new RenderPanel();
         wireInput();
     }
@@ -113,7 +123,8 @@ public class SwingCefBrowser extends CefBrowser_N implements CefRenderHandler {
     protected CefBrowser_N createDevToolsBrowser(CefClient client, String url,
             CefRequestContext context, CefBrowser_N parent, Point inspectAt) {
         return new SwingCefBrowser(
-                client, url, isTransparent_, context, (SwingCefBrowser) this, inspectAt, null);
+                client, url, isTransparent_, context, (SwingCefBrowser) this, inspectAt, null,
+                wheelScrollPolicy_);
     }
 
     // ---- CefRenderHandler -------------------------------------------------
@@ -267,16 +278,15 @@ public class SwingCefBrowser extends CefBrowser_N implements CefRenderHandler {
             public void mouseMoved(MouseEvent e) { sendMouseEvent(e); }
             public void mouseDragged(MouseEvent e) { sendMouseEvent(e); }
         });
-        // NOTE(scroll): wheel is forwarded as-is. OSR scrolling on Windows feels
-        // slow and ignores third-party "reverse scroll" tools (jcef's native
-        // sendMouseWheelEvent uses a fixed per-event delta and reads only the
-        // rotation sign; AWT delivers the raw HID wheel, not the OS FlipFlopWheel
-        // setting). Tried: re-sending N× for speed + a FlipFlopWheel registry
-        // read for direction — but the user's reverse comes from a tool, not the
-        // OS, so it can't be auto-detected. Revisit with the virtual scroll work
-        // (a manual config toggle is the realistic fix for tool-based reverse).
+        // OSR has no native window, so AWT delivers the wheel event and JCEF's
+        // native bridge forwards getUnitsToScroll() (OS scroll-lines) straight
+        // into CEF, which reads it as pixels → ~3px/notch, "sticky" scroll. The
+        // WheelScrollPolicy decides direction + magnitude; forwardScroll does the
+        // delivery. (Replaces the old as-is forwarding; see ui/scroll/.)
         panel_.addMouseWheelListener(new MouseWheelListener() {
-            public void mouseWheelMoved(MouseWheelEvent e) { sendMouseWheelEvent(e); }
+            public void mouseWheelMoved(MouseWheelEvent e) {
+                forwardScroll(wheelScrollPolicy_.translate(e), e);
+            }
         });
         panel_.addKeyListener(new KeyListener() {
             public void keyTyped(KeyEvent e) { sendKeyEvent(e); }
@@ -298,6 +308,35 @@ public class SwingCefBrowser extends CefBrowser_N implements CefRenderHandler {
             }
         });
         new DropTarget(panel_, new CefDropTargetListener(this));
+    }
+
+    /**
+     * Delivers a policy-decided {@link WheelScroll} to CEF. JCEF's native
+     * sendMouseWheelEvent reads getUnitsToScroll() (= scrollAmount × rotation)
+     * and routes to the horizontal axis only when SHIFT is held, so we encode
+     * the desired pixel delta as a WHEEL_UNIT_SCROLL event with scrollAmount =
+     * |delta|, rotation = sign, and set/clear SHIFT per axis. X and Y are sent
+     * as separate events because the native handles one axis at a time.
+     */
+    private void forwardScroll(WheelScroll scroll, MouseWheelEvent src) {
+        if (scroll == null || scroll.isEmpty()) return;
+        if (scroll.unitsY() != 0) {
+            sendMouseWheelEvent(buildUnitScroll(src, scroll.unitsY(), false));
+        }
+        if (scroll.unitsX() != 0) {
+            sendMouseWheelEvent(buildUnitScroll(src, scroll.unitsX(), true));
+        }
+    }
+
+    private MouseWheelEvent buildUnitScroll(MouseWheelEvent src, int units, boolean horizontal) {
+        int mods = horizontal
+                ? src.getModifiersEx() | InputEvent.SHIFT_DOWN_MASK
+                : src.getModifiersEx() & ~InputEvent.SHIFT_DOWN_MASK;
+        int rotation = units >= 0 ? 1 : -1;
+        int amount = Math.abs(units); // getUnitsToScroll() = amount × rotation = units
+        return new MouseWheelEvent(panel_, src.getID(), src.getWhen(), mods,
+                src.getX(), src.getY(), 0, false,
+                MouseWheelEvent.WHEEL_UNIT_SCROLL, amount, rotation);
     }
 
     private static int getDndAction(int mask) {

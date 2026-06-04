@@ -30,6 +30,8 @@ import de.bsommerfeld.wsbg.terminal.ui.bridge.FjNewsPublisher;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.HeadlinePublisher;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.MarketHoursPublisher;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.RedditHealthPublisher;
+import de.bsommerfeld.wsbg.terminal.ui.scroll.PixelScaledWheelScrollPolicy;
+import de.bsommerfeld.wsbg.terminal.ui.scroll.WheelScrollPolicy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.nio.file.Files;
@@ -89,6 +91,18 @@ public class AppModule extends AbstractModule {
             bind(EurUsdMonitorService.class).asEagerSingleton();
             bind(EurUsdPublisher.class).asEagerSingleton();
             bind(CommandBridge.class).asEagerSingleton();
+
+            // OSR wheel-scroll seam (see ui/scroll/). The off-screen browser gets
+            // no native OS wheel message, so we re-scale the AWT delta: precise
+            // rotation × OS lines-per-notch × scroll-speed inherits both the OS
+            // speed setting and (via the sign) the OS 'natural scrolling' setting.
+            // Speed + invert come from UserConfig. Block-mode (Windows page-scroll)
+            // is rare; derive it from the line speed. Wrap in LoggingWheelScrollPolicy
+            // to re-enable per-event diagnostics.
+            double scrollSpeed = config.getUser().getScrollSpeed();
+            boolean scrollInvert = config.getUser().isScrollInvert();
+            bind(WheelScrollPolicy.class).toInstance(new PixelScaledWheelScrollPolicy(
+                    scrollSpeed, scrollSpeed * 10.0, scrollInvert, scrollInvert));
 
         } catch (Exception e) {
             throw new RuntimeException("Failed to load Application Configuration", e);
