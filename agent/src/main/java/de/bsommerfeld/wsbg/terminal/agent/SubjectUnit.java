@@ -3,6 +3,7 @@ package de.bsommerfeld.wsbg.terminal.agent;
 import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
 import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooNewsItem;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -90,6 +91,21 @@ public final class SubjectUnit {
     }
 
     public synchronized List<UnitHeadline> headlines() { return new ArrayList<>(headlines); }
+
+    /**
+     * Drops already-consumed content — evidence and published headlines older than
+     * {@code maxAge} — while keeping the unit itself alive (its identity, ticker and
+     * latest snapshot stay). A rolling context window: the model is never fed
+     * hour-old comments or hour-old headlines, but the subject persists as long as
+     * it keeps being mentioned. Returns how many entries were dropped.
+     */
+    public synchronized int pruneOlderThan(Duration maxAge) {
+        long cutoff = Instant.now().minus(maxAge).getEpochSecond();
+        int before = evidence.size() + headlines.size();
+        evidence.values().removeIf(e -> e.addedAtEpoch() < cutoff);
+        headlines.removeIf(h -> h.atEpoch() < cutoff);
+        return before - (evidence.size() + headlines.size());
+    }
 
     public synchronized String lastHeadlineText() {
         return headlines.isEmpty() ? null : headlines.get(headlines.size() - 1).text();

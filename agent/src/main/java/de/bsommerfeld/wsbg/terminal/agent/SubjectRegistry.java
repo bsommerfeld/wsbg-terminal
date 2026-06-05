@@ -92,27 +92,18 @@ public final class SubjectRegistry {
     }
 
     /**
-     * Evicts units whose last activity is older than {@code maxAge} — context
-     * relief. The feed only ever lives for the session (a restart older than the
-     * snapshot TTL wipes everything anyway), so a subject that has gone quiet for
-     * that long is dead weight: it bloats the registry and, worse, the editorial
-     * context. Eviction is by {@code lastActivity}, so a subject that keeps
-     * getting mentioned stays alive; one that fell silent drops out. If it is
-     * mentioned again later it simply comes back as a fresh unit (a NEW line).
+     * Context relief: prunes already-consumed <em>content</em> — evidence and
+     * published headlines older than {@code maxAge} — from every unit, while
+     * leaving the units themselves standing. A subject may live as long as it
+     * likes; the model just never sees hour-old comments or hour-old headlines.
+     * Tied to the snapshot TTL (a session that old is wiped on restart anyway).
      *
-     * @return how many units were evicted
+     * @return total number of evidence/headline entries dropped
      */
-    public int evictOlderThan(java.time.Duration maxAge) {
-        java.time.Instant cutoff = java.time.Instant.now().minus(maxAge);
-        int removed = 0;
-        for (SubjectUnit u : byId.values()) {
-            if (u.lastActivity().isBefore(cutoff)) {
-                byId.remove(u.id);
-                dirty.remove(u.id);
-                removed++;
-            }
-        }
-        return removed;
+    public int pruneContentOlderThan(java.time.Duration maxAge) {
+        int pruned = 0;
+        for (SubjectUnit u : byId.values()) pruned += u.pruneOlderThan(maxAge);
+        return pruned;
     }
 
     /** Wipes every unit. Used by the lab "Reset". */

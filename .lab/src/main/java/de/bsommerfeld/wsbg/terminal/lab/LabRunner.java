@@ -97,14 +97,16 @@ public final class LabRunner {
      * time, matching the production "one tick at a time" discipline.
      */
     public synchronized void run(List<String> urls, Consumer<String> out) {
-        // ---- Phase 0: context relief — drop subjects gone quiet past the TTL ----
-        // Mirrors the production maintenance tick: a unit nobody has mentioned for
-        // longer than the snapshot TTL is dead weight for the model's context.
-        int evicted = subjects.evictOlderThan(
-                java.time.Duration.ofMinutes(config.getReddit().getSnapshotTtlMinutes()));
-        if (evicted > 0) {
-            out.accept(String.format("Context relief: evicted %d subject unit(s) idle > %d min.%n",
-                    evicted, config.getReddit().getSnapshotTtlMinutes()));
+        // ---- Phase 0: context relief — prune consumed content past the TTL ----
+        // The units themselves stand as long as they like; only their already-used
+        // content (evidence + published headlines older than the snapshot TTL) is
+        // dropped, so the model never re-reads hour-old comments or headlines.
+        long ttlMin = config.getReddit().getSnapshotTtlMinutes();
+        int pruned = subjects.pruneContentOlderThan(java.time.Duration.ofMinutes(ttlMin));
+        if (pruned > 0) {
+            out.accept(String.format(
+                    "Context relief: pruned %d evidence/headline entr(ies) older than %d min (units kept).%n",
+                    pruned, ttlMin));
         }
 
         // ---- Phase 1: ingest + cluster, thread by thread ----

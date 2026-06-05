@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 class SubjectRegistryTest {
 
     private static EvidenceRef ev(String thread, String comment, String snippet) {
-        return new EvidenceRef(thread, comment, snippet, "reddit", 0L);
+        return new EvidenceRef(thread, comment, snippet, "reddit", java.time.Instant.now().getEpochSecond());
     }
 
     @Test
@@ -71,17 +71,21 @@ class SubjectRegistryTest {
     }
 
     @Test
-    void evictsOnlyUnitsIdlePastTheThreshold() {
+    void prunesConsumedContentPastThresholdButKeepsTheUnit() {
         SubjectRegistry reg = new SubjectRegistry();
-        SubjectUnit fresh = reg.findOrCreate("NVDA", "NVIDIA");
-        fresh.addEvidence(ev("t3_x", "t1_now", "Nvidia")); // lastActivity = now
+        SubjectUnit u = reg.findOrCreate("NVDA", "NVIDIA");
+        u.addEvidence(ev("t3_x", "t1_now", "Nvidia"));
+        u.addHeadline("NVIDIA (NVDA) +2%", false);
 
-        // A zero threshold evicts nothing that was just touched...
-        assertEquals(0, reg.evictOlderThan(Duration.ofMinutes(60)));
-        assertNotNull(reg.get("NVDA"));
+        // Fresh content: nothing is stale yet.
+        assertEquals(0, reg.pruneContentOlderThan(Duration.ofMinutes(60)));
+        assertEquals(1, reg.get("NVDA").evidenceCount());
 
-        // ...but a negative age (cutoff in the future) treats everything as stale.
-        assertEquals(1, reg.evictOlderThan(Duration.ofMinutes(-1)));
-        assertNull(reg.get("NVDA"), "idle-past-threshold unit should be evicted");
+        // Negative age → cutoff in the future, so all content counts as consumed:
+        // evidence + headline are dropped, but the UNIT survives.
+        assertEquals(2, reg.pruneContentOlderThan(Duration.ofMinutes(-1)));
+        assertNotNull(reg.get("NVDA"), "unit must survive content pruning");
+        assertEquals(0, reg.get("NVDA").evidenceCount());
+        assertNull(reg.get("NVDA").lastHeadlineText(), "consumed headline pruned");
     }
 }
