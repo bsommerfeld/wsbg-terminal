@@ -54,7 +54,7 @@ Euer Computer sollte nicht nur schön blinken, sondern auch performen können. O
 | Spec | Anforderung                                                                                                                                                                                               |
 | :--- |:----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | **OS** | Mac (Apple Silicon bevorzugt, M-Series fetzt), Windows (AMD/NVIDIA Long) oder Linux.                                                                                                                      |
-| **RAM** | Mindestens **16 GB**, sonst läuft das Terminal genau wie eure Trades - nicht gut. Für High-Speed Headlines solltet ihr euch [mehr RAM installieren](https://downloadmoreram.com/index.html) (**16 GB+**). |
+| **RAM** | Mindestens **16 GB**, sonst läuft das Terminal genau wie eure Trades - nicht gut. Für High-Speed Headlines solltet ihr euch [mehr RAM installieren](https://downloadmoreram.com/index.html). |
 | **Speicherplatz** | **≈ 15 GB frei** (das Terminal lädt ein lokales KI-Modell plus Embedding-Modell auf die Platte, und die fressen nun mal Speicher).                                                                        |
 | **Prozessor** | M1/M2/M3/M4 aufwärts oder ein vernünftiger Mehrkerner mit GPU-Support. Ohne NPU/GPU ist die Textgenerierung langsamer als Trade Republic im Dip.                                                          |
 
@@ -74,5 +74,6 @@ mvn clean install
 # Abfahrt (für die ganz Faulen)
 ./.script/run.sh
 ```
+[![Static Badge](https://img.shields.io/badge/Code%20of%20Conduct-green)](CODE_OF_CONDUCT.md) [![Static Badge](https://img.shields.io/badge/Contributing-green)](CONTRIBUTING.md)
 
 **Keine Anlageberatung.** Ich mag nur die Aktie. 🖍️

@@ -6,6 +6,7 @@ import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.core.config.Model;
 import de.bsommerfeld.wsbg.terminal.core.config.UserLanguage;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
+import de.bsommerfeld.wsbg.terminal.core.util.BrowserUserAgent;
 import dev.langchain4j.data.message.ImageContent;
 import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.data.message.UserMessage;
@@ -48,7 +49,13 @@ public class AgentBrain {
     // the user's default-port Ollama. See OllamaServerManager.
     public static final String OLLAMA_BASE_URL = OllamaServerManager.BASE_URL;
 
-    private static final String USER_AGENT = "java:de.bsommerfeld.wsbg.terminal:v1.0 (by /u/WsbgTerminal)";
+    /**
+     * A random, realistic browser User-Agent chosen once per process for image
+     * fetches — a browser-shaped agent is what an image CDN expects and is the
+     * most reliably accepted, while keeping installs off one shared fingerprint.
+     * See {@link BrowserUserAgent}.
+     */
+    private final String userAgent = BrowserUserAgent.random();
 
     private final HttpClient httpClient = HttpClient.newBuilder()
             .followRedirects(HttpClient.Redirect.NORMAL).build();
@@ -318,7 +325,7 @@ public class AgentBrain {
     private ImagePayload fetchAndOptimize(String url) throws Exception {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url))
-                .header("User-Agent", USER_AGENT).GET().build();
+                .header("User-Agent", userAgent).GET().build();
 
         byte[] bytes = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray()).body();
         boolean converted = false;

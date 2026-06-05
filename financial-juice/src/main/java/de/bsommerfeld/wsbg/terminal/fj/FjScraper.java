@@ -2,6 +2,7 @@ package de.bsommerfeld.wsbg.terminal.fj;
 
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.core.domain.FjNewsItem;
+import de.bsommerfeld.wsbg.terminal.core.util.BrowserUserAgent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.w3c.dom.Document;
@@ -71,8 +72,12 @@ public class FjScraper {
      */
     private static final long POLL_INTERVAL_SECONDS = 30;
 
-    private static final String USER_AGENT =
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36";
+    /**
+     * A random, realistic browser User-Agent chosen once per process so the feed
+     * accepts us as a genuine browser without every install sharing one
+     * fingerprint. See {@link BrowserUserAgent}.
+     */
+    private final String userAgent = BrowserUserAgent.random();
 
     /**
      * Redundant prefix that FinancialJuice prepends to every single item
@@ -129,7 +134,7 @@ public class FjScraper {
         try {
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(FEED_URL))
-                    .header("User-Agent", USER_AGENT)
+                    .header("User-Agent", userAgent)
                     .GET()
                     .build();
 
