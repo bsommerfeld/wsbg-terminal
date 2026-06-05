@@ -61,13 +61,15 @@ public class EditorialAgent {
 
     /**
      * Subjects are NOT capped — the wire mirrors the room 1:1, so every named
-     * subject gets its own focused compose call. To keep Yahoo load bounded when
-     * a cluster names many subjects, only the first {@code RELATED_SUBJECT_LIMIT}
-     * resolve with the expensive second-hop (related instruments); the rest
-     * resolve ticker + news only. (The old hard {@code MAX_SUBJECTS=6} cap was
-     * removed; this is now just the related-fan-out gate.)
+     * subject gets its own focused compose call. The expensive second-hop
+     * (related instruments) is instead a shared budget spread evenly across ALL
+     * subjects ({@link #distributeRelated}, round-robin), so a 22-subject cluster
+     * gives each subject ~1 related instead of loading the first 6 with 4 each.
+     * {@code RELATED_BUDGET} = total related lookups per cluster (= the old
+     * 6×4); {@code RELATED_PER_SUBJECT} = cap any single subject can take.
      */
-    private static final int RELATED_SUBJECT_LIMIT = 6;
+    private static final int RELATED_BUDGET = 24;
+    private static final int RELATED_PER_SUBJECT = 4;
 
     private final AgentBrain brain;
     private final ClusterRegistry clusterRegistry;
@@ -165,13 +167,11 @@ public class EditorialAgent {
         List<String> names = subjects.names();
         listener.onSubjects(names, subjects.raw(), ms(t0, t1));
 
-        // Stage 2 — deterministic resolution. Every subject resolves ticker +
-        // news; only the first RELATED_SUBJECT_LIMIT pull the (expensive)
-        // second-hop related instruments, so uncapping doesn't explode Yahoo load.
-        List<ResolvedSubject> resolved = new ArrayList<>();
-        for (int i = 0; i < names.size(); i++) {
-            resolved.add(tickerResolver.resolve(names.get(i), i < RELATED_SUBJECT_LIMIT));
-        }
+        // Stage 2 — deterministic resolution, BATCHED. The related second-hop is
+        // a shared budget spread evenly across all subjects; every price snapshot
+        // (own ticker + related) is fetched in ONE spark call (see resolveAll).
+        int[] relatedAlloc = distributeRelated(names.size(), RELATED_BUDGET, RELATED_PER_SUBJECT);
+        List<ResolvedSubject> resolved = tickerResolver.resolveAll(names, relatedAlloc);
         long t2 = System.nanoTime();
         listener.onResolved(resolved, ms(t1, t2));
 
@@ -203,6 +203,29 @@ public class EditorialAgent {
     /** Elapsed milliseconds between two {@link System#nanoTime()} reads. */
     private static long ms(long startNanos, long endNanos) {
         return (endNanos - startNanos) / 1_000_000L;
+    }
+
+    /**
+     * Spreads a shared pool of {@code budget} related-instrument lookups evenly
+     * across {@code n} subjects — round-robin: everyone gets 1 before anyone
+     * gets a 2nd — capped at {@code perSubject} each. So 24 over 24 subjects = 1
+     * each; over 6 = 4 each; over 25 the 25th gets 0.
+     */
+    static int[] distributeRelated(int n, int budget, int perSubject) {
+        int[] alloc = new int[Math.max(0, n)];
+        int remaining = budget;
+        boolean progress = true;
+        while (remaining > 0 && progress) {
+            progress = false;
+            for (int i = 0; i < alloc.length && remaining > 0; i++) {
+                if (alloc[i] < perSubject) {
+                    alloc[i]++;
+                    remaining--;
+                    progress = true;
+                }
+            }
+        }
+        return alloc;
     }
 
     /**

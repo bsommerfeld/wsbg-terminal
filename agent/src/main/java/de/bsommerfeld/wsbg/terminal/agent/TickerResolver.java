@@ -11,8 +11,11 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -93,79 +96,118 @@ public final class TickerResolver {
         this.yahoo = yahoo;
     }
 
-    /**
-     * Resolves a single subject name, including the second-hop related
-     * instruments. Convenience overload — equivalent to
-     * {@code resolve(subjectName, true)}.
-     */
+    /** Resolves a single subject with the default related allowance ({@link #MAX_RELATED}). */
     public ResolvedSubject resolve(String subjectName) {
-        return resolve(subjectName, true);
+        return resolve(subjectName, MAX_RELATED);
     }
 
     /**
-     * Resolves a single subject name. Never throws — any Yahoo failure
-     * degrades to a {@code nothing} result so the headline still publishes.
+     * Resolves a single subject name with a specific related allowance. Never
+     * throws — any Yahoo failure degrades to a {@code nothing} result so the
+     * headline still publishes. (Thin wrapper around {@link #resolveAll}.)
      *
-     * @param withRelated when {@code false}, the expensive second-hop
-     *                    ({@code relatedTickers} → chart + news per related) is
-     *                    skipped. Used to cap Yahoo load when a cluster names
-     *                    many subjects: only the first few resolve with related.
+     * @param maxRelated cap on second-hop related instruments ({@code 0} = none)
      */
-    public ResolvedSubject resolve(String subjectName, boolean withRelated) {
-        String query = subjectName == null ? "" : subjectName.trim();
-        if (query.isEmpty() || yahoo == null) {
-            return new ResolvedSubject(query, query, null, null, List.of(), List.of());
-        }
-        try {
-            SearchResult sr = yahoo.search(query, MAX_QUOTES, NEWS_COUNT);
-            List<YahooNewsItem> news = sr.news() != null ? sr.news() : List.of();
-            YahooQuote strong = strongMatch(query, sr.quotes());
-            String ownTicker = strong == null ? null : strong.symbol();
-            List<RelatedInstrument> related = withRelated
-                    ? resolveRelated(news, ownTicker) : List.of();
-            if (strong == null) {
-                // Theme/person (news-only) — still carries the instruments its
-                // news is about, so the desk can read a causal chain.
-                return new ResolvedSubject(query, query, null, null, news, related);
-            }
-            MarketSnapshot snapshot = yahoo.fetchChart(strong.symbol()).orElse(null);
-            LOG.info("[RESOLVE] '{}' → {} ({}{})", query, strong.symbol(),
-                    snapshot != null && snapshot.hasPrice() ? "with market data" : "no chart",
-                    related.isEmpty() ? "" : ", +" + related.size() + " related");
-            return new ResolvedSubject(query, strong.displayName(), strong.symbol(), snapshot, news, related);
-        } catch (Exception e) {
-            LOG.debug("Subject resolution failed for '{}': {}", query, e.getMessage());
-            return new ResolvedSubject(query, query, null, null, List.of(), List.of());
-        }
+    public ResolvedSubject resolve(String subjectName, int maxRelated) {
+        return resolveAll(List.of(subjectName == null ? "" : subjectName),
+                new int[]{Math.max(0, maxRelated)}).get(0);
     }
 
     /**
-     * Second-hop: pull a live snapshot for the distinct {@code relatedTickers}
-     * Yahoo tagged on this subject's news (minus the subject's own ticker),
-     * capped at {@link #MAX_RELATED}. These are surfaced as raw evidence — the
-     * desk decides whether they connect, we never assert the link ourselves.
+     * Resolves many subjects at once with a per-subject related allowance, and
+     * — crucially — fetches every needed price snapshot (each subject's own
+     * ticker + all related tickers) in a single batched call
+     * ({@link YahooFinanceClient#fetchCharts}, spark endpoint). That collapses
+     * what used to be ~one chart request per ticker into 1–2 requests, which is
+     * the big Yahoo-call saving when a cluster names many subjects. News (the
+     * per-name search and the per-related-symbol news) still goes one request at
+     * a time — Yahoo has no batch news endpoint — but those are cached + the
+     * related fan-out is bounded by {@code relatedAlloc}.
+     *
+     * @param names        subject names (slang already normalised)
+     * @param relatedAlloc per-subject related cap, index-aligned with {@code names}
      */
-    private List<RelatedInstrument> resolveRelated(List<YahooNewsItem> news, String ownTicker) {
-        if (news.isEmpty()) return List.of();
-        Set<String> seen = new HashSet<>();
-        if (ownTicker != null) seen.add(ownTicker.toUpperCase(Locale.ROOT));
-        List<RelatedInstrument> out = new ArrayList<>();
-        for (YahooNewsItem n : news) {
-            if (n.relatedTickers() == null) continue;
-            for (String raw : n.relatedTickers()) {
-                if (raw == null) continue;
-                String sym = raw.trim().toUpperCase(Locale.ROOT);
-                if (sym.isEmpty() || !seen.add(sym)) continue;
-                MarketSnapshot snap = yahoo.fetchChart(sym).orElse(null);
-                if (snap == null || !snap.hasPrice()) continue;
-                // Attach the instrument's own news too, so every named ticker —
-                // primary subject or second-hop — carries a "why", not just a move.
-                List<YahooNewsItem> relNews = yahoo.getNewsForSymbol(sym, RELATED_NEWS_COUNT);
-                out.add(new RelatedInstrument(sym, snap, relNews == null ? List.of() : relNews));
-                if (out.size() >= MAX_RELATED) return out;
+    public List<ResolvedSubject> resolveAll(List<String> names, int[] relatedAlloc) {
+        int n = names == null ? 0 : names.size();
+        List<Pending> pending = new ArrayList<>(n);
+        LinkedHashSet<String> symbols = new LinkedHashSet<>();
+
+        // Phase 1 — search each subject, pick its ticker, gather related tickers
+        // (+ their news). No snapshots yet; just collect the symbols we'll need.
+        for (int i = 0; i < n; i++) {
+            String query = names.get(i) == null ? "" : names.get(i).trim();
+            int maxRelated = relatedAlloc != null && i < relatedAlloc.length ? Math.max(0, relatedAlloc[i]) : 0;
+            if (query.isEmpty() || yahoo == null) {
+                pending.add(Pending.empty(query));
+                continue;
             }
+            try {
+                SearchResult sr = yahoo.search(query, MAX_QUOTES, NEWS_COUNT);
+                List<YahooNewsItem> news = sr.news() != null ? sr.news() : List.of();
+                YahooQuote strong = strongMatch(query, sr.quotes());
+                String ownTicker = strong == null ? null : strong.symbol();
+                String canonical = strong == null ? query : strong.displayName();
+
+                List<String> relSyms = new ArrayList<>();
+                Map<String, List<YahooNewsItem>> relNews = new LinkedHashMap<>();
+                if (maxRelated > 0) {
+                    Set<String> seen = new HashSet<>();
+                    if (ownTicker != null) seen.add(ownTicker.toUpperCase(Locale.ROOT));
+                    collect:
+                    for (YahooNewsItem ni : news) {
+                        if (ni.relatedTickers() == null) continue;
+                        for (String raw : ni.relatedTickers()) {
+                            if (raw == null) continue;
+                            String sym = raw.trim().toUpperCase(Locale.ROOT);
+                            if (sym.isEmpty() || !seen.add(sym)) continue;
+                            relSyms.add(sym);
+                            List<YahooNewsItem> rn = yahoo.getNewsForSymbol(sym, RELATED_NEWS_COUNT);
+                            relNews.put(sym, rn == null ? List.of() : rn);
+                            if (relSyms.size() >= maxRelated) break collect;
+                        }
+                    }
+                }
+                if (ownTicker != null) symbols.add(ownTicker.toUpperCase(Locale.ROOT));
+                symbols.addAll(relSyms);
+                pending.add(new Pending(query, canonical, ownTicker, news, relSyms, relNews));
+            } catch (Exception e) {
+                LOG.debug("Subject resolution failed for '{}': {}", query, e.getMessage());
+                pending.add(Pending.empty(query));
+            }
+        }
+
+        // Phase 2 — ONE batched snapshot fetch for every ticker we touched.
+        Map<String, MarketSnapshot> snaps = yahoo == null || symbols.isEmpty()
+                ? Map.of() : yahoo.fetchCharts(new ArrayList<>(symbols));
+
+        // Phase 3 — assemble, wiring the batched snapshots back in.
+        List<ResolvedSubject> out = new ArrayList<>(pending.size());
+        for (Pending p : pending) {
+            MarketSnapshot ownSnap = p.ownTicker == null ? null
+                    : snaps.get(p.ownTicker.toUpperCase(Locale.ROOT));
+            List<RelatedInstrument> related = new ArrayList<>();
+            for (String sym : p.relSyms) {
+                MarketSnapshot s = snaps.get(sym);
+                if (s == null || !s.hasPrice()) continue;
+                related.add(new RelatedInstrument(sym, s, p.relNews.getOrDefault(sym, List.of())));
+            }
+            if (p.ownTicker != null) {
+                LOG.info("[RESOLVE] '{}' → {} ({}{})", p.query, p.ownTicker,
+                        ownSnap != null && ownSnap.hasPrice() ? "with market data" : "no chart",
+                        related.isEmpty() ? "" : ", +" + related.size() + " related");
+            }
+            out.add(new ResolvedSubject(p.query, p.canonical, p.ownTicker, ownSnap, p.news, related));
         }
         return out;
+    }
+
+    /** Per-subject scratch between phase 1 (collect) and phase 3 (assemble). */
+    private record Pending(String query, String canonical, String ownTicker,
+            List<YahooNewsItem> news, List<String> relSyms,
+            Map<String, List<YahooNewsItem>> relNews) {
+        static Pending empty(String query) {
+            return new Pending(query, query, null, List.of(), List.of(), Map.of());
+        }
     }
 
     /**

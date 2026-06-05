@@ -21,6 +21,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -64,6 +66,20 @@ public class YahooFinanceClient {
 
     private static final String SEARCH_URL = "https://query2.finance.yahoo.com/v1/finance/search";
     private static final String CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/";
+    /**
+     * Batched quote+sparkline for many symbols in ONE request — the big
+     * Yahoo-call saver. Returns each symbol's meta (price, prevClose, currency)
+     * plus the {@code close[]} series the UI draws as a sparkline. It does NOT
+     * carry day high/low, volume or 52-week range — those stay on {@link #CHART_URL}.
+     */
+    private static final String SPARK_URL = "https://query1.finance.yahoo.com/v7/finance/spark";
+    /**
+     * Symbols per spark request. Yahoo rejects large batches with HTTP 400
+     * (a 40-symbol request was observed 400ing while a 2-symbol one succeeded),
+     * so we keep chunks small; 10 reliably goes through. A 42-ticker cluster
+     * thus costs ~5 spark calls instead of ~42 individual chart calls.
+     */
+    private static final int SPARK_BATCH = 10;
 
     /**
      * Intraday chart granularity. 5-minute candles over one day give a
@@ -286,6 +302,138 @@ public class YahooFinanceClient {
             LOG.warn("Yahoo chart '{}' failed: {}", sym, e.getMessage());
             return Optional.empty();
         }
+    }
+
+    /**
+     * Fetches snapshots for MANY symbols at once via the spark endpoint — one
+     * HTTP request instead of one per symbol. Returns a symbol → snapshot map
+     * for every symbol that resolved (cache hits + this batch). Symbols already
+     * fresh in the cache are served from there; symbols spark doesn't return
+     * fall back to a per-symbol {@link #fetchChart}, so this never returns LESS
+     * data than the one-by-one path — it just (usually) costs far fewer requests.
+     *
+     * <p>Spark snapshots carry price, day-change%, currency and the sparkline
+     * series, but NOT day high/low, volume or 52-week range (those are
+     * {@link Double#NaN}/{@code -1}); the UI's main strip + sparkline are
+     * unaffected, only the hover tooltip loses those extras.
+     */
+    public Map<String, MarketSnapshot> fetchCharts(List<String> symbols) {
+        Map<String, MarketSnapshot> out = new LinkedHashMap<>();
+        if (symbols == null || symbols.isEmpty()) return out;
+        long now = Instant.now().getEpochSecond();
+
+        LinkedHashSet<String> misses = new LinkedHashSet<>();
+        for (String raw : symbols) {
+            if (raw == null || raw.isBlank()) continue;
+            String sym = raw.trim().toUpperCase();
+            if (out.containsKey(sym) || misses.contains(sym)) continue;
+            CachedSnapshot c = snapshotCache.get(sym);
+            if (c != null && now - c.storedAt() < cacheTtlSeconds) {
+                if (c.snapshot() != null) out.put(sym, c.snapshot());
+            } else {
+                misses.add(sym);
+            }
+        }
+        if (misses.isEmpty() || !online.isReachable()) return out;
+
+        List<String> miss = new ArrayList<>(misses);
+        int sparkHits = 0, fellBack = 0;
+        for (int i = 0; i < miss.size(); i += SPARK_BATCH) {
+            List<String> chunk = miss.subList(i, Math.min(miss.size(), i + SPARK_BATCH));
+            Map<String, MarketSnapshot> got = fetchSparkChunk(chunk, now);
+            for (String sym : chunk) {
+                MarketSnapshot s = got.get(sym);
+                if (s != null) {
+                    sparkHits++;
+                } else {
+                    s = fetchChart(sym).orElse(null); // fallback (caches itself)
+                    if (s != null) fellBack++;
+                }
+                if (s != null) out.put(sym, s);
+            }
+        }
+        LOG.info("Spark batch: {} symbol(s) → {} via spark, {} fell back to v8/chart",
+                miss.size(), sparkHits, fellBack);
+        return out;
+    }
+
+    /** One spark request for a chunk of symbols. Empty map on any failure → callers fall back. */
+    private Map<String, MarketSnapshot> fetchSparkChunk(List<String> chunk, long now) {
+        Map<String, MarketSnapshot> out = new LinkedHashMap<>();
+        try {
+            String url = SPARK_URL
+                    + "?symbols=" + URLEncoder.encode(String.join(",", chunk), StandardCharsets.UTF_8)
+                    + "&range=" + CHART_RANGE + "&interval=" + CHART_INTERVAL;
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .header("User-Agent", USER_AGENT)
+                    .header("Accept", "application/json")
+                    .timeout(requestTimeout)
+                    .GET()
+                    .build();
+            HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
+            if (resp.statusCode() != 200) {
+                LOG.warn("Yahoo spark batch returned HTTP {}", resp.statusCode());
+                return out;
+            }
+            for (MarketSnapshot s : parseSpark(resp.body())) {
+                snapshotCache.put(s.symbol().toUpperCase(), new CachedSnapshot(s, now));
+                out.put(s.symbol().toUpperCase(), s);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (Exception e) {
+            LOG.warn("Yahoo spark batch failed: {}", e.getMessage());
+        }
+        return out;
+    }
+
+    /**
+     * Parses a {@code v7/spark} response into per-symbol snapshots. Tolerant: any
+     * symbol it can't read is simply omitted (the caller falls back to v8/chart).
+     * The {@code close[]} series is carried through as the sparkline — same data
+     * the UI already draws — so the chart keeps working.
+     */
+    private static List<MarketSnapshot> parseSpark(String body) throws Exception {
+        List<MarketSnapshot> out = new ArrayList<>();
+        com.fasterxml.jackson.databind.JsonNode result = JSON.readTree(body).path("spark").path("result");
+        if (!result.isArray()) return out;
+        for (com.fasterxml.jackson.databind.JsonNode r : result) {
+            com.fasterxml.jackson.databind.JsonNode resp = r.path("response");
+            com.fasterxml.jackson.databind.JsonNode r0 = resp.isArray() && !resp.isEmpty() ? resp.get(0) : resp;
+            com.fasterxml.jackson.databind.JsonNode meta = r0.path("meta");
+            String symbol = r.path("symbol").asText(meta.path("symbol").asText(""));
+            if (symbol.isEmpty()) continue;
+
+            List<Double> spark = new ArrayList<>();
+            com.fasterxml.jackson.databind.JsonNode quote = r0.path("indicators").path("quote");
+            if (quote.isArray() && !quote.isEmpty()) {
+                for (com.fasterxml.jackson.databind.JsonNode c : quote.get(0).path("close")) {
+                    if (c.isNumber()) spark.add(c.asDouble());
+                }
+            }
+            double prevClose = meta.path("previousClose").isNumber()
+                    ? meta.path("previousClose").asDouble()
+                    : meta.path("chartPreviousClose").asDouble(Double.NaN);
+            double price = meta.path("regularMarketPrice").isNumber()
+                    ? meta.path("regularMarketPrice").asDouble()
+                    : (spark.isEmpty() ? Double.NaN : spark.get(spark.size() - 1));
+            double pct = Double.isFinite(price) && Double.isFinite(prevClose) && prevClose != 0.0
+                    ? (price - prevClose) / prevClose * 100.0 : Double.NaN;
+
+            out.add(new MarketSnapshot(
+                    symbol, price, prevClose, pct,
+                    Double.NaN, Double.NaN, -1L, Double.NaN, Double.NaN,
+                    emptyToNull(meta.path("currency").asText("")),
+                    emptyToNull(meta.path("exchangeName").asText("")),
+                    meta.path("regularMarketTime").asLong(0L),
+                    spark));
+        }
+        return out;
+    }
+
+    private static String emptyToNull(String s) {
+        return s == null || s.isBlank() ? null : s;
     }
 
     /**
