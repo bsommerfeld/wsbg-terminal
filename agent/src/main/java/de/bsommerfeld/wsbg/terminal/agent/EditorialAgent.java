@@ -115,6 +115,113 @@ public class EditorialAgent {
     }
 
     /**
+     * #2 step 3 — composes ONE headline for a single {@link SubjectUnit} from its
+     * accumulated Reddit evidence + Yahoo data + its OWN prior headlines, and
+     * classifies it NEW vs UPDATE (story-continuity). The unit is the editorial
+     * atom now, not the cluster. Returns a {@link UnitDraft}; storing the result
+     * on the unit / publishing it is the caller's job.
+     */
+    public UnitDraft composeUnit(SubjectUnit unit) {
+        ChatModel model = brain.getAgentModel();
+        if (model == null || unit == null) {
+            return new UnitDraft(unit == null ? "" : unit.id,
+                    unit == null ? "" : unit.canonicalName(), null, false, false, "", 0);
+        }
+        String sys = PromptLoader.load("headline-compose-unit")
+                .replace("{{LANGUAGE}}", brain.getUserLanguage().displayName())
+                .replace("{{ROOM_SLANG}}", WsbgJargon.roomSlangForPrompt());
+        String user = unitBrief(unit);
+
+        long t0 = System.nanoTime();
+        String text = chat(model, sys, user);
+        long elapsed = ms(t0, System.nanoTime());
+
+        Draft draft = null;
+        boolean isUpdate = false;
+        boolean salvaged = false;
+        JsonNode obj = firstHeadlineObject(parseJson(text));
+        if (obj != null) {
+            draft = toDraft(obj);
+            isUpdate = "UPDATE".equalsIgnoreCase(obj.path("mode").asText(""));
+        }
+        if (draft == null) {
+            for (JsonNode o : salvageObjects(text)) {
+                Draft d = toDraft(o);
+                if (d != null) {
+                    draft = d;
+                    isUpdate = "UPDATE".equalsIgnoreCase(o.path("mode").asText(""));
+                    salvaged = true;
+                    break;
+                }
+            }
+        }
+        return new UnitDraft(unit.id, unit.canonicalName(), draft, isUpdate, salvaged, text, elapsed);
+    }
+
+    /** The headline object out of a parsed reply: a bare object, or the first of a {@code {"headlines":[…]}} wrapper. */
+    private static JsonNode firstHeadlineObject(JsonNode root) {
+        if (root == null) return null;
+        if (root.has("headline")) return root;
+        if (root.path("headlines").isArray() && !root.path("headlines").isEmpty()) {
+            return root.path("headlines").get(0);
+        }
+        return null;
+    }
+
+    /** Builds the per-unit brief: Yahoo data + the room's evidence about this subject + its prior headlines. */
+    private static String unitBrief(SubjectUnit unit) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("=== SUBJECT: ").append(unit.canonicalName());
+        if (unit.isInstrument()) sb.append(" (").append(unit.ticker()).append(")");
+        sb.append(" ===\n");
+
+        MarketSnapshot s = unit.snapshot();
+        if (s != null && s.hasPrice()) {
+            sb.append(String.format(Locale.ROOT, "Yahoo market data: %.2f%s", s.price(),
+                    s.currency() == null || s.currency().isEmpty() ? "" : " " + s.currency()));
+            if (Double.isFinite(s.dayChangePercent())) {
+                sb.append(String.format(Locale.ROOT, ", day %+.2f%%", s.dayChangePercent()));
+            }
+            sb.append('\n');
+        } else if (!unit.isInstrument()) {
+            sb.append("No ticker — theme/person; write from the room's sentiment, no ticker.\n");
+        }
+
+        Instant now = Instant.now();
+        if (!unit.news().isEmpty()) {
+            sb.append("Yahoo news (context & attribution only — NOT the subject):\n");
+            for (YahooNewsItem n : unit.news()) {
+                sb.append("  - ");
+                if (n.publishedAt() != null) {
+                    long mins = Duration.between(n.publishedAt(), now).toMinutes();
+                    sb.append(mins < 60 ? mins + "m" : mins < 1440 ? (mins / 60) + "h" : (mins / 1440) + "d")
+                            .append(" ago — ");
+                }
+                sb.append(n.title()).append('\n');
+            }
+        }
+
+        sb.append("\nWhat the room said about THIS subject (Reddit evidence — the story):\n");
+        for (SubjectUnit.EvidenceRef e : unit.evidence()) {
+            sb.append("  - [").append(e.commentId() == null ? e.threadId() : e.commentId()).append("] ")
+                    .append(e.snippet()).append('\n');
+        }
+
+        List<SubjectUnit.UnitHeadline> prior = unit.headlines();
+        if (!prior.isEmpty()) {
+            sb.append("\nHEADLINES ALREADY PUBLISHED FOR THIS SUBJECT (classify NEW vs UPDATE; never repeat verbatim):\n");
+            for (SubjectUnit.UnitHeadline h : prior) {
+                sb.append("  - ").append(h.text()).append('\n');
+            }
+        }
+        return sb.toString();
+    }
+
+    /** One per-unit compose result (#2 step 3). {@code draft} is null when the model wrote no usable headline. */
+    public record UnitDraft(String unitId, String label, Draft draft, boolean isUpdate,
+            boolean salvaged, String raw, long ms) {}
+
+    /**
      * Runs one editorial tick over the given dirty clusters. Each cluster is
      * processed independently through the pipeline; one failing cluster never
      * blocks the rest.

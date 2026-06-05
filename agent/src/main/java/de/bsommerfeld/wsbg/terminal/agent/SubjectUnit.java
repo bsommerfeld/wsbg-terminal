@@ -38,6 +38,9 @@ public final class SubjectUnit {
     /** Evidence keyed by thread/comment so the same source is never double-counted. */
     private final Map<String, EvidenceRef> evidence = new LinkedHashMap<>();
 
+    /** Headlines already published for this unit — context for the NEW/UPDATE call. */
+    private final List<UnitHeadline> headlines = new ArrayList<>();
+
     public SubjectUnit(String id, String canonicalName) {
         this.id = id;
         this.canonicalName = canonicalName == null ? id : canonicalName;
@@ -74,10 +77,26 @@ public final class SubjectUnit {
     /** Source keys of this unit's evidence — used to detect a shared mention with another unit. */
     public synchronized Set<String> evidenceKeys() { return new HashSet<>(evidence.keySet()); }
 
-    /** Absorbs another unit's evidence into this one (dedup by source key). Used by identity-merge. */
+    /** Absorbs another unit's evidence (and headline history) into this one. Used by identity-merge. */
     public synchronized void absorb(SubjectUnit other) {
         for (EvidenceRef ref : other.evidence()) addEvidence(ref);
+        headlines.addAll(other.headlines());
     }
+
+    /** Records a headline published for this unit (NEW or UPDATE). */
+    public synchronized void addHeadline(String text, boolean update) {
+        headlines.add(new UnitHeadline(text, update, Instant.now().getEpochSecond()));
+        lastActivity = Instant.now();
+    }
+
+    public synchronized List<UnitHeadline> headlines() { return new ArrayList<>(headlines); }
+
+    public synchronized String lastHeadlineText() {
+        return headlines.isEmpty() ? null : headlines.get(headlines.size() - 1).text();
+    }
+
+    /** One headline this unit published, with whether it was an UPDATE of a prior line. */
+    public record UnitHeadline(String text, boolean update, long atEpoch) {}
 
     /**
      * One mention of the subject: where it was said (thread, optional comment),

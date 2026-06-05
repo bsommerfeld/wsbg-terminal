@@ -9,6 +9,7 @@ import de.bsommerfeld.wsbg.terminal.agent.EditorialAgent;
 import de.bsommerfeld.wsbg.terminal.agent.EditorialAgent.ClusterEditorial;
 import de.bsommerfeld.wsbg.terminal.agent.EditorialAgent.EditorialListener;
 import de.bsommerfeld.wsbg.terminal.agent.EditorialAgent.SubjectDraft;
+import de.bsommerfeld.wsbg.terminal.agent.EditorialAgent.UnitDraft;
 import de.bsommerfeld.wsbg.terminal.agent.HeadlineWriter.Draft;
 import de.bsommerfeld.wsbg.terminal.agent.InvestigationCluster;
 import de.bsommerfeld.wsbg.terminal.agent.SubjectRegistry;
@@ -170,10 +171,51 @@ public final class LabRunner {
             out.accept(String.format("%n  identity-merge: folded %d duplicate unit(s) into their ticker", merged));
         }
 
-        // ---- Phase 4: the accumulated subject units ----
+        // ---- Phase 4: per-unit compose with NEW/UPDATE — streamed live ----
+        // Only the units that gained evidence this run are dirty; each composes
+        // ONE headline from its accumulated evidence + Yahoo data + its OWN prior
+        // headlines, and the model tags it NEW (fresh angle) or UPDATE (continues
+        // a prior line). Across runs you see a re-touched unit produce an UPDATE.
+        java.util.Set<String> dirty = subjects.drainDirty();
+        List<SubjectUnit> toCompose = dirty.stream()
+                .map(subjects::get).filter(java.util.Objects::nonNull)
+                .sorted(Comparator.comparingInt(SubjectUnit::evidenceCount).reversed())
+                .toList();
+        section(out, "Headlines per subject unit (" + toCompose.size() + " dirty, streaming live)");
+        int published = 0;
+        for (SubjectUnit u : toCompose) {
+            UnitDraft ud = editorial.composeUnit(u);
+            boolean stored = renderUnitDraft(out, u, ud);
+            if (stored) published++;
+        }
+        out.accept(String.format("%n  → %d headline(s) published this run", published));
+
+        // ---- Phase 5: the accumulated subject registry ----
         renderSubjectUnits(out);
 
         section(out, "Done");
+    }
+
+    /** Renders one streamed per-unit headline; stores it on the unit when it actually changed. Returns whether stored. */
+    private static boolean renderUnitDraft(Consumer<String> out, SubjectUnit u, UnitDraft ud) {
+        String head = u.isInstrument() ? u.canonicalName() + " → " + u.ticker() : u.canonicalName();
+        if (ud.draft() == null || ud.draft().headline() == null || ud.draft().headline().isBlank()) {
+            out.accept(String.format("%n  ● %s → keine Headline  [%s]", head, fmtMs(ud.ms())));
+            String raw = ud.raw() == null || ud.raw().isBlank() ? "(empty response)" : ud.raw().strip();
+            for (String line : truncate(raw, 800).split("\n", -1)) out.accept("      │ " + line);
+            return false;
+        }
+        String text = ud.draft().headline();
+        boolean changed = !text.equalsIgnoreCase(u.lastHeadlineText());
+        String tag = !changed ? "unverändert" : (ud.isUpdate() ? "UPDATE" : "NEW");
+        String salv = ud.salvaged() ? " [gerettet]" : "";
+        out.accept(String.format("%n  ● %s  [%s]  [%s]%s", head, tag, fmtMs(ud.ms()), salv));
+        out.accept("      " + describeDraft(ud.draft()));
+        if (changed) {
+            u.addHeadline(text, ud.isUpdate());
+            return true;
+        }
+        return false;
     }
 
     /** Renders the feed-wide subject registry — the heart of #2 (B). */
