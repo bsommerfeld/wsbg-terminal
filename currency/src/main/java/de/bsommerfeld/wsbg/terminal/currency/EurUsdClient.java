@@ -3,6 +3,7 @@ package de.bsommerfeld.wsbg.terminal.currency;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.inject.Singleton;
+import de.bsommerfeld.wsbg.terminal.core.util.BrowserUserAgent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -58,10 +59,14 @@ public class EurUsdClient {
     private static final String FRANKFURTER_URL =
             "https://api.frankfurter.dev/v1/latest?base=EUR&symbols=USD";
 
-    private static final String USER_AGENT =
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36";
-
     private static final ObjectMapper JSON = new ObjectMapper();
+
+    /**
+     * A random, realistic browser User-Agent chosen once per process — Yahoo's
+     * {@code v8/chart} endpoint bot-blocks bare HTTP-library agents, and a
+     * single shared string is easy to block wholesale. See {@link BrowserUserAgent}.
+     */
+    private final String userAgent = BrowserUserAgent.random();
 
     private final HttpClient http;
     private final Duration requestTimeout;
@@ -93,7 +98,7 @@ public class EurUsdClient {
         try {
             HttpRequest req = HttpRequest.newBuilder()
                     .uri(URI.create(url))
-                    .header("User-Agent", USER_AGENT)
+                    .header("User-Agent", userAgent)
                     .header("Accept", "application/json")
                     .timeout(requestTimeout)
                     .GET()

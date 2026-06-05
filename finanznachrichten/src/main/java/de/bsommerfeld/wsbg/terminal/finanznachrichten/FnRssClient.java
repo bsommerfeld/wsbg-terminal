@@ -1,6 +1,7 @@
 package de.bsommerfeld.wsbg.terminal.finanznachrichten;
 
 import com.google.inject.Singleton;
+import de.bsommerfeld.wsbg.terminal.core.util.BrowserUserAgent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.w3c.dom.Document;
@@ -49,10 +50,6 @@ public class FnRssClient implements FeedFetcher {
 
     private static final Logger LOG = LoggerFactory.getLogger(FnRssClient.class);
 
-    /** Browser-shaped UA — bare HTTP clients are sometimes bot-blocked. */
-    private static final String USER_AGENT =
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36";
-
     /** Leading paid-placement marker finanznachrichten.de prepends to ads. */
     private static final Pattern SPONSORED_MARKER =
             Pattern.compile("^\\s*Anzeige\\s*/\\s*Werbung\\s*", Pattern.CASE_INSENSITIVE);
@@ -61,6 +58,13 @@ public class FnRssClient implements FeedFetcher {
 
     private final HttpClient http;
     private final Duration requestTimeout;
+
+    /**
+     * A random, realistic browser User-Agent chosen once per process — bare
+     * HTTP-library agents are bot-blocked, and a single shared string is easy to
+     * block across every install. See {@link BrowserUserAgent}.
+     */
+    private final String userAgent = BrowserUserAgent.random();
 
     public FnRssClient() {
         this(15);
@@ -84,7 +88,7 @@ public class FnRssClient implements FeedFetcher {
         try {
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(feed.url()))
-                    .header("User-Agent", USER_AGENT)
+                    .header("User-Agent", userAgent)
                     .header("Accept", "application/rss+xml, application/xml, text/xml")
                     .timeout(requestTimeout)
                     .GET()

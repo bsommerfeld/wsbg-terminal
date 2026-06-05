@@ -7,6 +7,7 @@ import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.core.config.YahooFinanceConfig;
 import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
+import de.bsommerfeld.wsbg.terminal.core.util.BrowserUserAgent;
 import de.bsommerfeld.wsbg.terminal.core.util.HostReachability;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -88,9 +89,6 @@ public class YahooFinanceClient {
     private static final Pattern PARAGRAPH = Pattern.compile("(?is)<p[^>]*>(.*?)</p>");
     private static final Pattern HTML_TAG = Pattern.compile("(?is)<[^>]+>");
 
-    private static final String USER_AGENT =
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36";
-
     private static final ObjectMapper JSON = new ObjectMapper();
 
     /**
@@ -105,6 +103,13 @@ public class YahooFinanceClient {
     private final HttpClient http;
     private final Duration requestTimeout;
     private final long cacheTtlSeconds;
+
+    /**
+     * A random, realistic browser User-Agent chosen once per process. Yahoo's
+     * JSON endpoints bot-block bare HTTP-library agents; a single shared string
+     * would be just as easy to block across every install. See {@link BrowserUserAgent}.
+     */
+    private final String userAgent = BrowserUserAgent.random();
 
     /**
      * Offline gate. When the network (or Yahoo) is unreachable, every fetch
@@ -185,7 +190,7 @@ public class YahooFinanceClient {
 
             HttpRequest req = HttpRequest.newBuilder()
                     .uri(URI.create(url))
-                    .header("User-Agent", USER_AGENT)
+                    .header("User-Agent", userAgent)
                     .header("Accept", "application/json")
                     .timeout(requestTimeout)
                     .GET()
@@ -263,7 +268,7 @@ public class YahooFinanceClient {
 
             HttpRequest req = HttpRequest.newBuilder()
                     .uri(URI.create(url))
-                    .header("User-Agent", USER_AGENT)
+                    .header("User-Agent", userAgent)
                     .header("Accept", "application/json")
                     .timeout(requestTimeout)
                     .GET()
@@ -318,7 +323,7 @@ public class YahooFinanceClient {
         try {
             HttpRequest req = HttpRequest.newBuilder()
                     .uri(URI.create(key))
-                    .header("User-Agent", USER_AGENT)
+                    .header("User-Agent", userAgent)
                     .header("Accept", "text/html,application/xhtml+xml")
                     .timeout(requestTimeout)
                     .GET()
