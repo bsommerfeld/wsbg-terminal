@@ -1,0 +1,137 @@
+package de.bsommerfeld.wsbg.terminal.agent;
+
+import de.bsommerfeld.wsbg.terminal.agent.SubjectUnit.EvidenceRef;
+import de.bsommerfeld.wsbg.terminal.agent.TickerResolver.ResolvedSubject;
+import de.bsommerfeld.wsbg.terminal.core.domain.RedditComment;
+import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
+import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
+
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+
+/**
+ * Wires a cluster's resolved subjects into the {@link SubjectRegistry} (#2):
+ * for each subject it finds the thread/comments that mention it and attaches
+ * them as evidence to the unit (by ticker or normalised name). Multi-membership
+ * falls out naturally — a comment naming "NVIDIA, AMD oder Intel" is attributed
+ * to all three units.
+ *
+ * <h3>Matching (word-level, not substring)</h3>
+ * The subject is stored normalised ("Meta Platforms, Inc.", "Münchener
+ * Rückversicherungs-Gesellschaft…") while the room writes the short/native form
+ * ("Meta", "Münchener rück"). So matching is on <b>significant words</b> of the
+ * name (+ the ticker via {@link TickerExtractor}), not a full-string substring:
+ * a comment shares a word like {@code meta} / {@code münchener} → match.
+ * Generic company words ({@code inc}, {@code holdings}, …) are filtered so they
+ * never carry a match on their own. Matching is deliberately lenient — context
+ * is "never decisive", a missed mention costs more than a loose one.
+ *
+ * <h3>No phantom units</h3>
+ * A subject the model named but no thread/comment actually mentions (a
+ * hallucination, or a name the matcher genuinely can't tie to the text) gets
+ * <b>zero evidence and is dropped</b> — a unit must reflect something the room
+ * really said.
+ */
+public final class SubjectAttributor {
+
+    /** Generic words that must never carry a match by themselves. */
+    private static final Set<String> STOP = Set.of(
+            "inc", "incorporated", "corp", "corporation", "company", "holdings",
+            "holding", "group", "the", "and", "für", "und", "fund", "trust",
+            "plc", "ltd", "limited", "gmbh", "kgaa", "aktiengesellschaft",
+            "gesellschaft", "technologies", "technology", "international",
+            "systems", "solutions", "index", "etf");
+
+    private final RedditRepository repository;
+
+    public SubjectAttributor(RedditRepository repository) {
+        this.repository = repository;
+    }
+
+    /** Attributes every resolved subject of {@code cluster} into {@code registry}. */
+    public void attribute(SubjectRegistry registry, InvestigationCluster cluster,
+            List<ResolvedSubject> resolved) {
+        long now = Instant.now().getEpochSecond();
+        for (ResolvedSubject rs : resolved) {
+            String ticker = rs.isInstrument() ? rs.ticker().toUpperCase(Locale.ROOT) : null;
+            Set<String> words = nameWords(rs.query(), rs.canonicalName());
+            if (words.isEmpty() && ticker == null) continue;
+
+            // Collect evidence first — a subject with no real mention is dropped.
+            List<EvidenceRef> found = new ArrayList<>();
+            for (String threadId : cluster.activeThreadIds) {
+                RedditThread t = repository.getThread(threadId);
+                if (t == null) continue;
+                if (matches(nz(t.title()) + " " + nz(t.textContent()), words, ticker)) {
+                    found.add(new EvidenceRef(threadId, null, snippet(t.title()), "reddit", now));
+                }
+                for (RedditComment c : repository.getCommentsForThread(threadId, 0)) {
+                    if (c.body() == null || c.body().isBlank()) continue;
+                    if (matches(c.body(), words, ticker)) {
+                        found.add(new EvidenceRef(threadId, c.id(), snippet(c.body()), "reddit", now));
+                    }
+                }
+            }
+            if (found.isEmpty()) continue; // no real mention → no phantom unit
+
+            String id = unitKey(rs);
+            if (id == null) continue;
+            SubjectUnit unit = registry.findOrCreate(id, rs.canonicalName());
+            unit.updateResolved(rs.canonicalName(), rs.ticker(), rs.snapshot(), rs.news());
+            for (EvidenceRef ref : found) unit.addEvidence(ref);
+            registry.markDirty(id);
+        }
+    }
+
+    /** Identity key: ticker for instruments, normalised canonical name otherwise. */
+    static String unitKey(ResolvedSubject rs) {
+        if (rs.isInstrument()) return rs.ticker().toUpperCase(Locale.ROOT);
+        String name = rs.canonicalName();
+        if (name == null || name.isBlank()) name = rs.query();
+        if (name == null || name.isBlank()) return null;
+        return "name:" + name.trim().toLowerCase(Locale.ROOT);
+    }
+
+    /** Significant words of the room's term + the canonical name (stop-words dropped). */
+    static Set<String> nameWords(String query, String canonical) {
+        Set<String> out = new LinkedHashSet<>();
+        addWords(out, query);
+        addWords(out, canonical);
+        return out;
+    }
+
+    private static void addWords(Set<String> out, String s) {
+        if (s == null) return;
+        for (String w : s.toLowerCase(Locale.ROOT).split("[^a-z0-9äöüß]+")) {
+            if (w.length() >= 3 && !STOP.contains(w)) out.add(w);
+        }
+    }
+
+    /** True if the text carries the ticker (as a symbol) or shares a significant name word. */
+    static boolean matches(String text, Set<String> nameWords, String ticker) {
+        if (text == null || text.isBlank()) return false;
+        if (ticker != null && TickerExtractor.extract(text).contains(ticker)) return true;
+        Set<String> textWords = new HashSet<>(Arrays.asList(
+                text.toLowerCase(Locale.ROOT).split("[^a-z0-9äöüß]+")));
+        for (String w : nameWords) {
+            if (textWords.contains(w)) return true;
+        }
+        return false;
+    }
+
+    private static String snippet(String s) {
+        if (s == null) return "";
+        String one = s.replace('\n', ' ').strip();
+        return one.length() > 140 ? one.substring(0, 140) + "…" : one;
+    }
+
+    private static String nz(String s) {
+        return s == null ? "" : s;
+    }
+}

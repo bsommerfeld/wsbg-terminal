@@ -16,6 +16,7 @@
         <module>financial-juice</module>
         <module>yahoo-finance</module>
         <module>currency</module>
+        <module>finanznachrichten</module>
 
         <module>agent</module>
         <module>terminal</module>

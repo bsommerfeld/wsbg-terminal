@@ -11,6 +11,8 @@ import de.bsommerfeld.wsbg.terminal.agent.EditorialAgent.EditorialListener;
 import de.bsommerfeld.wsbg.terminal.agent.EditorialAgent.SubjectDraft;
 import de.bsommerfeld.wsbg.terminal.agent.HeadlineWriter.Draft;
 import de.bsommerfeld.wsbg.terminal.agent.InvestigationCluster;
+import de.bsommerfeld.wsbg.terminal.agent.SubjectRegistry;
+import de.bsommerfeld.wsbg.terminal.agent.SubjectUnit;
 import de.bsommerfeld.wsbg.terminal.agent.TickerResolver.ResolvedSubject;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
@@ -22,6 +24,7 @@ import de.bsommerfeld.wsbg.terminal.reddit.RedditSource;
 import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooNewsItem;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.function.Consumer;
@@ -46,6 +49,7 @@ public final class LabRunner {
     private final AgentRepository agentRepository;
     private final ClusterEngine clusterEngine;
     private final ClusterRegistry registry;
+    private final SubjectRegistry subjects;
     private final EditorialAgent editorial;
     private final ThreadIngestor ingestor;
 
@@ -62,6 +66,7 @@ public final class LabRunner {
         this.agentRepository = injector.getInstance(AgentRepository.class);
         this.clusterEngine = injector.getInstance(ClusterEngine.class);
         this.registry = injector.getInstance(ClusterRegistry.class);
+        this.subjects = injector.getInstance(SubjectRegistry.class);
         this.editorial = injector.getInstance(EditorialAgent.class);
 
         String fallbackSub = config.getReddit().getSubreddits().isEmpty()
@@ -79,9 +84,10 @@ public final class LabRunner {
      */
     public synchronized void reset(Consumer<String> out) {
         registry.clear();
+        subjects.clear();
         redditRepository.clear();
         agentRepository.clear();
-        out.accept("Reset: cleared all clusters, threads, and headlines. Ollama stays warm.");
+        out.accept("Reset: cleared all clusters, subject units, threads, and headlines. Ollama stays warm.");
     }
 
     /**
@@ -141,48 +147,52 @@ public final class LabRunner {
             out.accept(String.format("    totals  : score=%d, comments=%d", c.totalScore, c.totalComments));
         }
 
-        // ---- Phase 3: editorial pass per cluster — streamed LIVE ----
-        section(out, "Editorial pipeline");
+        // ---- Phase 3 (B, step 1): attribute subjects into the feed-wide registry ----
+        // No compose yet — this step is about SEEING the SubjectUnits accumulate
+        // (per-unit compose with NEW/UPDATE is step 3). The registry is a
+        // singleton, so units persist across runs: submit two NVIDIA threads and
+        // watch the NVIDIA unit's evidence grow.
+        section(out, "Subject attribution");
         for (InvestigationCluster c : clusters) {
             out.accept(String.format("%n  cluster %s — \"%s\"", c.id, c.initialTitle));
-            out.accept("    running pipeline (subjects → tickers → headlines)…");
+            out.accept("    extract → resolve → attribute…");
             try {
-                // The listener fires as each stage finishes, so subjects appear,
-                // then resolution, then each headline pops in as it is composed
-                // (~every several seconds) — exactly like the live wire, instead
-                // of one big dump at the end.
-                ClusterEditorial ed = editorial.runClusterTraced(c.id, new EditorialListener() {
-                    @Override public void onSubjects(List<String> names, String raw, long ms) {
-                        out.accept(String.format("    subjects extracted (%d) [%s]: %s",
-                                names.size(), fmtMs(ms), names.isEmpty() ? "(none)" : names));
-                        if (names.isEmpty() && raw != null && !raw.isBlank()) {
-                            out.accept("      raw stage-1 reply: " + truncate(raw.replace('\n', ' '), 400));
-                        }
-                    }
-                    @Override public void onResolved(List<ResolvedSubject> resolved, long ms) {
-                        if (!resolved.isEmpty()) {
-                            out.accept(String.format("    resolved (%s):", fmtMs(ms)));
-                            for (ResolvedSubject r : resolved) {
-                                out.accept("      " + describeResolved(r));
-                                for (YahooNewsItem news : r.news()) {
-                                    out.accept("        · " + truncate(news.title(), 120));
-                                }
-                            }
-                        }
-                        out.accept("    headlines (streaming live, one per subject):");
-                    }
-                    @Override public void onSubjectDraft(SubjectDraft sd) {
-                        renderSubjectDraft(out, sd);
-                    }
-                });
-                out.accept(String.format("    → %d published after QA   (compose %s total, %d call(s))",
-                        ed.published(), fmtMs(ed.composeMs()), ed.subjectDrafts().size()));
+                List<ResolvedSubject> resolved = editorial.attributeCluster(c.id, subjects);
+                out.accept(String.format("    %d subject(s) attributed", resolved.size()));
             } catch (Exception e) {
-                out.accept("    ! editorial pass failed: " + e.getMessage());
+                out.accept("    ! attribution failed: " + e.getMessage());
             }
         }
 
+        // ---- Phase 4: the accumulated subject units ----
+        renderSubjectUnits(out);
+
         section(out, "Done");
+    }
+
+    /** Renders the feed-wide subject registry — the heart of #2 (B). */
+    private void renderSubjectUnits(Consumer<String> out) {
+        List<SubjectUnit> units = new ArrayList<>(subjects.all());
+        units.sort(Comparator.comparingInt(SubjectUnit::evidenceCount).reversed());
+        section(out, "Subject units: " + units.size() + " (accumulate across runs)");
+        for (SubjectUnit u : units) {
+            String head = u.isInstrument()
+                    ? String.format("%s → %s", u.canonicalName(), u.ticker())
+                    : u.canonicalName() + "  (no ticker — theme/person)";
+            MarketSnapshot s = u.snapshot();
+            String price = s != null && s.hasPrice()
+                    ? String.format(Locale.ROOT, "  %.2f%s (%+.2f%%)", s.price(),
+                        s.currency() == null || s.currency().isEmpty() ? "" : " " + s.currency(),
+                        s.dayChangePercent())
+                    : "";
+            out.accept(String.format("%n  ● %s%s", head, price));
+            out.accept(String.format("    evidence: %d  ·  news: %d", u.evidenceCount(), u.news().size()));
+            for (SubjectUnit.EvidenceRef e : u.evidence()) {
+                String where = e.commentId() == null ? "post " + e.threadId()
+                        : "comment " + e.commentId() + " in " + e.threadId();
+                out.accept(String.format("      ├ [%s] %s", where, truncate(e.snippet(), 120)));
+            }
+        }
     }
 
     // ---- rendering ----

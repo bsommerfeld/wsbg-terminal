@@ -77,6 +77,7 @@ public class EditorialAgent {
     private final ReportBuilder reportBuilder;
     private final TickerResolver tickerResolver;
     private final HeadlineWriter headlineWriter;
+    private final SubjectAttributor attributor;
 
     @Inject
     public EditorialAgent(AgentBrain brain, ClusterRegistry clusterRegistry,
@@ -90,6 +91,27 @@ public class EditorialAgent {
         this.reportBuilder = new ReportBuilder(redditRepository, brain);
         this.tickerResolver = new TickerResolver(yahooFinance);
         this.headlineWriter = new HeadlineWriter(agentRepository, eventBus);
+        this.attributor = new SubjectAttributor(redditRepository);
+    }
+
+    /**
+     * #2 step 1 — extracts + resolves the cluster's subjects (as the editorial
+     * tick does) but, instead of composing, attributes each subject's evidence
+     * into the feed-wide {@link SubjectRegistry}. Lets the {@code .lab} harness
+     * show how subject units accumulate before per-unit composition exists.
+     * Returns the resolved subjects for the trace.
+     */
+    public List<ResolvedSubject> attributeCluster(String clusterId, SubjectRegistry registry) {
+        ChatModel model = brain.getAgentModel();
+        InvestigationCluster cluster = clusterRegistry.getCluster(clusterId);
+        if (model == null || cluster == null) return List.of();
+
+        String brief = reportBuilder.buildReportData(cluster, agentRepository.getHeadlinesByClusterId(clusterId));
+        Subjects subjects = extractSubjects(model, brief);
+        int[] relatedAlloc = distributeRelated(subjects.names().size(), RELATED_BUDGET, RELATED_PER_SUBJECT);
+        List<ResolvedSubject> resolved = tickerResolver.resolveAll(subjects.names(), relatedAlloc);
+        attributor.attribute(registry, cluster, resolved);
+        return resolved;
     }
 
     /**
