@@ -37,6 +37,11 @@
 .widget-head .ident .glyph-reddit { background-image: url("/icons/reddit.png"); }
 .widget-head .ident .glyph-fj     { background-image: url("/icons/financialjuice.png"); }
 
+/* Brand glyphs double as links to the source (subreddit / FinancialJuice),
+   opened in the OS browser via CefHost.onBeforeBrowse. */
+a.glyph { display: block; cursor: pointer; transition: opacity .12s ease; }
+a.glyph:hover { opacity: .7; }
+
 .widget-head .live {
   margin-left: auto;
   display: inline-flex; align-items: center; gap: 6px;
