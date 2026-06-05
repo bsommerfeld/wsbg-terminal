@@ -20,7 +20,8 @@
 # (downloaded models are kept). Releases: https://github.com/ollama/ollama/releases
 $OllamaVersion = "0.24.0"
 
-# Models pulled into our ISOLATED store (<appData>\ollama\models). Edit freely.
+# Models reconciled into our ISOLATED store (<appData>\ollama\models): section 3
+# installs/updates these to the latest registry build and removes anything else.
 # One multimodal gemma4:e4b serves agent + vision; embeddinggemma does vectors.
 $ReasoningModel = "gemma4:e4b"             # editorial agent + vision (multimodal)
 $EmbedModel     = "embeddinggemma:latest"  # 768d cluster embeddings
@@ -153,32 +154,93 @@ if (Test-Path $ollamaExe) {
 }
 
 # ------------------------------------------------------------------------------
-# 3. Pull models into the isolated store (only if missing)
+# 3. Reconcile the isolated store to the desired model set (install / update / GC)
 # ------------------------------------------------------------------------------
+# $desiredModels is the single source of truth. For each one we compare the local
+# manifest digest ('ollama list' ID) against the registry's manifest digest
+# (Docker-Content-Digest, fetched WITHOUT downloading the model) and pull only
+# when missing or stale. Anything in the store that is NOT desired is removed, so
+# a model switch leaves no Altlasten. To switch models, edit $desiredModels (and
+# $OllamaVersion above if the new model needs a newer runtime).
+$desiredModels = @($ReasoningModel, $EmbedModel)
+
 Write-Host "[*] Models (isolated store: $aiModels):" -ForegroundColor Gray
-Write-Host "    - Reasoning / Vision / Agent: $ReasoningModel" -ForegroundColor Gray
-Write-Host "    - Embeddings:                 $EmbedModel" -ForegroundColor Gray
+foreach ($m in $desiredModels) { Write-Host "    - $m" -ForegroundColor Gray }
+
+# Local manifest digest (= 'ollama list' ID) for an installed tag, or $null.
+function Get-LocalDigest($model) {
+    try {
+        $line = & $ollamaExe list 2>$null | Select-Object -Skip 1 |
+            Where-Object { ($_ -split '\s+')[0].ToLower() -eq $model.ToLower() } |
+            Select-Object -First 1
+        if ($line) { return ($line -split '\s+')[1] }
+    } catch {}
+    return $null
+}
+
+# Remote manifest digest (first 12 hex) with no model download. The registry
+# serves the manifest body but no Docker-Content-Digest header, so the digest is
+# the SHA-256 of the manifest bytes (verified to equal the 'ollama list' ID /
+# tags-page digest). We write the body to a temp file and Get-FileHash it so the
+# exact bytes are hashed. URL is DERIVED from the name: "name:tag" ->
+# library/name/manifests/tag; a name already containing "/" is a full namespace
+# (community model), used as-is. Returns $null on any failure (offline / 404).
+function Get-RemoteDigest($model) {
+    $parts = $model -split ':', 2
+    $name = $parts[0]
+    $tag = if ($parts.Count -gt 1 -and $parts[1]) { $parts[1] } else { "latest" }
+    $path = if ($name -like "*/*") { $name } else { "library/$name" }
+    $url = "https://registry.ollama.ai/v2/$path/manifests/$tag"
+    $tmp = Join-Path $env:TEMP "ollama-manifest-$PID-$([guid]::NewGuid().ToString('N')).json"
+    try {
+        Invoke-WebRequest -Uri $url -OutFile $tmp -TimeoutSec 8 -UseBasicParsing -ErrorAction Stop `
+            -Headers @{ Accept = "application/vnd.docker.distribution.manifest.v2+json" }
+        # Guard: only a real manifest yields a digest, never an error body.
+        if (-not (Select-String -Path $tmp -Pattern 'schemaVersion' -Quiet)) { return $null }
+        return (Get-FileHash -Path $tmp -Algorithm SHA256).Hash.ToLower().Substring(0, 12)
+    } catch {
+        return $null
+    } finally {
+        Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+    }
+}
 
 if (Test-Path $ollamaExe) {
-    $installedModels = @()
-    try {
-        $installedModels = (& $ollamaExe list 2>$null | Select-Object -Skip 1 | ForEach-Object { ($_ -split '\s+')[0] })
-    } catch {}
-
-    function Pull-IfMissing($modelName) {
-        if ($installedModels -contains $modelName) {
-            Write-Host "    [OK] $modelName already available" -ForegroundColor Green
-        } else {
-            Write-Host "    > Pulling $modelName..."
-            & $ollamaExe pull $modelName
+    $allPresent = $true
+    foreach ($model in $desiredModels) {
+        $have = Get-LocalDigest $model
+        $want = Get-RemoteDigest $model
+        if (-not $have) {
+            Write-Host "    > Pulling $model (not installed)..."
+            & $ollamaExe pull $model
             if ($LASTEXITCODE -ne 0) {
-                Write-Host "    [WARN] Failed to pull $modelName" -ForegroundColor Yellow
+                Write-Host "    [WARN] Failed to pull $model" -ForegroundColor Yellow
+                $allPresent = $false
             }
+        } elseif (-not $want) {
+            Write-Host "    [OK] $model present (update check skipped -- registry unreachable)" -ForegroundColor Green
+        } elseif ($have -eq $want) {
+            Write-Host "    [OK] $model up to date ($have)" -ForegroundColor Green
+        } else {
+            Write-Host "    > Updating $model ($have -> $want)..."
+            & $ollamaExe pull $model
+            if ($LASTEXITCODE -ne 0) { Write-Host "    [WARN] Failed to update $model -- keeping $have" -ForegroundColor Yellow }
         }
     }
 
-    Pull-IfMissing $ReasoningModel
-    Pull-IfMissing $EmbedModel
+    # GC: remove any isolated-store model no longer desired. Skipped if a desired
+    # pull failed, so the old model is never dropped before the new one lands.
+    if ($allPresent) {
+        $installed = @()
+        try { $installed = (& $ollamaExe list 2>$null | Select-Object -Skip 1 | ForEach-Object { ($_ -split '\s+')[0] }) } catch {}
+        $desiredLower = $desiredModels | ForEach-Object { $_.ToLower() }
+        foreach ($inst in $installed) {
+            if ($inst -and ($desiredLower -notcontains $inst.ToLower())) {
+                Write-Host "    > Removing stale model $inst ..."
+                & $ollamaExe rm $inst 2>$null | Out-Null
+            }
+        }
+    }
 }
 
 # ------------------------------------------------------------------------------

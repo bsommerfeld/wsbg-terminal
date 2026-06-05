@@ -25,7 +25,8 @@ set -e
 #   Releases: https://github.com/ollama/ollama/releases
 OLLAMA_VERSION="0.24.0"
 
-# Models pulled into our ISOLATED store (<appData>/ollama/models). Edit freely.
+# Models reconciled into our ISOLATED store (<appData>/ollama/models): section 3
+# installs/updates these to the latest registry build and removes anything else.
 # One multimodal gemma4:e4b serves agent + vision; embeddinggemma does vectors.
 # (The gemma4:e4b-mlx build is text-only -- no vision encoder -- so we avoid it.)
 REASONING_MODEL="gemma4:e4b"          # editorial agent + vision (multimodal)
@@ -165,31 +166,95 @@ if [ -x "$OLLAMA" ]; then
 fi
 
 # ------------------------------------------------------------------------------
-# 3. Pull models into the isolated store (only if missing)
+# 3. Reconcile the isolated store to the desired model set (install / update / GC)
 # ------------------------------------------------------------------------------
+# DESIRED_MODELS below is the single source of truth. For each one we compare the
+# local manifest digest ('ollama list' ID) against the registry's manifest digest
+# (SHA-256 of the manifest, fetched WITHOUT downloading the model) and pull only
+# when missing or stale -- so models stay current with no blind re-pull. Anything
+# in the store that is NOT desired is removed, so a model switch leaves no
+# Altlasten. To switch models, edit DESIRED_MODELS (and OLLAMA_VERSION above if
+# the new model needs a newer runtime); the check URL, pull, and GC all follow.
+DESIRED_MODELS=("$REASONING_MODEL" "$EMBED_MODEL")
+# Agent and vision share the one gemma4:e4b -- only add a distinct vision model
+# if a future config ever diverges them.
+[ "$VISION_MODEL" != "$REASONING_MODEL" ] && DESIRED_MODELS+=("$VISION_MODEL")
+
 echo "[*] Models (isolated store: $AI_MODELS):"
-echo "    - Reasoning / Agent + Vision: $REASONING_MODEL"
-echo "    - Embeddings:                 $EMBED_MODEL"
+for m in "${DESIRED_MODELS[@]}"; do echo "    - $m"; done
 
-INSTALLED_MODELS=$("$OLLAMA" list 2>/dev/null | tail -n +2 | awk '{print $1}')
-
-pull_if_missing() {
-    # Case-insensitive match avoids re-pulling on tag-case discrepancies.
-    if echo "$INSTALLED_MODELS" | grep -qi "^$1$"; then
-        echo "    [OK] $1 already available"
-    else
-        echo "    > Pulling $1..."
-        "$OLLAMA" pull "$1" || echo "    [WARN] Failed to pull $1 -- continuing anyway"
-    fi
+# Local manifest digest (= 'ollama list' ID, 12 hex) for an installed tag, or "".
+local_digest() {
+    "$OLLAMA" list 2>/dev/null | tail -n +2 \
+        | awk -v m="$1" 'tolower($1)==tolower(m){print $2; exit}'
 }
 
-pull_if_missing "$REASONING_MODEL"
-# Agent and vision share the one gemma4:e4b -- only pull a separate vision
-# model if a future config ever diverges them.
-if [ "$VISION_MODEL" != "$REASONING_MODEL" ]; then
-    pull_if_missing "$VISION_MODEL"
+# Remote manifest digest (first 12 hex) with no model download -- the cheap
+# "is an update available?" probe. The registry serves the manifest body but no
+# Docker-Content-Digest header, so the digest is the SHA-256 of the manifest
+# bytes (verified to equal the 'ollama list' ID / tags-page digest). The URL is
+# DERIVED from the name: "name:tag" -> .../library/name/manifests/tag. A name
+# already containing a "/" is a full namespace (community model), used verbatim.
+remote_digest() {
+    local model="$1" name tag path tmp sha
+    name="${model%%:*}"
+    tag="${model#*:}"
+    [ "$tag" = "$model" ] && tag="latest"
+    case "$name" in
+        */*) path="$name" ;;
+        *)   path="library/$name" ;;
+    esac
+    tmp="/tmp/ollama-manifest-$$-$RANDOM.json"
+    # -f makes curl fail (no output, nonzero) on 404/5xx; a temp file hashes the
+    # exact bytes (command substitution would strip a trailing newline and change
+    # the digest). Empty/echo "" on any failure so the caller treats it as
+    # "registry unreachable" rather than computing a bogus digest.
+    if ! curl -sf -m 8 -o "$tmp" \
+        -H 'Accept: application/vnd.docker.distribution.manifest.v2+json' \
+        "https://registry.ollama.ai/v2/$path/manifests/$tag" 2>/dev/null; then
+        rm -f "$tmp"; return 0
+    fi
+    if ! grep -q 'schemaVersion' "$tmp" 2>/dev/null; then rm -f "$tmp"; return 0; fi
+    if command -v sha256sum >/dev/null 2>&1; then sha="sha256sum"; else sha="shasum -a 256"; fi
+    $sha < "$tmp" | grep -oE '^[0-9a-f]{12}'
+    rm -f "$tmp"
+}
+
+# Install-or-update each desired model. Track full presence so the GC below never
+# deletes the old model while a new one failed to land (e.g. an offline switch).
+ALL_PRESENT=true
+for model in "${DESIRED_MODELS[@]}"; do
+    have=$(local_digest "$model")
+    want=$(remote_digest "$model")
+    if [ -z "$have" ]; then
+        echo "    > Pulling $model (not installed)..."
+        "$OLLAMA" pull "$model" || { echo "    [WARN] Failed to pull $model -- continuing"; ALL_PRESENT=false; }
+    elif [ -z "$want" ]; then
+        echo "    [OK] $model present (update check skipped -- registry unreachable)"
+    elif [ "$have" = "$want" ]; then
+        echo "    [OK] $model up to date ($have)"
+    else
+        echo "    > Updating $model ($have -> $want)..."
+        "$OLLAMA" pull "$model" || echo "    [WARN] Failed to update $model -- keeping $have"
+    fi
+done
+
+# GC: drop every isolated-store model that is no longer desired. Skipped when a
+# desired pull failed, so we never remove the old model before the new one is
+# safely in place.
+if [ "$ALL_PRESENT" = true ]; then
+    while read -r inst; do
+        [ -z "$inst" ] && continue
+        keep=false
+        for model in "${DESIRED_MODELS[@]}"; do
+            [ "$(printf '%s' "$inst" | tr 'A-Z' 'a-z')" = "$(printf '%s' "$model" | tr 'A-Z' 'a-z')" ] && { keep=true; break; }
+        done
+        if [ "$keep" = false ]; then
+            echo "    > Removing stale model $inst ..."
+            "$OLLAMA" rm "$inst" >/dev/null 2>&1 || echo "    [WARN] Could not remove $inst"
+        fi
+    done < <("$OLLAMA" list 2>/dev/null | tail -n +2 | awk '{print $1}')
 fi
-pull_if_missing "$EMBED_MODEL"
 
 # ------------------------------------------------------------------------------
 # 4. Pre-install JCEF (embedded Chromium) native bundle
