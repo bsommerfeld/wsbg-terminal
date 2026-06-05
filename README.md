@@ -74,5 +74,6 @@ mvn clean install
 # Abfahrt (für die ganz Faulen)
 ./.script/run.sh
 ```
+[![Static Badge](https://img.shields.io/badge/Code%20of%20Conduct-green)](CODE_OF_CONDUCT.md) [![Static Badge](https://img.shields.io/badge/Contributing-green)](CONTRIBUTING.md)
 
 **Keine Anlageberatung.** Ich mag nur die Aktie. 🖍️
