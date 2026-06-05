@@ -97,8 +97,19 @@ public final class LabRunner {
      * time, matching the production "one tick at a time" discipline.
      */
     public synchronized void run(List<String> urls, Consumer<String> out) {
+        // ---- Phase 0: context relief — drop subjects gone quiet past the TTL ----
+        // Mirrors the production maintenance tick: a unit nobody has mentioned for
+        // longer than the snapshot TTL is dead weight for the model's context.
+        int evicted = subjects.evictOlderThan(
+                java.time.Duration.ofMinutes(config.getReddit().getSnapshotTtlMinutes()));
+        if (evicted > 0) {
+            out.accept(String.format("Context relief: evicted %d subject unit(s) idle > %d min.%n",
+                    evicted, config.getReddit().getSnapshotTtlMinutes()));
+        }
+
         // ---- Phase 1: ingest + cluster, thread by thread ----
         section(out, "Ingest + clustering");
+        java.util.Set<String> touchedClusters = new java.util.LinkedHashSet<>();
         int n = 0;
         for (String url : urls) {
             n++;
@@ -134,6 +145,7 @@ public final class LabRunner {
             }
 
             AssignOutcome outcome = clusterEngine.assign(t, 0, 0, visionText);
+            touchedClusters.add(outcome.clusterId());
             out.accept("  → " + describeOutcome(outcome));
         }
 
@@ -153,8 +165,17 @@ public final class LabRunner {
         // (per-unit compose with NEW/UPDATE is step 3). The registry is a
         // singleton, so units persist across runs: submit two NVIDIA threads and
         // watch the NVIDIA unit's evidence grow.
+        // Only the clusters that gained/changed a thread THIS run are re-attributed
+        // — exactly what production does (PassiveMonitorService processes changed
+        // threads, never the whole feed). An untouched cluster's evidence hasn't
+        // changed, so re-extracting it would be wasted model + Yahoo calls and
+        // (pre-fix) would needlessly re-wake its units.
         section(out, "Subject attribution");
         for (InvestigationCluster c : clusters) {
+            if (!touchedClusters.contains(c.id)) {
+                out.accept(String.format("%n  cluster %s — unchanged this run, skipped", c.id));
+                continue;
+            }
             out.accept(String.format("%n  cluster %s — \"%s\"", c.id, c.initialTitle));
             out.accept("    extract → resolve → attribute…");
             try {

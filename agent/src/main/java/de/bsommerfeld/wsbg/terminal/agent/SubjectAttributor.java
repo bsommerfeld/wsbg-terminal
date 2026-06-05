@@ -84,8 +84,13 @@ public final class SubjectAttributor {
             if (id == null) continue;
             SubjectUnit unit = registry.findOrCreate(id, rs.canonicalName());
             unit.updateResolved(rs.canonicalName(), rs.ticker(), rs.snapshot(), rs.news());
-            for (EvidenceRef ref : found) unit.addEvidence(ref);
-            registry.markDirty(id);
+            // Dirty ONLY when this attribution actually added new evidence. Re-running
+            // attribution over an unchanged cluster (same comments) must NOT re-wake a
+            // unit — otherwise every pass re-composes the whole feed. A price refresh
+            // alone (updateResolved) is not a reason to re-write a headline.
+            boolean gainedEvidence = false;
+            for (EvidenceRef ref : found) gainedEvidence |= unit.addEvidence(ref);
+            if (gainedEvidence) registry.markDirty(id);
         }
     }
 

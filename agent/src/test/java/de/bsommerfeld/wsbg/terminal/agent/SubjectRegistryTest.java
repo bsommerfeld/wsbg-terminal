@@ -3,6 +3,8 @@ package de.bsommerfeld.wsbg.terminal.agent;
 import de.bsommerfeld.wsbg.terminal.agent.SubjectUnit.EvidenceRef;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -66,5 +68,20 @@ class SubjectRegistryTest {
         // Share the comment but no common significant word → must NOT swallow.
         assertEquals(0, reg.mergeIdentities());
         assertNotNull(reg.get("name:pennystocks"));
+    }
+
+    @Test
+    void evictsOnlyUnitsIdlePastTheThreshold() {
+        SubjectRegistry reg = new SubjectRegistry();
+        SubjectUnit fresh = reg.findOrCreate("NVDA", "NVIDIA");
+        fresh.addEvidence(ev("t3_x", "t1_now", "Nvidia")); // lastActivity = now
+
+        // A zero threshold evicts nothing that was just touched...
+        assertEquals(0, reg.evictOlderThan(Duration.ofMinutes(60)));
+        assertNotNull(reg.get("NVDA"));
+
+        // ...but a negative age (cutoff in the future) treats everything as stale.
+        assertEquals(1, reg.evictOlderThan(Duration.ofMinutes(-1)));
+        assertNull(reg.get("NVDA"), "idle-past-threshold unit should be evicted");
     }
 }

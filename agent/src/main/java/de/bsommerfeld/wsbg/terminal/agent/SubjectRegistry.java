@@ -91,6 +91,30 @@ public final class SubjectRegistry {
         return merged;
     }
 
+    /**
+     * Evicts units whose last activity is older than {@code maxAge} — context
+     * relief. The feed only ever lives for the session (a restart older than the
+     * snapshot TTL wipes everything anyway), so a subject that has gone quiet for
+     * that long is dead weight: it bloats the registry and, worse, the editorial
+     * context. Eviction is by {@code lastActivity}, so a subject that keeps
+     * getting mentioned stays alive; one that fell silent drops out. If it is
+     * mentioned again later it simply comes back as a fresh unit (a NEW line).
+     *
+     * @return how many units were evicted
+     */
+    public int evictOlderThan(java.time.Duration maxAge) {
+        java.time.Instant cutoff = java.time.Instant.now().minus(maxAge);
+        int removed = 0;
+        for (SubjectUnit u : byId.values()) {
+            if (u.lastActivity().isBefore(cutoff)) {
+                byId.remove(u.id);
+                dirty.remove(u.id);
+                removed++;
+            }
+        }
+        return removed;
+    }
+
     /** Wipes every unit. Used by the lab "Reset". */
     public void clear() {
         byId.clear();
