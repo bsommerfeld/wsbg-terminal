@@ -106,6 +106,13 @@ public final class SubjectAttributor {
         return out;
     }
 
+    /** Significant words of a single string (stop-words + sub-3-char dropped). */
+    static Set<String> significantWords(String s) {
+        Set<String> out = new LinkedHashSet<>();
+        addWords(out, s);
+        return out;
+    }
+
     private static void addWords(Set<String> out, String s) {
         if (s == null) return;
         for (String w : s.toLowerCase(Locale.ROOT).split("[^a-z0-9äöüß]+")) {

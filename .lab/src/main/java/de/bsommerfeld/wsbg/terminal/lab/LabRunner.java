@@ -164,6 +164,12 @@ public final class LabRunner {
             }
         }
 
+        // ---- Phase 3.5: conservative identity-merge (name unit → ticker unit) ----
+        int merged = subjects.mergeIdentities();
+        if (merged > 0) {
+            out.accept(String.format("%n  identity-merge: folded %d duplicate unit(s) into their ticker", merged));
+        }
+
         // ---- Phase 4: the accumulated subject units ----
         renderSubjectUnits(out);
 

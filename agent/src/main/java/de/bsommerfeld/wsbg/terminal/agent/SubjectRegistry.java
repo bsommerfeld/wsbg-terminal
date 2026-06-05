@@ -2,8 +2,11 @@ package de.bsommerfeld.wsbg.terminal.agent;
 
 import com.google.inject.Singleton;
 
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -41,6 +44,51 @@ public final class SubjectRegistry {
         Set<String> drained = new HashSet<>(dirty);
         dirty.removeAll(drained);
         return drained;
+    }
+
+    public void remove(String id) {
+        byId.remove(id);
+        dirty.remove(id);
+    }
+
+    /**
+     * Conservative identity-merge (#2 step 2.5): folds a ticker-less name unit
+     * into a ticker unit ONLY when they share BOTH a piece of evidence (the same
+     * comment) AND a significant name word — so "The Metals Company" absorbs into
+     * "TMC the metals company" but two genuinely different subjects are never
+     * welded together. Deterministic, no embedding/threshold guesswork: a false
+     * merge would <em>swallow</em> data, so we'd rather leave a harmless duplicate.
+     * Ticker↔ticker units never merge (distinct tickers = distinct subjects).
+     *
+     * @return how many units were absorbed
+     */
+    public int mergeIdentities() {
+        List<SubjectUnit> tickerUnits = new ArrayList<>();
+        List<SubjectUnit> nameUnits = new ArrayList<>();
+        for (SubjectUnit u : byId.values()) {
+            (u.isInstrument() ? tickerUnits : nameUnits).add(u);
+        }
+        int merged = 0;
+        for (SubjectUnit n : nameUnits) {
+            if (byId.get(n.id) != n) continue; // defensive
+            Set<String> nWords = SubjectAttributor.significantWords(n.canonicalName());
+            Set<String> nKeys = n.evidenceKeys();
+            if (nWords.isEmpty() || nKeys.isEmpty()) continue;
+            for (SubjectUnit t : tickerUnits) {
+                boolean sharesWord = !Collections.disjoint(nWords,
+                        SubjectAttributor.significantWords(t.canonicalName()));
+                boolean sharesEvidence = !Collections.disjoint(nKeys, t.evidenceKeys());
+                if (sharesWord && sharesEvidence) {
+                    t.absorb(n);
+                    byId.remove(n.id);
+                    dirty.remove(n.id);
+                    dirty.add(t.id);
+                    merged++;
+                    break;
+                }
+            }
+        }
+        return merged;
     }
 
     /** Wipes every unit. Used by the lab "Reset". */

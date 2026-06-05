@@ -5,9 +5,11 @@ import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooNewsItem;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * One feed-wide editorial subject (#2, "Subjekt = Einheit"). Unlike a thread
@@ -68,6 +70,14 @@ public final class SubjectUnit {
 
     public synchronized List<EvidenceRef> evidence() { return new ArrayList<>(evidence.values()); }
     public synchronized int evidenceCount() { return evidence.size(); }
+
+    /** Source keys of this unit's evidence — used to detect a shared mention with another unit. */
+    public synchronized Set<String> evidenceKeys() { return new HashSet<>(evidence.keySet()); }
+
+    /** Absorbs another unit's evidence into this one (dedup by source key). Used by identity-merge. */
+    public synchronized void absorb(SubjectUnit other) {
+        for (EvidenceRef ref : other.evidence()) addEvidence(ref);
+    }
 
     /**
      * One mention of the subject: where it was said (thread, optional comment),
