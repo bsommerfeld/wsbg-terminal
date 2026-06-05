@@ -107,7 +107,7 @@ class YahooFinanceClientTest {
     @Test
     void displayNameFallsBackToShortNameWhenLongNameMissing() {
         YahooQuote q = new YahooQuote("NVDL", "GraniteShares 2x Long NVDA Daily ETF", "",
-                "ETF", "NGM", "NASDAQ", "", "", Double.NaN, Double.NaN);
+                "ETF", "NGM", "NASDAQ", "", "", Double.NaN, Double.NaN, 0.0);
         assertEquals("GraniteShares 2x Long NVDA Daily ETF", q.displayName());
     }
 

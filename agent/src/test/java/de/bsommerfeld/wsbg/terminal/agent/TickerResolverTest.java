@@ -17,9 +17,14 @@ import static org.junit.jupiter.api.Assertions.assertNull;
  */
 class TickerResolverTest {
 
-    /** A quote with just the fields the matcher/ranker reads. */
+    /** A quote with just the fields the matcher/ranker reads (no relevance score). */
     private static YahooQuote q(String symbol, String shortName, String exchange, String quoteType) {
-        return new YahooQuote(symbol, shortName, null, quoteType, exchange, exchange, null, null, 0.0, 0.0);
+        return q(symbol, shortName, exchange, quoteType, 0.0);
+    }
+
+    /** A quote carrying a Yahoo relevance score (tier-1 confidence signal). */
+    private static YahooQuote q(String symbol, String shortName, String exchange, String quoteType, double score) {
+        return new YahooQuote(symbol, shortName, null, quoteType, exchange, exchange, null, null, 0.0, 0.0, score);
     }
 
     @Test
@@ -86,8 +91,25 @@ class TickerResolverTest {
     void strictSingleTokenStillRejectsFuzzyExtraWord() {
         // The guard the strict mode exists for must survive the "com" relaxation:
         // a single-token query must NOT match a firm whose name merely contains the
-        // token among real, distinguishing words.
+        // token among real, distinguishing words (no score signal → stays rejected).
         List<YahooQuote> quotes = List.of(q("RMO", "Rheiner Management AG", "GER", "EQUITY"));
+        assertNull(TickerResolver.strongMatch("Rheiner", quotes));
+    }
+
+    @Test
+    void highYahooScoreRescuesSingleTokenWithExtraWord() {
+        // "Meta" vs "Meta Platforms, Inc." — "platforms" is NOT (and shouldn't need
+        // to be) a stop-word. A high Yahoo relevance score confirms the megacap, so
+        // no stop-list growth is needed.
+        List<YahooQuote> quotes = List.of(q("META", "Meta Platforms, Inc.", "NMS", "EQUITY", 800_000.0));
+        assertEquals("META", TickerResolver.strongMatch("Meta", quotes).symbol());
+    }
+
+    @Test
+    void lowYahooScoreDoesNotRescueFuzzyExtraWord() {
+        // Same structural shape, but an obscure low-score hit must stay rejected —
+        // the score, not a token list, is what separates Amazon-legit from Rheiner-fuzzy.
+        List<YahooQuote> quotes = List.of(q("RMO", "Rheiner Management AG", "GER", "EQUITY", 1_200.0));
         assertNull(TickerResolver.strongMatch("Rheiner", quotes));
     }
 }

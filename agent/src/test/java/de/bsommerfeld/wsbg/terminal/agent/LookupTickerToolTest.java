@@ -173,6 +173,6 @@ class LookupTickerToolTest {
 
     private static YahooQuote quote(String symbol, String name, String exchange) {
         return new YahooQuote(symbol, name, name, "EQUITY", exchange, exchange,
-                "Industrials", "Aerospace & Defense", Double.NaN, Double.NaN);
+                "Industrials", "Aerospace & Defense", Double.NaN, Double.NaN, 0.0);
     }
 }

@@ -61,6 +61,19 @@ public final class TickerResolver {
      */
     private static final int NEWS_COUNT = 6;
     private static final double STRONG_MATCH_THRESHOLD = 0.34;
+    /**
+     * Yahoo search-relevance score above which a single-token query is trusted to
+     * match a name that carries <em>extra</em> non-stop tokens (e.g. "Amazon" vs
+     * "Amazon.com, Inc.", "Meta" vs "Meta Platforms, Inc."). Instead of growing a
+     * stop-word list forever, we lean on Yahoo's own confidence: a well-known
+     * match scores very high (megacaps reach 6–7 figures), an obscure fuzzy hit
+     * ("Rheiner" → some micro-cap) scores low. The score is popularity-weighted,
+     * which is exactly why it works here — the megacaps we keep missing are the
+     * high-scoring ones; legitimate low-score names fall through to the embedding
+     * fallback (tier 2) rather than being matched on a thin token overlap.
+     * Deliberately conservative; tunable against live data.
+     */
+    private static final double MIN_CONFIDENT_SCORE = 100_000.0;
 
     /**
      * Cap on the second-hop: distinct {@code relatedTickers} mentioned across a
@@ -235,7 +248,13 @@ public final class TickerResolver {
             boolean exactSymbol = q.symbol() != null && query.equalsIgnoreCase(q.symbol());
             boolean strong = bestSimilarity(queryTokens, q) >= STRONG_MATCH_THRESHOLD;
             if (strong && strictSingleToken && !hasOnlyQueryTokens(queryTokens, q)) {
-                strong = false;
+                // The name carries extra, non-stop tokens beyond the single query
+                // token (e.g. "Amazon" vs "Amazon.com, Inc."). Rather than police
+                // this with an ever-growing stop-word list, defer to Yahoo's own
+                // relevance score: a confident megacap match clears the bar, an
+                // obscure fuzzy hit does not. (Tier 2, embedding, is the fallback
+                // for the legitimate low-score names this still rejects.)
+                strong = q.score() >= MIN_CONFIDENT_SCORE;
             }
             if (exactSymbol) strong = true;
             if (!strong) continue;

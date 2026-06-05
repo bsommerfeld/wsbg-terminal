@@ -556,7 +556,8 @@ public class YahooFinanceClient {
                             q.path("regularMarketPrice").isNumber()
                                     ? q.path("regularMarketPrice").asDouble() : Double.NaN,
                             q.path("regularMarketPercentChange").isNumber()
-                                    ? q.path("regularMarketPercentChange").asDouble() : Double.NaN));
+                                    ? q.path("regularMarketPercentChange").asDouble() : Double.NaN,
+                            q.path("score").asDouble(0.0)));
                 }
             }
 

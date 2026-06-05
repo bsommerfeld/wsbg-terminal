@@ -28,7 +28,8 @@ public record YahooQuote(
         String sector,
         String industry,
         double regularMarketPrice,
-        double regularMarketPercentChange) {
+        double regularMarketPercentChange,
+        double score) {
 
     /**
      * Display-friendly name: prefers {@link #longName} when present, falls
