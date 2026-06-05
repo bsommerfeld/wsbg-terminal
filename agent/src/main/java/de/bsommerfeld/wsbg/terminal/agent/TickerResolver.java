@@ -160,6 +160,12 @@ public final class TickerResolver {
             }
             try {
                 SearchResult sr = yahoo.search(query, MAX_QUOTES, NEWS_COUNT);
+                if (sr.rateLimited()) {
+                    // Yahoo is throttling — leave the subject unresolved (skip), don't
+                    // guess a tickerless unit, and don't fan out into more calls.
+                    pending.add(Pending.rateLimited(query));
+                    continue;
+                }
                 List<YahooNewsItem> news = sr.news() != null ? sr.news() : List.of();
                 YahooQuote strong = strongMatch(query, sr.quotes());
                 String ownTicker = strong == null ? null : strong.symbol();
@@ -186,7 +192,7 @@ public final class TickerResolver {
                 }
                 if (ownTicker != null) symbols.add(ownTicker.toUpperCase(Locale.ROOT));
                 symbols.addAll(relSyms);
-                pending.add(new Pending(query, canonical, ownTicker, news, relSyms, relNews));
+                pending.add(new Pending(query, canonical, ownTicker, news, relSyms, relNews, false));
             } catch (Exception e) {
                 LOG.debug("Subject resolution failed for '{}': {}", query, e.getMessage());
                 pending.add(Pending.empty(query));
@@ -199,6 +205,7 @@ public final class TickerResolver {
 
         // Phase 3 — assemble, wiring the batched snapshots back in.
         List<ResolvedSubject> out = new ArrayList<>(pending.size());
+        int rateLimited = 0;
         for (Pending p : pending) {
             MarketSnapshot ownSnap = p.ownTicker == null ? null
                     : snaps.get(p.ownTicker.toUpperCase(Locale.ROOT));
@@ -213,7 +220,13 @@ public final class TickerResolver {
                         ownSnap != null && ownSnap.hasPrice() ? "with market data" : "no chart",
                         related.isEmpty() ? "" : ", +" + related.size() + " related");
             }
-            out.add(new ResolvedSubject(p.query, p.canonical, p.ownTicker, ownSnap, p.news, related));
+            if (p.rateLimited) rateLimited++;
+            out.add(new ResolvedSubject(p.query, p.canonical, p.ownTicker, ownSnap, p.news, related,
+                    p.rateLimited));
+        }
+        if (rateLimited > 0) {
+            LOG.warn("[RESOLVE] Yahoo rate-limited — {} subject(s) left unresolved this pass "
+                    + "(skipped, will retry on next evidence)", rateLimited);
         }
         return out;
     }
@@ -221,9 +234,14 @@ public final class TickerResolver {
     /** Per-subject scratch between phase 1 (collect) and phase 3 (assemble). */
     private record Pending(String query, String canonical, String ownTicker,
             List<YahooNewsItem> news, List<String> relSyms,
-            Map<String, List<YahooNewsItem>> relNews) {
+            Map<String, List<YahooNewsItem>> relNews, boolean rateLimited) {
         static Pending empty(String query) {
-            return new Pending(query, query, null, List.of(), List.of(), Map.of());
+            return new Pending(query, query, null, List.of(), List.of(), Map.of(), false);
+        }
+
+        /** Search skipped/throttled by Yahoo — the subject is left unresolved, not tickerless. */
+        static Pending rateLimited(String query) {
+            return new Pending(query, query, null, List.of(), List.of(), Map.of(), true);
         }
     }
 
@@ -341,7 +359,12 @@ public final class TickerResolver {
             String ticker,
             MarketSnapshot snapshot,
             List<YahooNewsItem> news,
-            List<RelatedInstrument> related) {
+            List<RelatedInstrument> related,
+            // unresolved: resolution SKIPPED because Yahoo is rate-limiting (breaker
+            // open) — NOT a genuine "no ticker". The attributor drops these so a
+            // transient 429 never cements a wrong tickerless unit; they re-resolve
+            // naturally on the next evidence.
+            boolean unresolved) {
 
         public boolean isInstrument() {
             return ticker != null && !ticker.isBlank();

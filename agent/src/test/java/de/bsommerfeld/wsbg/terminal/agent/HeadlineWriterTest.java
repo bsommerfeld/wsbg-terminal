@@ -28,7 +28,7 @@ class HeadlineWriterTest {
     }
 
     private List<ResolvedSubject> resolvedNow() {
-        return List.of(new ResolvedSubject("ServiceNow", "ServiceNow, Inc.", "NOW", null, List.of(), List.of()));
+        return List.of(new ResolvedSubject("ServiceNow", "ServiceNow, Inc.", "NOW", null, List.of(), List.of(), false));
     }
 
     @Test

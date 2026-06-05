@@ -59,6 +59,10 @@ public final class SubjectAttributor {
             List<ResolvedSubject> resolved) {
         long now = Instant.now().getEpochSecond();
         for (ResolvedSubject rs : resolved) {
+            // Yahoo rate-limited this subject → skip it entirely (don't cement a
+            // wrong tickerless unit). It re-resolves when the cluster next gains
+            // evidence; an open breaker means nothing is published this pass anyway.
+            if (rs.unresolved()) continue;
             String ticker = rs.isInstrument() ? rs.ticker().toUpperCase(Locale.ROOT) : null;
             Set<String> words = nameWords(rs.query(), rs.canonicalName());
             if (words.isEmpty() && ticker == null) continue;

@@ -141,6 +141,33 @@ public class YahooFinanceClient {
     private final Map<String, CachedSnapshot> snapshotCache = new ConcurrentHashMap<>();
     private final Map<String, CachedArticle> articleCache = new ConcurrentHashMap<>();
 
+    /**
+     * Rate-limit circuit breaker. A comment-heavy cluster fans out into dozens of
+     * per-subject searches; once Yahoo answers one with 429 it will 429 the rest,
+     * so the first 429 OPENS the breaker and every subsequent Yahoo call
+     * short-circuits (no HTTP) until the cooldown passes. The caller is told via
+     * {@link SearchResult#rateLimited()} so it can SKIP the subject (retry on next
+     * evidence) rather than cement a wrong tickerless unit — and we never cascade
+     * 48 more 429s. {@code 0} = closed.
+     */
+    private static final long RATE_LIMIT_COOLDOWN_SECONDS = 90;
+    private volatile long rateLimitedUntil = 0L;
+
+    private boolean breakerOpen() {
+        return Instant.now().getEpochSecond() < rateLimitedUntil;
+    }
+
+    /** Yahoo status codes that mean "back off", not "not found". */
+    private static boolean isRateLimitStatus(int code) {
+        return code == 429 || code == 503 || code == 999;
+    }
+
+    private void tripBreaker(String what, int code) {
+        rateLimitedUntil = Instant.now().getEpochSecond() + RATE_LIMIT_COOLDOWN_SECONDS;
+        LOG.warn("Yahoo {} → HTTP {}; opening rate-limit breaker for {}s (skipping further Yahoo calls)",
+                what, code, RATE_LIMIT_COOLDOWN_SECONDS);
+    }
+
     public YahooFinanceClient() {
         this(10, 120);
     }
@@ -190,6 +217,12 @@ public class YahooFinanceClient {
             return cached.result;
         }
 
+        // Breaker open from a recent 429 → don't even try; tell the caller so it
+        // skips this subject rather than treating it as "no ticker".
+        if (breakerOpen()) {
+            return SearchResult.throttled();
+        }
+
         if (!online.isReachable()) {
             LOG.debug("Offline — skipping Yahoo search '{}'", trimmed);
             return SearchResult.empty();
@@ -214,6 +247,10 @@ public class YahooFinanceClient {
 
             HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
             if (resp.statusCode() != 200) {
+                if (isRateLimitStatus(resp.statusCode())) {
+                    tripBreaker("search '" + trimmed + "'", resp.statusCode());
+                    return SearchResult.throttled();
+                }
                 LOG.warn("Yahoo search '{}' returned HTTP {}", trimmed, resp.statusCode());
                 return SearchResult.empty();
             }
@@ -273,6 +310,7 @@ public class YahooFinanceClient {
             return Optional.ofNullable(cached.snapshot);
         }
 
+        if (breakerOpen()) return Optional.empty();
         if (!online.isReachable()) {
             LOG.debug("Offline — skipping Yahoo chart '{}'", sym);
             return Optional.empty();
@@ -292,7 +330,8 @@ public class YahooFinanceClient {
 
             HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
             if (resp.statusCode() != 200) {
-                LOG.warn("Yahoo chart '{}' returned HTTP {}", sym, resp.statusCode());
+                if (isRateLimitStatus(resp.statusCode())) tripBreaker("chart '" + sym + "'", resp.statusCode());
+                else LOG.warn("Yahoo chart '{}' returned HTTP {}", sym, resp.statusCode());
                 return Optional.empty();
             }
 
@@ -339,7 +378,7 @@ public class YahooFinanceClient {
                 misses.add(sym);
             }
         }
-        if (misses.isEmpty() || !online.isReachable()) return out;
+        if (misses.isEmpty() || breakerOpen() || !online.isReachable()) return out;
 
         List<String> miss = new ArrayList<>(misses);
         int sparkHits = 0, fellBack = 0;
@@ -378,7 +417,8 @@ public class YahooFinanceClient {
                     .build();
             HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
             if (resp.statusCode() != 200) {
-                LOG.warn("Yahoo spark batch returned HTTP {}", resp.statusCode());
+                if (isRateLimitStatus(resp.statusCode())) tripBreaker("spark batch", resp.statusCode());
+                else LOG.warn("Yahoo spark batch returned HTTP {}", resp.statusCode());
                 return out;
             }
             for (MarketSnapshot s : parseSpark(resp.body())) {
@@ -587,7 +627,7 @@ public class YahooFinanceClient {
             }
             return new SearchResult(
                     Collections.unmodifiableList(quotes),
-                    Collections.unmodifiableList(news));
+                    Collections.unmodifiableList(news), false);
         } catch (Exception e) {
             LOG.warn("Failed to parse Yahoo search response: {}", e.getMessage());
             return SearchResult.empty();
@@ -725,9 +765,14 @@ public class YahooFinanceClient {
      * exposed together because the endpoint returns them in one response;
      * splitting into two methods would double the round-trips.
      */
-    public record SearchResult(List<YahooQuote> quotes, List<YahooNewsItem> news) {
+    public record SearchResult(List<YahooQuote> quotes, List<YahooNewsItem> news, boolean rateLimited) {
         public static SearchResult empty() {
-            return new SearchResult(List.of(), List.of());
+            return new SearchResult(List.of(), List.of(), false);
+        }
+
+        /** Yahoo is rate-limiting (or the breaker is open) — distinct from "found nothing". */
+        public static SearchResult throttled() {
+            return new SearchResult(List.of(), List.of(), true);
         }
     }
 
