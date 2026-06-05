@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="/css/titlebar.css">
   <link rel="stylesheet" href="/css/widgets.css">
   <link rel="stylesheet" href="/css/footer.css">
+  <link rel="stylesheet" href="/css/donate.css">
 </head>
 <body>
 <div class="app">
@@ -36,6 +37,13 @@
          controls so the chrome looks symmetric. Icon swaps to a moon
          in light theme / sun in dark theme via CSS. -->
     <div class="tb-actions">
+      <!-- Persistent donate "door": always visible (independent of the 12h
+           gate), outline that fills + beats on hover, click opens the donate
+           page. Pulses as a hint while the footer banner is active. -->
+      <a class="iconbtn heart-btn" data-donate href="https://wsbg.app/donate"
+         target="_blank" rel="noopener" title="WSBG unterstützen" aria-label="WSBG unterstützen">
+        <svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+      </a>
       <button class="iconbtn js-theme-toggle" title="Theme umschalten" aria-label="Toggle theme">
         <svg class="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
         <svg class="icon-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
@@ -79,6 +87,12 @@
         <div class="ad-inner"></div>
       </div>
     </div>
+    <!-- Donate heart for Linux, where the HTML titlebar (its usual home) is
+         hidden. Mirrors the footer theme toggle's platform visibility. -->
+    <a class="iconbtn heart-btn footer-heart" data-donate href="https://wsbg.app/donate"
+       target="_blank" rel="noopener" title="WSBG unterstützen" aria-label="WSBG unterstützen">
+      <svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+    </a>
     <!-- Theme toggle lives here on Win/Linux, where the HTML titlebar
          (its usual home) is hidden in favour of the native OS title bar.
          Hidden on macOS via CSS — there it stays in the titlebar. -->

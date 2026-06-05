@@ -25,9 +25,27 @@ public class UserConfig {
     @Comment("Timestamp of the first start")
     private long firstStartTimestamp = 0;
 
-    @Key("open-minutes")
-    @Comment("Total time spent in the software (in minutes)")
-    private long openMinutes = 0;
+    @Key("active-millis")
+    @Comment("Accurate cumulative time the app has been open (milliseconds), "
+            + "measured by TimeTracker from start/interval/stop timestamp deltas "
+            + "(not tick-counted, so it survives crashes and ignores machine sleep). "
+            + "Drives when the footer donation banner first appears.")
+    private long activeMillis = 0;
+
+    @Key("donation-unlock-hours")
+    @Comment("Hours of cumulative active time before the footer donation banner "
+            + "is shown (default: 12). New users aren't asked to donate until the "
+            + "terminal has plausibly paid off. Set to 0 to show it immediately. "
+            + "(The persistent heart icon is always visible regardless; this only "
+            + "gates the active nudge layer — the rotating footer banner.)")
+    private double donationUnlockHours = 12.0;
+
+    @Key("donation-snooze-until")
+    @Comment("Epoch millis until which the active donation nudge layer (the "
+            + "rotating footer banner) stays suppressed. Set when the user clicks "
+            + "the donate heart or dismisses the banner — engagement earns a long "
+            + "cooldown. 0 = not snoozed. The heart icon stays visible throughout.")
+    private long donationSnoozeUntil = 0;
 
     @Key("scroll-speed")
     @Comment("Mouse/trackpad scroll speed inside the terminal: pixels per OS "
@@ -96,11 +114,27 @@ public class UserConfig {
         this.firstStartTimestamp = firstStartTimestamp;
     }
 
-    public long getOpenMinutes() {
-        return openMinutes;
+    public long getActiveMillis() {
+        return activeMillis;
     }
 
-    public void setOpenMinutes(long openMinutes) {
-        this.openMinutes = openMinutes;
+    public void setActiveMillis(long activeMillis) {
+        this.activeMillis = activeMillis;
+    }
+
+    public double getDonationUnlockHours() {
+        return donationUnlockHours;
+    }
+
+    public void setDonationUnlockHours(double donationUnlockHours) {
+        this.donationUnlockHours = donationUnlockHours;
+    }
+
+    public long getDonationSnoozeUntil() {
+        return donationSnoozeUntil;
+    }
+
+    public void setDonationSnoozeUntil(long donationSnoozeUntil) {
+        this.donationSnoozeUntil = donationSnoozeUntil;
     }
 }

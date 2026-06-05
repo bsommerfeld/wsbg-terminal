@@ -1,0 +1,38 @@
+/* Donate heart — the persistent "door".
+   Built on .iconbtn so it matches the theme toggle exactly (size, colour
+   var(--mute), 1.6 stroke, fill:none). Only heart-specific behaviour lives
+   here: NO hover glow/colour-lift — the only feedback is a quick heartbeat;
+   a steadier, calmer beat runs while the gated footer banner is on-screen,
+   as a hint linking the two. The `beat` keyframes are defined in footer.css. */
+
+/* Sit snug next to the theme toggle (trim the shared flex gap a touch). */
+.heart-btn {
+  margin-inline-end: -3px;
+  text-decoration: none;
+}
+.heart-btn svg path {
+  transition: fill .2s ease, stroke .2s ease;
+}
+
+/* Suppress only the iconbtn hover glow (the background box). On hover the heart
+   fills red and beats a little quicker — no box glow behind it. */
+.heart-btn:hover {
+  background: none;
+}
+.heart-btn:hover svg path {
+  fill: var(--red);
+  stroke: var(--red);
+}
+.heart-btn:hover svg {
+  animation: beat 1.1s ease-in-out infinite;
+}
+
+/* Hint: the footer banner is on-screen → a steady, calmer beat draws a glance
+   toward the donate door without changing colour. */
+.heart-btn.hint svg {
+  animation: beat 1.4s ease-in-out infinite;
+}
+
+/* Linux-only footer heart: mirror the footer theme toggle's visibility. */
+.footer-heart { display: none; }
+html[data-platform="other"] .footer-heart { display: inline-flex; }

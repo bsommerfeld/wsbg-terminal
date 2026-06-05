@@ -116,7 +116,7 @@ public final class AppMain {
         safeStop(() -> injector.getInstance(RedditRepository.class).shutdown(), "RedditRepository");
         safeStop(() -> injector.getInstance(AgentRepository.class).shutdown(), "AgentRepository");
         safeStop(() -> injector.getInstance(OllamaServerManager.class).shutdown(), "OllamaServerManager");
-        safeStop(() -> injector.getInstance(UserSessionTracker.class).shutdown(), "UserSessionTracker");
+        safeStop(() -> injector.getInstance(TimeTracker.class).shutdown(), "TimeTracker");
         safeStop(() -> injector.getInstance(PushHub.class).stop(), "PushHub");
         safeStop(() -> injector.getInstance(AssetServer.class).stop(), "AssetServer");
         safeStop(SingleInstance::release, "SingleInstance");

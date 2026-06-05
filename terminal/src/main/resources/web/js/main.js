@@ -5,6 +5,8 @@ import { Socket } from './bridge/socket.js';
 import { initTitlebar } from './chrome/titlebar.js';
 import { initTheme } from './chrome/theme.js';
 import { initFooter } from './chrome/footer.js';
+import { setDonationAdEnabled } from './chrome/slider.js';
+import { initDonate } from './chrome/donate.js';
 import { initKeyboardCopy } from './chrome/copy-fx.js';
 import { renderHeadlines } from './widgets/reddit.js';
 import { renderFjNews } from './widgets/financial-juice.js';
@@ -60,9 +62,16 @@ socket.on('reddit-status', payload => {
   if (live) live.textContent = state === 'DEGRADED' ? 'Defekt' : 'Live';
 });
 
+// Donation gate: the footer ad only joins the slide rotation once the backend
+// TimeTracker reports enough cumulative active time (~12 h). Payload: { unlocked }.
+socket.on('donation-gate', payload => {
+  setDonationAdEnabled(!!(payload && payload.unlocked));
+});
+
 initTheme();
 initTitlebar(socket);
 initFooter();
+initDonate(socket);
 initKeyboardCopy();
 
 socket.connect();

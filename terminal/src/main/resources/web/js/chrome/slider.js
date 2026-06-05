@@ -1,11 +1,16 @@
 // 3-position state machine: slides only ever travel right → center → left.
 //
-// Visible: 5 min for the markets strip, 30 s for the donate ad.
-// First demo swap fires 15 s after load so the cycle is visible
-// without waiting for the full 5-minute window.
+// The markets strip is the default; the donate banner is the gated, rotated-in
+// slide. Once unlocked (12 h gate, see main.js), the banner is shown sparingly:
+// capped to AD_CAP impressions per session and with a markets gap that *widens*
+// each time, so a terminal left open all day thins the banner out instead of
+// nagging every 5 minutes. Hovering the footer holds whatever slide is up.
 
-const MARKETS_MS = 5 * 60 * 1000;
-const AD_MS      = 30 * 1000;
+const BASE_MARKETS_MS = 5 * 60 * 1000;   // markets gap before the first banner
+const MAX_MARKETS_MS  = 40 * 60 * 1000;  // ceiling for the widening gap
+const AD_MS           = 30 * 1000;       // banner visible window
+const AD_CAP          = 4;               // max banner impressions per session
+const WIDEN_FACTOR    = 2;               // each successive markets gap doubles
 
 // Preset glyphs. The CSS class drives any animation (.heart beats, .star spins).
 const ICONS = {
@@ -38,6 +43,22 @@ const AD_MESSAGES = [
   },
 ];
 
+// Donation gate: the ad slide stays out of the rotation until the backend
+// (TimeTracker) reports enough cumulative active time (~12 h) AND no snooze is
+// active. Defaults to false so a fresh user never sees the donation banner
+// before the gate message arrives. Flipped by setDonationAdEnabled() from the
+// 'donation-gate' socket handler in main.js.
+let adEnabled = false;
+let hovered = false;   // pointer over the footer → hold the current slide
+let adShown = 0;       // banner impressions this session (frequency cap)
+export function setDonationAdEnabled(on) { adEnabled = !!on; }
+
+// Markets gap before the next banner, widening with each impression so the
+// banner thins out over a long session instead of reappearing every 5 minutes.
+function marketsWindow() {
+  return Math.min(MAX_MARKETS_MS, BASE_MARKETS_MS * Math.pow(WIDEN_FACTOR, adShown));
+}
+
 let lastAdIndex = -1;
 function pickAdMessage() {
   if (AD_MESSAGES.length <= 1) return AD_MESSAGES[0];
@@ -66,6 +87,7 @@ function renderAd(host, msg) {
     a.href = msg.link.href;
     a.target = '_blank';
     a.rel = 'noopener';
+    a.dataset.donate = '';   // engaging the banner link snoozes the nudge layer
     a.textContent = msg.link.label;
     const arrow = document.createElement('span');
     arrow.className = 'arrow';
@@ -85,10 +107,16 @@ export function initSlideCycle() {
   // the swap path before the first rotation.
   renderAd(adInner, pickAdMessage());
 
-  // Markets are visible from launch for the full 5-minute window —
-  // no short preview swap, the ad first appears 5 min after start.
+  // Pause-on-hover: holding the pointer over the footer freezes whatever
+  // slide is up, so a noticed banner doesn't slide away mid-read.
+  const feed = document.getElementById('feed') || markets.parentElement;
+  feed?.addEventListener('mouseenter', () => { hovered = true; });
+  feed?.addEventListener('mouseleave', () => { hovered = false; });
+
+  // Markets are visible from launch for the full first window — no short
+  // preview swap, the banner first appears one markets gap after start.
   let visible = 'markets';
-  let timer = setTimeout(swap, MARKETS_MS);
+  let timer = setTimeout(swap, marketsWindow());
 
   function snap(el, pos) {
     el.classList.remove('animate');
@@ -100,7 +128,27 @@ export function initSlideCycle() {
     el.classList.add('animate');
     el.dataset.pos = pos;
   }
+  // Tell the rest of the page (the donate heart) when the banner is on-screen,
+  // so it can pulse as a hint while the banner runs.
+  function fireAdVisibility(on) {
+    window.dispatchEvent(new CustomEvent('wsbg:ad-visibility', { detail: { visible: on } }));
+  }
   function swap() {
+    // Hold the current slide while the user is hovering the footer; re-check
+    // shortly instead of advancing.
+    if (hovered) {
+      clearTimeout(timer);
+      timer = setTimeout(swap, 1000);
+      return;
+    }
+    // Donation gate + frequency cap: while locked, or once this session's
+    // banner quota is spent, keep the markets strip up and re-arm with the
+    // (widening) markets window.
+    if (visible === 'markets' && (!adEnabled || adShown >= AD_CAP)) {
+      clearTimeout(timer);
+      timer = setTimeout(swap, marketsWindow());
+      return;
+    }
     const incoming = visible === 'markets' ? ad : markets;
     const outgoing = visible === 'markets' ? markets : ad;
     // Rotate the ad copy right before it snaps off-screen-right, so
@@ -111,8 +159,12 @@ export function initSlideCycle() {
       move(outgoing, 'left');
       move(incoming, 'center');
     }, 20);
+
+    if (incoming === ad) { adShown++; fireAdVisibility(true); }
+    else { fireAdVisibility(false); }
+
     visible = visible === 'markets' ? 'ad' : 'markets';
     clearTimeout(timer);
-    timer = setTimeout(swap, visible === 'markets' ? MARKETS_MS : AD_MS);
+    timer = setTimeout(swap, visible === 'markets' ? marketsWindow() : AD_MS);
   }
 }

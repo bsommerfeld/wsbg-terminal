@@ -23,8 +23,9 @@ import de.bsommerfeld.wsbg.terminal.reddit.RedditSource;
 import de.bsommerfeld.wsbg.terminal.reddit.RssRedditScraper;
 import de.bsommerfeld.wsbg.terminal.reddit.TestRedditScraper;
 import de.bsommerfeld.wsbg.terminal.reddit.TokenBucketRateLimiter;
-import de.bsommerfeld.wsbg.terminal.ui.UserSessionTracker;
+import de.bsommerfeld.wsbg.terminal.ui.TimeTracker;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.CommandBridge;
+import de.bsommerfeld.wsbg.terminal.ui.bridge.DonationGatePublisher;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.EurUsdPublisher;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.FjNewsPublisher;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.HeadlinePublisher;
@@ -77,7 +78,10 @@ public class AppModule extends AbstractModule {
             bind(AgentCoordinator.class).asEagerSingleton();
             bind(ClusterRebalancer.class).asEagerSingleton();
             bind(PassiveMonitorService.class).asEagerSingleton();
-            bind(UserSessionTracker.class).asEagerSingleton();
+            // TimeTracker must be eager so it starts its start/interval/stop
+            // checkpointing at boot; DonationGatePublisher reads it to gate the
+            // footer donation banner.
+            bind(TimeTracker.class).asEagerSingleton();
 
             // Publishers must be eager so they subscribe to the event bus
             // / hub before any data flows. CommandBridge wires inbound
@@ -86,6 +90,7 @@ public class AppModule extends AbstractModule {
             bind(FjNewsPublisher.class).asEagerSingleton();
             bind(MarketHoursPublisher.class).asEagerSingleton();
             bind(RedditHealthPublisher.class).asEagerSingleton();
+            bind(DonationGatePublisher.class).asEagerSingleton();
             // EurUsdMonitorService must come before EurUsdPublisher so the
             // publisher can register its listener against a running poll loop.
             bind(EurUsdMonitorService.class).asEagerSingleton();
