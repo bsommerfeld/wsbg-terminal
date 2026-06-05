@@ -72,4 +72,22 @@ class TickerResolverTest {
         List<YahooQuote> quotes = List.of(q("ALV.DE", "ALLIANZ", "GER", "EQUITY"));
         assertNull(TickerResolver.strongMatch("Tesla", quotes));
     }
+
+    @Test
+    void singleTokenQueryMatchesDotComSuffixName() {
+        // "Amazon" → "Amazon.com, Inc.": the glued ".com" must not break the strict
+        // single-token match — "com" is a generic suffix like inc/corp. Regression:
+        // Amazon used to fall through to a name-only unit with no ticker.
+        List<YahooQuote> quotes = List.of(q("AMZN", "Amazon.com, Inc.", "NMS", "EQUITY"));
+        assertEquals("AMZN", TickerResolver.strongMatch("Amazon", quotes).symbol());
+    }
+
+    @Test
+    void strictSingleTokenStillRejectsFuzzyExtraWord() {
+        // The guard the strict mode exists for must survive the "com" relaxation:
+        // a single-token query must NOT match a firm whose name merely contains the
+        // token among real, distinguishing words.
+        List<YahooQuote> quotes = List.of(q("RMO", "Rheiner Management AG", "GER", "EQUITY"));
+        assertNull(TickerResolver.strongMatch("Rheiner", quotes));
+    }
 }

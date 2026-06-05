@@ -75,7 +75,11 @@ public final class TickerResolver {
     private static final int RELATED_NEWS_COUNT = 2;
 
     private static final Set<String> STOP_TOKENS = Set.of(
-            "inc", "incorporated", "corp", "corporation", "co", "company",
+            // "com" is the dotcom suffix glued onto a name ("Amazon.com",
+            // "Salesforce.com", "Booking.com") — generic, like inc/corp, never a
+            // distinguishing token. Without it a single-token query ("Amazon")
+            // fails the strict match against "Amazon.com, Inc." and loses its ticker.
+            "inc", "incorporated", "corp", "corporation", "co", "com", "company",
             "ag", "se", "kgaa", "gmbh", "ltd", "limited", "plc", "sa", "nv",
             "aktiengesellschaft", "kommanditgesellschaft", "gesellschaft",
             "the", "and",
