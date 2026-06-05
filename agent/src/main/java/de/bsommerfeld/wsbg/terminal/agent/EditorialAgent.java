@@ -12,6 +12,8 @@ import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
 import de.bsommerfeld.wsbg.terminal.core.i18n.I18nService;
 import de.bsommerfeld.wsbg.terminal.db.AgentRepository;
 import de.bsommerfeld.wsbg.terminal.db.AgentRepository.HeadlineRecord;
+import de.bsommerfeld.wsbg.terminal.core.domain.RedditComment;
+import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
 import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooFinanceClient;
 import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooNewsItem;
@@ -28,8 +30,10 @@ import org.slf4j.LoggerFactory;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.Set;
@@ -73,9 +77,19 @@ public class EditorialAgent {
     private static final int RELATED_BUDGET = 24;
     private static final int RELATED_PER_SUBJECT = 4;
 
+    /**
+     * When a cluster carries more than this many comments, subject extraction is
+     * run in batches of this size and the names unioned — a long single brief made
+     * the 4B model emit a malformed/truncated subjects array (or overrun num_ctx),
+     * losing the whole thread. Smaller batches keep each output array short and
+     * reliable; no comment is dropped (every batch is extracted, names deduped).
+     */
+    private static final int EXTRACT_CHUNK_SIZE = 25;
+
     private final AgentBrain brain;
     private final ClusterRegistry clusterRegistry;
     private final AgentRepository agentRepository;
+    private final RedditRepository redditRepository;
     private final ReportBuilder reportBuilder;
     private final TickerResolver tickerResolver;
     private final HeadlineWriter headlineWriter;
@@ -90,6 +104,7 @@ public class EditorialAgent {
         this.brain = brain;
         this.clusterRegistry = clusterRegistry;
         this.agentRepository = agentRepository;
+        this.redditRepository = redditRepository;
         this.reportBuilder = new ReportBuilder(redditRepository, brain);
         this.tickerResolver = new TickerResolver(yahooFinance);
         this.headlineWriter = new HeadlineWriter(agentRepository, eventBus);
@@ -109,7 +124,7 @@ public class EditorialAgent {
         if (model == null || cluster == null) return List.of();
 
         String brief = reportBuilder.buildReportData(cluster, agentRepository.getHeadlinesByClusterId(clusterId));
-        Subjects subjects = extractSubjects(model, brief);
+        Subjects subjects = extractSubjects(model, cluster, brief);
         int[] relatedAlloc = distributeRelated(subjects.names().size(), RELATED_BUDGET, RELATED_PER_SUBJECT);
         List<ResolvedSubject> resolved = tickerResolver.resolveAll(subjects.names(), relatedAlloc);
         attributor.attribute(registry, cluster, resolved);
@@ -293,7 +308,7 @@ public class EditorialAgent {
 
         // Stage 1 — subjects (slang-normalised for lookup). Uncapped.
         long t0 = System.nanoTime();
-        Subjects subjects = extractSubjects(model, brief);
+        Subjects subjects = extractSubjects(model, cluster, brief);
         long t1 = System.nanoTime();
         List<String> names = subjects.names();
         listener.onSubjects(names, subjects.raw(), ms(t0, t1));
@@ -398,12 +413,45 @@ public class EditorialAgent {
 
     // ---- Stage 1: subject extraction ----
 
-    private Subjects extractSubjects(ChatModel model, String brief) {
+    private Subjects extractSubjects(ChatModel model, InvestigationCluster cluster, String brief) {
         String sys = PromptLoader.load("subject-extraction")
                 .replace("{{ENTITY_ALIASES}}", WsbgJargon.entityAliasesForPrompt());
-        String text = chat(model, sys, brief);
-        JsonNode root = parseJson(text);
+
+        int comments = countComments(cluster);
+        if (comments <= EXTRACT_CHUNK_SIZE) {
+            // Common path, unchanged: one call over the full rich brief (vision,
+            // poll, covered-split all intact).
+            String text = chat(model, sys, brief);
+            List<String> out = parseSubjectNames(text);
+            if (out.isEmpty()) {
+                String raw = text == null ? "" : text.strip();
+                LOG.warn("[EXTRACT] 0 subjects — brief={} chars (~{} tok), system={} chars; raw reply: {}",
+                        brief.length(), brief.length() / 4, sys.length(),
+                        raw.length() > 400 ? raw.substring(0, 400) + "…" : raw);
+            }
+            return new Subjects(out, out.size(), text);
+        }
+
+        // Many comments → batch the extraction so each output array stays short
+        // and reliable, then union the names. No comment is dropped.
+        List<String> chunks = commentChunks(cluster, EXTRACT_CHUNK_SIZE);
+        Map<String, String> union = new LinkedHashMap<>(); // lower-case key → first-seen spelling
+        for (String chunk : chunks) {
+            String text = chat(model, sys, chunk);
+            for (String name : parseSubjectNames(text)) {
+                union.putIfAbsent(name.toLowerCase(Locale.ROOT), name);
+            }
+        }
+        LOG.info("[EXTRACT] chunked {} comments into {} batch(es) → {} unique subject(s)",
+                comments, chunks.size(), union.size());
+        List<String> names = new ArrayList<>(union.values());
+        return new Subjects(names, names.size(), "<chunked: " + chunks.size() + " batch(es)>");
+    }
+
+    /** Strict parse of the subjects array, with a salvage pass for a broken/truncated reply. */
+    private List<String> parseSubjectNames(String text) {
         List<String> out = new ArrayList<>();
+        JsonNode root = parseJson(text);
         if (root != null && root.path("subjects").isArray()) {
             for (JsonNode s : root.path("subjects")) {
                 String name = s.asText("").trim();
@@ -411,23 +459,67 @@ public class EditorialAgent {
             }
         }
         if (out.isEmpty()) {
-            // The 4B model occasionally emits a malformed subjects array (a long
-            // array is exactly where it degenerates — same reason composeOne is
-            // per-subject). A strict parse then loses EVERY name. Salvage the
-            // quoted names from the raw reply so a broken array isn't total loss.
+            // The 4B model occasionally emits a malformed/truncated subjects array
+            // (long arrays are where it degenerates) → recover whatever names came
+            // through intact rather than losing the whole batch.
             List<String> salvaged = salvageSubjectNames(text);
             if (!salvaged.isEmpty()) {
-                LOG.warn("[EXTRACT] strict parse failed, salvaged {} subject name(s) from a broken reply",
-                        salvaged.size());
+                LOG.warn("[EXTRACT] strict parse failed, salvaged {} subject name(s)", salvaged.size());
                 out.addAll(salvaged);
-            } else {
-                String raw = text == null ? "" : text.strip();
-                LOG.warn("[EXTRACT] 0 subjects — brief={} chars (~{} tok), system={} chars; raw reply: {}",
-                        brief.length(), brief.length() / 4, sys.length(),
-                        raw.length() > 400 ? raw.substring(0, 400) + "…" : raw);
             }
         }
-        return new Subjects(out, out.size(), text);
+        return out;
+    }
+
+    private int countComments(InvestigationCluster cluster) {
+        int n = 0;
+        for (String tid : cluster.activeThreadIds) {
+            n += redditRepository.getCommentsForThread(tid, 0).size();
+        }
+        return n;
+    }
+
+    /**
+     * Splits the cluster's comments into batches of {@code perChunk}, each prefixed
+     * with the same thread-title/body preamble so every batch carries enough
+     * context to name subjects. Comment-derived only (the rich brief's vision/poll
+     * niceties matter far less on a thread big enough to need batching, which is by
+     * definition a comment-heavy text thread).
+     */
+    private List<String> commentChunks(InvestigationCluster cluster, int perChunk) {
+        StringBuilder preamble = new StringBuilder("THREADS IN THIS CLUSTER:\n");
+        List<String> lines = new ArrayList<>();
+        for (String tid : cluster.activeThreadIds) {
+            RedditThread t = redditRepository.getThread(tid);
+            if (t == null) continue;
+            preamble.append("- ").append(oneLine(t.title()));
+            if (t.textContent() != null && !t.textContent().isBlank()) {
+                preamble.append(" — ").append(oneLine(t.textContent()));
+            }
+            preamble.append('\n');
+            for (RedditComment c : redditRepository.getCommentsForThread(tid, 0)) {
+                if (c.body() == null || c.body().isBlank()) continue;
+                lines.add("- " + oneLine(c.body()));
+            }
+        }
+        List<String> chunks = new ArrayList<>();
+        if (lines.isEmpty()) {
+            chunks.add(preamble.toString());
+            return chunks;
+        }
+        for (int i = 0; i < lines.size(); i += perChunk) {
+            StringBuilder sb = new StringBuilder(preamble);
+            sb.append("\nCOMMENTS (batch ").append(chunks.size() + 1).append("):\n");
+            for (int j = i; j < Math.min(i + perChunk, lines.size()); j++) {
+                sb.append(lines.get(j)).append('\n');
+            }
+            chunks.add(sb.toString());
+        }
+        return chunks;
+    }
+
+    private static String oneLine(String s) {
+        return s == null ? "" : s.replace('\n', ' ').replace('\r', ' ').strip();
     }
 
     /** Stage-1 output: the named subjects (uncapped), their count, and the raw reply. */
