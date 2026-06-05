@@ -70,6 +70,12 @@ public class ClusterRegistry {
         dirtyClusterIds.remove(id);
     }
 
+    /** Drops every cluster. Used by the editorial-lab "Reset" action. */
+    public void clear() {
+        byId.clear();
+        dirtyClusterIds.clear();
+    }
+
     public boolean contains(InvestigationCluster cluster) {
         return cluster != null && byId.get(cluster.id) == cluster;
     }

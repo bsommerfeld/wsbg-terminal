@@ -42,7 +42,14 @@ import java.util.Set;
 public final class TickerResolver {
 
     private static final Logger LOG = LoggerFactory.getLogger(TickerResolver.class);
-    private static final int MAX_QUOTES = 3;
+    /**
+     * How many quote candidates to pull from the (single) search response.
+     * Larger than the old 3 so the exchange-preference in {@link #strongMatch}
+     * has the primary listing to choose from — e.g. {@code MUV2.DE} may sit
+     * behind a foreign secondary line ({@code 1MUV2.MI}) in Yahoo's order.
+     * Load-neutral: these come back in the same search call, no extra request.
+     */
+    private static final int MAX_QUOTES = 8;
     /**
      * How many Yahoo news items to carry per subject. Kept moderate not for any
      * technical limit (the search endpoint returns them in the same response, so
@@ -87,10 +94,24 @@ public final class TickerResolver {
     }
 
     /**
-     * Resolves a single subject name. Never throws — any Yahoo failure
-     * degrades to a {@code nothing} result so the headline still publishes.
+     * Resolves a single subject name, including the second-hop related
+     * instruments. Convenience overload — equivalent to
+     * {@code resolve(subjectName, true)}.
      */
     public ResolvedSubject resolve(String subjectName) {
+        return resolve(subjectName, true);
+    }
+
+    /**
+     * Resolves a single subject name. Never throws — any Yahoo failure
+     * degrades to a {@code nothing} result so the headline still publishes.
+     *
+     * @param withRelated when {@code false}, the expensive second-hop
+     *                    ({@code relatedTickers} → chart + news per related) is
+     *                    skipped. Used to cap Yahoo load when a cluster names
+     *                    many subjects: only the first few resolve with related.
+     */
+    public ResolvedSubject resolve(String subjectName, boolean withRelated) {
         String query = subjectName == null ? "" : subjectName.trim();
         if (query.isEmpty() || yahoo == null) {
             return new ResolvedSubject(query, query, null, null, List.of(), List.of());
@@ -100,7 +121,8 @@ public final class TickerResolver {
             List<YahooNewsItem> news = sr.news() != null ? sr.news() : List.of();
             YahooQuote strong = strongMatch(query, sr.quotes());
             String ownTicker = strong == null ? null : strong.symbol();
-            List<RelatedInstrument> related = resolveRelated(news, ownTicker);
+            List<RelatedInstrument> related = withRelated
+                    ? resolveRelated(news, ownTicker) : List.of();
             if (strong == null) {
                 // Theme/person (news-only) — still carries the instruments its
                 // news is about, so the desk can read a causal chain.
@@ -146,23 +168,68 @@ public final class TickerResolver {
         return out;
     }
 
-    /** Returns the first quote that confidently matches the query, or null. */
-    private static YahooQuote strongMatch(String query, List<YahooQuote> quotes) {
+    /**
+     * Returns the <em>preferred</em> quote among those that confidently match
+     * the query, or null. Unchanged match test (token overlap + single-token
+     * strict mode + exact-symbol), but instead of taking the FIRST match we
+     * collect all matches and pick the primary/most-relevant listing via
+     * {@link #preferenceRank} — so a foreign secondary line ({@code 1MUV2.MI})
+     * no longer beats the home listing ({@code MUV2.DE}) just by appearing first.
+     * Package-private for unit testing.
+     */
+    static YahooQuote strongMatch(String query, List<YahooQuote> quotes) {
         if (quotes == null || quotes.isEmpty()) return null;
         Set<String> queryTokens = tokenize(query);
         boolean strictSingleToken = queryTokens.size() == 1;
-        for (YahooQuote q : quotes) {
-            double sim = bestSimilarity(queryTokens, q);
-            boolean strong = sim >= STRONG_MATCH_THRESHOLD;
+
+        YahooQuote best = null;
+        int bestRank = Integer.MAX_VALUE;
+        for (int i = 0; i < quotes.size(); i++) {
+            YahooQuote q = quotes.get(i);
+            boolean exactSymbol = q.symbol() != null && query.equalsIgnoreCase(q.symbol());
+            boolean strong = bestSimilarity(queryTokens, q) >= STRONG_MATCH_THRESHOLD;
             if (strong && strictSingleToken && !hasOnlyQueryTokens(queryTokens, q)) {
                 strong = false;
             }
-            if (!strong && query.equalsIgnoreCase(q.symbol())) {
-                strong = true;
+            if (exactSymbol) strong = true;
+            if (!strong) continue;
+
+            int rank = preferenceRank(q, i, exactSymbol);
+            if (rank < bestRank) {
+                bestRank = rank;
+                best = q;
             }
-            if (strong) return q;
         }
-        return null;
+        return best;
+    }
+
+    /** Yahoo exchange codes for OTC / grey-market venues — deprioritised. */
+    private static final Set<String> OTC_EXCHANGES =
+            Set.of("PNK", "OTC", "OQB", "OQX", "OTCBB", "OTCQ");
+
+    /**
+     * Preference among name matches — <b>lower is better</b>. No brittle
+     * exchange whitelist; ranks on reliable, language-neutral signals:
+     * <ul>
+     *   <li>an <b>exact symbol</b> match wins outright (the subject WAS a ticker);</li>
+     *   <li><b>numeric-prefixed symbols</b> ({@code 1MUV2.MI}) are foreign
+     *       secondary listings on Borsa Italiana &amp; co. → heavy demotion;</li>
+     *   <li><b>OTC / grey-market</b> exchanges (PNK, …) → demotion;</li>
+     *   <li>real <b>EQUITY</b> mildly preferred over a same-name ETF/index (soft,
+     *       so an ETF still wins when it's the only/best match);</li>
+     *   <li>ties fall back to <b>Yahoo's own order</b> (≈ relevance).</li>
+     * </ul>
+     */
+    private static int preferenceRank(YahooQuote q, int yahooIndex, boolean exactSymbol) {
+        if (exactSymbol) return -1000 + yahooIndex;
+        int rank = yahooIndex; // Yahoo order is the baseline (≈ relevance)
+        String sym = q.symbol() == null ? "" : q.symbol();
+        if (!sym.isEmpty() && Character.isDigit(sym.charAt(0))) rank += 1000;
+        String exch = q.exchange() == null ? "" : q.exchange().trim().toUpperCase(Locale.ROOT);
+        if (OTC_EXCHANGES.contains(exch)) rank += 500;
+        String type = q.quoteType() == null ? "" : q.quoteType().trim().toUpperCase(Locale.ROOT);
+        if (!type.equals("EQUITY")) rank += 50;
+        return rank;
     }
 
     private static Set<String> tokenize(String s) {

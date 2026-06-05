@@ -15,10 +15,11 @@ public class YahooFinanceConfig {
     private int newsCount = 5;
 
     @Key("yahoo.cache-ttl-seconds")
-    @Comment("How long responses are cached in memory before re-fetching. Kept short "
-            + "so published prices stay near-live; just long enough to dedupe the "
-            + "repeated lookups within one editorial tick (search+chart, resolve+publish).")
-    private long cacheTtlSeconds = 60;
+    @Comment("How long responses are cached in memory before re-fetching. 120s so "
+            + "the dedupe survives a slow streaming editorial pass (one focused "
+            + "compose call per subject can stretch a cluster over minutes), while "
+            + "keeping published prices near-live.")
+    private long cacheTtlSeconds = 120;
 
     @Key("yahoo.request-timeout-seconds")
     @Comment("Per-request HTTP timeout when talking to Yahoo Finance endpoints.")

@@ -8,7 +8,6 @@ import de.bsommerfeld.wsbg.terminal.agent.AgentCoordinator;
 import de.bsommerfeld.wsbg.terminal.agent.ClusterRebalancer;
 import de.bsommerfeld.wsbg.terminal.agent.PassiveMonitorService;
 import de.bsommerfeld.wsbg.terminal.core.config.AgentConfig;
-import de.bsommerfeld.wsbg.terminal.core.config.ApplicationMode;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.core.config.RedditConfig;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
@@ -21,7 +20,6 @@ import de.bsommerfeld.wsbg.terminal.reddit.OAuthRedditTransport;
 import de.bsommerfeld.wsbg.terminal.reddit.RedditScraper;
 import de.bsommerfeld.wsbg.terminal.reddit.RedditSource;
 import de.bsommerfeld.wsbg.terminal.reddit.RssRedditScraper;
-import de.bsommerfeld.wsbg.terminal.reddit.TestRedditScraper;
 import de.bsommerfeld.wsbg.terminal.reddit.TokenBucketRateLimiter;
 import de.bsommerfeld.wsbg.terminal.ui.TimeTracker;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.CommandBridge;
@@ -65,9 +63,6 @@ public class AppModule extends AbstractModule {
 
             bind(GlobalConfig.class).toInstance(config);
             bind(AgentConfig.class).toInstance(config.getAgent());
-
-            ApplicationMode mode = ApplicationMode.get();
-            LOG.info("Application Mode initialized: {}", mode);
 
             // RedditSource is assembled in provideRedditSource() below — it
             // auto-selects a working path (OAuth → .json → RSS) at runtime, so
@@ -115,22 +110,17 @@ public class AppModule extends AbstractModule {
     }
 
     /**
-     * Builds the {@link RedditSource}. In TEST mode it's the synthetic scraper;
-     * otherwise it's a {@link FallbackRedditSource} that auto-selects a working
-     * path at runtime (OAuth → anonymous .json → RSS). The two JSON delegates
-     * share one repository but carry their own transport + rate limiter — OAuth
-     * gets the fast budget, anonymous .json the throttled one; RSS owns its own
-     * internally. Consumers only see {@link RedditSource} and never learn which
-     * path answered.
+     * Builds the {@link RedditSource}: a {@link FallbackRedditSource} that
+     * auto-selects a working path at runtime (OAuth → anonymous .json → RSS).
+     * The two JSON delegates share one repository but carry their own transport +
+     * rate limiter — OAuth gets the fast budget, anonymous .json the throttled
+     * one; RSS owns its own internally. Consumers only see {@link RedditSource}
+     * and never learn which path answered.
      */
     @Provides
     @Singleton
     RedditSource provideRedditSource(RedditRepository repository,
             ApplicationEventBus eventBus, GlobalConfig config) {
-        if (ApplicationMode.get() == ApplicationMode.TEST) {
-            LOG.info("Reddit source: TEST (synthetic data)");
-            return new TestRedditScraper(repository, config);
-        }
         RedditConfig rc = config.getReddit();
         String probeSub = rc.getSubreddits().isEmpty()
                 ? "wallstreetbetsGER" : rc.getSubreddits().get(0);

@@ -26,6 +26,18 @@ public final class ReportBuilder {
 
     private static final Logger LOG = LoggerFactory.getLogger(ReportBuilder.class);
 
+    /**
+     * Reddit handles carry zero content signal and actively hurt: a username
+     * like {@code NASX_Trader} gets mis-read by the subject extractor as a
+     * ticker ({@code $NASX}). So every author handle the model sees is masked.
+     * Sources are cited by comment ID ({@code t1_…}), never by name, so nothing
+     * is lost. The author field is replaced wholesale; {@code u/…} mentions
+     * inside comment/post text are scrubbed by {@link #stripHandles}.
+     */
+    private static final String ANON_AUTHOR = "[user]";
+    private static final java.util.regex.Pattern HANDLE =
+            java.util.regex.Pattern.compile("(?i)(?<![A-Za-z0-9])/?u/[A-Za-z0-9_-]{3,20}");
+
     private final RedditRepository repository;
     private final AgentBrain brain;
 
@@ -270,8 +282,15 @@ public final class ReportBuilder {
     private void appendTextSnippet(StringBuilder sb, String text) {
         if (text == null || text.isEmpty())
             return;
-        String snippet = text.length() > 500 ? text.substring(0, 500) + "..." : text;
+        String clean = stripHandles(text);
+        String snippet = clean.length() > 500 ? clean.substring(0, 500) + "..." : clean;
         sb.append("Content Snippet: ").append(snippet).append("\n");
+    }
+
+    /** Replaces {@code u/handle} / {@code /u/handle} mentions in free text with {@link #ANON_AUTHOR}. */
+    private static String stripHandles(String text) {
+        if (text == null || text.isEmpty()) return text;
+        return HANDLE.matcher(text).replaceAll(ANON_AUTHOR);
     }
 
     /**
@@ -319,16 +338,16 @@ public final class ReportBuilder {
         StringBuilder block = new StringBuilder();
         for (RedditComment c : ranked) {
             if (!coveredCommentIds.contains(c.id())) {
-                String body = c.body() != null ? c.body() : "[deleted]";
+                String body = stripHandles(c.body() != null ? c.body() : "[deleted]");
                 String scoreTag = c.score() < 0
                         ? "Score: " + c.score() + " — downvoted by the crowd"
                         : "Score: " + c.score();
                 block.append("- [").append(c.id()).append("] ");
-                block.append(c.author()).append(" (").append(scoreTag).append("): ")
+                block.append(ANON_AUTHOR).append(" (").append(scoreTag).append("): ")
                         .append(body).append("\n");
                 appendCommentImages(block, c, shown, false);
             } else if (hasUnshownCachedImage(c.imageUrls(), shown)) {
-                block.append("- [").append(c.id()).append("] ").append(c.author())
+                block.append("- [").append(c.id()).append("] ").append(ANON_AUTHOR)
                         .append(" [new image evidence since the last headline]:\n");
                 appendCommentImages(block, c, shown, true);
             }

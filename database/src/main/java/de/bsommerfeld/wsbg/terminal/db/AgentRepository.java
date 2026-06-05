@@ -135,6 +135,11 @@ public class AgentRepository {
         headlineCache.removeIf(h -> h.createdAt() < cutoff);
     }
 
+    /** Drops every stored headline. Used by the editorial-lab "Reset" action. */
+    public void clear() {
+        headlineCache.clear();
+    }
+
     /** Kept for API symmetry with the old persistent variant — no-op now. */
     public void shutdown() {
     }

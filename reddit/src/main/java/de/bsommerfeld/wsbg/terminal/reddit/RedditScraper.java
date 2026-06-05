@@ -84,8 +84,6 @@ import java.util.stream.Collectors;
  * A deep context fetch (expensive — one HTTP call + full comment tree parse)
  * is only triggered when the comment count has increased, avoiding redundant
  * network calls for threads that haven't changed.
- *
- * @see TestRedditScraper
  */
 @Singleton
 public class RedditScraper implements RedditSource {
@@ -178,11 +176,10 @@ public class RedditScraper implements RedditSource {
     }
 
     /**
-     * Convenience constructor for {@link TestRedditScraper} and any callers
-     * that don't need health-status events posted (tests, CLI tools). Uses the
-     * plain JDK transport. Production wiring goes through the
-     * {@link Inject @Inject} constructor, which receives the browser-backed
-     * transport.
+     * Convenience constructor for callers that don't need health-status events
+     * posted (tests, CLI tools). Uses the plain JDK transport. Production wiring
+     * goes through the {@link Inject @Inject} constructor, which receives the
+     * browser-backed transport.
      */
     public RedditScraper(RedditRepository repository, GlobalConfig config) {
         this(repository, buildLimiterFromConfig(config), null, new JdkRedditTransport());

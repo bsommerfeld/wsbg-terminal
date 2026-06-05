@@ -2,9 +2,7 @@ package de.bsommerfeld.wsbg.terminal.agent;
 
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
-import de.bsommerfeld.wsbg.terminal.core.config.ApplicationMode;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
-import de.bsommerfeld.wsbg.terminal.core.config.Model;
 import de.bsommerfeld.wsbg.terminal.core.config.RedditConfig;
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditComment;
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
@@ -15,10 +13,6 @@ import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
 import de.bsommerfeld.wsbg.terminal.db.RedditSnapshotStore;
 import de.bsommerfeld.wsbg.terminal.reddit.RedditSource;
 import de.bsommerfeld.wsbg.terminal.reddit.ScrapeStats;
-import dev.langchain4j.data.embedding.Embedding;
-import dev.langchain4j.model.embedding.EmbeddingModel;
-import dev.langchain4j.model.ollama.OllamaEmbeddingModel;
-import dev.langchain4j.store.embedding.CosineSimilarity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -61,7 +55,7 @@ public class PassiveMonitorService {
     private final AgentSnapshotStore agentSnapshotStore;
     private final GlobalConfig config;
 
-    private final EmbeddingModel embeddingModel;
+    private final ClusterEngine clusterEngine;
     private final ScheduledExecutorService scannerExecutor =
             Executors.newSingleThreadScheduledExecutor(daemonFactory("reddit-scanner"));
     private final ExecutorService analysisExecutor =
@@ -90,16 +84,15 @@ public class PassiveMonitorService {
     private volatile boolean clustersRestored = false;
 
     // Config values — loaded once from RedditConfig
-    private final double similarityThreshold;
     private final Duration cleanupInterval;
     private final long dataRetentionSeconds;
     private final long updateIntervalSeconds;
     private final long snapshotTtlMinutes;
 
     /**
-     * Snapshot persistence is disabled entirely in TEST mode: synthetic data
-     * must never leak onto disk where a later PROD run would restore it as if
-     * it were real (ghost threads from fake subreddits/IDs, placeholder images).
+     * Snapshot persistence is gated on the configured TTL ({@code 0} disables
+     * it). Kept as a field so the periodic save + shutdown hook can short-circuit
+     * cheaply.
      */
     private final boolean snapshotsEnabled;
 
@@ -107,7 +100,7 @@ public class PassiveMonitorService {
     public PassiveMonitorService(RedditSource scraper, AgentBrain brain, ApplicationEventBus eventBus,
             RedditRepository repository, AgentRepository agentRepository,
             RedditSnapshotStore snapshotStore, AgentSnapshotStore agentSnapshotStore,
-            ClusterRegistry clusterRegistry,
+            ClusterRegistry clusterRegistry, ClusterEngine clusterEngine,
             GlobalConfig config) {
         this.scraper = scraper;
         this.brain = brain;
@@ -117,24 +110,15 @@ public class PassiveMonitorService {
         this.snapshotStore = snapshotStore;
         this.agentSnapshotStore = agentSnapshotStore;
         this.clusterRegistry = clusterRegistry;
+        this.clusterEngine = clusterEngine;
         this.config = config;
 
         RedditConfig redditConfig = config.getReddit();
-        this.similarityThreshold = redditConfig.getSimilarityThreshold();
         this.cleanupInterval = Duration.ofHours(1);
         this.dataRetentionSeconds = Duration.ofHours(redditConfig.getDataRetentionHours()).toSeconds();
         this.updateIntervalSeconds = redditConfig.getUpdateIntervalSeconds();
         this.snapshotTtlMinutes = redditConfig.getSnapshotTtlMinutes();
-        this.snapshotsEnabled = snapshotTtlMinutes > 0 && !ApplicationMode.get().isTest();
-
-        String embeddingModelName = Model.EMBEDDING.getModelName();
-        LOG.info("Initializing Vector Embedding Model: {}", embeddingModelName);
-
-        this.embeddingModel = OllamaEmbeddingModel.builder()
-                .baseUrl(AgentBrain.OLLAMA_BASE_URL)
-                .modelName(embeddingModelName)
-                .timeout(Duration.ofSeconds(60))
-                .build();
+        this.snapshotsEnabled = snapshotTtlMinutes > 0;
 
         startMonitoring();
     }
@@ -298,7 +282,7 @@ public class PassiveMonitorService {
                 // so restored clusters embed with the same signal they had
                 // before the restart; threads with no cached vision embed on
                 // text alone.
-                clusterThread(t, 0, 0, CompletableFuture.completedFuture(cachedVisionText(t)));
+                clusterEngine.assign(t, 0, 0, cachedVisionText(t));
             }
             // Consolidation (merge/prune) is left to ClusterRebalancer's next
             // pass — seeding only re-creates the cluster assignment.
@@ -449,7 +433,11 @@ public class PassiveMonitorService {
                 if (deltas[0] > 0 || deltas[1] > 0) {
                     LOG.info("Update '{}': +{} score, +{} comments", t.title(), deltas[0], deltas[1]);
                 }
-                clusterThread(t, deltas[0], deltas[1], visionFutures.get(t.id()));
+                // visionFuture is pre-launched above so multiple threads' images
+                // analyse in parallel on the vision pool; by the time we reach
+                // thread N the early futures are usually already done.
+                CompletableFuture<String> vf = visionFutures.get(t.id());
+                clusterEngine.assign(t, deltas[0], deltas[1], vf == null ? "" : vf.join());
             }
 
             // Merging converged clusters and pruning dead ones is owned solely
@@ -543,100 +531,6 @@ public class PassiveMonitorService {
         lastSeenComments.put(t.id(), t.numComments());
 
         return new int[] { deltaScore, deltaComments };
-    }
-
-    /**
-     * Embeds thread content and assigns it to the best matching cluster,
-     * or creates a new investigation if no cluster exceeds the similarity
-     * threshold.
-     * Returns true if this triggered a meaningful state change.
-     */
-    private boolean clusterThread(RedditThread t, int deltaScore, int deltaComments,
-                                  CompletableFuture<String> visionFuture) {
-        // Vision description joins the embedding input so image-only posts —
-        // where the title is often generic ("Abwarten!!!") — still land in the
-        // right cluster based on what the picture actually shows.
-        //
-        // visionFuture is pre-launched in processUpdates so multiple threads'
-        // images analyse in parallel on the vision pool. By the time this
-        // method runs for thread N, the early threads' futures are usually
-        // already done — we just .join() to collect.
-        String visionText = visionFuture == null ? "" : visionFuture.join();
-        String content = t.title() + " "
-                + (t.textContent() != null ? t.textContent() : "") + " "
-                + visionText;
-        Embedding embedding = embeddingModel.embed(content).content();
-
-        // Ticker-overlap fast path. Vector similarity often fails on short
-        // German titles that share an instrument ("SNOW SNOW SNOW" vs
-        // "Snowflake mit Rakete"); ticker mentions are the most reliable
-        // topic key the WSBG community uses. If this thread names any
-        // ticker that an existing cluster has already accumulated, force
-        // the merge regardless of cosine score.
-        java.util.Set<String> threadTickers = new java.util.HashSet<>();
-        threadTickers.addAll(TickerExtractor.extract(t.title()));
-        threadTickers.addAll(TickerExtractor.extract(t.textContent()));
-        threadTickers.addAll(TickerExtractor.extract(visionText));
-
-        if (!threadTickers.isEmpty()) {
-            for (InvestigationCluster inv : clusterRegistry.getAllClusters()) {
-                if (inv.tickers.isEmpty()) continue;
-                java.util.Set<String> overlap = new java.util.HashSet<>(inv.tickers);
-                overlap.retainAll(threadTickers);
-                if (!overlap.isEmpty()) {
-                    // Ticker overlap settles membership; the delta only
-                    // decides whether this is worth waking the agent for.
-                    if (!inv.activeThreadIds.contains(t.id()) || deltaScore > 0 || deltaComments > 0) {
-                        LOG.info("Ticker-merge '{}' → '{}' (overlap {})",
-                                t.title(), inv.initialTitle, overlap);
-                        inv.addUpdate(t, deltaScore, deltaComments, embedding);
-                        clusterRegistry.notifyChange(inv.id);
-                    }
-                    return true;
-                }
-            }
-        }
-
-        InvestigationCluster bestMatch = null;
-        double bestScore = -1.0;
-        for (InvestigationCluster inv : clusterRegistry.getAllClusters()) {
-            double score = CosineSimilarity.between(embedding, inv.centroid());
-            if (score > bestScore) {
-                bestScore = score;
-                bestMatch = inv;
-            }
-        }
-
-        if (bestMatch != null && bestScore >= similarityThreshold) {
-            // Membership is decided by the embedding alone — if the post is
-            // similar enough, it belongs here, period. The delta is NOT a
-            // gate for joining; a thread we've never seen carries a zero
-            // delta on first sight (computeDeltas seeds the baseline from
-            // its own score), so gating on delta used to silently drop
-            // brand-new posts that matched an existing topic but named no
-            // ticker. We attach when the thread is new to the cluster, and
-            // additionally re-notify when an already-tracked thread shows
-            // fresh activity.
-            boolean newToCluster = !bestMatch.activeThreadIds.contains(t.id());
-            if (newToCluster || deltaScore > 0 || deltaComments > 0) {
-                LOG.info("[CLUSTER] {} '{}' → '{}' (sim={}, +{} score, +{} comments)",
-                        newToCluster ? "join" : "update",
-                        t.title(), bestMatch.initialTitle,
-                        String.format("%.2f", bestScore), deltaScore, deltaComments);
-                bestMatch.addUpdate(t, deltaScore, deltaComments, embedding);
-                clusterRegistry.notifyChange(bestMatch.id);
-                return true;
-            }
-            return false;
-        }
-
-        InvestigationCluster newInv = new InvestigationCluster(t, embedding);
-        clusterRegistry.add(newInv);
-        LOG.info("[CLUSTER] new {} '{}'{}{}",
-                newInv.id, t.title(),
-                bestScore > 0 ? " (best existing sim " + String.format("%.2f", bestScore) + " below " + similarityThreshold + ")" : "",
-                threadTickers.isEmpty() ? "" : " (tickers " + threadTickers + ")");
-        return true;
     }
 
 }

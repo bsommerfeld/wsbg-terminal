@@ -6,7 +6,6 @@ import de.bsommerfeld.wsbg.terminal.agent.AgentCoordinator;
 import de.bsommerfeld.wsbg.terminal.agent.ClusterRebalancer;
 import de.bsommerfeld.wsbg.terminal.agent.OllamaServerManager;
 import de.bsommerfeld.wsbg.terminal.agent.PassiveMonitorService;
-import de.bsommerfeld.wsbg.terminal.core.config.ApplicationMode;
 import de.bsommerfeld.wsbg.terminal.db.AgentRepository;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
 import de.bsommerfeld.wsbg.terminal.ui.config.AppModule;
@@ -57,7 +56,7 @@ public final class AppMain {
             System.exit(0);
         }
 
-        LOG.info("Bootstrapping WSBG Terminal (mode={})", ApplicationMode.get());
+        LOG.info("Bootstrapping WSBG Terminal");
         Injector injector = Guice.createInjector(new AppModule());
 
         AssetServer assetServer = injector.getInstance(AssetServer.class);

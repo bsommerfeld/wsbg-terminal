@@ -65,9 +65,29 @@ class ReportBuilderTest {
 
         String report = builder.buildReportData(cluster);
 
-        assertTrue(report.contains("trader"));
+        // Author handles carry no signal and are masked — the handle must NOT
+        // appear, but the body + score (and the comment ID for citation) do.
+        assertFalse(report.contains("trader"));
+        assertTrue(report.contains("[user]"));
         assertTrue(report.contains("diamond hands"));
         assertTrue(report.contains("Score: 42"));
+        assertTrue(report.contains("t1_1"));
+    }
+
+    @Test
+    void buildReportData_shouldStripHandleMentionsInBody() {
+        var cluster = createCluster("t3_1", "Title");
+        when(repository.getThread("t3_1")).thenReturn(thread("t3_1", "Title"));
+
+        long now = System.currentTimeMillis() / 1000;
+        var comment = new RedditComment("t1_1", "t3_1", "t3_1", "x",
+                "wie u/NASX_Trader sagt: all in", 5, now, now, now);
+        when(repository.getCommentsForThread("t3_1", 0)).thenReturn(List.of(comment));
+
+        String report = builder.buildReportData(cluster);
+
+        assertFalse(report.contains("NASX"));
+        assertTrue(report.contains("all in"));
     }
 
     @Test

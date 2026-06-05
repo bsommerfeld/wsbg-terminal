@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <parent>
+        <artifactId>wsbg-terminal</artifactId>
+        <groupId>de.bsommerfeld</groupId>
+        <version>${revision}</version>
+    </parent>
+    <modelVersion>4.0.0</modelVersion>
+
+    <!--
+      .lab — an isolated, native-window harness for the editorial pipeline.
+
+      Open the small Swing window, paste one or more Reddit thread URLs, and it
+      drives the EXACT production code paths (ClusterEngine for clustering,
+      EditorialAgent for subject extraction + headline composition) against just
+      those threads, with a live step-by-step trace. No JCEF, no scan loop — a
+      fast, reproducible feedback loop for iterating on prompts / clustering.
+      Lives as a hidden module (like .script); see docs/ for conventions + notes.
+    -->
+    <artifactId>lab</artifactId>
+
+    <dependencies>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>reddit</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>database</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>agent</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>yahoo-finance</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.google.inject</groupId>
+            <artifactId>guice</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld.jshepherd</groupId>
+            <artifactId>core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld.jshepherd</groupId>
+            <artifactId>toml</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.4.1</version>
+                <configuration>
+                    <archive>
+                        <manifest>
+                            <mainClass>de.bsommerfeld.wsbg.terminal.lab.EditorialLab</mainClass>
+                        </manifest>
+                    </archive>
+                </configuration>
+            </plugin>
+
+            <!-- exec:exec forks a clean JVM that opens the Swing window (mirrors
+                 the terminal module's launch style). Plain Swing/AWT needs no
+                 add-opens, just the classpath + main class. -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.5.0</version>
+                <configuration>
+                    <executable>java</executable>
+                    <arguments>
+                        <argument>-classpath</argument>
+                        <classpath/>
+                        <argument>de.bsommerfeld.wsbg.terminal.lab.EditorialLab</argument>
+                    </arguments>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>
