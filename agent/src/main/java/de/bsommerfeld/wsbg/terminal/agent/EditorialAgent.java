@@ -408,6 +408,15 @@ public class EditorialAgent {
                 if (!name.isEmpty()) out.add(name);
             }
         }
+        if (out.isEmpty()) {
+            // 0 subjects on a non-empty brief is almost always the brief + system
+            // prompt overrunning num_ctx (the front — incl. the JSON instruction —
+            // gets truncated) → surface the size and the raw reply so it's diagnosable.
+            String raw = text == null ? "" : text.strip();
+            LOG.warn("[EXTRACT] 0 subjects — brief={} chars (~{} tok), system={} chars; raw reply: {}",
+                    brief.length(), brief.length() / 4, sys.length(),
+                    raw.length() > 400 ? raw.substring(0, 400) + "…" : raw);
+        }
         return new Subjects(out, out.size(), text);
     }
 
