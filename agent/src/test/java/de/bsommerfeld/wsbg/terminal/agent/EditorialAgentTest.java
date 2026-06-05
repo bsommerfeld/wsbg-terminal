@@ -3,9 +3,11 @@ package de.bsommerfeld.wsbg.terminal.agent;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * The related-budget distribution: a shared pool of related-instrument lookups
@@ -50,5 +52,27 @@ class EditorialAgentTest {
     @Test
     void zeroSubjectsIsEmpty() {
         assertEquals(0, EditorialAgent.distributeRelated(0, 24, 4).length);
+    }
+
+    // ---- salvageSubjectNames: a broken/truncated subjects array isn't total loss ----
+
+    @Test
+    void salvagesNamesFromTruncatedArray() {
+        // Reply cut off mid-array: no closing ] and a dangling, unclosed final name.
+        String broken = "{\"subjects\": [\"Alphabet\", \"Apple\", \"Münchener Rück\", \"SAN";
+        assertEquals(List.of("Alphabet", "Apple", "Münchener Rück"),
+                EditorialAgent.salvageSubjectNames(broken));
+    }
+
+    @Test
+    void salvagesNamesEvenWithTrailingGarbage() {
+        String broken = "ok here you go {\"subjects\": [\"Nvidia\", \"SAP\"] } blah blah";
+        assertEquals(List.of("Nvidia", "SAP"), EditorialAgent.salvageSubjectNames(broken));
+    }
+
+    @Test
+    void salvageReturnsEmptyWhenNoSubjectsKey() {
+        assertTrue(EditorialAgent.salvageSubjectNames("totally unrelated prose").isEmpty());
+        assertTrue(EditorialAgent.salvageSubjectNames(null).isEmpty());
     }
 }

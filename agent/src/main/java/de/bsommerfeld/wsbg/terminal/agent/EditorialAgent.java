@@ -30,6 +30,8 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.Set;
 
 /**
@@ -409,19 +411,52 @@ public class EditorialAgent {
             }
         }
         if (out.isEmpty()) {
-            // 0 subjects on a non-empty brief is almost always the brief + system
-            // prompt overrunning num_ctx (the front — incl. the JSON instruction —
-            // gets truncated) → surface the size and the raw reply so it's diagnosable.
-            String raw = text == null ? "" : text.strip();
-            LOG.warn("[EXTRACT] 0 subjects — brief={} chars (~{} tok), system={} chars; raw reply: {}",
-                    brief.length(), brief.length() / 4, sys.length(),
-                    raw.length() > 400 ? raw.substring(0, 400) + "…" : raw);
+            // The 4B model occasionally emits a malformed subjects array (a long
+            // array is exactly where it degenerates — same reason composeOne is
+            // per-subject). A strict parse then loses EVERY name. Salvage the
+            // quoted names from the raw reply so a broken array isn't total loss.
+            List<String> salvaged = salvageSubjectNames(text);
+            if (!salvaged.isEmpty()) {
+                LOG.warn("[EXTRACT] strict parse failed, salvaged {} subject name(s) from a broken reply",
+                        salvaged.size());
+                out.addAll(salvaged);
+            } else {
+                String raw = text == null ? "" : text.strip();
+                LOG.warn("[EXTRACT] 0 subjects — brief={} chars (~{} tok), system={} chars; raw reply: {}",
+                        brief.length(), brief.length() / 4, sys.length(),
+                        raw.length() > 400 ? raw.substring(0, 400) + "…" : raw);
+            }
         }
         return new Subjects(out, out.size(), text);
     }
 
     /** Stage-1 output: the named subjects (uncapped), their count, and the raw reply. */
     private record Subjects(List<String> names, int namedByModel, String raw) {}
+
+    /**
+     * Recovers subject names from a reply whose JSON is broken/truncated: finds the
+     * {@code "subjects"} key, takes the array body (to the closing {@code ]} or — if
+     * the reply was cut off — to the end), and pulls every complete quoted string.
+     * A truncated final entry (no closing quote) is simply skipped, so we keep
+     * whatever names came through intact rather than losing all of them.
+     * Package-private for testing.
+     */
+    static List<String> salvageSubjectNames(String text) {
+        List<String> out = new ArrayList<>();
+        if (text == null) return out;
+        int key = text.indexOf("\"subjects\"");
+        if (key < 0) return out;
+        int lb = text.indexOf('[', key);
+        if (lb < 0) return out;
+        int rb = text.indexOf(']', lb);
+        String arr = rb < 0 ? text.substring(lb) : text.substring(lb, rb);
+        Matcher m = Pattern.compile("\"([^\"]+)\"").matcher(arr);
+        while (m.find()) {
+            String name = m.group(1).trim();
+            if (!name.isEmpty()) out.add(name);
+        }
+        return out;
+    }
 
     // ---- Stage 3: headline composition (one focused call per subject) ----
 
