@@ -7,6 +7,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -91,5 +92,30 @@ class EditorialAgentTest {
         assertEquals("3M", EditorialAgent.cleanSubjectName("3M"));
         assertEquals("Nvidia", EditorialAgent.cleanSubjectName("Nvidia"));
         assertEquals("Berkshire Hathaway", EditorialAgent.cleanSubjectName("Berkshire Hathaway"));
+    }
+
+    // ---- salvageDraftByRegex: recover a headline from stray-quote-broken JSON ----
+
+    @Test
+    void salvageDraftByRegexRecoversHeadlineFromStrayQuoteJson() {
+        // The exact live failure: `"ticker": null"` breaks the object, but the
+        // headline + scalars must still be recovered.
+        String broken = "{\"headline\": \"NVIDIA-Update: Die Apes sehen einen Rückgang von -4,97% bei NVIDIA\", "
+                + "\"mode\": \"UPDATE\", \"sentiment\": \"CAPITULATION\", \"highlight\": \"NORMAL\", "
+                + "\"tickerSymbol\": null, \"subjects\": [{\"name\": \"NVIDIA\", \"ticker\": null\"}], "
+                + "\"priceMovePercent\": -4.97}";
+        var d = EditorialAgent.salvageDraftByRegex(broken);
+        assertEquals("NVIDIA-Update: Die Apes sehen einen Rückgang von -4,97% bei NVIDIA", d.headline());
+        assertEquals("CAPITULATION", d.sentiment());
+        assertEquals("NORMAL", d.highlight());
+        assertEquals(-4.97, d.priceMovePercent());
+    }
+
+    @Test
+    void salvageDraftByRegexFieldsAndNumber() {
+        assertEquals("Oracle (ORCL) +2%", EditorialAgent.regexStringField(
+                "{\"headline\": \"Oracle (ORCL) +2%\", \"x\": 1}", "headline"));
+        assertEquals(6.5, EditorialAgent.regexNumberField("{\"priceMovePercent\": 6.5}", "priceMovePercent"));
+        assertNull(EditorialAgent.regexStringField("no json here", "headline"));
     }
 }

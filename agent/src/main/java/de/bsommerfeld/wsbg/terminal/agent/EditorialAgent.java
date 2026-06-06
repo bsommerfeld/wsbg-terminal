@@ -175,6 +175,16 @@ public class EditorialAgent {
                 }
             }
         }
+        if (draft == null) {
+            // Even balanced-object salvage failed (a stray quote like "ticker": null"
+            // breaks the object) — recover the headline + scalars by regex so the line
+            // isn't lost.
+            draft = salvageDraftByRegex(text);
+            if (draft != null) {
+                isUpdate = "UPDATE".equalsIgnoreCase(orEmpty(regexStringField(text, "mode")));
+                salvaged = true;
+            }
+        }
         return new UnitDraft(unit.id, unit.canonicalName(), draft, isUpdate, salvaged, text, elapsed, citedNews);
     }
 
@@ -665,6 +675,10 @@ public class EditorialAgent {
                 if (d != null) { salvaged = true; break; }
             }
         }
+        if (d == null) {
+            d = salvageDraftByRegex(text); // stray-quote-broken JSON → recover by regex
+            if (d != null) salvaged = true;
+        }
         return new SubjectDraft(label, d, salvaged, text, elapsed);
     }
 
@@ -738,6 +752,47 @@ public class EditorialAgent {
                 emptyToNull(h.path("assetClass").asText("")),
                 readStrings(h.path("sourceThreadIds")),
                 readStrings(h.path("sourceCommentIds")));
+    }
+
+    /**
+     * Last-resort draft recovery when the reply is JSON that even {@link #salvageObjects}
+     * can't parse — e.g. the 4B model emits {@code "ticker": null"} (a stray quote) and
+     * breaks the whole object, losing a perfectly good headline. We pull the fields out
+     * by regex instead, so the line still publishes. Array fields (subjects/ids) are
+     * skipped — the headline + its scalar fields are what matter here.
+     */
+    static Draft salvageDraftByRegex(String text) {
+        String headline = regexStringField(text, "headline");
+        if (headline == null || headline.isBlank()) return null;
+        return new Draft(
+                headline,
+                orEmpty(regexStringField(text, "sentiment")),
+                orEmpty(regexStringField(text, "highlight")),
+                emptyToNull(orEmpty(regexStringField(text, "tickerSymbol"))),
+                List.of(),
+                regexNumberField(text, "priceMovePercent"),
+                List.of(),
+                emptyToNull(orEmpty(regexStringField(text, "assetClass"))),
+                List.of(),
+                List.of());
+    }
+
+    /** Extracts a {@code "key": "value"} string (quote/escape-aware) from possibly-broken JSON. */
+    static String regexStringField(String text, String key) {
+        if (text == null) return null;
+        Matcher m = Pattern.compile("\"" + key + "\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"").matcher(text);
+        return m.find() ? m.group(1).replace("\\\"", "\"").trim() : null;
+    }
+
+    /** Extracts a {@code "key": <number>} value from possibly-broken JSON. */
+    static Double regexNumberField(String text, String key) {
+        if (text == null) return null;
+        Matcher m = Pattern.compile("\"" + key + "\"\\s*:\\s*(-?\\d+(?:\\.\\d+)?)").matcher(text);
+        return m.find() ? Double.valueOf(m.group(1)) : null;
+    }
+
+    private static String orEmpty(String s) {
+        return s == null ? "" : s;
     }
 
     /** Renders resolved subjects into the data block the compose stage reads. */

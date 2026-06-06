@@ -148,6 +148,8 @@ public final class LabRunner {
             String visionText = describeImages(t.imageUrls());
             if (!visionText.isBlank()) {
                 out.accept(String.format("  vision     : %s", truncate(visionText.replace('\n', ' '), 240)));
+            } else if (!t.imageUrls().isEmpty()) {
+                out.accept("  vision     : (no readable text in image — chart/graphic?)");
             }
 
             AssignOutcome outcome = clusterEngine.assign(t, 0, 0, visionText);
