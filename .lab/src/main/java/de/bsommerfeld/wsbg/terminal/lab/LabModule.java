@@ -5,6 +5,8 @@ import com.google.inject.Provides;
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooFinanceClient;
 import de.bsommerfeld.jshepherd.core.ConfigurationLoader;
+import de.bsommerfeld.wsbg.terminal.agent.EmbeddingService;
+import de.bsommerfeld.wsbg.terminal.agent.OllamaEmbeddingService;
 import de.bsommerfeld.wsbg.terminal.core.config.AgentConfig;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.core.config.RedditConfig;
@@ -60,6 +62,9 @@ public final class LabModule extends AbstractModule {
 
             bind(GlobalConfig.class).toInstance(config);
             bind(AgentConfig.class).toInstance(config.getAgent());
+            // Shared embedding seam — collation (and later tier-2 / name-matching)
+            // resolve EmbeddingService to the Ollama-backed impl.
+            bind(EmbeddingService.class).to(OllamaEmbeddingService.class);
         } catch (Exception e) {
             throw new RuntimeException("Failed to load configuration for editorial-lab", e);
         }
