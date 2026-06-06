@@ -74,4 +74,39 @@ class SubjectAttributorTest {
         Set<String> words = SubjectAttributor.nameWords("Micron", "Micron Technology, Inc.");
         assertEquals(text, SubjectAttributor.matchingLine(text, words, "MU"));
     }
+
+    // ---- Option A: cluster-relative distinctiveness (similar names) ----
+
+    @Test
+    void ambiguousWordAloneDoesNotMatchButDistinctiveDoes() {
+        Set<String> world = SubjectAttributor.nameWords("MSCI World Index", "MSCI World Index");
+        Set<String> em = SubjectAttributor.nameWords("MSCI Emerging Markets Index", "MSCI Emerging Markets Index");
+        Set<String> ambiguous = java.util.Set.of("msci"); // shared by both subjects
+
+        String worldRow = "Core MSCI World (iShares) -1,84%";
+        // World shares msci(ambiguous) + world(distinctive) → matches.
+        assertTrue(SubjectAttributor.matches(worldRow, world, null, ambiguous));
+        // EM shares only msci(ambiguous) → must NOT match the World row.
+        assertFalse(SubjectAttributor.matches(worldRow, em, null, ambiguous));
+    }
+
+    @Test
+    void shortFormStillMatchesViaDistinctiveWord() {
+        // "berkshire"/"meta" are distinctive, so the room's short form still matches
+        // (the gate only bites ambiguous words shared across cluster subjects).
+        Set<String> berk = SubjectAttributor.nameWords("Berkshire Hathaway", "Berkshire Hathaway Inc.");
+        assertTrue(SubjectAttributor.matches("ich nehme Berkshire", berk, null, java.util.Set.of()));
+        assertTrue(SubjectAttributor.matches("ich nehme Berkshire", berk, null, java.util.Set.of("hathaway")));
+    }
+
+    @Test
+    void ambiguousWordsCollectsSharedNames() {
+        var resolved = java.util.List.of(
+                new TickerResolver.ResolvedSubject("MSCI World", "MSCI World Index", null, null,
+                        java.util.List.of(), java.util.List.of(), false),
+                new TickerResolver.ResolvedSubject("MSCI EM", "MSCI Emerging Markets Index", null, null,
+                        java.util.List.of(), java.util.List.of(), false));
+        assertTrue(SubjectAttributor.ambiguousWords(resolved).contains("msci"));
+        assertFalse(SubjectAttributor.ambiguousWords(resolved).contains("world"));
+    }
 }

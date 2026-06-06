@@ -9,10 +9,12 @@ import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -60,6 +62,12 @@ public final class SubjectAttributor {
     public void attribute(SubjectRegistry registry, InvestigationCluster cluster,
             List<ResolvedSubject> resolved) {
         long now = Instant.now().getEpochSecond();
+        // Words that appear in ≥2 of THIS cluster's subject names are "ambiguous"
+        // (e.g. "msci" across MSCI World + MSCI Emerging Markets). A match on an
+        // ambiguous word ALONE isn't enough — otherwise MSCI EM would glom onto the
+        // "Core MSCI World −1,84%" row. A distinctive word ("world", "berkshire",
+        // "meta") still matches on its own, so short forms keep working.
+        Set<String> ambiguous = ambiguousWords(resolved);
         for (ResolvedSubject rs : resolved) {
             // A Yahoo-rate-limited subject (rs.unresolved()) is NOT skipped — the
             // ROOM is the story, Yahoo only enriches. It's attributed as a tickerless
@@ -75,25 +83,26 @@ public final class SubjectAttributor {
             for (String threadId : cluster.activeThreadIds) {
                 RedditThread t = repository.getThread(threadId);
                 if (t == null) continue;
-                if (matches(nz(t.title()) + " " + nz(t.textContent()), words, ticker)) {
+                if (matches(nz(t.title()) + " " + nz(t.textContent()), words, ticker, ambiguous)) {
                     found.add(new EvidenceRef(threadId, null, snippet(t.title()), "reddit", now));
                 }
                 // Image content is a normal evidence source, like a comment — a
                 // portfolio/watchlist screenshot, a meme of a person, a product shot.
                 // Yahoo stays pure enrichment; the picture itself is the context.
                 String tv = visionText(t.imageUrls());
-                if (!tv.isEmpty() && matches(tv, words, ticker)) {
+                if (!tv.isEmpty() && matches(tv, words, ticker, ambiguous)) {
                     found.add(new EvidenceRef(threadId, "_vision",
-                            snippet(matchingLine(tv, words, ticker)), "vision", now));
+                            snippet(matchingLine(tv, words, ticker, ambiguous)), "vision", now));
                 }
                 for (RedditComment c : repository.getCommentsForThread(threadId, 0)) {
-                    if (c.body() != null && !c.body().isBlank() && matches(c.body(), words, ticker)) {
+                    if (c.body() != null && !c.body().isBlank()
+                            && matches(c.body(), words, ticker, ambiguous)) {
                         found.add(new EvidenceRef(threadId, c.id(), snippet(c.body()), "reddit", now));
                     }
                     String cv = visionText(c.imageUrls());
-                    if (!cv.isEmpty() && matches(cv, words, ticker)) {
+                    if (!cv.isEmpty() && matches(cv, words, ticker, ambiguous)) {
                         found.add(new EvidenceRef(threadId, c.id() + "#img",
-                                snippet(matchingLine(cv, words, ticker)), "vision", now));
+                                snippet(matchingLine(cv, words, ticker, ambiguous)), "vision", now));
                     }
                 }
             }
@@ -155,28 +164,86 @@ public final class SubjectAttributor {
         return sb.toString().strip();
     }
 
+    // OPTION A (this): deterministic, cluster-relative distinctiveness — cheap, no
+    // embedding, fixes literal collisions (MSCI World vs MSCI EM). It cannot resolve
+    // ABBREVIATIONS ("Emerging Markets" ↔ a "MSCI EM IMI" row).
+    // TODO(B): semantic line-matching via the shared embedding service (cosine of the
+    // subject name vs each candidate line) — most reliable, handles abbreviations.
+    // Wire it here once the generic EmbeddingService abstraction exists.
+
+    /** Words shared by ≥2 of the cluster's subject names — ambiguous, can't carry a match alone. */
+    static Set<String> ambiguousWords(List<ResolvedSubject> resolved) {
+        Map<String, Integer> freq = new HashMap<>();
+        for (ResolvedSubject rs : resolved) {
+            for (String w : nameWords(rs.query(), rs.canonicalName())) {
+                freq.merge(w, 1, Integer::sum);
+            }
+        }
+        Set<String> out = new HashSet<>();
+        for (Map.Entry<String, Integer> e : freq.entrySet()) {
+            if (e.getValue() >= 2) out.add(e.getKey());
+        }
+        return out;
+    }
+
     /**
-     * The first line of an image transcript that mentions the subject, so the
-     * evidence snippet is the relevant row (e.g. "Micron Technology 772,30 € ▼ 9,23%")
-     * rather than the top of the screenshot. Falls back to the whole text.
+     * The BEST line of an image transcript for the subject (most distinctive-word
+     * overlap), so the evidence snippet is the subject's own row — "MSCI World"
+     * gets the World row, not whichever "msci" line came first. Falls back to the
+     * whole text.
      */
     static String matchingLine(String visionText, Set<String> nameWords, String ticker) {
+        return matchingLine(visionText, nameWords, ticker, Set.of());
+    }
+
+    static String matchingLine(String visionText, Set<String> nameWords, String ticker, Set<String> ambiguous) {
+        String best = null;
+        int bestScore = 0;
         for (String line : visionText.split("\n")) {
-            if (!line.isBlank() && matches(line, nameWords, ticker)) return line.strip();
+            if (line.isBlank()) continue;
+            if (ticker != null && TickerExtractor.extract(line).contains(ticker)) return line.strip();
+            int[] ov = overlap(line, nameWords, ambiguous);
+            int score = ov[0] * 100 + ov[1]; // distinctive words dominate, then total
+            if ((ov[0] >= 1 || ov[1] >= 2) && score > bestScore) {
+                bestScore = score;
+                best = line.strip();
+            }
         }
-        return visionText;
+        return best != null ? best : visionText;
     }
 
     /** True if the text carries the ticker (as a symbol) or shares a significant name word. */
     static boolean matches(String text, Set<String> nameWords, String ticker) {
+        return matches(text, nameWords, ticker, Set.of());
+    }
+
+    /**
+     * Cluster-aware match: the text matches if it carries the ticker, OR shares a
+     * DISTINCTIVE name word, OR shares ≥2 words total. A lone {@code ambiguous}
+     * word (shared by ≥2 cluster subjects, e.g. "msci") is not enough — that's what
+     * stops MSCI EM from matching the MSCI World row. Short forms still work because
+     * "berkshire"/"meta"/"world" are distinctive.
+     */
+    static boolean matches(String text, Set<String> nameWords, String ticker, Set<String> ambiguous) {
         if (text == null || text.isBlank()) return false;
         if (ticker != null && TickerExtractor.extract(text).contains(ticker)) return true;
+        int[] ov = overlap(text, nameWords, ambiguous);
+        return ov[0] >= 1 || ov[1] >= 2;
+    }
+
+    /** {@code {distinctiveHits, totalHits}} of {@code nameWords} present in {@code text}. */
+    private static int[] overlap(String text, Set<String> nameWords, Set<String> ambiguous) {
         Set<String> textWords = new HashSet<>(Arrays.asList(
                 text.toLowerCase(Locale.ROOT).split("[^a-z0-9äöüß]+")));
+        int distinctive = 0;
+        int total = 0;
         for (String w : nameWords) {
-            if (textWords.contains(w)) return true;
+            if (textWords.contains(w)) {
+                total++;
+                if (!ambiguous.contains(w)) distinctive++;
+            }
         }
-        return false;
+        return new int[]{distinctive, total};
     }
 
     private static String snippet(String s) {
