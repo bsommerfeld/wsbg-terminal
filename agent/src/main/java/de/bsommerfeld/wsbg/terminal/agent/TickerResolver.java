@@ -225,8 +225,8 @@ public final class TickerResolver {
                     p.rateLimited));
         }
         if (rateLimited > 0) {
-            LOG.warn("[RESOLVE] Yahoo rate-limited — {} subject(s) left unresolved this pass "
-                    + "(skipped, will retry on next evidence)", rateLimited);
+            LOG.warn("[RESOLVE] Yahoo rate-limited — {} subject(s) un-enriched this pass "
+                    + "(still published from room evidence; re-enriched on next evidence)", rateLimited);
         }
         return out;
     }
@@ -360,10 +360,10 @@ public final class TickerResolver {
             MarketSnapshot snapshot,
             List<YahooNewsItem> news,
             List<RelatedInstrument> related,
-            // unresolved: resolution SKIPPED because Yahoo is rate-limiting (breaker
-            // open) — NOT a genuine "no ticker". The attributor drops these so a
-            // transient 429 never cements a wrong tickerless unit; they re-resolve
-            // naturally on the next evidence.
+            // unresolved: Yahoo was rate-limiting (breaker open) so this subject was
+            // NOT enriched — a marker, NOT a skip. It's still attributed + headlined
+            // from the room evidence (Yahoo only enriches); it re-resolves to its
+            // ticker on the next evidence, and the identity-merge folds any duplicate.
             boolean unresolved) {
 
         public boolean isInstrument() {

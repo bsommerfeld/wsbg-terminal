@@ -59,10 +59,11 @@ public final class SubjectAttributor {
             List<ResolvedSubject> resolved) {
         long now = Instant.now().getEpochSecond();
         for (ResolvedSubject rs : resolved) {
-            // Yahoo rate-limited this subject → skip it entirely (don't cement a
-            // wrong tickerless unit). It re-resolves when the cluster next gains
-            // evidence; an open breaker means nothing is published this pass anyway.
-            if (rs.unresolved()) continue;
+            // A Yahoo-rate-limited subject (rs.unresolved()) is NOT skipped — the
+            // ROOM is the story, Yahoo only enriches. It's attributed as a tickerless
+            // unit and still gets a headline from the evidence; when Yahoo recovers it
+            // re-resolves to its ticker and the identity-merge folds the duplicate.
+            // (Headlines must never depend on Yahoo being up.)
             String ticker = rs.isInstrument() ? rs.ticker().toUpperCase(Locale.ROOT) : null;
             Set<String> words = nameWords(rs.query(), rs.canonicalName());
             if (words.isEmpty() && ticker == null) continue;
