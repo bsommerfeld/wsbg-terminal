@@ -290,10 +290,22 @@ public class AgentBrain {
                 LOG.warn("Vision model returned no-image placeholder for {}: {}", imageUrl, result);
                 return "";
             }
+            if (norm.isBlank()) {
+                // Image fetched fine (no exception, not the no-image placeholder) but
+                // the model produced NOTHING. Distinguish this from a fetch failure so
+                // an empty Vision result isn't a mystery: log that the bytes arrived and
+                // how many — a tiny payload hints a bad/placeholder image, a large one
+                // points at the model simply returning empty for that picture.
+                LOG.warn("Vision model returned an EMPTY description for {} — image fetched OK "
+                        + "(~{} KB {}); NOT a fetch failure. Likely an unreadable/placeholder image "
+                        + "or the model declined this one.", imageUrl,
+                        payload.base64.length() * 3 / 4 / 1024, payload.mimeType);
+                return "";
+            }
             LOG.info("Vision result: {}", result);
             return result;
         } catch (Exception e) {
-            LOG.warn("Vision failure: {}", e.getMessage());
+            LOG.warn("Vision failure (fetch/analyze) for {}: {}", imageUrl, e.getMessage());
             return "[SYSTEM ERROR: Image retrieval failed (" + e.getMessage()
                     + "). THE IMAGE IS INVISIBLE. DO NOT HALLUCINATE OR GUESS ITS CONTENT.]";
         }
