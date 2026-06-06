@@ -7,6 +7,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -109,6 +110,22 @@ class EditorialAgentTest {
         assertEquals("CAPITULATION", d.sentiment());
         assertEquals("NORMAL", d.highlight());
         assertEquals(-4.97, d.priceMovePercent());
+    }
+
+    // ---- headlineHasPriceNumber: detect a user-posted price for the "unverified" flag ----
+
+    @Test
+    void detectsPriceShapedNumbersForUnverifiedFlag() {
+        assertTrue(EditorialAgent.headlineHasPriceNumber("NVIDIA −4,97% im Depot"));
+        assertTrue(EditorialAgent.headlineHasPriceNumber("Ceres Power fällt auf 13,11%"));
+        assertTrue(EditorialAgent.headlineHasPriceNumber("TSLA 175.00 $ im Screenshot"));
+    }
+
+    @Test
+    void ignoresNonPriceNumbersAndPlainText() {
+        assertFalse(EditorialAgent.headlineHasPriceNumber("S&P 500 im Fokus der Apes"));
+        assertFalse(EditorialAgent.headlineHasPriceNumber("SAP taucht als Wette auf"));
+        assertFalse(EditorialAgent.headlineHasPriceNumber(null));
     }
 
     @Test

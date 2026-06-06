@@ -142,7 +142,7 @@ public class EditorialAgent {
         ChatModel model = brain.getAgentModel();
         if (model == null || unit == null) {
             return new UnitDraft(unit == null ? "" : unit.id,
-                    unit == null ? "" : unit.canonicalName(), null, false, false, "", 0, List.of());
+                    unit == null ? "" : unit.canonicalName(), null, false, false, "", 0, List.of(), false);
         }
         String sys = PromptLoader.load("headline-compose-unit")
                 .replace("{{LANGUAGE}}", brain.getUserLanguage().displayName())
@@ -185,7 +185,12 @@ public class EditorialAgent {
                 salvaged = true;
             }
         }
-        return new UnitDraft(unit.id, unit.canonicalName(), draft, isUpdate, salvaged, text, elapsed, citedNews);
+        // A price/% in the line is UNVERIFIED when we have no resolved market data
+        // for the subject — it then comes from the room's own post/screenshot, not
+        // from Yahoo. The wire is a sentiment mirror; user numbers aren't facts.
+        boolean unverified = mentionsPrice(draft) && !unitHasVerifiedPrice(unit);
+        return new UnitDraft(unit.id, unit.canonicalName(), draft, isUpdate, salvaged, text, elapsed,
+                citedNews, unverified);
     }
 
     /** The headline object out of a parsed reply: a bare object, or the first of a {@code {"headlines":[…]}} wrapper. */
@@ -259,10 +264,12 @@ public class EditorialAgent {
     /**
      * One per-unit compose result (#2 step 3). {@code draft} is null when the model
      * wrote no usable headline. {@code citedNewsIds} = the news the line leaned on
-     * (step 3b) — the caller marks them covered on the unit so they aren't reused.
+     * (step 3b). {@code unverified} = the line carries a price/% that did NOT come
+     * from our data sources (no resolved Yahoo data) — it's a user-posted number, to
+     * be shown with an "unverified" marker, never as fact.
      */
     public record UnitDraft(String unitId, String label, Draft draft, boolean isUpdate,
-            boolean salvaged, String raw, long ms, List<String> citedNewsIds) {}
+            boolean salvaged, String raw, long ms, List<String> citedNewsIds, boolean unverified) {}
 
     /**
      * Runs one editorial tick over the given dirty clusters. Each cluster is
@@ -793,6 +800,26 @@ public class EditorialAgent {
 
     private static String orEmpty(String s) {
         return s == null ? "" : s;
+    }
+
+    /** True if the unit carries a resolved (Yahoo) live price — a "verified" figure source. */
+    private static boolean unitHasVerifiedPrice(SubjectUnit unit) {
+        MarketSnapshot s = unit == null ? null : unit.snapshot();
+        return s != null && s.hasPrice();
+    }
+
+    /** A price-shaped number in the headline: a decimal, or a digit next to %/€/$/£. */
+    private static final Pattern PRICE_LIKE =
+            Pattern.compile("[-+]?\\d+[.,]\\d|\\d\\s*[%€$£]|[%€$£]\\s*\\d");
+
+    private static boolean mentionsPrice(Draft draft) {
+        if (draft == null) return false;
+        return draft.priceMovePercent() != null || headlineHasPriceNumber(draft.headline());
+    }
+
+    /** A price-shaped figure in the text: a decimal, or a digit next to %/€/$/£ ("S&P 500" is not). */
+    static boolean headlineHasPriceNumber(String headline) {
+        return headline != null && PRICE_LIKE.matcher(headline).find();
     }
 
     /** Renders resolved subjects into the data block the compose stage reads. */

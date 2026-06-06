@@ -237,7 +237,8 @@ public final class LabRunner {
         String text = ud.draft().headline();
         boolean changed = !text.equalsIgnoreCase(u.lastHeadlineText());
         String tag = !changed ? "unverändert" : (ud.isUpdate() ? "UPDATE" : "NEW");
-        String salv = ud.salvaged() ? " [gerettet]" : "";
+        String salv = (ud.salvaged() ? " [gerettet]" : "")
+                + (ud.unverified() ? " [⚠ ungeprüft: Zahl aus Nutzer-Post, nicht aus Yahoo]" : "");
         out.accept(String.format("%n  ● %s  [%s]  [%s]%s", head, tag, fmtMs(ud.ms()), salv));
         out.accept("      " + describeDraft(ud.draft()));
         if (!ud.citedNewsIds().isEmpty()) {
