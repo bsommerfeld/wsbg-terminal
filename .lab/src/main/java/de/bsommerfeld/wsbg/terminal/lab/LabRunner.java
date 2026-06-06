@@ -10,6 +10,7 @@ import de.bsommerfeld.wsbg.terminal.agent.EditorialAgent.ClusterEditorial;
 import de.bsommerfeld.wsbg.terminal.agent.EditorialAgent.EditorialListener;
 import de.bsommerfeld.wsbg.terminal.agent.EditorialAgent.SubjectDraft;
 import de.bsommerfeld.wsbg.terminal.agent.EditorialAgent.UnitDraft;
+import de.bsommerfeld.wsbg.terminal.agent.HeadlineCollator;
 import de.bsommerfeld.wsbg.terminal.agent.HeadlineWriter.Draft;
 import de.bsommerfeld.wsbg.terminal.agent.InvestigationCluster;
 import de.bsommerfeld.wsbg.terminal.agent.SubjectRegistry;
@@ -52,6 +53,7 @@ public final class LabRunner {
     private final ClusterRegistry registry;
     private final SubjectRegistry subjects;
     private final EditorialAgent editorial;
+    private final HeadlineCollator collator;
     private final ThreadIngestor ingestor;
 
     public LabRunner(Injector injector, Consumer<String> bootSink) {
@@ -69,6 +71,7 @@ public final class LabRunner {
         this.registry = injector.getInstance(ClusterRegistry.class);
         this.subjects = injector.getInstance(SubjectRegistry.class);
         this.editorial = injector.getInstance(EditorialAgent.class);
+        this.collator = injector.getInstance(HeadlineCollator.class);
 
         String fallbackSub = config.getReddit().getSubreddits().isEmpty()
                 ? "wallstreetbetsGER" : config.getReddit().getSubreddits().get(0);
@@ -88,7 +91,8 @@ public final class LabRunner {
         subjects.clear();
         redditRepository.clear();
         agentRepository.clear();
-        out.accept("Reset: cleared all clusters, subject units, threads, and headlines. Ollama stays warm.");
+        collator.clear();
+        out.accept("Reset: cleared all clusters, subject units, threads, headlines, and collation window. Ollama stays warm.");
     }
 
     /**
@@ -220,7 +224,7 @@ public final class LabRunner {
     }
 
     /** Renders one streamed per-unit headline; stores it on the unit when it actually changed. Returns whether stored. */
-    private static boolean renderUnitDraft(Consumer<String> out, SubjectUnit u, UnitDraft ud) {
+    private boolean renderUnitDraft(Consumer<String> out, SubjectUnit u, UnitDraft ud) {
         String head = u.isInstrument() ? u.canonicalName() + " → " + u.ticker() : u.canonicalName();
         if (ud.draft() == null || ud.draft().headline() == null || ud.draft().headline().isBlank()) {
             out.accept(String.format("%n  ● %s → keine Headline  [%s]", head, fmtMs(ud.ms())));
@@ -240,6 +244,14 @@ public final class LabRunner {
         if (changed) {
             u.addHeadline(text, ud.isUpdate());
             u.markNewsCovered(ud.citedNewsIds()); // 3b: consumed news won't be offered again
+            // Collation: a near-duplicate of a still-on-screen headline replaces it
+            // in place instead of stacking a new row.
+            HeadlineCollator.Decision col = collator.offer(u.id, text);
+            if (col.collated()) {
+                out.accept(String.format(Locale.ROOT,
+                        "      ↻ collated (sim %.2f) → ersetzt frühere Zeile: \"%s\"",
+                        col.similarity(), truncate(col.replacedText(), 90)));
+            }
             return true;
         }
         return false;
