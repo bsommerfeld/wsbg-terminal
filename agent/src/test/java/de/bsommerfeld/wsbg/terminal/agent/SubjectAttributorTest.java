@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Set;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -54,5 +55,23 @@ class SubjectAttributorTest {
         // A subject the room never named: no shared word, no ticker → no match.
         Set<String> words = SubjectAttributor.nameWords("JPMorgan", "JPMorgan Chase & Co.");
         assertFalse(SubjectAttributor.matches("Alphabet und dann kommt Apple", words, "JPM"));
+    }
+
+    @Test
+    void visionMatchingLinePicksTheSubjectRow() {
+        // A transcribed watchlist: the evidence snippet should be the subject's own
+        // row (with its price/move), not the top of the screenshot.
+        String watchlist = "Oracle 185,00 € ▼ 8,48 %\n"
+                + "Micron Technology 772,30 € ▼ 9,23 %\nNokia 12,34 € ▼ 11,95 %";
+        Set<String> words = SubjectAttributor.nameWords("Micron", "Micron Technology, Inc.");
+        assertEquals("Micron Technology 772,30 € ▼ 9,23 %",
+                SubjectAttributor.matchingLine(watchlist, words, "MU"));
+    }
+
+    @Test
+    void visionMatchingLineFallsBackToWholeTextWhenNoRowMatches() {
+        String text = "some unrelated transcript with no subject row";
+        Set<String> words = SubjectAttributor.nameWords("Micron", "Micron Technology, Inc.");
+        assertEquals(text, SubjectAttributor.matchingLine(text, words, "MU"));
     }
 }

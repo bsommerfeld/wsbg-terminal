@@ -49,9 +49,11 @@ public final class SubjectAttributor {
             "systems", "solutions", "index", "etf");
 
     private final RedditRepository repository;
+    private final AgentBrain brain;
 
-    public SubjectAttributor(RedditRepository repository) {
+    public SubjectAttributor(RedditRepository repository, AgentBrain brain) {
         this.repository = repository;
+        this.brain = brain;
     }
 
     /** Attributes every resolved subject of {@code cluster} into {@code registry}. */
@@ -76,10 +78,22 @@ public final class SubjectAttributor {
                 if (matches(nz(t.title()) + " " + nz(t.textContent()), words, ticker)) {
                     found.add(new EvidenceRef(threadId, null, snippet(t.title()), "reddit", now));
                 }
+                // Image content is a normal evidence source, like a comment — a
+                // portfolio/watchlist screenshot, a meme of a person, a product shot.
+                // Yahoo stays pure enrichment; the picture itself is the context.
+                String tv = visionText(t.imageUrls());
+                if (!tv.isEmpty() && matches(tv, words, ticker)) {
+                    found.add(new EvidenceRef(threadId, "_vision",
+                            snippet(matchingLine(tv, words, ticker)), "vision", now));
+                }
                 for (RedditComment c : repository.getCommentsForThread(threadId, 0)) {
-                    if (c.body() == null || c.body().isBlank()) continue;
-                    if (matches(c.body(), words, ticker)) {
+                    if (c.body() != null && !c.body().isBlank() && matches(c.body(), words, ticker)) {
                         found.add(new EvidenceRef(threadId, c.id(), snippet(c.body()), "reddit", now));
+                    }
+                    String cv = visionText(c.imageUrls());
+                    if (!cv.isEmpty() && matches(cv, words, ticker)) {
+                        found.add(new EvidenceRef(threadId, c.id() + "#img",
+                                snippet(matchingLine(cv, words, ticker)), "vision", now));
                     }
                 }
             }
@@ -128,6 +142,29 @@ public final class SubjectAttributor {
         for (String w : s.toLowerCase(Locale.ROOT).split("[^a-z0-9äöüß]+")) {
             if (w.length() >= 3 && !STOP.contains(w)) out.add(w);
         }
+    }
+
+    /** Joined cached vision transcripts for a set of image URLs (cache-only — never blocks on vision). */
+    private String visionText(List<String> urls) {
+        if (urls == null || urls.isEmpty() || brain == null) return "";
+        StringBuilder sb = new StringBuilder();
+        for (String url : urls) {
+            String d = brain.describeImageIfCached(url);
+            if (d != null && !d.isBlank()) sb.append(d).append('\n');
+        }
+        return sb.toString().strip();
+    }
+
+    /**
+     * The first line of an image transcript that mentions the subject, so the
+     * evidence snippet is the relevant row (e.g. "Micron Technology 772,30 € ▼ 9,23%")
+     * rather than the top of the screenshot. Falls back to the whole text.
+     */
+    static String matchingLine(String visionText, Set<String> nameWords, String ticker) {
+        for (String line : visionText.split("\n")) {
+            if (!line.isBlank() && matches(line, nameWords, ticker)) return line.strip();
+        }
+        return visionText;
     }
 
     /** True if the text carries the ticker (as a symbol) or shares a significant name word. */

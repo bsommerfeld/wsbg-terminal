@@ -108,7 +108,7 @@ public class EditorialAgent {
         this.reportBuilder = new ReportBuilder(redditRepository, brain);
         this.tickerResolver = new TickerResolver(yahooFinance);
         this.headlineWriter = new HeadlineWriter(agentRepository, eventBus);
-        this.attributor = new SubjectAttributor(redditRepository);
+        this.attributor = new SubjectAttributor(redditRepository, brain);
     }
 
     /**
@@ -229,10 +229,11 @@ public class EditorialAgent {
             }
         }
 
-        sb.append("\nWhat the room said about THIS subject (Reddit evidence — the story):\n");
+        sb.append("\nWhat the room said about THIS subject (evidence — the story):\n");
         for (SubjectUnit.EvidenceRef e : unit.evidence()) {
-            sb.append("  - [").append(e.commentId() == null ? e.threadId() : e.commentId()).append("] ")
-                    .append(e.snippet()).append('\n');
+            String loc = "vision".equals(e.source()) ? "image"
+                    : (e.commentId() == null ? e.threadId() : e.commentId());
+            sb.append("  - [").append(loc).append("] ").append(e.snippet()).append('\n');
         }
 
         List<SubjectUnit.UnitHeadline> prior = unit.headlines();
@@ -512,6 +513,13 @@ public class EditorialAgent {
                 preamble.append(" — ").append(oneLine(t.textContent()));
             }
             preamble.append('\n');
+            // Image transcripts are normal context too — fold the thread's + its
+            // comments' cached vision into the preamble so screenshot-only subjects
+            // (portfolio holdings, watchlists, memes) get named in extraction.
+            String vis = threadVision(t, tid);
+            if (!vis.isEmpty()) {
+                preamble.append("  [images]: ").append(oneLine(vis)).append('\n');
+            }
             for (RedditComment c : redditRepository.getCommentsForThread(tid, 0)) {
                 if (c.body() == null || c.body().isBlank()) continue;
                 lines.add("- " + oneLine(c.body()));
@@ -535,6 +543,24 @@ public class EditorialAgent {
 
     private static String oneLine(String s) {
         return s == null ? "" : s.replace('\n', ' ').replace('\r', ' ').strip();
+    }
+
+    /** Joined cached vision transcripts for a thread's images + its comments' images (cache-only). */
+    private String threadVision(RedditThread t, String threadId) {
+        StringBuilder sb = new StringBuilder();
+        appendVision(sb, t.imageUrls());
+        for (RedditComment c : redditRepository.getCommentsForThread(threadId, 0)) {
+            appendVision(sb, c.imageUrls());
+        }
+        return sb.toString().strip();
+    }
+
+    private void appendVision(StringBuilder sb, List<String> urls) {
+        if (urls == null) return;
+        for (String url : urls) {
+            String d = brain.describeImageIfCached(url);
+            if (d != null && !d.isBlank()) sb.append(d).append('\n');
+        }
     }
 
     /** Stage-1 output: the named subjects (uncapped), their count, and the raw reply. */

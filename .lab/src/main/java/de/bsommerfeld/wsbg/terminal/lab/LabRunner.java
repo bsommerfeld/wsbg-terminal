@@ -263,7 +263,8 @@ public final class LabRunner {
             out.accept(String.format("%n  ● %s%s", head, price));
             out.accept(String.format("    evidence: %d  ·  news: %d", u.evidenceCount(), u.news().size()));
             for (SubjectUnit.EvidenceRef e : u.evidence()) {
-                String where = e.commentId() == null ? "post " + e.threadId()
+                String where = "vision".equals(e.source()) ? "image in " + e.threadId()
+                        : e.commentId() == null ? "post " + e.threadId()
                         : "comment " + e.commentId() + " in " + e.threadId();
                 out.accept(String.format("      ├ [%s] %s", where, truncate(e.snippet(), 120)));
             }
