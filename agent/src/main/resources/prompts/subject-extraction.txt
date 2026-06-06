@@ -8,6 +8,8 @@ The data desk searches Yahoo Finance, which is English-indexed. Give each subjec
 {{ENTITY_ALIASES}}
 So "Rheiner" → "Rheinmetall", "Orangenmann" → "Trump", a German phrase → its English form ("Krieg in der Ukraine" → "Ukraine war"). When in doubt, prefer the real company/person/topic name a newswire would use.
 
+Give the bare ENTITY name only — never a transcribed price, quantity, percentage, currency symbol or trend arrow. Image transcripts often glue these on: from a watchlist row "Micron Technology 772,30 € ▼ 9,23 %" the subject is just "Micron Technology"; from "Oracle 185,00 € ▼ 8,48 %" it is "Oracle".
+
 ## Output
 Return ONLY a JSON object, nothing else:
 {"subjects": ["Rheinmetall", "Trump", "Ukraine war"]}

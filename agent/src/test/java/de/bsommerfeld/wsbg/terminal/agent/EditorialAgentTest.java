@@ -75,4 +75,21 @@ class EditorialAgentTest {
         assertTrue(EditorialAgent.salvageSubjectNames("totally unrelated prose").isEmpty());
         assertTrue(EditorialAgent.salvageSubjectNames(null).isEmpty());
     }
+
+    // ---- cleanSubjectName: strip a transcribed price tail, keep numeric names ----
+
+    @Test
+    void cleanSubjectNameStripsScreenshotPriceTail() {
+        assertEquals("Micron Technology", EditorialAgent.cleanSubjectName("Micron Technology 772,30 € ▼ 9,23 %"));
+        assertEquals("Oracle", EditorialAgent.cleanSubjectName("Oracle 185,00 € ▼ 8,48 %"));
+        assertEquals("Take-Two Interactive", EditorialAgent.cleanSubjectName("Take-Two Interactive 49,57 €"));
+    }
+
+    @Test
+    void cleanSubjectNameKeepsLegitimateNumericNames() {
+        assertEquals("S&P 500", EditorialAgent.cleanSubjectName("S&P 500"));
+        assertEquals("3M", EditorialAgent.cleanSubjectName("3M"));
+        assertEquals("Nvidia", EditorialAgent.cleanSubjectName("Nvidia"));
+        assertEquals("Berkshire Hathaway", EditorialAgent.cleanSubjectName("Berkshire Hathaway"));
+    }
 }

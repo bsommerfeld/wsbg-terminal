@@ -438,7 +438,7 @@ public class EditorialAgent {
             // Common path, unchanged: one call over the full rich brief (vision,
             // poll, covered-split all intact).
             String text = chat(model, sys, brief);
-            List<String> out = parseSubjectNames(text);
+            List<String> out = dedupClean(parseSubjectNames(text));
             if (out.isEmpty()) {
                 String raw = text == null ? "" : text.strip();
                 LOG.warn("[EXTRACT] 0 subjects — brief={} chars (~{} tok), system={} chars; raw reply: {}",
@@ -455,13 +455,45 @@ public class EditorialAgent {
         for (String chunk : chunks) {
             String text = chat(model, sys, chunk);
             for (String name : parseSubjectNames(text)) {
-                union.putIfAbsent(name.toLowerCase(Locale.ROOT), name);
+                String clean = cleanSubjectName(name);
+                if (!clean.isEmpty()) union.putIfAbsent(clean.toLowerCase(Locale.ROOT), clean);
             }
         }
         LOG.info("[EXTRACT] chunked {} comments into {} batch(es) → {} unique subject(s)",
                 comments, chunks.size(), union.size());
         List<String> names = new ArrayList<>(union.values());
         return new Subjects(names, names.size(), "<chunked: " + chunks.size() + " batch(es)>");
+    }
+
+    /**
+     * A transcribed price/move tail glued onto a subject name — a decimal number
+     * (1.234 or 1,23), a currency/percent symbol, or a trend arrow, and everything
+     * after it. Plain integers ("S&P 500", "3M") are NOT matched, so numeric names
+     * survive.
+     */
+    private static final Pattern PRICE_TAIL =
+            Pattern.compile("\\s*(?:\\d+[.,]\\d|[€$£%]|▲|▼|↑|↓).*$");
+
+    /**
+     * Strips a screenshot-row price tail from a subject name so the identity stays
+     * clean ("Micron Technology 772,30 € ▼ 9,23 %" → "Micron Technology"), while a
+     * legitimately-numeric name ("S&P 500", "3M") is left intact. Without this a
+     * watchlist row would resolve to no ticker and fragment into per-price units.
+     */
+    static String cleanSubjectName(String name) {
+        if (name == null) return "";
+        String cut = PRICE_TAIL.matcher(name.strip()).replaceFirst("").strip();
+        return cut.isEmpty() ? name.strip() : cut;
+    }
+
+    /** Cleans each name and dedups case-insensitively, keeping first-seen spelling + order. */
+    private static List<String> dedupClean(List<String> names) {
+        Map<String, String> seen = new LinkedHashMap<>();
+        for (String n : names) {
+            String c = cleanSubjectName(n);
+            if (!c.isEmpty()) seen.putIfAbsent(c.toLowerCase(Locale.ROOT), c);
+        }
+        return new ArrayList<>(seen.values());
     }
 
     /** Strict parse of the subjects array, with a salvage pass for a broken/truncated reply. */
