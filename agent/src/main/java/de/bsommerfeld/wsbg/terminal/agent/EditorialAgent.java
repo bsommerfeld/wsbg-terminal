@@ -142,7 +142,7 @@ public class EditorialAgent {
         ChatModel model = brain.getAgentModel();
         if (model == null || unit == null) {
             return new UnitDraft(unit == null ? "" : unit.id,
-                    unit == null ? "" : unit.canonicalName(), null, false, false, "", 0);
+                    unit == null ? "" : unit.canonicalName(), null, false, false, "", 0, List.of());
         }
         String sys = PromptLoader.load("headline-compose-unit")
                 .replace("{{LANGUAGE}}", brain.getUserLanguage().displayName())
@@ -156,10 +156,12 @@ public class EditorialAgent {
         Draft draft = null;
         boolean isUpdate = false;
         boolean salvaged = false;
+        List<String> citedNews = List.of();
         JsonNode obj = firstHeadlineObject(parseJson(text));
         if (obj != null) {
             draft = toDraft(obj);
             isUpdate = "UPDATE".equalsIgnoreCase(obj.path("mode").asText(""));
+            citedNews = readStrings(obj.path("sourceNewsIds"));
         }
         if (draft == null) {
             for (JsonNode o : salvageObjects(text)) {
@@ -167,12 +169,13 @@ public class EditorialAgent {
                 if (d != null) {
                     draft = d;
                     isUpdate = "UPDATE".equalsIgnoreCase(o.path("mode").asText(""));
+                    citedNews = readStrings(o.path("sourceNewsIds"));
                     salvaged = true;
                     break;
                 }
             }
         }
-        return new UnitDraft(unit.id, unit.canonicalName(), draft, isUpdate, salvaged, text, elapsed);
+        return new UnitDraft(unit.id, unit.canonicalName(), draft, isUpdate, salvaged, text, elapsed, citedNews);
     }
 
     /** The headline object out of a parsed reply: a bare object, or the first of a {@code {"headlines":[…]}} wrapper. */
@@ -205,10 +208,18 @@ public class EditorialAgent {
         }
 
         Instant now = Instant.now();
-        if (!unit.news().isEmpty()) {
-            sb.append("Yahoo news (context & attribution only — NOT the subject):\n");
-            for (YahooNewsItem n : unit.news()) {
-                sb.append("  - ");
+        // News not yet cited by a prior headline for THIS subject (covered ones are
+        // filtered so two headlines never rest on the same item). Each carries a
+        // [news:ID] the model echoes back in sourceNewsIds to mark it consumed.
+        List<YahooNewsItem> freshNews = new ArrayList<>();
+        for (YahooNewsItem n : unit.news()) {
+            if (!unit.isNewsCovered(n.uuid())) freshNews.add(n);
+        }
+        if (!freshNews.isEmpty()) {
+            sb.append("News (context & attribution — NOT the subject; cite any you lean on by its"
+                    + " [news:ID] in sourceNewsIds, a cited item won't be offered again):\n");
+            for (YahooNewsItem n : freshNews) {
+                sb.append("  - [news:").append(n.uuid() == null || n.uuid().isBlank() ? "?" : n.uuid()).append("] ");
                 if (n.publishedAt() != null) {
                     long mins = Duration.between(n.publishedAt(), now).toMinutes();
                     sb.append(mins < 60 ? mins + "m" : mins < 1440 ? (mins / 60) + "h" : (mins / 1440) + "d")
@@ -234,9 +245,13 @@ public class EditorialAgent {
         return sb.toString();
     }
 
-    /** One per-unit compose result (#2 step 3). {@code draft} is null when the model wrote no usable headline. */
+    /**
+     * One per-unit compose result (#2 step 3). {@code draft} is null when the model
+     * wrote no usable headline. {@code citedNewsIds} = the news the line leaned on
+     * (step 3b) — the caller marks them covered on the unit so they aren't reused.
+     */
     public record UnitDraft(String unitId, String label, Draft draft, boolean isUpdate,
-            boolean salvaged, String raw, long ms) {}
+            boolean salvaged, String raw, long ms, List<String> citedNewsIds) {}
 
     /**
      * Runs one editorial tick over the given dirty clusters. Each cluster is

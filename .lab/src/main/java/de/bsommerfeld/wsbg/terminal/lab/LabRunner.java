@@ -234,8 +234,12 @@ public final class LabRunner {
         String salv = ud.salvaged() ? " [gerettet]" : "";
         out.accept(String.format("%n  ● %s  [%s]  [%s]%s", head, tag, fmtMs(ud.ms()), salv));
         out.accept("      " + describeDraft(ud.draft()));
+        if (!ud.citedNewsIds().isEmpty()) {
+            out.accept("      cites news: " + String.join(", ", ud.citedNewsIds()));
+        }
         if (changed) {
             u.addHeadline(text, ud.isUpdate());
+            u.markNewsCovered(ud.citedNewsIds()); // 3b: consumed news won't be offered again
             return true;
         }
         return false;

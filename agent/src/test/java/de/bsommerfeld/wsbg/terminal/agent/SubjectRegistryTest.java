@@ -4,10 +4,13 @@ import de.bsommerfeld.wsbg.terminal.agent.SubjectUnit.EvidenceRef;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import java.util.Arrays;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Conservative identity-merge (#2 step 2.5): a ticker-less name unit folds into
@@ -87,5 +90,18 @@ class SubjectRegistryTest {
         assertNotNull(reg.get("NVDA"), "unit must survive content pruning");
         assertEquals(0, reg.get("NVDA").evidenceCount());
         assertNull(reg.get("NVDA").lastHeadlineText(), "consumed headline pruned");
+    }
+
+    @Test
+    void coveredNewsIsTrackedPerUnitAndIgnoresBlanks() {
+        // #2 step 3b: a cited news id is marked covered so the next compose skips it.
+        SubjectRegistry reg = new SubjectRegistry();
+        SubjectUnit u = reg.findOrCreate("NVDA", "NVIDIA");
+        assertFalse(u.isNewsCovered("uuid-1"));
+        u.markNewsCovered(Arrays.asList("uuid-1", "uuid-2", "", null));
+        assertTrue(u.isNewsCovered("uuid-1"));
+        assertTrue(u.isNewsCovered("uuid-2"));
+        assertFalse(u.isNewsCovered("uuid-3"));
+        assertEquals(2, u.coveredNewsIds().size(), "blank/null ids are not tracked");
     }
 }

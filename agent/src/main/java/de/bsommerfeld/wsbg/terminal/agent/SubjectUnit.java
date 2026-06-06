@@ -6,6 +6,7 @@ import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooNewsItem;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -41,6 +42,14 @@ public final class SubjectUnit {
 
     /** Headlines already published for this unit — context for the NEW/UPDATE call. */
     private final List<UnitHeadline> headlines = new ArrayList<>();
+
+    /**
+     * IDs of news items a published headline has already cited (#2 step 3b).
+     * Source-agnostic — any news source (Yahoo now, finanznachrichten later) hands
+     * a stable id here. A covered item is filtered out of the next compose so two
+     * headlines never rest on the same piece of news.
+     */
+    private final Set<String> coveredNewsIds = new HashSet<>();
 
     public SubjectUnit(String id, String canonicalName) {
         this.id = id;
@@ -110,6 +119,20 @@ public final class SubjectUnit {
     public synchronized String lastHeadlineText() {
         return headlines.isEmpty() ? null : headlines.get(headlines.size() - 1).text();
     }
+
+    /** Marks news ids as cited by a published headline — they won't be offered to the next compose. */
+    public synchronized void markNewsCovered(Collection<String> ids) {
+        if (ids == null) return;
+        for (String id : ids) {
+            if (id != null && !id.isBlank()) coveredNewsIds.add(id);
+        }
+    }
+
+    public synchronized boolean isNewsCovered(String id) {
+        return id != null && coveredNewsIds.contains(id);
+    }
+
+    public synchronized Set<String> coveredNewsIds() { return new HashSet<>(coveredNewsIds); }
 
     /** One headline this unit published, with whether it was an UPDATE of a prior line. */
     public record UnitHeadline(String text, boolean update, long atEpoch) {}
