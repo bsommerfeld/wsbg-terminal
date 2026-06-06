@@ -3,6 +3,7 @@ package de.bsommerfeld.wsbg.terminal.lab;
 import com.google.inject.AbstractModule;
 import com.google.inject.Provides;
 import com.google.inject.Singleton;
+import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooFinanceClient;
 import de.bsommerfeld.jshepherd.core.ConfigurationLoader;
 import de.bsommerfeld.wsbg.terminal.core.config.AgentConfig;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
@@ -89,5 +90,22 @@ public final class LabModule extends AbstractModule {
 
         LOG.info("Reddit source: dynamic fallback chain [OAuth → JSON → RSS]");
         return new FallbackRedditSource(List.of(oauth, json, rss), probeSub, 600L);
+    }
+
+    /**
+     * Lab-only Yahoo client with a LONG cache TTL (1 h instead of the prod ~120 s).
+     * The lab re-searches the same subjects across many runs, and Yahoo's search
+     * endpoint rate-limits aggressively — a long TTL means each subject is searched
+     * once per session, far gentler on Yahoo and far fewer 429s. Live price drift is
+     * irrelevant when iterating on the pipeline. Prod keeps its short TTL.
+     */
+    @Provides
+    @Singleton
+    YahooFinanceClient provideYahooFinanceClient(GlobalConfig config) {
+        long oneHour = 3600L;
+        int timeout = Math.max(1, config.getYahoo().getRequestTimeoutSeconds());
+        LOG.info("Lab Yahoo cache TTL: {}s (vs prod {}s) — gentler on the rate limiter",
+                oneHour, config.getYahoo().getCacheTtlSeconds());
+        return new YahooFinanceClient(timeout, oneHour);
     }
 }
