@@ -33,7 +33,15 @@ public final class OllamaAvailability {
 
     /** Starts (or reuses) the isolated Ollama on {@link OllamaServerManager#BASE_URL} for the session. */
     static synchronized void ensureOllama() {
-        if (managed == null) managed = new OllamaServerManager();
+        if (managed == null) {
+            managed = new OllamaServerManager();
+            // Tear the test-spawned server down when the test JVM exits, so a
+            // `mvn test` run doesn't leave an orphaned ollama (serve + model runners
+            // holding GBs of RAM) behind. Within the run it's reused across IT classes.
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                if (managed != null) managed.shutdown();
+            }, "ollama-it-teardown"));
+        }
         managed.ensureRunning(OllamaServerManager.BASE_URL);
     }
 
