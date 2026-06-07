@@ -3,16 +3,12 @@ package de.bsommerfeld.wsbg.terminal.agent;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
-import de.bsommerfeld.wsbg.terminal.core.config.Model;
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
 import dev.langchain4j.data.embedding.Embedding;
-import dev.langchain4j.model.embedding.EmbeddingModel;
-import dev.langchain4j.model.ollama.OllamaEmbeddingModel;
 import dev.langchain4j.store.embedding.CosineSimilarity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.time.Duration;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -38,21 +34,14 @@ public class ClusterEngine {
     private static final Logger LOG = LoggerFactory.getLogger(ClusterEngine.class);
 
     private final ClusterRegistry clusterRegistry;
-    private final EmbeddingModel embeddingModel;
+    private final EmbeddingService embeddings;
     private final double similarityThreshold;
 
     @Inject
-    public ClusterEngine(ClusterRegistry clusterRegistry, GlobalConfig config) {
+    public ClusterEngine(ClusterRegistry clusterRegistry, GlobalConfig config, EmbeddingService embeddings) {
         this.clusterRegistry = clusterRegistry;
         this.similarityThreshold = config.getReddit().getSimilarityThreshold();
-
-        String embeddingModelName = Model.EMBEDDING.getModelName();
-        LOG.info("Initializing Vector Embedding Model: {}", embeddingModelName);
-        this.embeddingModel = OllamaEmbeddingModel.builder()
-                .baseUrl(AgentBrain.OLLAMA_BASE_URL)
-                .modelName(embeddingModelName)
-                .timeout(Duration.ofSeconds(60))
-                .build();
+        this.embeddings = embeddings;
     }
 
     /**
@@ -74,7 +63,7 @@ public class ClusterEngine {
         String content = t.title() + " "
                 + (t.textContent() != null ? t.textContent() : "") + " "
                 + safeVision;
-        Embedding embedding = embeddingModel.embed(content).content();
+        Embedding embedding = Embedding.from(embeddings.embed(content));
 
         // Ticker-overlap fast path. Vector similarity often fails on short
         // German titles that share an instrument ("SNOW SNOW SNOW" vs

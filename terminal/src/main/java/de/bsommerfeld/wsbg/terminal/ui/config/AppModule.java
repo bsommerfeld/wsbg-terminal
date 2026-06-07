@@ -5,6 +5,8 @@ import com.google.inject.Provides;
 import com.google.inject.Singleton;
 import de.bsommerfeld.jshepherd.core.ConfigurationLoader;
 import de.bsommerfeld.wsbg.terminal.agent.AgentCoordinator;
+import de.bsommerfeld.wsbg.terminal.agent.EmbeddingService;
+import de.bsommerfeld.wsbg.terminal.agent.OllamaEmbeddingService;
 import de.bsommerfeld.wsbg.terminal.agent.ClusterRebalancer;
 import de.bsommerfeld.wsbg.terminal.agent.PassiveMonitorService;
 import de.bsommerfeld.wsbg.terminal.core.config.AgentConfig;
@@ -63,6 +65,8 @@ public class AppModule extends AbstractModule {
 
             bind(GlobalConfig.class).toInstance(config);
             bind(AgentConfig.class).toInstance(config.getAgent());
+            // Shared embedding seam (clustering, collation, …) → Ollama-backed impl.
+            bind(EmbeddingService.class).to(OllamaEmbeddingService.class);
 
             // RedditSource is assembled in provideRedditSource() below — it
             // auto-selects a working path (OAuth → .json → RSS) at runtime, so

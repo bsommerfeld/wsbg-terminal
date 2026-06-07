@@ -42,7 +42,7 @@ class ColdStartTimingIT {
             ClusterRegistry registry = new ClusterRegistry();
             RssRedditScraper rss = new RssRedditScraper(redditRepo, config, bus);
 
-            ClusterEngine clusterEngine = new ClusterEngine(registry, config);
+            ClusterEngine clusterEngine = new ClusterEngine(registry, config, new OllamaEmbeddingService());
 
             long start = System.currentTimeMillis();
             new PassiveMonitorService(rss, brain, bus, redditRepo, agentRepo,
