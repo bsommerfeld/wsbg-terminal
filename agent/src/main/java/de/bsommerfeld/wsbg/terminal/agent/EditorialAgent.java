@@ -100,13 +100,13 @@ public class EditorialAgent {
             AgentRepository agentRepository,
             RedditRepository redditRepository,
             ApplicationEventBus eventBus, I18nService i18n,
-            YahooFinanceClient yahooFinance) {
+            YahooFinanceClient yahooFinance, EmbeddingService embeddings) {
         this.brain = brain;
         this.clusterRegistry = clusterRegistry;
         this.agentRepository = agentRepository;
         this.redditRepository = redditRepository;
         this.reportBuilder = new ReportBuilder(redditRepository, brain);
-        this.tickerResolver = new TickerResolver(yahooFinance);
+        this.tickerResolver = new TickerResolver(yahooFinance, embeddings); // Tier 2 enabled
         this.headlineWriter = new HeadlineWriter(agentRepository, eventBus);
         this.attributor = new SubjectAttributor(redditRepository, brain);
     }

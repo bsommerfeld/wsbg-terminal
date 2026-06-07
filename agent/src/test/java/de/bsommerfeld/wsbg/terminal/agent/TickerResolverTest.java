@@ -87,6 +87,33 @@ class TickerResolverTest {
         assertEquals("AMZN", TickerResolver.strongMatch("Amazon", quotes).symbol());
     }
 
+    // ---- Tier 2: embedding fallback when token/score matching can't decide ----
+
+    @Test
+    void tier2PicksTheSemanticCandidateWhenTokensDontMatch() {
+        // "Google" shares NO token with "Alphabet Inc." — strongMatch can't link them,
+        // but the embedder knows they're the same (pinned). Tier 2 rescues it.
+        FakeEmbeddingService fake = new FakeEmbeddingService().pin("Google", "Alphabet Inc.", 0.8);
+        TickerResolver r = new TickerResolver(null, fake);
+        List<YahooQuote> quotes = List.of(
+                q("AAPL", "Apple Inc.", "NMS", "EQUITY"),
+                q("GOOGL", "Alphabet Inc.", "NMS", "EQUITY"));
+        assertEquals("GOOGL", r.embedMatch("Google", quotes).symbol());
+    }
+
+    @Test
+    void tier2RejectsWhenNoCandidateIsCloseEnough() {
+        // The guard: no semantically-close candidate → stays unresolved, never a guess.
+        TickerResolver r = new TickerResolver(null, new FakeEmbeddingService());
+        assertNull(r.embedMatch("Rheinmetall", List.of(q("AAPL", "Apple Inc.", "NMS", "EQUITY"))));
+    }
+
+    @Test
+    void tier2IsNoOpWithoutAnEmbedder() {
+        TickerResolver r = new TickerResolver(null); // no embedder → Tier 2 disabled
+        assertNull(r.embedMatch("Google", List.of(q("GOOGL", "Alphabet Inc.", "NMS", "EQUITY"))));
+    }
+
     @Test
     void strictSingleTokenStillRejectsFuzzyExtraWord() {
         // The guard the strict mode exists for must survive the "com" relaxation:

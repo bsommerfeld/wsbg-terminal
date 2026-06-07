@@ -55,7 +55,7 @@ class PipelineStagesIT {
         registry = new ClusterRegistry();
         engine = new ClusterEngine(registry, config, new OllamaEmbeddingService());
         editorial = new EditorialAgent(brain, registry, agentRepo, redditRepo, bus,
-                new I18nService(config), new YahooFinanceClient(config));
+                new I18nService(config), new YahooFinanceClient(config), new OllamaEmbeddingService());
     }
 
     @Test

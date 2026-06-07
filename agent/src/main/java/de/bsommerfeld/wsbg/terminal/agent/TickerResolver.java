@@ -107,10 +107,24 @@ public final class TickerResolver {
             "usdt", "usdc",
             "etf", "fund", "trust", "shares");
 
+    /**
+     * Tier 2 acceptance bar: when token/score matching ({@link #strongMatch}) can't
+     * confidently pick a candidate, the embedding ranker may — but only if the best
+     * candidate name is at least this cosine-similar to the query. Doubles as a guard
+     * (a fuzzy query with no semantically-close candidate stays unresolved). Tunable.
+     */
+    private static final double EMBED_MATCH_THRESHOLD = 0.55;
+
     private final YahooFinanceClient yahoo;
+    private final EmbeddingService embeddings; // Tier 2; null disables it
 
     public TickerResolver(YahooFinanceClient yahoo) {
+        this(yahoo, null);
+    }
+
+    public TickerResolver(YahooFinanceClient yahoo, EmbeddingService embeddings) {
         this.yahoo = yahoo;
+        this.embeddings = embeddings;
     }
 
     /** Resolves a single subject with the default related allowance ({@link #MAX_RELATED}). */
@@ -168,6 +182,9 @@ public final class TickerResolver {
                 }
                 List<YahooNewsItem> news = sr.news() != null ? sr.news() : List.of();
                 YahooQuote strong = strongMatch(query, sr.quotes());
+                if (strong == null) {
+                    strong = embedMatch(query, sr.quotes()); // Tier 2: semantic fallback
+                }
                 String ownTicker = strong == null ? null : strong.symbol();
                 String canonical = strong == null ? query : strong.displayName();
 
@@ -243,6 +260,23 @@ public final class TickerResolver {
         static Pending rateLimited(String query) {
             return new Pending(query, query, null, List.of(), List.of(), Map.of(), true);
         }
+    }
+
+    /**
+     * Tier 2: when {@link #strongMatch} found nothing (token/score didn't decide),
+     * pick the candidate whose NAME is most semantically similar to the query via
+     * the embedding ranker — but only above {@link #EMBED_MATCH_THRESHOLD}, so a
+     * fuzzy query with no close candidate stays unresolved (the guard). No-op when
+     * no embedder is wired. Source-agnostic: the candidates are just names, so the
+     * same path will rank a local symbol-corpus once that exists. Package-private
+     * for testing.
+     */
+    YahooQuote embedMatch(String query, List<YahooQuote> quotes) {
+        if (embeddings == null || quotes == null || quotes.isEmpty()) return null;
+        List<String> names = new ArrayList<>(quotes.size());
+        for (YahooQuote q : quotes) names.add(q.displayName());
+        int i = embeddings.bestMatch(query, names, EMBED_MATCH_THRESHOLD);
+        return i >= 0 ? quotes.get(i) : null;
     }
 
     /**
