@@ -11,6 +11,29 @@ class YahooFinanceClientTest {
 
     private final YahooFinanceClient client = new YahooFinanceClient(10, 300);
 
+    // ---- 429 circuit breaker ----
+
+    @Test
+    void rateLimitStatusOnlyForBackoffCodes() {
+        assertTrue(YahooFinanceClient.isRateLimitStatus(429));
+        assertTrue(YahooFinanceClient.isRateLimitStatus(503));
+        assertTrue(YahooFinanceClient.isRateLimitStatus(999));
+        assertFalse(YahooFinanceClient.isRateLimitStatus(200));
+        assertFalse(YahooFinanceClient.isRateLimitStatus(404));
+        assertFalse(YahooFinanceClient.isRateLimitStatus(500));
+    }
+
+    @Test
+    void breakerOpensAfterTripAndShortCircuitsSearch() {
+        YahooFinanceClient c = new YahooFinanceClient(10, 300);
+        assertFalse(c.breakerOpen(), "fresh client: breaker closed");
+        c.tripBreaker("test", 429);
+        assertTrue(c.breakerOpen(), "after a 429 the breaker is open");
+        // While open, search short-circuits (no HTTP) and reports the rate-limit
+        // signal so callers skip the subject instead of treating it as 'no result'.
+        assertTrue(c.search("Nvidia", 5, 0).rateLimited(), "open breaker → search is throttled");
+    }
+
     @Test
     void parsesQuoteAndNewsFromSearchResponse() {
         String body = """

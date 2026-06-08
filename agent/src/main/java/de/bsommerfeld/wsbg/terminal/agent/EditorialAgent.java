@@ -7,6 +7,7 @@ import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.agent.HeadlineWriter.Draft;
 import de.bsommerfeld.wsbg.terminal.agent.HeadlineWriter.DraftSubject;
 import de.bsommerfeld.wsbg.terminal.agent.TickerResolver.ResolvedSubject;
+import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
 import de.bsommerfeld.wsbg.terminal.core.i18n.I18nService;
@@ -90,6 +91,7 @@ public class EditorialAgent {
     private final ClusterRegistry clusterRegistry;
     private final AgentRepository agentRepository;
     private final RedditRepository redditRepository;
+    private final boolean newsCoverageEnabled; // #3b gate; default off (config)
     private final ReportBuilder reportBuilder;
     private final TickerResolver tickerResolver;
     private final HeadlineWriter headlineWriter;
@@ -100,11 +102,12 @@ public class EditorialAgent {
             AgentRepository agentRepository,
             RedditRepository redditRepository,
             ApplicationEventBus eventBus, I18nService i18n,
-            YahooFinanceClient yahooFinance, EmbeddingService embeddings) {
+            YahooFinanceClient yahooFinance, EmbeddingService embeddings, GlobalConfig config) {
         this.brain = brain;
         this.clusterRegistry = clusterRegistry;
         this.agentRepository = agentRepository;
         this.redditRepository = redditRepository;
+        this.newsCoverageEnabled = config.getHeadlines().isNewsCoverageEnabled();
         this.reportBuilder = new ReportBuilder(redditRepository, brain);
         this.tickerResolver = new TickerResolver(yahooFinance, embeddings); // Tier 2 enabled
         this.headlineWriter = new HeadlineWriter(agentRepository, eventBus);
@@ -204,7 +207,7 @@ public class EditorialAgent {
     }
 
     /** Builds the per-unit brief: Yahoo data + the room's evidence about this subject + its prior headlines. */
-    private static String unitBrief(SubjectUnit unit) {
+    private String unitBrief(SubjectUnit unit) {
         StringBuilder sb = new StringBuilder();
         sb.append("=== SUBJECT: ").append(unit.canonicalName());
         if (unit.isInstrument()) sb.append(" (").append(unit.ticker()).append(")");
@@ -228,7 +231,10 @@ public class EditorialAgent {
         // [news:ID] the model echoes back in sourceNewsIds to mark it consumed.
         List<YahooNewsItem> freshNews = new ArrayList<>();
         for (YahooNewsItem n : unit.news()) {
-            if (!unit.isNewsCovered(n.uuid())) freshNews.add(n);
+            // News coverage is OFF by default: news enriches freely and may back
+            // several headlines on a topic (it's cached, so reuse is free). Only when
+            // explicitly enabled do we hide a unit's already-cited news.
+            if (!newsCoverageEnabled || !unit.isNewsCovered(n.uuid())) freshNews.add(n);
         }
         if (!freshNews.isEmpty()) {
             sb.append("News (context & attribution — NOT the subject; cite any you lean on by its"

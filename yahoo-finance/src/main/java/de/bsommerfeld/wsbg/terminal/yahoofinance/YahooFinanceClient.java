@@ -153,16 +153,16 @@ public class YahooFinanceClient {
     private static final long RATE_LIMIT_COOLDOWN_SECONDS = 90;
     private volatile long rateLimitedUntil = 0L;
 
-    private boolean breakerOpen() {
+    boolean breakerOpen() {
         return Instant.now().getEpochSecond() < rateLimitedUntil;
     }
 
-    /** Yahoo status codes that mean "back off", not "not found". */
-    private static boolean isRateLimitStatus(int code) {
+    /** Yahoo status codes that mean "back off", not "not found". Package-private for testing. */
+    static boolean isRateLimitStatus(int code) {
         return code == 429 || code == 503 || code == 999;
     }
 
-    private void tripBreaker(String what, int code) {
+    void tripBreaker(String what, int code) {
         rateLimitedUntil = Instant.now().getEpochSecond() + RATE_LIMIT_COOLDOWN_SECONDS;
         LOG.warn("Yahoo {} → HTTP {}; opening rate-limit breaker for {}s (skipping further Yahoo calls)",
                 what, code, RATE_LIMIT_COOLDOWN_SECONDS);
