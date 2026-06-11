@@ -244,7 +244,256 @@ class RedditScraperTest {
         assertFalse(stats.hasUpdates());
     }
 
+    // -- resolveImageUrls --
+
+    @Test
+    void resolveImageUrls_shouldResolveInlineBodyImages() throws Exception {
+        // Image embedded mid-text via the rich-text editor: media_metadata
+        // present, is_gallery false, selftext references the media_id.
+        String json = """
+            {
+              "is_gallery": false,
+              "selftext": "Look at this ![img](abc1 \\"chart\\") and more text",
+              "media_metadata": {
+                "abc1": {"status":"valid","e":"Image","s":{"u":"https://preview.redd.it/abc1.png?width=640&amp;auto=webp"}}
+              }
+            }
+            """;
+        assertEquals(
+                List.of("https://preview.redd.it/abc1.png?width=640&auto=webp"),
+                invokeResolveImageUrls(json));
+    }
+
+    @Test
+    void resolveImageUrls_shouldResolveInlineImagesInTextOrderDeduped() throws Exception {
+        String json = """
+            {
+              "selftext": "![img](a) middle ![gif](b) end ![img](a)",
+              "media_metadata": {
+                "a": {"status":"valid","e":"Image","s":{"u":"https://preview.redd.it/a.jpg"}},
+                "b": {"status":"valid","e":"AnimatedImage","s":{"u":"https://preview.redd.it/b.gif"}}
+              }
+            }
+            """;
+        assertEquals(
+                List.of("https://preview.redd.it/a.jpg", "https://preview.redd.it/b.gif"),
+                invokeResolveImageUrls(json));
+    }
+
+    @Test
+    void resolveImageUrls_shouldInheritCrosspostParentGallery() throws Exception {
+        // The wrapper carries no media; the original post in
+        // crosspost_parent_list holds the gallery.
+        String json = """
+            {
+              "selftext": "",
+              "url": "https://www.reddit.com/r/other/comments/x/",
+              "crosspost_parent": "t3_x",
+              "crosspost_parent_list": [{
+                "is_gallery": true,
+                "gallery_data": {"items":[{"media_id":"g1"},{"media_id":"g2"}]},
+                "media_metadata": {
+                  "g1": {"status":"valid","e":"Image","s":{"u":"https://preview.redd.it/g1.png"}},
+                  "g2": {"status":"valid","e":"Image","s":{"u":"https://preview.redd.it/g2.png"}}
+                }
+              }]
+            }
+            """;
+        assertEquals(
+                List.of("https://preview.redd.it/g1.png", "https://preview.redd.it/g2.png"),
+                invokeResolveImageUrls(json));
+    }
+
+    @Test
+    void resolveImageUrls_shouldInheritCrosspostParentInlineBody() throws Exception {
+        String json = """
+            {
+              "selftext": "",
+              "crosspost_parent_list": [{
+                "selftext": "see ![img](p1)",
+                "media_metadata": {
+                  "p1": {"status":"valid","e":"Image","s":{"u":"https://preview.redd.it/p1.png"}}
+                }
+              }]
+            }
+            """;
+        assertEquals(
+                List.of("https://preview.redd.it/p1.png"),
+                invokeResolveImageUrls(json));
+    }
+
+    @Test
+    void resolveImageUrls_shouldSkipInvalidAndNonImageInlineEntries() throws Exception {
+        String json = """
+            {
+              "selftext": "![v](vid) ![ok](img) ![gone](missing)",
+              "media_metadata": {
+                "vid": {"status":"valid","e":"RedditVideo","s":{"u":"https://v.redd.it/vid"}},
+                "img": {"status":"valid","e":"Image","s":{"u":"https://preview.redd.it/img.png"}}
+              }
+            }
+            """;
+        assertEquals(
+                List.of("https://preview.redd.it/img.png"),
+                invokeResolveImageUrls(json));
+    }
+
+    @Test
+    void resolveImageUrls_shouldStillResolvePlainGallery() throws Exception {
+        String json = """
+            {
+              "is_gallery": true,
+              "gallery_data": {"items":[{"media_id":"m1"}]},
+              "media_metadata": {
+                "m1": {"status":"valid","e":"Image","s":{"u":"https://preview.redd.it/m1.png"}}
+              }
+            }
+            """;
+        assertEquals(List.of("https://preview.redd.it/m1.png"), invokeResolveImageUrls(json));
+    }
+
+    @Test
+    void resolveImageUrls_shouldReturnEmptyForPlainTextPost() throws Exception {
+        String json = """
+            { "is_gallery": false, "selftext": "just words, no images", "url": "https://www.reddit.com/r/x/comments/y/" }
+            """;
+        assertTrue(invokeResolveImageUrls(json).isEmpty());
+    }
+
+    // -- crosspost body-text fallback --
+
+    @Test
+    void parseThread_shouldUseCrosspostParentSelftext() throws Exception {
+        // The wrapper's own selftext is empty; the body lives on the parent.
+        String json = """
+            {
+              "title": "Micron DD",
+              "selftext": "",
+              "url": "https://www.reddit.com/r/stocks/comments/x/",
+              "crosspost_parent_list": [{ "selftext": "Original DD body about MU financials" }]
+            }
+            """;
+        RedditThread thread = invokeParseThread(json, "t3_abc", "wallstreetbetsGER");
+        assertEquals("Original DD body about MU financials", thread.textContent());
+    }
+
+    @Test
+    void parseThread_shouldFallBackToLinkWhenCrosspostParentTextEmpty() throws Exception {
+        // Crosspost of a pure image/link post: parent has no selftext either,
+        // so the link fallback still applies.
+        String json = """
+            {
+              "title": "x",
+              "selftext": "",
+              "url_overridden_by_dest": "https://i.redd.it/pic.png",
+              "crosspost_parent_list": [{ "selftext": "" }]
+            }
+            """;
+        RedditThread thread = invokeParseThread(json, "t3_abc", "x");
+        assertEquals("[Link: https://i.redd.it/pic.png]", thread.textContent());
+    }
+
+    @Test
+    void parseThreadData_shouldUseCrosspostParentSelftext() throws Exception {
+        String json = """
+            { "data": { "children": [ { "data": {
+              "name": "t3_abc",
+              "title": "Micron DD",
+              "selftext": "",
+              "crosspost_parent_list": [{ "selftext": "Original DD body" }]
+            } } ] } }
+            """;
+        ThreadAnalysisContext ctx = invokeParseThreadData(json);
+        assertEquals("Original DD body", ctx.selftext);
+    }
+
+    // -- extractImages (comment inline media) --
+
+    @Test
+    void extractImages_shouldResolveCommentInlineMedia() throws Exception {
+        String body = "this is fire ![img](c1) buy now";
+        String json = """
+            { "media_metadata": {
+                "c1": {"status":"valid","e":"Image","s":{"u":"https://preview.redd.it/c1.png"}}
+            }}
+            """;
+        var result = invokeExtractImages(body, json);
+        assertEquals(List.of("https://preview.redd.it/c1.png"), result.images());
+        assertEquals("this is fire [Image] buy now", result.text());
+    }
+
+    @Test
+    void extractImages_shouldHandleBothRawUrlAndInlineMediaInComment() throws Exception {
+        String body = "chart https://i.redd.it/raw.png and inline ![img](c2)";
+        String json = """
+            { "media_metadata": {
+                "c2": {"status":"valid","e":"AnimatedImage","s":{"u":"https://preview.redd.it/c2.gif"}}
+            }}
+            """;
+        var result = invokeExtractImages(body, json);
+        assertEquals(
+                List.of("https://i.redd.it/raw.png", "https://preview.redd.it/c2.gif"),
+                result.images());
+        assertTrue(result.text().contains("[Image]"));
+    }
+
+    @Test
+    void extractImages_shouldLeaveUnresolvableInlineRefUntouched() throws Exception {
+        String body = "see ![img](missing) here";
+        String json = "{ \"media_metadata\": { \"other\": {\"status\":\"valid\",\"e\":\"Image\",\"s\":{\"u\":\"https://x/o.png\"}} } }";
+        var result = invokeExtractImages(body, json);
+        assertTrue(result.images().isEmpty());
+        assertEquals("see ![img](missing) here", result.text());
+    }
+
+    @Test
+    void extractImages_shouldNoOpWithoutMediaMetadata() throws Exception {
+        String body = "plain comment, no media";
+        var result = invokeExtractImages(body, "{}");
+        assertTrue(result.images().isEmpty());
+        assertEquals("plain comment, no media", result.text());
+    }
+
     // -- Reflection helpers --
+
+    private RedditThread invokeParseThread(String json, String id, String subredditDefault)
+            throws Exception {
+        var data = new com.fasterxml.jackson.databind.ObjectMapper().readTree(json);
+        Method m = RedditScraper.class.getDeclaredMethod("parseThread",
+                com.fasterxml.jackson.databind.JsonNode.class, String.class, String.class);
+        m.setAccessible(true);
+        return (RedditThread) m.invoke(scraper, data, id, subredditDefault);
+    }
+
+    private ThreadAnalysisContext invokeParseThreadData(String json) throws Exception {
+        var listing = new com.fasterxml.jackson.databind.ObjectMapper().readTree(json);
+        var ctx = new ThreadAnalysisContext();
+        Method m = RedditScraper.class.getDeclaredMethod("parseThreadData",
+                com.fasterxml.jackson.databind.JsonNode.class, ThreadAnalysisContext.class);
+        m.setAccessible(true);
+        m.invoke(scraper, listing, ctx);
+        return ctx;
+    }
+
+    private RedditScraper.ImageExtractionResult invokeExtractImages(String body, String json)
+            throws Exception {
+        var data = new com.fasterxml.jackson.databind.ObjectMapper().readTree(json);
+        var ctx = new ThreadAnalysisContext();
+        Method m = RedditScraper.class.getDeclaredMethod("extractImages",
+                String.class, com.fasterxml.jackson.databind.JsonNode.class,
+                ThreadAnalysisContext.class);
+        m.setAccessible(true);
+        return (RedditScraper.ImageExtractionResult) m.invoke(scraper, body, data, ctx);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<String> invokeResolveImageUrls(String json) throws Exception {
+        var node = new com.fasterxml.jackson.databind.ObjectMapper().readTree(json);
+        Method m = RedditScraper.class.getDeclaredMethod("resolveImageUrls",
+                com.fasterxml.jackson.databind.JsonNode.class);
+        m.setAccessible(true);
+        return (List<String>) m.invoke(scraper, node);
+    }
 
     private String invokeNormalize(String permalink) throws Exception {
         Method m = RedditScraper.class.getDeclaredMethod("normalizePermalink", String.class);
