@@ -17,6 +17,9 @@
         <module>yahoo-finance</module>
         <module>currency</module>
         <module>finanznachrichten</module>
+        <module>source-api</module>
+        <module>embedding</module>
+        <module>aggregator</module>
 
         <module>agent</module>
         <module>terminal</module>
@@ -83,6 +86,21 @@
             <dependency>
                 <groupId>de.bsommerfeld</groupId>
                 <artifactId>currency</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>source-api</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>embedding</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>aggregator</artifactId>
                 <version>${project.version}</version>
             </dependency>
 

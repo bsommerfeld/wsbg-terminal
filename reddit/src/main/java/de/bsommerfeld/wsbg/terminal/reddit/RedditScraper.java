@@ -741,6 +741,13 @@ public class RedditScraper implements RedditSource {
      * and score, only triggering a deep re-fetch if the comment count
      * increased. The thread is always added to the batch to update mutable
      * metadata (score, upvote ratio).
+     *
+     * <p><b>Only new content (comments) re-evaluates a thread, never a score
+     * change.</b> A score is pure sentiment colour, not editorial substance —
+     * re-clustering / re-headlining a cluster just because votes ticked would
+     * republish a near-identical headline off nothing new. So a score-only delta
+     * updates the stored metadata (via the batch) but is NOT added to
+     * {@code threadUpdates}, which is what drives cluster assignment downstream.
      */
     private void handleExistingThread(RedditThread thread, RedditThread existing,
             ScrapeStats stats, List<RedditThread> batchCollector) {
@@ -751,7 +758,9 @@ public class RedditScraper implements RedditSource {
             stats.newComments += commentDiff;
         if (scoreDiff > 0)
             stats.newUpvotes += scoreDiff;
-        if (commentDiff > 0 || scoreDiff > 0)
+        // New content only — a score-only change is recorded (batch below) but
+        // must not re-trigger the editorial pipeline.
+        if (commentDiff > 0)
             stats.threadUpdates.add(thread);
 
         if (commentDiff > 0) {

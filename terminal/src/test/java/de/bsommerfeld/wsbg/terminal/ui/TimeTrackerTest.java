@@ -214,6 +214,62 @@ class TimeTrackerTest {
     }
 
     @Test
+    @DisplayName("onActiveChange fires when a snooze expires mid-session (60s checkpoint)")
+    void activeChangeFiresOnSnoozeExpiry() {
+        GlobalConfig config = stubConfig();
+        config.getUser().setActiveMillis(13 * HOUR_MS);
+        config.getUser().setDonationSnoozeUntil(System.currentTimeMillis() + HOUR_MS);
+        tracker = new TimeTracker(config);
+        assertFalse(tracker.isDonationActive(), "starts suppressed by the snooze");
+
+        AtomicInteger fired = new AtomicInteger();
+        tracker.onActiveChange(fired::incrementAndGet);
+
+        // The snooze expires while the session keeps running...
+        config.getUser().setDonationSnoozeUntil(System.currentTimeMillis() - 1);
+        // ...and the next periodic checkpoint notices the flip.
+        tracker.creditAndPersist(60_000L);
+
+        assertTrue(tracker.isDonationActive());
+        assertEquals(1, fired.get(), "expiry is announced exactly once");
+
+        tracker.creditAndPersist(60_000L);   // no further flip: no re-fire
+        assertEquals(1, fired.get());
+    }
+
+    @Test
+    @DisplayName("onActiveChange fires when snoozeDonation() suppresses the layer")
+    void activeChangeFiresOnSnooze() {
+        GlobalConfig config = stubConfig();
+        config.getUser().setActiveMillis(13 * HOUR_MS);
+        tracker = new TimeTracker(config);
+        assertTrue(tracker.isDonationActive());
+
+        AtomicInteger fired = new AtomicInteger();
+        tracker.onActiveChange(fired::incrementAndGet);
+
+        tracker.snoozeDonation();
+        assertEquals(1, fired.get());
+    }
+
+    // ---- supporter marker (gold heart) ---------------------------------------
+
+    @Test
+    @DisplayName("markDonationClicked persists the flag once and is idempotent")
+    void donationClickGildsOnce() {
+        GlobalConfig config = stubConfig();
+        tracker = new TimeTracker(config);
+        assertFalse(tracker.isDonationClicked());
+
+        tracker.markDonationClicked();
+        assertTrue(tracker.isDonationClicked());
+        assertTrue(config.getUser().isDonationClicked(), "flag lands in the persisted config");
+
+        tracker.markDonationClicked();   // second click: no state change
+        assertTrue(tracker.isDonationClicked());
+    }
+
+    @Test
     @DisplayName("a sleep-sized delta is clamped, so overnight suspend can't unlock")
     void sleepDoesNotUnlock() {
         GlobalConfig config = stubConfig();

@@ -5,7 +5,9 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.regex.Matcher;
@@ -16,8 +18,20 @@ import java.util.regex.Pattern;
  *
  * <p>
  * Runs {@code bin/setup.sh} (macOS/Linux) or {@code bin/setup.ps1}
- * (Windows). The launcher blocks until the script completes or the
- * {@link #TIMEOUT_MINUTES} deadline is reached.
+ * (Windows). For local development the script directory can be overridden
+ * via the {@code wsbg.setup.script.dir} system property or the
+ * {@code WSBG_SETUP_SCRIPT_DIR} environment variable, so dev launches
+ * always test against the repo's {@code .script/} instead of the
+ * release-cached {@code bin/} copies.
+ *
+ * <h3>Watchdog</h3>
+ * The launcher blocks until the script completes. There is no fixed overall
+ * deadline — a first-run model download legitimately takes as long as the
+ * connection needs — but an <em>idle</em> watchdog kills the script when it
+ * produces no output for {@link #DEFAULT_IDLE_TIMEOUT}: every long-running
+ * step (curl, ollama pull) emits steady progress lines, so prolonged silence
+ * means the process is hung, not slow. {@link #TIMEOUT_MINUTES} only caps
+ * the residual gap between stdout EOF and process exit.
  *
  * <h3>Output parsing</h3>
  * Script output is streamed line-by-line and parsed into structured
@@ -39,7 +53,23 @@ import java.util.regex.Pattern;
  */
 final class EnvironmentSetup {
 
+    /** Caps only the stdout-EOF → process-exit gap, not the script runtime. */
     private static final long TIMEOUT_MINUTES = 15;
+
+    /** Kill the script when it emits no output at all for this long. */
+    static final Duration DEFAULT_IDLE_TIMEOUT = Duration.ofMinutes(10);
+
+    /**
+     * Script exit code meaning "finished, but at least one step degraded"
+     * (e.g. a font download failed, a model update was skipped offline).
+     * Distinct from a hard failure so the launcher can phrase it as a
+     * warning. Must match the {@code exit 10} in setup.sh / setup.ps1.
+     */
+    static final int EXIT_WITH_WARNINGS = 10;
+
+    /** Dev-only override for the setup-script directory (see class javadoc). */
+    static final String SCRIPT_DIR_PROPERTY = "wsbg.setup.script.dir";
+    static final String SCRIPT_DIR_ENV = "WSBG_SETUP_SCRIPT_DIR";
 
     private static final Pattern ANSI_PATTERN = Pattern.compile("\u001B\\[[0-9;?]*[a-zA-Z]");
 
@@ -89,7 +119,14 @@ final class EnvironmentSetup {
             "^[#=\\-\\s▕▏█░▒]+$|^[\\d.]+%$|^[/\\\\|\\-]$|\\d+\\s*[KMG]?B\\s*/\\s*\\d|^[▕▏█░▒\\s]+\\d+%");
 
     private final Path appDirectory;
+    private final Duration idleTimeout;
     private final AtomicReference<Process> activeProcess = new AtomicReference<>();
+
+    /** Timestamp of the last script output line, driving the idle watchdog. */
+    private final AtomicLong lastOutputAt = new AtomicLong();
+
+    /** Set by the watchdog when it killed the script for being silent. */
+    private volatile boolean idleTimedOut;
 
     /**
      * Tracks which model is currently being pulled so progress/status lines inherit
@@ -109,7 +146,13 @@ final class EnvironmentSetup {
     private boolean installingOllama;
 
     EnvironmentSetup(Path appDirectory) {
+        this(appDirectory, DEFAULT_IDLE_TIMEOUT);
+    }
+
+    /** Test seam: inject a short idle timeout. */
+    EnvironmentSetup(Path appDirectory, Duration idleTimeout) {
         this.appDirectory = appDirectory;
+        this.idleTimeout = idleTimeout;
     }
 
     /**
@@ -148,12 +191,40 @@ final class EnvironmentSetup {
         ProcessBuilder pb = createProcessBuilder(script);
         Process process = pb.start();
         activeProcess.set(process);
+        lastOutputAt.set(System.currentTimeMillis());
+        idleTimedOut = false;
 
+        Thread watchdog = Thread.ofVirtual().name("setup-watchdog")
+                .start(() -> watchIdle(process));
         try {
             streamOutput(process, outputConsumer);
             return awaitCompletion(process, outputConsumer);
         } finally {
+            watchdog.interrupt();
             activeProcess.set(null);
+        }
+    }
+
+    /**
+     * Kills the script (and its children) once it has been silent for
+     * {@link #idleTimeout}. Active downloads emit progress lines continuously,
+     * so this never fires on a slow connection — only on a genuine hang.
+     */
+    private void watchIdle(Process process) {
+        try {
+            while (process.isAlive()) {
+                long remaining = idleTimeout.toMillis()
+                        - (System.currentTimeMillis() - lastOutputAt.get());
+                if (remaining <= 0) {
+                    idleTimedOut = true;
+                    process.descendants().forEach(ProcessHandle::destroyForcibly);
+                    process.destroyForcibly();
+                    return;
+                }
+                Thread.sleep(Math.min(remaining, 1000));
+            }
+        } catch (InterruptedException ignored) {
+            // run() finished — watchdog no longer needed
         }
     }
 
@@ -169,6 +240,9 @@ final class EnvironmentSetup {
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
             String line;
             while ((line = reader.readLine()) != null) {
+                // Any output — even noise — proves the script is alive.
+                lastOutputAt.set(System.currentTimeMillis());
+
                 String clean = stripAnsi(line).strip();
                 if (clean.isEmpty())
                     continue;
@@ -179,14 +253,21 @@ final class EnvironmentSetup {
     }
 
     /**
-     * Waits for the process to finish within the timeout. If the process
-     * does not complete in time, it is force-killed.
+     * Waits for the process to finish. Stdout is already at EOF here, so the
+     * {@link #TIMEOUT_MINUTES} wait only covers the exit gap; a script hung
+     * mid-run was already killed by the idle watchdog.
      *
      * @return {@code true} if the process exited with code 0
      */
     private boolean awaitCompletion(Process process, BiConsumer<String, String> consumer)
             throws InterruptedException {
         boolean finished = process.waitFor(TIMEOUT_MINUTES, TimeUnit.MINUTES);
+
+        if (idleTimedOut) {
+            consumer.accept("Setup timed out",
+                    "no output for " + idleTimeout.toMinutes() + " minutes");
+            return false;
+        }
         if (!finished) {
             process.destroyForcibly();
             consumer.accept("Setup timed out", "after " + TIMEOUT_MINUTES + " minutes");
@@ -194,6 +275,10 @@ final class EnvironmentSetup {
         }
 
         int exitCode = process.exitValue();
+        if (exitCode == EXIT_WITH_WARNINGS) {
+            consumer.accept("Setup completed with warnings", null);
+            return false;
+        }
         if (exitCode != 0) {
             consumer.accept("Setup warning", "exited with code " + exitCode);
         }
@@ -432,10 +517,20 @@ final class EnvironmentSetup {
     // =====================================================================
 
     private Path resolveScript() {
-        if (isWindows()) {
-            return appDirectory.resolve("bin/setup.ps1");
+        String name = isWindows() ? "setup.ps1" : "setup.sh";
+
+        // Dev override: point at the repo's .script/ so local launcher runs
+        // always test the checked-in scripts, not the release-cached bin/
+        // copies (which the update phase would otherwise restore first).
+        String override = System.getProperty(SCRIPT_DIR_PROPERTY, System.getenv(SCRIPT_DIR_ENV));
+        if (override != null && !override.isBlank()) {
+            Path candidate = Path.of(override).resolve(name);
+            if (Files.exists(candidate)) {
+                return candidate;
+            }
         }
-        return appDirectory.resolve("bin/setup.sh");
+
+        return appDirectory.resolve("bin").resolve(name);
     }
 
     private ProcessBuilder createProcessBuilder(Path script) {

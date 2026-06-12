@@ -76,6 +76,21 @@ public class RedditConfig {
     @Comment("Burst capacity for the OAUTH rate limiter (default: 20).")
     private double oauthRateLimitBurst = 20.0;
 
+    @Key("browser-rate-limit-requests-per-second")
+    @Comment("Sustained request rate for the BROWSER source (default: 6.0). The "
+            + "embedded browser carries a real session (cookies + fingerprint, "
+            + "challenge solved), so it is NOT held to the anonymous .json "
+            + "bot-detection budget (0.15/s) — that conservative value was for the "
+            + "headless path. A real browser session sustains far more; 6.0/s lets "
+            + "the full-fidelity deep fetches (?limit=500&depth=20) on cold start "
+            + "complete in seconds instead of minutes, with NO loss of data. A 429 "
+            + "self-heals (re-anchor); dial down if the IP is throttled persistently.")
+    private double browserRateLimitRequestsPerSecond = 6.0;
+
+    @Key("browser-rate-limit-burst")
+    @Comment("Burst capacity for the BROWSER rate limiter (default: 20).")
+    private double browserRateLimitBurst = 20.0;
+
     @Key("snapshot-ttl-minutes")
     @Comment("How long an on-disk Reddit snapshot stays valid across restarts "
             + "(default: 60, set 0 to disable). On startup, if a snapshot newer "
@@ -127,6 +142,14 @@ public class RedditConfig {
 
     public double getOauthRateLimitBurst() {
         return oauthRateLimitBurst;
+    }
+
+    public double getBrowserRateLimitRequestsPerSecond() {
+        return browserRateLimitRequestsPerSecond;
+    }
+
+    public double getBrowserRateLimitBurst() {
+        return browserRateLimitBurst;
     }
 
     public long getSnapshotTtlMinutes() {

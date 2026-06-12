@@ -1,9 +1,10 @@
 package de.bsommerfeld.wsbg.terminal.agent;
+import de.bsommerfeld.wsbg.terminal.embedding.EmbeddingService;
 
 import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
 import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooFinanceClient;
 import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooFinanceClient.SearchResult;
-import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooNewsItem;
+import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
 import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooQuote;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -180,7 +181,7 @@ public final class TickerResolver {
                     pending.add(Pending.rateLimited(query));
                     continue;
                 }
-                List<YahooNewsItem> news = sr.news() != null ? sr.news() : List.of();
+                List<RawNewsItem> news = sr.news() != null ? sr.news() : List.of();
                 YahooQuote strong = strongMatch(query, sr.quotes());
                 if (strong == null) {
                     strong = embedMatch(query, sr.quotes()); // Tier 2: semantic fallback
@@ -189,19 +190,19 @@ public final class TickerResolver {
                 String canonical = strong == null ? query : strong.displayName();
 
                 List<String> relSyms = new ArrayList<>();
-                Map<String, List<YahooNewsItem>> relNews = new LinkedHashMap<>();
+                Map<String, List<RawNewsItem>> relNews = new LinkedHashMap<>();
                 if (maxRelated > 0) {
                     Set<String> seen = new HashSet<>();
                     if (ownTicker != null) seen.add(ownTicker.toUpperCase(Locale.ROOT));
                     collect:
-                    for (YahooNewsItem ni : news) {
+                    for (RawNewsItem ni : news) {
                         if (ni.relatedTickers() == null) continue;
                         for (String raw : ni.relatedTickers()) {
                             if (raw == null) continue;
                             String sym = raw.trim().toUpperCase(Locale.ROOT);
                             if (sym.isEmpty() || !seen.add(sym)) continue;
                             relSyms.add(sym);
-                            List<YahooNewsItem> rn = yahoo.getNewsForSymbol(sym, RELATED_NEWS_COUNT);
+                            List<RawNewsItem> rn = yahoo.getNewsForSymbol(sym, RELATED_NEWS_COUNT);
                             relNews.put(sym, rn == null ? List.of() : rn);
                             if (relSyms.size() >= maxRelated) break collect;
                         }
@@ -250,8 +251,8 @@ public final class TickerResolver {
 
     /** Per-subject scratch between phase 1 (collect) and phase 3 (assemble). */
     private record Pending(String query, String canonical, String ownTicker,
-            List<YahooNewsItem> news, List<String> relSyms,
-            Map<String, List<YahooNewsItem>> relNews, boolean rateLimited) {
+            List<RawNewsItem> news, List<String> relSyms,
+            Map<String, List<RawNewsItem>> relNews, boolean rateLimited) {
         static Pending empty(String query) {
             return new Pending(query, query, null, List.of(), List.of(), Map.of(), false);
         }
@@ -392,7 +393,7 @@ public final class TickerResolver {
             String canonicalName,
             String ticker,
             MarketSnapshot snapshot,
-            List<YahooNewsItem> news,
+            List<RawNewsItem> news,
             List<RelatedInstrument> related,
             // unresolved: Yahoo was rate-limiting (breaker open) so this subject was
             // NOT enriched — a marker, NOT a skip. It's still attributed + headlined
@@ -418,7 +419,7 @@ public final class TickerResolver {
      * with its live snapshot. Carried as evidence for a possible causal link;
      * never asserted as one.
      */
-    public record RelatedInstrument(String ticker, MarketSnapshot snapshot, List<YahooNewsItem> news) {
+    public record RelatedInstrument(String ticker, MarketSnapshot snapshot, List<RawNewsItem> news) {
         public boolean hasNews() {
             return news != null && !news.isEmpty();
         }

@@ -17,11 +17,20 @@ import java.util.Map;
  * and is always shown by the page.
  *
  * <p>Pushed on every client open (so a freshly loaded page learns the state
- * immediately) and once more the moment the 12&nbsp;h gate is first crossed
- * mid-session. Also receives the inbound {@code donation} command: when the user
- * clicks the donate heart or dismisses the banner, that engagement snoozes the
- * active layer for a long cooldown, and the new (suppressed) state is pushed
- * back so the banner stops at once.
+ * immediately) and on every mid-session flip of the active state — the 12&nbsp;h
+ * unlock crossing <em>and</em> a snooze expiring while the terminal keeps
+ * running (via {@link TimeTracker#onActiveChange}). Also receives the inbound
+ * {@code donation} command: when the user clicks the donate heart or dismisses
+ * the banner, that engagement snoozes the active layer for a long cooldown, and
+ * the new (suppressed) state is pushed back so the banner stops at once. A click
+ * that actually opened the donate page carries {@code donated: true} and gilds
+ * the heart permanently (honor system — Ko-fi is external, no accounts exist,
+ * the click is the only signal there is).
+ *
+ * <p>The payload also carries the reciprocity stats the banner copy
+ * personalises with: {@code activeHours} (cumulative use) and {@code openCount}
+ * (sessions). Both already existed in {@code UserConfig}; this is where they
+ * stop being dead signals.
  */
 @Singleton
 public final class DonationGatePublisher {
@@ -36,13 +45,16 @@ public final class DonationGatePublisher {
         this.hub = hub;
         this.tracker = tracker;
         hub.onClientOpen(this::push);
-        tracker.onUnlock(this::push);
+        tracker.onActiveChange(this::push);
         hub.on("donation", this::onDonation);
     }
 
     private void onDonation(Map<String, Object> payload) {
         Object action = payload.get("action");
         if ("snooze".equals(action)) {
+            if (Boolean.TRUE.equals(payload.get("donated"))) {
+                tracker.markDonationClicked();
+            }
             tracker.snoozeDonation();
             push();
         }
@@ -50,7 +62,11 @@ public final class DonationGatePublisher {
 
     private void push() {
         try {
-            hub.broadcast("donation-gate", Map.of("unlocked", tracker.isDonationActive()));
+            hub.broadcast("donation-gate", Map.of(
+                    "unlocked", tracker.isDonationActive(),
+                    "supporter", tracker.isDonationClicked(),
+                    "activeHours", tracker.getActiveMillis() / 3_600_000L,
+                    "openCount", tracker.getOpenCount()));
         } catch (Exception e) {
             LOG.warn("donation-gate broadcast failed: {}", e.getMessage());
         }

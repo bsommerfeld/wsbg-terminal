@@ -1,4 +1,6 @@
 package de.bsommerfeld.wsbg.terminal.agent;
+import de.bsommerfeld.wsbg.terminal.embedding.EmbeddingService;
+import de.bsommerfeld.wsbg.terminal.embedding.OllamaEmbeddingService;
 
 import de.bsommerfeld.wsbg.terminal.agent.ClusterEngine.AssignOutcome;
 import de.bsommerfeld.wsbg.terminal.agent.EditorialAgent.UnitDraft;

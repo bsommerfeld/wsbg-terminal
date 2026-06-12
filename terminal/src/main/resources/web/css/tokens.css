@@ -55,6 +55,7 @@
   --red:          oklch(0.72 0.19 28);
   --red-soft:     oklch(0.72 0.19 28 / .10);
   --blue:         oklch(0.78 0.12 230);
+  --gold:         oklch(0.84 0.15 92);   /* supporter heart ("Ehrenaffe") */
 
   --titlebar-h:   38px;
   --footer-h:     32px;
@@ -88,5 +89,6 @@ html[data-theme="light"] {
   --red:          oklch(0.55 0.19 28);
   --red-soft:     oklch(0.55 0.19 28 / .10);
   --blue:         oklch(0.55 0.14 240);
+  --gold:         oklch(0.62 0.14 85);   /* supporter heart ("Ehrenaffe") */
 }
 

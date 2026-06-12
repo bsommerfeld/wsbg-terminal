@@ -1,5 +1,7 @@
 package de.bsommerfeld.wsbg.terminal.yahoofinance;
 
+import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
+
 import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
 import org.junit.jupiter.api.Test;
 
@@ -95,7 +97,7 @@ class YahooFinanceClientTest {
         assertTrue(Double.isNaN(rhm.regularMarketPercentChange()));
 
         assertEquals(1, result.news().size());
-        YahooNewsItem n = result.news().get(0);
+        RawNewsItem n = result.news().get(0);
         assertEquals("abc-123", n.uuid());
         assertEquals("Stocktwits", n.publisher());
         assertEquals(List.of("NVDA", "AMD"), n.relatedTickers());

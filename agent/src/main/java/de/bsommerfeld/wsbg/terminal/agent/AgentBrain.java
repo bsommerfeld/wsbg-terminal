@@ -11,6 +11,7 @@ import dev.langchain4j.data.message.ImageContent;
 import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.model.chat.request.ResponseFormat;
 import dev.langchain4j.model.ollama.OllamaChatModel;
 import jakarta.inject.Inject;
 import org.slf4j.Logger;
@@ -137,16 +138,19 @@ public class AgentBrain {
         int ctxTokens = config.getContextTokens();
         int visionCtxTokens = ctxTokens;
 
-        // Editorial agent — tool-use loop. Low temperature + tightened
-        // nucleus keep the tool-call JSON valid and the headlines faithful
-        // (no creative drift away from the cluster evidence). numPredict is
-        // bounded: a turn emits one tool call or a short headline, never an
-        // essay, and a tight cap discourages rambling pre-amble before the
-        // call.
+        // Editorial agent — every call in the deterministic pipeline expects a
+        // JSON reply (subjects array, headline object), so Ollama's JSON mode
+        // (constrained decoding) is on: the model CANNOT emit syntactically
+        // broken JSON anymore, which is what the EditorialAgent salvage cascade
+        // existed for (it stays as belt-and-braces). Known small-model quirk in
+        // JSON mode is whitespace-looping — the numPredict cap bounds that.
+        // Low temperature + tightened nucleus keep the headlines faithful (no
+        // creative drift away from the cluster evidence).
         this.agentModel = OllamaChatModel.builder()
                 .baseUrl(OLLAMA_BASE_URL).modelName(agentName)
                 .temperature(agentModelEnum.getTemperature()).topP(0.9).topK(40)
                 .numCtx(ctxTokens).numPredict(2048)
+                .responseFormat(ResponseFormat.JSON)
                 .timeout(timeout)
                 .build();
 
@@ -327,6 +331,15 @@ public class AgentBrain {
     /** Returns the resolved Ollama model name used by {@link #getAgentModel()}. */
     public String getAgentModelName() {
         return activeAgentModel;
+    }
+
+    /**
+     * The agent model's context window (num_ctx) in tokens. Ollama TRUNCATES a
+     * longer prompt silently — callers use this to warn/trim before that happens,
+     * because a silently-cut brief reads like the model suddenly got dumb.
+     */
+    public int contextTokens() {
+        return config.getAgent().getContextTokens();
     }
 
     // -- Image Processing --

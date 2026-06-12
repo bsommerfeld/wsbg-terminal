@@ -57,15 +57,18 @@
         <div class="ident"><a class="glyph glyph-reddit" href="https://www.reddit.com/r/wallstreetbetsGER"
               target="_blank" rel="noopener" title="r/wallstreetbetsGER öffnen"
               aria-label="r/wallstreetbetsGER öffnen"></a>Reddit · Schlagzeilen</div>
-        <!--
-          Reddit pull-status label. Hidden by default; fades in when the
-          scraper hits 403/429/timeouts, fades out when polling recovers.
-          TODO(oauth-login): when degraded > N min, swap textContent for an
-          interactive "Sign in to Reddit" CTA wired to the OAuth flow.
-        -->
-        <span class="reddit-status" id="reddit-status" data-state="OK"
-              aria-live="polite">Rate Limited</span>
-        <span class="live">Live</span>
+        <!-- Market-mood badge: the room's 24h sentiment split ("54% BEARISH"
+             ⇒ implies 46% bullish), computed server-side from the published
+             headlines (market-mood broadcasts). Mirrors the EUR/USD badge
+             slot in the FJ header. Hidden until a directional reading exists. -->
+        <span class="mood" id="mood-badge" hidden aria-live="polite"></span>
+        <!-- Scraper health lives directly on the LIVE indicator: main.js sets
+             data-state + swaps the label to "Defekt" when the pull is degraded
+             (403/429/timeouts). The old standalone "RATE LIMITED" chip was
+             dropped — Defekt does the job, and the slot belongs to the mood
+             badge now. TODO(oauth-login): when degraded > N min, render a
+             "Sign in to Reddit" CTA wired to the OAuth flow. -->
+        <span class="live" data-state="OK" aria-live="polite">Live</span>
       </header>
       <div class="widget-body" data-rows></div>
     </section>

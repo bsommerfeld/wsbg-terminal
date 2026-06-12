@@ -1,5 +1,7 @@
 package de.bsommerfeld.wsbg.terminal.finanznachrichten;
 
+import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
+
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import org.slf4j.Logger;
@@ -20,7 +22,7 @@ import java.util.function.Consumer;
 
 /**
  * Periodically reads a chosen set of finanznachrichten.de RSS {@link FnFeed}s
- * and pushes newly-seen {@link FnNewsItem}s to registered listeners.
+ * and pushes newly-seen {@link RawNewsItem}s to registered listeners.
  *
  * <h3>Choosing feeds</h3>
  * The feed selection is passed as varargs to {@link #start(FnFeed...)}:
@@ -80,7 +82,7 @@ public class FnMonitorService {
 
     /** Article links already emitted, across all ticks (no {@code guid} in the feeds). */
     private final Set<String> seenLinks = ConcurrentHashMap.newKeySet();
-    private final List<Consumer<FnNewsItem>> listeners = new CopyOnWriteArrayList<>();
+    private final List<Consumer<RawNewsItem>> listeners = new CopyOnWriteArrayList<>();
 
     private volatile List<FnFeed> feeds = List.of();
     private volatile ScheduledFuture<?> task;
@@ -144,7 +146,7 @@ public class FnMonitorService {
         try {
             for (int i = 0; i < snapshot.size(); i++) {
                 FnFeed feed = snapshot.get(i);
-                List<FnNewsItem> items;
+                List<RawNewsItem> items;
                 try {
                     items = fetcher.fetch(feed);
                 } catch (Exception e) {
@@ -154,7 +156,7 @@ public class FnMonitorService {
                 if (items == null) {
                     continue;
                 }
-                for (FnNewsItem item : items) {
+                for (RawNewsItem item : items) {
                     if (item.link() != null && !item.link().isEmpty() && seenLinks.add(item.link())) {
                         newCount++;
                         emit(item);
@@ -174,8 +176,8 @@ public class FnMonitorService {
         }
     }
 
-    private void emit(FnNewsItem item) {
-        for (Consumer<FnNewsItem> l : listeners) {
+    private void emit(RawNewsItem item) {
+        for (Consumer<RawNewsItem> l : listeners) {
             try {
                 l.accept(item);
             } catch (Exception e) {
@@ -188,11 +190,11 @@ public class FnMonitorService {
      * Registers a listener fired once per genuinely new item, on the monitor's
      * scheduler thread — keep it cheap or hand off to your own executor.
      */
-    public void addListener(Consumer<FnNewsItem> listener) {
+    public void addListener(Consumer<RawNewsItem> listener) {
         listeners.add(listener);
     }
 
-    public void removeListener(Consumer<FnNewsItem> listener) {
+    public void removeListener(Consumer<RawNewsItem> listener) {
         listeners.remove(listener);
     }
 

@@ -109,6 +109,46 @@ html[data-platform="other"] .footer-theme { display: inline-flex; }
   70%  { transform: rotate(360deg); }
   100% { transform: rotate(360deg); }
 }
+
+/* The rest of the glyph stencil set (slider.js ICONS). Shared sizing, each
+   with its own colour + a small signature motion — except the skull, which
+   holds perfectly still (it's dead). */
+.ad-inner .rocket,
+.ad-inner .gem,
+.ad-inner .banana,
+.ad-inner .moon,
+.ad-inner .skull { display: inline-flex; }
+.ad-inner .rocket svg,
+.ad-inner .gem svg,
+.ad-inner .banana svg,
+.ad-inner .moon svg,
+.ad-inner .skull svg { width: 12px; height: 12px; fill: currentColor; }
+
+.ad-inner .rocket { color: var(--red); animation: liftoff 1.3s ease-in-out infinite; }
+@keyframes liftoff {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-2px); }
+}
+
+.ad-inner .gem { color: var(--green); animation: sparkle 1.8s ease-in-out infinite; }
+@keyframes sparkle {
+  0%, 100% { opacity: 1;   transform: scale(1); }
+  50%      { opacity: .55; transform: scale(.9); }
+}
+
+.ad-inner .banana { color: var(--amber); animation: swing 2s ease-in-out infinite; }
+@keyframes swing {
+  0%, 100% { transform: rotate(-8deg); }
+  50%      { transform: rotate(8deg); }
+}
+
+.ad-inner .moon { color: var(--txt-2); animation: bob 3s ease-in-out infinite; }
+@keyframes bob {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-1.5px); }
+}
+
+.ad-inner .skull { color: var(--mute); }
 .ad-inner a {
   color: var(--amber); text-decoration: none;
   border-bottom: 1px dashed oklch(0.82 0.14 75 / .45);

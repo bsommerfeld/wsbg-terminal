@@ -196,6 +196,37 @@ class ReportBuilderTest {
     }
 
     @Test
+    void buildReportData_shouldRenderCommentsAsAnIndentedReplyTreeInConversationOrder() {
+        // thesis (top-level) ← OP "welche Aktie?" ← the pick naming the stocks.
+        // The pick only makes sense under the thesis it answers, so the tree must
+        // be preserved: conversation order + the reply indented under its parent.
+        var cluster = createCluster("t3_1", "Energie-Thread");
+        long now = System.currentTimeMillis() / 1000;
+        when(repository.getThread("t3_1")).thenReturn(thread("t3_1", "Energie-Thread"));
+
+        var thesis = new RedditComment("t1_thesis", "t3_1", "t3_1", "ape",
+                "Potential im Energiebereich und Strominfrastruktur", 5, now, now, now);
+        var question = new RedditComment("t1_q", "t3_1", "t1_thesis", "op",
+                "Denkst du an eine bestimmte Aktie?", 1, now + 10, now, now);
+        var pick = new RedditComment("t1_pick", "t3_1", "t1_q", "ape",
+                "E.ON und Constellation Energy sehen interessant aus", 4, now + 20, now, now);
+        // Deliberately out of conversation order, and the question out-scores nothing —
+        // the old score-sort would have torn the chain apart.
+        when(repository.getCommentsForThread("t3_1", 0))
+                .thenReturn(List.of(pick, thesis, question));
+
+        String report = builder.buildReportData(cluster);
+
+        // Conversation order: thesis before the pick (not score order).
+        assertTrue(report.indexOf("Potential im Energiebereich") < report.indexOf("Constellation Energy"),
+                "thesis is rendered before the reply that answers it");
+        // The pick is two levels deep (thesis → question → pick) → indented.
+        assertTrue(report.contains("    - [t1_pick]"),
+                "the pick reply is indented under the chain it answers");
+        assertTrue(report.contains("conversation order"), "header explains the ordering");
+    }
+
+    @Test
     void buildReportData_shouldDummy() {
         // Sentinel — kept to anchor the test file. Real coverage of the
         // context-building path is in the buildReportData_* tests above.

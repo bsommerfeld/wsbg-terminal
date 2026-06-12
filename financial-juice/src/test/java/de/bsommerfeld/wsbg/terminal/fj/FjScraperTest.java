@@ -1,6 +1,6 @@
 package de.bsommerfeld.wsbg.terminal.fj;
 
-import de.bsommerfeld.wsbg.terminal.core.domain.FjNewsItem;
+import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -43,20 +43,20 @@ class FjScraperTest {
                 </rss>
                 """;
 
-        List<FjNewsItem> items = scraper.parseRss(xml);
+        List<RawNewsItem> items = scraper.parseRss(xml);
 
         assertEquals(2, items.size());
 
-        FjNewsItem first = items.get(0);
-        assertEquals("123", first.guid());
+        RawNewsItem first = items.get(0);
+        assertEquals("123", first.uuid());
         assertEquals("ECB holds rates steady", first.title());
         assertEquals("https://www.financialjuice.com/News/123/ECB-holds.aspx?xy=rss", first.link());
-        assertTrue(first.description().contains("ECB decided to hold"));
-        assertEquals("FinancialJuice", first.author());
-        assertTrue(first.publishedUtc() > 0);
+        assertTrue(first.summary().contains("ECB decided to hold"));
+        assertEquals("FinancialJuice", first.publisher());
+        assertNotNull(first.publishedAt());
 
-        FjNewsItem second = items.get(1);
-        assertEquals("456", second.guid());
+        RawNewsItem second = items.get(1);
+        assertEquals("456", second.uuid());
         assertEquals("Google opens AI center", second.title());
     }
 
@@ -75,7 +75,7 @@ class FjScraperTest {
                 </channel></rss>
                 """;
 
-        FjNewsItem item = scraper.parseRss(xml).getFirst();
+        RawNewsItem item = scraper.parseRss(xml).getFirst();
         assertEquals("Test Headline", item.title());
     }
 
@@ -94,7 +94,7 @@ class FjScraperTest {
                 </channel></rss>
                 """;
 
-        FjNewsItem item = scraper.parseRss(xml).getFirst();
+        RawNewsItem item = scraper.parseRss(xml).getFirst();
         assertEquals("No prefix here", item.title());
     }
 
@@ -113,10 +113,10 @@ class FjScraperTest {
                 </channel></rss>
                 """;
 
-        FjNewsItem item = scraper.parseRss(xml).getFirst();
-        assertFalse(item.description().contains("<br"));
-        assertTrue(item.description().contains("S&P 500: -410 mln"));
-        assertTrue(item.description().contains("Nasdaq: -5 mln"));
+        RawNewsItem item = scraper.parseRss(xml).getFirst();
+        assertFalse(item.summary().contains("<br"));
+        assertTrue(item.summary().contains("S&P 500: -410 mln"));
+        assertTrue(item.summary().contains("Nasdaq: -5 mln"));
     }
 
     @Test
@@ -136,12 +136,12 @@ class FjScraperTest {
 
         // parseRss doesn't deduplicate — that happens in fetch()
         // so we test seenGuids manually
-        List<FjNewsItem> first = scraper.parseRss(xml);
+        List<RawNewsItem> first = scraper.parseRss(xml);
         assertEquals(1, first.size());
         assertEquals(0, scraper.seenCount());
 
         // After a second parse, items are still returned (parseRss is stateless)
-        List<FjNewsItem> second = scraper.parseRss(xml);
+        List<RawNewsItem> second = scraper.parseRss(xml);
         assertEquals(1, second.size());
     }
 
@@ -160,13 +160,13 @@ class FjScraperTest {
                 </channel></rss>
                 """;
 
-        FjNewsItem item = scraper.parseRss(xml).getFirst();
-        assertEquals("", item.description());
+        RawNewsItem item = scraper.parseRss(xml).getFirst();
+        assertEquals("", item.summary());
     }
 
     @Test
     void handlesInvalidXmlGracefully() {
-        List<FjNewsItem> items = scraper.parseRss("not xml at all <><><>");
+        List<RawNewsItem> items = scraper.parseRss("not xml at all <><><>");
         assertTrue(items.isEmpty());
     }
 
@@ -185,8 +185,8 @@ class FjScraperTest {
                 </channel></rss>
                 """;
 
-        FjNewsItem item = scraper.parseRss(xml).getFirst();
-        assertEquals(0, item.publishedUtc());
+        RawNewsItem item = scraper.parseRss(xml).getFirst();
+        assertNull(item.publishedAt());
         assertEquals("Test", item.title());
     }
 
@@ -211,11 +211,11 @@ class FjScraperTest {
                 </channel></rss>
                 """;
 
-        FjNewsItem item = scraper.parseRss(xml).getFirst();
-        assertTrue(item.description().contains("Bold text"));
-        assertTrue(item.description().contains("Normal text"));
-        assertFalse(item.description().contains("<strong>"));
-        assertFalse(item.description().contains("<div>"));
+        RawNewsItem item = scraper.parseRss(xml).getFirst();
+        assertTrue(item.summary().contains("Bold text"));
+        assertTrue(item.summary().contains("Normal text"));
+        assertFalse(item.summary().contains("<strong>"));
+        assertFalse(item.summary().contains("<div>"));
     }
 
     @Test
@@ -236,8 +236,8 @@ class FjScraperTest {
                 </channel></rss>
                 """;
 
-        FjNewsItem item = scraper.parseRss(xml).getFirst();
-        String[] lines = item.description().split("\n");
+        RawNewsItem item = scraper.parseRss(xml).getFirst();
+        String[] lines = item.summary().split("\n");
         assertEquals(3, lines.length);
         assertEquals("$COST Costco Wholesale Q3 Earnings", lines[0]);
         assertEquals("EPS $4.93, est. $4.91", lines[1]);

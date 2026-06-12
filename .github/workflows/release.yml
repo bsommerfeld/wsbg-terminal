@@ -56,10 +56,14 @@ jobs:
             -DincludeScope=runtime \
             -DoutputDirectory="${GITHUB_WORKSPACE}/${DEPS_DIR}"
 
+      # terminal/target carries the terminal jar itself; terminal/target/deps
+      # (from copy-dependencies above) carries every runtime dependency —
+      # including all first-party module jars via the Maven graph. New modules
+      # need no entry here: depending on them from terminal is enough.
       - name: Package with TinyUpdate
         uses: ./updater/action
         with:
-          artifact-dirs: 'core/target,database/target,reddit/target,agent/target,terminal/target,terminal/target/deps'
+          artifact-dirs: 'terminal/target,terminal/target/deps'
           script-dir: '.script'
 
       - name: Prepare Build Status Badges
@@ -80,6 +84,13 @@ jobs:
         uses: bsommerfeld/release-changelog@v0.1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          # User-first release notes (NOT the dev-style Added/Changed/
+          # Fixed/Removed default) — the changelog IS the release-notes
+          # body end users read: one universal "Was hat sich geändert?"
+          # heading, free-form story underneath. The action resets
+          # CHANGELOG.md to this skeleton after every release.
+          changelog-template: |
+            # Was hat sich geändert?
           prepend-text: |
             ${{ steps.badges.outputs.build-badge }} ${{ steps.badges.outputs.test-badge }}
 

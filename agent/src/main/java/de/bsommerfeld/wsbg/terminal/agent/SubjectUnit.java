@@ -1,7 +1,7 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
 import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
-import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooNewsItem;
+import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -27,6 +27,14 @@ import java.util.Set;
  */
 public final class SubjectUnit {
 
+    /**
+     * News items carried per unit. Merged (not replaced) on every re-resolve so an
+     * item a headline already leaned on can't vanish just because Yahoo's next
+     * search returned a different set; capped so a long-lived unit doesn't hoard
+     * a session's worth of headlines-context. Oldest items fall off first.
+     */
+    static final int MAX_NEWS = 12;
+
     /** Stable identity key — ticker (UPPER) for instruments, normalised name otherwise. */
     public final String id;
     public final Instant firstSeen;
@@ -35,7 +43,15 @@ public final class SubjectUnit {
     private volatile String canonicalName;
     private volatile String ticker;            // null for theme/person
     private volatile MarketSnapshot snapshot;  // latest resolved
-    private volatile List<YahooNewsItem> news = List.of();
+    private volatile List<RawNewsItem> news = List.of();
+
+    /**
+     * Price anchor: the first verified (Yahoo) price ever resolved for this unit,
+     * and when. Survives every prune — it's what lets the wire say "seit erster
+     * Erwähnung +12%" long after the original evidence aged out.
+     */
+    private volatile Double firstPrice;
+    private volatile Instant firstPriceAt;
 
     /** Evidence keyed by thread/comment so the same source is never double-counted. */
     private final Map<String, EvidenceRef> evidence = new LinkedHashMap<>();
@@ -58,13 +74,54 @@ public final class SubjectUnit {
         this.lastActivity = this.firstSeen;
     }
 
-    /** Refreshes the unit's resolved Yahoo data (ticker, snapshot, news). */
+    /**
+     * Refreshes the unit's resolved Yahoo data (ticker, snapshot, news). News is
+     * <b>merged by uuid</b>, never replaced: items the unit already holds stay (a
+     * cited article must not vanish because a later search returned other hits),
+     * fresh items are added, and the list is capped at {@link #MAX_NEWS} dropping
+     * the oldest. Covered-ids of items that fell off the cap are dropped with them.
+     * The first price ever seen is pinned as the unit's price anchor.
+     */
     public synchronized void updateResolved(String canonicalName, String ticker,
-            MarketSnapshot snapshot, List<YahooNewsItem> news) {
+            MarketSnapshot snapshot, List<RawNewsItem> news) {
         if (canonicalName != null && !canonicalName.isBlank()) this.canonicalName = canonicalName;
         this.ticker = ticker;
         this.snapshot = snapshot;
-        this.news = news == null ? List.of() : news;
+        if (firstPrice == null && snapshot != null && snapshot.hasPrice()) {
+            firstPrice = snapshot.price();
+            firstPriceAt = Instant.now();
+        }
+        this.news = mergeNews(this.news, news);
+        Set<String> kept = new HashSet<>();
+        for (RawNewsItem n : this.news) {
+            if (n.uuid() != null) kept.add(n.uuid());
+        }
+        coveredNewsIds.retainAll(kept);
+    }
+
+    /** Existing ∪ fresh, deduped by uuid (existing wins), newest first, capped at {@link #MAX_NEWS}. */
+    private static List<RawNewsItem> mergeNews(List<RawNewsItem> existing, List<RawNewsItem> fresh) {
+        Map<String, RawNewsItem> byUuid = new LinkedHashMap<>();
+        for (RawNewsItem n : existing) {
+            if (n != null && n.uuid() != null && !n.uuid().isBlank()) byUuid.putIfAbsent(n.uuid(), n);
+        }
+        if (fresh != null) {
+            for (RawNewsItem n : fresh) {
+                if (n != null && n.uuid() != null && !n.uuid().isBlank()) byUuid.putIfAbsent(n.uuid(), n);
+            }
+        }
+        List<RawNewsItem> merged = new ArrayList<>(byUuid.values());
+        // Newest first; items without a timestamp sort last (oldest), so they're
+        // the first to fall off the cap.
+        merged.sort((a, b) -> {
+            Instant pa = a.publishedAt();
+            Instant pb = b.publishedAt();
+            if (pa == null && pb == null) return 0;
+            if (pa == null) return 1;
+            if (pb == null) return -1;
+            return pb.compareTo(pa);
+        });
+        return merged.size() <= MAX_NEWS ? merged : new ArrayList<>(merged.subList(0, MAX_NEWS));
     }
 
     /** Adds one piece of evidence; returns {@code true} if it was new (not a duplicate source). */
@@ -78,8 +135,10 @@ public final class SubjectUnit {
     public String ticker() { return ticker; }
     public boolean isInstrument() { return ticker != null && !ticker.isBlank(); }
     public MarketSnapshot snapshot() { return snapshot; }
-    public List<YahooNewsItem> news() { return news; }
+    public List<RawNewsItem> news() { return news; }
     public Instant lastActivity() { return lastActivity; }
+    public Double firstPrice() { return firstPrice; }
+    public Instant firstPriceAt() { return firstPriceAt; }
 
     public synchronized List<EvidenceRef> evidence() { return new ArrayList<>(evidence.values()); }
     public synchronized int evidenceCount() { return evidence.size(); }
@@ -93,27 +152,38 @@ public final class SubjectUnit {
         headlines.addAll(other.headlines());
     }
 
-    /** Records a headline published for this unit (NEW or UPDATE). */
-    public synchronized void addHeadline(String text, boolean update) {
-        headlines.add(new UnitHeadline(text, update, Instant.now().getEpochSecond()));
+    /** Records a headline published for this unit (NEW or UPDATE), with its sentiment + the verified price at publish time. */
+    public synchronized void addHeadline(String text, boolean update, String sentiment) {
+        Double price = snapshot != null && snapshot.hasPrice() ? snapshot.price() : null;
+        headlines.add(new UnitHeadline(text, update, Instant.now().getEpochSecond(),
+                sentiment == null ? "" : sentiment, price));
         lastActivity = Instant.now();
+    }
+
+    /** Records a headline without sentiment/price metadata (older call sites, identity-merge). */
+    public synchronized void addHeadline(String text, boolean update) {
+        addHeadline(text, update, "");
     }
 
     public synchronized List<UnitHeadline> headlines() { return new ArrayList<>(headlines); }
 
     /**
-     * Drops already-consumed content — evidence and published headlines older than
-     * {@code maxAge} — while keeping the unit itself alive (its identity, ticker and
-     * latest snapshot stay). A rolling context window: the model is never fed
-     * hour-old comments or hour-old headlines, but the subject persists as long as
-     * it keeps being mentioned. Returns how many entries were dropped.
+     * Drops already-consumed <b>evidence</b> older than {@code maxAge} while keeping
+     * the unit itself alive (identity, ticker, latest snapshot, price anchor stay).
+     * A rolling context window: the model is never fed hour-old comments.
+     *
+     * <p>Published headlines are deliberately <b>not</b> pruned: they are the unit's
+     * story memory. Wiping them made the unit look like "no prior headlines" after
+     * the TTL, and the compose prompt's "no prior headlines → ALWAYS write a line"
+     * rule then re-published the hour-old story verbatim as NEW. They're ~20 words
+     * each and the brief renders only the last few plus a digest, so keeping all of
+     * them costs almost nothing. Returns how many evidence entries were dropped.
      */
     public synchronized int pruneOlderThan(Duration maxAge) {
         long cutoff = Instant.now().minus(maxAge).getEpochSecond();
-        int before = evidence.size() + headlines.size();
+        int before = evidence.size();
         evidence.values().removeIf(e -> e.addedAtEpoch() < cutoff);
-        headlines.removeIf(h -> h.atEpoch() < cutoff);
-        return before - (evidence.size() + headlines.size());
+        return before - evidence.size();
     }
 
     public synchronized String lastHeadlineText() {
@@ -134,8 +204,20 @@ public final class SubjectUnit {
 
     public synchronized Set<String> coveredNewsIds() { return new HashSet<>(coveredNewsIds); }
 
-    /** One headline this unit published, with whether it was an UPDATE of a prior line. */
-    public record UnitHeadline(String text, boolean update, long atEpoch) {}
+    /**
+     * One headline this unit published. {@code sentiment} is the compose stage's
+     * classification (BULLISH/BEARISH/…, may be empty), {@code priceAtTime} the
+     * verified price when the line went out ({@code null} if none) — together they
+     * are the unit's story arc, cheap enough to keep forever.
+     */
+    public record UnitHeadline(String text, boolean update, long atEpoch,
+            String sentiment, Double priceAtTime) {
+
+        /** Older call sites without story metadata. */
+        public UnitHeadline(String text, boolean update, long atEpoch) {
+            this(text, update, atEpoch, "", null);
+        }
+    }
 
     /**
      * One mention of the subject: where it was said (thread, optional comment),

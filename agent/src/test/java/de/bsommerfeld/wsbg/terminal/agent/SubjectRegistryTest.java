@@ -74,7 +74,7 @@ class SubjectRegistryTest {
     }
 
     @Test
-    void prunesConsumedContentPastThresholdButKeepsTheUnit() {
+    void prunesConsumedEvidencePastThresholdButKeepsUnitAndHeadlines() {
         SubjectRegistry reg = new SubjectRegistry();
         SubjectUnit u = reg.findOrCreate("NVDA", "NVIDIA");
         u.addEvidence(ev("t3_x", "t1_now", "Nvidia"));
@@ -84,12 +84,15 @@ class SubjectRegistryTest {
         assertEquals(0, reg.pruneContentOlderThan(Duration.ofMinutes(60)));
         assertEquals(1, reg.get("NVDA").evidenceCount());
 
-        // Negative age → cutoff in the future, so all content counts as consumed:
-        // evidence + headline are dropped, but the UNIT survives.
-        assertEquals(2, reg.pruneContentOlderThan(Duration.ofMinutes(-1)));
+        // Negative age → cutoff in the future, so all evidence counts as consumed
+        // and is dropped — but the UNIT survives, and its headlines survive too:
+        // they are the story memory that stops a post-prune unit from looking
+        // brand-new and re-publishing its old story as NEW.
+        assertEquals(1, reg.pruneContentOlderThan(Duration.ofMinutes(-1)));
         assertNotNull(reg.get("NVDA"), "unit must survive content pruning");
         assertEquals(0, reg.get("NVDA").evidenceCount());
-        assertNull(reg.get("NVDA").lastHeadlineText(), "consumed headline pruned");
+        assertEquals("NVIDIA (NVDA) +2%", reg.get("NVDA").lastHeadlineText(),
+                "headlines are story memory — never pruned");
     }
 
     @Test

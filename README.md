@@ -19,6 +19,7 @@ Das WSBG Terminal ist eure Kommandozentrale für [**r/wallstreetbetsGER**](https
 | **KI-Headlines**     | Das Terminal fasst das Affengeschrei zusammen, damit ihr wisst, ob Long oder Short.                                                           |
 | **News-Ergänzungen** | Passend zum Instrument holt sich das Terminal aktuelle Nachrichten von Yahoo Finances, damit die Headlines wenigstens *etwas* Substanz haben. |
 | **Raketen-Radar**    | Pennystock-Raketen leuchten farbig auf: Banane, orange, rot – je höher der verpasste Gewinn, desto greller.                                   |
+| **Stimmungs-Barometer** | Das Badge im Reddit-Header zeigt live, zu wie viel Prozent der Käfig gerade brüllt: **54 % BEARISH** heißt, 46 % schmieren noch Hopium. Grün = Mond, Rot = Blut, Grau = der Käfig ist sich uneinig (passiert nie). |
 | **Live News-Ticker** | Financial Juice & EUR/USD-Kurs laufen direkt mit – damit ihr wisst, warum euer Depot blutet, noch bevor es im Subreddit steht.                |
 | **Marktzeiten**      | Internationale Marktzeiten samt Urlaubstage direkt in der Fußnote. Wahre Affen wissen wann sie liquidiert werden.                             |
 | **100 % Lokal**      | Die KI läuft komplett auf eurer Kiste. Keine Cloud, kein Abo, kein fremder Mensch – eure Verluste bleiben streng privat.                      |

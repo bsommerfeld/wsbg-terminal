@@ -1,5 +1,7 @@
 package de.bsommerfeld.wsbg.terminal.finanznachrichten;
 
+import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
+
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -26,14 +28,14 @@ class FnRssClientIT {
     @Test
     void fetchesAndParsesLiveAktienNachrichtenFeed() {
         FnRssClient client = new FnRssClient();
-        List<FnNewsItem> items = client.fetch(FnFeed.AKTIEN_NACHRICHTEN);
+        List<RawNewsItem> items = client.fetch(FnFeed.AKTIEN_NACHRICHTEN);
 
         assertFalse(items.isEmpty(), "live feed should yield at least one item");
-        FnNewsItem first = items.getFirst();
+        RawNewsItem first = items.getFirst();
         assertNotNull(first.title());
         assertFalse(first.title().isBlank());
         assertTrue(first.link().startsWith("https://www.finanznachrichten.de/"),
                 "each item must carry an active link back to the article");
-        assertEquals(FnFeed.AKTIEN_NACHRICHTEN.slug(), first.feedSlug());
+        assertEquals("finanznachrichten", first.publisher());
     }
 }

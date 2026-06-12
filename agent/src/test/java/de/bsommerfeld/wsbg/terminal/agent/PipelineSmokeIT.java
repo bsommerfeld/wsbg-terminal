@@ -1,4 +1,6 @@
 package de.bsommerfeld.wsbg.terminal.agent;
+import de.bsommerfeld.wsbg.terminal.embedding.EmbeddingService;
+import de.bsommerfeld.wsbg.terminal.embedding.OllamaEmbeddingService;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -15,7 +17,7 @@ import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
 import de.bsommerfeld.wsbg.terminal.db.RedditSnapshotStore;
 import de.bsommerfeld.wsbg.terminal.reddit.RssRedditScraper;
 import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooFinanceClient;
-import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooNewsItem;
+import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.SystemMessage;
@@ -183,7 +185,7 @@ class PipelineSmokeIT {
             System.out.println(sb);
             if (r.hasNews()) {
                 newsBacked.incrementAndGet();
-                for (YahooNewsItem n : r.news()) {
+                for (RawNewsItem n : r.news()) {
                     String age = n.publishedAt() == null ? "?" :
                             humanAge(Duration.between(n.publishedAt(), now).toMinutes());
                     System.out.println("        news[" + age + "]: " + n.title()
@@ -289,7 +291,7 @@ class PipelineSmokeIT {
                 sb.append(" → no ticker (theme/person — news only, write without a ticker)");
             }
             sb.append('\n');
-            for (YahooNewsItem n : r.news()) {
+            for (RawNewsItem n : r.news()) {
                 sb.append("    Yahoo news: ");
                 if (n.publishedAt() != null) sb.append(humanAge(Duration.between(n.publishedAt(), now).toMinutes())).append(" — ");
                 sb.append(n.title());

@@ -25,6 +25,13 @@ public class YahooFinanceConfig {
     @Comment("Per-request HTTP timeout when talking to Yahoo Finance endpoints.")
     private int requestTimeoutSeconds = 10;
 
+    @Key("yahoo.browser-fetch-enabled")
+    @Comment("Route Yahoo requests through the embedded browser first (carries a "
+            + "real browser fingerprint + cookies, clearing the IP/429 block that "
+            + "hits the plain HTTP client), falling back to direct HTTP. Turn off "
+            + "to use direct HTTP only.")
+    private boolean browserFetchEnabled = true;
+
     public int getNewsCount() {
         return newsCount;
     }
@@ -47,5 +54,13 @@ public class YahooFinanceConfig {
 
     public void setRequestTimeoutSeconds(int requestTimeoutSeconds) {
         this.requestTimeoutSeconds = requestTimeoutSeconds;
+    }
+
+    public boolean isBrowserFetchEnabled() {
+        return browserFetchEnabled;
+    }
+
+    public void setBrowserFetchEnabled(boolean browserFetchEnabled) {
+        this.browserFetchEnabled = browserFetchEnabled;
     }
 }

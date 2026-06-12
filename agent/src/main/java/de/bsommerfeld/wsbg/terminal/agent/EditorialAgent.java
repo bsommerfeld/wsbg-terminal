@@ -1,4 +1,5 @@
 package de.bsommerfeld.wsbg.terminal.agent;
+import de.bsommerfeld.wsbg.terminal.embedding.EmbeddingService;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -17,7 +18,7 @@ import de.bsommerfeld.wsbg.terminal.core.domain.RedditComment;
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
 import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooFinanceClient;
-import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooNewsItem;
+import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.SystemMessage;
@@ -142,15 +143,17 @@ public class EditorialAgent {
      * on the unit / publishing it is the caller's job.
      */
     public UnitDraft composeUnit(SubjectUnit unit) {
+        if (unit == null) {
+            return new UnitDraft("", "", null, false, false, "", 0, List.of(), false);
+        }
         ChatModel model = brain.getAgentModel();
-        if (model == null || unit == null) {
-            return new UnitDraft(unit == null ? "" : unit.id,
-                    unit == null ? "" : unit.canonicalName(), null, false, false, "", 0, List.of(), false);
+        if (model == null) {
+            return new UnitDraft(unit.id, unit.canonicalName(), null, false, false, "", 0, List.of(), false);
         }
         String sys = PromptLoader.load("headline-compose-unit")
                 .replace("{{LANGUAGE}}", brain.getUserLanguage().displayName())
                 .replace("{{ROOM_SLANG}}", WsbgJargon.roomSlangForPrompt());
-        String user = unitBrief(unit);
+        String user = unitBrief(unit, newsCoverageEnabled);
 
         long t0 = System.nanoTime();
         String text = chat(model, sys, user);
@@ -206,13 +209,33 @@ public class EditorialAgent {
         return null;
     }
 
-    /** Builds the per-unit brief: Yahoo data + the room's evidence about this subject + its prior headlines. */
-    private String unitBrief(SubjectUnit unit) {
+    /**
+     * News older than this is still shown (a quiet subject's only context may be
+     * old news) but tagged {@code [STALE]} so the model never sells it as a fresh
+     * catalyst. User-chosen range was 24–48h; 36h is the middle. Tunable.
+     */
+    static final Duration NEWS_STALE_AFTER = Duration.ofHours(36);
+
+    /** Full prior headlines rendered in the brief; older ones collapse into a digest line. */
+    static final int PRIOR_HEADLINES_SHOWN = 3;
+
+    /**
+     * Rough char budget for the evidence block (~1.5k tokens). A hot unit can pile
+     * up more mentions within the TTL than num_ctx absorbs — Ollama would then
+     * truncate the prompt SILENTLY, which reads as the model getting dumb. Oldest
+     * mentions are dropped first, with an explicit "omitted" line so the model
+     * knows the story is longer than what it sees.
+     */
+    static final int EVIDENCE_CHAR_BUDGET = 6000;
+
+    /** Builds the per-unit brief: Yahoo data + the room's evidence about this subject + its story memory. Static for testability. */
+    static String unitBrief(SubjectUnit unit, boolean newsCoverageEnabled) {
         StringBuilder sb = new StringBuilder();
         sb.append("=== SUBJECT: ").append(unit.canonicalName());
         if (unit.isInstrument()) sb.append(" (").append(unit.ticker()).append(")");
         sb.append(" ===\n");
 
+        Instant now = Instant.now();
         MarketSnapshot s = unit.snapshot();
         if (s != null && s.hasPrice()) {
             sb.append(String.format(Locale.ROOT, "Yahoo market data: %.2f%s", s.price(),
@@ -220,17 +243,28 @@ public class EditorialAgent {
             if (Double.isFinite(s.dayChangePercent())) {
                 sb.append(String.format(Locale.ROOT, ", day %+.2f%%", s.dayChangePercent()));
             }
+            // Price anchor: where the subject stood when the room first surfaced
+            // it. Survives the evidence prune — the "since first mention" arc is
+            // story memory, not a Reddit claim (both prices are Yahoo's own).
+            Double anchor = unit.firstPrice();
+            if (anchor != null && anchor > 0 && unit.firstPriceAt() != null) {
+                double sinceFirst = (s.price() - anchor) / anchor * 100.0;
+                sb.append(String.format(Locale.ROOT,
+                        "; since first mention (%s ago): %+.2f%% (%.2f → %.2f)",
+                        age(unit.firstPriceAt(), now), sinceFirst, anchor, s.price()));
+            }
             sb.append('\n');
         } else if (!unit.isInstrument()) {
             sb.append("No ticker — theme/person; write from the room's sentiment, no ticker.\n");
         }
 
-        Instant now = Instant.now();
         // News not yet cited by a prior headline for THIS subject (covered ones are
         // filtered so two headlines never rest on the same item). Each carries a
         // [news:ID] the model echoes back in sourceNewsIds to mark it consumed.
-        List<YahooNewsItem> freshNews = new ArrayList<>();
-        for (YahooNewsItem n : unit.news()) {
+        // Old items are kept (no fresh news is also a situation worth reporting
+        // from) but tagged STALE so they're never sold as a fresh catalyst.
+        List<RawNewsItem> freshNews = new ArrayList<>();
+        for (RawNewsItem n : unit.news()) {
             // News coverage is OFF by default: news enriches freely and may back
             // several headlines on a topic (it's cached, so reuse is free). Only when
             // explicitly enabled do we hide a unit's already-cited news.
@@ -238,33 +272,114 @@ public class EditorialAgent {
         }
         if (!freshNews.isEmpty()) {
             sb.append("News (context & attribution — NOT the subject; cite any you lean on by its"
-                    + " [news:ID] in sourceNewsIds, a cited item won't be offered again):\n");
-            for (YahooNewsItem n : freshNews) {
+                    + " [news:ID] in sourceNewsIds, a cited item won't be offered again."
+                    + " [STALE] = older background, NOT a fresh catalyst):\n");
+            for (RawNewsItem n : freshNews) {
                 sb.append("  - [news:").append(n.uuid() == null || n.uuid().isBlank() ? "?" : n.uuid()).append("] ");
                 if (n.publishedAt() != null) {
-                    long mins = Duration.between(n.publishedAt(), now).toMinutes();
-                    sb.append(mins < 60 ? mins + "m" : mins < 1440 ? (mins / 60) + "h" : (mins / 1440) + "d")
-                            .append(" ago — ");
+                    sb.append(age(n.publishedAt(), now)).append(" ago ");
+                    if (Duration.between(n.publishedAt(), now).compareTo(NEWS_STALE_AFTER) > 0) {
+                        sb.append("[STALE] ");
+                    }
+                    sb.append("— ");
                 }
-                sb.append(n.title()).append('\n');
+                sb.append(n.title());
+                if (n.publisher() != null && !n.publisher().isEmpty()) sb.append(" · ").append(n.publisher());
+                if (n.summary() != null && !n.summary().isBlank()) {
+                    String sum = n.summary().replace('\n', ' ').strip();
+                    sb.append("\n      ").append(sum.length() > 200 ? sum.substring(0, 200) + "…" : sum);
+                }
+                sb.append('\n');
             }
         }
 
+        // Evidence under a char budget: keep the NEWEST refs that fit, drop the
+        // oldest, and say so — never let Ollama truncate the prompt silently.
+        List<SubjectUnit.EvidenceRef> refs = unit.evidence();
+        int start = refs.size();
+        int budget = EVIDENCE_CHAR_BUDGET;
+        while (start > 0 && budget - refs.get(start - 1).snippet().length() - 24 >= 0) {
+            start--;
+            budget -= refs.get(start).snippet().length() + 24;
+        }
         sb.append("\nWhat the room said about THIS subject (evidence — the story):\n");
-        for (SubjectUnit.EvidenceRef e : unit.evidence()) {
+        if (start > 0) {
+            sb.append("  (").append(start).append(" earlier mention(s) omitted — the story is older"
+                    + " than shown; prior headlines below already reflect them)\n");
+        }
+        List<SubjectUnit.EvidenceRef> context = new ArrayList<>();
+        for (SubjectUnit.EvidenceRef e : refs.subList(start, refs.size())) {
+            if ("reddit-context".equals(e.source())) {
+                context.add(e); // a reply chain this subject was named in — rendered below
+                continue;
+            }
             String loc = "vision".equals(e.source()) ? "image"
                     : (e.commentId() == null ? e.threadId() : e.commentId());
-            sb.append("  - [").append(loc).append("] ").append(e.snippet()).append('\n');
+            sb.append("  - [").append(loc).append(", ")
+                    .append(age(Instant.ofEpochSecond(e.addedAtEpoch()), now)).append(" ago] ")
+                    .append(e.snippet()).append('\n');
         }
-
-        List<SubjectUnit.UnitHeadline> prior = unit.headlines();
-        if (!prior.isEmpty()) {
-            sb.append("\nHEADLINES ALREADY PUBLISHED FOR THIS SUBJECT (classify NEW vs UPDATE; never repeat verbatim):\n");
-            for (SubjectUnit.UnitHeadline h : prior) {
-                sb.append("  - ").append(h.text()).append('\n');
+        if (!context.isEmpty()) {
+            sb.append("Conversation those mentions were a reply to (context — NOT the subject "
+                    + "itself, but the thread of discussion it was named in):\n");
+            for (SubjectUnit.EvidenceRef e : context) {
+                sb.append("    ↳ ").append(e.snippet()).append('\n');
             }
         }
+
+        appendStoryMemory(sb, unit.headlines(), now);
         return sb.toString();
+    }
+
+    /**
+     * The unit's story memory: the last {@link #PRIOR_HEADLINES_SHOWN} headlines in
+     * full (with age + sentiment), older ones as a count digest, plus the sentiment
+     * arc across the whole history. This block is what survives the evidence prune —
+     * without it, a unit older than the TTL looked brand-new and the "no prior
+     * headlines → always write" rule re-published the old story verbatim.
+     */
+    private static void appendStoryMemory(StringBuilder sb, List<SubjectUnit.UnitHeadline> prior,
+            Instant now) {
+        if (prior.isEmpty()) return;
+        sb.append("\nHEADLINES ALREADY PUBLISHED FOR THIS SUBJECT (story memory — classify NEW vs"
+                + " UPDATE against ALL of these; never repeat verbatim):\n");
+        int shownFrom = Math.max(0, prior.size() - PRIOR_HEADLINES_SHOWN);
+        if (shownFrom > 0) {
+            SubjectUnit.UnitHeadline first = prior.get(0);
+            sb.append("  (+").append(shownFrom).append(" earlier headline(s) since ")
+                    .append(age(Instant.ofEpochSecond(first.atEpoch()), now))
+                    .append(" ago — the story is OLDER than the lines shown; do NOT re-open an"
+                            + " already-covered angle as NEW)\n");
+        }
+        for (SubjectUnit.UnitHeadline h : prior.subList(shownFrom, prior.size())) {
+            sb.append("  - [").append(age(Instant.ofEpochSecond(h.atEpoch()), now)).append(" ago");
+            if (h.sentiment() != null && !h.sentiment().isBlank()) sb.append(", ").append(h.sentiment());
+            sb.append("] ").append(h.text()).append('\n');
+        }
+        String arc = sentimentArc(prior);
+        if (!arc.isEmpty()) sb.append("Sentiment arc so far: ").append(arc).append('\n');
+    }
+
+    /**
+     * The unit's sentiment trajectory ("BULLISH → MIXED → BEARISH") across its
+     * published headlines, consecutive duplicates collapsed. Empty when fewer than
+     * two distinct steps exist — a one-word arc carries no information the
+     * headline list doesn't. Package-private for testing.
+     */
+    static String sentimentArc(List<SubjectUnit.UnitHeadline> prior) {
+        List<String> steps = new ArrayList<>();
+        for (SubjectUnit.UnitHeadline h : prior) {
+            String sent = h.sentiment() == null ? "" : h.sentiment().trim().toUpperCase(Locale.ROOT);
+            if (sent.isEmpty()) continue;
+            if (steps.isEmpty() || !steps.get(steps.size() - 1).equals(sent)) steps.add(sent);
+        }
+        return steps.size() < 2 ? "" : String.join(" → ", steps);
+    }
+
+    /** Compact relative age: "5m", "3h", "2d". Clamps negative (clock skew) to "0m". */
+    static String age(Instant then, Instant now) {
+        long mins = Math.max(0, Duration.between(then, now).toMinutes());
+        return mins < 60 ? mins + "m" : mins < 1440 ? (mins / 60) + "h" : (mins / 1440) + "d";
     }
 
     /**
@@ -848,13 +963,9 @@ public class EditorialAgent {
             sb.append(" → no ticker (theme/person — news only, write without a ticker)");
         }
         sb.append('\n');
-        for (YahooNewsItem n : r.news()) {
+        for (RawNewsItem n : r.news()) {
             sb.append("    Yahoo news: ");
-            if (n.publishedAt() != null) {
-                long mins = Duration.between(n.publishedAt(), now).toMinutes();
-                sb.append(mins < 60 ? mins + "m" : mins < 1440 ? (mins / 60) + "h" : (mins / 1440) + "d")
-                        .append(" ago — ");
-            }
+            appendNewsAge(sb, n, now);
             sb.append(n.title());
             if (n.publisher() != null && !n.publisher().isEmpty()) sb.append(" · ").append(n.publisher());
             sb.append('\n');
@@ -869,13 +980,9 @@ public class EditorialAgent {
                 sb.append(String.format(Locale.ROOT, " %+.2f%% today", s.dayChangePercent()));
             }
             sb.append('\n');
-            for (YahooNewsItem n : ri.news()) {
+            for (RawNewsItem n : ri.news()) {
                 sb.append("        Yahoo news: ");
-                if (n.publishedAt() != null) {
-                    long mins = Duration.between(n.publishedAt(), now).toMinutes();
-                    sb.append(mins < 60 ? mins + "m" : mins < 1440 ? (mins / 60) + "h" : (mins / 1440) + "d")
-                            .append(" ago — ");
-                }
+                appendNewsAge(sb, n, now);
                 sb.append(n.title());
                 if (n.publisher() != null && !n.publisher().isEmpty()) sb.append(" · ").append(n.publisher());
                 sb.append('\n');
@@ -884,9 +991,30 @@ public class EditorialAgent {
         return sb.toString();
     }
 
+    /** Appends "3h ago — " (with a {@code [STALE]} tag past {@link #NEWS_STALE_AFTER}) when the item is dated. */
+    private static void appendNewsAge(StringBuilder sb, RawNewsItem n, Instant now) {
+        if (n.publishedAt() == null) return;
+        sb.append(age(n.publishedAt(), now)).append(" ago ");
+        if (Duration.between(n.publishedAt(), now).compareTo(NEWS_STALE_AFTER) > 0) {
+            sb.append("[STALE] ");
+        }
+        sb.append("— ");
+    }
+
     // ---- model + JSON helpers ----
 
     private String chat(ChatModel model, String systemPrompt, String userMessage) {
+        // Ollama TRUNCATES a prompt beyond num_ctx silently — the model then sees a
+        // cut-off brief and produces exactly the confused output that looks like
+        // sudden dumbness, with no error anywhere. Estimate (~4 chars/token) and
+        // at least make the overflow visible. 512 tokens headroom for the reply.
+        int estTokens = (systemPrompt.length() + userMessage.length()) / 4;
+        int ctx = brain.contextTokens();
+        if (estTokens > ctx - 512) {
+            LOG.warn("[CTX] prompt ~{} tok vs num_ctx {} — Ollama will silently truncate; "
+                    + "brief should have been budgeted tighter (sys={} chars, user={} chars)",
+                    estTokens, ctx, systemPrompt.length(), userMessage.length());
+        }
         List<ChatMessage> messages = List.of(
                 SystemMessage.from(systemPrompt), UserMessage.from(userMessage));
         ChatResponse response = model.chat(ChatRequest.builder().messages(messages).build());

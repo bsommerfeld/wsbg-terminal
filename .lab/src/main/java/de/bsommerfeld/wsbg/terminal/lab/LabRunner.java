@@ -23,7 +23,7 @@ import de.bsommerfeld.wsbg.terminal.db.AgentRepository;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
 import de.bsommerfeld.wsbg.terminal.lab.ThreadIngestor.IngestResult;
 import de.bsommerfeld.wsbg.terminal.reddit.RedditSource;
-import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooNewsItem;
+import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -245,8 +245,18 @@ public final class LabRunner {
             out.accept("      cites news: " + String.join(", ", ud.citedNewsIds()));
         }
         if (changed) {
-            u.addHeadline(text, ud.isUpdate());
+            u.addHeadline(text, ud.isUpdate(), ud.draft().sentiment()); // sentiment feeds the unit's story arc
             u.markNewsCovered(ud.citedNewsIds()); // 3b: consumed news won't be offered again
+            // Persist through the same store production uses → the permanent
+            // HeadlineArchive gets the line (lab output is real pipeline output).
+            // Ticker comes from the UNIT (resolver-validated), never the model.
+            agentRepository.saveHeadline(u.id, text, "",
+                    ud.draft().sourceThreadIds(), ud.draft().sourceCommentIds(),
+                    de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.fromString(ud.draft().highlight()),
+                    u.ticker(), java.util.List.of(), ud.draft().priceMovePercent(),
+                    ud.draft().sectors(), ud.draft().assetClass(),
+                    de.bsommerfeld.wsbg.terminal.db.HeadlineSentiment.fromString(ud.draft().sentiment()),
+                    u.snapshot());
             // Collation: a near-duplicate of a still-on-screen headline replaces it
             // in place instead of stacking a new row.
             HeadlineCollator.Decision col = collator.offer(u.id, text);

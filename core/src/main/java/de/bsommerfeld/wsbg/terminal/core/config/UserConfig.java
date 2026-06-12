@@ -47,6 +47,13 @@ public class UserConfig {
             + "cooldown. 0 = not snoozed. The heart icon stays visible throughout.")
     private long donationSnoozeUntil = 0;
 
+    @Key("donation-clicked")
+    @Comment("Whether the user has ever clicked through to the donate page "
+            + "(the heart or a banner link). Honor system — no accounts, no "
+            + "verification: the click gilds the heart icon permanently. Does "
+            + "not change any banner behaviour.")
+    private boolean donationClicked = false;
+
     @Key("scroll-speed")
     @Comment("Mouse/trackpad scroll speed inside the terminal: pixels per OS "
             + "scroll-line (default: 12.0). The browser renders off-screen, so the "
@@ -136,5 +143,13 @@ public class UserConfig {
 
     public void setDonationSnoozeUntil(long donationSnoozeUntil) {
         this.donationSnoozeUntil = donationSnoozeUntil;
+    }
+
+    public boolean isDonationClicked() {
+        return donationClicked;
+    }
+
+    public void setDonationClicked(boolean donationClicked) {
+        this.donationClicked = donationClicked;
     }
 }

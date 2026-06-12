@@ -39,10 +39,18 @@ public final class SubjectRegistry {
 
     public void markDirty(String id) { if (id != null) dirty.add(id); }
 
-    /** Returns and clears the current dirty set atomically. */
+    /**
+     * Returns and clears the current dirty set. Per-element remove (not a bulk
+     * {@code removeAll} over a snapshot) so a unit re-marked between the snapshot
+     * and the clear isn't silently wiped — a lost mark here means "the headline
+     * never came", which is miserable to debug. A mark that lands after its
+     * element was drained simply survives into the next drain.
+     */
     public Set<String> drainDirty() {
-        Set<String> drained = new HashSet<>(dirty);
-        dirty.removeAll(drained);
+        Set<String> drained = new HashSet<>();
+        for (String id : dirty) {
+            if (dirty.remove(id)) drained.add(id);
+        }
         return drained;
     }
 
@@ -92,13 +100,14 @@ public final class SubjectRegistry {
     }
 
     /**
-     * Context relief: prunes already-consumed <em>content</em> — evidence and
-     * published headlines older than {@code maxAge} — from every unit, while
-     * leaving the units themselves standing. A subject may live as long as it
-     * likes; the model just never sees hour-old comments or hour-old headlines.
-     * Tied to the snapshot TTL (a session that old is wiped on restart anyway).
+     * Context relief: prunes already-consumed <em>evidence</em> older than
+     * {@code maxAge} from every unit, while leaving the units themselves standing.
+     * A subject may live as long as it likes; the model just never sees hour-old
+     * comments. Published headlines are NOT pruned — they're the unit's story
+     * memory (see {@link SubjectUnit#pruneOlderThan}). Tied to the snapshot TTL
+     * (a session that old is wiped on restart anyway).
      *
-     * @return total number of evidence/headline entries dropped
+     * @return total number of evidence entries dropped
      */
     public int pruneContentOlderThan(java.time.Duration maxAge) {
         int pruned = 0;

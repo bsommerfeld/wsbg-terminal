@@ -144,23 +144,18 @@ runs:
         [ -d "bin" ] && cp -r bin "../app/"
         [ -d "images" ] && cp -r images "../app/"
 
-        # Sort first-party and third-party jars based on standard module prefixes
+        # Sort first-party and third-party jars by the embedded Maven descriptor:
+        # maven-jar-plugin writes META-INF/maven/<groupId>/... into every jar it
+        # builds, so jars from this repo (groupId de.bsommerfeld) identify
+        # themselves — no module-prefix list to maintain when modules are added.
+        # The trailing slash keeps sub-groups (e.g. de.bsommerfeld.jshepherd,
+        # an external library) classified as dependencies.
         shopt -s nullglob
         for jar in lib/*.jar; do
-            filename=$(basename "$jar")
-            
-            is_dep=true
-            for prefix in "wsbg-" "core-" "database-" "reddit-" "financial-juice-" "yahoo-finance-" "currency-" "agent-" "terminal-" "launcher-" "updater-"; do
-                if [[ "$filename" == "$prefix"* ]]; then
-                    is_dep=false
-                    break
-                fi
-            done
-            
-            if [ "$is_dep" = true ]; then
-                cp "$jar" "../deps/lib/"
-            else
+            if unzip -l "$jar" 2>/dev/null | grep -q "META-INF/maven/de\.bsommerfeld/"; then
                 cp "$jar" "../app/lib/"
+            else
+                cp "$jar" "../deps/lib/"
             fi
         done
 

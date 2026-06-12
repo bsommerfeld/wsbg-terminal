@@ -1,5 +1,7 @@
 package de.bsommerfeld.wsbg.terminal.finanznachrichten;
 
+import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
+
 import java.util.List;
 
 /**
@@ -16,5 +18,5 @@ public interface FeedFetcher {
      * must never throw and must never return {@code null} — a failed fetch
      * returns an empty list so one broken feed cannot stall a whole sweep.
      */
-    List<FnNewsItem> fetch(FnFeed feed);
+    List<RawNewsItem> fetch(FnFeed feed);
 }

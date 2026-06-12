@@ -5,12 +5,13 @@ import { Socket } from './bridge/socket.js';
 import { initTitlebar } from './chrome/titlebar.js';
 import { initTheme } from './chrome/theme.js';
 import { initFooter } from './chrome/footer.js';
-import { setDonationAdEnabled } from './chrome/slider.js';
-import { initDonate } from './chrome/donate.js';
+import { setDonationAdEnabled, setDonationStats } from './chrome/slider.js';
+import { initDonate, setSupporter } from './chrome/donate.js';
 import { initKeyboardCopy } from './chrome/copy-fx.js';
 import { renderHeadlines } from './widgets/reddit.js';
 import { renderFjNews } from './widgets/financial-juice.js';
 import { renderEurUsd } from './widgets/eurusd.js';
+import { renderMood } from './widgets/mood.js';
 import { setMarketCalendar } from './markets/state.js';
 
 // [data-platform] drives the title-bar split in CSS:
@@ -46,26 +47,35 @@ socket.on('market-hours', payload => {
   setMarketCalendar(payload);
 });
 
-// Reddit scraper health — toggles the status label next to the LIVE
-// indicator. Payload: { state: 'OK' | 'DEGRADED', degradedSinceMs }.
+// Market-mood badge (Reddit header): 24h sentiment split from the
+// published headlines. Renders only once mood.js is switched live.
+socket.on('market-mood', payload => {
+  renderMood(document.getElementById('mood-badge'), payload);
+});
+
+// Reddit scraper health — lives directly on the Reddit LIVE indicator
+// (the standalone "RATE LIMITED" chip was dropped; "Defekt" does the
+// job and the header slot belongs to the mood badge). Payload:
+// { state: 'OK' | 'DEGRADED', degradedSinceMs }.
 // TODO(oauth-login): when payload.suggestLogin is true (future flag,
 // set server-side once degraded > N min), swap the static label for
 // a clickable "Sign in to Reddit" CTA wired to the OAuth flow.
 socket.on('reddit-status', payload => {
-  const el = document.getElementById('reddit-status');
-  if (!el || !payload) return;
+  const live = document.querySelector('#widget-reddit .live');
+  if (!live || !payload) return;
   const state = payload.state || 'OK';
-  el.dataset.state = state;
-  // The LIVE indicator can't claim liveness while the pull is dead, so
-  // swap its label to "Defekt" alongside the CSS dot/colour change.
-  const live = el.parentElement && el.parentElement.querySelector('.live');
-  if (live) live.textContent = state === 'DEGRADED' ? 'Defekt' : 'Live';
+  live.dataset.state = state;
+  live.textContent = state === 'DEGRADED' ? 'Defekt' : 'Live';
 });
 
 // Donation gate: the footer ad only joins the slide rotation once the backend
-// TimeTracker reports enough cumulative active time (~12 h). Payload: { unlocked }.
+// TimeTracker reports enough cumulative active time (~12 h). Payload:
+// { unlocked, supporter, activeHours, openCount } — supporter gilds the heart,
+// the stats personalise the banner copy ({hours}/{opens} placeholders).
 socket.on('donation-gate', payload => {
   setDonationAdEnabled(!!(payload && payload.unlocked));
+  setDonationStats(payload);
+  setSupporter(!!(payload && payload.supporter));
 });
 
 initTheme();

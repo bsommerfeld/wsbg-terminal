@@ -2,7 +2,7 @@ package de.bsommerfeld.wsbg.terminal.agent.tool;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
-import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooNewsItem;
+import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
 import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooQuote;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
@@ -286,11 +286,11 @@ public final class LookupTickerTool implements Tool {
     private static void appendNewsBlock(StringBuilder sb, ToolContext ctx, String symbol) {
         if (ctx.yahooFinance() == null) return;
         try {
-            List<YahooNewsItem> news = ctx.yahooFinance().getNewsForSymbol(symbol, NEWS_PER_LOOKUP);
+            List<RawNewsItem> news = ctx.yahooFinance().getNewsForSymbol(symbol, NEWS_PER_LOOKUP);
             if (news.isEmpty()) return;
             sb.append("\nRecent Yahoo news for ").append(symbol).append(":\n");
             Instant now = Instant.now();
-            for (YahooNewsItem item : news) {
+            for (RawNewsItem item : news) {
                 sb.append("  - ");
                 if (item.publishedAt() != null) {
                     long mins = Duration.between(item.publishedAt(), now).toMinutes();

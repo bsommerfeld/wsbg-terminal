@@ -1,5 +1,7 @@
 package de.bsommerfeld.wsbg.terminal.finanznachrichten;
 
+import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
+
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.core.util.BrowserUserAgent;
 import org.slf4j.Logger;
@@ -26,7 +28,7 @@ import java.util.regex.Pattern;
 
 /**
  * Fetches and parses a single finanznachrichten.de RSS feed into
- * {@link FnNewsItem} objects. Stateless and thread-safe — de-duplication and
+ * {@link RawNewsItem} objects. Stateless and thread-safe — de-duplication and
  * scheduling live in {@link FnMonitorService}.
  *
  * <h3>Feed format</h3>
@@ -84,7 +86,7 @@ public class FnRssClient implements FeedFetcher {
      * failure (network, non-200, parse error) — never throws.
      */
     @Override
-    public List<FnNewsItem> fetch(FnFeed feed) {
+    public List<RawNewsItem> fetch(FnFeed feed) {
         try {
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(feed.url()))
@@ -111,12 +113,11 @@ public class FnRssClient implements FeedFetcher {
     }
 
     /**
-     * Parses raw RSS 2.0 XML into {@link FnNewsItem}s. Package-visible and pure
+     * Parses raw RSS 2.0 XML into {@link RawNewsItem}s. Package-visible and pure
      * (no network) so it can be unit-tested against captured feed bodies.
      */
-    List<FnNewsItem> parse(String xml, FnFeed feed) {
-        List<FnNewsItem> items = new ArrayList<>();
-        long now = System.currentTimeMillis() / 1000;
+    List<RawNewsItem> parse(String xml, FnFeed feed) {
+        List<RawNewsItem> items = new ArrayList<>();
         String feedSlug = feed == null ? "" : feed.slug();
 
         try {
@@ -140,14 +141,15 @@ public class FnRssClient implements FeedFetcher {
                 String description = stripHtml(SPONSORED_MARKER.matcher(rawDescription).replaceFirst(""));
                 long publishedUtc = parsePubDate(pubDate);
 
-                items.add(new FnNewsItem(
+                items.add(new RawNewsItem(
+                        link,                       // no guid in the feed → link is the id
                         title,
+                        "finanznachrichten",
                         link,
-                        description,
+                        publishedUtc == 0 ? null : Instant.ofEpochSecond(publishedUtc),
+                        List.of(),                  // Fn tags ISIN, not ticker symbols
                         isin.isEmpty() ? null : isin,
-                        publishedUtc,
-                        now,
-                        feedSlug,
+                        description,
                         sponsored));
             }
         } catch (Exception e) {

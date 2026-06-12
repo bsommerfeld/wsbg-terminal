@@ -33,6 +33,15 @@
   animation: beat 1.4s ease-in-out infinite;
 }
 
+/* Supporter state ("Ehrenaffe"): the user has opened the donate page at least
+   once (honor system, persisted server-side) — the heart stays filled gold
+   from then on. Hover keeps the beat but stays gold instead of going red. */
+.heart-btn.supporter svg path,
+.heart-btn.supporter:hover svg path {
+  fill: var(--gold);
+  stroke: var(--gold);
+}
+
 /* Linux-only footer heart: mirror the footer theme toggle's visibility. */
 .footer-heart { display: none; }
 html[data-platform="other"] .footer-heart { display: inline-flex; }

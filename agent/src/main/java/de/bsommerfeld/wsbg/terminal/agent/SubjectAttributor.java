@@ -1,4 +1,5 @@
 package de.bsommerfeld.wsbg.terminal.agent;
+import de.bsommerfeld.wsbg.terminal.embedding.EmbeddingService;
 
 import de.bsommerfeld.wsbg.terminal.agent.SubjectUnit.EvidenceRef;
 import de.bsommerfeld.wsbg.terminal.agent.TickerResolver.ResolvedSubject;
@@ -62,6 +63,15 @@ public final class SubjectAttributor {
     public void attribute(SubjectRegistry registry, InvestigationCluster cluster,
             List<ResolvedSubject> resolved) {
         long now = Instant.now().getEpochSecond();
+        // Reply tree per thread, built once for the whole cluster: when a subject
+        // is named deep in a chain ("E.ON und Constellation"), the conversation it
+        // answers (the energy thesis it hangs under) is attached as CONTEXT to the
+        // same unit, so the headline can carry the shared story. Cheap, and on RSS
+        // (no parent linkage) every chain is empty — context simply isn't added.
+        Map<String, CommentTree> trees = new HashMap<>();
+        for (String threadId : cluster.activeThreadIds) {
+            trees.put(threadId, CommentTree.of(repository.getCommentsForThread(threadId, 0)));
+        }
         // Words that appear in ≥2 of THIS cluster's subject names are "ambiguous"
         // (e.g. "msci" across MSCI World + MSCI Emerging Markets). A match on an
         // ambiguous word ALONE isn't enough — otherwise MSCI EM would glom onto the
@@ -107,6 +117,29 @@ public final class SubjectAttributor {
                 }
             }
             if (found.isEmpty()) continue; // no real mention → no phantom unit
+
+            // Conversation context: for every real comment-mention, pull in the
+            // chain it replies to as CONTEXT evidence (root-first, the thesis
+            // first). An ancestor that is itself a real mention of THIS subject
+            // stays a real mention — we don't downgrade it to context.
+            Set<String> realKeys = new HashSet<>();
+            for (EvidenceRef ref : found) realKeys.add(ref.key());
+            List<EvidenceRef> context = new ArrayList<>();
+            Set<String> contextKeys = new HashSet<>();
+            for (EvidenceRef ref : found) {
+                String commentId = baseCommentId(ref.commentId());
+                if (commentId == null) continue; // post body / thread image — no ancestors
+                CommentTree tree = trees.get(ref.threadId());
+                if (tree == null) continue;
+                for (RedditComment anc : tree.ancestorsOf(commentId)) {
+                    if (anc.body() == null || anc.body().isBlank()) continue;
+                    String key = ref.threadId() + "/" + anc.id();
+                    if (realKeys.contains(key) || !contextKeys.add(key)) continue;
+                    context.add(new EvidenceRef(ref.threadId(), anc.id(),
+                            contextSnippet(anc.body()), "reddit-context", now));
+                }
+            }
+            found.addAll(context);
 
             String id = unitKey(rs);
             if (id == null) continue;
@@ -250,6 +283,26 @@ public final class SubjectAttributor {
         if (s == null) return "";
         String one = s.replace('\n', ' ').strip();
         return one.length() > 140 ? one.substring(0, 140) + "…" : one;
+    }
+
+    /** A wider snippet for context lines — the thesis a pick answers needs room to read. */
+    private static String contextSnippet(String s) {
+        if (s == null) return "";
+        String one = s.replace('\n', ' ').strip();
+        return one.length() > 240 ? one.substring(0, 240) + "…" : one;
+    }
+
+    /**
+     * The underlying comment id of an evidence ref, or {@code null} when the ref
+     * isn't a comment. Strips the {@code #img} suffix a vision ref carries and
+     * filters the post-level markers ({@code null} = post body, {@code _vision}
+     * = a thread image) that have no comment ancestors.
+     */
+    private static String baseCommentId(String commentId) {
+        if (commentId == null || "_vision".equals(commentId)) return null;
+        return commentId.endsWith("#img")
+                ? commentId.substring(0, commentId.length() - "#img".length())
+                : commentId;
     }
 
     private static String nz(String s) {

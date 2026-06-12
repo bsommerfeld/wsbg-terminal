@@ -1,5 +1,12 @@
 package de.bsommerfeld.wsbg.terminal.yahoofinance;
 
+import de.bsommerfeld.wsbg.terminal.source.NewsSource;
+import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
+import de.bsommerfeld.wsbg.terminal.source.net.DirectWebFetcher;
+import de.bsommerfeld.wsbg.terminal.source.net.WebFetchChain;
+import de.bsommerfeld.wsbg.terminal.source.net.WebFetcher;
+import de.bsommerfeld.wsbg.terminal.source.net.WebResponse;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.inject.Inject;
@@ -12,11 +19,7 @@ import de.bsommerfeld.wsbg.terminal.core.util.HostReachability;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.net.URI;
 import java.net.URLEncoder;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
@@ -61,7 +64,7 @@ import java.util.regex.Pattern;
  * "Yahoo couldn't tell us", not as an exceptional state.
  */
 @Singleton
-public class YahooFinanceClient {
+public class YahooFinanceClient implements NewsSource {
 
     private static final Logger LOG = LoggerFactory.getLogger(YahooFinanceClient.class);
 
@@ -116,7 +119,13 @@ public class YahooFinanceClient {
     private static final Duration REACHABILITY_PROBE_TIMEOUT = Duration.ofSeconds(2);
     private static final Duration REACHABILITY_CACHE_TTL = Duration.ofSeconds(30);
 
-    private final HttpClient http;
+    /**
+     * The fetch strategy. In production this is a {@link WebFetchChain} of
+     * {@code [browser, direct]} so Yahoo's IP/429 block is cleared by the
+     * embedded browser with a plain-HTTP fallback; tests/lab get a direct-only
+     * chain. Rate-limit/breaker logic stays here, in the caller.
+     */
+    private final WebFetcher webFetcher;
     private final Duration requestTimeout;
     private final long cacheTtlSeconds;
 
@@ -173,6 +182,11 @@ public class YahooFinanceClient {
     }
 
     @Inject
+    public YahooFinanceClient(GlobalConfig config, WebFetcher webFetcher) {
+        this(resolveTimeout(config), resolveTtl(config), webFetcher);
+    }
+
+    /** Config-driven, direct-HTTP only — for tests/CLI without an injector. */
     public YahooFinanceClient(GlobalConfig config) {
         this(resolveTimeout(config), resolveTtl(config));
     }
@@ -187,14 +201,28 @@ public class YahooFinanceClient {
         return y == null ? 120 : y.getCacheTtlSeconds();
     }
 
+    /** Direct-HTTP-only variant for tests/CLI/lab (no embedded browser available). */
     public YahooFinanceClient(int requestTimeoutSeconds, long cacheTtlSeconds) {
-        this.http = HttpClient.newBuilder()
-                .version(HttpClient.Version.HTTP_2)
-                .followRedirects(HttpClient.Redirect.NORMAL) // article links 30x-redirect to the publisher
-                .connectTimeout(Duration.ofSeconds(Math.max(2, requestTimeoutSeconds)))
-                .build();
+        this(requestTimeoutSeconds, cacheTtlSeconds,
+                new WebFetchChain(java.util.List.of(new DirectWebFetcher())));
+    }
+
+    public YahooFinanceClient(int requestTimeoutSeconds, long cacheTtlSeconds, WebFetcher webFetcher) {
+        this.webFetcher = webFetcher;
         this.requestTimeout = Duration.ofSeconds(Math.max(2, requestTimeoutSeconds));
         this.cacheTtlSeconds = Math.max(0, cacheTtlSeconds);
+    }
+
+    /**
+     * Performs a GET via the configured {@link WebFetcher} chain (browser→direct
+     * in production), applying the standard Yahoo headers. The {@code User-Agent}
+     * matters only for the direct strategy; the browser sets its own.
+     */
+    private WebResponse httpGet(String url, String accept) throws Exception {
+        Map<String, String> headers = new LinkedHashMap<>();
+        headers.put("User-Agent", userAgent);
+        headers.put("Accept", accept);
+        return webFetcher.fetch(url, headers, requestTimeout);
     }
 
     /**
@@ -237,21 +265,13 @@ public class YahooFinanceClient {
                     + "&quotesQueryId=tss_match_phrase_query"
                     + "&newsQueryId=news_cie_vespa";
 
-            HttpRequest req = HttpRequest.newBuilder()
-                    .uri(URI.create(url))
-                    .header("User-Agent", userAgent)
-                    .header("Accept", "application/json")
-                    .timeout(requestTimeout)
-                    .GET()
-                    .build();
-
-            HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
-            if (resp.statusCode() != 200) {
-                if (isRateLimitStatus(resp.statusCode())) {
-                    tripBreaker("search '" + trimmed + "'", resp.statusCode());
+            WebResponse resp = httpGet(url, "application/json");
+            if (resp.status() != 200) {
+                if (isRateLimitStatus(resp.status())) {
+                    tripBreaker("search '" + trimmed + "'", resp.status());
                     return SearchResult.throttled();
                 }
-                LOG.warn("Yahoo search '{}' returned HTTP {}", trimmed, resp.statusCode());
+                LOG.warn("Yahoo search '{}' returned HTTP {}", trimmed, resp.status());
                 return SearchResult.empty();
             }
 
@@ -282,9 +302,22 @@ public class YahooFinanceClient {
      * yields the symbol itself as the top quote and the symbol's news in
      * the {@code news} array.
      */
-    public List<YahooNewsItem> getNewsForSymbol(String symbol, int newsCount) {
+    public List<RawNewsItem> getNewsForSymbol(String symbol, int newsCount) {
         if (symbol == null || symbol.isBlank()) return List.of();
         return search(symbol.trim(), 1, Math.max(1, newsCount)).news();
+    }
+
+    // --- NewsSource -------------------------------------------------------
+
+    @Override
+    public String sourceName() {
+        return "yahoo";
+    }
+
+    /** {@link NewsSource} view over {@link #getNewsForSymbol} — the pull-by-symbol path. */
+    @Override
+    public List<RawNewsItem> newsFor(String symbol, int limit) {
+        return getNewsForSymbol(symbol, limit);
     }
 
     /**
@@ -320,18 +353,10 @@ public class YahooFinanceClient {
             String url = CHART_URL + URLEncoder.encode(sym, StandardCharsets.UTF_8)
                     + "?interval=" + CHART_INTERVAL + "&range=" + CHART_RANGE;
 
-            HttpRequest req = HttpRequest.newBuilder()
-                    .uri(URI.create(url))
-                    .header("User-Agent", userAgent)
-                    .header("Accept", "application/json")
-                    .timeout(requestTimeout)
-                    .GET()
-                    .build();
-
-            HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
-            if (resp.statusCode() != 200) {
-                if (isRateLimitStatus(resp.statusCode())) tripBreaker("chart '" + sym + "'", resp.statusCode());
-                else LOG.warn("Yahoo chart '{}' returned HTTP {}", sym, resp.statusCode());
+            WebResponse resp = httpGet(url, "application/json");
+            if (resp.status() != 200) {
+                if (isRateLimitStatus(resp.status())) tripBreaker("chart '" + sym + "'", resp.status());
+                else LOG.warn("Yahoo chart '{}' returned HTTP {}", sym, resp.status());
                 return Optional.empty();
             }
 
@@ -408,17 +433,10 @@ public class YahooFinanceClient {
             String url = SPARK_URL
                     + "?symbols=" + URLEncoder.encode(String.join(",", chunk), StandardCharsets.UTF_8)
                     + "&range=" + CHART_RANGE + "&interval=" + CHART_INTERVAL;
-            HttpRequest req = HttpRequest.newBuilder()
-                    .uri(URI.create(url))
-                    .header("User-Agent", userAgent)
-                    .header("Accept", "application/json")
-                    .timeout(requestTimeout)
-                    .GET()
-                    .build();
-            HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
-            if (resp.statusCode() != 200) {
-                if (isRateLimitStatus(resp.statusCode())) tripBreaker("spark batch", resp.statusCode());
-                else LOG.warn("Yahoo spark batch returned HTTP {}", resp.statusCode());
+            WebResponse resp = httpGet(url, "application/json");
+            if (resp.status() != 200) {
+                if (isRateLimitStatus(resp.status())) tripBreaker("spark batch", resp.status());
+                else LOG.warn("Yahoo spark batch returned HTTP {}", resp.status());
                 return out;
             }
             for (MarketSnapshot s : parseSpark(resp.body())) {
@@ -483,7 +501,7 @@ public class YahooFinanceClient {
 
     /**
      * Best-effort full-text fetch for a news article URL (the {@code link} on a
-     * {@link YahooNewsItem}). Follows the {@code finance.yahoo.com/m/…} redirect
+     * {@link RawNewsItem}). Follows the {@code finance.yahoo.com/m/…} redirect
      * to the publisher, strips boilerplate, and returns readable body text
      * capped at {@link #ARTICLE_MAX_CHARS}.
      *
@@ -509,17 +527,9 @@ public class YahooFinanceClient {
             return Optional.empty();
         }
         try {
-            HttpRequest req = HttpRequest.newBuilder()
-                    .uri(URI.create(key))
-                    .header("User-Agent", userAgent)
-                    .header("Accept", "text/html,application/xhtml+xml")
-                    .timeout(requestTimeout)
-                    .GET()
-                    .build();
-
-            HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
-            if (resp.statusCode() != 200) {
-                LOG.warn("Yahoo article fetch '{}' returned HTTP {}", key, resp.statusCode());
+            WebResponse resp = httpGet(key, "text/html,application/xhtml+xml");
+            if (resp.status() != 200) {
+                LOG.warn("Yahoo article fetch '{}' returned HTTP {}", key, resp.status());
                 return Optional.empty();
             }
             String text = extractReadableText(resp.body());
@@ -601,7 +611,7 @@ public class YahooFinanceClient {
                 }
             }
 
-            List<YahooNewsItem> news = new ArrayList<>();
+            List<RawNewsItem> news = new ArrayList<>();
             JsonNode newsNode = root.path("news");
             if (newsNode.isArray()) {
                 for (JsonNode n : newsNode) {
@@ -616,7 +626,7 @@ public class YahooFinanceClient {
                             if (!s.isEmpty()) related.add(s);
                         }
                     }
-                    news.add(new YahooNewsItem(
+                    news.add(new RawNewsItem(
                             text(n, "uuid"),
                             title,
                             text(n, "publisher"),
@@ -765,7 +775,7 @@ public class YahooFinanceClient {
      * exposed together because the endpoint returns them in one response;
      * splitting into two methods would double the round-trips.
      */
-    public record SearchResult(List<YahooQuote> quotes, List<YahooNewsItem> news, boolean rateLimited) {
+    public record SearchResult(List<YahooQuote> quotes, List<RawNewsItem> news, boolean rateLimited) {
         public static SearchResult empty() {
             return new SearchResult(List.of(), List.of(), false);
         }

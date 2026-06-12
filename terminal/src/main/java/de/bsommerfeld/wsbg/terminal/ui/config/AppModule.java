@@ -3,10 +3,11 @@ package de.bsommerfeld.wsbg.terminal.ui.config;
 import com.google.inject.AbstractModule;
 import com.google.inject.Provides;
 import com.google.inject.Singleton;
+import com.google.inject.multibindings.Multibinder;
 import de.bsommerfeld.jshepherd.core.ConfigurationLoader;
 import de.bsommerfeld.wsbg.terminal.agent.AgentCoordinator;
-import de.bsommerfeld.wsbg.terminal.agent.EmbeddingService;
-import de.bsommerfeld.wsbg.terminal.agent.OllamaEmbeddingService;
+import de.bsommerfeld.wsbg.terminal.embedding.EmbeddingService;
+import de.bsommerfeld.wsbg.terminal.embedding.OllamaEmbeddingService;
 import de.bsommerfeld.wsbg.terminal.agent.ClusterRebalancer;
 import de.bsommerfeld.wsbg.terminal.agent.PassiveMonitorService;
 import de.bsommerfeld.wsbg.terminal.core.config.AgentConfig;
@@ -23,14 +24,25 @@ import de.bsommerfeld.wsbg.terminal.reddit.RedditScraper;
 import de.bsommerfeld.wsbg.terminal.reddit.RedditSource;
 import de.bsommerfeld.wsbg.terminal.reddit.RssRedditScraper;
 import de.bsommerfeld.wsbg.terminal.reddit.TokenBucketRateLimiter;
+import de.bsommerfeld.wsbg.terminal.source.NewsSource;
+import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooFinanceClient;
+import de.bsommerfeld.wsbg.terminal.source.net.DirectWebFetcher;
+import de.bsommerfeld.wsbg.terminal.source.net.WebFetchChain;
+import de.bsommerfeld.wsbg.terminal.source.net.WebFetcher;
+import de.bsommerfeld.wsbg.terminal.ui.CefHost;
 import de.bsommerfeld.wsbg.terminal.ui.TimeTracker;
+import de.bsommerfeld.wsbg.terminal.ui.net.CefRedditTransport;
+import de.bsommerfeld.wsbg.terminal.ui.net.CefWebFetcher;
+import de.bsommerfeld.wsbg.terminal.ui.bridge.ArchiveQueryBridge;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.CommandBridge;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.DonationGatePublisher;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.EurUsdPublisher;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.FjNewsPublisher;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.HeadlinePublisher;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.MarketHoursPublisher;
+import de.bsommerfeld.wsbg.terminal.ui.bridge.MarketMoodPublisher;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.RedditHealthPublisher;
+import de.bsommerfeld.wsbg.terminal.ui.bridge.WatchlistBridge;
 import de.bsommerfeld.wsbg.terminal.ui.scroll.PixelScaledWheelScrollPolicy;
 import de.bsommerfeld.wsbg.terminal.ui.scroll.WheelScrollPolicy;
 import org.slf4j.Logger;
@@ -68,6 +80,16 @@ public class AppModule extends AbstractModule {
             // Shared embedding seam (clustering, collation, …) → Ollama-backed impl.
             bind(EmbeddingService.class).to(OllamaEmbeddingService.class);
 
+            // News sources are collected into a Set<NewsSource> (Guice
+            // multibindings) so NewsAggregator can fan a query across all of
+            // them; adding/dropping a source is a binding change here, never a
+            // change in the aggregator. Yahoo is the first (pull-by-symbol)
+            // source; the RSS feed index joins later. Architectural wiring only
+            // — nothing consumes the aggregator yet, so behaviour is unchanged.
+            Multibinder<NewsSource> newsSources =
+                    Multibinder.newSetBinder(binder(), NewsSource.class);
+            newsSources.addBinding().to(YahooFinanceClient.class);
+
             // RedditSource is assembled in provideRedditSource() below — it
             // auto-selects a working path (OAuth → .json → RSS) at runtime, so
             // there is no configured source and every install finds its own way.
@@ -95,6 +117,13 @@ public class AppModule extends AbstractModule {
             bind(EurUsdMonitorService.class).asEagerSingleton();
             bind(EurUsdPublisher.class).asEagerSingleton();
             bind(CommandBridge.class).asEagerSingleton();
+            // Archive layer: search/byTicker queries, the persisted watchlist,
+            // and the daily market-mood badge ("54% BEARISH") — all reading the
+            // permanent HeadlineArchive / the archive-seeded wire window. Eager
+            // so their hub.on(...) handlers exist before the first page loads.
+            bind(ArchiveQueryBridge.class).asEagerSingleton();
+            bind(WatchlistBridge.class).asEagerSingleton();
+            bind(MarketMoodPublisher.class).asEagerSingleton();
 
             // OSR wheel-scroll seam (see ui/scroll/). The off-screen browser gets
             // no native OS wheel message, so we re-scale the AWT delta: precise
@@ -115,16 +144,50 @@ public class AppModule extends AbstractModule {
 
     /**
      * Builds the {@link RedditSource}: a {@link FallbackRedditSource} that
-     * auto-selects a working path at runtime (OAuth → anonymous .json → RSS).
-     * The two JSON delegates share one repository but carry their own transport +
-     * rate limiter — OAuth gets the fast budget, anonymous .json the throttled
-     * one; RSS owns its own internally. Consumers only see {@link RedditSource}
-     * and never learn which path answered.
+     * auto-selects a working path at runtime (OAuth → browser → anonymous .json
+     * → RSS). Every JSON delegate shares one repository but carries its own
+     * transport + rate limiter — OAuth gets the fast budget, the browser and
+     * anonymous {@code .json} the throttled one; RSS owns its own internally.
+     * Consumers only see {@link RedditSource} and never learn which path
+     * answered.
+     *
+     * <p>The <b>browser</b> delegate ({@link CefRedditTransport}) fetches the
+     * full-fidelity {@code .json} through the embedded Chromium runtime, so it
+     * carries a real browser TLS fingerprint + cookies and clears the bot
+     * detection that 403s the plain {@code .json} path. It sits just under OAuth
+     * (which only probes true once a client ID is configured) and above the
+     * legacy anonymous {@code .json}, making it the de-facto primary on a normal
+     * install while RSS stays the always-reachable floor.
+     */
+    /**
+     * The generic fetch strategy any source can consume: a {@link WebFetchChain}
+     * resolved in order. When {@code yahoo.browser-fetch-enabled} is on, the
+     * browser "joker" ({@link CefWebFetcher} — real fingerprint + cookies, clears
+     * bot-walls) leads, with plain {@link DirectWebFetcher} as the fallback;
+     * toggled off, it's direct-only. New news wires opt in just by taking a
+     * {@link WebFetcher} and choosing their chain order — no per-source plumbing.
      */
     @Provides
     @Singleton
+    WebFetcher provideWebFetcher(GlobalConfig config, CefHost cefHost) {
+        DirectWebFetcher direct = new DirectWebFetcher();
+        if (config.getYahoo().isBrowserFetchEnabled()) {
+            LOG.info("WebFetcher: browser → direct (browser joker enabled)");
+            // NOTE: the Yahoo origin browsers warm up lazily on first use. Eager
+            // prewarming was tried and reverted — kicking it at injector time
+            // forced CEF init off the EDT (before the window initializes it on the
+            // EDT), which hangs on macOS. A correct prewarm must run AFTER the
+            // window has brought CEF up; deferred until that hook exists.
+            return new WebFetchChain(List.of(new CefWebFetcher(cefHost), direct));
+        }
+        LOG.info("WebFetcher: direct only (browser joker disabled)");
+        return new WebFetchChain(List.of(direct));
+    }
+
+    @Provides
+    @Singleton
     RedditSource provideRedditSource(RedditRepository repository,
-            ApplicationEventBus eventBus, GlobalConfig config) {
+            ApplicationEventBus eventBus, GlobalConfig config, CefHost cefHost) {
         RedditConfig rc = config.getReddit();
         String probeSub = rc.getSubreddits().isEmpty()
                 ? "wallstreetbetsGER" : rc.getSubreddits().get(0);
@@ -133,14 +196,22 @@ public class AppModule extends AbstractModule {
                 new OAuthRedditTransport(config),
                 new TokenBucketRateLimiter(rc.getOauthRateLimitBurst(),
                         rc.getOauthRateLimitRequestsPerSecond()));
+        // Browser-driven .json: a real browser session (cookies + fingerprint,
+        // challenge solved), so it runs on its OWN generous rate limit, NOT the
+        // anonymous 0.15/s bot-detection budget — full-fidelity deep fetches stay
+        // intact but stream in fast instead of one every ~6.6s.
+        RedditScraper browser = new RedditScraper(repository, eventBus,
+                new CefRedditTransport(cefHost, probeSub),
+                new TokenBucketRateLimiter(rc.getBrowserRateLimitBurst(),
+                        rc.getBrowserRateLimitRequestsPerSecond()));
         RedditScraper json = new RedditScraper(repository, eventBus,
                 new JdkRedditTransport(),
                 new TokenBucketRateLimiter(rc.getRateLimitBurst(),
                         rc.getRateLimitRequestsPerSecond()));
         RssRedditScraper rss = new RssRedditScraper(repository, config, eventBus);
 
-        LOG.info("Reddit source: dynamic fallback chain [OAuth → JSON → RSS]");
-        return new FallbackRedditSource(List.of(oauth, json, rss), probeSub, 600L);
+        LOG.info("Reddit source: dynamic fallback chain [OAuth → browser → JSON → RSS]");
+        return new FallbackRedditSource(List.of(oauth, browser, json, rss), probeSub, 600L);
     }
 
     /**

@@ -12,7 +12,9 @@ const AD_MS           = 30 * 1000;       // banner visible window
 const AD_CAP          = 4;               // max banner impressions per session
 const WIDEN_FACTOR    = 2;               // each successive markets gap doubles
 
-// Preset glyphs. The CSS class drives any animation (.heart beats, .star spins).
+// Preset glyphs ("Schablonen"). The CSS class drives colour + animation
+// (.heart beats, .star spins, .rocket lifts, .gem sparkles, .banana swings,
+// .moon bobs, .skull holds still — it's dead). All styled in footer.css.
 const ICONS = {
   heart: {
     cls: 'heart',
@@ -22,24 +24,120 @@ const ICONS = {
     cls: 'star',
     svg: '<svg viewBox="0 0 24 24"><path d="M12 2 L14 10 L22 12 L14 14 L12 22 L10 14 L2 12 L10 10 Z"/></svg>',
   },
+  rocket: {
+    cls: 'rocket',
+    svg: '<svg viewBox="0 0 24 24"><path d="M12 2c2.8 1.8 4.2 5 4.2 8.4 0 .9-.1 1.8-.3 2.6l2.6 2.6-1.4 2.8-2.6-.9c-.7 1.2-1.6 2.4-2.5 3.5-.9-1.1-1.8-2.3-2.5-3.5l-2.6.9-1.4-2.8 2.6-2.6c-.2-.8-.3-1.7-.3-2.6C7.8 7 9.2 3.8 12 2z"/></svg>',
+  },
+  gem: {
+    cls: 'gem',
+    svg: '<svg viewBox="0 0 24 24"><path d="M6 3h12l4 6-10 12L2 9l4-6z"/></svg>',
+  },
+  banana: {
+    cls: 'banana',
+    svg: '<svg viewBox="0 0 24 24"><path d="M3 12c1.5 5.5 7.5 8.5 13 6.5 3-1.1 5-3.2 6-6-1.2 1.2-3 2.2-5 2.7C12 16.4 6.8 14.8 4.8 10.5L3 12z"/></svg>',
+  },
+  moon: {
+    cls: 'moon',
+    svg: '<svg viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>',
+  },
+  skull: {
+    cls: 'skull',
+    svg: '<svg viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 2a8 8 0 0 0-8 8c0 2.9 1.6 5 3.5 6.3V20h9v-3.7C18.4 15 20 12.9 20 10a8 8 0 0 0-8-8zM9 9a1.8 1.8 0 1 1 0 3.6A1.8 1.8 0 0 1 9 9zm6 0a1.8 1.8 0 1 1 0 3.6 1.8 1.8 0 0 1 0-3.6z"/></svg>',
+  },
 };
 
-// Each entry: { icon?: 'heart'|'star', text: string, link?: { href, label } }
+// Reciprocity stats from the donation-gate payload (TimeTracker's persisted
+// bookkeeping). Lines containing {hours}/{opens} placeholders are kept out of
+// the rotation until the corresponding stat has arrived.
+let stats = { hours: null, opens: null };
+export function setDonationStats(payload) {
+  const hours = payload && payload.activeHours;
+  const opens = payload && payload.openCount;
+  stats = {
+    hours: Number.isFinite(hours) && hours > 0 ? Math.round(hours) : null,
+    opens: Number.isFinite(opens) && opens > 0 ? opens : null,
+  };
+}
+
+const DONATE_LINK = { href: 'https://wsbg.app/donate', label: 'wsbg.app/donate' };
+
+// Each entry: { icon?: key of ICONS, text: string, link?: { href, label } }.
+// {hours} / {opens} are filled from the reciprocity stats at render time.
 const AD_MESSAGES = [
   {
     icon: 'heart',
     text: 'Zur Abwechslung mal Gewinne realisiert? Finanziere den nächsten Loss-Porn',
-    link: { href: 'https://wsbg.app/donate', label: 'wsbg.app/donate' },
+    link: DONATE_LINK,
   },
   {
     icon: 'heart',
     text: 'Dir hat das WSBG-Terminal geholfen? Hilf beim Verlusttopf ausgleichen',
-    link: { href: 'https://wsbg.app/donate', label: 'wsbg.app/donate' },
+    link: DONATE_LINK,
   },
   {
     icon: 'star',
     text: 'Alles verloren und trotzdem den Drang zu spenden? Ein Stern ist fast so viel Wert wie ein Euro',
     link: { href: 'https://wsbg.app', label: 'wsbg.app' },
+  },
+  {
+    icon: 'heart',
+    text: '{hours} Stunden im Käfig und noch keinen Cent Miete gezahlt',
+    link: DONATE_LINK,
+  },
+  {
+    icon: 'heart',
+    text: 'Käfigbesuch Nr. {opens} — der Türsteher-Affe nimmt auch Trinkgeld',
+    link: DONATE_LINK,
+  },
+  {
+    icon: 'rocket',
+    text: 'Die nächste Rakete wird hier zuerst gesichtet. Der Treibstoff zahlt sich nicht von selbst',
+    link: DONATE_LINK,
+  },
+  {
+    icon: 'rocket',
+    text: '+606 % auf die Pennystock-Rakete, 0 % an den Maschinenraum? Rechne nochmal nach',
+    link: DONATE_LINK,
+  },
+  {
+    icon: 'gem',
+    text: 'Diamond Hands beim Halten, Butterhände beim Spenden?',
+    link: DONATE_LINK,
+  },
+  {
+    icon: 'gem',
+    text: 'Du YOLOst vierstellig in 0DTE-Optionen, aber 5 € sind zu teuer?',
+    link: DONATE_LINK,
+  },
+  {
+    icon: 'banana',
+    text: 'Affen arbeiten für Bananen. Der Entwickler auch',
+    link: DONATE_LINK,
+  },
+  {
+    icon: 'banana',
+    text: 'Eine Banane im Monat hält den Käfig sauber',
+    link: DONATE_LINK,
+  },
+  {
+    icon: 'moon',
+    text: 'Bis zum Mond sind es 384.400 km. Bis zur Spende ein Klick',
+    link: DONATE_LINK,
+  },
+  {
+    icon: 'moon',
+    text: 'Hopium ist gratis, der Strom für die KI nicht',
+    link: DONATE_LINK,
+  },
+  {
+    icon: 'skull',
+    text: 'Dein Depot ist tot, das Terminal lebt — solange jemand spendet',
+    link: DONATE_LINK,
+  },
+  {
+    icon: 'skull',
+    text: 'Für die Gefallenen können wir nichts mehr tun. Für den Wire schon',
+    link: DONATE_LINK,
   },
 ];
 
@@ -59,13 +157,21 @@ function marketsWindow() {
   return Math.min(MAX_MARKETS_MS, BASE_MARKETS_MS * Math.pow(WIDEN_FACTOR, adShown));
 }
 
-let lastAdIndex = -1;
+// Lines whose placeholder stat hasn't arrived yet stay out of the pool.
+function eligibleMessages() {
+  return AD_MESSAGES.filter(m =>
+    (!m.text.includes('{hours}') || stats.hours != null) &&
+    (!m.text.includes('{opens}') || stats.opens != null));
+}
+
+let lastAd = null;
 function pickAdMessage() {
-  if (AD_MESSAGES.length <= 1) return AD_MESSAGES[0];
-  let i;
-  do { i = Math.floor(Math.random() * AD_MESSAGES.length); } while (i === lastAdIndex);
-  lastAdIndex = i;
-  return AD_MESSAGES[i];
+  const pool = eligibleMessages();
+  if (pool.length <= 1) return pool[0];
+  let msg;
+  do { msg = pool[Math.floor(Math.random() * pool.length)]; } while (msg === lastAd);
+  lastAd = msg;
+  return msg;
 }
 
 function renderAd(host, msg) {
@@ -79,7 +185,9 @@ function renderAd(host, msg) {
   }
 
   const text = document.createElement('span');
-  text.textContent = msg.text;
+  text.textContent = msg.text
+    .replace('{hours}', stats.hours)
+    .replace('{opens}', stats.opens);
   host.appendChild(text);
 
   if (msg.link) {

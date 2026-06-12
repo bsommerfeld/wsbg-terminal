@@ -54,76 +54,51 @@ a.glyph:hover { opacity: .7; }
   animation: pulse 2s infinite;
 }
 
-/* Reddit pull-status badge — flex-centred between ident (left) and the
-   LIVE indicator (right) via dual auto-margins. Default state takes no
-   space (width-collapsed + invisible) so the existing layout is
-   unchanged; when the scraper hits 403/429/timeout it fades in as a
-   heavy "RATE LIMITED" chip with a soft red wash and a slowly drifting
-   gradient. The glow itself is static — only the gradient moves.
-   TODO(oauth-login): swap text + add cursor:pointer when degraded > N
-   min and wire the click to the OAuth flow. */
-.widget-head .reddit-status {
-  margin: 0 auto;           /* eats auto space on both sides → centred */
-  padding: 3px 14px;
-  border-radius: 3px;
-
-  /* Static outer glow, never pulses — the breathing effect comes from
-     the moving gradient below instead. */
-  box-shadow: 0 0 16px 2px oklch(0.55 0.19 28 / 0.22);
-
-  /* Multi-stop gradient that drifts via background-position. The
-     darker mid-stop slides slowly across the chip, giving the surface
-     a faint, heavy "alive" feel without flashing. */
-  background:
-    linear-gradient(90deg,
-      oklch(0.55 0.19 28 / 0.10) 0%,
-      oklch(0.55 0.19 28 / 0.22) 50%,
-      oklch(0.55 0.19 28 / 0.10) 100%);
-  background-size: 220% 100%;
-  background-position: 0% 50%;
-
-  color: var(--red);
-  font-size: 0.72em;
-  font-weight: 700;
-  letter-spacing: .22em;
-  text-transform: uppercase;
-  white-space: nowrap;
-
-  /* Collapsed state — keep the element in flow but with no visible box
-     so it can't slide into the ident/live text when scraping is healthy. */
-  max-width: 0;
-  padding-left: 0;
-  padding-right: 0;
-  overflow: hidden;
-  opacity: 0;
-  pointer-events: none;
-  transition: max-width 320ms ease, opacity 240ms ease,
-              padding 320ms ease;
-}
-.widget-head .reddit-status[data-state="DEGRADED"] {
-  max-width: 220px;
-  padding-left: 14px;
-  padding-right: 14px;
-  opacity: 1;
-  animation: rate-limit-drift 9s ease-in-out infinite;
-}
-@keyframes rate-limit-drift {
-  0%, 100% { background-position: 0% 50%; }
-  50%      { background-position: 100% 50%; }
-}
-
-/* When the RATE LIMITED chip is showing, the pull is effectively dead, so
-   the LIVE indicator (a sibling that follows the status chip in the header)
-   stops claiming liveness: the dot goes static red — no pulse — and the
-   label tints red. The "Live" → "Defekt" text swap is done in main.js. */
-.widget-head .reddit-status[data-state="DEGRADED"] ~ .live {
+/* Scraper health on the LIVE indicator itself (the old standalone
+   "RATE LIMITED" chip was removed — "Defekt" does the job). When the
+   pull is degraded (403/429/timeouts) main.js sets data-state="DEGRADED"
+   and swaps the label to "Defekt": the dot goes static red — no pulse —
+   and the label tints red. */
+.widget-head .live[data-state="DEGRADED"] {
   color: var(--red);
 }
-.widget-head .reddit-status[data-state="DEGRADED"] ~ .live::before {
+.widget-head .live[data-state="DEGRADED"]::before {
   background: var(--red);
   box-shadow: 0 0 6px var(--red);
   animation: none;
 }
+
+/* Market-mood badge in the Reddit widget header — the room's 24h
+   sentiment split ("54% BEARISH"). A pill whose CAMP COLOUR does all
+   the talking: translucent wash as the background, the same colour at
+   full opacity as a bright ring, and the figure itself in the colour.
+   Colour transitions are animated so a live flip BULLISH→BEARISH
+   visibly glides instead of snapping. Hidden (the [hidden] attribute)
+   until the badge is switched live and a directional reading exists. */
+.widget-head .mood {
+  --mood-color: var(--txt-2);                 /* NEUTRAL default */
+  margin-left: auto;                          /* pinned right, before LIVE */
+  display: inline-flex; align-items: center;
+  padding: 2px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--mood-color);        /* bright, 100% opacity ring */
+  color: var(--mood-color);                   /* the figure in the camp colour */
+  background: color-mix(in oklch, var(--mood-color) 13%, transparent);
+  font-size: var(--font-chrome);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .04em;
+  white-space: nowrap;
+  transition: color 600ms ease, border-color 600ms ease, background 600ms ease;
+}
+.widget-head .mood[hidden] { display: none; }
+.widget-head .mood[data-mood="BULLISH"] { --mood-color: var(--green); }
+.widget-head .mood[data-mood="BEARISH"] { --mood-color: var(--red); }
+/* Same spacing trick as the EUR/USD badge: when the mood badge is visible
+   it owns the auto margin and LIVE follows at a fixed gap; while hidden,
+   LIVE keeps its own auto margin and stays pinned right. */
+.widget-head .mood ~ .live { margin-left: 14px; }
+.widget-head .mood[hidden] ~ .live { margin-left: auto; }
 
 /* EUR/USD ticker pinned to the FJ widget header — flags flank the rate
    with no chip background. The rate text tints briefly on direction

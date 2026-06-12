@@ -1,7 +1,11 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
+import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
+import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.List;
 
@@ -134,5 +138,103 @@ class EditorialAgentTest {
                 "{\"headline\": \"Oracle (ORCL) +2%\", \"x\": 1}", "headline"));
         assertEquals(6.5, EditorialAgent.regexNumberField("{\"priceMovePercent\": 6.5}", "priceMovePercent"));
         assertNull(EditorialAgent.regexStringField("no json here", "headline"));
+    }
+
+    // ---- unitBrief: the per-unit compose context, incl. the story memory that
+    // ---- survives the evidence prune ----
+
+    private static MarketSnapshot snap(double price) {
+        return new MarketSnapshot("NVDA", price, Double.NaN, 1.5, Double.NaN, Double.NaN,
+                -1, Double.NaN, Double.NaN, "USD", "", 0, List.of());
+    }
+
+    private static SubjectUnit.EvidenceRef ev(String comment, String snippet) {
+        return new SubjectUnit.EvidenceRef("t3_x", comment, snippet, "reddit",
+                Instant.now().getEpochSecond());
+    }
+
+    @Test
+    void unitBriefTagsOldNewsAsStaleButStillShowsIt() {
+        SubjectUnit u = new SubjectUnit("NVDA", "NVIDIA");
+        Instant now = Instant.now();
+        u.updateResolved("NVIDIA", "NVDA", null, List.of(
+                new RawNewsItem("fresh", "Nvidia beats", "Reuters", "http://x/f",
+                        now.minus(2, ChronoUnit.HOURS), List.of()),
+                new RawNewsItem("old", "Nvidia capex worries", "WSJ", "http://x/o",
+                        now.minus(3, ChronoUnit.DAYS), List.of())));
+        u.addEvidence(ev("t1_a", "NVDA yolo"));
+
+        String brief = EditorialAgent.unitBrief(u, false);
+        assertTrue(brief.contains("[news:old] 3d ago [STALE] — Nvidia capex worries · WSJ"),
+                "old news stays visible but tagged:\n" + brief);
+        assertTrue(brief.contains("[news:fresh] 2h ago — Nvidia beats · Reuters"),
+                "fresh news untagged:\n" + brief);
+    }
+
+    @Test
+    void unitBriefRendersStoryDigestAndSentimentArc() {
+        SubjectUnit u = new SubjectUnit("NVDA", "NVIDIA");
+        u.addEvidence(ev("t1_a", "NVDA"));
+        for (int i = 1; i <= 5; i++) {
+            u.addHeadline("Headline Nummer " + i, i > 1, i <= 2 ? "BULLISH" : "BEARISH");
+        }
+        String brief = EditorialAgent.unitBrief(u, false);
+        assertTrue(brief.contains("(+2 earlier headline(s)"), "older lines collapse to a digest:\n" + brief);
+        assertTrue(brief.contains("Headline Nummer 5") && brief.contains("Headline Nummer 3"),
+                "last 3 shown in full");
+        assertFalse(brief.contains("Headline Nummer 2"), "older lines not shown verbatim");
+        assertTrue(brief.contains("Sentiment arc so far: BULLISH → BEARISH"),
+                "arc collapses consecutive duplicates:\n" + brief);
+    }
+
+    @Test
+    void unitBriefRendersPriceAnchorSinceFirstMention() {
+        SubjectUnit u = new SubjectUnit("NVDA", "NVIDIA");
+        u.updateResolved("NVIDIA", "NVDA", snap(100.0), null);
+        u.updateResolved("NVIDIA", "NVDA", snap(112.0), null);
+        u.addEvidence(ev("t1_a", "NVDA"));
+
+        String brief = EditorialAgent.unitBrief(u, false);
+        assertTrue(brief.contains("since first mention"), brief);
+        assertTrue(brief.contains("+12.00% (100.00 → 112.00)"), brief);
+    }
+
+    @Test
+    void unitBriefBudgetsEvidenceDroppingOldestWithAnExplicitOmissionLine() {
+        SubjectUnit u = new SubjectUnit("NVDA", "NVIDIA");
+        String big = "x".repeat(600);
+        for (int i = 0; i < 15; i++) {
+            u.addEvidence(ev("t1_" + i, big + i)); // ~9k chars total > budget
+        }
+        String brief = EditorialAgent.unitBrief(u, false);
+        assertTrue(brief.contains("earlier mention(s) omitted"), "omission is explicit:\n"
+                + brief.substring(0, Math.min(400, brief.length())));
+        assertTrue(brief.contains(big + "14"), "newest evidence kept");
+        assertFalse(brief.contains(big + "0]") || brief.contains("[t1_0,"), "oldest dropped");
+        assertTrue(brief.length() < EditorialAgent.EVIDENCE_CHAR_BUDGET + 2000,
+                "brief stays near the budget, got " + brief.length());
+    }
+
+    @Test
+    void sentimentArcNeedsTwoDistinctSteps() {
+        assertEquals("", EditorialAgent.sentimentArc(List.of(
+                new SubjectUnit.UnitHeadline("a", false, 0, "BULLISH", null),
+                new SubjectUnit.UnitHeadline("b", false, 0, "bullish", null))),
+                "one collapsed step carries no information");
+        assertEquals("BULLISH → MIXED → BULLISH", EditorialAgent.sentimentArc(List.of(
+                new SubjectUnit.UnitHeadline("a", false, 0, "BULLISH", null),
+                new SubjectUnit.UnitHeadline("b", false, 0, "MIXED", null),
+                new SubjectUnit.UnitHeadline("c", false, 0, "", null),
+                new SubjectUnit.UnitHeadline("d", false, 0, "BULLISH", null))),
+                "blank sentiments are skipped, real flips kept");
+    }
+
+    @Test
+    void ageFormatsCompactly() {
+        Instant now = Instant.now();
+        assertEquals("5m", EditorialAgent.age(now.minus(5, ChronoUnit.MINUTES), now));
+        assertEquals("3h", EditorialAgent.age(now.minus(3, ChronoUnit.HOURS), now));
+        assertEquals("2d", EditorialAgent.age(now.minus(2, ChronoUnit.DAYS), now));
+        assertEquals("0m", EditorialAgent.age(now.plus(1, ChronoUnit.MINUTES), now), "clock skew clamps");
     }
 }

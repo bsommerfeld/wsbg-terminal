@@ -23,7 +23,9 @@ $OllamaVersion = "0.24.0"
 # Models reconciled into our ISOLATED store (<appData>\ollama\models): section 3
 # installs/updates these to the latest registry build and removes anything else.
 # One multimodal gemma4:e4b serves agent + vision; embeddinggemma does vectors.
+# (The gemma4:e4b-mlx build is text-only -- no vision encoder -- so we avoid it.)
 $ReasoningModel = "gemma4:e4b"             # editorial agent + vision (multimodal)
+$VisionModel    = "gemma4:e4b"             # same model serves vision
 $EmbedModel     = "embeddinggemma:latest"  # 768d cluster embeddings
 
 # Private endpoint -- our instance binds here, NEVER the user's default 11434.
@@ -34,6 +36,16 @@ Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host "   WSBG Terminal - Setup & Installation   " -ForegroundColor Cyan
 Write-Host "=========================================="
 Write-Host ""
+
+# Degraded-but-not-fatal steps report through Write-Warn; the script then exits
+# with code 10 so the launcher can show "Setup completed with warnings" instead
+# of claiming a clean run. Keep the code in sync with
+# EnvironmentSetup.EXIT_WITH_WARNINGS (launcher) and setup.bat.
+$script:SetupWarned = $false
+function Write-Warn($msg) {
+    $script:SetupWarned = $true
+    Write-Host "    [WARN] $msg" -ForegroundColor Yellow
+}
 
 # ------------------------------------------------------------------------------
 # Resolve the application data directory + the isolated ai\ layout
@@ -96,12 +108,12 @@ if ($haveVer -eq $OllamaVersion) {
         Write-Host "    Downloading $url ..."
         & curl.exe -fL --retry 3 --retry-delay 2 -o $tmpZip $url
         if ($LASTEXITCODE -ne 0) {
-            Write-Host "    [WARN] Ollama download failed (curl exit $LASTEXITCODE) -- continuing." -ForegroundColor Yellow
+            Write-Warn "Ollama download failed (curl exit $LASTEXITCODE) -- continuing."
         } else {
             Write-Host "    Extracting..."
             & tar.exe -xf $tmpZip -C $aiDir
             if ($LASTEXITCODE -ne 0) {
-                Write-Host "    [WARN] Ollama extract failed (tar exit $LASTEXITCODE) -- continuing." -ForegroundColor Yellow
+                Write-Warn "Ollama extract failed (tar exit $LASTEXITCODE) -- continuing."
             }
             Remove-Item $tmpZip -Force -ErrorAction SilentlyContinue
 
@@ -114,11 +126,11 @@ if ($haveVer -eq $OllamaVersion) {
             if (Test-Path $ollamaExe) {
                 Write-Host "    Isolated Ollama ready at $ollamaExe" -ForegroundColor Green
             } else {
-                Write-Host "    [WARN] ollama.exe not found after extraction -- check archive layout." -ForegroundColor Yellow
+                Write-Warn "ollama.exe not found after extraction -- check archive layout."
             }
         }
     } catch {
-        Write-Host "    [WARN] Isolated Ollama install failed: $_ -- continuing." -ForegroundColor Yellow
+        Write-Warn "Isolated Ollama install failed: $_ -- continuing."
         Remove-Item $tmpZip -Force -ErrorAction SilentlyContinue
     }
 }
@@ -146,10 +158,10 @@ if (Test-Path $ollamaExe) {
         if ($ready) {
             Write-Host "    Server ready." -ForegroundColor Green
         } else {
-            Write-Host "    [WARN] Server did not respond in time - pulls may fail." -ForegroundColor Yellow
+            Write-Warn "Server did not respond in time - pulls may fail."
         }
     } catch {
-        Write-Host "    [WARN] Could not start isolated Ollama server: $_" -ForegroundColor Yellow
+        Write-Warn "Could not start isolated Ollama server: $_"
     }
 }
 
@@ -163,6 +175,9 @@ if (Test-Path $ollamaExe) {
 # a model switch leaves no Altlasten. To switch models, edit $desiredModels (and
 # $OllamaVersion above if the new model needs a newer runtime).
 $desiredModels = @($ReasoningModel, $EmbedModel)
+# Agent and vision share the one gemma4:e4b -- only add a distinct vision model
+# if a future config ever diverges them. (Mirrors setup.sh.)
+if ($VisionModel -ne $ReasoningModel) { $desiredModels += $VisionModel }
 
 Write-Host "[*] Models (isolated store: $aiModels):" -ForegroundColor Gray
 foreach ($m in $desiredModels) { Write-Host "    - $m" -ForegroundColor Gray }
@@ -210,11 +225,13 @@ if (Test-Path $ollamaExe) {
     foreach ($model in $desiredModels) {
         $have = Get-LocalDigest $model
         $want = Get-RemoteDigest $model
+        # The launcher tracks model names from the exact "> Pulling <model>..."
+        # wording -- keep extra detail on its own line, never appended.
         if (-not $have) {
-            Write-Host "    > Pulling $model (not installed)..."
+            Write-Host "    > Pulling $model..."
             & $ollamaExe pull $model
             if ($LASTEXITCODE -ne 0) {
-                Write-Host "    [WARN] Failed to pull $model" -ForegroundColor Yellow
+                Write-Warn "Failed to pull $model"
                 $allPresent = $false
             }
         } elseif (-not $want) {
@@ -222,9 +239,10 @@ if (Test-Path $ollamaExe) {
         } elseif ($have -eq $want) {
             Write-Host "    [OK] $model up to date ($have)" -ForegroundColor Green
         } else {
-            Write-Host "    > Updating $model ($have -> $want)..."
+            Write-Host "    Update available: $model ($have -> $want)"
+            Write-Host "    > Pulling $model..."
             & $ollamaExe pull $model
-            if ($LASTEXITCODE -ne 0) { Write-Host "    [WARN] Failed to update $model -- keeping $have" -ForegroundColor Yellow }
+            if ($LASTEXITCODE -ne 0) { Write-Warn "Failed to update $model -- keeping $have" }
         }
     }
 
@@ -241,6 +259,8 @@ if (Test-Path $ollamaExe) {
             }
         }
     }
+} else {
+    Write-Warn "Isolated Ollama binary missing -- skipping model install."
 }
 
 # ------------------------------------------------------------------------------
@@ -271,7 +291,7 @@ if (Test-Path $jcefMarker) {
     } else { $null }
 
     if (-not $arch) {
-        Write-Host "    [WARN] Unsupported arch for JCEF - skipping." -ForegroundColor Yellow
+        Write-Warn "Unsupported arch for JCEF - skipping."
     } else {
         $platform = "windows-$arch"
         Write-Host "[*] Installing browser runtime ($platform)..." -ForegroundColor Cyan
@@ -302,7 +322,7 @@ if (Test-Path $jcefMarker) {
             "" | Out-File -FilePath $jcefMarker -Encoding ascii
             Write-Host "    Browser runtime ready." -ForegroundColor Green
         } catch {
-            Write-Host "    [WARN] JCEF install failed: $_ - falling back to runtime download." -ForegroundColor Yellow
+            Write-Warn "JCEF install failed: $_ - falling back to runtime download."
             Remove-Item $tmpJar, $tmpTar -Force -ErrorAction SilentlyContinue
         }
     }
@@ -340,7 +360,7 @@ if (Test-Path $fontMarker) {
             Invoke-WebRequest -Uri $f.url -OutFile $dest -UseBasicParsing -ErrorAction Stop
             Write-Host "    [OK] $($f.name)" -ForegroundColor Green
         } catch {
-            Write-Host "    [WARN] Failed to download $($f.name): $_" -ForegroundColor Yellow
+            Write-Warn "Failed to download $($f.name): $_"
             $failed++
         }
     }
@@ -349,7 +369,7 @@ if (Test-Path $fontMarker) {
         "" | Out-File -FilePath $fontMarker -Encoding ascii
         Write-Host "    Fonts ready." -ForegroundColor Green
     } else {
-        Write-Host "    [WARN] Font install partial - UI will use system fallback for missing weights." -ForegroundColor Yellow
+        Write-Warn "Font install partial - UI will use system fallback for missing weights."
     }
 }
 
@@ -405,4 +425,8 @@ if ($ollamaProcess -ne $null -and -not $ollamaProcess.HasExited) {
 }
 
 Write-Host "Setup Complete! Ready to Run." -ForegroundColor Green
+
+# Exit 10 = "finished, but degraded" -- the launcher shows "Setup completed
+# with warnings" and proceeds. 0 = clean run. (EnvironmentSetup.EXIT_WITH_WARNINGS)
+if ($script:SetupWarned) { Exit 10 }
 Exit 0

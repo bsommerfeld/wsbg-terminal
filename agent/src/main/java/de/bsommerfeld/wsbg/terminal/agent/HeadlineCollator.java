@@ -1,4 +1,5 @@
 package de.bsommerfeld.wsbg.terminal.agent;
+import de.bsommerfeld.wsbg.terminal.embedding.EmbeddingService;
 
 import com.google.inject.Inject;
 import com.google.inject.Singleton;

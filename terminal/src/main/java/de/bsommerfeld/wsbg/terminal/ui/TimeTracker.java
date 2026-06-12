@@ -80,12 +80,19 @@ public final class TimeTracker {
     private final AtomicBoolean unlocked = new AtomicBoolean(false);
     private final CopyOnWriteArrayList<Runnable> unlockListeners = new CopyOnWriteArrayList<>();
 
+    /** Listeners fired whenever {@link #isDonationActive()} flips (either way). */
+    private final CopyOnWriteArrayList<Runnable> activeChangeListeners = new CopyOnWriteArrayList<>();
+
+    /** Last {@link #isDonationActive()} value the change listeners were told about. */
+    private volatile boolean lastActiveState;
+
     @Inject
     public TimeTracker(GlobalConfig config) {
         this.config = config;
         this.user = config.getUser();
         this.lastCheckpointNanos = System.nanoTime();   // session "start" checkpoint
         this.unlocked.set(thresholdReached(user.getActiveMillis(), user.getDonationUnlockHours()));
+        this.lastActiveState = isDonationActive();
 
         recordSessionStart();
 
@@ -131,15 +138,20 @@ public final class TimeTracker {
      */
     synchronized void creditAndPersist(long elapsedMs) {
         long credited = creditedMillis(elapsedMs, maxCreditPerFlushMs);
-        if (credited <= 0) return;
-        if (credited < elapsedMs) {
-            LOG.debug("Checkpoint delta {} ms exceeds cap {} ms — crediting only the "
-                    + "cap (machine sleep/suspend assumed).", elapsedMs, maxCreditPerFlushMs);
+        if (credited > 0) {
+            if (credited < elapsedMs) {
+                LOG.debug("Checkpoint delta {} ms exceeds cap {} ms — crediting only the "
+                        + "cap (machine sleep/suspend assumed).", elapsedMs, maxCreditPerFlushMs);
+            }
+            long total = user.getActiveMillis() + credited;
+            user.setActiveMillis(total);
+            persist();
+            maybeUnlock(total);
         }
-        long total = user.getActiveMillis() + credited;
-        user.setActiveMillis(total);
-        persist();
-        maybeUnlock(total);
+        // Re-evaluated even when nothing was credited: the snooze window can
+        // expire mid-session with no crediting involved, and a long-running
+        // terminal would otherwise never learn the banner may run again.
+        notifyIfActiveChanged();
     }
 
     private void maybeUnlock(long totalMs) {
@@ -153,6 +165,20 @@ public final class TimeTracker {
                 } catch (Throwable t) {
                     LOG.warn("Unlock listener failed: {}", t.getMessage());
                 }
+            }
+        }
+    }
+
+    /** Fires the active-change listeners if {@link #isDonationActive()} flipped. */
+    private void notifyIfActiveChanged() {
+        boolean now = isDonationActive();
+        if (now == lastActiveState) return;
+        lastActiveState = now;
+        for (Runnable l : activeChangeListeners) {
+            try {
+                l.run();
+            } catch (Throwable t) {
+                LOG.warn("Active-change listener failed: {}", t.getMessage());
             }
         }
     }
@@ -210,6 +236,31 @@ public final class TimeTracker {
         user.setDonationSnoozeUntil(until);
         persist();
         LOG.info("Donation nudge snoozed until {}.", java.time.Instant.ofEpochMilli(until));
+        notifyIfActiveChanged();
+    }
+
+    /**
+     * Records that the user has opened the donate page at least once (clicked
+     * the heart or a banner link). Honor system — there are no accounts and
+     * Ko-fi is external, so the click itself is the only signal we have. The
+     * flag is persisted once and never reset; it gilds the heart icon. Banner
+     * behaviour is unaffected.
+     */
+    public void markDonationClicked() {
+        if (user.isDonationClicked()) return;
+        user.setDonationClicked(true);
+        persist();
+        LOG.info("Donate click recorded — heart gilded (supporter state, honor system).");
+    }
+
+    /** Whether the user has ever clicked through to the donate page. */
+    public boolean isDonationClicked() {
+        return user.isDonationClicked();
+    }
+
+    /** How many times the terminal has been opened (sessions), incl. this one. */
+    public long getOpenCount() {
+        return user.getOpenCount();
     }
 
     /** Cumulative active milliseconds, including time credited so far this session. */
@@ -224,6 +275,16 @@ public final class TimeTracker {
      */
     public void onUnlock(Runnable listener) {
         unlockListeners.add(listener);
+    }
+
+    /**
+     * Registers a callback fired every time {@link #isDonationActive()} flips —
+     * unlock crossing, snooze set, or snooze <em>expiry</em> (caught by the
+     * 60&nbsp;s checkpoint, so a long-running session re-arms the banner without
+     * needing a restart). Does not fire for the state at registration time.
+     */
+    public void onActiveChange(Runnable listener) {
+        activeChangeListeners.add(listener);
     }
 
     /** Final checkpoint (credits the partial interval) and stops the daemon. */
