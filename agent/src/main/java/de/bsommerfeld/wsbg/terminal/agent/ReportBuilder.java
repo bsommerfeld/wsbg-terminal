@@ -86,18 +86,35 @@ public final class ReportBuilder {
         Set<String> coveredCommentIds = new HashSet<>();
         if (!priorHeadlines.isEmpty()) {
             sb.append("\nPRIOR HEADLINES FOR THIS CLUSTER (chronological — already published, do NOT repeat):\n");
+            long coveredBeforeEpoch = 0L;
             for (int i = 0; i < priorHeadlines.size(); i++) {
                 HeadlineRecord h = priorHeadlines.get(i);
                 long secsAgo = Instant.now().getEpochSecond() - h.createdAt();
                 sb.append("  H").append(i + 1)
                         .append(" [").append(formatRelativeSeconds(secsAgo)).append(" ago]: ")
                         .append(h.headline()).append("\n");
-                if (h.sourceThreadIds() != null) coveredThreadIds.addAll(h.sourceThreadIds());
-                if (h.sourceCommentIds() != null) coveredCommentIds.addAll(h.sourceCommentIds());
+                if (h.createdAt() > coveredBeforeEpoch) coveredBeforeEpoch = h.createdAt();
             }
-            sb.append("Only the FRESH evidence below (threads/comments not yet cited above) is shown "
-                    + "in full. If it carries new information, publish a follow-up. If nothing fresh "
-                    + "is shown, this cluster has nothing new — move on to the next dirty cluster.\n");
+            // Time-based coverage (robust, model-citation-independent): everything
+            // that existed at/before the most recent prior headline was already on
+            // the table when that line was written → covered, so it must NOT seed a
+            // new headline. The prior headlines above ARE the context for that
+            // covered material; only fresh evidence is shown in full below. Mirrors
+            // the per-unit covered boundary. Late-analysed images still re-surface
+            // (keyed on `shown`, not on coverage — see appendComments/appendImages).
+            Set<String> tids = new HashSet<>(inv.activeThreadIds);
+            if (inv.bestThreadId != null) tids.add(inv.bestThreadId);
+            for (String tid : tids) {
+                RedditThread t = repository.getThread(tid);
+                if (t != null && t.createdUtc() <= coveredBeforeEpoch) coveredThreadIds.add(tid);
+                for (RedditComment c : repository.getCommentsForThread(tid, 0)) {
+                    if (c.createdUtc() <= coveredBeforeEpoch) coveredCommentIds.add(c.id());
+                }
+            }
+            sb.append("Only the FRESH evidence below (new since the last headline) is shown in full; "
+                    + "what the prior headlines already covered is omitted. If the fresh material carries "
+                    + "new information, publish a follow-up. If nothing fresh is shown, this cluster has "
+                    + "nothing new — move on to the next dirty cluster.\n");
         }
         sb.append("\n");
 
@@ -126,15 +143,15 @@ public final class ReportBuilder {
     private void appendThreadSources(StringBuilder sb, InvestigationCluster inv,
             Set<String> coveredThreadIds, Set<String> coveredCommentIds,
             List<HeadlineRecord> priorHeadlines) {
-        // Map each covered thread to the most recent headline that cited it.
-        // priorHeadlines is chronological, so a later entry overwrites an
-        // earlier one — leaving the freshest headline per thread.
+        // A covered thread collapses to a reference showing the most recent
+        // headline this cluster already produced — so the agent recognises "I've
+        // said this" instead of re-deriving it. priorHeadlines is chronological,
+        // so the last entry is the freshest line.
         Map<String, String> threadToHeadline = new java.util.HashMap<>();
-        for (HeadlineRecord h : priorHeadlines) {
-            if (h.sourceThreadIds() == null) continue;
-            for (String tid : h.sourceThreadIds()) {
-                threadToHeadline.put(tid, h.headline());
-            }
+        String latestHeadline = priorHeadlines.isEmpty() ? null
+                : priorHeadlines.get(priorHeadlines.size() - 1).headline();
+        if (latestHeadline != null) {
+            for (String tid : coveredThreadIds) threadToHeadline.put(tid, latestHeadline);
         }
 
         Set<String> shown = inv.shownImageUrls;

@@ -103,18 +103,20 @@ class ReportBuilderTest {
 
     @Test
     void buildReportData_shouldCollapseCoveredThreadAndFilterCoveredComments() {
-        // Cluster with two threads: t3_1 already cited in a prior headline
-        // (and its only comment too), t3_2 fresh.
+        // Coverage is TIME-based: everything created at/before the prior
+        // headline (now-120) is covered; anything created after is fresh.
+        // t3_1 + its comment predate the headline (covered); t3_2 + its comment
+        // came after (fresh).
         var cluster = createCluster("t3_1", "Rheinmetall +12%");
         long now = System.currentTimeMillis() / 1000;
         var fresh = new RedditThread("t3_2", "wsb", "Rheinmetall Nachschlag",
-                "author", "neuer post", now, "/p2", 30, 0.9, 4, now, null);
+                "author", "neuer post", now - 30, "/p2", 30, 0.9, 4, now - 30, null);
         cluster.addUpdate(fresh, 30, 4, dummyEmbedding());
 
-        when(repository.getThread("t3_1")).thenReturn(thread("t3_1", "Rheinmetall +12%"));
+        when(repository.getThread("t3_1")).thenReturn(thread("t3_1", "Rheinmetall +12%", now - 300));
         when(repository.getThread("t3_2")).thenReturn(fresh);
-        var coveredComment = new RedditComment("t1_old", "t3_1", "t3_1", "ape", "covered take", 50, now, now, now);
-        var freshComment = new RedditComment("t1_new", "t3_2", "t3_2", "bull", "fresh take", 60, now, now, now);
+        var coveredComment = new RedditComment("t1_old", "t3_1", "t3_1", "ape", "covered take", 50, now - 300, now, now);
+        var freshComment = new RedditComment("t1_new", "t3_2", "t3_2", "bull", "fresh take", 60, now - 30, now, now);
         when(repository.getCommentsForThread("t3_1", 0)).thenReturn(List.of(coveredComment));
         when(repository.getCommentsForThread("t3_2", 0)).thenReturn(List.of(freshComment));
 
@@ -173,12 +175,13 @@ class ReportBuilderTest {
     void buildReportData_shouldResurfaceCoveredCommentWhenItsImageLandsLate_thenStop() {
         var cluster = createCluster("t3_1", "Pennystock-Rakete");
         long now = System.currentTimeMillis() / 1000;
-        when(repository.getThread("t3_1")).thenReturn(thread("t3_1", "Pennystock-Rakete"));
+        // Thread + comment predate the prior headline (now-90) → time-covered.
+        when(repository.getThread("t3_1")).thenReturn(thread("t3_1", "Pennystock-Rakete", now - 300));
         var comment = new RedditComment("t1_c", "t3_1", "t3_1", "ape", "rein da", 8,
-                now, now, now, List.of("imgL"));
+                now - 300, now, now, List.of("imgL"));
         when(repository.getCommentsForThread("t3_1", 0)).thenReturn(List.of(comment));
         // The image only just finished analysing — it's in the cache now, but
-        // the thread + comment were already cited in a prior headline.
+        // the thread + comment were already covered by a prior headline.
         when(brain.describeImageIfCached("imgL")).thenReturn("Gain-Screenshot: +606%");
 
         var prior = new HeadlineRecord("t3_1", "Pennystock im Fokus", "", now - 90,
@@ -241,9 +244,12 @@ class ReportBuilderTest {
     }
 
     private RedditThread thread(String id, String title) {
-        long now = System.currentTimeMillis() / 1000;
+        return thread(id, title, System.currentTimeMillis() / 1000);
+    }
+
+    private RedditThread thread(String id, String title, long createdUtc) {
         return new RedditThread(id, "wsb", title, "author", "content",
-                now, "/r/wsb/" + id, 50, 0.9, 10, now, null);
+                createdUtc, "/r/wsb/" + id, 50, 0.9, 10, createdUtc, null);
     }
 
     private Embedding dummyEmbedding() {

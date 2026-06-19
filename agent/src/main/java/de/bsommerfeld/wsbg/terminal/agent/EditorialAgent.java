@@ -136,7 +136,12 @@ public class EditorialAgent {
         InvestigationCluster cluster = clusterRegistry.getCluster(clusterId);
         if (model == null || cluster == null) return List.of();
 
-        String brief = reportBuilder.buildReportData(cluster, agentRepository.getHeadlinesByClusterId(clusterId));
+        // Extraction must see ALL evidence (no coverage filter) — a subject named
+        // only in an older, already-covered comment must still be extracted and
+        // attributed, or its unit would stop accumulating. Coverage is applied at
+        // COMPOSE time (the cluster-theme brief in publishClusterTheme, and the
+        // per-unit brief), never at extraction.
+        String brief = reportBuilder.buildReportData(cluster);
         Subjects subjects = extractSubjects(model, cluster, brief);
         int[] relatedAlloc = distributeRelated(subjects.names().size(), RELATED_BUDGET, RELATED_PER_SUBJECT);
         List<ResolvedSubject> resolved = tickerResolver.resolveAll(subjects.names(), relatedAlloc);
@@ -302,50 +307,57 @@ public class EditorialAgent {
             }
         }
 
-        // Evidence under a char budget: keep the NEWEST refs that fit, drop the
-        // oldest, and say so — never let Ollama truncate the prompt silently.
-        List<SubjectUnit.EvidenceRef> refs = unit.evidence();
-        int start = refs.size();
-        int budget = EVIDENCE_CHAR_BUDGET;
-        while (start > 0 && budget - refs.get(start - 1).snippet().length() - 24 >= 0) {
-            start--;
-            budget -= refs.get(start).snippet().length() + 24;
-        }
         // Coverage boundary: evidence added on/before the unit's most recent
-        // published headline was already in view when that line was written, so
-        // it must NOT seed another headline — only material that arrived SINCE is
-        // genuinely new. We mark (not omit) the already-reflected lines so the
-        // model keeps the story context but writes a follow-up about the fresh
-        // material only. Time-based (not model-citation-based): a 4B model
-        // under-cites sources, but the unit's own evidence + headline timestamps
-        // are exact. (This restores, at the subject level, the covered-evidence
-        // split the per-cluster brief used to do.)
+        // published headline was already in view when that line was written, so it
+        // must NOT seed another headline. We OMIT that covered material here — the
+        // story-memory headlines below ARE its context — and show only what arrived
+        // SINCE the last headline. Time-based (not model-citation-based): a 4B model
+        // under-cites sources, but the unit's own evidence + headline timestamps are
+        // exact. Mirrors the per-cluster ReportBuilder coverage.
         long lastHeadlineEpoch = 0L;
         for (SubjectUnit.UnitHeadline h : unit.headlines()) {
             if (h.atEpoch() > lastHeadlineEpoch) lastHeadlineEpoch = h.atEpoch();
         }
-        sb.append("\nWhat the room said about THIS subject (evidence — the story):\n");
-        if (start > 0) {
-            sb.append("  (").append(start).append(" earlier mention(s) omitted — the story is older"
-                    + " than shown; prior headlines below already reflect them)\n");
+        List<SubjectUnit.EvidenceRef> visible = new ArrayList<>();
+        int coveredOmitted = 0;
+        for (SubjectUnit.EvidenceRef e : unit.evidence()) {
+            if (lastHeadlineEpoch > 0 && e.addedAtEpoch() <= lastHeadlineEpoch) {
+                coveredOmitted++;
+                continue; // already reflected in a prior headline → omit
+            }
+            visible.add(e);
         }
-        if (lastHeadlineEpoch > 0) {
-            sb.append("  Lines tagged [✓ COVERED] already fed a prior headline — do NOT write them"
-                    + " up again; a follow-up must rest on the UNTAGGED (new since the last"
-                    + " headline) material. If nothing is untagged, there is nothing new to"
-                    + " publish.\n");
+
+        // Char budget over the VISIBLE (fresh) refs: keep the NEWEST that fit, drop
+        // the oldest, and say so — never let Ollama truncate the prompt silently.
+        int start = visible.size();
+        int budget = EVIDENCE_CHAR_BUDGET;
+        while (start > 0 && budget - visible.get(start - 1).snippet().length() - 24 >= 0) {
+            start--;
+            budget -= visible.get(start).snippet().length() + 24;
+        }
+        boolean haveHeadlines = lastHeadlineEpoch > 0;
+        sb.append("\nWhat the room said about THIS subject")
+                .append(haveHeadlines
+                        ? " (NEW since the last headline — older mentions are already covered by the headlines below):\n"
+                        : " (evidence — the story):\n");
+        if (coveredOmitted > 0) {
+            sb.append("  (").append(coveredOmitted).append(" earlier mention(s) already reflected in the"
+                    + " prior headlines below — omitted; write a follow-up only from the new material here)\n");
+        }
+        if (start > 0) {
+            sb.append("  (").append(start).append(" further older mention(s) omitted to fit the context"
+                    + " budget — prior headlines below reflect them)\n");
         }
         List<SubjectUnit.EvidenceRef> context = new ArrayList<>();
-        for (SubjectUnit.EvidenceRef e : refs.subList(start, refs.size())) {
+        for (SubjectUnit.EvidenceRef e : visible.subList(start, visible.size())) {
             if ("reddit-context".equals(e.source())) {
                 context.add(e); // a reply chain this subject was named in — rendered below
                 continue;
             }
             String loc = "vision".equals(e.source()) ? "image"
                     : (e.commentId() == null ? e.threadId() : e.commentId());
-            String covered = lastHeadlineEpoch > 0 && e.addedAtEpoch() <= lastHeadlineEpoch
-                    ? "[✓ COVERED] " : "";
-            sb.append("  - ").append(covered).append("[").append(loc).append(", ")
+            sb.append("  - [").append(loc).append(", ")
                     .append(age(Instant.ofEpochSecond(e.addedAtEpoch()), now)).append(" ago] ")
                     .append(e.snippet()).append('\n');
         }

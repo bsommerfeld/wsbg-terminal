@@ -173,34 +173,38 @@ class EditorialAgentTest {
     }
 
     @Test
-    void unitBriefMarksEvidenceAlreadyCoveredByAPriorHeadline() {
+    void unitBriefOmitsEvidenceAlreadyCoveredByAPriorHeadline() {
         SubjectUnit u = new SubjectUnit("NVDA", "NVIDIA");
         long now = Instant.now().getEpochSecond();
         long headlineAt = now - 3600;            // the unit's last headline, 1h ago
-        // Evidence from BEFORE that headline → already reflected → must be tagged.
+        // Evidence from BEFORE that headline → already reflected → must be OMITTED.
         u.addEvidence(new SubjectUnit.EvidenceRef("t3_x", "t1_old", "old yolo call",
                 "reddit", now - 7200));
-        // Evidence from AFTER that headline → genuinely new → must stay untagged.
+        // Evidence from AFTER that headline → genuinely new → must be shown.
         u.addEvidence(new SubjectUnit.EvidenceRef("t3_x", "t1_new", "fresh DD drop",
                 "reddit", now - 600));
         u.seedHeadline("NVIDIA läuft", "BULLISH", headlineAt);
 
         String brief = EditorialAgent.unitBrief(u, false);
-        assertTrue(brief.contains("[✓ COVERED] [t1_old"),
-                "evidence older than the last headline must be tagged covered:\n" + brief);
-        assertFalse(brief.contains("[✓ COVERED] [t1_new"),
-                "evidence newer than the last headline must stay untagged (fresh):\n" + brief);
-        assertTrue(brief.contains("Lines tagged [✓ COVERED]"),
-                "the brief must steer the model to write only from the new material:\n" + brief);
+        assertFalse(brief.contains("old yolo call"),
+                "evidence older than the last headline must be OMITTED (the headline is its context):\n" + brief);
+        assertTrue(brief.contains("fresh DD drop"),
+                "evidence newer than the last headline must be shown in full:\n" + brief);
+        assertTrue(brief.contains("already reflected in the prior headlines"),
+                "the brief must note that covered material was omitted:\n" + brief);
+        assertTrue(brief.contains("NVIDIA läuft"),
+                "the prior headline must be present as the context for the omitted evidence:\n" + brief);
     }
 
     @Test
-    void unitBriefLeavesAllEvidenceUntaggedWhenNoPriorHeadline() {
+    void unitBriefShowsAllEvidenceWhenNoPriorHeadline() {
         SubjectUnit u = new SubjectUnit("NVDA", "NVIDIA");
         u.addEvidence(ev("t1_a", "first NVDA mention"));
         String brief = EditorialAgent.unitBrief(u, false);
-        assertFalse(brief.contains("[✓ COVERED]"),
-                "with no prior headline nothing is covered — every line is fresh:\n" + brief);
+        assertTrue(brief.contains("first NVDA mention"),
+                "with no prior headline nothing is covered — every mention is shown:\n" + brief);
+        assertFalse(brief.contains("already reflected in the prior headlines"),
+                "no omission note when there is no prior headline:\n" + brief);
     }
 
     @Test
@@ -239,7 +243,7 @@ class EditorialAgentTest {
             u.addEvidence(ev("t1_" + i, big + i)); // ~9k chars total > budget
         }
         String brief = EditorialAgent.unitBrief(u, false);
-        assertTrue(brief.contains("earlier mention(s) omitted"), "omission is explicit:\n"
+        assertTrue(brief.contains("omitted to fit the context budget"), "budget omission is explicit:\n"
                 + brief.substring(0, Math.min(400, brief.length())));
         assertTrue(brief.contains(big + "14"), "newest evidence kept");
         assertFalse(brief.contains(big + "0]") || brief.contains("[t1_0,"), "oldest dropped");
