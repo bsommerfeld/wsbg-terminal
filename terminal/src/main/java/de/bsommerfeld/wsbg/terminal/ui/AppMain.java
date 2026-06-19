@@ -35,6 +35,16 @@ public final class AppMain {
         // keeps the last Chromium frame until the next one is presented.
         System.setProperty("sun.awt.noerasebackground", "true");
 
+        // Force the OpenGL Java2D pipeline (disable Metal). The macOS Metal
+        // pipeline crashes natively in MTLGC_DestroyMTLGraphicsConfig → -[MTLContext
+        // dealloc] → objc_release on the "Java2D Queue Flusher" thread when a
+        // graphics config is torn down (display sleep/wake / reconfig) — hit live
+        // after ~3h uptime (SIGSEGV, hs_err). Our software-OSR browser paints
+        // BufferedImages through Java2D continuously, which exercises that path
+        // hard. Must be set before ANY AWT/Toolkit init. (OpenGL is deprecated on
+        // macOS but stable here; revisit if a JDK fixes the Metal teardown.)
+        System.setProperty("sun.java2d.metal", "false");
+
         System.setProperty("apple.awt.application.name", "WSBG Terminal");
         System.setProperty("apple.laf.useScreenMenuBar", "true");
 
