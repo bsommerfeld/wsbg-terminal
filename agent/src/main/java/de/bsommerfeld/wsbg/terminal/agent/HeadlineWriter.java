@@ -185,6 +185,78 @@ public final class HeadlineWriter {
         return true;
     }
 
+    /**
+     * Publishes a headline for a feed-wide {@link SubjectUnit} (the editorial atom
+     * after the #2 cutover). Same QA + broadcast as {@link #publish}, but the
+     * grouping key is the <b>unit id</b> (so story continuity / dedup is per
+     * subject, not per cluster) and the ticker + market snapshot come from the
+     * <b>unit</b> (resolver-validated), never from the model. Returns {@code true}
+     * when saved + broadcast, {@code false} on blank text or the identical-text
+     * guard. Never throws on bad model output.
+     */
+    public boolean publishUnit(SubjectUnit unit, Draft draft) {
+        if (unit == null || draft == null) return false;
+        String headline = stripHtml(draft.headline()).trim();
+        if (headline.isEmpty()) return false;
+
+        // Identical-text guard against an accidental re-fire for the same unit.
+        long now = System.currentTimeMillis() / 1000;
+        boolean dup = agentRepository.getHeadlinesByClusterId(unit.id).stream()
+                .anyMatch(h -> headline.equalsIgnoreCase(h.headline())
+                        && (now - h.createdAt()) < DUP_TEXT_GUARD_SECS);
+        if (dup) {
+            LOG.debug("[WRITE] skip duplicate headline text for unit {}", unit.id);
+            return false;
+        }
+
+        // Ticker + snapshot are the unit's resolver-validated facts, not the model's.
+        String tickerSymbol = unit.isInstrument()
+                ? unit.ticker().toUpperCase(Locale.ROOT) : null;
+        MarketSnapshot snapshot = unit.snapshot();
+
+        // Source-id hygiene: comment ids must look like Reddit comment fullnames;
+        // thread ids are kept as-is (a unit legitimately spans many threads).
+        List<String> threadIds = clean(draft.sourceThreadIds());
+        List<String> commentIds = clean(draft.sourceCommentIds());
+        commentIds.removeIf(id -> !id.startsWith("t1_"));
+
+        // The subject for the UI glow is the unit itself: keep it only when the
+        // unit has a validated ticker and its name appears verbatim in the line.
+        List<HeadlineSubject> subjects = new ArrayList<>();
+        if (tickerSymbol != null) {
+            String name = unit.canonicalName();
+            if (name != null && !name.isBlank() && headline.contains(name)) {
+                subjects.add(new HeadlineSubject(name, tickerSymbol));
+            }
+        }
+
+        HeadlineHighlight highlight = HeadlineHighlight.fromString(draft.highlight());
+        // Same soft anti-over-flag as the cluster path.
+        if (highlight == HeadlineHighlight.IMPORTANT && tickerSymbol != null
+                && recentlyFlagged(tickerSymbol, now)) {
+            highlight = HeadlineHighlight.NORMAL;
+        }
+
+        Double priceMove = sanePriceMove(draft.priceMovePercent(), headline);
+        List<String> sectors = clean(draft.sectors()).stream()
+                .collect(distinctByLower()).stream().limit(2).toList();
+        String assetClass = normalizeAssetClass(draft.assetClass());
+        HeadlineSentiment sentiment = HeadlineSentiment.fromString(draft.sentiment());
+
+        agentRepository.saveHeadline(unit.id, headline, "",
+                threadIds, commentIds, highlight, tickerSymbol, subjects, priceMove,
+                sectors, assetClass, sentiment, snapshot);
+
+        LOG.info("[WRITE] unit {} [{}{} {}{}]: {}", unit.id, highlight,
+                tickerSymbol == null ? "" : " " + tickerSymbol, sentiment,
+                priceMove == null ? "" : String.format(Locale.ROOT, " %+.1f%%", priceMove),
+                headline);
+
+        eventBus.post(new AgentStreamEndEvent(
+                "||PASSIVE||" + headline + "||REF||ID:" + unit.id));
+        return true;
+    }
+
     private boolean recentlyFlagged(String ticker, long now) {
         long horizon = now - TICKER_FLAG_WINDOW_SECS;
         return agentRepository.getRecentHeadlines().stream()

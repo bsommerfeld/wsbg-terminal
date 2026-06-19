@@ -91,6 +91,58 @@ class HeadlineWriterTest {
                 "huge % + money amount ⇒ P&L misread, nulled");
     }
 
+    // ---- publishUnit: the prod path after the #2 cutover ----
+
+    private SubjectUnit instrumentUnit() {
+        SubjectUnit u = new SubjectUnit("NOW", "ServiceNow");
+        u.updateResolved("ServiceNow", "NOW", null, List.of());
+        return u;
+    }
+
+    @Test
+    void publishUnit_keys_on_unit_id_and_takes_ticker_from_the_unit() {
+        AgentRepository repo = new AgentRepository();
+        HeadlineWriter w = new HeadlineWriter(repo, new ApplicationEventBus());
+        // The model's draft ticker is deliberately bogus — publishUnit must ignore
+        // it and use the unit's resolver-validated ticker.
+        Draft d = new Draft("ServiceNow läuft heiß", "FOMO", "NORMAL", "BOGUS",
+                List.of(new DraftSubject("BOGUS", "BOGUS")), null, List.of("Software"),
+                "stock", List.of("t3_x"), List.of("t1_c1", "junk"));
+
+        assertTrue(w.publishUnit(instrumentUnit(), d));
+        List<HeadlineRecord> byUnit = repo.getHeadlinesByClusterId("NOW");
+        assertEquals(1, byUnit.size(), "saved under the unit id, not a cluster id");
+        HeadlineRecord h = byUnit.get(0);
+        assertEquals("NOW", h.tickerSymbol(), "ticker comes from the unit, never the model");
+        assertEquals(1, h.subjects().size(), "name appears in line → glow subject kept");
+        assertEquals("NOW", h.subjects().get(0).ticker());
+        assertEquals(List.of("t1_c1"), h.sourceCommentIds(), "non-t1_ comment id dropped");
+    }
+
+    @Test
+    void publishUnit_themeUnit_has_no_ticker_even_if_model_claims_one() {
+        AgentRepository repo = new AgentRepository();
+        HeadlineWriter w = new HeadlineWriter(repo, new ApplicationEventBus());
+        SubjectUnit theme = new SubjectUnit("name:inflation", "Inflation"); // no ticker
+        Draft d = new Draft("Deutsche Inflation sinkt auf 2,7%", "BULLISH", "NORMAL",
+                "FAKE", List.of(new DraftSubject("FAKE", "FAKE")), null, List.of(), null,
+                List.of(), List.of());
+        assertTrue(w.publishUnit(theme, d));
+        assertNull(repo.getHeadlinesByClusterId("name:inflation").get(0).tickerSymbol());
+    }
+
+    @Test
+    void publishUnit_guards_identical_double_publish_for_the_same_unit() {
+        AgentRepository repo = new AgentRepository();
+        HeadlineWriter w = new HeadlineWriter(repo, new ApplicationEventBus());
+        SubjectUnit u = instrumentUnit();
+        Draft d = new Draft("ServiceNow läuft heiß", "FOMO", "NORMAL", null,
+                List.of(), null, List.of(), null, List.of(), List.of());
+        assertTrue(w.publishUnit(u, d));
+        assertFalse(w.publishUnit(u, d), "identical text within guard window skipped");
+        assertEquals(1, repo.getHeadlinesByClusterId("NOW").size());
+    }
+
     @Test
     void guards_against_identical_double_publish() {
         AgentRepository repo = new AgentRepository();

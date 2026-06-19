@@ -38,6 +38,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.Comparator;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -97,13 +99,18 @@ public class EditorialAgent {
     private final TickerResolver tickerResolver;
     private final HeadlineWriter headlineWriter;
     private final SubjectAttributor attributor;
+    /** Feed-wide subject store — the editorial atom in prod after the #2 cutover. */
+    private final SubjectRegistry subjectRegistry;
+    /** Context-relief window: evidence older than this is pruned each unit tick (0 disables). */
+    private final long contextTtlMinutes;
 
     @Inject
     public EditorialAgent(AgentBrain brain, ClusterRegistry clusterRegistry,
             AgentRepository agentRepository,
             RedditRepository redditRepository,
             ApplicationEventBus eventBus, I18nService i18n,
-            YahooFinanceClient yahooFinance, EmbeddingService embeddings, GlobalConfig config) {
+            YahooFinanceClient yahooFinance, EmbeddingService embeddings,
+            SubjectRegistry subjectRegistry, GlobalConfig config) {
         this.brain = brain;
         this.clusterRegistry = clusterRegistry;
         this.agentRepository = agentRepository;
@@ -113,6 +120,8 @@ public class EditorialAgent {
         this.tickerResolver = new TickerResolver(yahooFinance, embeddings); // Tier 2 enabled
         this.headlineWriter = new HeadlineWriter(agentRepository, eventBus);
         this.attributor = new SubjectAttributor(redditRepository, brain);
+        this.subjectRegistry = subjectRegistry;
+        this.contextTtlMinutes = config.getReddit().getSnapshotTtlMinutes();
     }
 
     /**
@@ -413,6 +422,96 @@ public class EditorialAgent {
             }
         }
         LOG.info("[AGENT] tick done: {} cluster(s) → {} headline(s)", dirtyClusterIds.size(), published);
+    }
+
+    /**
+     * The production editorial tick after the #2 cutover: the editorial atom is
+     * the feed-wide {@link SubjectUnit}, not the cluster. Mirrors the proven
+     * {@code LabRunner.run} flow exactly, on the singleton {@link SubjectRegistry}:
+     *
+     * <ol>
+     *   <li><b>context relief</b> — prune evidence older than the snapshot TTL
+     *       (units themselves stand; only stale content is dropped);</li>
+     *   <li><b>attribute</b> every dirty cluster's resolved subjects into the
+     *       registry (this is what marks units dirty);</li>
+     *   <li><b>identity-merge</b> name units into their ticker unit;</li>
+     *   <li><b>compose + publish</b> ONE headline per dirty unit (NEW/UPDATE), via
+     *       {@link HeadlineWriter#publishUnit} so the line is QA'd, archived under
+     *       the unit id, and broadcast to the page.</li>
+     * </ol>
+     *
+     * <p>Clusters remain the ingestion/grouping layer (ClusterEngine assigns,
+     * ClusterRebalancer tidies); a dirty cluster is just the signal that fresh
+     * evidence arrived. Collation is intentionally NOT run here (deferred).
+     */
+    public void runUnitTick(Set<String> dirtyClusterIds) {
+        if (dirtyClusterIds == null || dirtyClusterIds.isEmpty()) return;
+        ChatModel model = brain.getAgentModel();
+        if (model == null) {
+            LOG.warn("EditorialAgent: agent model not ready, skipping unit tick.");
+            return;
+        }
+
+        // 1 — context relief (same rolling window the lab + snapshot TTL use).
+        if (contextTtlMinutes > 0) {
+            subjectRegistry.pruneContentOlderThan(Duration.ofMinutes(contextTtlMinutes));
+        }
+
+        // 2 — attribute each dirty cluster's subjects into the feed-wide registry.
+        for (String id : dirtyClusterIds) {
+            try {
+                attributeCluster(id, subjectRegistry);
+            } catch (Exception e) {
+                LOG.warn("EditorialAgent: attribution of cluster {} failed: {}", id, e.getMessage());
+            }
+        }
+
+        // 3 — fold name units into their ticker unit (conservative, never swallows).
+        subjectRegistry.mergeIdentities();
+
+        // 4 — compose + publish one headline per dirty unit, heaviest evidence first.
+        Set<String> dirtyUnits = subjectRegistry.drainDirty();
+        List<SubjectUnit> toCompose = dirtyUnits.stream()
+                .map(subjectRegistry::get).filter(Objects::nonNull)
+                .sorted(Comparator.comparingInt(SubjectUnit::evidenceCount).reversed())
+                .toList();
+        int published = 0;
+        for (SubjectUnit u : toCompose) {
+            try {
+                seedHeadlineHistoryIfEmpty(u);
+                UnitDraft ud = composeUnit(u);
+                Draft d = ud.draft();
+                if (d == null || d.headline() == null || d.headline().isBlank()) continue;
+                // Unchanged from the unit's last line → nothing to publish.
+                if (d.headline().equalsIgnoreCase(u.lastHeadlineText())) continue;
+                if (headlineWriter.publishUnit(u, d)) {
+                    u.addHeadline(d.headline(), ud.isUpdate(), d.sentiment());
+                    u.markNewsCovered(ud.citedNewsIds());
+                    published++;
+                }
+            } catch (Exception e) {
+                LOG.warn("EditorialAgent: unit {} failed: {}", u.id, e.getMessage());
+            }
+        }
+        LOG.info("[AGENT] unit tick done: {} cluster(s) → {} dirty unit(s) → {} headline(s)",
+                dirtyClusterIds.size(), toCompose.size(), published);
+    }
+
+    /**
+     * Restart continuity: a {@link SubjectUnit} is rebuilt from fresh evidence
+     * after a process restart (units aren't snapshotted), so its in-memory headline
+     * history starts empty — and the compose prompt's "no prior headlines → always
+     * write" rule would then re-publish a line the archive already holds as NEW.
+     * Seed the unit's history (chronological) from the permanent archive under its
+     * own id the first time we touch it, so NEW/UPDATE survives a cold restart. The
+     * archive query is the last-24h wire window — exactly the story horizon.
+     */
+    private void seedHeadlineHistoryIfEmpty(SubjectUnit unit) {
+        if (!unit.headlines().isEmpty()) return;
+        for (HeadlineRecord r : agentRepository.getHeadlinesByClusterId(unit.id)) {
+            unit.addHeadline(r.headline(), false,
+                    r.sentiment() == null ? "" : r.sentiment().name());
+        }
     }
 
     /**

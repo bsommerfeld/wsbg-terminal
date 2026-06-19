@@ -44,6 +44,7 @@ class PipelineStagesIT {
     private static ClusterEngine engine;
     private static ClusterRegistry registry;
     private static RedditRepository redditRepo;
+    private static AgentRepository agentRepo;
     private static EditorialAgent editorial;
 
     @BeforeAll
@@ -52,12 +53,13 @@ class PipelineStagesIT {
         GlobalConfig config = new GlobalConfig();
         ApplicationEventBus bus = new ApplicationEventBus();
         redditRepo = new RedditRepository();
-        AgentRepository agentRepo = new AgentRepository();
+        agentRepo = new AgentRepository();
         brain = new AgentBrain(config, bus, new OllamaServerManager());
         registry = new ClusterRegistry();
         engine = new ClusterEngine(registry, config, new OllamaEmbeddingService());
         editorial = new EditorialAgent(brain, registry, agentRepo, redditRepo, bus,
-                new I18nService(config), new YahooFinanceClient(config), new OllamaEmbeddingService(), config);
+                new I18nService(config), new YahooFinanceClient(config), new OllamaEmbeddingService(),
+                new SubjectRegistry(), config);
     }
 
     @Test
@@ -95,5 +97,29 @@ class PipelineStagesIT {
         assertFalse(headline.isBlank(), "headline must not be blank");
         assertTrue(headline.toLowerCase(Locale.ROOT).contains("nvidia"),
                 "headline should name the subject: " + headline);
+    }
+
+    /**
+     * The full PROD orchestration after the #2 cutover: a live cluster goes
+     * through {@code runUnitTick} (attribute → merge → compose-per-unit →
+     * publishUnit) and a real headline lands in the repository — the same path
+     * {@code AgentCoordinator} now drives. End-to-end over the real model.
+     */
+    @Test
+    void runUnitTickPublishesHeadlinesEndToEnd() {
+        SyntheticThreads.Synthetic syn = SyntheticThreads.allInPoll();
+        redditRepo.saveThread(syn.thread()).join();
+        for (RedditComment c : syn.comments()) redditRepo.saveComment(c).join();
+
+        AssignOutcome out = engine.assign(syn.thread(), 0, 0, "");
+        int before = agentRepo.getRecentHeadlines().size();
+
+        editorial.runUnitTick(Set.of(out.clusterId()));
+
+        List<AgentRepository.HeadlineRecord> after = agentRepo.getRecentHeadlines();
+        System.out.println("[UNITTICK-IT] published " + (after.size() - before) + " headline(s): "
+                + after.stream().map(AgentRepository.HeadlineRecord::headline).toList());
+        assertTrue(after.size() > before,
+                "runUnitTick should publish at least one headline for a live cluster");
     }
 }

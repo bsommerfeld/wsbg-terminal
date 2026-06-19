@@ -98,7 +98,10 @@ public class AgentCoordinator {
         long t0 = System.currentTimeMillis();
         try {
             LOG.info("AgentCoordinator tick: {} dirty cluster(s) → {}", drained.size(), drained);
-            agent.runTick(drained);
+            // #2 cutover: prod now runs the feed-wide subject-unit pipeline
+            // (attribute → merge → compose-per-unit → publish), not the old
+            // per-cluster runTick. Clusters are still the ingestion signal.
+            agent.runUnitTick(drained);
         } catch (Exception e) {
             LOG.error("AgentCoordinator tick failed", e);
         } finally {

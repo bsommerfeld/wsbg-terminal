@@ -47,7 +47,7 @@ class AgentCoordinatorTest {
             runs.incrementAndGet();
             latch.countDown();
             return null;
-        }).when(agent).runTick(anySet());
+        }).when(agent).runUnitTick(anySet());
 
         coordinator = new AgentCoordinator(registry, agent, 100L);
         registry.add(cluster("t3_a"));
@@ -64,7 +64,7 @@ class AgentCoordinatorTest {
             runs.incrementAndGet();
             firstRun.countDown();
             return null;
-        }).when(agent).runTick(anySet());
+        }).when(agent).runUnitTick(anySet());
 
         coordinator = new AgentCoordinator(registry, agent, 100L);
         for (int i = 0; i < 10; i++) {
@@ -93,7 +93,7 @@ class AgentCoordinatorTest {
                 secondRun.countDown();
             }
             return null;
-        }).when(agent).runTick(anySet());
+        }).when(agent).runUnitTick(anySet());
 
         coordinator = new AgentCoordinator(registry, agent, 100L);
         registry.notifyChange("t3_a");
@@ -111,7 +111,7 @@ class AgentCoordinatorTest {
         coordinator = new AgentCoordinator(registry, agent, 100L);
         // No notifyChange — no run should happen.
         Thread.sleep(500);
-        verify(agent, never()).runTick(any());
+        verify(agent, never()).runUnitTick(any());
     }
 
     @SuppressWarnings("unchecked")
