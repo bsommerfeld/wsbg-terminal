@@ -13,6 +13,15 @@ public class HeadlineConfig {
     @Comment("Enable or disable headline generation entirely (default: true)")
     private boolean enabled = true;
 
+    @Key("cluster-theme-enabled")
+    @Comment("When true, each dirty cluster (= one Reddit thread) also gets a "
+            + "'theme' headline capturing the whole thread's narrative, on top of the "
+            + "per-subject lines. Default false: every thread would otherwise produce a "
+            + "line (incl. chatty/meme threads with no instrument), which floods the wire "
+            + "with generic lines and overlaps the per-subject headlines. Opt in for the "
+            + "richer thread-narrative coverage.")
+    private boolean clusterThemeEnabled = false;
+
     @Key("news-coverage-enabled")
     @Comment("When true, a news item already cited by one headline of a subject is "
             + "hidden from that subject's next compose (no two headlines on the same "
@@ -26,6 +35,14 @@ public class HeadlineConfig {
 
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
+    }
+
+    public boolean isClusterThemeEnabled() {
+        return clusterThemeEnabled;
+    }
+
+    public void setClusterThemeEnabled(boolean clusterThemeEnabled) {
+        this.clusterThemeEnabled = clusterThemeEnabled;
     }
 
     public boolean isNewsCoverageEnabled() {

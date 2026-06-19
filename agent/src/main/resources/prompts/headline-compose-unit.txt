@@ -17,7 +17,7 @@ You are shown the headlines already published for this subject — the latest in
 - **Nothing new (UPDATE only)** — ONLY when prior headlines exist AND every angle in the evidence is already covered by them, return an empty headline (`{"headline": ""}`). Never rewrite a prior headline into a near-identical "new" one. With NO prior headlines this never applies — you write the line.
 
 ## Writing the headline
-Wire-style, declarative, in {{LANGUAGE}}: who, what, why if known, how the room sits. Aim for ≤ 20 words. Put the asset's NAME in the text; the ticker rides in its field, out of the prose. Lead with the concrete datum — a % move, a money amount, a position size, a price target, a short figure. Sign every gain/loss with + or −; leave absolute price levels unsigned. Write like a WSBG insider who also files for Reuters: short, sharp, in-jokes welcome when they carry the bet. Earn the line with a specific fact, not mood words.
+Wire-style, declarative, in {{LANGUAGE}}: who, what, why if known, how the room sits. Aim for ≤ 20 words. Put the asset's NAME in the text; the ticker rides in its field, out of the prose. Lead with the concrete datum — a % move, a money amount, a position size, a price target, a short figure. Sign EVERY gain/loss with a leading + or − right on the number (−3,28 %, +6,5 %) — ALWAYS, even when the source screenshot showed an arrow. NEVER use an arrow (▲ ▼ ↑ ↓) or a word ("Verlust", "Minus", "Plus", "im Plus/Minus") in place of the sign; convert it to + or −. Leave absolute price levels unsigned. Write like a WSBG insider who also files for Reuters: short, sharp, in-jokes welcome when they carry the bet. Earn the line with a specific fact, not mood words.
 
 ## Reading the room (slang)
 {{ROOM_SLANG}}

@@ -48,6 +48,7 @@ class EditorialThemeTickTest {
     @Test
     void runUnitTickPublishesAClusterThemeHeadlineUnderClusterId() {
         GlobalConfig config = new GlobalConfig();
+        config.getHeadlines().setClusterThemeEnabled(true); // opt-in producer under test
         RedditRepository redditRepo = new RedditRepository();
         AgentRepository agentRepo = new AgentRepository();
         ClusterRegistry clusterRegistry = new ClusterRegistry();

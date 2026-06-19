@@ -95,6 +95,7 @@ public class EditorialAgent {
     private final AgentRepository agentRepository;
     private final RedditRepository redditRepository;
     private final boolean newsCoverageEnabled; // #3b gate; default off (config)
+    private final boolean clusterThemeEnabled;  // cluster-theme producer; default off (config)
     private final ReportBuilder reportBuilder;
     private final TickerResolver tickerResolver;
     private final HeadlineWriter headlineWriter;
@@ -116,6 +117,7 @@ public class EditorialAgent {
         this.agentRepository = agentRepository;
         this.redditRepository = redditRepository;
         this.newsCoverageEnabled = config.getHeadlines().isNewsCoverageEnabled();
+        this.clusterThemeEnabled = config.getHeadlines().isClusterThemeEnabled();
         this.reportBuilder = new ReportBuilder(redditRepository, brain);
         this.tickerResolver = new TickerResolver(yahooFinance, embeddings); // Tier 2 enabled
         this.headlineWriter = new HeadlineWriter(agentRepository, eventBus);
@@ -508,8 +510,14 @@ public class EditorialAgent {
         int themePublished = 0;
         for (String id : dirtyClusterIds) {
             try {
+                // attributeCluster always runs — it feeds the per-subject units.
+                // The cluster's OWN theme line is opt-in (off by default): every
+                // thread would otherwise get a line, flooding the wire with generic
+                // narratives and overlapping the per-subject headlines.
                 List<ResolvedSubject> resolved = attributeCluster(id, subjectRegistry);
-                themePublished += publishClusterTheme(model, id, resolved);
+                if (clusterThemeEnabled) {
+                    themePublished += publishClusterTheme(model, id, resolved);
+                }
             } catch (Exception e) {
                 LOG.warn("EditorialAgent: cluster {} failed: {}", id, e.getMessage());
             }
