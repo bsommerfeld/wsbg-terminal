@@ -114,8 +114,9 @@ yahoo-finance → core
 - **financial-juice** / **currency** — live news ticker and EUR/USD FX badge.
 - **agent** — the editorial pipeline (LangChain4j + Ollama). Central classes: `AgentBrain`
   (model access + vision cache), `PassiveMonitorService` (scheduled poll loop), `ClusterEngine`
-  (the single source of truth for cluster assignment), `ClusterRegistry` / `ClusterRebalancer`
-  (active clusters + periodic merge/prune), `EditorialAgent` (the deterministic per-cluster tick),
+  (the single source of truth for cluster assignment), `ClusterRegistry` (active clusters),
+  `SubjectRegistry` / `SubjectUnit` / `SubjectAttributor` (the feed-wide subject layer — the
+  editorial atom), `EditorialAgent` (the per-subject-unit editorial tick, `runUnitTick`),
   `TickerResolver` (subject → validated Yahoo ticker), and `HeadlineWriter` (QA gate + publish).
 - **terminal** — process entry point (`AppMain`), the JCEF window, the HTTP/WebSocket servers, and
   the Java↔page bridges; Guice wiring lives here.
@@ -129,22 +130,27 @@ yahoo-finance → core
 
 ## The editorial pipeline (the core)
 
-The agent is **not** a tool-use loop. It is a fixed, deterministic per-cluster pipeline:
+The agent is **not** a tool-use loop. It is a fixed, deterministic pipeline whose editorial atom
+is the feed-wide **subject unit** (not the cluster):
 
 1. **Poll** — the Reddit source polls every `update-interval-seconds` (default 60 s).
 2. **Cluster** — for each new/updated thread, `ClusterEngine.assign` embeds
    `title + body + visionDescription` and joins the nearest cluster centroid (cosine ≥
-   similarity-threshold, default 0.55) with EMA centroid drift, or creates a new cluster.
-3. **Debounce** — every registry change triggers `AgentCoordinator` (3 s debounce → one tick).
-4. **Edit** — per dirty cluster: `ReportBuilder` brief → **subject extraction** (one LLM call,
-   uncapped) → `TickerResolver` (Yahoo ticker + quote + news per subject) → **one headline
-   composition call per subject** (single-object JSON, never a batched array — a 4 B model
-   degenerates on long arrays) → `HeadlineWriter`.
-5. **Publish** — `HeadlineWriter` QA-gates each draft (with an identical-text dedupe guard),
-   persists accepted records to `AgentRepository` (and the permanent archive), and posts an
-   `AgentStreamEndEvent` that the UI publisher picks up.
-6. **Rebalance** — every 30 s `ClusterRebalancer` does iterative all-pair merging and prunes
-   stale single-thread clusters.
+   similarity-threshold, default 0.55) with EMA centroid drift, or creates a new cluster. Clusters
+   are assign-only **ingestion buckets** — there is no cluster merge/prune step.
+3. **Debounce** — every registry change triggers `AgentCoordinator` (3 s debounce → one
+   `EditorialAgent.runUnitTick`).
+4. **Attribute** — per dirty cluster: `ReportBuilder` brief → **subject extraction** (one LLM call,
+   uncapped) → `TickerResolver` (Yahoo ticker + quote + news per subject) → `SubjectAttributor`
+   folds the evidence into the feed-wide `SubjectRegistry`, then `mergeIdentities` folds name units
+   into their ticker unit (cross-thread consolidation happens here, at the subject level).
+5. **Compose** — for each dirty `SubjectUnit`, **one headline composition call** (single-object
+   JSON, never a batched array — a 4 B model degenerates on long arrays), tagged NEW/UPDATE against
+   the unit's own prior headlines.
+6. **Publish** — `HeadlineWriter.publishUnit` QA-gates the draft (identical-text dedupe; ticker +
+   snapshot from the resolver-validated unit, never the model), persists it to `AgentRepository`
+   (and the permanent archive) keyed by the unit id, and posts an `AgentStreamEndEvent` the UI
+   publisher picks up.
 
 ### Highlight rubric (the "rocket radar")
 
