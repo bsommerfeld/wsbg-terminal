@@ -94,12 +94,16 @@ yahoo-finance → core
 - **core** — shared domain objects (`RedditThread`, `RedditComment`, `FjNewsItem`), config POJOs,
   the `Model` enum, the event bus, and `I18nService`. No framework deps beyond Guava EventBus.
 - **reddit** — Reddit fetching behind a `RedditSource` interface. The bound implementation is a
-  **dynamic fallback chain** (OAuth → browser → `.json` → RSS) that probes at runtime and
+  **dynamic fallback chain** (OAuth → anonymous `.json` → RSS) that probes at runtime and
   re-resolves every 600 s, so each install self-selects a working path and self-heals. The
-  **browser** path fetches Reddit's `.json` through the embedded Chromium runtime so the request
-  goes out as ordinary browser traffic (real session + cookies) — the supported path where a bare
-  client gets a 403; **RSS** is the always-reachable anonymous floor. All sources share one
-  `RedditRepository` so a fallback switch continues from existing data instead of re-scanning.
+  anonymous `.json` delegate rides the shared `WebFetcher` chain (`browser → direct`): the
+  **browser** transport fetches Reddit's `.json` through the embedded Chromium runtime so the
+  request goes out as ordinary browser traffic (real session + cookies) — the supported path
+  where a bare client gets a 403 — with plain HTTP as the per-request fallback; **RSS** is the
+  always-reachable anonymous floor. All sources share one `RedditRepository` so a fallback switch
+  continues from existing data instead of re-scanning, and one `WebFetcher` transport seam (the
+  same Yahoo uses) so a new fetcher — e.g. a future BYOK API strategy — is a wiring change, not a
+  rebuild.
 - **database** — in-memory stores plus permanent headline history:
   - `RedditRepository` — threads + comment trees (session-only).
   - `AgentRepository` — the live 24 h headline wire, re-seeded from the archive on startup.

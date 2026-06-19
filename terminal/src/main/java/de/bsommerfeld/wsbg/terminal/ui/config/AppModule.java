@@ -18,8 +18,7 @@ import de.bsommerfeld.wsbg.terminal.core.util.StorageUtils;
 import de.bsommerfeld.wsbg.terminal.currency.EurUsdMonitorService;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
 import de.bsommerfeld.wsbg.terminal.reddit.FallbackRedditSource;
-import de.bsommerfeld.wsbg.terminal.reddit.JdkRedditTransport;
-import de.bsommerfeld.wsbg.terminal.reddit.OAuthRedditTransport;
+import de.bsommerfeld.wsbg.terminal.reddit.OAuthRedditFetcher;
 import de.bsommerfeld.wsbg.terminal.reddit.RedditScraper;
 import de.bsommerfeld.wsbg.terminal.reddit.RedditSource;
 import de.bsommerfeld.wsbg.terminal.reddit.RssRedditScraper;
@@ -31,7 +30,6 @@ import de.bsommerfeld.wsbg.terminal.source.net.WebFetchChain;
 import de.bsommerfeld.wsbg.terminal.source.net.WebFetcher;
 import de.bsommerfeld.wsbg.terminal.ui.CefHost;
 import de.bsommerfeld.wsbg.terminal.ui.TimeTracker;
-import de.bsommerfeld.wsbg.terminal.ui.net.CefRedditTransport;
 import de.bsommerfeld.wsbg.terminal.ui.net.CefWebFetcher;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.ArchiveQueryBridge;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.CommandBridge;
@@ -143,23 +141,6 @@ public class AppModule extends AbstractModule {
     }
 
     /**
-     * Builds the {@link RedditSource}: a {@link FallbackRedditSource} that
-     * auto-selects a working path at runtime (OAuth → browser → anonymous .json
-     * → RSS). Every JSON delegate shares one repository but carries its own
-     * transport + rate limiter — OAuth gets the fast budget, the browser and
-     * anonymous {@code .json} the throttled one; RSS owns its own internally.
-     * Consumers only see {@link RedditSource} and never learn which path
-     * answered.
-     *
-     * <p>The <b>browser</b> delegate ({@link CefRedditTransport}) fetches the
-     * full-fidelity {@code .json} through the embedded Chromium runtime, so it
-     * carries a real browser session + cookies and is served the same way as an
-     * ordinary browser on the {@code .json} path that 403s a bare client. It sits just under OAuth
-     * (which only probes true once a client ID is configured) and above the
-     * legacy anonymous {@code .json}, making it the de-facto primary on a normal
-     * install while RSS stays the always-reachable floor.
-     */
-    /**
      * The generic fetch strategy any source can consume: a {@link WebFetchChain}
      * resolved in order. When {@code yahoo.browser-fetch-enabled} is on, the
      * browser "joker" ({@link CefWebFetcher} — real browser session + cookies,
@@ -184,34 +165,52 @@ public class AppModule extends AbstractModule {
         return new WebFetchChain(List.of(direct));
     }
 
+    /**
+     * Builds the {@link RedditSource}: a {@link FallbackRedditSource} that
+     * auto-selects a working path at runtime (OAuth → anonymous {@code .json} →
+     * RSS). Every delegate shares one repository but carries its own fetcher +
+     * rate limiter; consumers only see {@link RedditSource} and never learn which
+     * path answered.
+     *
+     * <p><b>The anonymous {@code .json} delegate rides the shared
+     * {@link WebFetcher} chain</b> ({@code browser → direct}), so the old separate
+     * "browser" and "JSON" delegates collapse into one: a request prefers the
+     * embedded-Chromium transport (real browser session + cookies, served like an
+     * ordinary browser on the {@code .json} path that 403s a bare client) and
+     * falls back to plain HTTP <em>per request</em> — more resilient than the old
+     * 600 s source-level re-probe. Browser is the de-facto primary on a normal
+     * install; OAuth only probes true once a client ID is configured; RSS stays
+     * the always-reachable floor.
+     *
+     * <p>Reddit's volume limit is per-IP regardless of TLS fingerprint, so the
+     * browser and direct transports share one budget: the generous browser rate
+     * when the joker leads the chain, else the conservative anonymous rate.
+     */
     @Provides
     @Singleton
     RedditSource provideRedditSource(RedditRepository repository,
-            ApplicationEventBus eventBus, GlobalConfig config, CefHost cefHost) {
+            ApplicationEventBus eventBus, GlobalConfig config, WebFetcher webFetcher) {
         RedditConfig rc = config.getReddit();
         String probeSub = rc.getSubreddits().isEmpty()
                 ? "wallstreetbetsGER" : rc.getSubreddits().get(0);
 
         RedditScraper oauth = new RedditScraper(repository, eventBus,
-                new OAuthRedditTransport(config),
+                new OAuthRedditFetcher(config),
                 new TokenBucketRateLimiter(rc.getOauthRateLimitBurst(),
                         rc.getOauthRateLimitRequestsPerSecond()));
-        // Browser-driven .json: a real browser session (cookies + an established
-        // browser context), so it runs on its OWN generous rate limit, NOT the
-        // conservative anonymous 0.15/s rate — full-fidelity deep fetches stay
-        // intact but stream in fast instead of one every ~6.6s.
-        RedditScraper browser = new RedditScraper(repository, eventBus,
-                new CefRedditTransport(cefHost, probeSub),
-                new TokenBucketRateLimiter(rc.getBrowserRateLimitBurst(),
-                        rc.getBrowserRateLimitRequestsPerSecond()));
-        RedditScraper json = new RedditScraper(repository, eventBus,
-                new JdkRedditTransport(),
-                new TokenBucketRateLimiter(rc.getRateLimitBurst(),
-                        rc.getRateLimitRequestsPerSecond()));
+
+        boolean browserJoker = config.getYahoo().isBrowserFetchEnabled();
+        TokenBucketRateLimiter anonLimiter = browserJoker
+                ? new TokenBucketRateLimiter(rc.getBrowserRateLimitBurst(),
+                        rc.getBrowserRateLimitRequestsPerSecond())
+                : new TokenBucketRateLimiter(rc.getRateLimitBurst(),
+                        rc.getRateLimitRequestsPerSecond());
+        RedditScraper anon = new RedditScraper(repository, eventBus, webFetcher, anonLimiter);
+
         RssRedditScraper rss = new RssRedditScraper(repository, config, eventBus);
 
-        LOG.info("Reddit source: dynamic fallback chain [OAuth → browser → JSON → RSS]");
-        return new FallbackRedditSource(List.of(oauth, browser, json, rss), probeSub, 600L);
+        LOG.info("Reddit source: dynamic fallback chain [OAuth → {} → RSS]", webFetcher.name());
+        return new FallbackRedditSource(List.of(oauth, anon, rss), probeSub, 600L);
     }
 
     /**

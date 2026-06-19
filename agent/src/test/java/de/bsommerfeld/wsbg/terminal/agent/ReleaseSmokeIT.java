@@ -8,13 +8,13 @@ import de.bsommerfeld.wsbg.terminal.db.AgentRepository;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
 import de.bsommerfeld.wsbg.terminal.db.RedditSnapshotStore;
 import de.bsommerfeld.wsbg.terminal.reddit.FallbackRedditSource;
-import de.bsommerfeld.wsbg.terminal.reddit.JdkRedditTransport;
-import de.bsommerfeld.wsbg.terminal.reddit.OAuthRedditTransport;
+import de.bsommerfeld.wsbg.terminal.reddit.OAuthRedditFetcher;
 import de.bsommerfeld.wsbg.terminal.reddit.RedditScraper;
 import de.bsommerfeld.wsbg.terminal.reddit.RedditSource;
 import de.bsommerfeld.wsbg.terminal.reddit.RssRedditScraper;
 import de.bsommerfeld.wsbg.terminal.reddit.ThreadAnalysisContext;
 import de.bsommerfeld.wsbg.terminal.reddit.TokenBucketRateLimiter;
+import de.bsommerfeld.wsbg.terminal.source.net.DirectWebFetcher;
 import dev.langchain4j.data.embedding.Embedding;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -60,9 +60,9 @@ class ReleaseSmokeIT {
         ApplicationEventBus bus = new ApplicationEventBus();
 
         RedditScraper oauth = new RedditScraper(repo, bus,
-                new OAuthRedditTransport(config), new TokenBucketRateLimiter(20, 8));
+                new OAuthRedditFetcher(config), new TokenBucketRateLimiter(20, 8));
         RedditScraper json = new RedditScraper(repo, bus,
-                new JdkRedditTransport(), new TokenBucketRateLimiter(5, 0.15));
+                new DirectWebFetcher(), new TokenBucketRateLimiter(5, 0.15));
         RssRedditScraper rss = new RssRedditScraper(repo, config, bus);
 
         System.out.println("[SMOKE] probe OAuth = " + oauth.probe(SUB) + " (expect false: no client-id)");

@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
+import de.bsommerfeld.wsbg.terminal.source.net.WebFetcher;
+import de.bsommerfeld.wsbg.terminal.source.net.WebResponse;
 import jakarta.inject.Inject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,13 +23,16 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Application-only ("userless") OAuth transport against {@code oauth.reddit.com}.
+ * Application-only ("userless") OAuth {@link WebFetcher} against
+ * {@code oauth.reddit.com}.
  *
  * <p>
- * This is the production fetch path. The public {@code www.reddit.com/.json}
- * endpoints often reject headless clients with a 403, but the official OAuth API
- * host is the supported programmatic interface — a plain {@link HttpClient}
- * carrying a bearer token is served normally, with no browser involved.
+ * This is the supported programmatic fetch path. The public
+ * {@code www.reddit.com/.json} endpoints often reject headless clients with a
+ * 403, but the official OAuth API host is served normally to a plain
+ * {@link HttpClient} carrying a bearer token, with no browser involved. It is
+ * one transport strategy among the shared {@link WebFetcher} seam — caller
+ * headers are ignored (this sets its own {@code User-Agent} + {@code Authorization}).
  *
  * <h3>No user login</h3>
  * The token is obtained via the {@code installed_client} grant, which is
@@ -44,13 +49,13 @@ import java.util.Map;
  *
  * <h3>URL rewriting</h3>
  * {@link RedditScraper} builds {@code https://www.reddit.com/...} URLs. This
- * transport rewrites the host to {@code https://oauth.reddit.com/...}; the paths
+ * fetcher rewrites the host to {@code https://oauth.reddit.com/...}; the paths
  * (listings, {@code /by_id/}, comment trees) are identical on the OAuth host.
  */
 @Singleton
-public final class OAuthRedditTransport implements RedditTransport {
+public final class OAuthRedditFetcher implements WebFetcher {
 
-    private static final Logger LOG = LoggerFactory.getLogger(OAuthRedditTransport.class);
+    private static final Logger LOG = LoggerFactory.getLogger(OAuthRedditFetcher.class);
 
     private static final String WWW_BASE = "https://www.reddit.com";
     private static final String OAUTH_BASE = "https://oauth.reddit.com";
@@ -74,33 +79,39 @@ public final class OAuthRedditTransport implements RedditTransport {
     private volatile Instant expiresAt = Instant.EPOCH;
 
     @Inject
-    public OAuthRedditTransport(GlobalConfig config) {
+    public OAuthRedditFetcher(GlobalConfig config) {
         this.clientId = config.getReddit().getOauthClientId();
         this.deviceId = randomDeviceId();
         if (clientId == null || clientId.isBlank()) {
-            LOG.error("reddit.oauth-client-id is not set — Reddit access will fail. "
+            LOG.error("reddit.oauth-client-id is not set — Reddit OAuth access will fail. "
                     + "Register an installed app at https://www.reddit.com/prefs/apps "
                     + "and put its client ID in config.toml.");
         }
     }
 
     @Override
-    public RedditResponse get(String url) throws Exception {
-        RedditResponse response = sendAuthorized(toOAuthUrl(url));
+    public String name() {
+        return "oauth";
+    }
+
+    @Override
+    public WebResponse fetch(String url, Map<String, String> headers, Duration timeout) throws Exception {
+        WebResponse response = sendAuthorized(toOAuthUrl(url), timeout);
         // A 401 usually means the cached token was revoked/expired early —
         // refresh once and retry before giving up.
-        if (response.statusCode() == 401) {
+        if (response.status() == 401) {
             LOG.info("Reddit OAuth token rejected (401); refreshing and retrying.");
             refreshToken();
-            response = sendAuthorized(toOAuthUrl(url));
+            response = sendAuthorized(toOAuthUrl(url), timeout);
         }
         return response;
     }
 
-    private RedditResponse sendAuthorized(String oauthUrl) throws Exception {
+    private WebResponse sendAuthorized(String oauthUrl, Duration timeout) throws Exception {
         String token = currentToken();
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(oauthUrl))
+                .timeout(timeout)
                 .header("User-Agent", RedditUserAgent.VALUE)
                 .header("Authorization", "bearer " + token)
                 .GET()
@@ -108,11 +119,11 @@ public final class OAuthRedditTransport implements RedditTransport {
 
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
-        Map<String, String> headers = new HashMap<>();
+        Map<String, String> outHeaders = new HashMap<>();
         response.headers().map().forEach((k, v) -> {
-            if (v != null && !v.isEmpty()) headers.put(k, v.get(0));
+            if (v != null && !v.isEmpty()) outHeaders.put(k, v.get(0));
         });
-        return new RedditResponse(response.statusCode(), response.body(), headers);
+        return new WebResponse(response.statusCode(), response.body(), outHeaders);
     }
 
     /** Maps a {@code www.reddit.com} URL onto the OAuth host. */

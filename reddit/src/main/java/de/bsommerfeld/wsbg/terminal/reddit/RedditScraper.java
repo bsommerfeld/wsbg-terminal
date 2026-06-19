@@ -11,10 +11,14 @@ import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
 import de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.RedditHealthEvent;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
+import de.bsommerfeld.wsbg.terminal.source.net.DirectWebFetcher;
+import de.bsommerfeld.wsbg.terminal.source.net.WebFetcher;
+import de.bsommerfeld.wsbg.terminal.source.net.WebResponse;
 import jakarta.inject.Inject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -65,10 +69,14 @@ import java.util.stream.Collectors;
  * comments throughout the codebase for every touchpoint.
  *
  * <h3>Transport</h3>
- * The actual byte-fetching is delegated to a {@link RedditTransport}, so this
- * class is agnostic to whether a request goes out via a JDK {@code HttpClient}
- * or the embedded browser. Rate limiting and User-Agent concerns live with the
- * transport / this class respectively; see {@link JdkRedditTransport}.
+ * The actual byte-fetching is delegated to a generic {@link WebFetcher} — the
+ * same transport seam every source shares — so this class is agnostic to whether
+ * a request goes out via a plain JDK {@code HttpClient} ({@link DirectWebFetcher}),
+ * the embedded browser ({@code CefWebFetcher}), an OAuth-rewriting fetcher, or a
+ * {@code WebFetchChain} that tries several in order. Rate limiting stays here
+ * (the {@link #rateLimiter} chokepoint); the per-request {@code User-Agent} is
+ * applied by the direct transport from {@link #REQUEST_HEADERS} (browser/OAuth
+ * transports set their own).
  *
  * <h3>Data flow</h3>
  * 
@@ -137,14 +145,30 @@ public class RedditScraper implements RedditSource {
     private static final Pattern INLINE_MEDIA_REF =
             Pattern.compile("!\\[[^\\]]*]\\(([^)\\s\"]+)[^)]*\\)");
 
+    /**
+     * Per-request ceiling. Deep comment fetches are the slow case (large body,
+     * chunked back over the browser router); 30 s is generous headroom over a
+     * healthy fetch while still failing fast enough for a fallback to move on.
+     */
+    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(30);
+
+    /**
+     * Headers applied to every request. The direct transport sends these
+     * verbatim; the browser/OAuth transports ignore them and set their own
+     * {@code User-Agent} (browser session UA / OAuth bearer). The per-process
+     * {@code instance:} token keeps installs off a shared rate budget.
+     */
+    private static final Map<String, String> REQUEST_HEADERS =
+            Map.of("User-Agent", RedditUserAgent.VALUE);
+
     protected final RedditRepository repository;
 
     /**
-     * Fetches the actual bytes. Swapped for a browser-backed implementation in
-     * production so the {@code .json} endpoint is reached as an ordinary browser
-     * request; defaults to {@link JdkRedditTransport} for tests/CLI.
+     * Fetches the actual bytes through the shared {@link WebFetcher} seam. In
+     * production this is a browser→direct chain; tests/CLI default to the plain
+     * {@link DirectWebFetcher}. The OAuth and RSS paths inject their own fetcher.
      */
-    private final RedditTransport transport;
+    private final WebFetcher fetcher;
 
     /**
      * Single shared mapper instance. Jackson's {@link ObjectMapper} is
@@ -183,24 +207,24 @@ public class RedditScraper implements RedditSource {
 
     @Inject
     public RedditScraper(RedditRepository repository, ApplicationEventBus eventBus,
-            RedditTransport transport, TokenBucketRateLimiter rateLimiter) {
-        this(repository, rateLimiter, eventBus, transport);
+            WebFetcher fetcher, TokenBucketRateLimiter rateLimiter) {
+        this(repository, rateLimiter, eventBus, fetcher);
     }
 
     /**
      * Convenience constructor for callers that don't need health-status events
-     * posted (tests, CLI tools). Uses the plain JDK transport. Production wiring
-     * goes through the {@link Inject @Inject} constructor, which receives the
-     * browser-backed transport.
+     * posted (tests, CLI tools). Uses the plain direct transport. Production
+     * wiring goes through the {@link Inject @Inject} constructor, which receives
+     * the browser-backed chain.
      */
     public RedditScraper(RedditRepository repository, GlobalConfig config) {
-        this(repository, buildLimiterFromConfig(config), null, new JdkRedditTransport());
+        this(repository, buildLimiterFromConfig(config), null, new DirectWebFetcher());
     }
 
     protected RedditScraper(RedditRepository repository, TokenBucketRateLimiter rateLimiter,
-            ApplicationEventBus eventBus, RedditTransport transport) {
+            ApplicationEventBus eventBus, WebFetcher fetcher) {
         this.repository = repository;
-        this.transport = transport;
+        this.fetcher = fetcher;
         this.mapper = new ObjectMapper();
         this.rateLimiter = rateLimiter;
         this.eventBus = eventBus;
@@ -273,8 +297,8 @@ public class RedditScraper implements RedditSource {
         LOG.info("Fetching Thread Context: {}", url);
 
         try {
-            RedditResponse response = executeGet(url);
-            if (response.statusCode() != 200)
+            WebResponse response = executeGet(url);
+            if (response.status() != 200)
                 return context;
 
             JsonNode root = mapper.readTree(response.body());
@@ -459,9 +483,9 @@ public class RedditScraper implements RedditSource {
         ScrapeStats stats = new ScrapeStats();
 
         try {
-            RedditResponse response = executeGet(url);
-            if (response.statusCode() != 200) {
-                LOG.error("Failed to fetch subreddit data: HTTP {}", response.statusCode());
+            WebResponse response = executeGet(url);
+            if (response.status() != 200) {
+                LOG.error("Failed to fetch subreddit data: HTTP {}", response.status());
                 recordFetchOutcome(false);
                 return stats;
             }
@@ -521,9 +545,9 @@ public class RedditScraper implements RedditSource {
             LOG.debug("Batch Updating {} threads...", batch.size());
 
             try {
-                RedditResponse response = executeGet(url);
-                if (response.statusCode() != 200) {
-                    LOG.warn("Batch update failed (HTTP {}): {}", response.statusCode(), url);
+                WebResponse response = executeGet(url);
+                if (response.status() != 200) {
+                    LOG.warn("Batch update failed (HTTP {}): {}", response.status(), url);
                     continue;
                 }
 
@@ -865,14 +889,14 @@ public class RedditScraper implements RedditSource {
     // =====================================================================
 
     /**
-     * Executes a GET through the configured {@link RedditTransport} with
-     * automatic rate-limit handling. Every outgoing call flows through this
-     * method so the token bucket is the single outbound chokepoint regardless
-     * of which transport is wired in.
+     * Executes a GET through the configured {@link WebFetcher} with automatic
+     * rate-limit handling. Every outgoing call flows through this method so the
+     * token bucket is the single outbound chokepoint regardless of which
+     * transport is wired in.
      */
-    private RedditResponse executeGet(String url) throws Exception {
+    private WebResponse executeGet(String url) throws Exception {
         rateLimiter.acquire();
-        RedditResponse response = transport.get(url);
+        WebResponse response = fetcher.fetch(url, REQUEST_HEADERS, REQUEST_TIMEOUT);
         checkRateLimit(response);
         return response;
     }
@@ -888,7 +912,7 @@ public class RedditScraper implements RedditSource {
      * header values are silently ignored — a malformed header should not
      * crash the scraper.
      */
-    private void checkRateLimit(RedditResponse response) {
+    private void checkRateLimit(WebResponse response) {
         response.header("x-ratelimit-remaining").ifPresent(remaining -> {
             try {
                 double rem = Double.parseDouble(remaining);
@@ -1144,7 +1168,7 @@ public class RedditScraper implements RedditSource {
         if (subreddit == null || subreddit.isBlank()) return false;
         try {
             String url = REDDIT_BASE + "/r/" + subreddit + "/new" + JSON_SUFFIX + "?limit=1";
-            return executeGet(url).statusCode() == 200;
+            return executeGet(url).status() == 200;
         } catch (Exception e) {
             return false;
         }
@@ -1152,8 +1176,8 @@ public class RedditScraper implements RedditSource {
 
     @Override
     public String sourceName() {
-        // Same class serves both OAuth and anonymous .json — the transport
-        // tells them apart for logging.
-        return "JSON[" + transport.getClass().getSimpleName() + "]";
+        // Same class serves both OAuth and anonymous .json — the fetcher's
+        // name tells them apart for logging (e.g. "JSON[chain[browser→direct]]").
+        return "JSON[" + fetcher.name() + "]";
     }
 }

@@ -8,6 +8,9 @@ import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
 import de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.RedditHealthEvent;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
+import de.bsommerfeld.wsbg.terminal.source.net.DirectWebFetcher;
+import de.bsommerfeld.wsbg.terminal.source.net.WebFetcher;
+import de.bsommerfeld.wsbg.terminal.source.net.WebResponse;
 import jakarta.inject.Inject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,6 +20,7 @@ import javax.xml.stream.XMLStreamConstants;
 import javax.xml.stream.XMLStreamReader;
 import java.io.StringReader;
 import java.net.URI;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -79,8 +83,15 @@ public final class RssRedditScraper implements RedditSource {
     private final XMLInputFactory xmlFactory;
 
     private final RedditRepository repository;
-    private final RedditTransport transport;
+    private final WebFetcher fetcher;
     private final TokenBucketRateLimiter rateLimiter;
+
+    /** Per-request ceiling for the plain Atom-feed fetches. */
+    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(30);
+
+    /** User-Agent for the direct transport (RSS hits www.reddit.com anonymously). */
+    private static final java.util.Map<String, String> REQUEST_HEADERS =
+            java.util.Map.of("User-Agent", RedditUserAgent.VALUE);
     private final ApplicationEventBus eventBus;
 
     private volatile boolean degraded = false;
@@ -119,7 +130,7 @@ public final class RssRedditScraper implements RedditSource {
                 rc.getRateLimitRequestsPerSecond());
         // Plain transport: hits www.reddit.com directly (no OAuth host rewrite,
         // no bearer token) — exactly what the public Atom feeds need.
-        this.transport = new JdkRedditTransport();
+        this.fetcher = new DirectWebFetcher();
         this.xmlFactory = XMLInputFactory.newFactory();
         // Harden against XXE — these are remote feeds.
         this.xmlFactory.setProperty(XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES, false);
@@ -404,10 +415,10 @@ public final class RssRedditScraper implements RedditSource {
     private List<Entry> fetchFeed(String url) {
         try {
             rateLimiter.acquire();
-            RedditResponse response = transport.get(url);
+            WebResponse response = fetcher.fetch(url, REQUEST_HEADERS, REQUEST_TIMEOUT);
             checkRateLimit(response);
-            if (response.statusCode() != 200) {
-                LOG.warn("RSS fetch failed (HTTP {}): {}", response.statusCode(), url);
+            if (response.status() != 200) {
+                LOG.warn("RSS fetch failed (HTTP {}): {}", response.status(), url);
                 return null;
             }
             return parseFeed(response.body());
@@ -487,7 +498,7 @@ public final class RssRedditScraper implements RedditSource {
         return r.getElementText();
     }
 
-    private void checkRateLimit(RedditResponse response) {
+    private void checkRateLimit(WebResponse response) {
         response.header("x-ratelimit-remaining").ifPresent(remaining -> {
             try {
                 if (Double.parseDouble(remaining) < 2.0) {

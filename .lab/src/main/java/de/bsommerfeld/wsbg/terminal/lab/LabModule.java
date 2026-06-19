@@ -14,9 +14,9 @@ import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
 import de.bsommerfeld.wsbg.terminal.core.util.StorageUtils;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
 import de.bsommerfeld.wsbg.terminal.reddit.FallbackRedditSource;
-import de.bsommerfeld.wsbg.terminal.reddit.JdkRedditTransport;
-import de.bsommerfeld.wsbg.terminal.reddit.OAuthRedditTransport;
+import de.bsommerfeld.wsbg.terminal.reddit.OAuthRedditFetcher;
 import de.bsommerfeld.wsbg.terminal.reddit.RedditScraper;
+import de.bsommerfeld.wsbg.terminal.source.net.DirectWebFetcher;
 import de.bsommerfeld.wsbg.terminal.reddit.RedditSource;
 import de.bsommerfeld.wsbg.terminal.reddit.RssRedditScraper;
 import de.bsommerfeld.wsbg.terminal.reddit.TokenBucketRateLimiter;
@@ -84,11 +84,13 @@ public final class LabModule extends AbstractModule {
                 ? "wallstreetbetsGER" : rc.getSubreddits().get(0);
 
         RedditScraper oauth = new RedditScraper(repository, eventBus,
-                new OAuthRedditTransport(config),
+                new OAuthRedditFetcher(config),
                 new TokenBucketRateLimiter(rc.getOauthRateLimitBurst(),
                         rc.getOauthRateLimitRequestsPerSecond()));
+        // The lab has no embedded browser, so the anonymous .json delegate uses
+        // the plain direct transport (the terminal injects a browser→direct chain).
         RedditScraper json = new RedditScraper(repository, eventBus,
-                new JdkRedditTransport(),
+                new DirectWebFetcher(),
                 new TokenBucketRateLimiter(rc.getRateLimitBurst(),
                         rc.getRateLimitRequestsPerSecond()));
         RssRedditScraper rss = new RssRedditScraper(repository, config, eventBus);
