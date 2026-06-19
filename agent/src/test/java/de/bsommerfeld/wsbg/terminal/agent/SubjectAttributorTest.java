@@ -13,6 +13,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -162,5 +163,154 @@ class SubjectAttributorTest {
         // The thesis is NOT counted as a real mention (it names no stock).
         assertFalse(refs.stream().anyMatch(e -> "t1_thesis".equals(e.commentId()) && "reddit".equals(e.source())),
                 "the thesis stays context, never a phantom real mention");
+    }
+
+    // ---- Images attach twice: standalone (transcript names it) + inherited (post does) ----
+
+    private static ResolvedSubject instrument(String query, String canonical, String ticker) {
+        return new ResolvedSubject(query, canonical, ticker, null, List.of(), List.of(), false);
+    }
+
+    private static RedditThread threadWithImages(String id, String title, String body, List<String> images) {
+        long now = System.currentTimeMillis() / 1000;
+        return new RedditThread(id, "wsb", title, "op", body, now, "/p", 10, 0.9, 0, now, images);
+    }
+
+    @Test
+    void inheritedThreadImageAttachesEvenWhenTranscriptNeverNamesTheSubject() {
+        // The post says NVIDIA; the attached image is an unlabelled chart that never
+        // names NVIDIA. It must still attach to NVIDIA — the poster put it on a NVIDIA
+        // post, so the placement IS the link.
+        String transcript = "Live chart, daily: price 145, +3%, RSI cooling from overbought";
+        Set<String> nvidiaWords = SubjectAttributor.nameWords("Nvidia", "NVIDIA Corporation");
+        assertFalse(SubjectAttributor.matches(transcript, nvidiaWords, "NVDA"),
+                "precondition: the transcript itself does NOT name NVIDIA");
+
+        var thread = threadWithImages("t3_1", "NVIDIA läuft heiß", "", List.of("img1"));
+        var repository = mock(RedditRepository.class);
+        when(repository.getThread("t3_1")).thenReturn(thread);
+        when(repository.getCommentsForThread("t3_1", 0)).thenReturn(List.of());
+        var brain = mock(AgentBrain.class);
+        when(brain.describeImageIfCached("img1")).thenReturn(transcript);
+
+        var cluster = new InvestigationCluster(thread, Embedding.from(new float[768]));
+        var registry = new SubjectRegistry();
+        new SubjectAttributor(repository, brain)
+                .attribute(registry, cluster, List.of(instrument("Nvidia", "NVIDIA Corporation", "NVDA")));
+
+        SubjectUnit nvidia = registry.get("NVDA");
+        assertNotNull(nvidia, "NVIDIA is a unit even though only the post text named it");
+        assertTrue(nvidia.evidence().stream().anyMatch(
+                        e -> "_vision#0".equals(e.commentId()) && "vision".equals(e.source())),
+                "the unlabelled chart is attached to NVIDIA as inherited vision evidence");
+    }
+
+    @Test
+    void imageNamingAnotherSubjectAttachesToBoth_inheritedAndStandalone() {
+        // An AMD chart posted on a NVIDIA thread. NVIDIA gets it (inherited from the
+        // post), AMD gets it (standalone — its own transcript names AMD). Both at once.
+        String transcript = "Live AMD chart, daily: price 145, +3%";
+        var thread = threadWithImages("t3_1", "NVIDIA läuft heiß", "", List.of("img1"));
+        var repository = mock(RedditRepository.class);
+        when(repository.getThread("t3_1")).thenReturn(thread);
+        when(repository.getCommentsForThread("t3_1", 0)).thenReturn(List.of());
+        var brain = mock(AgentBrain.class);
+        when(brain.describeImageIfCached("img1")).thenReturn(transcript);
+
+        var cluster = new InvestigationCluster(thread, Embedding.from(new float[768]));
+        var registry = new SubjectRegistry();
+        new SubjectAttributor(repository, brain).attribute(registry, cluster, List.of(
+                instrument("Nvidia", "NVIDIA Corporation", "NVDA"),
+                instrument("AMD", "Advanced Micro Devices, Inc.", "AMD")));
+
+        SubjectUnit nvidia = registry.get("NVDA");
+        SubjectUnit amd = registry.get("AMD");
+        assertNotNull(nvidia, "NVIDIA unit exists (post text + inherited image)");
+        assertNotNull(amd, "AMD unit exists (standalone image)");
+        // NVIDIA: post text (reddit) AND the image inherited (vision).
+        assertTrue(nvidia.evidence().stream().anyMatch(e -> "reddit".equals(e.source())),
+                "NVIDIA carries the post text as a real mention");
+        assertTrue(nvidia.evidence().stream().anyMatch(
+                        e -> "_vision#0".equals(e.commentId()) && "vision".equals(e.source())),
+                "the AMD chart is also inherited onto the NVIDIA post it sits on");
+        // AMD: the image standalone, snippet = the row that names it.
+        var amdImg = amd.evidence().stream()
+                .filter(e -> "_vision#0".equals(e.commentId())).findFirst().orElseThrow();
+        assertEquals("vision", amdImg.source());
+        assertTrue(amdImg.snippet().contains("AMD"), "AMD's evidence snippet is the row naming it");
+        // AMD never picked up the NVIDIA post text.
+        assertFalse(amd.evidence().stream().anyMatch(e -> "reddit".equals(e.source())),
+                "AMD does not inherit the NVIDIA post text");
+    }
+
+    @Test
+    void multipleImagesOnOnePostGetSeparateKeys() {
+        // Two images on one post must not collapse into one evidence slot.
+        var thread = threadWithImages("t3_1", "NVIDIA Doppelpost", "", List.of("a", "b"));
+        var repository = mock(RedditRepository.class);
+        when(repository.getThread("t3_1")).thenReturn(thread);
+        when(repository.getCommentsForThread("t3_1", 0)).thenReturn(List.of());
+        var brain = mock(AgentBrain.class);
+        when(brain.describeImageIfCached("a")).thenReturn("Unlabelled chart one, +2%");
+        when(brain.describeImageIfCached("b")).thenReturn("Unlabelled chart two, -1%");
+
+        var cluster = new InvestigationCluster(thread, Embedding.from(new float[768]));
+        var registry = new SubjectRegistry();
+        new SubjectAttributor(repository, brain)
+                .attribute(registry, cluster, List.of(instrument("Nvidia", "NVIDIA Corporation", "NVDA")));
+
+        SubjectUnit nvidia = registry.get("NVDA");
+        assertNotNull(nvidia);
+        long visionRefs = nvidia.evidence().stream()
+                .filter(e -> e.commentId() != null && e.commentId().startsWith("_vision#"))
+                .count();
+        assertEquals(2, visionRefs, "both images attach under distinct per-image keys");
+    }
+
+    @Test
+    void inheritedCommentImageAttachesWhenTheCommentNamedTheSubject() {
+        long now = System.currentTimeMillis() / 1000;
+        var thread = threadWithImages("t3_1", "Daily Diskussion", "", List.of());
+        var comment = new RedditComment("t1_c", "t3_1", "t3_1", "ape",
+                "NVIDIA all in, schaut euch das an", 4, now, now, now, List.of("c1"));
+        var repository = mock(RedditRepository.class);
+        when(repository.getThread("t3_1")).thenReturn(thread);
+        when(repository.getCommentsForThread("t3_1", 0)).thenReturn(List.of(comment));
+        var brain = mock(AgentBrain.class);
+        // The comment's image is an unlabelled meme that never names NVIDIA.
+        when(brain.describeImageIfCached("c1")).thenReturn("Meme: rocket pointing up");
+
+        var cluster = new InvestigationCluster(thread, Embedding.from(new float[768]));
+        var registry = new SubjectRegistry();
+        new SubjectAttributor(repository, brain)
+                .attribute(registry, cluster, List.of(instrument("Nvidia", "NVIDIA Corporation", "NVDA")));
+
+        SubjectUnit nvidia = registry.get("NVDA");
+        assertNotNull(nvidia);
+        assertTrue(nvidia.evidence().stream().anyMatch(
+                        e -> "t1_c".equals(e.commentId()) && "reddit".equals(e.source())),
+                "the comment text is a real mention");
+        assertTrue(nvidia.evidence().stream().anyMatch(
+                        e -> "t1_c#img0".equals(e.commentId()) && "vision".equals(e.source())),
+                "the comment's unlabelled image rides along on the comment that named NVIDIA");
+    }
+
+    @Test
+    void imageNamingNothingOnAPostNamingNothingIsNotAttributed() {
+        // No phantom: an off-topic image on a post that never names the subject must
+        // not attach — there is nothing tying it to NVIDIA.
+        var thread = threadWithImages("t3_1", "Schönes Wochenende euch", "", List.of("m1"));
+        var repository = mock(RedditRepository.class);
+        when(repository.getThread("t3_1")).thenReturn(thread);
+        when(repository.getCommentsForThread("t3_1", 0)).thenReturn(List.of());
+        var brain = mock(AgentBrain.class);
+        when(brain.describeImageIfCached("m1")).thenReturn("Off-topic meme.");
+
+        var cluster = new InvestigationCluster(thread, Embedding.from(new float[768]));
+        var registry = new SubjectRegistry();
+        new SubjectAttributor(repository, brain)
+                .attribute(registry, cluster, List.of(instrument("Nvidia", "NVIDIA Corporation", "NVDA")));
+
+        assertNull(registry.get("NVDA"), "no evidence ties the post or image to NVIDIA → no unit");
     }
 }

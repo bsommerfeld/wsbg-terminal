@@ -5,11 +5,11 @@ package de.bsommerfeld.wsbg.terminal.reddit;
  *
  * <p>
  * The default {@link JdkRedditTransport} uses a plain JDK {@code HttpClient}.
- * That path is blocked by Reddit's bot detection on the {@code .json} API
- * endpoint (HTTP 403 with a Cloudflare block page) for anything that isn't a
- * real browser, so the production wiring swaps in a transport backed by the
- * embedded JCEF/Chromium runtime which carries the {@code cf_clearance} cookie
- * and a browser TLS fingerprint. Keeping this as an interface lets the
+ * Reddit often returns HTTP 403 (a Cloudflare interstitial) to that bare client
+ * on the {@code .json} API endpoint while serving a real browser normally, so
+ * the production wiring swaps in a transport backed by the embedded
+ * JCEF/Chromium runtime, which carries the standard {@code cf_clearance} cookie
+ * and a browser session. Keeping this as an interface lets the
  * {@link RedditScraper} — and the {@code reddit} module as a whole — stay free
  * of any browser dependency.
  *

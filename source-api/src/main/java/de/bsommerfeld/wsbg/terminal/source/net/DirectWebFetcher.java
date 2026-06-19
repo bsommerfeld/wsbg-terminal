@@ -11,8 +11,8 @@ import java.util.Map;
 /**
  * The plain-HTTP {@link WebFetcher}: a JDK {@link HttpClient} GET with the
  * caller's headers applied verbatim. This is the universal fallback strategy and
- * the historical behaviour — it works wherever bot detection isn't in play, and
- * is what the chain drops to when the browser strategy is disabled or unavailable.
+ * the historical behaviour — it works against any host that serves a plain client,
+ * and is what the chain drops to when the browser strategy is disabled or unavailable.
  */
 public final class DirectWebFetcher implements WebFetcher {
 

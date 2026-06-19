@@ -48,7 +48,7 @@ public class RedditConfig {
             + "authenticates application-only (\"userless\") against "
             + "oauth.reddit.com — end users never log in. Required: without it "
             + "the scraper cannot reach Reddit, since the public .json endpoint "
-            + "is blocked by bot detection.")
+            + "rejects bare headless clients with a 403.")
     private String oauthClientId = "";
 
     @Key("rate-limit-requests-per-second")
@@ -78,10 +78,10 @@ public class RedditConfig {
 
     @Key("browser-rate-limit-requests-per-second")
     @Comment("Sustained request rate for the BROWSER source (default: 6.0). The "
-            + "embedded browser carries a real session (cookies + fingerprint, "
-            + "challenge solved), so it is NOT held to the anonymous .json "
-            + "bot-detection budget (0.15/s) — that conservative value was for the "
-            + "headless path. A real browser session sustains far more; 6.0/s lets "
+            + "embedded browser carries a real session (cookies + an established "
+            + "browser context), so it is NOT held to the conservative anonymous "
+            + ".json rate (0.15/s) that was tuned for the headless path. A real "
+            + "browser session sustains far more; 6.0/s lets "
             + "the full-fidelity deep fetches (?limit=500&depth=20) on cold start "
             + "complete in seconds instead of minutes, with NO loss of data. A 429 "
             + "self-heals (re-anchor); dial down if the IP is throttled persistently.")

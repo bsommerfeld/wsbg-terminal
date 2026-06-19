@@ -37,6 +37,23 @@
          controls so the chrome looks symmetric. Icon swaps to a moon
          in light theme / sun in dark theme via CSS. -->
     <div class="tb-actions">
+      <!-- Shared paint defs. #gold-grad is the bullion fill for the supporter
+           ("Ehrenaffe") heart state — referenced from donate.css via
+           fill: url(#gold-grad). Diagonal bar gradient: dark bronze edges
+           around a bright specular band, like light across a gold bar. -->
+      <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+        <defs>
+          <linearGradient id="gold-grad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0"    stop-color="#8a5d08"/>
+            <stop offset="0.18" stop-color="#d9a92c"/>
+            <stop offset="0.38" stop-color="#ffe884"/>
+            <stop offset="0.50" stop-color="#fff6c2"/>
+            <stop offset="0.62" stop-color="#ffd75e"/>
+            <stop offset="0.80" stop-color="#c8901a"/>
+            <stop offset="1"    stop-color="#7a4f06"/>
+          </linearGradient>
+        </defs>
+      </svg>
       <!-- Persistent donate "door": always visible (independent of the 12h
            gate), outline that fills + beats on hover, click opens the donate
            page. Pulses as a hint while the footer banner is active. -->

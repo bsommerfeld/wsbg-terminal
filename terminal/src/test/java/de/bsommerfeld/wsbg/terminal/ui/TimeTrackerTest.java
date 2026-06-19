@@ -197,8 +197,8 @@ class TimeTrackerTest {
         long before = System.currentTimeMillis();
         tracker.snoozeDonation();
 
-        assertTrue(config.getUser().getDonationSnoozeUntil() > before + 6L * 24 * HOUR_MS,
-                "snooze reaches days into the future");
+        assertTrue(config.getUser().getDonationSnoozeUntil() > before + 47L * HOUR_MS,
+                "snooze reaches ~48h into the future");
         assertFalse(tracker.isDonationActive(), "active layer is suppressed after snooze");
     }
 

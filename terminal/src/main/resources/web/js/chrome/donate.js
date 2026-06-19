@@ -5,10 +5,12 @@
 // behaviours around it:
 //   1. Hint pulse — while the gated footer banner is on-screen, the heart
 //      pulses (.hint) to link the ambient banner to the durable donate door.
-//   2. Engagement → snooze — clicking any donate target (the heart or the
-//      banner link) counts as engagement and snoozes the active nudge layer
-//      for a long cooldown (persisted server-side), so we stop knocking once
-//      the user has answered. The door stays; only the banner/pulse go quiet.
+//   2. Engagement → snooze — clicking a BANNER link counts as "nudge answered"
+//      and snoozes the active nudge layer for a cooldown (persisted
+//      server-side). The heart is deliberately exempt: it is the door the
+//      user opens on their own — punishing that with silence buried the
+//      banner for testers and donors alike. The door stays; only the
+//      banner/pulse go quiet.
 //   3. Supporter gilding — a click that actually opened the donate page turns
 //      the heart gold, permanently (honor system: Ko-fi is external and there
 //      are no accounts, so the click-through is the only signal there is).
@@ -22,11 +24,17 @@ let socket = null;
 export function initDonate(sock) {
   socket = sock;
 
-  // Any donate click → snooze the nudge layer; a click on a /donate target
-  // additionally gilds the heart. The anchor's own navigation is unaffected.
   document.addEventListener('click', e => {
     const target = e.target.closest('[data-donate]');
     if (!target) return;
+    if (target.closest('.heart-btn')) {
+      // Heart: voluntary interest — gild, never snooze.
+      setSupporter(true);
+      if (socket) socket.send('donation', { action: 'gild' });
+      return;
+    }
+    // Banner link: the nudge was answered — gild if it was the donate page,
+    // and rest the banner either way.
     const donated = (target.href || '').includes('/donate');
     if (donated) setSupporter(true);
     snooze(donated);

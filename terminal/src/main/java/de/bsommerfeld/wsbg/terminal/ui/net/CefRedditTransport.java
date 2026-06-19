@@ -8,11 +8,11 @@ import java.time.Duration;
 
 /**
  * {@link RedditTransport} backed by the embedded Chromium runtime. This is the
- * path the {@code reddit} module's interface doc anticipates: Reddit's bot
- * detection 403s the anonymous {@code .json} endpoint for any non-browser
- * client (TLS/HTTP fingerprint + JS challenge), but a same-origin {@code fetch}
- * from a real {@code reddit.com} document sails through with the browser's
- * fingerprint and cookies. See {@link CefFetchClient} for the mechanism.
+ * path the {@code reddit} module's interface doc anticipates: Reddit returns 403
+ * to a bare non-browser client on the anonymous {@code .json} endpoint, but a
+ * same-origin {@code fetch} from a real {@code reddit.com} document is handled as
+ * an ordinary browser request, carrying the browser's session and cookies. See
+ * {@link CefFetchClient} for the mechanism.
  *
  * <p>
  * Anchored at {@code https://www.reddit.com/}, so every {@code www.reddit.com}
@@ -36,7 +36,7 @@ public final class CefRedditTransport implements RedditTransport {
     /**
      * @param probeSubreddit the subreddit used to build the readiness-verification
      *                       URL ({@code /r/<sub>/new.json?limit=1}) — a cheap call
-     *                       that only returns 200 once Chromium is past the bot wall
+     *                       that only returns 200 once Chromium's session is ready
      */
     public CefRedditTransport(CefHost cefHost, String probeSubreddit) {
         String verifyUrl = "https://www.reddit.com/r/" + probeSubreddit + "/new.json?limit=1";

@@ -36,13 +36,12 @@ import java.util.regex.Pattern;
  * objects — but no app registration, no OAuth token, no user login.
  *
  * <h3>Why feeds instead of {@code .json}</h3>
- * Reddit's bot detection blocks anonymous {@code .json} access (HTTP 403),
- * which is why {@link RedditScraper} needs application-only OAuth. The Atom
- * feeds ({@code …/new.rss}, {@code …/comments/<id>/.rss}) are <em>not</em>
- * behind that wall — a plain {@link java.net.http.HttpClient} reaches them with
- * a 200. They share the same ~100 req / 10 min per-IP budget as the blocked
- * JSON endpoint, so the existing {@link TokenBucketRateLimiter} (tuned for that
- * budget) carries over unchanged.
+ * Anonymous {@code .json} access is often refused with a 403 for headless
+ * clients, which is why {@link RedditScraper} prefers application-only OAuth. The
+ * public Atom feeds ({@code …/new.rss}, {@code …/comments/<id>/.rss}) are served
+ * to a plain {@link java.net.http.HttpClient} with a 200. They share the same
+ * ~100 req / 10 min per-IP budget as the JSON endpoint, so the existing
+ * {@link TokenBucketRateLimiter} (tuned for that budget) carries over unchanged.
  *
  * <h3>What the feed cannot carry</h3>
  * Atom has no scores, no comment counts, no poll data, and no comment-tree

@@ -40,8 +40,8 @@ import java.util.stream.Collectors;
  * <h3>Rate limiting</h3>
  * Reddit returns {@code x-ratelimit-remaining} and {@code x-ratelimit-reset}
  * headers on every response. When remaining requests drop below 2, the
- * scraper blocks the calling thread for the reset window to avoid HTTP 429
- * responses that would temporarily ban the IP.
+ * scraper blocks the calling thread for the reset window so it stays within
+ * Reddit's published limit and backs off cooperatively.
  *
  * <p>
  * The unauthenticated JSON endpoint has a documented soft limit of
@@ -57,8 +57,8 @@ import java.util.stream.Collectors;
  * Long-term, the correct fix for daily-use scenarios and any user
  * distribution is to switch this class to authenticated mode against
  * {@code oauth.reddit.com}. With a registered Reddit app and a
- * persisted user-token, the budget rises to ~600 req / min and the
- * 403/429 spiral goes away. The UI hook for the OAuth prompt lives in
+ * persisted user-token, the budget rises to ~600 req / min on the supported
+ * API, which removes the 403/429 friction. The UI hook for the OAuth prompt lives in
  * {@code RedditHealthPublisher} — once the user has signed in and a
  * token is on disk, this class should branch on token presence and
  * swap base URL + Authorization header. See {@code TODO(oauth-login)}
@@ -141,8 +141,8 @@ public class RedditScraper implements RedditSource {
 
     /**
      * Fetches the actual bytes. Swapped for a browser-backed implementation in
-     * production so Reddit's bot detection on the {@code .json} endpoint is
-     * satisfied; defaults to {@link JdkRedditTransport} for tests/CLI.
+     * production so the {@code .json} endpoint is reached as an ordinary browser
+     * request; defaults to {@link JdkRedditTransport} for tests/CLI.
      */
     private final RedditTransport transport;
 
@@ -163,8 +163,8 @@ public class RedditScraper implements RedditSource {
 
     /**
      * Health state for the unauthenticated scrape endpoint. Reddit
-     * blocks anonymous JSON access aggressively (HTTP 403/429) once a
-     * client crosses an undocumented per-IP / per-UA threshold. We
+     * returns HTTP 403/429 on anonymous JSON access once a client
+     * crosses an undocumented per-IP / per-UA threshold. We
      * track consecutive failures + the start of the current degraded
      * run so the UI can fade in a status label and — later, when the
      * outage persists — surface a Reddit-OAuth login CTA.

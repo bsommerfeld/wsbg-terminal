@@ -153,8 +153,8 @@ public class AppModule extends AbstractModule {
      *
      * <p>The <b>browser</b> delegate ({@link CefRedditTransport}) fetches the
      * full-fidelity {@code .json} through the embedded Chromium runtime, so it
-     * carries a real browser TLS fingerprint + cookies and clears the bot
-     * detection that 403s the plain {@code .json} path. It sits just under OAuth
+     * carries a real browser session + cookies and is served the same way as an
+     * ordinary browser on the {@code .json} path that 403s a bare client. It sits just under OAuth
      * (which only probes true once a client ID is configured) and above the
      * legacy anonymous {@code .json}, making it the de-facto primary on a normal
      * install while RSS stays the always-reachable floor.
@@ -162,8 +162,8 @@ public class AppModule extends AbstractModule {
     /**
      * The generic fetch strategy any source can consume: a {@link WebFetchChain}
      * resolved in order. When {@code yahoo.browser-fetch-enabled} is on, the
-     * browser "joker" ({@link CefWebFetcher} — real fingerprint + cookies, clears
-     * bot-walls) leads, with plain {@link DirectWebFetcher} as the fallback;
+     * browser "joker" ({@link CefWebFetcher} — real browser session + cookies,
+     * served like an ordinary browser) leads, with plain {@link DirectWebFetcher} as the fallback;
      * toggled off, it's direct-only. New news wires opt in just by taking a
      * {@link WebFetcher} and choosing their chain order — no per-source plumbing.
      */
@@ -196,9 +196,9 @@ public class AppModule extends AbstractModule {
                 new OAuthRedditTransport(config),
                 new TokenBucketRateLimiter(rc.getOauthRateLimitBurst(),
                         rc.getOauthRateLimitRequestsPerSecond()));
-        // Browser-driven .json: a real browser session (cookies + fingerprint,
-        // challenge solved), so it runs on its OWN generous rate limit, NOT the
-        // anonymous 0.15/s bot-detection budget — full-fidelity deep fetches stay
+        // Browser-driven .json: a real browser session (cookies + an established
+        // browser context), so it runs on its OWN generous rate limit, NOT the
+        // conservative anonymous 0.15/s rate — full-fidelity deep fetches stay
         // intact but stream in fast instead of one every ~6.6s.
         RedditScraper browser = new RedditScraper(repository, eventBus,
                 new CefRedditTransport(cefHost, probeSub),

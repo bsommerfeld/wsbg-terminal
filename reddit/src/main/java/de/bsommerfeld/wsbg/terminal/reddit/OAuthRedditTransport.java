@@ -24,10 +24,10 @@ import java.util.Map;
  * Application-only ("userless") OAuth transport against {@code oauth.reddit.com}.
  *
  * <p>
- * This is the production fetch path. Reddit's bot detection blocks the public
- * {@code www.reddit.com/.json} endpoints for headless clients, but the official
- * OAuth API host has no such wall — a plain {@link HttpClient} carrying a bearer
- * token gets through with no browser involved.
+ * This is the production fetch path. The public {@code www.reddit.com/.json}
+ * endpoints often reject headless clients with a 403, but the official OAuth API
+ * host is the supported programmatic interface — a plain {@link HttpClient}
+ * carrying a bearer token is served normally, with no browser involved.
  *
  * <h3>No user login</h3>
  * The token is obtained via the {@code installed_client} grant, which is

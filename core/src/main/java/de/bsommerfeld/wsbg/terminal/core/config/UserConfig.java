@@ -43,8 +43,9 @@ public class UserConfig {
     @Key("donation-snooze-until")
     @Comment("Epoch millis until which the active donation nudge layer (the "
             + "rotating footer banner) stays suppressed. Set when the user clicks "
-            + "the donate heart or dismisses the banner — engagement earns a long "
-            + "cooldown. 0 = not snoozed. The heart icon stays visible throughout.")
+            + "a banner link — the nudge was answered, so it rests for ~2 days. "
+            + "Clicking the heart icon does NOT snooze. 0 = not snoozed. The "
+            + "heart icon stays visible throughout.")
     private long donationSnoozeUntil = 0;
 
     @Key("donation-clicked")

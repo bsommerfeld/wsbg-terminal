@@ -56,8 +56,13 @@ public final class TimeTracker {
 
     private static final long MILLIS_PER_HOUR = 3_600_000L;
 
-    /** How long a donate-click / banner-dismiss suppresses the active nudge layer. */
-    private static final long SNOOZE_MILLIS = 7L * 24 * MILLIS_PER_HOUR;
+    /**
+     * How long a banner-link click suppresses the active nudge layer. Two days,
+     * not weeks: the banner is the product's only revenue surface, and a long
+     * cooldown after a single engagement effectively hid it forever. The heart
+     * click deliberately does NOT snooze (see {@code DonationGatePublisher}).
+     */
+    private static final long SNOOZE_MILLIS = 2L * 24 * MILLIS_PER_HOUR;
 
     /**
      * How often the running session is flushed to disk. Small enough that a
@@ -227,9 +232,10 @@ public final class TimeTracker {
     }
 
     /**
-     * Suppresses the active nudge layer for {@value #SNOOZE_MILLIS}ms (7 days).
-     * Called when the user engages (donate click) or dismisses the banner —
-     * engagement earns a long quiet period. Persisted, so it survives restarts.
+     * Suppresses the active nudge layer for {@value #SNOOZE_MILLIS}ms (48 h).
+     * Called when the user engages a banner link — the nudge was answered, so
+     * it rests for a while. Persisted, so it survives restarts. The heart
+     * click does not snooze.
      */
     public void snoozeDonation() {
         long until = System.currentTimeMillis() + SNOOZE_MILLIS;

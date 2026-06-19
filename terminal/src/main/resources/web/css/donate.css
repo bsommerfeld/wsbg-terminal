@@ -34,12 +34,51 @@
 }
 
 /* Supporter state ("Ehrenaffe"): the user has opened the donate page at least
-   once (honor system, persisted server-side) — the heart stays filled gold
-   from then on. Hover keeps the beat but stays gold instead of going red. */
+   once (honor system, persisted server-side) — the heart turns into a little
+   gold bar from then on. Three layers make the metal read as real:
+     1. bullion fill — the diagonal #gold-grad bar gradient (defs in
+        index.html): dark bronze edges, bright specular band in the middle;
+     2. depth — a dark rim stroke plus a contact shadow and a warm glow
+        (drop-shadow follows the heart silhouette, unlike box-shadow);
+     3. life — a narrow white glint sweeps across every few seconds, masked
+        to the heart shape so it reads as light moving over the metal.
+   Hover keeps the beat but stays gold instead of going red. */
+.heart-btn { position: relative; }
 .heart-btn.supporter svg path,
 .heart-btn.supporter:hover svg path {
-  fill: var(--gold);
-  stroke: var(--gold);
+  fill: url(#gold-grad);
+  stroke: #7a4f06;          /* dark bullion rim */
+  stroke-width: 1.1;
+}
+.heart-btn.supporter svg {
+  filter: drop-shadow(0 1px 1px oklch(0 0 0 / .35))
+          drop-shadow(0 0 3px oklch(0.85 0.15 90 / .4));
+}
+
+/* The glint: an overlay exactly over the 17px icon, clipped to the heart
+   silhouette via mask, carrying a narrow moving highlight band. Most of the
+   cycle it rests off-shape; the sweep itself takes ~1s. */
+.heart-btn.supporter::after {
+  content: "";
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 17px; height: 17px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  background: linear-gradient(115deg,
+      transparent 38%,
+      oklch(1 0 0 / .55) 46%,
+      oklch(1 0 0 / .95) 50%,
+      oklch(1 0 0 / .55) 54%,
+      transparent 62%) no-repeat;
+  background-size: 300% 100%;
+  -webkit-mask: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z'/%3E%3C/svg%3E") center / contain no-repeat;
+  animation: gold-glint 4s ease-in-out infinite;
+}
+@keyframes gold-glint {
+  0%, 70%   { background-position: 115% 0; }
+  95%, 100% { background-position: -15% 0; }
 }
 
 /* Linux-only footer heart: mirror the footer theme toggle's visibility. */

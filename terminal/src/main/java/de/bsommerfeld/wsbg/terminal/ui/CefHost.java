@@ -228,11 +228,20 @@ public final class CefHost {
         }
     }
 
-    /** Opens {@code url} in the OS default browser; failures are logged, never thrown. */
-    private static void openExternal(String url) {
+    /**
+     * Opens {@code url} in the OS default browser; failures are logged, never
+     * thrown. Public because the page itself routes external link clicks here
+     * over the socket ({@code open-external} in {@code CommandBridge}) — the
+     * CEF-side interception below is only the fallback for navigations that
+     * bypass the page's click handler.
+     */
+    public static void openExternal(String url) {
         try {
             if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
+                LOG.info("Opening external URL in OS browser: {}", url);
                 Desktop.getDesktop().browse(URI.create(url));
+            } else {
+                LOG.warn("Desktop BROWSE action unsupported — cannot open {}", url);
             }
         } catch (Exception e) {
             LOG.warn("Failed to open external URL {}: {}", url, e.getMessage());

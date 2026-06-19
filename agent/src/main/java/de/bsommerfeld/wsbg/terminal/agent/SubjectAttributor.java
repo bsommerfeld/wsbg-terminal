@@ -25,6 +25,21 @@ import java.util.Set;
  * falls out naturally — a comment naming "NVIDIA, AMD oder Intel" is attributed
  * to all three units.
  *
+ * <h3>Images attach twice — standalone and inherited</h3>
+ * An attached image is evidence in two independent ways, both as plain
+ * {@code "vision"} source:
+ * <ul>
+ *   <li><b>standalone</b> — the image's own transcript names a subject, so it
+ *       lands at that subject regardless of what its post said (an AMD chart under
+ *       an NVIDIA thread is also attributed to AMD);</li>
+ *   <li><b>inherited</b> — the carrying post/comment named a subject, so the image
+ *       rides along as the poster's own context for it, even when the transcript
+ *       never says the name (an unlabelled chart, a logo-only depot, a meme on an
+ *       NVIDIA thread is attributed to NVIDIA). The placement IS the link.</li>
+ * </ul>
+ * Both can fire at once across different subjects; for the same image+subject the
+ * per-image evidence key dedupes them to one ref (standalone snippet preferred).
+ *
  * <h3>Matching (word-level, not substring)</h3>
  * The subject is stored normalised ("Meta Platforms, Inc.", "Münchener
  * Rückversicherungs-Gesellschaft…") while the room writes the short/native form
@@ -93,27 +108,34 @@ public final class SubjectAttributor {
             for (String threadId : cluster.activeThreadIds) {
                 RedditThread t = repository.getThread(threadId);
                 if (t == null) continue;
-                if (matches(nz(t.title()) + " " + nz(t.textContent()), words, ticker, ambiguous)) {
+                boolean threadNames = matches(nz(t.title()) + " " + nz(t.textContent()),
+                        words, ticker, ambiguous);
+                if (threadNames) {
                     found.add(new EvidenceRef(threadId, null, snippet(t.title()), "reddit", now));
                 }
-                // Image content is a normal evidence source, like a comment — a
-                // portfolio/watchlist screenshot, a meme of a person, a product shot.
-                // Yahoo stays pure enrichment; the picture itself is the context.
-                String tv = visionText(t.imageUrls());
-                if (!tv.isEmpty() && matches(tv, words, ticker, ambiguous)) {
-                    found.add(new EvidenceRef(threadId, "_vision",
-                            snippet(matchingLine(tv, words, ticker, ambiguous)), "vision", now));
-                }
+                // A post's images attach to this subject in TWO ways, both as plain
+                // "vision" evidence:
+                //   (1) standalone — the image's own transcript names the subject (an
+                //       AMD chart lands at AMD no matter which post carries it), or
+                //   (2) inherited — the POST that carries it named the subject, so the
+                //       image rides along as the poster's own context even when the
+                //       transcript never says the name (an unlabelled chart, a logo-only
+                //       depot, a meme). The poster attached it to THIS post about THIS
+                //       subject; that placement IS the link — no explicit join needed.
+                // Vision already frames numbers as observed (PERSONAL P/L etc.), so an
+                // inherited image needs no separate "unverified" marker.
+                attachImages(found, threadId, "_vision#", t.imageUrls(),
+                        threadNames, words, ticker, ambiguous, now);
                 for (RedditComment c : repository.getCommentsForThread(threadId, 0)) {
-                    if (c.body() != null && !c.body().isBlank()
-                            && matches(c.body(), words, ticker, ambiguous)) {
+                    boolean commentNames = c.body() != null && !c.body().isBlank()
+                            && matches(c.body(), words, ticker, ambiguous);
+                    if (commentNames) {
                         found.add(new EvidenceRef(threadId, c.id(), snippet(c.body()), "reddit", now));
                     }
-                    String cv = visionText(c.imageUrls());
-                    if (!cv.isEmpty() && matches(cv, words, ticker, ambiguous)) {
-                        found.add(new EvidenceRef(threadId, c.id() + "#img",
-                                snippet(matchingLine(cv, words, ticker, ambiguous)), "vision", now));
-                    }
+                    // Same dual rule for a comment's images: standalone, or inherited
+                    // when the comment body itself named the subject.
+                    attachImages(found, threadId, c.id() + "#img", c.imageUrls(),
+                            commentNames, words, ticker, ambiguous, now);
                 }
             }
             if (found.isEmpty()) continue; // no real mention → no phantom unit
@@ -186,15 +208,38 @@ public final class SubjectAttributor {
         }
     }
 
-    /** Joined cached vision transcripts for a set of image URLs (cache-only — never blocks on vision). */
-    private String visionText(List<String> urls) {
-        if (urls == null || urls.isEmpty() || brain == null) return "";
-        StringBuilder sb = new StringBuilder();
-        for (String url : urls) {
-            String d = brain.describeImageIfCached(url);
-            if (d != null && !d.isBlank()) sb.append(d).append('\n');
+    /**
+     * Attaches a thread's or comment's images as evidence for one subject. Each
+     * image is keyed individually ({@code prefix + index}) so a multi-image post
+     * doesn't collapse into a single evidence slot. An image attaches when its own
+     * transcript names the subject (standalone — the snippet is the matching row),
+     * OR when {@code containerNames} is set, i.e. the carrying post/comment named
+     * the subject and the image rides along as inherited context (the snippet is
+     * then the transcript's lead clause, since no row names the subject). Vision is
+     * cache-only here — a not-yet-analysed image is simply skipped, never blocked on.
+     */
+    private void attachImages(List<EvidenceRef> found, String threadId, String prefix,
+            List<String> urls, boolean containerNames,
+            Set<String> words, String ticker, Set<String> ambiguous, long now) {
+        if (urls == null || urls.isEmpty() || brain == null) return;
+        for (int i = 0; i < urls.size(); i++) {
+            String d = brain.describeImageIfCached(urls.get(i));
+            if (d == null || d.isBlank()) continue;
+            boolean imageNames = matches(d, words, ticker, ambiguous);
+            if (!imageNames && !containerNames) continue;
+            String snip = imageNames
+                    ? snippet(matchingLine(d, words, ticker, ambiguous))
+                    : snippet(leadLine(d));
+            found.add(new EvidenceRef(threadId, prefix + i, snip, "vision", now));
         }
-        return sb.toString().strip();
+    }
+
+    /** First non-blank line of a transcript — the vision lead clause used as an inherited-image snippet. */
+    private static String leadLine(String visionText) {
+        for (String line : visionText.split("\n")) {
+            if (!line.isBlank()) return line.strip();
+        }
+        return visionText;
     }
 
     // OPTION A (this): deterministic, cluster-relative distinctiveness — cheap, no
@@ -294,15 +339,14 @@ public final class SubjectAttributor {
 
     /**
      * The underlying comment id of an evidence ref, or {@code null} when the ref
-     * isn't a comment. Strips the {@code #img} suffix a vision ref carries and
-     * filters the post-level markers ({@code null} = post body, {@code _vision}
-     * = a thread image) that have no comment ancestors.
+     * isn't a comment. Strips the {@code #img<n>} suffix a comment-image vision ref
+     * carries and filters the post-level markers ({@code null} = post body,
+     * {@code _vision<n>} = a thread image) that have no comment ancestors.
      */
     private static String baseCommentId(String commentId) {
-        if (commentId == null || "_vision".equals(commentId)) return null;
-        return commentId.endsWith("#img")
-                ? commentId.substring(0, commentId.length() - "#img".length())
-                : commentId;
+        if (commentId == null || commentId.startsWith("_vision")) return null;
+        int img = commentId.indexOf("#img");
+        return img >= 0 ? commentId.substring(0, img) : commentId;
     }
 
     private static String nz(String s) {

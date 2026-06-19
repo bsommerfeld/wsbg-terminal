@@ -13,17 +13,19 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * The browser-backed {@link WebFetcher} "joker": fetches through the embedded
- * Chromium runtime so the request carries a real TLS/HTTP fingerprint and
- * cookies, clearing bot-walls (Cloudflare JS challenge, Yahoo's IP throttle)
- * that 403/429 a headless client.
+ * Chromium runtime so the request goes out as ordinary browser traffic, with
+ * Chromium managing the TLS/HTTP session and cookies. This is the path that
+ * works against hosts which return 403/429 to a bare headless client (a
+ * Cloudflare JS interstitial, Yahoo's IP-based limits) but serve a normal
+ * browser session.
  *
- * <p>The same-origin trick ({@link CefFetchClient}) requires the hidden browser
- * to be anchored at the target's own origin, so this keeps <b>one hidden browser
- * per origin</b>, created lazily on first use: a {@code reddit.com} fetch and a
- * {@code query1.finance.yahoo.com} fetch each get their own parked tab, none of
- * them ever attached to a window. Request headers are ignored — the browser sets
- * its own fingerprint, which is the whole point; the plain {@code direct}
- * strategy in the chain is where caller headers take effect.
+ * <p>The same-origin approach ({@link CefFetchClient}) requires the hidden
+ * browser to be anchored at the target's own origin, so this keeps <b>one hidden
+ * browser per origin</b>, created lazily on first use: a {@code reddit.com} fetch
+ * and a {@code query1.finance.yahoo.com} fetch each get their own parked tab,
+ * none of them ever attached to a window. Request headers are ignored — Chromium
+ * supplies its own session; the plain {@code direct} strategy in the chain is
+ * where caller headers take effect.
  */
 public final class CefWebFetcher implements WebFetcher {
 
@@ -49,7 +51,7 @@ public final class CefWebFetcher implements WebFetcher {
         }
         // Anchor the per-origin browser there; the first URL seen for the origin
         // doubles as the readiness-verification URL (it returns 200 only once the
-        // browser is genuinely through the wall).
+        // browser's session is fully established).
         CefFetchClient client = byOrigin.computeIfAbsent(origin, o -> {
             LOG.info("Spinning up hidden browser anchored at {}", o);
             return new CefFetchClient(cefHost, o + "/", url, hostOf(o));

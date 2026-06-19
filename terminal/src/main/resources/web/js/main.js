@@ -7,6 +7,7 @@ import { initTheme } from './chrome/theme.js';
 import { initFooter } from './chrome/footer.js';
 import { setDonationAdEnabled, setDonationStats } from './chrome/slider.js';
 import { initDonate, setSupporter } from './chrome/donate.js';
+import { initExternalLinks } from './chrome/external-links.js';
 import { initKeyboardCopy } from './chrome/copy-fx.js';
 import { renderHeadlines } from './widgets/reddit.js';
 import { renderFjNews } from './widgets/financial-juice.js';
@@ -82,6 +83,7 @@ initTheme();
 initTitlebar(socket);
 initFooter();
 initDonate(socket);
+initExternalLinks(socket);
 initKeyboardCopy();
 
 socket.connect();

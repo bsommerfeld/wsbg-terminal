@@ -26,9 +26,9 @@ public class YahooFinanceConfig {
     private int requestTimeoutSeconds = 10;
 
     @Key("yahoo.browser-fetch-enabled")
-    @Comment("Route Yahoo requests through the embedded browser first (carries a "
-            + "real browser fingerprint + cookies, clearing the IP/429 block that "
-            + "hits the plain HTTP client), falling back to direct HTTP. Turn off "
+    @Comment("Route Yahoo requests through the embedded browser first (a real "
+            + "browser session + cookies, served like an ordinary browser where the "
+            + "plain HTTP client gets a 429), falling back to direct HTTP. Turn off "
             + "to use direct HTTP only.")
     private boolean browserFetchEnabled = true;
 

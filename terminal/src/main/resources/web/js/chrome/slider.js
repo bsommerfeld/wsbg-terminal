@@ -7,10 +7,20 @@
 // nagging every 5 minutes. Hovering the footer holds whatever slide is up.
 
 const BASE_MARKETS_MS = 5 * 60 * 1000;   // markets gap before the first banner
-const MAX_MARKETS_MS  = 40 * 60 * 1000;  // ceiling for the widening gap
+const MAX_MARKETS_MS  = 20 * 60 * 1000;  // ceiling for the widening gap
 const AD_MS           = 30 * 1000;       // banner visible window
-const AD_CAP          = 4;               // max banner impressions per session
-const WIDEN_FACTOR    = 2;               // each successive markets gap doubles
+const AD_CAP          = 6;               // max banner impressions per session
+const WIDEN_FACTOR    = 1.5;             // each successive markets gap widens gently
+
+// How long a hover-hold survives without fresh pointer activity. Under OSR
+// the browser's idea of "pointer is over the footer" can go stale forever
+// (e.g. the window is dragged away under a stationary cursor — no mouseleave
+// is ever delivered; proven live via DevTools: the slide cycle sat frozen
+// until a synthetic mouseleave un-stuck it). So the hold is a decaying
+// timestamp refreshed by real pointer events, never a latched boolean: a
+// genuine reader keeps it alive by arriving (mouseenter/mousemove), a stuck
+// hover dies after this window instead of suppressing the banner for good.
+const HOVER_HOLD_MS   = 60 * 1000;
 
 // Preset glyphs ("Schablonen"). The CSS class drives colour + animation
 // (.heart beats, .star spins, .rocket lifts, .gem sparkles, .banana swings,
@@ -147,7 +157,7 @@ const AD_MESSAGES = [
 // before the gate message arrives. Flipped by setDonationAdEnabled() from the
 // 'donation-gate' socket handler in main.js.
 let adEnabled = false;
-let hovered = false;   // pointer over the footer → hold the current slide
+let holdUntil = 0;     // hover-hold deadline (see HOVER_HOLD_MS)
 let adShown = 0;       // banner impressions this session (frequency cap)
 export function setDonationAdEnabled(on) { adEnabled = !!on; }
 
@@ -215,11 +225,14 @@ export function initSlideCycle() {
   // the swap path before the first rotation.
   renderAd(adInner, pickAdMessage());
 
-  // Pause-on-hover: holding the pointer over the footer freezes whatever
-  // slide is up, so a noticed banner doesn't slide away mid-read.
+  // Pause-on-hover: pointer activity over the footer freezes whatever slide
+  // is up, so a noticed banner doesn't slide away mid-read. The hold decays
+  // (HOVER_HOLD_MS) instead of latching, because OSR can lose the mouseleave.
   const feed = document.getElementById('feed') || markets.parentElement;
-  feed?.addEventListener('mouseenter', () => { hovered = true; });
-  feed?.addEventListener('mouseleave', () => { hovered = false; });
+  const refreshHold = () => { holdUntil = Date.now() + HOVER_HOLD_MS; };
+  feed?.addEventListener('mouseenter', refreshHold);
+  feed?.addEventListener('mousemove', refreshHold);
+  feed?.addEventListener('mouseleave', () => { holdUntil = 0; });
 
   // Markets are visible from launch for the full first window — no short
   // preview swap, the banner first appears one markets gap after start.
@@ -242,9 +255,9 @@ export function initSlideCycle() {
     window.dispatchEvent(new CustomEvent('wsbg:ad-visibility', { detail: { visible: on } }));
   }
   function swap() {
-    // Hold the current slide while the user is hovering the footer; re-check
-    // shortly instead of advancing.
-    if (hovered) {
+    // Hold the current slide while the hover-hold is alive; re-check shortly
+    // instead of advancing.
+    if (Date.now() < holdUntil) {
       clearTimeout(timer);
       timer = setTimeout(swap, 1000);
       return;

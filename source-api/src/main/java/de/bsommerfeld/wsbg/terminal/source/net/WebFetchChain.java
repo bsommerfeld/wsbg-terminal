@@ -15,8 +15,9 @@ import java.util.Map;
  * synthetic failure) is returned so the caller still sees a status to act on.
  *
  * <p>This is the "array of fetch methods, tried in order" model: e.g.
- * {@code [browser, direct]} prefers the bot-wall-clearing browser and falls back
- * to plain HTTP, with no source-specific glue. The set and order are pure wiring.
+ * {@code [browser, direct]} prefers the browser transport (which behaves like an
+ * ordinary browser session) and falls back to plain HTTP, with no source-specific
+ * glue. The set and order are pure wiring.
  */
 public final class WebFetchChain implements WebFetcher {
 

@@ -20,12 +20,17 @@ import java.util.Map;
  * immediately) and on every mid-session flip of the active state — the 12&nbsp;h
  * unlock crossing <em>and</em> a snooze expiring while the terminal keeps
  * running (via {@link TimeTracker#onActiveChange}). Also receives the inbound
- * {@code donation} command: when the user clicks the donate heart or dismisses
- * the banner, that engagement snoozes the active layer for a long cooldown, and
- * the new (suppressed) state is pushed back so the banner stops at once. A click
- * that actually opened the donate page carries {@code donated: true} and gilds
- * the heart permanently (honor system — Ko-fi is external, no accounts exist,
- * the click is the only signal there is).
+ * {@code donation} command with two actions:
+ * <ul>
+ *   <li>{@code gild} — the heart was clicked. Gilds permanently (honor system —
+ *       Ko-fi is external, no accounts exist, the click is the only signal
+ *       there is) and does <em>not</em> snooze: opening the door voluntarily is
+ *       interest, not annoyance, and snoozing here buried the banner for
+ *       exactly the most engaged users.</li>
+ *   <li>{@code snooze} — a banner link was clicked. Rests the banner for the
+ *       cooldown; {@code donated: true} (the donate page, not the repo link)
+ *       additionally gilds.</li>
+ * </ul>
  *
  * <p>The payload also carries the reciprocity stats the banner copy
  * personalises with: {@code activeHours} (cumulative use) and {@code openCount}
@@ -51,7 +56,10 @@ public final class DonationGatePublisher {
 
     private void onDonation(Map<String, Object> payload) {
         Object action = payload.get("action");
-        if ("snooze".equals(action)) {
+        if ("gild".equals(action)) {
+            tracker.markDonationClicked();
+            push();
+        } else if ("snooze".equals(action)) {
             if (Boolean.TRUE.equals(payload.get("donated"))) {
                 tracker.markDonationClicked();
             }

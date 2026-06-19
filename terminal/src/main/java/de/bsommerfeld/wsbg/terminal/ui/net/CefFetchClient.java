@@ -24,9 +24,11 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Fetches URLs through the embedded Chromium runtime instead of a plain HTTP
- * client, so every request carries Chromium's real TLS/HTTP fingerprint,
- * cookies, and the ability to clear JS bot-walls — the exact reason a normal
- * browser is never blocked on hosts that 403/429 a headless Java client.
+ * client, so every request goes out as ordinary browser traffic — Chromium
+ * manages the TLS/HTTP session, cookies, and any JS the host serves, exactly as
+ * it would for a user browsing the site. Some hosts return 403/429 to a bare
+ * headless Java client but serve a real browser session normally; routing
+ * through Chromium keeps us on the supported, browser-equivalent path.
  *
  * <h3>The same-origin trick</h3>
  * A hidden, never-displayed browser is anchored at {@code anchorUrl} (e.g.
@@ -35,8 +37,9 @@ import java.util.concurrent.atomic.AtomicLong;
  * URL on the same origin is a same-origin request — no CORS preflight, no
  * {@code Access-Control-Allow-Origin} requirement, and full access to every
  * response header (including {@code x-ratelimit-*}). The fetch runs on
- * Chromium's network stack with the document's cookies, which is what gets it
- * past the bot detection that blocks the JDK transport.
+ * Chromium's network stack with the document's cookies, so it is handled the
+ * same way the host treats an ordinary browser session rather than the bare JDK
+ * transport.
  *
  * <h3>Return channel</h3>
  * Injected JS hands results back through the {@code window.wsbgFetchQuery(...)}
@@ -72,7 +75,7 @@ public final class CefFetchClient {
 
     /** Re-anchor at most this often, so a run of blocked responses can't loop-reload. */
     private static final long RELOAD_COOLDOWN_MS = 60_000;
-    /** Warmup poll cadence and ceiling — covers a slow Cloudflare JS challenge + reCAPTCHA. */
+    /** Warmup poll cadence and ceiling — covers a slow Cloudflare JS interstitial. */
     private static final long WARMUP_POLL_MS = 2_500;
     private static final int WARMUP_MAX_ATTEMPTS = 40; // ~100s before giving up (re-armable)
     private static final Duration WARMUP_FETCH_TIMEOUT = Duration.ofSeconds(15);
@@ -91,10 +94,10 @@ public final class CefFetchClient {
      * @param anchorUrl a URL whose origin owns the resources you'll fetch
      *                  (the browser parks here so those fetches are same-origin)
      * @param verifyUrl a cheap same-origin URL that returns HTTP 200 only once
-     *                  the page is genuinely through any bot-wall — readiness is
-     *                  gated on this, NOT on the anchor's page-load event, because
-     *                  Cloudflare serves a 200 challenge page first and often
-     *                  clears it silently (no second load event)
+     *                  the page session is fully established — readiness is gated
+     *                  on this, NOT on the anchor's page-load event, because
+     *                  Cloudflare serves a 200 interstitial page first and often
+     *                  resolves it silently (no second load event)
      * @param label     short name for logs (e.g. "reddit")
      */
     public CefFetchClient(CefHost cefHost, String anchorUrl, String verifyUrl, String label) {
@@ -118,11 +121,11 @@ public final class CefFetchClient {
     public HttpResult fetch(String url, Duration timeout) throws Exception {
         ensureReady(Duration.ofSeconds(45));
         HttpResult result = rawFetch(url, timeout);
-        // A bot-block status mid-session means the document's clearance went
-        // stale; reload the anchor so the next request runs against a freshly
-        // challenged page. This request still returns the block (the scraper
-        // records it), but we self-heal instead of silently rotting to RSS.
-        if (isBotBlock(result.status())) reloadAnchor();
+        // A restricted status mid-session usually means the document's session
+        // went stale; reload the anchor so the next request runs against a fresh
+        // page. This request still returns that status (the scraper records it),
+        // but we recover automatically instead of silently dropping to RSS.
+        if (isRestricted(result.status())) reloadAnchor();
         return result;
     }
 
@@ -144,12 +147,12 @@ public final class CefFetchClient {
         }
     }
 
-    private static boolean isBotBlock(int status) {
+    private static boolean isRestricted(int status) {
         return status == 403 || status == 429 || status == 503;
     }
 
     /**
-     * Reloads the anchor document to refresh cookies / re-clear a JS bot-wall,
+     * Reloads the anchor document to refresh cookies / re-establish the session,
      * resetting readiness so the next {@link #fetch} waits for the fresh page.
      * Rate-limited by {@link #RELOAD_COOLDOWN_MS} and run off the calling thread.
      */
@@ -161,7 +164,7 @@ public final class CefFetchClient {
         if (b == null) return;
         ready = false;
         readyLatch = new CountDownLatch(1);
-        LOG.info("CEF fetch '{}': bot-block or stale session — re-anchoring on {}", label, anchorUrl);
+        LOG.info("CEF fetch '{}': restricted status or stale session — re-anchoring on {}", label, anchorUrl);
         SwingUtilities.invokeLater(() -> b.loadURL(anchorUrl));
     }
 
@@ -174,16 +177,17 @@ public final class CefFetchClient {
         CountDownLatch latch = readyLatch;
         if (!latch.await(timeout.toMillis(), TimeUnit.MILLISECONDS)) {
             throw new IllegalStateException(
-                    "CEF fetch browser for '" + label + "' not through bot-wall within " + timeout);
+                    "CEF fetch browser for '" + label + "' session not ready within " + timeout);
         }
     }
 
     /**
      * Polls {@link #verifyUrl} in the background until it returns HTTP 200, then
      * flips readiness. This is the crux of the Cloudflare interaction: the anchor
-     * load fires {@code onLoadEnd} on the <em>challenge</em> page (also a 200) and
-     * the challenge usually clears silently afterwards (no second load event), so
-     * the only reliable "we're through" signal is an actual data fetch succeeding.
+     * load fires {@code onLoadEnd} on the <em>interstitial</em> page (also a 200)
+     * and that page usually resolves silently afterwards (no second load event),
+     * so the only reliable "session is ready" signal is an actual data fetch
+     * succeeding.
      * Idempotent and re-armable: one poller at a time, and {@link #ensureReady}
      * restarts it if a run gave up.
      */
@@ -198,7 +202,7 @@ public final class CefFetchClient {
                         if (r.status() == 200) {
                             ready = true;
                             readyLatch.countDown();
-                            LOG.info("CEF fetch '{}' through bot-wall after {} probe(s).", label, attempt);
+                            LOG.info("CEF fetch '{}' session ready after {} probe(s).", label, attempt);
                             return;
                         }
                         LOG.debug("[{}] warmup probe {} → HTTP {}, retrying", label, attempt, r.status());
@@ -237,12 +241,12 @@ public final class CefFetchClient {
             }
         });
 
-        // A page finished loading (the anchor, or a challenge interstitial on it).
-        // Don't trust this as "ready" — start the warmup poller, which confirms we
-        // are actually through by fetching real data.
+        // A page finished loading (the anchor, or an interstitial on it).
+        // Don't trust this as "ready" — start the warmup poller, which confirms the
+        // session is usable by fetching real data.
         cefHost.addLoadEndListener((b, status) -> {
             if (b == browser && !ready) {
-                LOG.info("CEF fetch '{}' anchor page loaded (status {}); verifying bot-wall…", label, status);
+                LOG.info("CEF fetch '{}' anchor page loaded (status {}); verifying session…", label, status);
                 kickWarmup();
             }
         });
