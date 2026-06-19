@@ -191,6 +191,19 @@ public final class SubjectUnit {
         addHeadline(text, update, "");
     }
 
+    /**
+     * Seeds a prior headline from the permanent archive on a cold restart,
+     * preserving its ORIGINAL publish time ({@code atEpoch}) — not "now". The
+     * timestamp matters: the brief's covered-evidence boundary is the unit's
+     * latest headline time, so a seeded headline must carry its real time or
+     * freshly-fetched evidence would wrongly read as already-covered. Does not
+     * bump {@code lastActivity} (hydration isn't fresh activity).
+     */
+    public synchronized void seedHeadline(String text, String sentiment, long atEpoch) {
+        headlines.add(new UnitHeadline(text, false, atEpoch,
+                sentiment == null ? "" : sentiment, null));
+    }
+
     public synchronized List<UnitHeadline> headlines() { return new ArrayList<>(headlines); }
 
     /**

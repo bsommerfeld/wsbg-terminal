@@ -173,6 +173,37 @@ class EditorialAgentTest {
     }
 
     @Test
+    void unitBriefMarksEvidenceAlreadyCoveredByAPriorHeadline() {
+        SubjectUnit u = new SubjectUnit("NVDA", "NVIDIA");
+        long now = Instant.now().getEpochSecond();
+        long headlineAt = now - 3600;            // the unit's last headline, 1h ago
+        // Evidence from BEFORE that headline → already reflected → must be tagged.
+        u.addEvidence(new SubjectUnit.EvidenceRef("t3_x", "t1_old", "old yolo call",
+                "reddit", now - 7200));
+        // Evidence from AFTER that headline → genuinely new → must stay untagged.
+        u.addEvidence(new SubjectUnit.EvidenceRef("t3_x", "t1_new", "fresh DD drop",
+                "reddit", now - 600));
+        u.seedHeadline("NVIDIA läuft", "BULLISH", headlineAt);
+
+        String brief = EditorialAgent.unitBrief(u, false);
+        assertTrue(brief.contains("[✓ COVERED] [t1_old"),
+                "evidence older than the last headline must be tagged covered:\n" + brief);
+        assertFalse(brief.contains("[✓ COVERED] [t1_new"),
+                "evidence newer than the last headline must stay untagged (fresh):\n" + brief);
+        assertTrue(brief.contains("Lines tagged [✓ COVERED]"),
+                "the brief must steer the model to write only from the new material:\n" + brief);
+    }
+
+    @Test
+    void unitBriefLeavesAllEvidenceUntaggedWhenNoPriorHeadline() {
+        SubjectUnit u = new SubjectUnit("NVDA", "NVIDIA");
+        u.addEvidence(ev("t1_a", "first NVDA mention"));
+        String brief = EditorialAgent.unitBrief(u, false);
+        assertFalse(brief.contains("[✓ COVERED]"),
+                "with no prior headline nothing is covered — every line is fresh:\n" + brief);
+    }
+
+    @Test
     void unitBriefRendersStoryDigestAndSentimentArc() {
         SubjectUnit u = new SubjectUnit("NVDA", "NVIDIA");
         u.addEvidence(ev("t1_a", "NVDA"));
