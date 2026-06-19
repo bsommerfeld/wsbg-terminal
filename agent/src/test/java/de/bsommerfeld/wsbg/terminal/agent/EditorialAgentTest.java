@@ -12,6 +12,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -236,5 +237,46 @@ class EditorialAgentTest {
         assertEquals("3h", EditorialAgent.age(now.minus(3, ChronoUnit.HOURS), now));
         assertEquals("2d", EditorialAgent.age(now.minus(2, ChronoUnit.DAYS), now));
         assertEquals("0m", EditorialAgent.age(now.plus(1, ChronoUnit.MINUTES), now), "clock skew clamps");
+    }
+
+    // ---- parseDraft: the shared compose-reply parser (used by composeOne + composeTheme) ----
+
+    @Test
+    void parseDraftReadsATickerlessThemeObject() {
+        // A typical theme reply: thread narrative, no instrument, co-occurrence framing.
+        String reply = "{\"headline\": \"Waffenstillstand-Thread: Raum jubelt, dazu Rheinmetall-Chart −8% gepostet\","
+                + " \"sentiment\": \"MIXED\", \"highlight\": \"NORMAL\", \"tickerSymbol\": null,"
+                + " \"subjects\": [], \"priceMovePercent\": null, \"sectors\": [], \"assetClass\": null,"
+                + " \"sourceThreadIds\": [\"t3_abc\"], \"sourceCommentIds\": []}";
+        HeadlineWriter.Draft d = EditorialAgent.parseDraft(reply);
+        assertNotNull(d);
+        assertTrue(d.headline().contains("Waffenstillstand-Thread"), "headline kept verbatim");
+        assertNull(d.tickerSymbol(), "a theme line carries no ticker");
+        assertTrue(d.subjects().isEmpty());
+        assertNull(d.priceMovePercent());
+        assertEquals(List.of("t3_abc"), d.sourceThreadIds(), "source ids drive coverage");
+        assertEquals("MIXED", d.sentiment());
+    }
+
+    @Test
+    void parseDraftReturnsNullForEmptyHeadline() {
+        // The "nothing fresh / nothing market-relevant" contract.
+        assertNull(EditorialAgent.parseDraft("{\"headline\": \"\"}"));
+    }
+
+    @Test
+    void parseDraftSalvagesAHeadlineFromCodeFencedReply() {
+        // 4B models sometimes wrap the object in a ```json fence — the balanced-brace
+        // salvage still recovers the line.
+        String fenced = "```json\n{\"headline\": \"NVIDIA-Daily: Raum FOMO-t den Bounce\","
+                + " \"sentiment\": \"FOMO\"}\n```";
+        HeadlineWriter.Draft d = EditorialAgent.parseDraft(fenced);
+        assertNotNull(d, "the object inside the fence is recovered");
+        assertTrue(d.headline().contains("NVIDIA-Daily"));
+    }
+
+    @Test
+    void parseDraftReturnsNullForGarbage() {
+        assertNull(EditorialAgent.parseDraft("ich kann das leider nicht beantworten"));
     }
 }

@@ -75,6 +75,32 @@ public final class SubjectUnit {
     }
 
     /**
+     * Restore ctor — rebuilds a unit verbatim from a {@link Snapshot} (short-TTL
+     * session persistence, so a quick restart resumes the exact subject state:
+     * accumulated evidence, published-headline history, the price anchor, and
+     * covered-news ids). Live Yahoo {@code news} is deliberately NOT snapshotted —
+     * it's enrichment that re-fetches on the next attribution, and freezing a
+     * session-old quote/headline set would be staler than re-asking Yahoo; the
+     * {@code coveredNewsIds} survive, so 3b dedup still holds by id.
+     */
+    public SubjectUnit(Snapshot s) {
+        this.id = s.id();
+        this.canonicalName = s.canonicalName() == null ? s.id() : s.canonicalName();
+        this.ticker = s.ticker();
+        this.firstSeen = Instant.ofEpochSecond(s.firstSeenEpoch());
+        this.lastActivity = Instant.ofEpochSecond(s.lastActivityEpoch());
+        this.firstPrice = s.firstPrice();
+        this.firstPriceAt = s.firstPriceAtEpoch() == null ? null
+                : Instant.ofEpochSecond(s.firstPriceAtEpoch());
+        this.snapshot = s.snapshot();
+        if (s.evidence() != null) {
+            for (EvidenceRef e : s.evidence()) evidence.put(e.key(), e);
+        }
+        if (s.headlines() != null) headlines.addAll(s.headlines());
+        if (s.coveredNewsIds() != null) coveredNewsIds.addAll(s.coveredNewsIds());
+    }
+
+    /**
      * Refreshes the unit's resolved Yahoo data (ticker, snapshot, news). News is
      * <b>merged by uuid</b>, never replaced: items the unit already holds stay (a
      * cited article must not vanish because a later search returned other hits),
@@ -203,6 +229,32 @@ public final class SubjectUnit {
     }
 
     public synchronized Set<String> coveredNewsIds() { return new HashSet<>(coveredNewsIds); }
+
+    /** Captures the unit's full state for short-TTL session persistence (see the restore ctor). */
+    public synchronized Snapshot toSnapshot() {
+        return new Snapshot(id, canonicalName, ticker,
+                firstSeen.getEpochSecond(), lastActivity.getEpochSecond(),
+                firstPrice, firstPriceAt == null ? null : firstPriceAt.getEpochSecond(),
+                snapshot,
+                new ArrayList<>(evidence.values()),
+                new ArrayList<>(headlines),
+                new ArrayList<>(coveredNewsIds));
+    }
+
+    /**
+     * Serializable form of a unit for {@code agent-snapshot.json}. Times are epoch
+     * seconds (no Jackson time module needed). Live {@code news} is intentionally
+     * absent — re-fetched from Yahoo on the next attribution (see the restore ctor).
+     */
+    public record Snapshot(
+            String id, String canonicalName, String ticker,
+            long firstSeenEpoch, long lastActivityEpoch,
+            Double firstPrice, Long firstPriceAtEpoch,
+            MarketSnapshot snapshot,
+            List<EvidenceRef> evidence,
+            List<UnitHeadline> headlines,
+            List<String> coveredNewsIds) {
+    }
 
     /**
      * One headline this unit published. {@code sentiment} is the compose stage's

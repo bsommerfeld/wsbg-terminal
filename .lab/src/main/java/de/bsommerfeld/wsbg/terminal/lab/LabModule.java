@@ -37,8 +37,8 @@ import java.util.List;
  * app data dir, so it shares the user's Ollama models and Reddit/Yahoo settings).
  *
  * <p>Crucially it does <b>not</b> bind {@code PassiveMonitorService},
- * {@code AgentCoordinator}, or {@code ClusterRebalancer}: there is no scan loop,
- * no debounce, no 30 s rebalance. The lab drives clustering and the editorial
+ * {@code AgentCoordinator}: there is no scan loop and
+ * no debounce. The lab drives clustering and the editorial
  * tick by hand, one thread at a time, so every step is observable.
  */
 public final class LabModule extends AbstractModule {

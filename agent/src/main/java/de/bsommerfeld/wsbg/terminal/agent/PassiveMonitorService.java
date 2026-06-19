@@ -34,12 +34,12 @@ import java.util.stream.Collectors;
  * Passive Reddit scanner that maintains the cluster set.
  *
  * <p>
- * Responsibilities are narrow now: poll Reddit, compute deltas, route new
- * threads into the right cluster (via embeddings + EMA centroid drift), prune
- * expired clusters, and merge converged ones. Each mutation pushes a
- * {@code notifyChange} into {@link ClusterRegistry}; the
+ * Responsibilities are narrow now: poll Reddit, compute deltas, and hand each
+ * changed thread to {@link ClusterEngine} (one cluster == one thread). Each
+ * mutation pushes a {@code notifyChange} into {@link ClusterRegistry}; the
  * {@code AgentCoordinator} listens on the other end and decides what (if
- * anything) to do with the change.
+ * anything) to do with the change. There is no cross-thread merge/prune step
+ * anymore — the feed-wide {@link SubjectRegistry} is the cross-thread layer.
  */
 @Singleton
 public class PassiveMonitorService {
@@ -76,6 +76,7 @@ public class PassiveMonitorService {
         return t;
     });
     private final ClusterRegistry clusterRegistry;
+    private final SubjectRegistry subjectRegistry;
 
     // Tracking deltas between scan cycles
     private final Map<String, Integer> lastSeenScore = new ConcurrentHashMap<>();
@@ -100,8 +101,8 @@ public class PassiveMonitorService {
     public PassiveMonitorService(RedditSource scraper, AgentBrain brain, ApplicationEventBus eventBus,
             RedditRepository repository, AgentRepository agentRepository,
             RedditSnapshotStore snapshotStore, AgentSnapshotStore agentSnapshotStore,
-            ClusterRegistry clusterRegistry, ClusterEngine clusterEngine,
-            GlobalConfig config) {
+            ClusterRegistry clusterRegistry, SubjectRegistry subjectRegistry,
+            ClusterEngine clusterEngine, GlobalConfig config) {
         this.scraper = scraper;
         this.brain = brain;
         this.eventBus = eventBus;
@@ -110,6 +111,7 @@ public class PassiveMonitorService {
         this.snapshotStore = snapshotStore;
         this.agentSnapshotStore = agentSnapshotStore;
         this.clusterRegistry = clusterRegistry;
+        this.subjectRegistry = subjectRegistry;
         this.clusterEngine = clusterEngine;
         this.config = config;
 
@@ -168,7 +170,8 @@ public class PassiveMonitorService {
             List<InvestigationCluster.Snapshot> clusterSnapshots = clusterRegistry.getAllClusters()
                     .stream().map(InvestigationCluster::toSnapshot).collect(Collectors.toList());
             agentSnapshotStore.save(brain.exportVisionCache(),
-                    agentRepository.getAllHeadlines(), clusterSnapshots);
+                    agentRepository.getAllHeadlines(), clusterSnapshots,
+                    subjectRegistry.snapshotAll());
         } catch (Exception e) {
             LOG.warn("Snapshot save failed: {}", e.getMessage());
         }
@@ -250,10 +253,16 @@ public class PassiveMonitorService {
                 clusterRegistry.restore(restored);
                 clustersRestored = true;
             }
-            LOG.info("Restored {} vision entries, {} headlines, {} clusters from agent snapshot.",
+            // Subject units are the editorial atom — restore them verbatim too, so
+            // accumulated evidence, the price anchor, published-headline history and
+            // covered-news ids survive a quick restart (otherwise a re-touched unit
+            // looks brand-new and the wire could repeat a line it already ran).
+            subjectRegistry.restore(a.subjectUnits());
+            LOG.info("Restored {} vision entries, {} headlines, {} clusters, {} subject units from agent snapshot.",
                     a.visionCache() != null ? a.visionCache().size() : 0,
                     a.headlines() != null ? a.headlines().size() : 0,
-                    a.clusters() != null ? a.clusters().size() : 0);
+                    a.clusters() != null ? a.clusters().size() : 0,
+                    a.subjectUnits() != null ? a.subjectUnits().size() : 0);
         });
         return true;
     }
@@ -284,8 +293,8 @@ public class PassiveMonitorService {
                 // text alone.
                 clusterEngine.assign(t, 0, 0, cachedVisionText(t));
             }
-            // Consolidation (merge/prune) is left to ClusterRebalancer's next
-            // pass — seeding only re-creates the cluster assignment.
+            // One cluster == one thread now — seeding just re-creates each
+            // thread's own cluster; there is no merge/prune step to defer.
             for (RedditThread t : threads) {
                 prefetchThreadImages(t);
                 prefetchCommentImages(t.id());
@@ -440,10 +449,10 @@ public class PassiveMonitorService {
                 clusterEngine.assign(t, deltas[0], deltas[1], vf == null ? "" : vf.join());
             }
 
-            // Merging converged clusters and pruning dead ones is owned solely
-            // by ClusterRebalancer (every 30s) — PassiveMonitor only assigns
-            // threads to clusters on arrival. Headline generation is driven by
-            // AgentCoordinator (subscribed to ClusterRegistry.notifyChange).
+            // One cluster == one thread: assign() creates or updates each
+            // thread's own cluster on arrival; there is no cross-thread merge/
+            // prune. Headline generation is driven by AgentCoordinator
+            // (subscribed to ClusterRegistry.notifyChange).
         } catch (Exception e) {
             LOG.error("Processing failed", e);
         }

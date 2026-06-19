@@ -83,9 +83,10 @@ class PipelineSmokeIT {
             RssRedditScraper rss = new RssRedditScraper(redditRepo, config, bus);
 
             // Production clustering. The ctor self-starts the scan loop.
-            ClusterEngine clusterEngine = new ClusterEngine(registry, config, new OllamaEmbeddingService());
+            ClusterEngine clusterEngine = new ClusterEngine(registry, new OllamaEmbeddingService());
             new PassiveMonitorService(rss, brain, bus, redditRepo, agentRepo,
-                    new RedditSnapshotStore(), new AgentSnapshotStore(), registry, clusterEngine, config);
+                    new RedditSnapshotStore(), new AgentSnapshotStore(), registry,
+                    new SubjectRegistry(), clusterEngine, config);
 
             // RSS cold-start is slow: scanSubreddit fetches every thread context
             // serially (anon rate limiter, ~7s each) and only clusters the whole

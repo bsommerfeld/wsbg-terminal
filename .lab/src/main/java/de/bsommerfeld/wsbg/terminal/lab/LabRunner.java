@@ -350,12 +350,8 @@ public final class LabRunner {
         return switch (o.kind()) {
             case NEW -> "NEW cluster " + o.clusterId()
                     + (o.tickers().isEmpty() ? "" : "  tickers=" + o.tickers());
-            case JOIN_COSINE -> String.format(Locale.ROOT,
-                    "JOINED %s via cosine (sim=%.2f)", o.clusterId(), o.similarity());
-            case UPDATE_COSINE -> String.format(Locale.ROOT,
-                    "re-touched %s via cosine (sim=%.2f)", o.clusterId(), o.similarity());
-            case JOIN_TICKER -> "JOINED " + o.clusterId() + " via ticker overlap " + o.tickers();
-            case UPDATE_TICKER -> "re-touched " + o.clusterId() + " via ticker overlap " + o.tickers();
+            case UPDATE -> "re-touched " + o.clusterId()
+                    + (o.tickers().isEmpty() ? "" : "  tickers=" + o.tickers());
         };
     }
 

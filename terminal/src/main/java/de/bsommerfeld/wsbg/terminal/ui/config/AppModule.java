@@ -8,7 +8,6 @@ import de.bsommerfeld.jshepherd.core.ConfigurationLoader;
 import de.bsommerfeld.wsbg.terminal.agent.AgentCoordinator;
 import de.bsommerfeld.wsbg.terminal.embedding.EmbeddingService;
 import de.bsommerfeld.wsbg.terminal.embedding.OllamaEmbeddingService;
-import de.bsommerfeld.wsbg.terminal.agent.ClusterRebalancer;
 import de.bsommerfeld.wsbg.terminal.agent.PassiveMonitorService;
 import de.bsommerfeld.wsbg.terminal.core.config.AgentConfig;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
@@ -95,7 +94,6 @@ public class AppModule extends AbstractModule {
             // AgentCoordinator must be eager so it subscribes to ClusterRegistry
             // changes before PassiveMonitorService starts emitting them.
             bind(AgentCoordinator.class).asEagerSingleton();
-            bind(ClusterRebalancer.class).asEagerSingleton();
             bind(PassiveMonitorService.class).asEagerSingleton();
             // TimeTracker must be eager so it starts its start/interval/stop
             // checkpointing at boot; DonationGatePublisher reads it to gate the

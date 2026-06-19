@@ -149,7 +149,7 @@ class ReleaseSmokeIT {
 
             AgentSnapshotStore store = new AgentSnapshotStore();
             store.save(Map.of("https://i.redd.it/x.jpeg", "grüner Screenshot"),
-                    repo.getAllHeadlines(), List.of(cluster.toSnapshot()));
+                    repo.getAllHeadlines(), List.of(cluster.toSnapshot()), List.of());
 
             Optional<AgentSnapshotStore.AgentSnapshot> back =
                     new AgentSnapshotStore().loadIfFresh(60);

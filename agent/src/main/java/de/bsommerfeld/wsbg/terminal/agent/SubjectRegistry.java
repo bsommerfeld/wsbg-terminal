@@ -120,4 +120,25 @@ public final class SubjectRegistry {
         byId.clear();
         dirty.clear();
     }
+
+    /** Snapshots every unit for short-TTL session persistence. */
+    public List<SubjectUnit.Snapshot> snapshotAll() {
+        List<SubjectUnit.Snapshot> out = new ArrayList<>();
+        for (SubjectUnit u : byId.values()) out.add(u.toSnapshot());
+        return out;
+    }
+
+    /**
+     * Restores units verbatim from snapshots (quick restart within the TTL).
+     * Replaces the current set so a restore is idempotent; units do NOT come back
+     * dirty (no evidence was added, so nothing to re-compose until fresh activity).
+     */
+    public void restore(List<SubjectUnit.Snapshot> snapshots) {
+        if (snapshots == null) return;
+        for (SubjectUnit.Snapshot s : snapshots) {
+            if (s == null || s.id() == null) continue;
+            SubjectUnit u = new SubjectUnit(s);
+            byId.put(u.id, u);
+        }
+    }
 }

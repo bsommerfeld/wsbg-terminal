@@ -425,24 +425,32 @@ public class EditorialAgent {
     }
 
     /**
-     * The production editorial tick after the #2 cutover: the editorial atom is
-     * the feed-wide {@link SubjectUnit}, not the cluster. Mirrors the proven
-     * {@code LabRunner.run} flow exactly, on the singleton {@link SubjectRegistry}:
+     * The production editorial tick. One dirty signal (a cluster that gained fresh
+     * content) drives TWO independent headline producers, never deduped against
+     * each other:
      *
+     * <ul>
+     *   <li>the <b>cluster/thread</b> — one THEME headline per dirty cluster (the
+     *       thread's narrative, the room's juxtaposition), keyed by cluster id;</li>
+     *   <li>the feed-wide <b>{@link SubjectUnit}</b> — one headline per dirty unit
+     *       (a subject tracked across the whole feed), keyed by unit id.</li>
+     * </ul>
+     *
+     * Steps (mirrors the proven {@code LabRunner.run} flow on the singleton
+     * {@link SubjectRegistry}):
      * <ol>
-     *   <li><b>context relief</b> — prune evidence older than the snapshot TTL
-     *       (units themselves stand; only stale content is dropped);</li>
-     *   <li><b>attribute</b> every dirty cluster's resolved subjects into the
-     *       registry (this is what marks units dirty);</li>
+     *   <li><b>context relief</b> — prune evidence older than the snapshot TTL;</li>
+     *   <li><b>per dirty cluster</b> — attribute its subjects into the registry
+     *       (marks units dirty) AND publish its theme headline;</li>
      *   <li><b>identity-merge</b> name units into their ticker unit;</li>
      *   <li><b>compose + publish</b> ONE headline per dirty unit (NEW/UPDATE), via
-     *       {@link HeadlineWriter#publishUnit} so the line is QA'd, archived under
-     *       the unit id, and broadcast to the page.</li>
+     *       {@link HeadlineWriter#publishUnit}.</li>
      * </ol>
      *
-     * <p>Clusters remain the ingestion/grouping layer (ClusterEngine assigns,
-     * ClusterRebalancer tidies); a dirty cluster is just the signal that fresh
-     * evidence arrived. Collation is intentionally NOT run here (deferred).
+     * <p>Clusters are the ingestion layer (ClusterEngine assigns one cluster per
+     * thread) AND, now, the theme producer. A dirty cluster is both the signal that
+     * fresh evidence arrived and an entity that gets its own line. Collation is
+     * intentionally NOT run here (deferred).
      */
     public void runUnitTick(Set<String> dirtyClusterIds) {
         if (dirtyClusterIds == null || dirtyClusterIds.isEmpty()) return;
@@ -457,12 +465,20 @@ public class EditorialAgent {
             subjectRegistry.pruneContentOlderThan(Duration.ofMinutes(contextTtlMinutes));
         }
 
-        // 2 — attribute each dirty cluster's subjects into the feed-wide registry.
+        // 2 — per dirty cluster, drive BOTH producers from the one dirty signal:
+        //     (a) attribute its subjects into the feed-wide registry (marks units
+        //         dirty for step 4), and
+        //     (b) publish the cluster's own THEME headline — the thread narrative /
+        //         the room's juxtaposition. The two producers are independent and
+        //         intentionally NOT deduped (the connected thread context is a
+        //         different truth from the per-subject line).
+        int themePublished = 0;
         for (String id : dirtyClusterIds) {
             try {
-                attributeCluster(id, subjectRegistry);
+                List<ResolvedSubject> resolved = attributeCluster(id, subjectRegistry);
+                themePublished += publishClusterTheme(model, id, resolved);
             } catch (Exception e) {
-                LOG.warn("EditorialAgent: attribution of cluster {} failed: {}", id, e.getMessage());
+                LOG.warn("EditorialAgent: cluster {} failed: {}", id, e.getMessage());
             }
         }
 
@@ -493,8 +509,28 @@ public class EditorialAgent {
                 LOG.warn("EditorialAgent: unit {} failed: {}", u.id, e.getMessage());
             }
         }
-        LOG.info("[AGENT] unit tick done: {} cluster(s) → {} dirty unit(s) → {} headline(s)",
-                dirtyClusterIds.size(), toCompose.size(), published);
+        LOG.info("[AGENT] tick done: {} cluster(s) → {} theme + {} unit headline(s) ({} dirty unit(s))",
+                dirtyClusterIds.size(), themePublished, published, toCompose.size());
+    }
+
+    /**
+     * Composes and publishes ONE cluster-theme headline for a dirty cluster — the
+     * thread's own narrative / the room's juxtaposition, complementary to the
+     * per-subject unit lines (and never deduped against them). Keyed by cluster id,
+     * so it inherits {@link ReportBuilder}'s coverage (only fresh, uncovered
+     * material composes → a re-dirtied thread writes a follow-up over just the new
+     * comments) and the identical-text guard for free. Ticker/snapshot are validated
+     * against {@code resolved} (the resolver, never the model). Returns 1 if a line
+     * was published, else 0.
+     */
+    private int publishClusterTheme(ChatModel model, String clusterId, List<ResolvedSubject> resolved) {
+        InvestigationCluster cluster = clusterRegistry.getCluster(clusterId);
+        if (cluster == null) return 0;
+        String brief = reportBuilder.buildReportData(
+                cluster, agentRepository.getHeadlinesByClusterId(clusterId));
+        Draft d = composeTheme(model, brief);
+        if (d == null || d.headline() == null || d.headline().isBlank()) return 0;
+        return headlineWriter.publish(cluster, d, resolved) ? 1 : 0;
     }
 
     /**
@@ -907,6 +943,44 @@ public class EditorialAgent {
             if (d != null) salvaged = true;
         }
         return new SubjectDraft(label, d, salvaged, text, elapsed);
+    }
+
+    /**
+     * Composes the cluster's THEME headline — the thread's own narrative / the
+     * room's juxtaposition (a separate producer from the per-subject unit lines,
+     * never deduped against them). Reads the whole cluster brief (no per-subject
+     * Yahoo block — a theme is the conversation, not one instrument) and returns a
+     * {@link Draft}, or {@code null} when the thread carries nothing worth a line.
+     */
+    public Draft composeTheme(ChatModel model, String brief) {
+        String sys = PromptLoader.load("headline-theme")
+                .replace("{{LANGUAGE}}", brain.getUserLanguage().displayName())
+                .replace("{{ROOM_SLANG}}", WsbgJargon.roomSlangForPrompt());
+        return parseDraft(chat(model, sys, brief));
+    }
+
+    /**
+     * Parses a single-object compose reply into a {@link Draft}, with the same
+     * recovery chain the per-subject path uses: strict object → first of a
+     * {@code headlines} array → balanced-brace salvage → regex salvage. Returns
+     * {@code null} when nothing parseable (or an empty headline) is found.
+     */
+    static Draft parseDraft(String text) {
+        JsonNode root = parseJson(text);
+        if (root != null) {
+            if (root.has("headline")) {
+                Draft d = toDraft(root);
+                if (d != null) return d;
+            } else if (root.path("headlines").isArray() && !root.path("headlines").isEmpty()) {
+                Draft d = toDraft(root.path("headlines").get(0));
+                if (d != null) return d;
+            }
+        }
+        for (JsonNode obj : salvageObjects(text)) {
+            Draft d = toDraft(obj);
+            if (d != null) return d;
+        }
+        return salvageDraftByRegex(text);
     }
 
     /**

@@ -3,7 +3,6 @@ package de.bsommerfeld.wsbg.terminal.ui;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
 import de.bsommerfeld.wsbg.terminal.agent.AgentCoordinator;
-import de.bsommerfeld.wsbg.terminal.agent.ClusterRebalancer;
 import de.bsommerfeld.wsbg.terminal.agent.OllamaServerManager;
 import de.bsommerfeld.wsbg.terminal.agent.PassiveMonitorService;
 import de.bsommerfeld.wsbg.terminal.db.AgentRepository;
@@ -111,7 +110,6 @@ public final class AppMain {
         // submitted while the services it depends on are torn down below.
         safeStop(() -> injector.getInstance(PassiveMonitorService.class).shutdown(), "PassiveMonitorService");
         safeStop(() -> injector.getInstance(AgentCoordinator.class).shutdown(), "AgentCoordinator");
-        safeStop(() -> injector.getInstance(ClusterRebalancer.class).shutdown(), "ClusterRebalancer");
         safeStop(() -> injector.getInstance(RedditRepository.class).shutdown(), "RedditRepository");
         safeStop(() -> injector.getInstance(AgentRepository.class).shutdown(), "AgentRepository");
         safeStop(() -> injector.getInstance(OllamaServerManager.class).shutdown(), "OllamaServerManager");
