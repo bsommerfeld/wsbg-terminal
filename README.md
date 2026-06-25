@@ -17,11 +17,15 @@ Das WSBG Terminal ist eure Kommandozentrale für [**r/wallstreetbetsGER**](https
 |:---------------------|:----------------------------------------------------------------------------------------------------------------------------------------------|
 | **Auto-Fetch**       | Der Algo zieht sich die neusten Threads automatisch rein. Nie wieder F5 drücken, während der Kurs fällt.                                      |
 | **KI-Headlines**     | Das Terminal fasst das Affengeschrei zusammen, damit ihr wisst, ob Long oder Short.                                                           |
-| **News-Ergänzungen** | Passend zum Instrument holt sich das Terminal aktuelle Nachrichten von Yahoo Finances, damit die Headlines wenigstens *etwas* Substanz haben. |
+| **Echtzeit-Kurse**   | Live-Kurs direkt an der Schlagzeile – in **Euro**, mit Mini-Chart und Tagesbewegung. Tagsüber von Lang & Schwarz, nachts die **US-Nachbörse bis 2 Uhr** (falls Micron mal wieder +600 % nach Earnings rennt), und wenn alle Börsen zu sind, bleibt der letzte echte Kurs stehen statt Quatsch anzuzeigen. |
+| **News-Ergänzungen** | Passend zum Instrument zieht das Terminal Nachrichten aus **mehreren Quellen** (Yahoo + NASDAQ), trianguliert und entdoppelt – damit die Headlines wenigstens *etwas* Substanz haben, auch wenn eine Quelle gerade streikt. |
+| **Thread-Sprung**    | Unten rechts an jeder Schlagzeile ein ↗ – ein Klick und der Original-Thread öffnet sich im Browser. Für die, die das Affengeschrei im Original brüllen hören wollen.                                            |
+| **Archiv-Historie**  | Einfach weiterscrollen: ältere Schlagzeilen werden aus dem permanenten Archiv nachgeladen. Die Wire vergisst nichts – eure Verluste auch nicht.                                                                |
 | **Raketen-Radar**    | Pennystock-Raketen leuchten farbig auf: Banane, orange, rot – je höher der verpasste Gewinn, desto greller.                                   |
-| **Stimmungs-Barometer** | Das Badge im Reddit-Header zeigt live, zu wie viel Prozent der Käfig gerade brüllt: **54 % BEARISH** heißt, 46 % schmieren noch Hopium. Grün = Mond, Rot = Blut, Grau = der Käfig ist sich uneinig (passiert nie). |
+| **Fear & Greed-Tacho** | CNNs Angst-und-Gier-Index als Tacho im Reddit-Header. Zeigt, ob der **Gesamtmarkt** gerade in Panik (rot) oder in Gier (grün) badet – damit ihr wisst, ob euer FOMO wenigstens Gesellschaft hat.            |
 | **Live News-Ticker** | Financial Juice & EUR/USD-Kurs laufen direkt mit – damit ihr wisst, warum euer Depot blutet, noch bevor es im Subreddit steht.                |
 | **Marktzeiten**      | Internationale Marktzeiten samt Urlaubstage direkt in der Fußnote. Wahre Affen wissen wann sie liquidiert werden.                             |
+| **Einstellungen**    | Zahnrad oben, und die Mitte klappt zur Schaltzentrale auf: Tag/Nacht (oder dem System folgen), Schlagzeilen-Filter (nur Ticker oder das volle Affengeschrei), Sprache, Updates – und ganz unten der rote **„Daten löschen"**-Knopf, der das Terminal komplett zurücksetzt (höchstens alle 10 Minuten, damit ihr euch nicht selbst sabotiert). |
 | **100 % Lokal**      | Die KI läuft komplett auf eurer Kiste. Keine Cloud, kein Abo, kein fremder Mensch – eure Verluste bleiben streng privat.                      |
 
 ### 📸 Loss Porn (Visuals)

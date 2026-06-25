@@ -6,9 +6,6 @@ import de.bsommerfeld.wsbg.terminal.agent.ClusterEngine;
 import de.bsommerfeld.wsbg.terminal.agent.ClusterEngine.AssignOutcome;
 import de.bsommerfeld.wsbg.terminal.agent.ClusterRegistry;
 import de.bsommerfeld.wsbg.terminal.agent.EditorialAgent;
-import de.bsommerfeld.wsbg.terminal.agent.EditorialAgent.ClusterEditorial;
-import de.bsommerfeld.wsbg.terminal.agent.EditorialAgent.EditorialListener;
-import de.bsommerfeld.wsbg.terminal.agent.EditorialAgent.SubjectDraft;
 import de.bsommerfeld.wsbg.terminal.agent.EditorialAgent.UnitDraft;
 import de.bsommerfeld.wsbg.terminal.agent.HeadlineCollator;
 import de.bsommerfeld.wsbg.terminal.agent.HeadlineWriter.Draft;
@@ -23,7 +20,6 @@ import de.bsommerfeld.wsbg.terminal.db.AgentRepository;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
 import de.bsommerfeld.wsbg.terminal.lab.ThreadIngestor.IngestResult;
 import de.bsommerfeld.wsbg.terminal.reddit.RedditSource;
-import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -297,43 +293,6 @@ public final class LabRunner {
     }
 
     // ---- rendering ----
-
-    /** Renders one streamed per-subject result the moment it lands. */
-    private static void renderSubjectDraft(Consumer<String> out, SubjectDraft sd) {
-        String salv = sd.salvaged() ? " [aus kaputtem JSON gerettet]" : "";
-        if (sd.draft() != null) {
-            out.accept(String.format("      • %s  [%s]%s", sd.label(), fmtMs(sd.ms()), salv));
-            out.accept("        " + describeDraft(sd.draft()));
-        } else {
-            // No headline: either the model chose "" (nothing to say) or the
-            // reply was unparseable — dump the raw so it's obvious which.
-            out.accept(String.format("      • %s → keine Headline  [%s]", sd.label(), fmtMs(sd.ms())));
-            String raw = sd.raw() == null || sd.raw().isBlank() ? "(empty response)" : sd.raw().strip();
-            for (String line : truncate(raw, 1200).split("\n", -1)) {
-                out.accept("        │ " + line);
-            }
-        }
-    }
-
-    private static String describeResolved(ResolvedSubject r) {
-        StringBuilder sb = new StringBuilder(r.canonicalName());
-        if (r.isInstrument()) {
-            sb.append(" → ").append(r.ticker());
-            MarketSnapshot s = r.snapshot();
-            if (s != null && s.hasPrice()) {
-                sb.append(String.format(Locale.ROOT, "  %.2f%s", s.price(),
-                        s.currency() == null || s.currency().isEmpty() ? "" : " " + s.currency()));
-                if (Double.isFinite(s.dayChangePercent())) {
-                    sb.append(String.format(Locale.ROOT, " (%+.2f%% today)", s.dayChangePercent()));
-                }
-            }
-        } else if (!r.news().isEmpty()) {
-            sb.append(" → no ticker (theme/person — news only)");
-        } else {
-            sb.append(" → nothing (rest on cluster sentiment)");
-        }
-        return sb.toString();
-    }
 
     private static String describeDraft(Draft d) {
         StringBuilder tag = new StringBuilder("[");

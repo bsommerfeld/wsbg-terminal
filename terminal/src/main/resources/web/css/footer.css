@@ -9,10 +9,10 @@
 
 .feed { flex: 1; position: relative; height: 100%; overflow: hidden; }
 
-/* Theme toggle in the footer (Win/Linux only — see index.html). Hidden
+/* Settings gear in the footer (Win/Linux only — see index.html). Hidden
    by default so macOS keeps it in the titlebar; revealed on "other". The
    left border separates it from the market-chip strip. */
-.footer-theme {
+.footer-settings {
   display: none;
   flex: 0 0 auto;
   margin: 0 8px;
@@ -20,7 +20,7 @@
   border-radius: 0;
   padding-left: 12px;
 }
-html[data-platform="other"] .footer-theme { display: inline-flex; }
+html[data-platform="other"] .footer-settings { display: inline-flex; }
 
 /* 3-position state machine: slides only ever travel right → center → left. */
 .slide {

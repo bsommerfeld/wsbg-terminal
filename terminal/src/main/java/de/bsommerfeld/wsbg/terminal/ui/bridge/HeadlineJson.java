@@ -48,7 +48,23 @@ final class HeadlineJson {
         // from persisted fields, so it needs no schema/snapshot change.
         m.put("usedYahoo", r.tickerSymbol() != null || r.snapshot() != null
                 || r.priceMovePercent() != null);
+        // Source thread → a permalink the UI offers as an "open in browser" button.
+        String threadId = primaryThreadId(r);
+        if (threadId != null) {
+            m.put("threadUrl", "https://www.reddit.com/comments/" + threadId.substring(3));
+        }
         return m;
+    }
+
+    /** The Reddit thread id the line rests on: a cited source thread, else the cluster id when it is one. */
+    private static String primaryThreadId(HeadlineRecord r) {
+        if (r.sourceThreadIds() != null) {
+            for (String id : r.sourceThreadIds()) {
+                if (id != null && id.startsWith("t3_")) return id;
+            }
+        }
+        String c = r.clusterId();
+        return c != null && c.startsWith("t3_") ? c : null;
     }
 
     /**
@@ -70,6 +86,11 @@ final class HeadlineJson {
         m.put("fiftyTwoWeekLow", finite(s.fiftyTwoWeekLow()));
         m.put("volume", s.volume() < 0 ? null : s.volume());
         m.put("currency", s.currency());
+        // Provenance + freshness: which venue priced it (L&S / Tradegate / NASDAQ /
+        // Yahoo exchange) and when, so the UI can label the source and dim the quote
+        // once the market has closed (no live venue → the figure is a last close).
+        m.put("source", s.exchangeName());
+        m.put("marketTime", s.marketTimeEpochSeconds() > 0 ? s.marketTimeEpochSeconds() : null);
         m.put("spark", s.spark());
         return m;
     }

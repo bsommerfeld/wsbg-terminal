@@ -262,8 +262,24 @@ public final class CefHost {
         // because the native browser isn't created yet. 120Hz is not reachable:
         // it would need external begin-frame control, which JCEF exposes no Java
         // API to drive (so enabling it only yields black frames — see initialize()).
+        return createBrowser(url, 60);
+    }
+
+    /**
+     * Browser for headless same-origin fetching (CefFetchClient): never shown, so
+     * it must NOT burn CPU painting. A minimal windowless frame rate means CEF
+     * calls onPaint ~1×/sec instead of 60×/sec — the page still loads, runs JS
+     * and serves {@code fetch()} calls (those are paint-independent), but it no
+     * longer competes with the VISIBLE browser's Java2D paint pipeline. Without
+     * this, the hidden reddit.com renderer blits a full invisible page 60×/sec.
+     */
+    public CefBrowser createFetchBrowser(String url) {
+        return createBrowser(url, 1);
+    }
+
+    private CefBrowser createBrowser(String url, int frameRate) {
         CefBrowserSettings settings = new CefBrowserSettings();
-        settings.windowless_frame_rate = 60;
+        settings.windowless_frame_rate = frameRate;
         org.cef.browser.SwingCefBrowser browser = new org.cef.browser.SwingCefBrowser(
                 client(), url, false, null, wheelScrollPolicy, settings);
         browser.createImmediately();

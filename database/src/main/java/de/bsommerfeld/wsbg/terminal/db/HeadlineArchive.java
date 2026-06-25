@@ -44,8 +44,9 @@ import java.util.Set;
  * primitives a later search/watchlist UI builds on. At ~1–2&nbsp;KB per record
  * this stays cheap for years of wire output.
  *
- * <p>There is intentionally no {@code clear()}/delete API — the lab "Reset"
- * wipes the live stores, never history.
+ * <p>The lab "Reset" never touches history. The only way to wipe the archive is
+ * the explicit, user-triggered {@link #clear()} ("Archiv löschen" in Settings) —
+ * a deliberate, destructive action, not part of any automatic lifecycle.
  */
 @Singleton
 public class HeadlineArchive {
@@ -93,19 +94,17 @@ public class HeadlineArchive {
     }
 
     /**
-     * Archives one published headline. Idempotent on the record's identity
-     * (createdAt + clusterId + text), so a snapshot-restore replay can't
-     * duplicate history. The market snapshot's intraday spark series is
-     * stripped before writing — it's render-only bulk; the scalar price/move
-     * facts stay.
+     * Archives one published headline <b>in full</b>, so it can be re-displayed
+     * 1:1 days later — including its intraday spark series (the sparkline chart).
+     * Idempotent on the record's identity (createdAt + clusterId + text), so a
+     * snapshot-restore replay can't duplicate history.
      */
     public synchronized void append(HeadlineRecord record) {
         if (record == null || record.headline() == null || record.headline().isBlank()) return;
-        HeadlineRecord slim = stripSpark(record);
-        if (!index(slim)) return; // already archived
+        if (!index(record)) return; // already archived
         try {
             Files.createDirectories(file.getParent());
-            Files.writeString(file, mapper.writeValueAsString(slim) + System.lineSeparator(),
+            Files.writeString(file, mapper.writeValueAsString(record) + System.lineSeparator(),
                     StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         } catch (Exception e) {
             // The in-memory index keeps the record for this session either way.
@@ -137,17 +136,22 @@ public class HeadlineArchive {
         return r.createdAt() + "|" + r.clusterId() + "|" + r.headline();
     }
 
-    private static HeadlineRecord stripSpark(HeadlineRecord r) {
-        if (r.snapshot() == null || !r.snapshot().hasSpark()) return r;
-        var s = r.snapshot();
-        return new HeadlineRecord(r.clusterId(), r.headline(), r.context(), r.createdAt(),
-                r.sourceThreadIds(), r.sourceCommentIds(), r.highlight(), r.tickerSymbol(),
-                r.subjects(), r.priceMovePercent(), r.sectors(), r.assetClass(), r.sentiment(),
-                new de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot(
-                        s.symbol(), s.price(), s.previousClose(), s.dayChangePercent(),
-                        s.dayHigh(), s.dayLow(), s.volume(), s.fiftyTwoWeekHigh(),
-                        s.fiftyTwoWeekLow(), s.currency(), s.exchangeName(),
-                        s.marketTimeEpochSeconds(), List.of()));
+    /**
+     * Wipes the permanent archive — the file and every in-memory index. Triggered
+     * only by the user's explicit "Archiv löschen" action. The live wire is the
+     * caller's concern (it keeps the current session; see
+     * {@code AgentRepository.clearArchiveKeepSession}).
+     */
+    public synchronized void clear() {
+        records.clear();
+        tickerIndex.clear();
+        identities.clear();
+        try {
+            Files.deleteIfExists(file);
+        } catch (IOException e) {
+            LOG.warn("Failed to delete archive file {}: {}", file, e.getMessage());
+        }
+        LOG.info("Headline archive cleared.");
     }
 
     // ---- read API (search / watchlist primitives) ----
@@ -183,6 +187,23 @@ public class HeadlineArchive {
         List<HeadlineRecord> out = new ArrayList<>(hits);
         out.sort((a, b) -> Long.compare(b.createdAt(), a.createdAt()));
         return out;
+    }
+
+    /**
+     * The scroll-back page: up to {@code limit} headlines strictly OLDER than
+     * {@code beforeEpoch}, newest-first. Pass the lowest {@code createdAt} of the
+     * previous page as the next cursor; a non-positive cursor pages from the newest.
+     * Filters then sorts the survivors, so it's robust to out-of-order appends.
+     */
+    public synchronized List<HeadlineRecord> page(long beforeEpoch, int limit) {
+        if (limit <= 0) return List.of();
+        long cursor = beforeEpoch <= 0 ? Long.MAX_VALUE : beforeEpoch;
+        List<HeadlineRecord> out = new ArrayList<>();
+        for (HeadlineRecord r : records) {
+            if (r.createdAt() < cursor) out.add(r);
+        }
+        out.sort((a, b) -> Long.compare(b.createdAt(), a.createdAt()));
+        return out.size() <= limit ? out : new ArrayList<>(out.subList(0, limit));
     }
 
     /**

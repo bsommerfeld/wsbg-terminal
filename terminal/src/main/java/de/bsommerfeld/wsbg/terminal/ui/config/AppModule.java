@@ -14,7 +14,10 @@ import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.core.config.RedditConfig;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
 import de.bsommerfeld.wsbg.terminal.core.util.StorageUtils;
+import de.bsommerfeld.wsbg.terminal.core.price.PriceSource;
 import de.bsommerfeld.wsbg.terminal.currency.EurUsdMonitorService;
+import de.bsommerfeld.wsbg.terminal.feargreed.FearGreedMonitorService;
+import de.bsommerfeld.wsbg.terminal.price.FallbackPriceSource;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
 import de.bsommerfeld.wsbg.terminal.reddit.FallbackRedditSource;
 import de.bsommerfeld.wsbg.terminal.reddit.OAuthRedditFetcher;
@@ -22,6 +25,7 @@ import de.bsommerfeld.wsbg.terminal.reddit.RedditScraper;
 import de.bsommerfeld.wsbg.terminal.reddit.RedditSource;
 import de.bsommerfeld.wsbg.terminal.reddit.RssRedditScraper;
 import de.bsommerfeld.wsbg.terminal.reddit.TokenBucketRateLimiter;
+import de.bsommerfeld.wsbg.terminal.nasdaq.NasdaqNewsClient;
 import de.bsommerfeld.wsbg.terminal.source.NewsSource;
 import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooFinanceClient;
 import de.bsommerfeld.wsbg.terminal.source.net.DirectWebFetcher;
@@ -34,11 +38,13 @@ import de.bsommerfeld.wsbg.terminal.ui.bridge.ArchiveQueryBridge;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.CommandBridge;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.DonationGatePublisher;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.EurUsdPublisher;
+import de.bsommerfeld.wsbg.terminal.ui.bridge.FearGreedPublisher;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.FjNewsPublisher;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.HeadlinePublisher;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.MarketHoursPublisher;
-import de.bsommerfeld.wsbg.terminal.ui.bridge.MarketMoodPublisher;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.RedditHealthPublisher;
+import de.bsommerfeld.wsbg.terminal.ui.bridge.SettingsBridge;
+import de.bsommerfeld.wsbg.terminal.ui.bridge.UpdateService;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.WatchlistBridge;
 import de.bsommerfeld.wsbg.terminal.ui.scroll.PixelScaledWheelScrollPolicy;
 import de.bsommerfeld.wsbg.terminal.ui.scroll.WheelScrollPolicy;
@@ -80,12 +86,14 @@ public class AppModule extends AbstractModule {
             // News sources are collected into a Set<NewsSource> (Guice
             // multibindings) so NewsAggregator can fan a query across all of
             // them; adding/dropping a source is a binding change here, never a
-            // change in the aggregator. Yahoo is the first (pull-by-symbol)
-            // source; the RSS feed index joins later. Architectural wiring only
-            // — nothing consumes the aggregator yet, so behaviour is unchanged.
+            // change in the aggregator. The resolver consults the aggregator
+            // (forwarded via EditorialAgent), so the wire triangulates news
+            // across providers instead of depending on Yahoo alone. The RSS feed
+            // index joins once the finanznachrichten/FJ streams feed it.
             Multibinder<NewsSource> newsSources =
                     Multibinder.newSetBinder(binder(), NewsSource.class);
             newsSources.addBinding().to(YahooFinanceClient.class);
+            newsSources.addBinding().to(NasdaqNewsClient.class);
 
             // RedditSource is assembled in provideRedditSource() below — it
             // auto-selects a working path (OAuth → .json → RSS) at runtime, so
@@ -112,14 +120,27 @@ public class AppModule extends AbstractModule {
             // publisher can register its listener against a running poll loop.
             bind(EurUsdMonitorService.class).asEagerSingleton();
             bind(EurUsdPublisher.class).asEagerSingleton();
+            // Same ordering: the monitor's poll loop must exist before the publisher subscribes.
+            bind(FearGreedMonitorService.class).asEagerSingleton();
+            bind(FearGreedPublisher.class).asEagerSingleton();
+            // The live price chain (L&S → Tradegate → NASDAQ → Yahoo, EUR). Optionally
+            // injected into TickerResolver; Yahoo stays the search + news source.
+            bind(PriceSource.class).to(FallbackPriceSource.class).in(com.google.inject.Singleton.class);
             bind(CommandBridge.class).asEagerSingleton();
-            // Archive layer: search/byTicker queries, the persisted watchlist,
-            // and the daily market-mood badge ("54% BEARISH") — all reading the
-            // permanent HeadlineArchive / the archive-seeded wire window. Eager
-            // so their hub.on(...) handlers exist before the first page loads.
+            // Archive layer: search/byTicker queries + scroll-back pagination, and
+            // the persisted watchlist — reading the permanent HeadlineArchive / the
+            // archive-seeded wire window. Eager so their hub.on(...) handlers exist
+            // before the first page loads.
             bind(ArchiveQueryBridge.class).asEagerSingleton();
             bind(WatchlistBridge.class).asEagerSingleton();
-            bind(MarketMoodPublisher.class).asEagerSingleton();
+            // Settings view backend: persists the config-backed preferences
+            // (headline mode, language, auto-update) and
+            // pushes the current snapshot on client open.
+            bind(SettingsBridge.class).asEagerSingleton();
+            // In-app update indicator (titlebar green button) + relaunch, the
+            // counterpart to the launcher's auto-update opt-out. Eager so its
+            // hub handlers + the periodic check are live from boot.
+            bind(UpdateService.class).asEagerSingleton();
 
             // OSR wheel-scroll seam (see ui/scroll/). The off-screen browser gets
             // no native OS wheel message, so we re-scale the AWT delta: precise
@@ -192,7 +213,12 @@ public class AppModule extends AbstractModule {
         String probeSub = rc.getSubreddits().isEmpty()
                 ? "wallstreetbetsGER" : rc.getSubreddits().get(0);
 
-        RedditScraper oauth = new RedditScraper(repository, eventBus,
+        // The delegates are wired with a null event bus on purpose: health is
+        // owned by FallbackRedditSource (the only layer that sees the aggregate
+        // — degraded only when the WHOLE chain is down, healthy as soon as any
+        // delegate answers), so an individual scraper's failure no longer flips
+        // the UI to "Defekt" while a fallback still works.
+        RedditScraper oauth = new RedditScraper(repository, null,
                 new OAuthRedditFetcher(config),
                 new TokenBucketRateLimiter(rc.getOauthRateLimitBurst(),
                         rc.getOauthRateLimitRequestsPerSecond()));
@@ -203,12 +229,12 @@ public class AppModule extends AbstractModule {
                         rc.getBrowserRateLimitRequestsPerSecond())
                 : new TokenBucketRateLimiter(rc.getRateLimitBurst(),
                         rc.getRateLimitRequestsPerSecond());
-        RedditScraper anon = new RedditScraper(repository, eventBus, webFetcher, anonLimiter);
+        RedditScraper anon = new RedditScraper(repository, null, webFetcher, anonLimiter);
 
-        RssRedditScraper rss = new RssRedditScraper(repository, config, eventBus);
+        RssRedditScraper rss = new RssRedditScraper(repository, config, null);
 
         LOG.info("Reddit source: dynamic fallback chain [OAuth → {} → RSS]", webFetcher.name());
-        return new FallbackRedditSource(List.of(oauth, anon, rss), probeSub, 600L);
+        return new FallbackRedditSource(List.of(oauth, anon, rss), probeSub, 600L, eventBus);
     }
 
     /**

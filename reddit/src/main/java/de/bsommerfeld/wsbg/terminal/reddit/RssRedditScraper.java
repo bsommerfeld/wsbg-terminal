@@ -193,6 +193,7 @@ public final class RssRedditScraper implements RedditSource {
         List<Entry> entries = fetchFeed(url);
         if (entries == null) {
             recordFetchOutcome(false);
+            stats.failed = true;
             return stats;
         }
         recordFetchOutcome(true);

@@ -31,6 +31,25 @@ public final class CefWebFetcher implements WebFetcher {
 
     private static final Logger LOG = LoggerFactory.getLogger(CefWebFetcher.class);
 
+    /**
+     * Bare API hosts that aren't a browsable webpage (their root 404s / teapots),
+     * so the joker can't anchor a session there. Anchor at the brand's real site
+     * instead — loading it clears the domain-wide anti-bot cookie — and fetch the
+     * API host cross-origin through that session.
+     */
+    private static final Map<String, String> ANCHOR_OVERRIDE = Map.of(
+            "api.nasdaq.com", "https://www.nasdaq.com",
+            "production.dataviz.cnn.io", "https://edition.cnn.com");
+
+    /**
+     * Overridden hosts whose API answers CORS with {@code Access-Control-Allow-Origin: *},
+     * which the browser refuses to combine with credentials — so the cross-origin
+     * fetch must omit cookies (CNN's public dataviz endpoint). NASDAQ, by contrast,
+     * echoes the exact origin + allows credentials, so it keeps the default "include".
+     */
+    private static final java.util.Set<String> CREDENTIALS_OMIT =
+            java.util.Set.of("production.dataviz.cnn.io");
+
     private final CefHost cefHost;
     private final Map<String, CefFetchClient> byOrigin = new ConcurrentHashMap<>();
 
@@ -45,16 +64,24 @@ public final class CefWebFetcher implements WebFetcher {
 
     @Override
     public WebResponse fetch(String url, Map<String, String> headers, Duration timeout) throws Exception {
-        String origin = originOf(url);
-        if (origin == null) {
+        String requestOrigin = originOf(url);
+        if (requestOrigin == null) {
             throw new IllegalArgumentException("Cannot derive origin from URL: " + url);
         }
-        // Anchor the per-origin browser there; the first URL seen for the origin
-        // doubles as the readiness-verification URL (it returns 200 only once the
-        // browser's session is fully established).
-        CefFetchClient client = byOrigin.computeIfAbsent(origin, o -> {
-            LOG.info("Spinning up hidden browser anchored at {}", o);
-            return new CefFetchClient(cefHost, o + "/", url, hostOf(o));
+        // Normally anchor at the target's own origin (same-origin fetch). For a bare
+        // API host, anchor at the brand's real website instead and fetch the API
+        // cross-origin through that session.
+        String anchorOrigin = ANCHOR_OVERRIDE.getOrDefault(hostOf(requestOrigin), requestOrigin);
+        boolean overridden = !anchorOrigin.equals(requestOrigin);
+        // Anchor the per-origin browser there; for a same-origin anchor the first URL
+        // doubles as the readiness check, but an overridden anchor verifies on its own
+        // homepage (the API host isn't a loadable page).
+        String creds = CREDENTIALS_OMIT.contains(hostOf(requestOrigin)) ? "omit" : "include";
+        CefFetchClient client = byOrigin.computeIfAbsent(anchorOrigin, o -> {
+            LOG.info("Spinning up hidden browser anchored at {}{}", o,
+                    overridden ? " (for " + requestOrigin + ")" : "");
+            String verify = overridden ? o + "/" : url;
+            return new CefFetchClient(cefHost, o + "/", verify, hostOf(o), creds);
         });
         CefFetchClient.HttpResult r = client.fetch(url, timeout);
         return new WebResponse(r.status(), r.body(), r.headers());

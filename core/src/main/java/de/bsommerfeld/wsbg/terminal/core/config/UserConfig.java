@@ -55,6 +55,12 @@ public class UserConfig {
             + "not change any banner behaviour.")
     private boolean donationClicked = false;
 
+    @Key("last-data-clear-epoch")
+    @Comment("Epoch seconds of the last 'Daten löschen' (full terminal wipe). The "
+            + "button is gated to once per 10 minutes so a mis-click can't wipe and "
+            + "re-wipe before the wire has refilled. 0 = never cleared.")
+    private long lastDataClearEpoch = 0;
+
     @Key("scroll-speed")
     @Comment("Mouse/trackpad scroll speed inside the terminal: pixels per OS "
             + "scroll-line (default: 12.0). The browser renders off-screen, so the "
@@ -152,5 +158,13 @@ public class UserConfig {
 
     public void setDonationClicked(boolean donationClicked) {
         this.donationClicked = donationClicked;
+    }
+
+    public long getLastDataClearEpoch() {
+        return lastDataClearEpoch;
+    }
+
+    public void setLastDataClearEpoch(long lastDataClearEpoch) {
+        this.lastDataClearEpoch = lastDataClearEpoch;
     }
 }

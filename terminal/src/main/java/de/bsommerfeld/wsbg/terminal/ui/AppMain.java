@@ -35,15 +35,23 @@ public final class AppMain {
         // keeps the last Chromium frame until the next one is presented.
         System.setProperty("sun.awt.noerasebackground", "true");
 
-        // Force the OpenGL Java2D pipeline (disable Metal). The macOS Metal
-        // pipeline crashes natively in MTLGC_DestroyMTLGraphicsConfig → -[MTLContext
-        // dealloc] → objc_release on the "Java2D Queue Flusher" thread when a
-        // graphics config is torn down (display sleep/wake / reconfig) — hit live
-        // after ~3h uptime (SIGSEGV, hs_err). Our software-OSR browser paints
-        // BufferedImages through Java2D continuously, which exercises that path
-        // hard. Must be set before ANY AWT/Toolkit init. (OpenGL is deprecated on
-        // macOS but stable here; revisit if a JDK fixes the Metal teardown.)
-        System.setProperty("sun.java2d.metal", "false");
+        // Java2D pipeline choice (macOS). Our software-OSR browser blits EVERY
+        // Chromium frame through Java2D, so the pipeline is on the hot path for
+        // the whole UI. Metal (the Apple-Silicon default) accelerates that; the
+        // deprecated OpenGL pipeline is markedly slower and makes scroll/click/
+        // animations feel laggy. So we keep Metal by DEFAULT.
+        //
+        // OpenGL once mitigated a rare native crash in the Metal graphics-config
+        // teardown (MTLGC_DestroyMTLGraphicsConfig on display sleep/wake, SIGSEGV
+        // after hours) — unconfirmed and possibly external. It's kept as an
+        // OPT-IN (-Dwsbg.j2d.opengl=true or WSBG_J2D_OPENGL=true) rather than the
+        // default, so a certain, pervasive slowdown isn't traded for a rare crash.
+        // Must be set before ANY AWT/Toolkit init.
+        if (Boolean.getBoolean("wsbg.j2d.opengl")
+                || "true".equalsIgnoreCase(System.getenv("WSBG_J2D_OPENGL"))) {
+            System.setProperty("sun.java2d.metal", "false");
+            LOG.info("Java2D: OpenGL pipeline forced (Metal disabled) via opt-in flag.");
+        }
 
         System.setProperty("apple.awt.application.name", "WSBG Terminal");
         System.setProperty("apple.laf.useScreenMenuBar", "true");
@@ -67,6 +75,7 @@ public final class AppMain {
 
         LOG.info("Bootstrapping WSBG Terminal");
         Injector injector = Guice.createInjector(new AppModule());
+        INJECTOR = injector; // for the in-app update relaunch (UpdateService → relaunchForUpdate)
 
         AssetServer assetServer = injector.getInstance(AssetServer.class);
         PushHub pushHub = injector.getInstance(PushHub.class);
@@ -106,6 +115,46 @@ public final class AppMain {
 
     private static final java.util.concurrent.atomic.AtomicBoolean SERVICES_DOWN =
             new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    /** Held for the in-app update relaunch (set once in {@link #main}). */
+    private static volatile Injector INJECTOR;
+
+    /**
+     * Closes the app cleanly and relaunches the launcher to apply a pending
+     * update — the action behind the titlebar's green "update now" button
+     * (UpdateService). Mirrors the proven shutdown-hook path: stop services
+     * FIRST (this releases the single-instance lock, so the relaunched launcher
+     * won't just detect us and raise the old window), THEN spawn the launcher
+     * with {@code --force-update} (so it updates even though auto-update is off),
+     * THEN tear CEF down and exit. Runs on the EDT to match the window-close
+     * path. Only ever reached when {@code WSBG_LAUNCHER_EXECUTABLE} is set
+     * (UpdateService keeps the button hidden otherwise).
+     */
+    public static void relaunchForUpdate() {
+        SwingUtilities.invokeLater(() -> {
+            shutdownServices(INJECTOR);
+            spawnLauncherForceUpdate();
+            safeStop(() -> INJECTOR.getInstance(CefHost.class).dispose(), "CefHost");
+            System.exit(0);
+        });
+    }
+
+    private static void spawnLauncherForceUpdate() {
+        String exe = System.getenv("WSBG_LAUNCHER_EXECUTABLE");
+        if (exe == null || exe.isBlank()) {
+            LOG.warn("Update relaunch requested but WSBG_LAUNCHER_EXECUTABLE is unset — cannot relaunch.");
+            return;
+        }
+        try {
+            new ProcessBuilder(exe, "--force-update")
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                    .redirectError(ProcessBuilder.Redirect.DISCARD)
+                    .start();
+            LOG.info("Relaunching launcher for update: {} --force-update", exe);
+        } catch (Exception e) {
+            LOG.error("Failed to relaunch launcher for update: {}", e.getMessage());
+        }
+    }
 
     /**
      * Stops every service that must die with the app — most importantly the

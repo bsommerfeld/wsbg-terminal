@@ -4,15 +4,16 @@
 import { Socket } from './bridge/socket.js';
 import { initTitlebar } from './chrome/titlebar.js';
 import { initTheme } from './chrome/theme.js';
+import { initSettings } from './chrome/settings.js';
 import { initFooter } from './chrome/footer.js';
 import { setDonationAdEnabled, setDonationStats } from './chrome/slider.js';
 import { initDonate, setSupporter } from './chrome/donate.js';
 import { initExternalLinks } from './chrome/external-links.js';
 import { initKeyboardCopy } from './chrome/copy-fx.js';
-import { renderHeadlines } from './widgets/reddit.js';
+import { renderHeadlines, initHeadlineScroll, appendArchivePage } from './widgets/reddit.js';
 import { renderFjNews } from './widgets/financial-juice.js';
 import { renderEurUsd } from './widgets/eurusd.js';
-import { renderMood } from './widgets/mood.js';
+import { renderFearGreed } from './widgets/fear-greed.js';
 import { setMarketCalendar } from './markets/state.js';
 
 // [data-platform] drives the title-bar split in CSS:
@@ -32,8 +33,14 @@ document.documentElement.dataset.platform = isMac ? 'mac' : (isWin ? 'win' : 'ot
 const wsPort = new URLSearchParams(location.search).get('ws');
 const socket = new Socket(`ws://127.0.0.1:${wsPort}`);
 
+const redditBody = document.querySelector('#widget-reddit [data-rows]');
 socket.on('headlines', payload => {
-  renderHeadlines(document.querySelector('#widget-reddit [data-rows]'), payload);
+  renderHeadlines(redditBody, payload);
+});
+// Scroll-back: load older archived headlines as the user scrolls past the live wire.
+initHeadlineScroll(redditBody, socket);
+socket.on('archive-results', payload => {
+  if (payload && payload.command === 'page') appendArchivePage(payload.items);
 });
 
 socket.on('fj-news', payload => {
@@ -48,10 +55,9 @@ socket.on('market-hours', payload => {
   setMarketCalendar(payload);
 });
 
-// Market-mood badge (Reddit header): 24h sentiment split from the
-// published headlines. Renders only once mood.js is switched live.
-socket.on('market-mood', payload => {
-  renderMood(document.getElementById('mood-badge'), payload);
+// Fear & Greed gauge (Reddit header): whole-market sentiment.
+socket.on('fear-greed', payload => {
+  renderFearGreed(document.getElementById('fear-greed-badge'), payload);
 });
 
 // Reddit scraper health — lives directly on the Reddit LIVE indicator
@@ -80,6 +86,7 @@ socket.on('donation-gate', payload => {
 });
 
 initTheme();
+initSettings(socket);
 initTitlebar(socket);
 initFooter();
 initDonate(socket);

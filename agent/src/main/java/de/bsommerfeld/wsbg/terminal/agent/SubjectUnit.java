@@ -107,12 +107,16 @@ public final class SubjectUnit {
      * fresh items are added, and the list is capped at {@link #MAX_NEWS} dropping
      * the oldest. Covered-ids of items that fell off the cap are dropped with them.
      * The first price ever seen is pinned as the unit's price anchor.
+     *
+     * <p>A {@code null} snapshot does NOT clear the last good one — a transient
+     * resolve miss (Yahoo rate-limit, or the 02:00–07:30 price-gap where the chain
+     * deliberately skips fetching) must not wipe the headline's chart/price.
      */
     public synchronized void updateResolved(String canonicalName, String ticker,
             MarketSnapshot snapshot, List<RawNewsItem> news) {
         if (canonicalName != null && !canonicalName.isBlank()) this.canonicalName = canonicalName;
         this.ticker = ticker;
-        this.snapshot = snapshot;
+        if (snapshot != null) this.snapshot = snapshot; // keep last good price when this resolve had none
         if (firstPrice == null && snapshot != null && snapshot.hasPrice()) {
             firstPrice = snapshot.price();
             firstPriceAt = Instant.now();

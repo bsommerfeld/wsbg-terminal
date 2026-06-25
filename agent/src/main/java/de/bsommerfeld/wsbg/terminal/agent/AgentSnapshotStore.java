@@ -48,6 +48,15 @@ public final class AgentSnapshotStore {
         this.file = StorageUtils.getSnapshotsDir().resolve(FILE_NAME);
     }
 
+    /** Deletes the persisted snapshot file so a restart can't restore it — for the "Daten löschen" full reset. */
+    public synchronized void clear() {
+        try {
+            Files.deleteIfExists(file);
+        } catch (Exception e) {
+            LOG.warn("Failed to delete agent snapshot file: {}", e.getMessage());
+        }
+    }
+
     public synchronized void save(Map<String, String> visionCache,
             List<HeadlineRecord> headlines, List<InvestigationCluster.Snapshot> clusters,
             List<SubjectUnit.Snapshot> subjectUnits) {

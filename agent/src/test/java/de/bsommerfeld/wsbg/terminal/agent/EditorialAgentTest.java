@@ -100,6 +100,16 @@ class EditorialAgentTest {
         assertEquals("Berkshire Hathaway", EditorialAgent.cleanSubjectName("Berkshire Hathaway"));
     }
 
+    @Test
+    void cleanSubjectNameCollapsesSpacedOutTicker() {
+        // OCR'd watchlist row split a ticker into single letters — collapse it.
+        assertEquals("OTLK", EditorialAgent.cleanSubjectName("O T L K"));
+        assertEquals("NVDA", EditorialAgent.cleanSubjectName("N V D A"));
+        // Ordinary multi-word names (multi-letter tokens) stay untouched.
+        assertEquals("Take-Two Interactive", EditorialAgent.cleanSubjectName("Take-Two Interactive"));
+        assertEquals("S&P 500", EditorialAgent.cleanSubjectName("S&P 500"));
+    }
+
     // ---- salvageDraftByRegex: recover a headline from stray-quote-broken JSON ----
 
     @Test
@@ -274,7 +284,7 @@ class EditorialAgentTest {
         assertEquals("0m", EditorialAgent.age(now.plus(1, ChronoUnit.MINUTES), now), "clock skew clamps");
     }
 
-    // ---- parseDraft: the shared compose-reply parser (used by composeOne + composeTheme) ----
+    // ---- parseDraft: the shared compose-reply parser (used by composeUnit + composeTheme) ----
 
     @Test
     void parseDraftReadsATickerlessThemeObject() {

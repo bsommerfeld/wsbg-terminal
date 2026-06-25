@@ -68,6 +68,34 @@ class TickerResolverTest {
     }
 
     @Test
+    void prefersUsPrimaryOverObscureForeignSecondary() {
+        // The live regression: Take-Two resolved to TTWO.WA (Warsaw) instead of the
+        // Nasdaq primary. The US primary (no suffix) must beat the obscure foreign line.
+        List<YahooQuote> quotes = List.of(
+                q("TTWO.WA", "TAKE-TWO INTERACTIVE", "WSE", "EQUITY"),
+                q("TTWO", "TAKE-TWO INTERACTIVE", "NMS", "EQUITY"));
+        assertEquals("TTWO", TickerResolver.strongMatch("Take-Two", quotes).symbol());
+    }
+
+    @Test
+    void prefersXetraPrimaryOverFrankfurtFallback() {
+        // For a German name the Xetra primary (.DE) outranks the Frankfurt venue (.F).
+        List<YahooQuote> quotes = List.of(
+                q("RHM.F", "RHEINMETALL", "FRA", "EQUITY"),
+                q("RHM.DE", "RHEINMETALL", "GER", "EQUITY"));
+        assertEquals("RHM.DE", TickerResolver.strongMatch("Rheinmetall", quotes).symbol());
+    }
+
+    @Test
+    void prefersFrankfurtOverObscureForeignWhenNoPrimary() {
+        // No home/primary listing in the set: Frankfurt (.F) beats Warsaw (.WA).
+        List<YahooQuote> quotes = List.of(
+                q("BYA.WA", "QUANTUM BLOCKCHAIN", "WSE", "EQUITY"),
+                q("BYA.F", "QUANTUM BLOCKCHAIN", "FRA", "EQUITY"));
+        assertEquals("BYA.F", TickerResolver.strongMatch("Quantum Blockchain", quotes).symbol());
+    }
+
+    @Test
     void soleMatchIsReturnedEvenIfPenalised() {
         List<YahooQuote> quotes = List.of(q("1MUV2.MI", "MUNICH RE", "MIL", "EQUITY"));
         assertEquals("1MUV2.MI", TickerResolver.strongMatch("Munich", quotes).symbol());
@@ -88,6 +116,22 @@ class TickerResolverTest {
         assertEquals("AMZN", TickerResolver.strongMatch("Amazon", quotes).symbol());
     }
 
+    @Test
+    void prefersTheCashIndexOverItsFuture() {
+        // "NASDAQ 100" matches both the future and the index; prefer the index (^NDX).
+        List<YahooQuote> quotes = List.of(
+                q("NQ=F", "Nasdaq 100 Futures", "CME", "FUTURE"),
+                q("^NDX", "NASDAQ 100", "NIM", "INDEX"));
+        assertEquals("^NDX", TickerResolver.strongMatch("NASDAQ 100", quotes).symbol());
+    }
+
+    @Test
+    void genericThemeAcronymDoesNotExactMatchItsTicker() {
+        // "AI" is the theme, not C3.ai — the exact-symbol fast-path is gated for theme words.
+        assertNull(TickerResolver.strongMatch("AI", List.of(q("AI", "C3.ai, Inc.", "NYQ", "EQUITY"))));
+        assertNull(TickerResolver.strongMatch("IT", List.of(q("IT", "Gartner, Inc.", "NYQ", "EQUITY"))));
+    }
+
     // ---- Tier 2: embedding fallback when token/score matching can't decide ----
 
     @Test
@@ -100,6 +144,16 @@ class TickerResolverTest {
                 q("AAPL", "Apple Inc.", "NMS", "EQUITY"),
                 q("GOOGL", "Alphabet Inc.", "NMS", "EQUITY"));
         assertEquals("GOOGL", r.embedMatch("Google", quotes).symbol());
+    }
+
+    @Test
+    void tier2RejectsNonEquityEvenWhenSemanticallyClose() {
+        // A pure theme ("Biotech") has no token match; the embedder finds an ETF
+        // semantically close, but the EQUITY-only Tier-2 gate rejects it — themes
+        // must not be promoted to an ETF/index ticker with a bogus live price.
+        FakeEmbeddingService fake = new FakeEmbeddingService().pin("Biotech", "iShares Biotechnology ETF", 0.85);
+        TickerResolver r = new TickerResolver(null, fake);
+        assertNull(r.embedMatch("Biotech", List.of(q("IBB", "iShares Biotechnology ETF", "NMS", "ETF"))));
     }
 
     @Test

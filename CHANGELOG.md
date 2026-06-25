@@ -1,16 +1,19 @@
 # Was hat sich geändert?
 
-Wer einmal die Spendenseite geöffnet hat, trägt ab sofort ein **goldenes Herz** in der Titelleiste — dauerhaft. Kein Konto, keine Kontrolle, reine Ehrensache unter Affen. Und die Spendenzeile im Footer hat aufgerüstet: aus 3 Sprüchen wurden 15, mit Raketen, Diamanten, Bananen, Mond und Totenkopf als Begleitung — einige kennen jetzt sogar deine Käfig-Bilanz („87 Stunden im Käfig und noch keinen Cent Miete gezahlt").
+Das Terminal hat jetzt **Einstellungen**. Wo früher der Tag/Nacht-Knopf saß, sitzt nun ein Zahnrad (das sich beim Drüberfahren dreht) — ein Klick, und die Mitte verwandelt sich in eine aufgeräumte, luftige Einstellungsseite mit einem schick geschwungenen Zurück-Pfeil. Dort lebt jetzt der Hell/Dunkel-Schalter (wahlweise „dem System folgen"), und endlich kann man auch festlegen, **was** im Schlagzeilen-Käfig landet: **Nur Ticker** (nur erkannte Werte, der ruhige Default) oder **Alles** (zusätzlich die Thread-Themen). Dazu ein Schalter, der Zahlen aus Nutzer-Posts mit einem „!" markiert, wenn Yahoo sie nicht bestätigt hat — Stimmung bleibt Stimmung, kein Fakt.
 
-> 📸 **[Bild einfügen: Titelleiste mit dem goldenen Herz neben dem Theme-Umschalter — einmal Standard-Umriss, einmal Gold gefüllt]**
+> 📸 **[Bild einfügen: Titelleiste mit dem neuen Zahnrad-Button (statt Sonne/Mond), daneben das goldene Herz]**
 
-> 📸 **[Bild einfügen: Footer-Spendenzeile mit einem der neuen Sprüche, z. B. die Bananen-Zeile „Affen arbeiten für Bananen. Der Entwickler auch"]**
+> 📸 **[Bild einfügen: die neue Einstellungsseite mit den Kategorien Aussehen / Schlagzeilen / Sprache / Updates und dem geschwungenen Zurück-Pfeil oben links]**
 
-### Restliches
+Und die Headlines treffen jetzt die **richtige Börse**: Take-Two landete zuletzt schon mal in Warschau, Werte rutschten auf illiquide Auslandsnotizen mit absurden Kursen. Ab jetzt gewinnt die Heimat-/Primärbörse (Nasdaq, Xetra, London …), Frankfurt ist der Rückfall, exotische Zweitnotizen fliegen raus — die Kurse in den Schlagzeilen ergeben wieder Sinn.
 
-- Lief das Terminal tagelang durch, blieb die Spendenzeile nach einer Schonfrist für immer stumm — jetzt meldet sie sich nach Ablauf wieder, ohne Neustart.
-- Klicks auf externe Links (Reddit-Logo, Financial-Juice-Logo, Spendenlinks) verpufften — jetzt öffnen sie zuverlässig den Standard-Browser.
-- Die Spendenzeile konnte für immer unsichtbar bleiben, weil das Terminal den Mauszeiger fälschlich dauerhaft über dem Footer wähnte — gefixt.
-- Ein Klick aufs Herz legt die Spendenzeile nicht mehr für eine Woche still — nur ein Klick auf einen Banner-Link pausiert sie, und auch nur noch zwei Tage. Dafür rotiert sie über den Tag etwas häufiger rein.
-- Reddit und Yahoo sperren den Käfig nicht mehr aus: beide werden jetzt durch den eingebauten Browser geholt (echter Fingerabdruck + Cookies, also keine Bot-Sperre mehr), mit Direkt-Abruf als Fallback. Der Reddit-Wire füllt sich beim Start in Sekunden statt Minuten — bei voller Tiefe, ohne dass eine Info verloren geht.
-- Headlines doppeln sich nicht mehr, nur weil ein paar Upvotes reinticken: ein reiner Score-Anstieg ist Stimmung, kein neuer Inhalt, und stößt die Redaktion nicht mehr neu an — nur echte neue Kommentare tun das.
+## Restliches
+
+- **Updates sind jetzt abschaltbar.** Wer nicht bei jedem Start automatisch aktualisieren will, schaltet es in den Einstellungen aus — taucht dann eine neue Version auf, erscheint ein grüner Download-Pfeil in der Titelleiste; ein Klick schließt das Terminal sauber und installiert.
+- Wer einmal die Spendenseite geöffnet hat, trägt ein **goldenes Herz** in der Titelleiste — dauerhaft, reine Ehrensache unter Affen. Die Footer-Spendenzeile hat 15 Sprüche mit Raketen, Diamanten, Bananen, Mond und Totenkopf und kennt teils sogar deine Käfig-Bilanz.
+- Reddit und Yahoo sperren den Käfig nicht mehr aus: beide werden durch den eingebauten Browser geholt (echter Fingerabdruck + Cookies, keine Bot-Sperre), mit Direkt-Abruf als Fallback. Der Wire füllt sich beim Start in Sekunden statt Minuten — bei voller Tiefe.
+- Headlines doppeln sich nicht mehr, nur weil ein paar Upvotes reinticken: ein reiner Score-Anstieg ist Stimmung, kein neuer Inhalt, und stößt die Redaktion nicht mehr neu an.
+- Lief das Terminal tagelang durch, blieb die Spendenzeile irgendwann für immer stumm — jetzt meldet sie sich nach Ablauf wieder, ohne Neustart.
+- Klicks auf externe Links (Reddit-Logo, Financial-Juice-Logo, Spendenlinks) öffnen wieder zuverlässig den Standard-Browser.
+- Spürbar flüssiger: auf dem Mac läuft die Oberfläche wieder über die schnelle Grafik-Pipeline, und der eingebaute Browser, der Reddit/Yahoo im Hintergrund holt, frisst keine Render-Leistung mehr — er lief unsichtbar mit voller Bildrate mit und ließ Scrollen, Klicks und Animationen haken.

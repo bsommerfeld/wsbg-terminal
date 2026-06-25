@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="/css/widgets.css">
   <link rel="stylesheet" href="/css/footer.css">
   <link rel="stylesheet" href="/css/donate.css">
+  <link rel="stylesheet" href="/css/settings.css">
 </head>
 <body>
 <div class="app">
@@ -33,9 +34,9 @@
       <span>Terminal</span>
     </div>
 
-    <!-- Theme toggle. Always lives at the opposite end of the window
-         controls so the chrome looks symmetric. Icon swaps to a moon
-         in light theme / sun in dark theme via CSS. -->
+    <!-- Action buttons (update / donate / settings). Always at the opposite
+         end of the window controls so the chrome looks symmetric. The settings
+         gear opens the Settings view (which now hosts the theme switch). -->
     <div class="tb-actions">
       <!-- Shared paint defs. #gold-grad is the bullion fill for the supporter
            ("Ehrenaffe") heart state — referenced from donate.css via
@@ -54,6 +55,14 @@
           </linearGradient>
         </defs>
       </svg>
+      <!-- Update-available indicator (toward the window centre, inboard of the
+           heart): hidden until the backend reports a newer release while
+           auto-update is off. Click closes the app cleanly and relaunches the
+           launcher to apply the update. Green download glyph. -->
+      <button class="iconbtn update-btn js-update-apply" hidden
+              title="Update verfügbar – jetzt installieren" aria-label="Update installieren">
+        <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      </button>
       <!-- Persistent donate "door": always visible (independent of the 12h
            gate), outline that fills + beats on hover, click opens the donate
            page. Pulses as a hint while the footer banner is active. -->
@@ -61,9 +70,10 @@
          target="_blank" rel="noopener" title="WSBG unterstützen" aria-label="WSBG unterstützen">
         <svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
       </a>
-      <button class="iconbtn js-theme-toggle" title="Theme umschalten" aria-label="Toggle theme">
-        <svg class="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
-        <svg class="icon-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      <!-- Settings gear: opens the Settings view (replaces the centre widgets).
+           Spins on hover. Replaced the old standalone theme toggle. -->
+      <button class="iconbtn gear-btn js-settings-toggle" title="Einstellungen" aria-label="Einstellungen öffnen">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       </button>
     </div>
   </header>
@@ -73,12 +83,13 @@
       <header class="widget-head">
         <div class="ident"><a class="glyph glyph-reddit" href="https://www.reddit.com/r/wallstreetbetsGER"
               target="_blank" rel="noopener" title="r/wallstreetbetsGER öffnen"
-              aria-label="r/wallstreetbetsGER öffnen"></a>Reddit · Schlagzeilen</div>
-        <!-- Market-mood badge: the room's 24h sentiment split ("54% BEARISH"
-             ⇒ implies 46% bullish), computed server-side from the published
-             headlines (market-mood broadcasts). Mirrors the EUR/USD badge
-             slot in the FJ header. Hidden until a directional reading exists. -->
-        <span class="mood" id="mood-badge" hidden aria-live="polite"></span>
+              aria-label="r/wallstreetbetsGER öffnen"></a>Schlagzeilen</div>
+        <!-- The CNN Fear&Greed gauge (whole-market mood), pinned right before LIVE.
+             The old BULLISH/BEARISH room-mood badge was removed — F&G covers market
+             sentiment and the aggregate badge read misleadingly. -->
+        <div class="sentiment-cluster">
+          <span class="fear-greed" id="fear-greed-badge" hidden aria-live="polite"></span>
+        </div>
         <!-- Scraper health lives directly on the LIVE indicator: main.js sets
              data-state + swaps the label to "Defekt" when the pull is degraded
              (403/429/timeouts). The old standalone "RATE LIMITED" chip was
@@ -102,6 +113,101 @@
       </header>
       <div class="widget-body" data-rows></div>
     </section>
+
+    <!-- Settings view: replaces the centre widgets when the gear is clicked.
+         Flat, lots of whitespace, one section per category. The curved back
+         arrow (top-left) returns to the widgets. -->
+    <section class="settings-view" id="settings-view" hidden aria-label="Einstellungen">
+      <header class="settings-head">
+        <button class="settings-back js-settings-close" title="Zurück" aria-label="Zurück">
+          <svg viewBox="0 0 24 24"><path d="M10 19l-7-7 7-7"/><path d="M3 12h11a7 7 0 0 1 7 7v1"/></svg>
+        </button>
+        <h1 class="settings-title">Einstellungen</h1>
+      </header>
+
+      <div class="settings-scroll">
+        <section class="settings-cat">
+          <h2 class="cat-title">Aussehen</h2>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="setting-name">Erscheinungsbild</span>
+              <span class="setting-hint">Heller oder dunkler Modus.</span>
+            </div>
+            <button class="daynight js-theme-switch" role="switch" aria-label="Hell/Dunkel umschalten">
+              <span class="daynight-track">
+                <svg class="daynight-icon moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                <svg class="daynight-icon sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+                <span class="daynight-thumb"></span>
+              </span>
+            </button>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="setting-name">Aus Systemeinstellungen übernehmen</span>
+              <span class="setting-hint">Folgt automatisch dem hellen/dunklen Modus deines Systems.</span>
+            </div>
+            <label class="checkbox">
+              <input type="checkbox" class="js-theme-system">
+              <span class="checkbox-box"></span>
+            </label>
+          </div>
+        </section>
+
+        <section class="settings-cat">
+          <h2 class="cat-title">Schlagzeilen</h2>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="setting-name">Anzeige</span>
+              <span class="setting-hint">„Nur Ticker" zeigt nur erkannte Subjekte; „Alles" zusätzlich die Thread-Themen.</span>
+            </div>
+            <select class="select js-headlines-mode">
+              <option value="tickers">Nur Ticker</option>
+              <option value="all">Alles</option>
+            </select>
+          </div>
+        </section>
+
+        <section class="settings-cat">
+          <h2 class="cat-title">Sprache</h2>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="setting-name">Anzeigesprache</span>
+              <span class="setting-hint">Wird nach einem Neustart vollständig übernommen.</span>
+            </div>
+            <select class="select js-language">
+              <option value="de">Deutsch</option>
+              <option value="en">English</option>
+            </select>
+          </div>
+        </section>
+
+        <section class="settings-cat">
+          <h2 class="cat-title">Updates</h2>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="setting-name">Automatisch aktualisieren</span>
+              <span class="setting-hint">Aktualisiert beim Start automatisch. Wenn aus, meldet ein Hinweis in der Titelleiste neue Versionen.</span>
+            </div>
+            <label class="checkbox">
+              <input type="checkbox" class="js-auto-update">
+              <span class="checkbox-box"></span>
+            </label>
+          </div>
+        </section>
+
+        <!-- Destructive zone, set apart at the very bottom. -->
+        <section class="settings-cat settings-danger">
+          <h2 class="cat-title">Daten</h2>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="setting-name">Daten löschen</span>
+              <span class="setting-hint">Setzt das Terminal komplett zurück: Threads, Cluster, Schlagzeilen und das Archiv. Danach füllt sich die Wire vom nächsten Scan neu. Höchstens alle 10 Minuten.</span>
+            </div>
+            <button class="danger-btn js-clear-data">Daten löschen</button>
+          </div>
+        </section>
+      </div>
+    </section>
   </main>
 
   <footer class="footer">
@@ -117,12 +223,11 @@
        target="_blank" rel="noopener" title="WSBG unterstützen" aria-label="WSBG unterstützen">
       <svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
     </a>
-    <!-- Theme toggle lives here on Win/Linux, where the HTML titlebar
+    <!-- Settings gear lives here on Win/Linux, where the HTML titlebar
          (its usual home) is hidden in favour of the native OS title bar.
          Hidden on macOS via CSS — there it stays in the titlebar. -->
-    <button class="iconbtn js-theme-toggle footer-theme" title="Theme umschalten" aria-label="Toggle theme">
-      <svg class="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
-      <svg class="icon-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    <button class="iconbtn gear-btn js-settings-toggle footer-settings" title="Einstellungen" aria-label="Einstellungen öffnen">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
     </button>
   </footer>
 </div>

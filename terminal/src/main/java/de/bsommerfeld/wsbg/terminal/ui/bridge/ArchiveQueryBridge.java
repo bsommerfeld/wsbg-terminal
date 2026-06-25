@@ -71,6 +71,8 @@ public final class ArchiveQueryBridge {
             case "ticker" -> archive.byTicker(str(payload.get("symbol")));
             case "recent" -> newestFirst(archive.recent(
                     Duration.ofHours(intOr(payload.get("hours"), DEFAULT_RECENT_HOURS))));
+            // scroll-back: older headlines before a cursor (the lowest createdAt shown so far).
+            case "page" -> archive.page(longOr(payload.get("before"), 0L), limit);
             default -> List.of();
         };
 
@@ -103,5 +105,9 @@ public final class ArchiveQueryBridge {
 
     private static int intOr(Object o, int fallback) {
         return o instanceof Number n ? n.intValue() : fallback;
+    }
+
+    private static long longOr(Object o, long fallback) {
+        return o instanceof Number n ? n.longValue() : fallback;
     }
 }

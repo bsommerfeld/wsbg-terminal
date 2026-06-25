@@ -112,16 +112,48 @@ class HeadlineArchiveTest {
     }
 
     @Test
-    void sparkSeriesIsStrippedFromTheArchivedSnapshot() {
+    void fullSnapshotIncludingSparkSurvivesTheArchive() {
         MarketSnapshot withSpark = new MarketSnapshot("NVDA", 100.0, 99.0, 1.0,
                 Double.NaN, Double.NaN, -1, Double.NaN, Double.NaN, "USD", "", 0,
                 List.of(99.0, 99.5, 100.0));
         HeadlineArchive a = new HeadlineArchive(file());
         a.append(rec("t3_a", "NVIDIA +1%", now(), "NVDA", List.of(), withSpark));
 
+        // Reloaded from disk: the headline re-displays 1:1, sparkline chart included.
         HeadlineRecord stored = new HeadlineArchive(file()).all().get(0);
         assertEquals(100.0, stored.snapshot().price(), 1e-9, "scalar facts kept");
-        assertTrue(stored.snapshot().spark().isEmpty(), "render-only spark bulk dropped");
+        assertEquals(List.of(99.0, 99.5, 100.0), stored.snapshot().spark(),
+                "spark series persisted for faithful re-display");
+    }
+
+    @Test
+    void pageReturnsOlderHeadlinesNewestFirst() {
+        HeadlineArchive a = new HeadlineArchive(file());
+        a.append(rec("t3_a", "Älteste", 1000, null, List.of(), null));
+        a.append(rec("t3_b", "Mitte", 2000, null, List.of(), null));
+        a.append(rec("t3_c", "Neuste", 3000, null, List.of(), null));
+
+        // page from the newest (cursor 0 → MAX): newest-first, capped at the limit.
+        assertEquals(List.of("Neuste", "Mitte"),
+                a.page(0, 2).stream().map(HeadlineRecord::headline).toList());
+        // next page: strictly older than the cursor 2000 → only "Älteste".
+        assertEquals(List.of("Älteste"),
+                a.page(2000, 2).stream().map(HeadlineRecord::headline).toList());
+        // exhausted: nothing older than the oldest.
+        assertTrue(a.page(1000, 2).isEmpty());
+    }
+
+    @Test
+    void clearWipesTheArchiveFileAndIndex() {
+        HeadlineArchive a = new HeadlineArchive(file());
+        a.append(rec("t3_a", "NVIDIA +1%", now(), "NVDA", List.of(), null));
+        assertEquals(1, a.size());
+
+        a.clear();
+        assertEquals(0, a.size(), "in-memory wiped");
+        assertTrue(a.byTicker("NVDA").isEmpty(), "ticker index wiped");
+        // A fresh archive over the same path loads nothing — the file is gone.
+        assertEquals(0, new HeadlineArchive(file()).size(), "file deleted");
     }
 
     @Test

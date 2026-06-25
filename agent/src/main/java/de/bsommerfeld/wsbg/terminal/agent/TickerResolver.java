@@ -1,7 +1,10 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 import de.bsommerfeld.wsbg.terminal.embedding.EmbeddingService;
 
+import de.bsommerfeld.wsbg.terminal.aggregator.NewsAggregator;
 import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
+import de.bsommerfeld.wsbg.terminal.core.price.PriceRef;
+import de.bsommerfeld.wsbg.terminal.core.price.PriceSource;
 import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooFinanceClient;
 import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooFinanceClient.SearchResult;
 import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
@@ -112,12 +115,45 @@ public final class TickerResolver {
      * Tier 2 acceptance bar: when token/score matching ({@link #strongMatch}) can't
      * confidently pick a candidate, the embedding ranker may — but only if the best
      * candidate name is at least this cosine-similar to the query. Doubles as a guard
-     * (a fuzzy query with no semantically-close candidate stays unresolved). Tunable.
+     * (a fuzzy query with no semantically-close candidate stays unresolved). Raised
+     * from 0.55 because the loose fallback was turning pure THEMES into bogus tickers
+     * (Biotech→an index, Semiconductor→an ETF, Drones→some foreign line). Paired with
+     * the EQUITY-only filter in {@link #embedMatch}, the fuzzy fallback now only ever
+     * promotes a real, confidently-named stock. (The subject still keeps its Yahoo
+     * NEWS regardless — that's attached independent of the ticker.)
      */
-    private static final double EMBED_MATCH_THRESHOLD = 0.55;
+    private static final double EMBED_MATCH_THRESHOLD = 0.70;
 
     private final YahooFinanceClient yahoo;
     private final EmbeddingService embeddings; // Tier 2; null disables it
+
+    /**
+     * The live price chain (L&amp;S → Tradegate → NASDAQ → Yahoo, EUR). Optional:
+     * injected only in production (AppModule); null in tests and the lab harness,
+     * where snapshots fall back to the Yahoo batch below. Yahoo stays the SEARCH +
+     * NEWS source regardless — the chain only supplies the price snapshot.
+     */
+    private PriceSource priceSource;
+
+    /**
+     * Installs the live price chain. Forwarded by {@code EditorialAgent} (which
+     * Guice manages and which builds this resolver by hand); null in tests / the
+     * lab harness, where snapshots fall back to the Yahoo batch.
+     */
+    void setPriceSource(PriceSource priceSource) {
+        this.priceSource = priceSource;
+    }
+
+    /**
+     * The multi-source news pool (Yahoo + NASDAQ + …). Forwarded by
+     * {@code EditorialAgent}; null in tests / the lab harness, where news comes
+     * straight from the Yahoo search result.
+     */
+    private NewsAggregator newsAggregator;
+
+    void setNewsAggregator(NewsAggregator newsAggregator) {
+        this.newsAggregator = newsAggregator;
+    }
 
     public TickerResolver(YahooFinanceClient yahoo) {
         this(yahoo, null);
@@ -181,13 +217,20 @@ public final class TickerResolver {
                     pending.add(Pending.rateLimited(query));
                     continue;
                 }
-                List<RawNewsItem> news = sr.news() != null ? sr.news() : List.of();
                 YahooQuote strong = strongMatch(query, sr.quotes());
                 if (strong == null) {
                     strong = embedMatch(query, sr.quotes()); // Tier 2: semantic fallback
                 }
                 String ownTicker = strong == null ? null : strong.symbol();
                 String canonical = strong == null ? query : strong.displayName();
+
+                // News: triangulated across all sources by the resolved ticker (Yahoo +
+                // NASDAQ + …) so the wire doesn't depend on Yahoo alone. A ticker-less
+                // theme keeps Yahoo's query-news (the only handle without a symbol); the
+                // lab/tests (no aggregator) also keep the search news.
+                List<RawNewsItem> news = (newsAggregator != null && ownTicker != null)
+                        ? newsAggregator.newsFor(ownTicker, NEWS_COUNT)
+                        : (sr.news() != null ? sr.news() : List.of());
 
                 List<String> relSyms = new ArrayList<>();
                 Map<String, List<RawNewsItem>> relNews = new LinkedHashMap<>();
@@ -202,7 +245,9 @@ public final class TickerResolver {
                             String sym = raw.trim().toUpperCase(Locale.ROOT);
                             if (sym.isEmpty() || !seen.add(sym)) continue;
                             relSyms.add(sym);
-                            List<RawNewsItem> rn = yahoo.getNewsForSymbol(sym, RELATED_NEWS_COUNT);
+                            List<RawNewsItem> rn = newsAggregator != null
+                                    ? newsAggregator.newsFor(sym, RELATED_NEWS_COUNT)
+                                    : yahoo.getNewsForSymbol(sym, RELATED_NEWS_COUNT);
                             relNews.put(sym, rn == null ? List.of() : rn);
                             if (relSyms.size() >= maxRelated) break collect;
                         }
@@ -217,9 +262,34 @@ public final class TickerResolver {
             }
         }
 
-        // Phase 2 — ONE batched snapshot fetch for every ticker we touched.
-        Map<String, MarketSnapshot> snaps = yahoo == null || symbols.isEmpty()
-                ? Map.of() : yahoo.fetchCharts(new ArrayList<>(symbols));
+        // Phase 2 — snapshots. With the live price chain each subject's OWN ticker
+        // goes through L&S→Tradegate→NASDAQ→Yahoo (EUR, looked up by name); related
+        // tickers (second-hop context, ticker-only) stay on the Yahoo batch. Without
+        // a chain (tests / lab harness) everything uses the Yahoo batch as before.
+        Map<String, MarketSnapshot> snaps = new LinkedHashMap<>();
+        if (priceSource != null) {
+            for (Pending p : pending) {
+                if (p.ownTicker == null) continue;
+                String key = p.ownTicker.toUpperCase(Locale.ROOT);
+                if (snaps.containsKey(key)) continue;
+                priceSource.snapshot(new PriceRef(p.canonical, p.ownTicker))
+                        .ifPresent(s -> snaps.put(key, s));
+            }
+            // Own tickers are fully the chain's job — it already includes Yahoo as a
+            // fallback, and intentionally returns nothing in the 02:00–07:30 gap so the
+            // unit keeps its last snapshot. So the Yahoo batch covers ONLY related/context
+            // tickers; never re-fetch an own ticker the chain deliberately skipped.
+            LinkedHashSet<String> ownTickers = new LinkedHashSet<>();
+            for (Pending p : pending) {
+                if (p.ownTicker != null) ownTickers.add(p.ownTicker.toUpperCase(Locale.ROOT));
+            }
+            LinkedHashSet<String> rest = new LinkedHashSet<>(symbols);
+            rest.removeAll(ownTickers);
+            rest.removeAll(snaps.keySet());
+            if (yahoo != null && !rest.isEmpty()) snaps.putAll(yahoo.fetchCharts(new ArrayList<>(rest)));
+        } else if (yahoo != null && !symbols.isEmpty()) {
+            snaps.putAll(yahoo.fetchCharts(new ArrayList<>(symbols)));
+        }
 
         // Phase 3 — assemble, wiring the batched snapshots back in.
         List<ResolvedSubject> out = new ArrayList<>(pending.size());
@@ -277,7 +347,17 @@ public final class TickerResolver {
         List<String> names = new ArrayList<>(quotes.size());
         for (YahooQuote q : quotes) names.add(q.displayName());
         int i = embeddings.bestMatch(query, names, EMBED_MATCH_THRESHOLD);
-        return i >= 0 ? quotes.get(i) : null;
+        if (i < 0) return null;
+        YahooQuote best = quotes.get(i);
+        // EQUITY-only gate for the fuzzy fallback: a theme/topic ("Biotech",
+        // "Drones", "Semiconductor") that has no token/score match must NOT be
+        // promoted to an ETF/index/currency/crypto ticker with a live price the
+        // room never meant. Only a real, confidently-named stock survives Tier 2;
+        // anything else stays tickerless (its Yahoo NEWS is kept regardless,
+        // attached independent of the ticker in resolveAll).
+        String type = best.quoteType() == null ? "" : best.quoteType().trim().toUpperCase(Locale.ROOT);
+        if (!type.equals("EQUITY")) return null;
+        return best;
     }
 
     /**
@@ -298,7 +378,11 @@ public final class TickerResolver {
         int bestRank = Integer.MAX_VALUE;
         for (int i = 0; i < quotes.size(); i++) {
             YahooQuote q = quotes.get(i);
-            boolean exactSymbol = q.symbol() != null && query.equalsIgnoreCase(q.symbol());
+            // A generic theme/macro acronym (AI, KI, EV, FED, …) is almost always the
+            // theme, not the same-letter ticker (e.g. "AI" the topic, not C3.ai). Don't
+            // let it exact-match a ticker — leave it unresolved (a clear ticker-less line).
+            boolean exactSymbol = q.symbol() != null && query.equalsIgnoreCase(q.symbol())
+                    && !THEME_WORDS.contains(query.trim().toUpperCase(Locale.ROOT));
             boolean strong = bestSimilarity(queryTokens, q) >= STRONG_MATCH_THRESHOLD;
             if (strong && strictSingleToken && !hasOnlyQueryTokens(queryTokens, q)) {
                 // The name carries extra, non-stop tokens beyond the single query
@@ -326,13 +410,56 @@ public final class TickerResolver {
             Set.of("PNK", "OTC", "OQB", "OQX", "OTCBB", "OTCQ");
 
     /**
-     * Preference among name matches — <b>lower is better</b>. No brittle
-     * exchange whitelist; ranks on reliable, language-neutral signals:
+     * Generic theme/macro/slang acronyms the room uses as topics, not tickers —
+     * even though each happens to BE a listed symbol. Gated from the exact-symbol
+     * fast-path so "AI" stays the AI theme (not C3.ai), "IT" stays IT (not Gartner).
+     */
+    private static final Set<String> THEME_WORDS = Set.of(
+            "AI", "KI", "EV", "IT", "FED", "ECB", "EZB", "USA", "USD", "EUR", "GBP",
+            "CPI", "GDP", "BIP", "PCE", "ETF", "IPO", "ATH", "FOMO", "DD", "YOLO",
+            "CEO", "CFO", "KGV", "QE", "BTC");
+
+    // ---- Venue preference (the "primary → Frankfurt → never obscure" directive) ----
+    // Symbol-suffix is the most reliable venue signal Yahoo gives ("TTWO.WA" =
+    // Warsaw, "RHM.DE" = Xetra); the US primary listing simply has no suffix. We
+    // rank a listing's venue into three tiers so a US/home primary beats a thin
+    // foreign secondary (Take-Two → TTWO, not TTWO.WA) and, when no primary is in
+    // the candidate set, Frankfurt (a real, EUR-quoted, accessible venue for the
+    // German user base) beats any other obscure foreign line.
+
+    /** Suffixes of primary/home venues — kept at tier 0 (no venue malus). */
+    private static final Set<String> PRIMARY_SUFFIXES = Set.of(
+            "DE",                       // Xetra (German home)
+            "L",                        // London Stock Exchange
+            "PA", "AS", "BR", "LS",     // Euronext Paris/Amsterdam/Brussels/Lisbon
+            "MC",                       // Madrid
+            "MI",                       // Borsa Italiana (primary; numeric secondaries already demoted)
+            "SW",                       // SIX Swiss
+            "VI",                       // Vienna
+            "CO", "ST", "HE", "OL",     // Copenhagen/Stockholm/Helsinki/Oslo
+            "TO", "V",                  // Toronto / TSX-V
+            "HK", "T", "AX", "NZ");     // Hong Kong / Tokyo / Australia / New Zealand
+
+    /** Suffixes of German regional venues — Frankfurt &amp; co., the fallback tier. */
+    private static final Set<String> FRANKFURT_SUFFIXES = Set.of(
+            "F",                                    // Frankfurt
+            "BE", "MU", "SG", "HM", "DU", "HA");    // Berlin/Munich/Stuttgart/Hamburg/Düsseldorf/Hannover
+
+    private static final int VENUE_FRANKFURT = 100; // German fallback venue
+    private static final int VENUE_OBSCURE = 400;   // unclassified foreign secondary (e.g. .WA Warsaw)
+
+    /**
+     * Preference among name matches — <b>lower is better</b>. Ranks on reliable,
+     * mostly language-neutral signals (additive, so they compose):
      * <ul>
      *   <li>an <b>exact symbol</b> match wins outright (the subject WAS a ticker);</li>
      *   <li><b>numeric-prefixed symbols</b> ({@code 1MUV2.MI}) are foreign
      *       secondary listings on Borsa Italiana &amp; co. → heavy demotion;</li>
      *   <li><b>OTC / grey-market</b> exchanges (PNK, …) → demotion;</li>
+     *   <li><b>venue tier</b> (the directive): a primary/home listing (US no-suffix,
+     *       {@code .DE}, {@code .L}, …) is preferred; Frankfurt ({@code .F}) is the
+     *       fallback; any other obscure foreign line ({@code .WA}, …) is demoted —
+     *       so Take-Two resolves to {@code TTWO} (Nasdaq), not {@code TTWO.WA};</li>
      *   <li>real <b>EQUITY</b> mildly preferred over a same-name ETF/index (soft,
      *       so an ETF still wins when it's the only/best match);</li>
      *   <li>ties fall back to <b>Yahoo's own order</b> (≈ relevance).</li>
@@ -345,9 +472,27 @@ public final class TickerResolver {
         if (!sym.isEmpty() && Character.isDigit(sym.charAt(0))) rank += 1000;
         String exch = q.exchange() == null ? "" : q.exchange().trim().toUpperCase(Locale.ROOT);
         if (OTC_EXCHANGES.contains(exch)) rank += 500;
+        rank += venueMalus(sym);
         String type = q.quoteType() == null ? "" : q.quoteType().trim().toUpperCase(Locale.ROOT);
         if (!type.equals("EQUITY")) rank += 50;
+        // Prefer the cash index / spot over a derivative future: "NASDAQ 100" → ^NDX, not NQ=F.
+        if (type.equals("FUTURE") || sym.toUpperCase(Locale.ROOT).endsWith("=F")) rank += 200;
         return rank;
+    }
+
+    /**
+     * Venue tier from a symbol's exchange suffix: 0 for a primary/home listing
+     * (incl. US, which has no suffix), {@link #VENUE_FRANKFURT} for a German
+     * regional venue (Frankfurt &amp; co.), {@link #VENUE_OBSCURE} for an
+     * unrecognised foreign suffix (treated as a thin secondary line).
+     */
+    private static int venueMalus(String symbol) {
+        int dot = symbol.lastIndexOf('.');
+        if (dot < 0 || dot == symbol.length() - 1) return 0; // no suffix → US/home primary
+        String suffix = symbol.substring(dot + 1).toUpperCase(Locale.ROOT);
+        if (PRIMARY_SUFFIXES.contains(suffix)) return 0;
+        if (FRANKFURT_SUFFIXES.contains(suffix)) return VENUE_FRANKFURT;
+        return VENUE_OBSCURE;
     }
 
     private static Set<String> tokenize(String s) {

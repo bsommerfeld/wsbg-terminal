@@ -1,32 +1,57 @@
-// Single-click theme toggle (dark ↔ light), persisted in localStorage.
+// Theme state (dark ↔ light), persisted in localStorage.
 //
-// Replaces the previous settings flyout which carried this toggle plus
-// a density picker and a handful of feature switches. Those settings
-// are now hard-on; only the theme is user-controllable.
+// The toggle now lives inside the Settings view (settings.js drives the
+// day/night switch + the "follow system" checkbox); this module owns the
+// state and applies it. When "follow system" is on, the OS colour-scheme
+// wins and the explicit choice is ignored until it's turned off again.
 
 const STORAGE_KEY = 'wsbg.theme.v1';
+const FOLLOW_KEY = 'wsbg.theme.follow-system.v1';
+const mql = window.matchMedia('(prefers-color-scheme: dark)');
 
-export function initTheme() {
-  restore();
-
-  // Multiple toggle buttons may exist (titlebar on macOS, footer on
-  // Win/Linux); only one is visible per platform, but wire them all.
-  const toggle = () => {
-    const current = document.documentElement.dataset.theme || 'dark';
-    const next = current === 'dark' ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', next);
-    try { localStorage.setItem(STORAGE_KEY, next); } catch (_) {}
-  };
-
-  document.querySelectorAll('.js-theme-toggle').forEach(btn => {
-    btn.addEventListener('click', toggle);
-  });
+function read(key) {
+  try { return localStorage.getItem(key); } catch (_) { return null; }
+}
+function write(key, value) {
+  try { localStorage.setItem(key, value); } catch (_) {}
 }
 
-function restore() {
-  let stored;
-  try { stored = localStorage.getItem(STORAGE_KEY); } catch (_) { stored = null; }
-  if (stored === 'dark' || stored === 'light') {
-    document.documentElement.setAttribute('data-theme', stored);
-  }
+function apply(theme) {
+  document.documentElement.setAttribute('data-theme', theme === 'light' ? 'light' : 'dark');
+}
+
+export function isFollowingSystem() {
+  return read(FOLLOW_KEY) === '1';
+}
+
+export function currentTheme() {
+  return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+}
+
+/** Explicit user choice (only meaningful while NOT following the system). */
+export function setTheme(theme) {
+  write(STORAGE_KEY, theme);
+  if (!isFollowingSystem()) apply(theme);
+}
+
+/** Toggle convenience for the day/night switch. */
+export function toggleTheme() {
+  setTheme(currentTheme() === 'dark' ? 'light' : 'dark');
+}
+
+/** Turn "follow system" on/off; applies the resulting theme immediately. */
+export function setFollowSystem(on) {
+  write(FOLLOW_KEY, on ? '1' : '0');
+  if (on) apply(mql.matches ? 'dark' : 'light');
+  else apply(read(STORAGE_KEY) === 'light' ? 'light' : 'dark');
+}
+
+export function initTheme() {
+  if (isFollowingSystem()) apply(mql.matches ? 'dark' : 'light');
+  else { const s = read(STORAGE_KEY); if (s === 'dark' || s === 'light') apply(s); }
+
+  // React to OS colour-scheme changes while following the system.
+  mql.addEventListener('change', () => {
+    if (isFollowingSystem()) apply(mql.matches ? 'dark' : 'light');
+  });
 }

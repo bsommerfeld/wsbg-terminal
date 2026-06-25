@@ -26,6 +26,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -205,6 +208,26 @@ public class RedditScraper implements RedditSource {
     private volatile boolean degraded = false;
     private volatile long degradedSinceEpochMs = 0L;
 
+    /**
+     * Deferred comment ingestion — mirrors the RSS path so the JSON path has the
+     * same fast cold-start. Fetching one comment tree per new thread INLINE
+     * (limit=500&depth=20, rate-limited) is what made a cold-start listing crawl
+     * for minutes. Clustering only needs title+body+vision, so a new thread is
+     * enqueued here and a single daemon worker backfills its comments in the
+     * background; the listing scan returns immediately and clusters form at once.
+     */
+    private final BlockingQueue<PendingComment> commentQueue = new LinkedBlockingQueue<>();
+
+    /**
+     * Threads whose comments backfilled since the last scan — re-surfaced into the
+     * next scan's {@link ScrapeStats} so the editorial layer regenerates their
+     * headline with the new evidence (the comment tree the first pass didn't have).
+     */
+    private final Set<String> pendingResurface = ConcurrentHashMap.newKeySet();
+
+    /** One queued comment-ingestion job. */
+    private record PendingComment(String threadId, String permalink) {}
+
     @Inject
     public RedditScraper(RedditRepository repository, ApplicationEventBus eventBus,
             WebFetcher fetcher, TokenBucketRateLimiter rateLimiter) {
@@ -228,6 +251,36 @@ public class RedditScraper implements RedditSource {
         this.mapper = new ObjectMapper();
         this.rateLimiter = rateLimiter;
         this.eventBus = eventBus;
+
+        Thread commentWorker = new Thread(this::runCommentWorker, "json-comment-ingest");
+        commentWorker.setDaemon(true);
+        commentWorker.start();
+    }
+
+    /**
+     * Drains the comment-ingestion queue in the background, fetching each
+     * thread's full context (which saves its comment tree to the repository as a
+     * side effect) and marking it for re-surfacing so the next scan regenerates
+     * its headline with the freshly-arrived comments.
+     */
+    private void runCommentWorker() {
+        while (true) {
+            PendingComment pc;
+            try {
+                pc = commentQueue.take();
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+            try {
+                fetchThreadContext(pc.permalink()); // populates the repo's comment tree
+                if (repository.getThread(pc.threadId()) != null) {
+                    pendingResurface.add(pc.threadId());
+                }
+            } catch (Exception e) {
+                LOG.debug("Async comment ingest failed for {}: {}", pc.threadId(), e.getMessage());
+            }
+        }
     }
 
     /**
@@ -487,6 +540,7 @@ public class RedditScraper implements RedditSource {
             if (response.status() != 200) {
                 LOG.error("Failed to fetch subreddit data: HTTP {}", response.status());
                 recordFetchOutcome(false);
+                stats.failed = true;
                 return stats;
             }
 
@@ -504,8 +558,30 @@ public class RedditScraper implements RedditSource {
         } catch (Exception e) {
             LOG.error("Error scraping subreddit {}", subreddit, e);
             recordFetchOutcome(false);
+            stats.failed = true;
         }
+        drainResurfaced(stats);
         return stats;
+    }
+
+    /**
+     * Folds threads whose comments backfilled asynchronously into this scan's
+     * stats, so the editorial layer re-evaluates them with the new comment tree.
+     * Mirrors the RSS path's re-surface — the one channel the {@link RedditSource}
+     * contract gives back to the agent.
+     */
+    private void drainResurfaced(ScrapeStats stats) {
+        if (pendingResurface.isEmpty()) return;
+        List<String> ids = new ArrayList<>(pendingResurface);
+        pendingResurface.clear();
+        for (String id : ids) {
+            if (stats.scannedIds.contains(id)) continue; // already in this batch
+            RedditThread t = repository.getThread(id);
+            if (t == null) continue;
+            stats.scannedIds.add(id);
+            stats.threadUpdates.add(t);
+            stats.newComments++; // mark hasUpdates so the cycle isn't a no-op
+        }
     }
 
     // =====================================================================
@@ -756,8 +832,11 @@ public class RedditScraper implements RedditSource {
         if (!bodySnippet.isEmpty()) {
             LOG.info("[REDDIT]   body: {}", bodySnippet);
         }
-        LOG.debug("Fetching full context for new thread: {}", thread.id());
-        fetchThreadContext(thread.permalink());
+        // Defer the comment fetch to the background worker — clustering needs only
+        // title+body+vision, so the thread can be clustered now and its comments
+        // backfilled (and the headline re-surfaced) shortly. Fetching inline here
+        // is what made the JSON cold-start crawl.
+        commentQueue.add(new PendingComment(thread.id(), thread.permalink()));
     }
 
     /**
@@ -790,7 +869,10 @@ public class RedditScraper implements RedditSource {
         if (commentDiff > 0) {
             LOG.info("Context Update: {} ({})\n +{} comments, Score: {}",
                     thread.title(), thread.id(), commentDiff, thread.score());
-            fetchThreadContext(thread.permalink());
+            // Deferred like the new-thread path: enqueue the comment refresh, the
+            // background worker backfills it. The thread is already in threadUpdates
+            // above (commentDiff > 0), so the cluster re-evaluates regardless.
+            commentQueue.add(new PendingComment(thread.id(), thread.permalink()));
         }
 
         batchCollector.add(thread);

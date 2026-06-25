@@ -34,6 +34,14 @@ public class AgentRepository {
 
     private final List<HeadlineRecord> headlineCache = new CopyOnWriteArrayList<>();
 
+    /**
+     * Identities of headlines that belong to the CURRENT session — published live
+     * this run, or restored from the short-TTL snapshot. NOT the ones merely
+     * re-seeded from the permanent archive at startup. Lets "Archiv löschen" drop
+     * the archived history from the wire while keeping the live session intact.
+     */
+    private final java.util.Set<String> sessionIdentities = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
     /** Permanent archive behind the wire; {@code null} in archive-less tests. */
     private final HeadlineArchive archive;
 
@@ -110,7 +118,13 @@ public class AgentRepository {
                 sentiment == null ? HeadlineSentiment.NEUTRAL : sentiment,
                 snapshot);
         headlineCache.add(record);
+        sessionIdentities.add(identity(record)); // live-published this session
         if (archive != null) archive.append(record); // permanent — survives everything
+    }
+
+    /** Identity of a headline — must match {@link HeadlineArchive}'s formula. */
+    private static String identity(HeadlineRecord r) {
+        return r.createdAt() + "|" + r.clusterId() + "|" + r.headline();
     }
 
     /** Returns every cached headline (for persistence snapshots). */
@@ -125,6 +139,10 @@ public class AgentRepository {
     public void restoreHeadlines(List<HeadlineRecord> records) {
         if (records == null || records.isEmpty()) return;
         for (HeadlineRecord r : records) {
+            // Snapshot-restored headlines ARE the current session — mark them so
+            // "Archiv löschen" keeps them, even when the archive re-seed already
+            // put an identical copy in the wire.
+            sessionIdentities.add(identity(r));
             boolean dup = headlineCache.stream().anyMatch(h ->
                     h.createdAt() == r.createdAt()
                             && java.util.Objects.equals(h.clusterId(), r.clusterId())
@@ -166,6 +184,29 @@ public class AgentRepository {
      */
     public void clear() {
         headlineCache.clear();
+    }
+
+    /**
+     * The user's "Archiv löschen": wipes the permanent {@link HeadlineArchive} and
+     * drops every archive-only headline from the live wire, KEEPING only the
+     * current session (live-published + snapshot-restored, tracked by
+     * {@link #sessionIdentities}). So the UI clears down to "what's happening now",
+     * not to empty. No-op on the archive in archive-less tests.
+     */
+    public void clearArchiveKeepSession() {
+        if (archive != null) archive.clear();
+        headlineCache.removeIf(h -> !sessionIdentities.contains(identity(h)));
+    }
+
+    /**
+     * The user's "Daten löschen": a FULL wipe — the live wire, the permanent
+     * {@link HeadlineArchive}, and the session-identity tracking. Nothing is kept;
+     * the wire repopulates from the next scan as if the app had just started.
+     */
+    public void clearAll() {
+        headlineCache.clear();
+        sessionIdentities.clear();
+        if (archive != null) archive.clear();
     }
 
     /** Kept for API symmetry with the old persistent variant — no-op now. */

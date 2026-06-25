@@ -71,13 +71,28 @@ public final class CefFetchClient {
     private final String anchorUrl;
     private final String verifyUrl;
     private final String label;
+    /** fetch() credentials mode: "include" (send cookies — needed for cookie-gated APIs)
+     *  or "omit" (no cookies — required for a cross-origin host that answers ACAO:*). */
+    private final String credentials;
     private final String clientTag = randomTag();
 
     /** Re-anchor at most this often, so a run of blocked responses can't loop-reload. */
     private static final long RELOAD_COOLDOWN_MS = 60_000;
-    /** Warmup poll cadence and ceiling — covers a slow Cloudflare JS interstitial. */
+    /** Warmup poll cadence — the quick base used while a Cloudflare JS interstitial resolves. */
     private static final long WARMUP_POLL_MS = 2_500;
-    private static final int WARMUP_MAX_ATTEMPTS = 40; // ~100s before giving up (re-armable)
+    /**
+     * Ceiling for the exponential back-off applied when Reddit is actively
+     * throttling (503/429). We must never hammer an endpoint that's telling us
+     * to wait — that's how an IP/user gets blocked, not unblocked.
+     */
+    private static final long WARMUP_MAX_BACKOFF_MS = 60_000;
+    /**
+     * Total time one warmup run polls before giving up (re-armable). The fast
+     * interstitial case resolves in seconds; a sustained throttle backs off and
+     * hits this budget, at which point the source layer's fallback (RSS) has long
+     * since taken over and demoted this path.
+     */
+    private static final long WARMUP_BUDGET_MS = 5 * 60_000;
     private static final Duration WARMUP_FETCH_TIMEOUT = Duration.ofSeconds(15);
 
     private final AtomicBoolean started = new AtomicBoolean(false);
@@ -101,10 +116,15 @@ public final class CefFetchClient {
      * @param label     short name for logs (e.g. "reddit")
      */
     public CefFetchClient(CefHost cefHost, String anchorUrl, String verifyUrl, String label) {
+        this(cefHost, anchorUrl, verifyUrl, label, "include");
+    }
+
+    public CefFetchClient(CefHost cefHost, String anchorUrl, String verifyUrl, String label, String credentials) {
         this.cefHost = cefHost;
         this.anchorUrl = anchorUrl;
         this.verifyUrl = verifyUrl;
         this.label = label;
+        this.credentials = credentials == null ? "include" : credentials;
     }
 
     /** Result of one browser-driven fetch. */
@@ -152,6 +172,24 @@ public final class CefFetchClient {
     }
 
     /**
+     * Reads a {@code Retry-After} header (delta-seconds form) into millis, so we
+     * wait at least as long as the server asked. Returns 0 when absent or in the
+     * HTTP-date form (we fall back to exponential back-off there). Header lookup
+     * is case-tolerant — browser {@code fetch} lowercases header names.
+     */
+    private static long parseRetryAfterMs(Map<String, String> headers) {
+        if (headers == null) return 0L;
+        String v = headers.get("retry-after");
+        if (v == null) v = headers.get("Retry-After");
+        if (v == null) return 0L;
+        try {
+            return Math.max(0L, Long.parseLong(v.trim()) * 1000L);
+        } catch (NumberFormatException e) {
+            return 0L; // HTTP-date form — let the exponential back-off handle it
+        }
+    }
+
+    /**
      * Reloads the anchor document to refresh cookies / re-establish the session,
      * resetting readiness so the next {@link #fetch} waits for the fresh page.
      * Rate-limited by {@link #RELOAD_COOLDOWN_MS} and run off the calling thread.
@@ -196,20 +234,40 @@ public final class CefFetchClient {
         if (!warmupRunning.compareAndSet(false, true)) return;
         Thread t = new Thread(() -> {
             try {
-                for (int attempt = 1; attempt <= WARMUP_MAX_ATTEMPTS && !ready; attempt++) {
+                long deadline = System.currentTimeMillis() + WARMUP_BUDGET_MS;
+                long delay = WARMUP_POLL_MS;
+                for (int attempt = 1; !ready && System.currentTimeMillis() < deadline; attempt++) {
+                    int status = -1;
+                    long retryAfterMs = 0L;
                     try {
                         HttpResult r = rawFetch(verifyUrl, WARMUP_FETCH_TIMEOUT);
-                        if (r.status() == 200) {
+                        status = r.status();
+                        if (status == 200) {
                             ready = true;
                             readyLatch.countDown();
                             LOG.info("CEF fetch '{}' session ready after {} probe(s).", label, attempt);
                             return;
                         }
-                        LOG.debug("[{}] warmup probe {} → HTTP {}, retrying", label, attempt, r.status());
+                        retryAfterMs = parseRetryAfterMs(r.headers());
                     } catch (Exception e) {
                         LOG.debug("[{}] warmup probe {} failed: {}", label, attempt, e.getMessage());
                     }
-                    Thread.sleep(WARMUP_POLL_MS);
+                    // Throttle (503/429) → back off exponentially and honour
+                    // Retry-After; never poll a rate-limited endpoint fast. A
+                    // non-throttle non-200 (interstitial still resolving) keeps
+                    // the quick base cadence so a healthy session comes up fast.
+                    if (isRestricted(status)) {
+                        delay = Math.max(retryAfterMs, Math.min(WARMUP_MAX_BACKOFF_MS, delay * 2));
+                        LOG.debug("[{}] warmup probe {} → HTTP {}, backing off {} ms",
+                                label, attempt, status, delay);
+                    } else {
+                        delay = WARMUP_POLL_MS;
+                    }
+                    Thread.sleep(delay);
+                }
+                if (!ready) {
+                    LOG.info("CEF fetch '{}' warmup gave up after {} — fallback handles it.",
+                            label, java.time.Duration.ofMillis(WARMUP_BUDGET_MS));
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -255,7 +313,7 @@ public final class CefFetchClient {
         // Assigning `browser` before the async load fires keeps the load-end
         // listener's identity check (b == browser) valid.
         try {
-            Runnable create = () -> browser = cefHost.createBrowser(anchorUrl);
+            Runnable create = () -> browser = cefHost.createFetchBrowser(anchorUrl);
             if (SwingUtilities.isEventDispatchThread()) {
                 create.run();
             } else {
@@ -306,7 +364,7 @@ public final class CefFetchClient {
         String jsUrl = JSON.writeValueAsString(url);
         return "(function(){var TAG=" + jsTag + ",ID=" + id + ",URL=" + jsUrl + ",D='\\u0001';"
                 + "function q(s){window.wsbgFetchQuery({request:s,onSuccess:function(){},onFailure:function(){}});}"
-                + "fetch(URL,{credentials:'include',headers:{'Accept':'application/json'}}).then(function(r){"
+                + "fetch(URL,{credentials:'" + credentials + "',headers:{'Accept':'application/json'}}).then(function(r){"
                 + "var h={};r.headers.forEach(function(v,k){h[k]=v;});"
                 + "return r.text().then(function(t){"
                 + "var CH=" + CHUNK + ",total=Math.max(1,Math.ceil(t.length/CH));"

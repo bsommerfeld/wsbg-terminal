@@ -60,6 +60,8 @@
   --footer-h:     32px;
   --pad-x:        24px;
   --row-pad-y:    13px;
+  --meta-leiste-h: 24px;  /* shared height for the headline meta "Leisten" (chart/tags/provenance) */
+  --meta-seg-font: 0.8em; /* shared text size for meta segments (tags + ticker) — visual consistency */
 
   /* Base 16px per user request. Secondary sizes scale via em so density
      and base bumps cascade without touching every rule. Chrome stays

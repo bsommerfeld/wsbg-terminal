@@ -83,20 +83,22 @@ public final class LabModule extends AbstractModule {
         String probeSub = rc.getSubreddits().isEmpty()
                 ? "wallstreetbetsGER" : rc.getSubreddits().get(0);
 
-        RedditScraper oauth = new RedditScraper(repository, eventBus,
+        // Health is owned by FallbackRedditSource (aggregate), so the delegates
+        // get a null bus — mirrors the terminal wiring.
+        RedditScraper oauth = new RedditScraper(repository, null,
                 new OAuthRedditFetcher(config),
                 new TokenBucketRateLimiter(rc.getOauthRateLimitBurst(),
                         rc.getOauthRateLimitRequestsPerSecond()));
         // The lab has no embedded browser, so the anonymous .json delegate uses
         // the plain direct transport (the terminal injects a browser→direct chain).
-        RedditScraper json = new RedditScraper(repository, eventBus,
+        RedditScraper json = new RedditScraper(repository, null,
                 new DirectWebFetcher(),
                 new TokenBucketRateLimiter(rc.getRateLimitBurst(),
                         rc.getRateLimitRequestsPerSecond()));
-        RssRedditScraper rss = new RssRedditScraper(repository, config, eventBus);
+        RssRedditScraper rss = new RssRedditScraper(repository, config, null);
 
         LOG.info("Reddit source: dynamic fallback chain [OAuth → JSON → RSS]");
-        return new FallbackRedditSource(List.of(oauth, json, rss), probeSub, 600L);
+        return new FallbackRedditSource(List.of(oauth, json, rss), probeSub, 600L, eventBus);
     }
 
     /**

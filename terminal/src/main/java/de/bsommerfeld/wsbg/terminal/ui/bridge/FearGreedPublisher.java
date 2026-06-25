@@ -1,0 +1,51 @@
+package de.bsommerfeld.wsbg.terminal.ui.bridge;
+
+import com.google.inject.Inject;
+import com.google.inject.Singleton;
+import de.bsommerfeld.wsbg.terminal.feargreed.FearGreedIndex;
+import de.bsommerfeld.wsbg.terminal.feargreed.FearGreedMonitorService;
+import de.bsommerfeld.wsbg.terminal.ui.web.PushHub;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+/**
+ * Forwards every Fear &amp; Greed reading from {@link FearGreedMonitorService} to
+ * connected clients as a typed {@code fear-greed} websocket envelope, and re-sends
+ * the cached reading on client open so a fresh page renders the gauge at once.
+ * Mirrors {@link EurUsdPublisher}.
+ */
+@Singleton
+public final class FearGreedPublisher {
+
+    private static final Logger LOG = LoggerFactory.getLogger(FearGreedPublisher.class);
+
+    private final PushHub hub;
+
+    @Inject
+    public FearGreedPublisher(FearGreedMonitorService monitor, PushHub hub) {
+        this.hub = hub;
+        monitor.addListener(this::push);
+        hub.onClientOpen(() -> monitor.getCurrent().ifPresent(this::push));
+    }
+
+    private void push(FearGreedIndex idx) {
+        try {
+            hub.broadcast("fear-greed", toJson(idx));
+        } catch (Exception e) {
+            LOG.warn("Fear&Greed broadcast failed: {}", e.getMessage());
+        }
+    }
+
+    private static Map<String, Object> toJson(FearGreedIndex idx) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("score", Math.round(idx.score()));
+        m.put("rating", idx.rating());
+        m.put("band", idx.band().name());
+        m.put("previousClose", Math.round(idx.previousClose()));
+        m.put("fetchedAt", idx.fetchedAt().toString());
+        return m;
+    }
+}

@@ -29,7 +29,7 @@ class PromptLoaderTest {
 
     @Test
     void loadWithVariables_shouldSubstitutePlaceholders() {
-        String result = PromptLoader.load("agent-system", Map.of("LANGUAGE", "German"));
+        String result = PromptLoader.load("headline-theme", Map.of("LANGUAGE", "German"));
 
         assertNotNull(result);
         assertFalse(result.contains("{{LANGUAGE}}"), "Placeholder should be replaced");
@@ -38,7 +38,7 @@ class PromptLoaderTest {
 
     @Test
     void loadWithVariables_shouldPreserveUnmatchedPlaceholders() {
-        String raw = PromptLoader.load("agent-system");
+        String raw = PromptLoader.load("headline-theme");
         assertTrue(raw.contains("{{"), "Raw template should still contain placeholders");
     }
 }

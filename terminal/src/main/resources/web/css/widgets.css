@@ -94,11 +94,38 @@ a.glyph:hover { opacity: .7; }
 .widget-head .mood[hidden] { display: none; }
 .widget-head .mood[data-mood="BULLISH"] { --mood-color: var(--green); }
 .widget-head .mood[data-mood="BEARISH"] { --mood-color: var(--red); }
-/* Same spacing trick as the EUR/USD badge: when the mood badge is visible
-   it owns the auto margin and LIVE follows at a fixed gap; while hidden,
-   LIVE keeps its own auto margin and stays pinned right. */
-.widget-head .mood ~ .live { margin-left: 14px; }
-.widget-head .mood[hidden] ~ .live { margin-left: auto; }
+/* Sentiment cluster: groups the Fear&Greed gauge + the mood badge in one
+   container, pinned right before LIVE. The cluster owns the auto-margin now
+   (always present, so LIVE stays pinned right even when both badges hide). */
+.widget-head .sentiment-cluster {
+  margin-left: auto;
+  display: inline-flex; align-items: center; gap: 10px;
+}
+.widget-head .sentiment-cluster .mood { margin-left: 0; } /* cluster owns the right-pin */
+.widget-head .sentiment-cluster ~ .live { margin-left: 14px; }
+
+/* Fear & Greed speedometer: a compact CNN-style gauge — fixed red→amber→green
+   arc, a needle at the score, the figure tinted by band (red fear / green greed). */
+.widget-head .fear-greed {
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.widget-head .fear-greed[hidden] { display: none; }
+.widget-head .fear-greed .fg-gauge { display: block; overflow: visible; }
+.widget-head .fear-greed .fg-track { opacity: .9; }
+.widget-head .fear-greed .fg-needle {
+  stroke: var(--txt); stroke-width: 2; stroke-linecap: round;
+  transition: x2 .6s ease, y2 .6s ease;       /* needle glides on a new reading */
+}
+.widget-head .fear-greed .fg-hub { fill: var(--txt); }
+.widget-head .fear-greed .fg-val {
+  font-size: var(--font-chrome); font-weight: 700;
+  font-variant-numeric: tabular-nums; color: var(--txt-2);
+  transition: color .6s ease;
+}
+.widget-head .fear-greed[data-band="EXTREME_FEAR"] .fg-val,
+.widget-head .fear-greed[data-band="FEAR"]         .fg-val { color: var(--red); }
+.widget-head .fear-greed[data-band="GREED"]         .fg-val,
+.widget-head .fear-greed[data-band="EXTREME_GREED"] .fg-val { color: var(--green); }
 
 /* EUR/USD ticker pinned to the FJ widget header — flags flank the rate
    with no chip background. The rate text tints briefly on direction
@@ -191,36 +218,59 @@ a.glyph:hover { opacity: .7; }
 }
 .row:hover { background: var(--bg-hover); }
 
+/* "Open the source thread" button, pinned bottom-right of a headline card.
+   Subtle until the row is hovered; opens the Reddit thread in the OS browser. */
+.row .thread-open {
+  position: absolute;
+  right: 12px; bottom: 8px;
+  font-size: .9em; line-height: 1; text-decoration: none;
+  color: var(--mute-2); opacity: 0;
+  transition: opacity .12s ease, color .12s ease;
+}
+.row:hover .thread-open { opacity: .6; }
+.row .thread-open:hover { opacity: 1; color: var(--txt); }
+
 /* Yahoo provenance mark — a subtle, faintly glowing wordmark pinned to the
    bottom-right corner, set well clear of the meta tags. Present only on lines
    the agent enriched with Yahoo Finance data; hover (native title) explains it.
    Deliberately understated: it's a disclaimer, not a badge. */
-.row .yahoo-mark {
-  position: absolute;
-  right: var(--pad-x);
-  bottom: 5px;
-  width: 38px;
-  height: 11px;
-  background: url("/icons/yahoo.png") right center / contain no-repeat;
-  opacity: .5;
+/* Provenance "Leiste": Yahoo mark + resolved ticker grouped like a macOS
+   segmented control, pushed to the RIGHT end of the meta row so the chart +
+   numbers keep the left. One rounded bordered container; segments meet at a
+   hairline divider. Either segment is optional. */
+.row .body .meta .provenance {
+  flex: 0 0 auto;
+  margin-left: auto;                /* keep Yahoo + ticker pinned to the right */
+  height: var(--meta-leiste-h); box-sizing: border-box;
+  display: inline-flex; align-items: stretch;
+  border: 1px solid var(--line-soft);
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--bg-1);
+}
+.row .body .meta .provenance .prov-seg {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0 8px;                   /* full-height seg; vertical centering via flex */
+}
+.row .body .meta .provenance .prov-seg + .prov-seg {
+  border-left: 1px solid var(--line-soft);   /* macOS hairline between buttons */
+}
+.row .body .meta .provenance .prov-ticker {
+  color: var(--amber); font-weight: 600;
+  font-size: var(--meta-seg-font);  /* same size as the tags — segment consistency */
+  letter-spacing: .03em; font-variant-numeric: tabular-nums;
+}
+.row .body .meta .provenance .prov-yahoo {
+  width: 46px;                      /* full seg height; logo sized + centered below */
+  background: url("/icons/yahoo.png") center / 42px auto no-repeat;
+  opacity: .65; cursor: help;
   filter: drop-shadow(0 0 3px rgba(124, 58, 237, .45));
-  pointer-events: auto;
-  transition: opacity .15s ease, filter .15s ease;
+  transition: opacity .15s ease;
 }
-/* Dark mode: the dark-purple wordmark reads faint on a dark ground, so lift
-   brightness a touch. Opacity matches light mode. */
-html[data-theme="dark"] .row .yahoo-mark {
-  opacity: .5;
+.row .body .meta .provenance .prov-yahoo:hover { opacity: 1; }
+/* Dark mode: the dark-purple wordmark reads faint on a dark ground — lift it. */
+html[data-theme="dark"] .row .body .meta .provenance .prov-yahoo {
   filter: brightness(1.55) drop-shadow(0 0 3px rgba(150, 90, 255, .55));
-}
-.row .yahoo-mark:hover {
-  opacity: 1;
-  filter: drop-shadow(0 0 6px rgba(124, 58, 237, .85));
-  cursor: help;
-}
-html[data-theme="dark"] .row .yahoo-mark:hover {
-  opacity: 1;
-  filter: brightness(1.6) drop-shadow(0 0 7px rgba(150, 90, 255, .9));
 }
 .row .time {
   color: var(--mute); font-size: var(--font-time);
@@ -232,62 +282,44 @@ html[data-theme="dark"] .row .yahoo-mark:hover {
 .row .body .head .pct.up   { color: var(--green); }
 .row .body .head .pct.down { color: var(--red); }
 
-/* ---------------------------------------------------------------------
- * Copy confirmation FX layer.
- *
- * #fx-layer is a fixed-position pointer-events:none overlay above all
- * widgets. The keyboard-copy (Ctrl/Cmd+C) confirmation checkmark lives
- * here briefly and removes itself on animationend. Layer stays in the
- * DOM permanently after the first interaction; effects auto-clean.
- *
- * The checkmark uses stroke-dashoffset for the draw-on animation and
- * is colour-cued green so the user reads "done" before they've even
- * registered the path shape.
- * ------------------------------------------------------------------- */
-#fx-layer {
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 9999;
-  overflow: hidden;
-}
-.copy-tick {
-  position: absolute;
-  pointer-events: none;
-  fill: none;
-  stroke: var(--green);
-  stroke-width: 3;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  filter: drop-shadow(0 0 6px oklch(0.72 0.18 145 / .55));
-  transform-origin: 50% 50%;
-  animation: tick-life 780ms ease forwards;
-}
-.copy-tick path {
-  stroke-dasharray: 28;
-  stroke-dashoffset: 28;
-  animation: tick-draw 320ms cubic-bezier(.4, .1, .3, 1) forwards;
-}
-@keyframes tick-draw {
-  to { stroke-dashoffset: 0; }
-}
-@keyframes tick-life {
-  0%   { opacity: 0; transform: scale(0.6); }
-  18%  { opacity: 1; transform: scale(1.15); }
-  35%  { transform: scale(1); }
-  70%  { opacity: 1; }
-  100% { opacity: 0; transform: scale(1.25); }
-}
 .row .body .meta {
   margin-top: 6px; color: var(--mute);
   font-size: var(--font-meta); letter-spacing: .06em;
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  /* One line, never wrapping: when the window is narrow the tags Leiste shrinks
+     (clips) instead of the row breaking onto a second line. */
+  display: flex; align-items: center; gap: 10px; flex-wrap: nowrap; min-width: 0;
 }
 .row .body .meta .dot { color: var(--mute-2); }
 .row .body .meta .ticker { color: var(--amber); font-weight: 600; }
 .row .body .meta .pct { font-variant-numeric: tabular-nums; }
 .row .body .meta .pct.up   { color: var(--green); }
 .row .body .meta .pct.down { color: var(--red); }
+
+/* Meta-row "Leisten": chart+numbers, tags, and provenance each sit in their own
+   bordered, rounded, hairline-segmented container (macOS segmented-control look)
+   so the row reads as three tidy groups instead of loose chips. */
+.row .body .meta .meta-group {
+  height: var(--meta-leiste-h); box-sizing: border-box;
+  display: inline-flex; align-items: stretch;
+  border: 1px solid var(--line-soft); border-radius: 5px;
+  overflow: hidden; background: var(--bg-1);
+}
+/* Chart + numbers padded inside their Leiste; the 56×18 sparkline keeps its size. */
+.row .body .meta .meta-group.quote-group { padding: 0 8px; align-items: center; flex: 0 0 auto; }
+/* The tags Leiste is the one that yields when space is tight (clips via the
+   group's overflow:hidden); chart + provenance keep their size. */
+.row .body .meta .meta-group.tags-group { flex: 0 1 auto; min-width: 0; }
+/* Inside the tags Leiste the chips drop their own pill chrome — the group draws
+   the border, a hairline divides one tag from the next, each fills the height. */
+.row .body .meta .meta-group.tags-group .tag {
+  border: 0; border-radius: 0; background: none; margin: 0; padding: 0 9px;
+  display: inline-flex; align-items: center;
+  font-size: var(--meta-seg-font);  /* same size as the ticker — segment consistency */
+  white-space: nowrap;
+}
+.row .body .meta .meta-group.tags-group .tag + .tag {
+  border-left: 1px solid var(--line-soft);
+}
 .row .body .meta .tag {
   color: var(--txt-2);
   background: var(--bg-1);
@@ -398,6 +430,9 @@ html[data-theme="dark"] .row .yahoo-mark:hover {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
+/* Stale quote: every venue is closed, so the figure is a last close, not live.
+   Just dim the whole strip — no label (the hover title explains it). */
+.row .body .meta .quote.stale { opacity: .55; }
 
 /* FinancialJuice expandable detail.
    Some FJ items carry a multi-line body (earnings breakdowns, data

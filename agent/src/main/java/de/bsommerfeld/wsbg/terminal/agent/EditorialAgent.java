@@ -94,16 +94,19 @@ public class EditorialAgent {
     private final ClusterRegistry clusterRegistry;
     private final AgentRepository agentRepository;
     private final RedditRepository redditRepository;
-    private final boolean newsCoverageEnabled; // #3b gate; default off (config)
-    private final boolean clusterThemeEnabled;  // cluster-theme producer; default off (config)
     private final ReportBuilder reportBuilder;
     private final TickerResolver tickerResolver;
     private final HeadlineWriter headlineWriter;
     private final SubjectAttributor attributor;
     /** Feed-wide subject store — the editorial atom in prod after the #2 cutover. */
     private final SubjectRegistry subjectRegistry;
-    /** Context-relief window: evidence older than this is pruned each unit tick (0 disables). */
-    private final long contextTtlMinutes;
+    /**
+     * Live config — read fresh each tick, NOT cached in the ctor, so the Settings
+     * view (SettingsBridge mutates this same instance) takes effect without a
+     * restart: cluster-theme mode (ALLES/NUR TICKER), news-coverage, and the
+     * context-relief window all switch live.
+     */
+    private final GlobalConfig config;
 
     @Inject
     public EditorialAgent(AgentBrain brain, ClusterRegistry clusterRegistry,
@@ -116,14 +119,35 @@ public class EditorialAgent {
         this.clusterRegistry = clusterRegistry;
         this.agentRepository = agentRepository;
         this.redditRepository = redditRepository;
-        this.newsCoverageEnabled = config.getHeadlines().isNewsCoverageEnabled();
-        this.clusterThemeEnabled = config.getHeadlines().isClusterThemeEnabled();
         this.reportBuilder = new ReportBuilder(redditRepository, brain);
         this.tickerResolver = new TickerResolver(yahooFinance, embeddings); // Tier 2 enabled
         this.headlineWriter = new HeadlineWriter(agentRepository, eventBus);
         this.attributor = new SubjectAttributor(redditRepository, brain);
         this.subjectRegistry = subjectRegistry;
-        this.contextTtlMinutes = config.getReddit().getSnapshotTtlMinutes();
+        this.config = config;
+    }
+
+    /**
+     * Installs the live price chain (L&amp;S → Tradegate → NASDAQ → Yahoo, EUR) onto
+     * the resolver. Optional Guice method-injection: present in production
+     * (AppModule binds {@link PriceSource}), absent in the lab harness + tests,
+     * where the resolver keeps the Yahoo-only snapshot path. Fires after the
+     * constructor, so the hand-built {@link #tickerResolver} already exists.
+     */
+    @com.google.inject.Inject(optional = true)
+    void setPriceSource(de.bsommerfeld.wsbg.terminal.core.price.PriceSource priceSource) {
+        tickerResolver.setPriceSource(priceSource);
+    }
+
+    /**
+     * Installs the multi-source news pool onto the resolver. Optional Guice
+     * method-injection: present in production (AppModule binds the news sources),
+     * absent in the lab harness + tests, where news stays Yahoo-only.
+     */
+    @com.google.inject.Inject(optional = true)
+    void setNewsAggregator(de.bsommerfeld.wsbg.terminal.aggregator.NewsAggregator aggregator) {
+        tickerResolver.setNewsAggregator(aggregator);
+        LOG.info("[NEWS] multi-source aggregator installed on the resolver.");
     }
 
     /**
@@ -169,7 +193,7 @@ public class EditorialAgent {
         String sys = PromptLoader.load("headline-compose-unit")
                 .replace("{{LANGUAGE}}", brain.getUserLanguage().displayName())
                 .replace("{{ROOM_SLANG}}", WsbgJargon.roomSlangForPrompt());
-        String user = unitBrief(unit, newsCoverageEnabled);
+        String user = unitBrief(unit, config.getHeadlines().isNewsCoverageEnabled());
 
         long t0 = System.nanoTime();
         String text = chat(model, sys, user);
@@ -254,10 +278,18 @@ public class EditorialAgent {
         Instant now = Instant.now();
         MarketSnapshot s = unit.snapshot();
         if (s != null && s.hasPrice()) {
-            sb.append(String.format(Locale.ROOT, "Yahoo market data: %.2f%s", s.price(),
+            // Multi-source now (L&S / Tradegate / NASDAQ / Yahoo) — name the venue,
+            // don't hard-code "Yahoo", so the model never mislabels an EUR L&S price.
+            String venue = s.exchangeName() == null || s.exchangeName().isBlank() ? "Markt" : s.exchangeName();
+            sb.append(String.format(Locale.ROOT, "Live market data (%s): %.2f%s", venue, s.price(),
                     s.currency() == null || s.currency().isEmpty() ? "" : " " + s.currency()));
             if (Double.isFinite(s.dayChangePercent())) {
                 sb.append(String.format(Locale.ROOT, ", day %+.2f%%", s.dayChangePercent()));
+            }
+            // Off-hours honesty: a quote older than 30 min is a last close, not live.
+            long quoteAge = now.getEpochSecond() - s.marketTimeEpochSeconds();
+            if (s.marketTimeEpochSeconds() > 0 && quoteAge > 1800) {
+                sb.append(" [Markt geschlossen — letzter Kurs, KEIN Live-Preis: nicht als frische Bewegung darstellen]");
             }
             // Price anchor: where the subject stood when the room first surfaced
             // it. Survives the evidence prune — the "since first mention" arc is
@@ -437,29 +469,6 @@ public class EditorialAgent {
             boolean salvaged, String raw, long ms, List<String> citedNewsIds, boolean unverified) {}
 
     /**
-     * Runs one editorial tick over the given dirty clusters. Each cluster is
-     * processed independently through the pipeline; one failing cluster never
-     * blocks the rest.
-     */
-    public void runTick(Set<String> dirtyClusterIds) {
-        if (dirtyClusterIds == null || dirtyClusterIds.isEmpty()) return;
-        ChatModel model = brain.getAgentModel();
-        if (model == null) {
-            LOG.warn("EditorialAgent: agent model not ready, skipping tick.");
-            return;
-        }
-        int published = 0;
-        for (String id : dirtyClusterIds) {
-            try {
-                published += processCluster(model, id, EditorialListener.NO_OP).published();
-            } catch (Exception e) {
-                LOG.warn("EditorialAgent: cluster {} failed: {}", id, e.getMessage());
-            }
-        }
-        LOG.info("[AGENT] tick done: {} cluster(s) → {} headline(s)", dirtyClusterIds.size(), published);
-    }
-
-    /**
      * The production editorial tick. One dirty signal (a cluster that gained fresh
      * content) drives TWO independent headline producers, never deduped against
      * each other:
@@ -496,6 +505,7 @@ public class EditorialAgent {
         }
 
         // 1 — context relief (same rolling window the lab + snapshot TTL use).
+        long contextTtlMinutes = config.getReddit().getSnapshotTtlMinutes();
         if (contextTtlMinutes > 0) {
             subjectRegistry.pruneContentOlderThan(Duration.ofMinutes(contextTtlMinutes));
         }
@@ -515,7 +525,7 @@ public class EditorialAgent {
                 // thread would otherwise get a line, flooding the wire with generic
                 // narratives and overlapping the per-subject headlines.
                 List<ResolvedSubject> resolved = attributeCluster(id, subjectRegistry);
-                if (clusterThemeEnabled) {
+                if (config.getHeadlines().isClusterThemeEnabled()) {
                     themePublished += publishClusterTheme(model, id, resolved);
                 }
             } catch (Exception e) {
@@ -594,91 +604,6 @@ public class EditorialAgent {
         }
     }
 
-    /**
-     * Runs the full editorial pipeline for a single cluster and returns every
-     * intermediate artifact (extracted subjects, resolved Yahoo data, composed
-     * drafts) alongside the published count. The {@code editorial-lab} harness
-     * calls this to render the pipeline step-by-step; {@link #runTick} uses the
-     * same path and only reads {@link ClusterEditorial#published()}.
-     *
-     * <p>Side effects are identical to a live tick: accepted drafts are persisted
-     * to {@link AgentRepository} and broadcast by {@link HeadlineWriter}.
-     */
-    public ClusterEditorial runClusterTraced(String clusterId) {
-        return runClusterTraced(clusterId, EditorialListener.NO_OP);
-    }
-
-    /**
-     * Same as {@link #runClusterTraced(String)} but fires {@code listener}
-     * callbacks as each stage finishes — so the {@code .lab} harness can render
-     * the trace <em>live</em> (subjects, then resolution, then each headline as
-     * it is composed) instead of waiting for the whole cluster to finish.
-     */
-    public ClusterEditorial runClusterTraced(String clusterId, EditorialListener listener) {
-        ChatModel model = brain.getAgentModel();
-        if (model == null) {
-            return ClusterEditorial.empty(clusterId);
-        }
-        return processCluster(model, clusterId, listener == null ? EditorialListener.NO_OP : listener);
-    }
-
-    /** Streaming hook for the harness — every method has a no-op default. */
-    public interface EditorialListener {
-        EditorialListener NO_OP = new EditorialListener() {};
-        default void onSubjects(List<String> names, String raw, long ms) {}
-        default void onResolved(List<ResolvedSubject> resolved, long ms) {}
-        default void onSubjectDraft(SubjectDraft draft) {}
-    }
-
-    private ClusterEditorial processCluster(ChatModel model, String clusterId, EditorialListener listener) {
-        InvestigationCluster cluster = clusterRegistry.getCluster(clusterId);
-        if (cluster == null) {
-            return ClusterEditorial.empty(clusterId);
-        }
-
-        List<HeadlineRecord> priorHeadlines = agentRepository.getHeadlinesByClusterId(clusterId);
-        String brief = reportBuilder.buildReportData(cluster, priorHeadlines);
-
-        // Stage 1 — subjects (slang-normalised for lookup). Uncapped.
-        long t0 = System.nanoTime();
-        Subjects subjects = extractSubjects(model, cluster, brief);
-        long t1 = System.nanoTime();
-        List<String> names = subjects.names();
-        listener.onSubjects(names, subjects.raw(), ms(t0, t1));
-
-        // Stage 2 — deterministic resolution, BATCHED. The related second-hop is
-        // a shared budget spread evenly across all subjects; every price snapshot
-        // (own ticker + related) is fetched in ONE spark call (see resolveAll).
-        int[] relatedAlloc = distributeRelated(names.size(), RELATED_BUDGET, RELATED_PER_SUBJECT);
-        List<ResolvedSubject> resolved = tickerResolver.resolveAll(names, relatedAlloc);
-        long t2 = System.nanoTime();
-        listener.onResolved(resolved, ms(t1, t2));
-
-        // Stage 3+4 — ONE focused compose call PER subject, and each headline is
-        // QA'd + published the moment it's composed (NOT held until all subjects
-        // are done). A small model handles a single, focused headline reliably
-        // but degenerates / drops to prose when asked for a big JSON array — so
-        // we never batch. Publishing inline means the wire fills one line at a
-        // time as the desk works through the subjects, instead of going silent
-        // for the whole cluster and then dumping every line at once. A cluster
-        // with no market subject still gets one general-sentiment line.
-        List<ResolvedSubject> targets = resolved.isEmpty()
-                ? java.util.Collections.singletonList((ResolvedSubject) null) : resolved;
-        List<SubjectDraft> subjectDrafts = new ArrayList<>();
-        int n = 0;
-        for (ResolvedSubject rs : targets) {
-            SubjectDraft sd = composeOne(model, brief, rs);
-            if (sd.draft() != null && headlineWriter.publish(cluster, sd.draft(), resolved)) n++;
-            subjectDrafts.add(sd);
-            listener.onSubjectDraft(sd);
-        }
-        long t3 = System.nanoTime();
-
-        return new ClusterEditorial(clusterId, cluster.initialTitle, names,
-                subjects.namedByModel(), subjects.raw(), resolved, subjectDrafts, n,
-                ms(t0, t1), ms(t1, t2), ms(t2, t3));
-    }
-
     /** Elapsed milliseconds between two {@link System#nanoTime()} reads. */
     private static long ms(long startNanos, long endNanos) {
         return (endNanos - startNanos) / 1_000_000L;
@@ -706,43 +631,6 @@ public class EditorialAgent {
         }
         return alloc;
     }
-
-    /**
-     * Every artifact one cluster's editorial pass produced. {@code subjects} is
-     * the stage-1 output (uncapped); {@code subjectsNamedByModel} is how many the
-     * model named (equals {@code subjects.size()} now that there's no cap);
-     * {@code subjectsRaw} is the stage-1 raw reply for diagnosis;
-     * {@code subjectDrafts} carries one entry per focused compose call (per
-     * subject, or one "general" entry for a subject-less cluster), each with its
-     * draft (or null), raw reply, salvage flag and latency; {@code published} is
-     * how many survived {@link HeadlineWriter}'s QA.
-     */
-    public record ClusterEditorial(
-            String clusterId,
-            String initialTitle,
-            List<String> subjects,
-            int subjectsNamedByModel,
-            String subjectsRaw,
-            List<ResolvedSubject> resolved,
-            List<SubjectDraft> subjectDrafts,
-            int published,
-            long subjectsMs,
-            long resolveMs,
-            long composeMs) {
-
-        static ClusterEditorial empty(String clusterId) {
-            return new ClusterEditorial(clusterId, null, List.of(), 0, "", List.of(), List.of(),
-                    0, 0, 0, 0);
-        }
-    }
-
-    /**
-     * One focused per-subject compose call's result: the subject label, the draft
-     * it produced (or {@code null} when the model chose no headline or the reply
-     * was unparseable), whether the draft had to be salvaged from malformed JSON,
-     * the raw model reply (for the lab), and the call latency in ms.
-     */
-    public record SubjectDraft(String label, Draft draft, boolean salvaged, String raw, long ms) {}
 
     // ---- Stage 1: subject extraction ----
 
@@ -797,10 +685,24 @@ public class EditorialAgent {
      * legitimately-numeric name ("S&P 500", "3M") is left intact. Without this a
      * watchlist row would resolve to no ticker and fragment into per-price units.
      */
+    /**
+     * Spaced-out all-caps ticker, e.g. an OCR'd watchlist row read as "O T L K".
+     * A run of ≥3 single capitals separated only by spaces is collapsed to one
+     * token ("O T L K" → "OTLK") so it resolves as the ticker it is. Bounded to
+     * single letters so ordinary multi-word names ("Take Two") are untouched.
+     */
+    private static final Pattern SPACED_TICKER =
+            Pattern.compile("\\b([A-Z](?:\\s+[A-Z]){2,5})\\b");
+
     static String cleanSubjectName(String name) {
         if (name == null) return "";
         String cut = PRICE_TAIL.matcher(name.strip()).replaceFirst("").strip();
-        return cut.isEmpty() ? name.strip() : cut;
+        if (cut.isEmpty()) cut = name.strip();
+        Matcher m = SPACED_TICKER.matcher(cut);
+        if (m.find()) {
+            cut = m.replaceAll(mr -> mr.group(1).replaceAll("\\s+", ""));
+        }
+        return cut;
     }
 
     /** Cleans each name and dedups case-insensitively, keeping first-seen spelling + order. */
@@ -940,54 +842,7 @@ public class EditorialAgent {
         return out;
     }
 
-    // ---- Stage 3: headline composition (one focused call per subject) ----
-
-    /**
-     * Composes ONE headline for a single subject (or, when {@code subject} is
-     * null, for the cluster's overall sentiment). Small, focused prompt + a
-     * single-object output → the 4B model stays coherent and never has to emit a
-     * long JSON array. Parsing is forgiving: a single object, a {@code {"headlines":[…]}}
-     * wrapper the model sometimes adds, or — failing both — the first balanced
-     * {@code {...}} salvaged from the reply.
-     */
-    private SubjectDraft composeOne(ChatModel model, String brief, ResolvedSubject subject) {
-        String label = subject == null ? "(cluster general sentiment)" : subject.canonicalName();
-        String sys = PromptLoader.load("headline-compose-single")
-                .replace("{{LANGUAGE}}", brain.getUserLanguage().displayName())
-                .replace("{{ROOM_SLANG}}", WsbgJargon.roomSlangForPrompt());
-        String subjectBlock = subject == null
-                ? "(no specific instrument — read the cluster's overall sentiment and write one line for it, without a ticker)\n"
-                : renderOne(subject);
-        String user = brief
-                + "\n\n=== THIS SUBJECT (Yahoo Finance — NOT Reddit; context & attribution only) ===\n"
-                + subjectBlock;
-
-        long t0 = System.nanoTime();
-        String text = chat(model, sys, user);
-        long elapsed = ms(t0, System.nanoTime());
-
-        Draft d = null;
-        JsonNode root = parseJson(text);
-        if (root != null) {
-            if (root.has("headline")) {
-                d = toDraft(root);
-            } else if (root.path("headlines").isArray() && !root.path("headlines").isEmpty()) {
-                d = toDraft(root.path("headlines").get(0));
-            }
-        }
-        boolean salvaged = false;
-        if (d == null) {
-            for (JsonNode obj : salvageObjects(text)) {
-                d = toDraft(obj);
-                if (d != null) { salvaged = true; break; }
-            }
-        }
-        if (d == null) {
-            d = salvageDraftByRegex(text); // stray-quote-broken JSON → recover by regex
-            if (d != null) salvaged = true;
-        }
-        return new SubjectDraft(label, d, salvaged, text, elapsed);
-    }
+    // ---- Stage 3: headline composition ----
 
     /**
      * Composes the cluster's THEME headline — the thread's own narrative / the
@@ -1158,64 +1013,6 @@ public class EditorialAgent {
     /** A price-shaped figure in the text: a decimal, or a digit next to %/€/$/£ ("S&P 500" is not). */
     static boolean headlineHasPriceNumber(String headline) {
         return headline != null && PRICE_LIKE.matcher(headline).find();
-    }
-
-    /** Renders resolved subjects into the data block the compose stage reads. */
-    /** Renders ONE resolved subject's Yahoo block for the per-subject compose prompt. */
-    private static String renderOne(ResolvedSubject r) {
-        StringBuilder sb = new StringBuilder();
-        Instant now = Instant.now();
-        sb.append("- ").append(r.canonicalName());
-        if (r.isInstrument()) {
-            sb.append(" → ticker ").append(r.ticker());
-            MarketSnapshot s = r.snapshot();
-            if (s != null && s.hasPrice()) {
-                sb.append(String.format(Locale.ROOT, " | price %.2f%s", s.price(),
-                        s.currency() == null || s.currency().isEmpty() ? "" : " " + s.currency()));
-                if (Double.isFinite(s.dayChangePercent())) {
-                    sb.append(String.format(Locale.ROOT, ", day %+.2f%%", s.dayChangePercent()));
-                }
-            }
-        } else {
-            sb.append(" → no ticker (theme/person — news only, write without a ticker)");
-        }
-        sb.append('\n');
-        for (RawNewsItem n : r.news()) {
-            sb.append("    Yahoo news: ");
-            appendNewsAge(sb, n, now);
-            sb.append(n.title());
-            if (n.publisher() != null && !n.publisher().isEmpty()) sb.append(" · ").append(n.publisher());
-            sb.append('\n');
-        }
-        // Second-hop evidence: instruments this subject's news is about, with
-        // their live move. Raw material for a causal read — the desk links them
-        // only if it genuinely holds; never forced.
-        for (TickerResolver.RelatedInstrument ri : r.related()) {
-            MarketSnapshot s = ri.snapshot();
-            sb.append("    related instrument (from the news above): ").append(ri.ticker());
-            if (s != null && s.hasPrice() && Double.isFinite(s.dayChangePercent())) {
-                sb.append(String.format(Locale.ROOT, " %+.2f%% today", s.dayChangePercent()));
-            }
-            sb.append('\n');
-            for (RawNewsItem n : ri.news()) {
-                sb.append("        Yahoo news: ");
-                appendNewsAge(sb, n, now);
-                sb.append(n.title());
-                if (n.publisher() != null && !n.publisher().isEmpty()) sb.append(" · ").append(n.publisher());
-                sb.append('\n');
-            }
-        }
-        return sb.toString();
-    }
-
-    /** Appends "3h ago — " (with a {@code [STALE]} tag past {@link #NEWS_STALE_AFTER}) when the item is dated. */
-    private static void appendNewsAge(StringBuilder sb, RawNewsItem n, Instant now) {
-        if (n.publishedAt() == null) return;
-        sb.append(age(n.publishedAt(), now)).append(" ago ");
-        if (Duration.between(n.publishedAt(), now).compareTo(NEWS_STALE_AFTER) > 0) {
-            sb.append("[STALE] ");
-        }
-        sb.append("— ");
     }
 
     // ---- model + JSON helpers ----

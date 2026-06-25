@@ -71,7 +71,7 @@ class ReleaseSmokeIT {
         System.out.println("[SMOKE] probe RSS   = " + rssReachable + " (expect true)");
         assertTrue(rssReachable, "RSS must be reachable for the chain to have a fallback");
 
-        RedditSource chain = new FallbackRedditSource(List.of(oauth, json, rss), SUB, 600);
+        RedditSource chain = new FallbackRedditSource(List.of(oauth, json, rss), SUB, 600, null);
 
         // Trigger resolution with one cheap real fetch through the chain.
         String permalink = firstPermalink();

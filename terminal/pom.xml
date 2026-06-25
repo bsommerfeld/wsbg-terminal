@@ -37,6 +37,22 @@
             <groupId>de.bsommerfeld</groupId>
             <artifactId>currency</artifactId>
         </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>fear-greed</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>lang-schwarz</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>tradegate</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>nasdaq-quote</artifactId>
+        </dependency>
         <!-- News source layer: source-api (NewsSource contract), the concrete
              Yahoo source, and the aggregator that fans across them. Referenced
              directly by AppModule's Multibinder wiring. -->
