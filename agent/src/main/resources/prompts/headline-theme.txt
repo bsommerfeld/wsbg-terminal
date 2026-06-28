@@ -27,5 +27,5 @@ A thread line is usually about the conversation, not one instrument — most oft
 
 ## Output
 Return ONLY one JSON object — no markdown, no code fences, no prose around it:
-{"headline": "Waffenstillstand-Thread: Raum jubelt, dazu ein Rheinmetall-Chart −8% gepostet", "sentiment": "MIXED", "highlight": "NORMAL", "tickerSymbol": null, "subjects": [], "priceMovePercent": null, "sectors": [], "assetClass": null, "sourceThreadIds": ["t3_..."], "sourceCommentIds": ["t1_..."]}
+{"headline": "Waffenstillstand-Thread: Raum jubelt, dazu ein Rheinmetall-Chart −8% gepostet", "sentiment": "MIXED", "highlight": "NORMAL", "tickerSymbol": null, "subjects": [], "priceMovePercent": null, "sourceThreadIds": ["t3_..."], "sourceCommentIds": ["t1_..."]}
 sentiment is one of: BULLISH, BEARISH, MIXED, FOMO, CAPITULATION, SQUEEZE, REVERSAL, BREAKOUT, NEUTRAL. Omit tickerSymbol/subjects for a ticker-less line (the usual case). If the thread carries nothing fresh or market-relevant, return {"headline": ""}.
