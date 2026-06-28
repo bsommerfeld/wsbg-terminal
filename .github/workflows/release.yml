@@ -85,17 +85,22 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           # User-first release notes (NOT the dev-style Added/Changed/
-          # Fixed/Removed default) — the changelog IS the release-notes
-          # body end users read: one universal "Was hat sich geändert?"
-          # heading, free-form story underneath. The action resets
-          # CHANGELOG.md to this skeleton after every release — note the
-          # permanent download footer below: it carries forward into every
-          # future CHANGELOG (and therefore every release body), and its
-          # links use the /releases/latest/download/ form so they always
-          # resolve to the current release's installers. The matching stable
-          # asset names are produced by package.yml's rename step.
+          # Fixed/Removed default) — the changelog IS the release-notes body
+          # end users read: one universal "Was hat sich geändert?" heading,
+          # free-form story underneath. The action resets CHANGELOG.md to this
+          # skeleton after every release; the file stays footer-free.
           changelog-template: |
             # Was hat sich geändert?
+          # The download footer lives in append-text, NOT in the changelog file:
+          # the action builds the release body as CHANGELOG.md + prepend + append,
+          # so append-text lands the platform installer links at the bottom of
+          # EVERY release body (including the very first), while CHANGELOG.md stays
+          # clean. The /releases/latest/download/ links always resolve to the
+          # current release; the matching stable asset names are produced by
+          # package.yml's rename step.
+          prepend-text: |
+            ${{ steps.badges.outputs.build-badge }} ${{ steps.badges.outputs.test-badge }}
+          append-text: |
 
             ---
 
@@ -106,9 +111,7 @@ jobs:
             [![Linux deb](https://img.shields.io/badge/Linux-.deb-E95420?style=for-the-badge&logo=debian&logoColor=white)](https://github.com/bsommerfeld/wsbg-terminal/releases/latest/download/WSBG-Terminal-Linux.deb)
             [![Linux rpm](https://img.shields.io/badge/Linux-.rpm-EE0000?style=for-the-badge&logo=redhat&logoColor=white)](https://github.com/bsommerfeld/wsbg-terminal/releases/latest/download/WSBG-Terminal-Linux.rpm)
 
-            Immer die neueste Version — die Links zeigen automatisch auf die aktuelle Release.
-          prepend-text: |
-            ${{ steps.badges.outputs.build-badge }} ${{ steps.badges.outputs.test-badge }}
+            Immer die neueste Version - die Links zeigen automatisch auf die aktuelle Release.
 
       - name: Upload TinyUpdate Artifacts
         env:
