@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class ClusterEngineTest {
 
     private static ClusterEngine engine(ClusterRegistry reg) {
-        return new ClusterEngine(reg, new FakeEmbeddingService());
+        return new ClusterEngine(reg);
     }
 
     private static RedditThread thread(String id, String title, String body, int score, int comments) {

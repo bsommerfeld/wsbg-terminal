@@ -1,5 +1,4 @@
 package de.bsommerfeld.wsbg.terminal.agent;
-import de.bsommerfeld.wsbg.terminal.embedding.EmbeddingService;
 
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
@@ -31,23 +30,29 @@ import java.util.Set;
  * <p>Pulled out of {@link PassiveMonitorService} so the assignment logic is one
  * reusable unit driven by both the live scanner and the {@code .lab} harness.
  *
- * <p>NOTE: the content embedding is still computed and stored as the cluster's
- * centroid purely to keep the snapshot shape stable; it no longer drives any
- * routing decision and is a cleanup candidate (drop it + the {@link
- * EmbeddingService} dependency once the snapshot format is migrated).
+ * <p>NOTE: assignment is now pure in-memory bookkeeping — it makes <b>no model
+ * call</b>. The content embedding (the cluster's "centroid") used to be computed
+ * here for cosine-vs-centroid routing, but since the 1:1 cutover it drove no
+ * decision and was dead weight: one Ollama embedding call per new/changed thread
+ * that contended with the editorial pipeline for the shared runner during every
+ * scan. It was removed. {@link InvestigationCluster} still carries an (empty)
+ * centroid field purely to keep the persisted snapshot shape stable; nothing
+ * reads it. (The live embedding model survives — {@link TickerResolver} tier-2
+ * subject→ticker matching still uses it; only this per-thread call is gone.)
  */
 @Singleton
 public class ClusterEngine {
 
     private static final Logger LOG = LoggerFactory.getLogger(ClusterEngine.class);
 
+    /** Placeholder centroid kept only so the snapshot shape is unchanged (see class javadoc). */
+    private static final Embedding EMPTY_CENTROID = Embedding.from(new float[0]);
+
     private final ClusterRegistry clusterRegistry;
-    private final EmbeddingService embeddings;
 
     @Inject
-    public ClusterEngine(ClusterRegistry clusterRegistry, EmbeddingService embeddings) {
+    public ClusterEngine(ClusterRegistry clusterRegistry) {
         this.clusterRegistry = clusterRegistry;
-        this.embeddings = embeddings;
     }
 
     /**
@@ -70,12 +75,8 @@ public class ClusterEngine {
         threadTickers.addAll(TickerExtractor.extract(t.textContent()));
         threadTickers.addAll(TickerExtractor.extract(safeVision));
 
-        // Centroid kept only for snapshot-shape stability (see class javadoc).
-        String content = t.title() + " "
-                + (t.textContent() != null ? t.textContent() : "") + " "
-                + safeVision;
-        Embedding embedding = Embedding.from(embeddings.embed(content));
-
+        // No embedding is computed here anymore (see class javadoc): assignment is
+        // pure in-memory bookkeeping. The empty centroid keeps the snapshot shape stable.
         InvestigationCluster existing = clusterRegistry.getCluster(t.id());
         if (existing != null) {
             boolean firstTime = !existing.activeThreadIds.contains(t.id());
@@ -84,13 +85,13 @@ public class ClusterEngine {
             if (firstTime || deltaScore > 0 || deltaComments > 0) {
                 LOG.info("[CLUSTER] update '{}' (+{} score, +{} comments)",
                         t.title(), deltaScore, deltaComments);
-                existing.addUpdate(t, deltaScore, deltaComments, embedding);
+                existing.addUpdate(t, deltaScore, deltaComments, EMPTY_CENTROID);
                 clusterRegistry.notifyChange(existing.id);
             }
             return new AssignOutcome(Kind.UPDATE, existing.id, existing.initialTitle, threadTickers);
         }
 
-        InvestigationCluster newInv = new InvestigationCluster(t, embedding);
+        InvestigationCluster newInv = new InvestigationCluster(t, EMPTY_CENTROID);
         clusterRegistry.add(newInv);
         LOG.info("[CLUSTER] new {} '{}'{}", newInv.id, t.title(),
                 threadTickers.isEmpty() ? "" : " (tickers " + threadTickers + ")");

@@ -30,20 +30,21 @@
  *       updating threads not covered by the subreddit scan. New or updated threads
  *       are queued to the analysis executor.
  *   <li><b>Analysis executor</b> (single thread): processes thread update batches via
- *       {@code processUpdates()}, embeds each thread using an Ollama embedding model, and
- *       routes it to the nearest existing cluster or creates a new one.
+ *       {@code processUpdates()} and routes each thread to its cluster. Assignment is
+ *       pure in-memory bookkeeping — no model call.
  * </ul>
  *
- * <h2>Semantic Clustering</h2>
+ * <h2>Clustering (1:1 thread)</h2>
  *
- * <p>Each incoming thread is embedded into a vector using an Ollama embedding model
- * ({@code embeddinggemma}). The vector is compared against all existing cluster
- * centroids using cosine similarity. If the best match exceeds the configured threshold,
- * the thread is added to that cluster; otherwise a new cluster is created.
- *
- * <p>Cluster centroids are updated via Exponential Moving Average (EMA) on each new thread,
- * letting centroids drift toward the most recent semantic focus of the cluster without
- * losing the original topic anchor. Cluster IDs are derived from the seed thread's Reddit ID.
+ * <p>Since the feed-wide {@link de.bsommerfeld.wsbg.terminal.agent.SubjectRegistry}
+ * became the cross-thread aggregation layer, clustering is a faithful 1:1 wrapper of a
+ * single Reddit thread: the cluster ID is the seed thread's Reddit ID, a known thread
+ * updates its own cluster, a new thread creates one. The old embedding/cosine-vs-centroid
+ * routing was removed — it drove no decision anymore and cost one Ollama embedding call
+ * per thread that contended with the editorial pipeline during every scan. (The embedding
+ * model itself survives for {@link de.bsommerfeld.wsbg.terminal.agent.TickerResolver}
+ * tier-2 subject→ticker matching.) Cross-thread consolidation now happens at the subject
+ * level via {@code SubjectRegistry.mergeIdentities}.
  *
  * <h2>Session State</h2>
  *

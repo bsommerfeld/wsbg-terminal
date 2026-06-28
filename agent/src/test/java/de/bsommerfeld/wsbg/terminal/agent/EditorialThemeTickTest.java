@@ -86,7 +86,7 @@ class EditorialThemeTickTest {
                 "Rheinmetall wird bluten", 3, now, now, now)).join();
 
         // One cluster == one thread.
-        new ClusterEngine(clusterRegistry, new FakeEmbeddingService()).assign(thread, 0, 0, "");
+        new ClusterEngine(clusterRegistry).assign(thread, 0, 0, "");
 
         editorial.runUnitTick(Set.of("t3_x"));
 

@@ -83,7 +83,7 @@ class PipelineSmokeIT {
             RssRedditScraper rss = new RssRedditScraper(redditRepo, config, bus);
 
             // Production clustering. The ctor self-starts the scan loop.
-            ClusterEngine clusterEngine = new ClusterEngine(registry, new OllamaEmbeddingService());
+            ClusterEngine clusterEngine = new ClusterEngine(registry);
             new PassiveMonitorService(rss, brain, bus, redditRepo, agentRepo,
                     new RedditSnapshotStore(), new AgentSnapshotStore(), registry,
                     new SubjectRegistry(), clusterEngine, config);
