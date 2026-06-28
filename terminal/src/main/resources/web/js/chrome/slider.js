@@ -87,63 +87,8 @@ const AD_MESSAGES = [
     link: { href: 'https://wsbg.app', label: 'wsbg.app' },
   },
   {
-    icon: 'heart',
-    text: '{hours} Stunden im Käfig und noch keinen Cent Miete gezahlt',
-    link: DONATE_LINK,
-  },
-  {
-    icon: 'heart',
-    text: 'Käfigbesuch Nr. {opens} — der Türsteher-Affe nimmt auch Trinkgeld',
-    link: DONATE_LINK,
-  },
-  {
-    icon: 'rocket',
-    text: 'Die nächste Rakete wird hier zuerst gesichtet. Der Treibstoff zahlt sich nicht von selbst',
-    link: DONATE_LINK,
-  },
-  {
-    icon: 'rocket',
-    text: '+606 % auf die Pennystock-Rakete, 0 % an den Maschinenraum? Rechne nochmal nach',
-    link: DONATE_LINK,
-  },
-  {
     icon: 'gem',
-    text: 'Diamond Hands beim Halten, Butterhände beim Spenden?',
-    link: DONATE_LINK,
-  },
-  {
-    icon: 'gem',
-    text: 'Du YOLOst vierstellig in 0DTE-Optionen, aber 5 € sind zu teuer?',
-    link: DONATE_LINK,
-  },
-  {
-    icon: 'banana',
-    text: 'Affen arbeiten für Bananen. Der Entwickler auch',
-    link: DONATE_LINK,
-  },
-  {
-    icon: 'banana',
-    text: 'Eine Banane im Monat hält den Käfig sauber',
-    link: DONATE_LINK,
-  },
-  {
-    icon: 'moon',
-    text: 'Bis zum Mond sind es 384.400 km. Bis zur Spende ein Klick',
-    link: DONATE_LINK,
-  },
-  {
-    icon: 'moon',
-    text: 'Hopium ist gratis, der Strom für die KI nicht',
-    link: DONATE_LINK,
-  },
-  {
-    icon: 'skull',
-    text: 'Dein Depot ist tot, das Terminal lebt — solange jemand spendet',
-    link: DONATE_LINK,
-  },
-  {
-    icon: 'skull',
-    text: 'Für die Gefallenen können wir nichts mehr tun. Für den Wire schon',
+    text: 'MSCI oder Terminal, was wählst du?',
     link: DONATE_LINK,
   },
 ];
