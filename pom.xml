@@ -28,8 +28,6 @@
         <module>agent</module>
         <module>terminal</module>
 
-        <module>.lab</module>
-
         <module>updater</module>
         <module>launcher</module>
     </modules>
