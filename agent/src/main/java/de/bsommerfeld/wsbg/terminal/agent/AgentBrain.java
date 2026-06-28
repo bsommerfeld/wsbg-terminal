@@ -59,7 +59,11 @@ public class AgentBrain {
     private final String userAgent = BrowserUserAgent.random();
 
     private final HttpClient httpClient = HttpClient.newBuilder()
-            .followRedirects(HttpClient.Redirect.NORMAL).build();
+            .followRedirects(HttpClient.Redirect.NORMAL)
+            // Bound the connect phase: image fetches run on the single vision-prefetch
+            // worker, so a hung CDN connection would otherwise stall ALL vision warming.
+            .connectTimeout(java.time.Duration.ofSeconds(10))
+            .build();
 
     private ChatModel visionModel;
     private ChatModel agentModel;
@@ -350,6 +354,9 @@ public class AgentBrain {
     private ImagePayload fetchAndOptimize(String url) throws Exception {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url))
+                // Hard read deadline so a slow/stalled image host can't pin the
+                // single vision-prefetch worker indefinitely.
+                .timeout(java.time.Duration.ofSeconds(20))
                 .header("User-Agent", userAgent).GET().build();
 
         byte[] bytes = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray()).body();
