@@ -13,20 +13,17 @@ Seien wir ehrlich: Keiner von uns kann sich das echte Bloomberg-Terminal leisten
 
 Das WSBG Terminal ist eure Kommandozentrale für [**r/wallstreetbetsGER**](https://www.reddit.com/r/wallstreetbetsGER/). Statt alle 2 Sekunden F5 zu hämmern und euch durch tausende Kommentare voller Degeneration zu wühlen, liefert euch das Terminal die Fakten.
 
-| Feature              | Beschreibung                                                                                                                                  |
-|:---------------------|:----------------------------------------------------------------------------------------------------------------------------------------------|
-| **Auto-Fetch**       | Der Algo zieht sich die neusten Threads automatisch rein. Nie wieder F5 drücken, während der Kurs fällt.                                      |
-| **KI-Headlines**     | Das Terminal fasst das Affengeschrei zusammen, damit ihr wisst, ob Long oder Short.                                                           |
-| **Echtzeit-Kurse**   | Live-Kurs direkt an der Schlagzeile – in **Euro**, mit Mini-Chart und Tagesbewegung. Tagsüber von Lang & Schwarz, nachts die **US-Nachbörse bis 2 Uhr** (falls Micron mal wieder +600 % nach Earnings rennt), und wenn alle Börsen zu sind, bleibt der letzte echte Kurs stehen statt Quatsch anzuzeigen. |
-| **News-Ergänzungen** | Passend zum Instrument zieht das Terminal Nachrichten aus **mehreren Quellen** (Yahoo + NASDAQ), trianguliert und entdoppelt – damit die Headlines wenigstens *etwas* Substanz haben, auch wenn eine Quelle gerade streikt. |
-| **Thread-Sprung**    | Unten rechts an jeder Schlagzeile ein ↗ – ein Klick und der Original-Thread öffnet sich im Browser. Für die, die das Affengeschrei im Original brüllen hören wollen.                                            |
-| **Archiv-Historie**  | Einfach weiterscrollen: ältere Schlagzeilen werden aus dem permanenten Archiv nachgeladen. Die Wire vergisst nichts – eure Verluste auch nicht.                                                                |
-| **Raketen-Radar**    | Die eine handfeste Chance zwischen tausend Mood-Posts leuchtet **rot** auf – „Wo kann ich schnell Geld machen?". Kein Ampel-Gewusel, ein klares Signal: hier könnte was gehen, der Rest ist Stimmung.                                   |
-| **Fear & Greed-Tacho** | CNNs Angst-und-Gier-Index als Tacho im Reddit-Header. Zeigt, ob der **Gesamtmarkt** gerade in Panik (rot) oder in Gier (grün) badet – damit ihr wisst, ob euer FOMO wenigstens Gesellschaft hat.            |
-| **Live News-Ticker** | Financial Juice & EUR/USD-Kurs laufen direkt mit – damit ihr wisst, warum euer Depot blutet, noch bevor es im Subreddit steht.                |
-| **Marktzeiten**      | Internationale Marktzeiten samt Urlaubstage direkt in der Fußnote. Wahre Affen wissen wann sie liquidiert werden.                             |
-| **Einstellungen**    | Zahnrad oben, und die Mitte klappt zur Schaltzentrale auf: Tag/Nacht (oder dem System folgen), Schlagzeilen-Filter (nur Ticker oder das volle Affengeschrei), Sprache, Updates – und ganz unten der rote **„Daten löschen"**-Knopf, der das Terminal komplett zurücksetzt (höchstens alle 10 Minuten, damit ihr euch nicht selbst sabotiert). |
-| **100 % Lokal**      | Die KI läuft komplett auf eurer Kiste. Keine Cloud, kein Abo, kein fremder Mensch – eure Verluste bleiben streng privat.                      |
+| Feature              | Beschreibung                                                                                                                                                   |
+|:---------------------|:---------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Auto-Fetch**       | Der Algo zieht sich die neusten Threads automatisch rein. Nie wieder F5 drücken, während der Kurs fällt.                                                       |
+| **KI-Headlines**     | Das Terminal fasst das Affengeschrei zusammen, damit ihr wisst, ob Long oder Short.                                                                            |
+| **Echtzeit-Kurse**   | Live-Kurs direkt an der Schlagzeile. Tagsüber von Lang & Schwarz, nachts die **US-Nachbörse bis 2 Uhr** (falls Micron mal wieder +600 % nach Earnings rennt)   |
+| **News-Ergänzungen** | Passend zum Thema zieht das Terminal Nachrichten aus **mehreren Quellen**, trianguliert und entdoppelt - damit die Headlines wenigstens *etwas* Substanz haben |
+| **Raketen-Radar**    | Ein rotes Aufleuchten einer Headline um euch klar zu machen, wo ihr gerade massive Gewinne verpasst habt.                                                      |
+| **Fear & Greed-Tacho** | CNNs FEAR-and-GREED-Index als Tacho im Reddit-Header, damit ihr wisst, ob eure FOMO wenigstens Gesellschaft hat.                                               |
+| **Live News-Ticker** | Financial Juice & EUR/USD-Kurs laufen direkt mit - damit ihr wisst, warum euer Depot blutet, noch bevor es im Subreddit steht.                                 |
+| **Marktzeiten**      | Internationale Marktzeiten samt Urlaubstage direkt in der Fußnote. Wahre Affen wissen wann sie liquidiert werden.                                              |
+| **100 % Lokal**      | Die KI läuft komplett auf eurer Kiste. Keine Cloud, kein Abo, kein fremder Mensch - eure Verluste bleiben streng privat.                                       |
 
 ### 📸 Loss Porn (Visuals)
 
