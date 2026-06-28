@@ -1,19 +1,37 @@
 # Was hat sich geändert?
 
-Das Terminal hat jetzt **Einstellungen**. Wo früher der Tag/Nacht-Knopf saß, sitzt nun ein Zahnrad (das sich beim Drüberfahren dreht) — ein Klick, und die Mitte verwandelt sich in eine aufgeräumte, luftige Einstellungsseite mit einem schick geschwungenen Zurück-Pfeil. Dort lebt jetzt der Hell/Dunkel-Schalter (wahlweise „dem System folgen"), und endlich kann man auch festlegen, **was** im Schlagzeilen-Käfig landet: **Nur Subjekte** (eine Zeile je erkanntem Subjekt — Ticker, aber auch Personen oder Indizes wie der S&P 500) oder **Subjekte + Threads** (zusätzlich die Thread-Themen des jeweiligen Beitrags). Dazu ein Schalter, der Zahlen aus Nutzer-Posts mit einem „!" markiert, wenn Yahoo sie nicht bestätigt hat — Stimmung bleibt Stimmung, kein Fakt.
+**Alles. Das hier ist Tag 1.**
 
-> 📸 **[Bild einfügen: Titelleiste mit dem neuen Zahnrad-Button (statt Sonne/Mond), daneben das Spenden-Herz]**
+Monate im Maschinenraum, und jetzt steht das Ding: das **WSBG Terminal 1.0.0**. Ein Stock-Spotter und Stimmungs-Seismograph für [r/wallstreetbetsGER](https://www.reddit.com/r/wallstreetbetsGER/) — komplett lokal, komplett euer.
 
-> 📸 **[Bild einfügen: die neue Einstellungsseite mit den Kategorien Aussehen / Schlagzeilen / Sprache / Updates und dem geschwungenen Zurück-Pfeil oben links]**
+Warum überhaupt? Weil der halbe Käfig seit Monaten brüllt, der Sub solle endlich sterben. Zu viel Spam, zu viel Lärm. Früher gab es hier echte Analysen, heute kreischen nur noch Affen im FOMO-Delirium. Verständlich. Aber die falsche Schlussfolgerung.
 
-Und die Headlines treffen jetzt die **richtige Börse**: Take-Two landete zuletzt schon mal in Warschau, Werte rutschten auf illiquide Auslandsnotizen mit absurden Kursen. Ab jetzt gewinnt die Heimat-/Primärbörse (Nasdaq, Xetra, London …), Frankfurt ist der Rückfall, exotische Zweitnotizen fliegen raus — die Kurse in den Schlagzeilen ergeben wieder Sinn.
+Denn genau dieses Geschrei **ist** die Information — man muss sie nur lesen können. Zwischen den Zeilen. Die Stimmung unter dem Lärm. Wer „ALL IN MICRON" ohne ein Wort Begründung in den Thread rotzt, sagt trotzdem etwas: über Micron, über den Raum, über das, was als Nächstes gepumpt wird. Genau das fischt das Terminal heraus — aus tausend Kommentaren das eine Subjekt, den einen Ticker, die eine Wette, die gerade Fahrt aufnimmt. Es übersetzt das Affengeschrei in eine saubere Schlagzeilen-Wire, hängt den echten Kurs und die passenden News dran und leuchtet rot, wo schnell Geld zu machen wäre.
 
-## Restliches
+Das Terminal soll den Subreddit **nicht ersetzen**. Es legt eine andere Perspektive darüber. Der Sub bleibt der Sub — laut, dreckig, genial. Das Terminal ist die Linse, durch die aus dem Lärm wieder ein Signal wird. Denn alles ist Information, wenn man richtig damit umgeht.
 
-- **Auch nachts und am Wochenende stehen jetzt Kurse in den Schlagzeilen.** Sind alle Börsen zu, zeigt der Käfig den letzten Schlusskurs (als solcher gekennzeichnet) statt gar keiner Zahl — vorher blieb außerhalb der Handelszeiten die Kursangabe einfach leer.
-- **Updates sind jetzt abschaltbar.** Wer nicht bei jedem Start automatisch aktualisieren will, schaltet es in den Einstellungen aus — taucht dann eine neue Version auf, erscheint ein grüner Download-Pfeil in der Titelleiste; ein Klick schließt das Terminal sauber und installiert.
-- Die **Footer-Spendenzeile** blendet sich jetzt von Anfang an im Wechsel mit der Markt-Zeile alle paar Minuten kurz ein — kein langes Warten mehr, bis sie das erste Mal auftaucht. 15 Sprüche mit Raketen, Diamanten, Bananen, Mond und Totenkopf, die teils sogar deine Käfig-Bilanz kennen. Das Herz in der Titelleiste öffnet wie immer die Spendenseite.
-- Reddit und Yahoo sperren den Käfig nicht mehr aus: beide werden durch den eingebauten Browser geholt (echter Fingerabdruck + Cookies, keine Bot-Sperre), mit Direkt-Abruf als Fallback. Der Wire füllt sich beim Start in Sekunden statt Minuten — bei voller Tiefe.
-- Headlines doppeln sich nicht mehr, nur weil ein paar Upvotes reinticken: ein reiner Score-Anstieg ist Stimmung, kein neuer Inhalt, und stößt die Redaktion nicht mehr neu an.
-- Klicks auf externe Links (Reddit-Logo, Financial-Juice-Logo, Spendenlinks) öffnen wieder zuverlässig den Standard-Browser.
-- Spürbar flüssiger: auf dem Mac läuft die Oberfläche wieder über die schnelle Grafik-Pipeline, und der eingebaute Browser, der Reddit/Yahoo im Hintergrund holt, frisst keine Render-Leistung mehr — er lief unsichtbar mit voller Bildrate mit und ließ Scrollen, Klicks und Animationen haken.
+> **[Bild einfügen: „Spotted by the Terminal" — die Schlagzeile, die das Terminal Wochen vor dem Move aus dem Geschrei gefischt hat, mit dem +100 %-Kurs daneben]**
+
+Ja, das ist schon passiert. Wochen vorher rausgefischt, dann über +100 %. Kein Backtest, kein Im-Nachhinein-Glück — live aus dem Käfig.
+
+**Keine Anlageberatung. Ich mag nur die Aktie.**
+
+## Was drinsteckt
+
+- **100 % lokal** — die KI läuft auf eurer Kiste. Keine Cloud, kein Abo, eure Verluste bleiben privat.
+- **Echtzeit-Kurse an jeder Schlagzeile** — Mini-Chart und Tagesbewegung, tagsüber von Lang & Schwarz, nachts die US-Nachbörse bis 2 Uhr, und wenn alle Börsen zu sind, bleibt der letzte echte Kurs stehen.
+- **News-Ergänzung aus mehreren Quellen** — trianguliert und entdoppelt, damit die Headlines Substanz haben, auch wenn eine Quelle streikt.
+- **Permanentes Archiv** — die Wire vergisst nichts. Einfach weiterscrollen, ältere Schlagzeilen werden nachgeladen.
+- **Fear-&-Greed-Tacho, Live-News-Ticker, Marktzeiten** — der Kontext um euer FOMO herum, direkt im Blick.
+- **Einstellungen** — Tag/Nacht (oder dem System folgen), Schlagzeilen-Filter, Sprache, Updates, und der rote „Daten löschen"-Knopf.
+
+---
+
+## Holt es euch in den Käfig
+
+[![Windows](https://img.shields.io/badge/Windows-Installer-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/bsommerfeld/wsbg-terminal/releases/latest/download/WSBG-Terminal-Windows.exe)
+[![macOS](https://img.shields.io/badge/macOS-Installer-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/bsommerfeld/wsbg-terminal/releases/latest/download/WSBG-Terminal-macOS.dmg)
+[![Linux deb](https://img.shields.io/badge/Linux-.deb-E95420?style=for-the-badge&logo=debian&logoColor=white)](https://github.com/bsommerfeld/wsbg-terminal/releases/latest/download/WSBG-Terminal-Linux.deb)
+[![Linux rpm](https://img.shields.io/badge/Linux-.rpm-EE0000?style=for-the-badge&logo=redhat&logoColor=white)](https://github.com/bsommerfeld/wsbg-terminal/releases/latest/download/WSBG-Terminal-Linux.rpm)
+
+Immer die neueste Version — die Links zeigen automatisch auf die aktuelle Release.
