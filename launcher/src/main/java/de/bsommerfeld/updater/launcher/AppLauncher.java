@@ -103,6 +103,13 @@ final class AppLauncher {
 
         PathEnricher.enrich(pb);
 
+        // Hand the terminal our own executable path so its in-app "update now"
+        // button can relaunch us (cleanly close → restart the launcher, which
+        // applies the update). Absent in dev runs (run.sh starts the terminal
+        // directly) — the terminal hides the update button when this is unset.
+        ProcessHandle.current().info().command().ifPresent(
+                exe -> pb.environment().put("WSBG_LAUNCHER_EXECUTABLE", exe));
+
         pb.start();
     }
 

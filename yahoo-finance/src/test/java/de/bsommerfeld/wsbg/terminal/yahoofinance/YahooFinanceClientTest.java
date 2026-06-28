@@ -1,5 +1,7 @@
 package de.bsommerfeld.wsbg.terminal.yahoofinance;
 
+import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
+
 import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
 import org.junit.jupiter.api.Test;
 
@@ -10,6 +12,29 @@ import static org.junit.jupiter.api.Assertions.*;
 class YahooFinanceClientTest {
 
     private final YahooFinanceClient client = new YahooFinanceClient(10, 300);
+
+    // ---- 429 circuit breaker ----
+
+    @Test
+    void rateLimitStatusOnlyForBackoffCodes() {
+        assertTrue(YahooFinanceClient.isRateLimitStatus(429));
+        assertTrue(YahooFinanceClient.isRateLimitStatus(503));
+        assertTrue(YahooFinanceClient.isRateLimitStatus(999));
+        assertFalse(YahooFinanceClient.isRateLimitStatus(200));
+        assertFalse(YahooFinanceClient.isRateLimitStatus(404));
+        assertFalse(YahooFinanceClient.isRateLimitStatus(500));
+    }
+
+    @Test
+    void breakerOpensAfterTripAndShortCircuitsSearch() {
+        YahooFinanceClient c = new YahooFinanceClient(10, 300);
+        assertFalse(c.breakerOpen(), "fresh client: breaker closed");
+        c.tripBreaker("test", 429);
+        assertTrue(c.breakerOpen(), "after a 429 the breaker is open");
+        // While open, search short-circuits (no HTTP) and reports the rate-limit
+        // signal so callers skip the subject instead of treating it as 'no result'.
+        assertTrue(c.search("Nvidia", 5, 0).rateLimited(), "open breaker → search is throttled");
+    }
 
     @Test
     void parsesQuoteAndNewsFromSearchResponse() {
@@ -72,7 +97,7 @@ class YahooFinanceClientTest {
         assertTrue(Double.isNaN(rhm.regularMarketPercentChange()));
 
         assertEquals(1, result.news().size());
-        YahooNewsItem n = result.news().get(0);
+        RawNewsItem n = result.news().get(0);
         assertEquals("abc-123", n.uuid());
         assertEquals("Stocktwits", n.publisher());
         assertEquals(List.of("NVDA", "AMD"), n.relatedTickers());
@@ -107,7 +132,7 @@ class YahooFinanceClientTest {
     @Test
     void displayNameFallsBackToShortNameWhenLongNameMissing() {
         YahooQuote q = new YahooQuote("NVDL", "GraniteShares 2x Long NVDA Daily ETF", "",
-                "ETF", "NGM", "NASDAQ", "", "", Double.NaN, Double.NaN);
+                "ETF", "NGM", "NASDAQ", "", "", Double.NaN, Double.NaN, 0.0);
         assertEquals("GraniteShares 2x Long NVDA Daily ETF", q.displayName());
     }
 

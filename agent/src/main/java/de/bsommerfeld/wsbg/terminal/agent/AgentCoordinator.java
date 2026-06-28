@@ -15,19 +15,23 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Bridges {@link ClusterRegistry} updates to {@link EditorialAgent} runs.
+ * Bridges {@link ClusterRegistry} updates into the {@link EditorialPipeline} (#3).
+ *
+ * <p>Since the #3 cutover the coordinator no longer runs the editorial work itself
+ * (the old serial {@code EditorialAgent.runUnitTick}); its role shrinks to
+ * <b>debouncing the notification flurries</b> a Reddit scan produces and handing the
+ * coalesced set of changed clusters to the pipeline, which preps them in parallel and
+ * drains a FIFO compose queue. Submission is async, so a "tick" here just drains the
+ * dirty set and submits.
  *
  * <p>
- * Two guards keep the agent from running too often:
+ * Two guards remain:
  * <ul>
- * <li><b>Debounce</b>: a {@code notifyChange} burst within
- * {@link #DEBOUNCE_MS} ms coalesces into a single scheduled run. Reddit
- * scans always produce flurries of notifications; running once per flurry
- * is much cheaper than once per cluster.</li>
- * <li><b>In-flight gate</b>: only one agent run executes at a time. Changes
- * that arrive during a run get caught by the dirty set inside
- * {@link ClusterRegistry} and trigger a follow-up run once the current one
- * finishes.</li>
+ * <li><b>Debounce</b>: a {@code notifyChange} burst within {@code DEBOUNCE_MS} ms
+ * coalesces into a single drain+submit. Reddit scans always produce flurries.</li>
+ * <li><b>Follow-up</b>: changes that arrive during/after a drain stay in the
+ * {@link ClusterRegistry} dirty set and schedule another drain (the pipeline itself
+ * coalesces a cluster that's still being prepped).</li>
  * </ul>
  */
 @Singleton
@@ -47,7 +51,7 @@ public class AgentCoordinator {
     private static final long DEFAULT_DEBOUNCE_MS = 3_000;
 
     private final ClusterRegistry clusterRegistry;
-    private final EditorialAgent agent;
+    private final EditorialPipeline pipeline;
     private final long debounceMs;
     private final ScheduledExecutorService scheduler =
             Executors.newSingleThreadScheduledExecutor(r -> {
@@ -60,13 +64,13 @@ public class AgentCoordinator {
     private final ConcurrentHashMap<String, Boolean> inFlight = new ConcurrentHashMap<>();
 
     @Inject
-    public AgentCoordinator(ClusterRegistry clusterRegistry, EditorialAgent agent) {
-        this(clusterRegistry, agent, DEFAULT_DEBOUNCE_MS);
+    public AgentCoordinator(ClusterRegistry clusterRegistry, EditorialPipeline pipeline) {
+        this(clusterRegistry, pipeline, DEFAULT_DEBOUNCE_MS);
     }
 
-    AgentCoordinator(ClusterRegistry clusterRegistry, EditorialAgent agent, long debounceMs) {
+    AgentCoordinator(ClusterRegistry clusterRegistry, EditorialPipeline pipeline, long debounceMs) {
         this.clusterRegistry = clusterRegistry;
-        this.agent = agent;
+        this.pipeline = pipeline;
         this.debounceMs = debounceMs;
         this.clusterRegistry.subscribeToChanges(this::onChange);
         LOG.info("AgentCoordinator initialized (debounce {}ms).", debounceMs);
@@ -98,7 +102,10 @@ public class AgentCoordinator {
         long t0 = System.currentTimeMillis();
         try {
             LOG.info("AgentCoordinator tick: {} dirty cluster(s) → {}", drained.size(), drained);
-            agent.runTick(drained);
+            // #3 cutover: hand the changed clusters to the producer/consumer pipeline
+            // (parallel prep → FIFO compose queue), not the old serial runUnitTick.
+            // Submission is async — the pipeline coalesces + drains on its own pools.
+            pipeline.submitClusters(drained);
         } catch (Exception e) {
             LOG.error("AgentCoordinator tick failed", e);
         } finally {

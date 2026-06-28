@@ -148,4 +148,71 @@ class JsonParserTest {
         assertEquals(1, manifest.files().size());
         assertEquals("lib/a.jar", manifest.files().get(0).path());
     }
+
+    // -- Release asset extraction --
+
+    @Test
+    void extractAssetUrl_shouldFindAssetByName() {
+        String json = """
+                {
+                  "tag_name": "v1.0",
+                  "assets": [
+                    { "name": "update.json", "browser_download_url": "https://cdn.example.com/update.json" },
+                    { "name": "files.zip", "browser_download_url": "https://cdn.example.com/files.zip" }
+                  ]
+                }
+                """;
+        assertEquals("https://cdn.example.com/files.zip",
+                JsonParser.extractAssetUrl(json, "files.zip"));
+    }
+
+    @Test
+    void extractAssetUrl_shouldReturnNullForMissingAsset() {
+        String json = """
+                { "assets": [{ "name": "other.txt", "browser_download_url": "https://x/o.txt" }] }
+                """;
+        assertNull(JsonParser.extractAssetUrl(json, "update.json"));
+    }
+
+    @Test
+    void extractAssetUrl_shouldIgnoreBodyTextMimickingAssets() {
+        // The release body is free markdown — quoted key-lookalikes and
+        // brackets inside it must not confuse the scan. (JSON escapes the
+        // inner quotes, so the raw text contains \" sequences.)
+        String json = """
+                {
+                  "tag_name": "v1.0",
+                  "body": "Changelog [1] mentions \\"name\\": \\"update.json\\" and a fake \\"browser_download_url\\": \\"https://evil.example/x\\" {oops]",
+                  "assets": [
+                    { "name": "update.json", "browser_download_url": "https://cdn.example.com/real.json" }
+                  ]
+                }
+                """;
+        assertEquals("https://cdn.example.com/real.json",
+                JsonParser.extractAssetUrl(json, "update.json"));
+    }
+
+    @Test
+    void extractAssetUrl_shouldIgnoreNestedUploaderObjects() {
+        // Keys inside nested objects (e.g. uploader) must not shadow the
+        // asset's own top-level name/url.
+        String json = """
+                {
+                  "assets": [
+                    {
+                      "uploader": { "name": "update.json", "browser_download_url": "https://evil.example/y" },
+                      "name": "update.json",
+                      "browser_download_url": "https://cdn.example.com/real.json"
+                    }
+                  ]
+                }
+                """;
+        assertEquals("https://cdn.example.com/real.json",
+                JsonParser.extractAssetUrl(json, "update.json"));
+    }
+
+    @Test
+    void extractAssetUrl_shouldReturnNullWithoutAssetsArray() {
+        assertNull(JsonParser.extractAssetUrl("{ \"tag_name\": \"v1.0\" }", "update.json"));
+    }
 }

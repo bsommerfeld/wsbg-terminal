@@ -14,6 +14,10 @@ import org.cef.CefClient;
 import org.cef.CefSettings;
 import org.cef.browser.CefBrowser;
 import org.cef.browser.CefFrame;
+import org.cef.browser.CefMessageRouter;
+import org.cef.handler.CefLifeSpanHandlerAdapter;
+import org.cef.handler.CefLoadHandlerAdapter;
+import org.cef.handler.CefMessageRouterHandler;
 import org.cef.handler.CefRequestHandlerAdapter;
 import org.cef.network.CefRequest;
 import org.slf4j.Logger;
@@ -23,7 +27,9 @@ import java.awt.Desktop;
 import java.io.File;
 import java.net.URI;
 import java.nio.file.Path;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BiConsumer;
 
 /**
  * Owns the JCEF runtime — {@link CefApp} + {@link CefClient} are
@@ -46,6 +52,25 @@ public final class CefHost {
     private final WheelScrollPolicy wheelScrollPolicy;
     private CefApp cefApp;
     private CefClient cefClient;
+
+    /**
+     * Page→Java return channel for browser-driven fetches (see
+     * {@code ui.net.CefFetchClient}). Registered once during {@link #initialize()}
+     * BEFORE any browser is created — JCEF binds message routers to a browser at
+     * creation time, so adding it afterwards would silently miss every browser.
+     * The {@code window.wsbgFetchQuery(...)} JS function it injects is harmless to
+     * the UI page, which never calls it.
+     */
+    private CefMessageRouter fetchRouter;
+
+    /**
+     * Fan-out for main-frame load-end events. A single {@code CefLoadHandler} slot
+     * exists per client; this multiplexer lets several consumers (the headless
+     * fetch browsers) observe "their" browser finishing a navigation without
+     * fighting over that slot.
+     */
+    private final CopyOnWriteArrayList<BiConsumer<CefBrowser, Integer>> loadEndListeners =
+            new CopyOnWriteArrayList<>();
 
     @Inject
     public CefHost(WheelScrollPolicy wheelScrollPolicy) {
@@ -137,6 +162,40 @@ public final class CefHost {
             cefApp = builder.build();
             cefClient = cefApp.createClient();
             cefClient.addRequestHandler(new ExternalLinkRouter());
+            // target="_blank" anchors (every external link in the page: donate
+            // heart, banner links, Reddit/FJ header glyphs) arrive as POPUPS,
+            // not as onBeforeBrowse navigations — without this handler the
+            // click silently dies (no popup window exists in OSR mode).
+            cefClient.addLifeSpanHandler(new CefLifeSpanHandlerAdapter() {
+                @Override
+                public boolean onBeforePopup(CefBrowser browser, CefFrame frame,
+                                             String targetUrl, String targetFrameName) {
+                    if (targetUrl != null && targetUrl.startsWith("http")) {
+                        openExternal(targetUrl);
+                    }
+                    return true; // never create an in-app popup window
+                }
+            });
+
+            // Headless-fetch plumbing. BOTH must be registered here, before any
+            // browser exists: JCEF wires routers/handlers into a browser when the
+            // browser is created, so a late registration would never reach it.
+            fetchRouter = CefMessageRouter.create(
+                    new CefMessageRouter.CefMessageRouterConfig("wsbgFetchQuery", "wsbgFetchQueryCancel"));
+            cefClient.addMessageRouter(fetchRouter);
+            cefClient.addLoadHandler(new CefLoadHandlerAdapter() {
+                @Override
+                public void onLoadEnd(CefBrowser browser, CefFrame frame, int httpStatusCode) {
+                    if (frame == null || !frame.isMain()) return;
+                    for (BiConsumer<CefBrowser, Integer> l : loadEndListeners) {
+                        try {
+                            l.accept(browser, httpStatusCode);
+                        } catch (Exception e) {
+                            LOG.debug("load-end listener threw: {}", e.getMessage());
+                        }
+                    }
+                }
+            });
             LOG.info("JCEF initialized.");
         } catch (Exception e) {
             throw new RuntimeException("JCEF initialization failed", e);
@@ -164,14 +223,28 @@ public final class CefHost {
             if (url.startsWith("http://127.0.0.1") || url.startsWith("ws://127.0.0.1")) {
                 return false;
             }
-            try {
-                if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
-                    Desktop.getDesktop().browse(URI.create(url));
-                }
-            } catch (Exception e) {
-                LOG.warn("Failed to open external URL {}: {}", url, e.getMessage());
-            }
+            openExternal(url);
             return true; // cancel in-browser navigation
+        }
+    }
+
+    /**
+     * Opens {@code url} in the OS default browser; failures are logged, never
+     * thrown. Public because the page itself routes external link clicks here
+     * over the socket ({@code open-external} in {@code CommandBridge}) — the
+     * CEF-side interception below is only the fallback for navigations that
+     * bypass the page's click handler.
+     */
+    public static void openExternal(String url) {
+        try {
+            if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
+                LOG.info("Opening external URL in OS browser: {}", url);
+                Desktop.getDesktop().browse(URI.create(url));
+            } else {
+                LOG.warn("Desktop BROWSE action unsupported — cannot open {}", url);
+            }
+        } catch (Exception e) {
+            LOG.warn("Failed to open external URL {}: {}", url, e.getMessage());
         }
     }
 
@@ -189,12 +262,49 @@ public final class CefHost {
         // because the native browser isn't created yet. 120Hz is not reachable:
         // it would need external begin-frame control, which JCEF exposes no Java
         // API to drive (so enabling it only yields black frames — see initialize()).
+        return createBrowser(url, 60);
+    }
+
+    /**
+     * Browser for headless same-origin fetching (CefFetchClient): never shown, so
+     * it must NOT burn CPU painting. A minimal windowless frame rate means CEF
+     * calls onPaint ~1×/sec instead of 60×/sec — the page still loads, runs JS
+     * and serves {@code fetch()} calls (those are paint-independent), but it no
+     * longer competes with the VISIBLE browser's Java2D paint pipeline. Without
+     * this, the hidden reddit.com renderer blits a full invisible page 60×/sec.
+     */
+    public CefBrowser createFetchBrowser(String url) {
+        return createBrowser(url, 1);
+    }
+
+    private CefBrowser createBrowser(String url, int frameRate) {
         CefBrowserSettings settings = new CefBrowserSettings();
-        settings.windowless_frame_rate = 60;
+        settings.windowless_frame_rate = frameRate;
         org.cef.browser.SwingCefBrowser browser = new org.cef.browser.SwingCefBrowser(
                 client(), url, false, null, wheelScrollPolicy, settings);
         browser.createImmediately();
         return browser;
+    }
+
+    /**
+     * Registers a handler on the shared headless-fetch message router. Triggers
+     * JCEF initialization if it hasn't happened yet, so the router exists. A
+     * handler may be added at any time (unlike the router itself, which must be
+     * registered before browser creation — handled in {@link #initialize()}).
+     */
+    public void addFetchQueryHandler(CefMessageRouterHandler handler) {
+        client(); // ensure initialize() ran and fetchRouter is non-null
+        fetchRouter.addHandler(handler, true);
+    }
+
+    /**
+     * Subscribes to main-frame load-end events. The listener receives the
+     * browser that finished loading and the HTTP status of its main resource;
+     * filter by browser identity to react only to your own.
+     */
+    public void addLoadEndListener(BiConsumer<CefBrowser, Integer> listener) {
+        client(); // ensure the multiplexing load handler is wired
+        loadEndListeners.add(listener);
     }
 
     public synchronized void dispose() {

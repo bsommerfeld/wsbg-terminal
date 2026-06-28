@@ -51,11 +51,6 @@ html[data-platform="other"] .app {
   70%  { box-shadow: 0 0 0 7px oklch(0.78 0.16 150 / 0); }
   100% { box-shadow: 0 0 0 0 oklch(0.78 0.16 150 / 0); }
 }
-@keyframes pulse-amber {
-  0%   { box-shadow: 0 0 0 0 oklch(0.82 0.14 75 / .55); }
-  70%  { box-shadow: 0 0 0 7px oklch(0.82 0.14 75 / 0); }
-  100% { box-shadow: 0 0 0 0 oklch(0.82 0.14 75 / 0); }
-}
 
 @media (max-width: 900px) {
   .main { grid-template-columns: 1fr; grid-template-rows: 1fr 1px 1fr; }

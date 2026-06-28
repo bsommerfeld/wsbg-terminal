@@ -4,9 +4,8 @@ set -e
 # Navigate to project root relative to this script
 cd "$(dirname "$0")/.."
 
-echo "Building WSBG Terminal (PROD)..."
-export APP_MODE=PROD
+echo "Building WSBG Terminal..."
 mvn clean install -DskipTests
 
-echo "Starting WSBG Terminal UI (PROD MODE)..."
+echo "Starting WSBG Terminal UI..."
 mvn -pl terminal exec:exec

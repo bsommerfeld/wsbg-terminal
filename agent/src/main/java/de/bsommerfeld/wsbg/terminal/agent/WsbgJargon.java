@@ -31,9 +31,17 @@ public final class WsbgJargon {
 
     /** Slang → canonical/English entity name for Yahoo lookup. */
     public static final Map<String, String> ENTITY_ALIASES = ordered(
-            "Rheiner / Rhein", "Rheinmetall",
+            "Rheiner / Rhein / Rheini / RHEINI", "Rheinmetall",
             "Orangenmann", "Trump",
             "Obdukatze", "Obducat",
+            // Recurring WSBG-GER nicknames for real instruments — extend as new ones appear.
+            "Lederjacke / Lederjacken-Mann", "NVIDIA",      // Jensen Huang's leather jacket
+            "Pala", "Palantir",
+            "Coba", "Commerzbank",
+            "Kranich", "Lufthansa",                         // the airline's crane logo
+            "Saylor", "MicroStrategy",                      // Michael Saylor / Strategy
+            "Daimler / Benz", "Mercedes-Benz Group",
+            "Telekom / Magenta", "Deutsche Telekom",
             "Bumsbude", "(generic junk/penny stock — resolve the actual ticker the post names, not this word)");
 
     /** Slang → sentiment/role meaning for reading the room. */

@@ -16,10 +16,19 @@
         <module>financial-juice</module>
         <module>yahoo-finance</module>
         <module>currency</module>
+        <module>fear-greed</module>
+        <module>lang-schwarz</module>
+        <module>tradegate</module>
+        <module>nasdaq-quote</module>
         <module>finanznachrichten</module>
+        <module>source-api</module>
+        <module>embedding</module>
+        <module>aggregator</module>
 
         <module>agent</module>
         <module>terminal</module>
+
+        <module>.lab</module>
 
         <module>updater</module>
         <module>launcher</module>
@@ -81,6 +90,41 @@
             <dependency>
                 <groupId>de.bsommerfeld</groupId>
                 <artifactId>currency</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>fear-greed</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>lang-schwarz</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>tradegate</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>nasdaq-quote</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>source-api</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>embedding</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>aggregator</artifactId>
                 <version>${project.version}</version>
             </dependency>
 

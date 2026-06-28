@@ -3,10 +3,11 @@ package de.bsommerfeld.wsbg.terminal.ui;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
 import de.bsommerfeld.wsbg.terminal.agent.AgentCoordinator;
-import de.bsommerfeld.wsbg.terminal.agent.ClusterRebalancer;
+import de.bsommerfeld.wsbg.terminal.agent.EditorialPipeline;
 import de.bsommerfeld.wsbg.terminal.agent.OllamaServerManager;
 import de.bsommerfeld.wsbg.terminal.agent.PassiveMonitorService;
-import de.bsommerfeld.wsbg.terminal.core.config.ApplicationMode;
+import de.bsommerfeld.wsbg.terminal.currency.EurUsdMonitorService;
+import de.bsommerfeld.wsbg.terminal.feargreed.FearGreedMonitorService;
 import de.bsommerfeld.wsbg.terminal.db.AgentRepository;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
 import de.bsommerfeld.wsbg.terminal.ui.config.AppModule;
@@ -37,6 +38,24 @@ public final class AppMain {
         // keeps the last Chromium frame until the next one is presented.
         System.setProperty("sun.awt.noerasebackground", "true");
 
+        // Java2D pipeline choice (macOS). Our software-OSR browser blits EVERY
+        // Chromium frame through Java2D, so the pipeline is on the hot path for
+        // the whole UI. Metal (the Apple-Silicon default) accelerates that; the
+        // deprecated OpenGL pipeline is markedly slower and makes scroll/click/
+        // animations feel laggy. So we keep Metal by DEFAULT.
+        //
+        // OpenGL once mitigated a rare native crash in the Metal graphics-config
+        // teardown (MTLGC_DestroyMTLGraphicsConfig on display sleep/wake, SIGSEGV
+        // after hours) — unconfirmed and possibly external. It's kept as an
+        // OPT-IN (-Dwsbg.j2d.opengl=true or WSBG_J2D_OPENGL=true) rather than the
+        // default, so a certain, pervasive slowdown isn't traded for a rare crash.
+        // Must be set before ANY AWT/Toolkit init.
+        if (Boolean.getBoolean("wsbg.j2d.opengl")
+                || "true".equalsIgnoreCase(System.getenv("WSBG_J2D_OPENGL"))) {
+            System.setProperty("sun.java2d.metal", "false");
+            LOG.info("Java2D: OpenGL pipeline forced (Metal disabled) via opt-in flag.");
+        }
+
         System.setProperty("apple.awt.application.name", "WSBG Terminal");
         System.setProperty("apple.laf.useScreenMenuBar", "true");
 
@@ -57,8 +76,9 @@ public final class AppMain {
             System.exit(0);
         }
 
-        LOG.info("Bootstrapping WSBG Terminal (mode={})", ApplicationMode.get());
+        LOG.info("Bootstrapping WSBG Terminal");
         Injector injector = Guice.createInjector(new AppModule());
+        INJECTOR = injector; // for the in-app update relaunch (UpdateService → relaunchForUpdate)
 
         AssetServer assetServer = injector.getInstance(AssetServer.class);
         PushHub pushHub = injector.getInstance(PushHub.class);
@@ -91,13 +111,62 @@ public final class AppMain {
         SwingUtilities.invokeLater(() -> {
             BrowserWindow window = injector.getInstance(BrowserWindow.class);
             window.setOnClose(() -> shutdownServices(injector));
-            window.open(entryUrl);
+            window.open(entryUrl);  // brings JCEF up SYNCHRONOUSLY on this (EDT) thread
             windowRef[0] = window;  // hand to the raise listener
+
+            // CEF's native init is now done, on the AWT thread, via the window. ONLY
+            // now start the background hidden-browser fetchers (FX, Fear&Greed). As
+            // eager singletons they used to poll from their own threads during DI
+            // construction — before the window — and the first fetch would trigger
+            // JCEF init off the AWT thread, racing the EDT init and deadlocking the
+            // window (no UI, unkillable JVM). Deferring them here removes the race.
+            injector.getInstance(EurUsdMonitorService.class).start();
+            injector.getInstance(FearGreedMonitorService.class).start();
         });
     }
 
     private static final java.util.concurrent.atomic.AtomicBoolean SERVICES_DOWN =
             new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    /** Held for the in-app update relaunch (set once in {@link #main}). */
+    private static volatile Injector INJECTOR;
+
+    /**
+     * Closes the app cleanly and relaunches the launcher to apply a pending
+     * update — the action behind the titlebar's green "update now" button
+     * (UpdateService). Mirrors the proven shutdown-hook path: stop services
+     * FIRST (this releases the single-instance lock, so the relaunched launcher
+     * won't just detect us and raise the old window), THEN spawn the launcher
+     * with {@code --force-update} (so it updates even though auto-update is off),
+     * THEN tear CEF down and exit. Runs on the EDT to match the window-close
+     * path. Only ever reached when {@code WSBG_LAUNCHER_EXECUTABLE} is set
+     * (UpdateService keeps the button hidden otherwise).
+     */
+    public static void relaunchForUpdate() {
+        SwingUtilities.invokeLater(() -> {
+            shutdownServices(INJECTOR);
+            spawnLauncherForceUpdate();
+            safeStop(() -> INJECTOR.getInstance(CefHost.class).dispose(), "CefHost");
+            System.exit(0);
+        });
+    }
+
+    private static void spawnLauncherForceUpdate() {
+        String exe = System.getenv("WSBG_LAUNCHER_EXECUTABLE");
+        if (exe == null || exe.isBlank()) {
+            LOG.warn("Update relaunch requested but WSBG_LAUNCHER_EXECUTABLE is unset — cannot relaunch.");
+            return;
+        }
+        try {
+            new ProcessBuilder(exe, "--force-update")
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                    .redirectError(ProcessBuilder.Redirect.DISCARD)
+                    .start();
+            LOG.info("Relaunching launcher for update: {} --force-update", exe);
+        } catch (Exception e) {
+            LOG.error("Failed to relaunch launcher for update: {}", e.getMessage());
+        }
+    }
 
     /**
      * Stops every service that must die with the app — most importantly the
@@ -111,12 +180,12 @@ public final class AppMain {
         // Stop the scan loop first so no fresh embedding/vision/cluster work is
         // submitted while the services it depends on are torn down below.
         safeStop(() -> injector.getInstance(PassiveMonitorService.class).shutdown(), "PassiveMonitorService");
+        safeStop(() -> injector.getInstance(EditorialPipeline.class).shutdown(), "EditorialPipeline");
         safeStop(() -> injector.getInstance(AgentCoordinator.class).shutdown(), "AgentCoordinator");
-        safeStop(() -> injector.getInstance(ClusterRebalancer.class).shutdown(), "ClusterRebalancer");
         safeStop(() -> injector.getInstance(RedditRepository.class).shutdown(), "RedditRepository");
         safeStop(() -> injector.getInstance(AgentRepository.class).shutdown(), "AgentRepository");
         safeStop(() -> injector.getInstance(OllamaServerManager.class).shutdown(), "OllamaServerManager");
-        safeStop(() -> injector.getInstance(UserSessionTracker.class).shutdown(), "UserSessionTracker");
+        safeStop(() -> injector.getInstance(TimeTracker.class).shutdown(), "TimeTracker");
         safeStop(() -> injector.getInstance(PushHub.class).stop(), "PushHub");
         safeStop(() -> injector.getInstance(AssetServer.class).stop(), "AssetServer");
         safeStop(SingleInstance::release, "SingleInstance");

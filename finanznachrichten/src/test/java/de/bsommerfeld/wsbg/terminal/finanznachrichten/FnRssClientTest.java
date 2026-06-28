@@ -1,7 +1,10 @@
 package de.bsommerfeld.wsbg.terminal.finanznachrichten;
 
+import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
+
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -43,32 +46,31 @@ class FnRssClientTest {
 
     @Test
     void parsesItemsWithIsinAndIsoDate() {
-        List<FnNewsItem> items = client.parse(FEED, FnFeed.AKTIEN_NACHRICHTEN);
+        List<RawNewsItem> items = client.parse(FEED, FnFeed.AKTIEN_NACHRICHTEN);
 
         assertEquals(3, items.size());
 
-        FnNewsItem first = items.get(0);
+        RawNewsItem first = items.get(0);
         assertEquals("VORSICHT bei Siemens Energy! CTS Eventim KAUFEN?", first.title());
         assertEquals("https://www.finanznachrichten.de/nachrichten-2026-06/68687080-vorsicht.htm", first.link());
         assertEquals("DE000ENER6Y0", first.isin());
-        assertEquals("rss-aktien-nachrichten", first.feedSlug());
+        assertEquals("finanznachrichten", first.publisher());
         assertFalse(first.sponsored());
         // 2026-06-05T03:46:00Z
-        assertEquals(1780631160L, first.publishedUtc());
-        assertTrue(first.fetchedUtc() > 0);
+        assertEquals(Instant.ofEpochSecond(1780631160L), first.publishedAt());
     }
 
     @Test
     void detectsAndStripsSponsoredMarker() {
-        FnNewsItem ad = client.parse(FEED, FnFeed.AKTIEN_NACHRICHTEN).get(1);
+        RawNewsItem ad = client.parse(FEED, FnFeed.AKTIEN_NACHRICHTEN).get(1);
         assertTrue(ad.sponsored(), "item with 'Anzeige / Werbung' must be flagged sponsored");
-        assertFalse(ad.description().startsWith("Anzeige"), "marker must be stripped from description");
-        assertTrue(ad.description().startsWith("Nevada"));
+        assertFalse(ad.summary().startsWith("Anzeige"), "marker must be stripped from description");
+        assertTrue(ad.summary().startsWith("Nevada"));
     }
 
     @Test
     void itemWithoutIsinHasNullIsin() {
-        FnNewsItem noIsin = client.parse(FEED, FnFeed.AKTIEN_NACHRICHTEN).get(2);
+        RawNewsItem noIsin = client.parse(FEED, FnFeed.AKTIEN_NACHRICHTEN).get(2);
         assertNull(noIsin.isin());
         assertEquals("Marktbericht ohne ISIN", noIsin.title());
     }
@@ -83,8 +85,8 @@ class FnRssClientTest {
                 <pubDate>not-a-date</pubDate>
                 </item></channel></rss>
                 """;
-        FnNewsItem item = client.parse(xml, FnFeed.NEWS).getFirst();
-        assertEquals(0, item.publishedUtc());
+        RawNewsItem item = client.parse(xml, FnFeed.NEWS).getFirst();
+        assertNull(item.publishedAt());
         assertEquals("Bad date", item.title());
     }
 
@@ -98,9 +100,9 @@ class FnRssClientTest {
                 <pubDate>2026-06-05T05:46:00+02:00</pubDate>
                 </item></channel></rss>
                 """;
-        FnNewsItem item = client.parse(xml, FnFeed.NEWS).getFirst();
+        RawNewsItem item = client.parse(xml, FnFeed.NEWS).getFirst();
         // same instant as 03:46:00Z
-        assertEquals(1780631160L, item.publishedUtc());
+        assertEquals(Instant.ofEpochSecond(1780631160L), item.publishedAt());
     }
 
     @Test

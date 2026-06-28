@@ -49,6 +49,15 @@ public final class RedditSnapshotStore {
         this.file = StorageUtils.getSnapshotsDir().resolve(FILE_NAME);
     }
 
+    /** Deletes the persisted snapshot file so a restart can't restore it — for the "Daten löschen" full reset. */
+    public synchronized void clear() {
+        try {
+            Files.deleteIfExists(file);
+        } catch (Exception e) {
+            LOG.warn("Failed to delete reddit snapshot file: {}", e.getMessage());
+        }
+    }
+
     /** Writes the current repository contents to disk, stamped with "now". */
     public synchronized void save(List<RedditThread> threads, List<RedditComment> comments) {
         try {

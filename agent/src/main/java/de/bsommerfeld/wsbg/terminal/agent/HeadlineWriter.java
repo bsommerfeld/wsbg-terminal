@@ -166,14 +166,15 @@ public final class HeadlineWriter {
         List<String> sectors = clean(draft.sectors()).stream()
                 .collect(distinctByLower()).stream().limit(2).toList();
         String assetClass = normalizeAssetClass(draft.assetClass());
-        HeadlineSentiment sentiment = HeadlineSentiment.fromString(draft.sentiment());
 
         MarketSnapshot snapshot = tickerSymbol == null ? null
                 : snapshotByTicker.get(tickerSymbol.toUpperCase(Locale.ROOT));
+        HeadlineSentiment sentiment = reconcileSentiment(
+                HeadlineSentiment.fromString(draft.sentiment()), priceMove);
 
         agentRepository.saveHeadline(cluster.id, headline, "",
                 threadIds, commentIds, highlight, tickerSymbol, subjects, priceMove,
-                sectors, assetClass, sentiment, snapshot);
+                sectors, assetClass, sentiment, snapshot, false);
 
         LOG.info("[WRITE] {} [{}{} {}{}]: {}", cluster.id, highlight,
                 tickerSymbol == null ? "" : " " + tickerSymbol, sentiment,
@@ -182,6 +183,90 @@ public final class HeadlineWriter {
 
         eventBus.post(new AgentStreamEndEvent(
                 "||PASSIVE||" + headline + "||REF||ID:" + cluster.id));
+        return true;
+    }
+
+    /**
+     * Publishes a headline for a feed-wide {@link SubjectUnit} (the editorial atom
+     * after the #2 cutover). Same QA + broadcast as {@link #publish}, but the
+     * grouping key is the <b>unit id</b> (so story continuity / dedup is per
+     * subject, not per cluster) and the ticker + market snapshot come from the
+     * <b>unit</b> (resolver-validated), never from the model. Returns {@code true}
+     * when saved + broadcast, {@code false} on blank text or the identical-text
+     * guard. Never throws on bad model output.
+     */
+    public boolean publishUnit(SubjectUnit unit, Draft draft) {
+        return publishUnit(unit, draft, false);
+    }
+
+    /**
+     * Same as {@link #publishUnit(SubjectUnit, Draft)} but records whether the
+     * compose stage leaned on at least one external news item ({@code newsEnriched}
+     * = the draft cited a {@code [news:ID]}). The flag is derived by the caller
+     * (which holds the cited-news list), persisted on the record, and surfaced by
+     * the UI as a subtle "News" provenance tag.
+     */
+    public boolean publishUnit(SubjectUnit unit, Draft draft, boolean newsEnriched) {
+        if (unit == null || draft == null) return false;
+        String headline = stripHtml(draft.headline()).trim();
+        if (headline.isEmpty()) return false;
+
+        // Identical-text guard against an accidental re-fire for the same unit.
+        long now = System.currentTimeMillis() / 1000;
+        boolean dup = agentRepository.getHeadlinesByClusterId(unit.id).stream()
+                .anyMatch(h -> headline.equalsIgnoreCase(h.headline())
+                        && (now - h.createdAt()) < DUP_TEXT_GUARD_SECS);
+        if (dup) {
+            LOG.debug("[WRITE] skip duplicate headline text for unit {}", unit.id);
+            return false;
+        }
+
+        // Ticker + snapshot are the unit's resolver-validated facts, not the model's.
+        String tickerSymbol = unit.isInstrument()
+                ? unit.ticker().toUpperCase(Locale.ROOT) : null;
+        MarketSnapshot snapshot = unit.snapshot();
+
+        // Source-id hygiene: comment ids must look like Reddit comment fullnames;
+        // thread ids are kept as-is (a unit legitimately spans many threads).
+        List<String> threadIds = clean(draft.sourceThreadIds());
+        List<String> commentIds = clean(draft.sourceCommentIds());
+        commentIds.removeIf(id -> !id.startsWith("t1_"));
+
+        // The subject for the UI glow is the unit itself: keep it only when the
+        // unit has a validated ticker and its name appears verbatim in the line.
+        List<HeadlineSubject> subjects = new ArrayList<>();
+        if (tickerSymbol != null) {
+            String name = unit.canonicalName();
+            if (name != null && !name.isBlank() && headline.contains(name)) {
+                subjects.add(new HeadlineSubject(name, tickerSymbol));
+            }
+        }
+
+        HeadlineHighlight highlight = HeadlineHighlight.fromString(draft.highlight());
+        // Same soft anti-over-flag as the cluster path.
+        if (highlight == HeadlineHighlight.IMPORTANT && tickerSymbol != null
+                && recentlyFlagged(tickerSymbol, now)) {
+            highlight = HeadlineHighlight.NORMAL;
+        }
+
+        Double priceMove = sanePriceMove(draft.priceMovePercent(), headline);
+        List<String> sectors = clean(draft.sectors()).stream()
+                .collect(distinctByLower()).stream().limit(2).toList();
+        String assetClass = normalizeAssetClass(draft.assetClass());
+        HeadlineSentiment sentiment = reconcileSentiment(
+                HeadlineSentiment.fromString(draft.sentiment()), priceMove);
+
+        agentRepository.saveHeadline(unit.id, headline, "",
+                threadIds, commentIds, highlight, tickerSymbol, subjects, priceMove,
+                sectors, assetClass, sentiment, snapshot, newsEnriched);
+
+        LOG.info("[WRITE] unit {} [{}{} {}{}]: {}", unit.id, highlight,
+                tickerSymbol == null ? "" : " " + tickerSymbol, sentiment,
+                priceMove == null ? "" : String.format(Locale.ROOT, " %+.1f%%", priceMove),
+                headline);
+
+        eventBus.post(new AgentStreamEndEvent(
+                "||PASSIVE||" + headline + "||REF||ID:" + unit.id));
         return true;
     }
 
@@ -206,6 +291,42 @@ public final class HeadlineWriter {
             return null; // money amount + huge % ⇒ almost always a P&L misread
         }
         return priceMove;
+    }
+
+    private static final java.util.Set<HeadlineSentiment> BULLISH_CAMP = java.util.EnumSet.of(
+            HeadlineSentiment.BULLISH, HeadlineSentiment.FOMO,
+            HeadlineSentiment.BREAKOUT, HeadlineSentiment.SQUEEZE);
+    private static final java.util.Set<HeadlineSentiment> BEARISH_CAMP = java.util.EnumSet.of(
+            HeadlineSentiment.BEARISH, HeadlineSentiment.CAPITULATION);
+
+    /** Only a move at least this large (in %) overrides the model's directional label. */
+    private static final double SENTIMENT_FLIP_MIN_MOVE = 1.5;
+
+    /**
+     * Makes the directional read agree with the sign of the number the headline
+     * itself carries — a line with a −% can't read BULLISH, and vice versa (a
+     * reader feels lied to otherwise). The number is the line's own
+     * {@code priceMovePercent}, which is the figure the line is ABOUT — Yahoo- OR
+     * user-sourced, it doesn't matter (sentiment is sentiment: a posted −13% is
+     * bearish regardless of whether Yahoo confirms it).
+     *
+     * <p>Deliberately does NOT fall back to the instrument's market day-move: a
+     * loss-porn post is BEARISH even when the stock is green today, so the model's
+     * own classification must stand when the line carries no move of its own. Only
+     * flips a directional label that <em>contradicts</em> a <b>prominent</b> move
+     * ({@link #SENTIMENT_FLIP_MIN_MOVE}); a tiny ±0.x% day-move must NOT drag a
+     * bullish narrative ("+20% seit dem Tief") to BEARISH. Non-directional reads
+     * (NEUTRAL/MIXED/REVERSAL) and number-less lines stay as the model set them.
+     * <b>Never a publish gate</b> — it only corrects the label.
+     */
+    static HeadlineSentiment reconcileSentiment(HeadlineSentiment sentiment, Double priceMove) {
+        if (priceMove == null || !Double.isFinite(priceMove)
+                || Math.abs(priceMove) < SENTIMENT_FLIP_MIN_MOVE) {
+            return sentiment;
+        }
+        if (priceMove < 0 && BULLISH_CAMP.contains(sentiment)) return HeadlineSentiment.BEARISH;
+        if (priceMove > 0 && BEARISH_CAMP.contains(sentiment)) return HeadlineSentiment.BULLISH;
+        return sentiment;
     }
 
     private static String sanitizeTicker(String raw) {

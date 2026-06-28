@@ -130,7 +130,7 @@ html[data-theme="light"] .tb-title .flag {
 }
 .tb-title .sep { color: var(--mute-2); font-weight: 400; }
 
-/* Icon buttons (currently just the theme toggle). */
+/* Icon buttons (donate heart, settings gear, update indicator). */
 .iconbtn {
   width: 30px; height: 26px;
   display: inline-flex; align-items: center; justify-content: center;
@@ -144,9 +144,19 @@ html[data-theme="light"] .tb-title .flag {
   stroke-linecap: round; stroke-linejoin: round;
 }
 
-/* Theme toggle: show the icon for the target theme — sun in dark mode
-   (clicking switches to light), moon in light mode (switches to dark). */
-.js-theme-toggle .icon-sun,
-.js-theme-toggle .icon-moon { display: none; }
-html[data-theme="dark"]  .js-theme-toggle .icon-sun  { display: inline; }
-html[data-theme="light"] .js-theme-toggle .icon-moon { display: inline; }
+/* Settings gear: the cog spins up on hover (a single smooth turn). */
+.gear-btn svg { transition: transform .6s cubic-bezier(.34, 1.2, .64, 1); }
+.gear-btn:hover svg { transform: rotate(180deg); }
+
+/* Update-available indicator: green, hidden until the backend reports a newer
+   release (js sets/clears [hidden]). A soft pulse draws the eye when it appears. */
+/* .iconbtn's display:inline-flex would beat the UA [hidden] rule, so the button
+   would show even with no release — pin it gone while hidden. */
+.update-btn[hidden] { display: none; }
+.update-btn { color: var(--green); }
+.update-btn:hover { color: var(--green); background: var(--bg-1); }
+.update-btn:not([hidden]) { animation: update-glow 2.4s ease-in-out infinite; }
+@keyframes update-glow {
+  0%, 100% { opacity: .65; }
+  50%      { opacity: 1; }
+}

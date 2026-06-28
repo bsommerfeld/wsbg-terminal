@@ -37,6 +37,37 @@
             <groupId>de.bsommerfeld</groupId>
             <artifactId>currency</artifactId>
         </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>fear-greed</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>lang-schwarz</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>tradegate</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>nasdaq-quote</artifactId>
+        </dependency>
+        <!-- News source layer: source-api (NewsSource contract), the concrete
+             Yahoo source, and the aggregator that fans across them. Referenced
+             directly by AppModule's Multibinder wiring. -->
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>source-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>yahoo-finance</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>aggregator</artifactId>
+        </dependency>
 
         <!-- JCEF (embedded Chromium) + WebSocket push.
              No JavaFX in this module — the terminal UI is HTML/CSS/JS. -->

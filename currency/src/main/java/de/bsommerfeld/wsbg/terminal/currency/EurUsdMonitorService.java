@@ -14,6 +14,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
@@ -74,11 +75,15 @@ public class EurUsdMonitorService {
     private static final Logger LOG = LoggerFactory.getLogger(EurUsdMonitorService.class);
 
     /**
-     * Initial delay before the first poll. Kept short so the UI has data to
-     * render immediately after boot, but non-zero so we don't race the
-     * rest of the DI graph during construction.
+     * Initial delay before the first poll: zero, so the very first fetch fires
+     * immediately on the scheduler's daemon thread the moment the service is
+     * constructed. This never blocks the DI graph (the tick runs off-thread) and
+     * the fan-out is harmless even if the publisher hasn't registered its
+     * listener yet — the quote is cached in {@link #current} and the publisher
+     * re-sends it on the next {@code onClientOpen}. The result is data on screen
+     * as fast as the network allows instead of a fixed dead wait after boot.
      */
-    private static final long INITIAL_DELAY_SECONDS = 5;
+    private static final long INITIAL_DELAY_SECONDS = 0;
 
     private final EurUsdClient client;
     private final long pollIntervalSeconds;
@@ -92,6 +97,7 @@ public class EurUsdMonitorService {
 
     private final AtomicReference<EurUsdQuote> current = new AtomicReference<>(null);
     private final List<Consumer<EurUsdQuote>> listeners = new CopyOnWriteArrayList<>();
+    private final AtomicBoolean started = new AtomicBoolean(false);
 
     public EurUsdMonitorService() {
         this(new EurUsdClient(), new CurrencyConfig());
@@ -99,16 +105,30 @@ public class EurUsdMonitorService {
 
     @Inject
     public EurUsdMonitorService(EurUsdClient client, GlobalConfig config) {
-        this(client, resolveCurrencyConfig(config));
+        // Production (Guice) path: build WITHOUT auto-starting. The poll loop hits the
+        // browser transport, which must not trigger JCEF's native init off the AWT
+        // thread before the window does — that races the EDT init and deadlocks the
+        // window. AppMain calls start() only after the window has brought CEF up.
+        this(client, resolveCurrencyConfig(config), false);
     }
 
     public EurUsdMonitorService(EurUsdClient client, CurrencyConfig config) {
+        this(client, config, true);
+    }
+
+    /**
+     * Full constructor. {@code autoStart=false} builds the service without
+     * scheduling the poll loop — for tests that drive {@link #tick()} by hand
+     * and must not race a zero-delay scheduled tick (which would consume their
+     * stubbed return values). Production always starts.
+     */
+    EurUsdMonitorService(EurUsdClient client, CurrencyConfig config, boolean autoStart) {
         this.client = client;
         // 30 s floor — the Yahoo v8/chart spot quote only refreshes ~once
         // per minute, so polling faster than this just re-fetches an
         // unchanged value.
         this.pollIntervalSeconds = Math.max(30, config.getPollIntervalSeconds());
-        start();
+        if (autoStart) start();
     }
 
     private static CurrencyConfig resolveCurrencyConfig(GlobalConfig config) {
@@ -116,7 +136,9 @@ public class EurUsdMonitorService {
         return c == null ? new CurrencyConfig() : c;
     }
 
-    private void start() {
+    /** Starts the poll loop. Idempotent — safe whether called by the ctor (tests) or AppMain. */
+    public void start() {
+        if (!started.compareAndSet(false, true)) return;
         LOG.info("Starting EUR/USD monitor (interval: {} seconds)", pollIntervalSeconds);
         scheduler.scheduleAtFixedRate(this::tick,
                 INITIAL_DELAY_SECONDS, pollIntervalSeconds, TimeUnit.SECONDS);

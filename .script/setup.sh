@@ -41,6 +41,16 @@ echo "=========================================="
 echo "   WSBG Terminal - Setup & Installation   "
 echo "=========================================="
 
+# Degraded-but-not-fatal steps report through warn(); the script then exits
+# with code 10 so the launcher can show "Setup completed with warnings"
+# instead of claiming a clean run. Keep the code in sync with
+# EnvironmentSetup.EXIT_WITH_WARNINGS (launcher) and setup.bat.
+SETUP_WARNED=0
+warn() {
+    SETUP_WARNED=1
+    echo "    [WARN] $1"
+}
+
 OS="$(uname -s)"
 
 # ------------------------------------------------------------------------------
@@ -95,11 +105,13 @@ install_ollama() {
     rm -rf "$AI_DIR/bin" "$AI_DIR/lib" "$AI_DIR/ollama"
     mkdir -p "$AI_DIR"
 
+    # --retry matches setup.ps1: a transient network hiccup must not abort
+    # a ~1 GB download that was already underway.
     if [ "$OS" = "Darwin" ]; then
         url="$base/ollama-darwin.tgz"
         tmp="/tmp/ollama-darwin-$$.tgz"
-        curl -fL --progress-bar -o "$tmp" "$url" || { echo "    [WARN] Download failed."; return 1; }
-        tar -xzf "$tmp" -C "$AI_DIR" || { echo "    [WARN] Extract failed."; rm -f "$tmp"; return 1; }
+        curl -fL --retry 3 --retry-delay 2 --progress-bar -o "$tmp" "$url" || { warn "Download failed."; return 1; }
+        tar -xzf "$tmp" -C "$AI_DIR" || { warn "Extract failed."; rm -f "$tmp"; return 1; }
         rm -f "$tmp"
     else
         case "$arch" in
@@ -108,14 +120,14 @@ install_ollama() {
         esac
         url="$base/ollama-linux-${arch}.tar.zst"
         tmp="/tmp/ollama-linux-$$.tar.zst"
-        curl -fL --progress-bar -o "$tmp" "$url" || { echo "    [WARN] Download failed."; return 1; }
+        curl -fL --retry 3 --retry-delay 2 --progress-bar -o "$tmp" "$url" || { warn "Download failed."; return 1; }
         # .tar.zst needs zstd: GNU tar --zstd (>=1.31), else the standalone CLI.
         if tar --zstd -xf "$tmp" -C "$AI_DIR" 2>/dev/null; then
             :
         elif command -v zstd >/dev/null 2>&1; then
-            zstd -dc "$tmp" | tar -x -C "$AI_DIR" || { echo "    [WARN] Extract failed."; rm -f "$tmp"; return 1; }
+            zstd -dc "$tmp" | tar -x -C "$AI_DIR" || { warn "Extract failed."; rm -f "$tmp"; return 1; }
         else
-            echo "    [WARN] Cannot extract .tar.zst (need 'zstd' or GNU tar >=1.31)."
+            warn "Cannot extract .tar.zst (need 'zstd' or GNU tar >=1.31)."
             rm -f "$tmp"; return 1
         fi
         rm -f "$tmp"
@@ -127,14 +139,14 @@ install_ollama() {
     elif [ -x "$AI_DIR/ollama" ]; then
         OLLAMA="$AI_DIR/ollama"
     else
-        echo "    [WARN] ollama binary not found after extraction -- check archive layout."
+        warn "ollama binary not found after extraction -- check archive layout."
         return 1
     fi
     chmod +x "$OLLAMA" 2>/dev/null || true
     echo "    Isolated Ollama ready at $OLLAMA"
 }
 
-install_ollama || echo "    [WARN] Isolated Ollama install failed -- continuing."
+install_ollama || warn "Isolated Ollama install failed -- continuing."
 
 # ------------------------------------------------------------------------------
 # 2. Start OUR server on the private port (stopped again at the end of setup)
@@ -160,7 +172,7 @@ if [ -x "$OLLAMA" ]; then
         if [ "$READY" = true ]; then
             echo "    Server ready."
         else
-            echo "    [WARN] Server did not respond in time -- pulls may fail."
+            warn "Server did not respond in time -- pulls may fail."
         fi
     fi
 fi
@@ -222,38 +234,46 @@ remote_digest() {
 
 # Install-or-update each desired model. Track full presence so the GC below never
 # deletes the old model while a new one failed to land (e.g. an offline switch).
-ALL_PRESENT=true
-for model in "${DESIRED_MODELS[@]}"; do
-    have=$(local_digest "$model")
-    want=$(remote_digest "$model")
-    if [ -z "$have" ]; then
-        echo "    > Pulling $model (not installed)..."
-        "$OLLAMA" pull "$model" || { echo "    [WARN] Failed to pull $model -- continuing"; ALL_PRESENT=false; }
-    elif [ -z "$want" ]; then
-        echo "    [OK] $model present (update check skipped -- registry unreachable)"
-    elif [ "$have" = "$want" ]; then
-        echo "    [OK] $model up to date ($have)"
-    else
-        echo "    > Updating $model ($have -> $want)..."
-        "$OLLAMA" pull "$model" || echo "    [WARN] Failed to update $model -- keeping $have"
-    fi
-done
-
-# GC: drop every isolated-store model that is no longer desired. Skipped when a
-# desired pull failed, so we never remove the old model before the new one is
-# safely in place.
-if [ "$ALL_PRESENT" = true ]; then
-    while read -r inst; do
-        [ -z "$inst" ] && continue
-        keep=false
-        for model in "${DESIRED_MODELS[@]}"; do
-            [ "$(printf '%s' "$inst" | tr 'A-Z' 'a-z')" = "$(printf '%s' "$model" | tr 'A-Z' 'a-z')" ] && { keep=true; break; }
-        done
-        if [ "$keep" = false ]; then
-            echo "    > Removing stale model $inst ..."
-            "$OLLAMA" rm "$inst" >/dev/null 2>&1 || echo "    [WARN] Could not remove $inst"
+# Guarded on the binary (mirrors setup.ps1): without it every pull would just
+# fail noisily. The launcher tracks model names from the exact "> Pulling
+# <model>..." wording -- keep extra detail on its own line, never appended.
+if [ -x "$OLLAMA" ]; then
+    ALL_PRESENT=true
+    for model in "${DESIRED_MODELS[@]}"; do
+        have=$(local_digest "$model")
+        want=$(remote_digest "$model")
+        if [ -z "$have" ]; then
+            echo "    > Pulling $model..."
+            "$OLLAMA" pull "$model" || { warn "Failed to pull $model -- continuing"; ALL_PRESENT=false; }
+        elif [ -z "$want" ]; then
+            echo "    [OK] $model present (update check skipped -- registry unreachable)"
+        elif [ "$have" = "$want" ]; then
+            echo "    [OK] $model up to date ($have)"
+        else
+            echo "    Update available: $model ($have -> $want)"
+            echo "    > Pulling $model..."
+            "$OLLAMA" pull "$model" || warn "Failed to update $model -- keeping $have"
         fi
-    done < <("$OLLAMA" list 2>/dev/null | tail -n +2 | awk '{print $1}')
+    done
+
+    # GC: drop every isolated-store model that is no longer desired. Skipped when
+    # a desired pull failed, so we never remove the old model before the new one
+    # is safely in place.
+    if [ "$ALL_PRESENT" = true ]; then
+        while read -r inst; do
+            [ -z "$inst" ] && continue
+            keep=false
+            for model in "${DESIRED_MODELS[@]}"; do
+                [ "$(printf '%s' "$inst" | tr 'A-Z' 'a-z')" = "$(printf '%s' "$model" | tr 'A-Z' 'a-z')" ] && { keep=true; break; }
+            done
+            if [ "$keep" = false ]; then
+                echo "    > Removing stale model $inst ..."
+                "$OLLAMA" rm "$inst" >/dev/null 2>&1 || warn "Could not remove $inst"
+            fi
+        done < <("$OLLAMA" list 2>/dev/null | tail -n +2 | awk '{print $1}')
+    fi
+else
+    warn "Isolated Ollama binary missing -- skipping model install."
 fi
 
 # ------------------------------------------------------------------------------
@@ -286,12 +306,12 @@ install_jcef() {
     case "$UNAME_OS" in
         Darwin) PLATFORM_OS="macosx" ;;
         Linux)  PLATFORM_OS="linux" ;;
-        *)      echo "    [WARN] Unsupported OS for JCEF: $UNAME_OS"; return 1 ;;
+        *)      warn "Unsupported OS for JCEF: $UNAME_OS"; return 1 ;;
     esac
     case "$UNAME_ARCH" in
         arm64|aarch64) PLATFORM_ARCH="arm64" ;;
         x86_64|amd64)  PLATFORM_ARCH="amd64" ;;
-        *)             echo "    [WARN] Unsupported arch for JCEF: $UNAME_ARCH"; return 1 ;;
+        *)             warn "Unsupported arch for JCEF: $UNAME_ARCH"; return 1 ;;
     esac
     PLATFORM="${PLATFORM_OS}-${PLATFORM_ARCH}"
 
@@ -305,16 +325,16 @@ install_jcef() {
     local TMP_TAR="/tmp/jcef-native-$$.tar.gz"
 
     mkdir -p "$JCEF_DIR"
-    curl -fL --progress-bar -o "$TMP_JAR" "$URL" || { echo "    [WARN] JCEF download failed."; rm -f "$TMP_JAR"; return 1; }
+    curl -fL --progress-bar -o "$TMP_JAR" "$URL" || { warn "JCEF download failed."; rm -f "$TMP_JAR"; return 1; }
     # Extract the inner tar.gz from the JAR (it's a regular ZIP file).
-    unzip -p "$TMP_JAR" "*.tar.gz" > "$TMP_TAR" || { echo "    [WARN] JCEF inner tarball extract failed."; rm -f "$TMP_JAR" "$TMP_TAR"; return 1; }
-    tar -xzf "$TMP_TAR" -C "$JCEF_DIR" || { echo "    [WARN] JCEF extract failed."; rm -f "$TMP_JAR" "$TMP_TAR"; return 1; }
+    unzip -p "$TMP_JAR" "*.tar.gz" > "$TMP_TAR" || { warn "JCEF inner tarball extract failed."; rm -f "$TMP_JAR" "$TMP_TAR"; return 1; }
+    tar -xzf "$TMP_TAR" -C "$JCEF_DIR" || { warn "JCEF extract failed."; rm -f "$TMP_JAR" "$TMP_TAR"; return 1; }
     rm -f "$TMP_JAR" "$TMP_TAR"
     : > "$JCEF_DIR/install.lock"
     echo "    Browser runtime ready."
 }
 
-install_jcef || echo "    [WARN] JCEF install incomplete -- falling back to runtime download on first launch."
+install_jcef || warn "JCEF install incomplete -- falling back to runtime download on first launch."
 
 # ------------------------------------------------------------------------------
 # 5. Install JetBrains Mono + Inter fonts for the terminal UI
@@ -349,7 +369,7 @@ install_fonts() {
         if curl -fsL "$url" -o "$FONT_DIR/$name"; then
             echo "    [OK] $name"
         else
-            echo "    [WARN] Failed to download $name"
+            warn "Failed to download $name"
             failed=1
         fi
     done
@@ -358,7 +378,7 @@ install_fonts() {
         : > "$FONT_MARKER"
         echo "    Fonts ready."
     else
-        echo "    [WARN] Font install partial -- UI will use system fallback for missing weights."
+        warn "Font install partial -- UI will use system fallback for missing weights."
     fi
 }
 
@@ -411,3 +431,10 @@ echo "=========================================="
 echo "   Setup Complete! Ready to Run.          "
 echo "=========================================="
 echo "Run using: .script/run.sh"
+
+# Exit 10 = "finished, but degraded" -- the launcher shows "Setup completed
+# with warnings" and proceeds. 0 = clean run. (EnvironmentSetup.EXIT_WITH_WARNINGS)
+if [ "$SETUP_WARNED" = "1" ]; then
+    exit 10
+fi
+exit 0

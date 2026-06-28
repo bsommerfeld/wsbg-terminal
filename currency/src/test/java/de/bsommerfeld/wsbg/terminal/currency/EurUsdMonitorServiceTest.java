@@ -139,23 +139,12 @@ class EurUsdMonitorServiceTest {
     }
 
     /**
-     * Builds a service that has scheduled a poll, then shuts the scheduler
-     * down immediately so the test owns invocation timing via {@link
-     * EurUsdMonitorService#tick()}. Without this the scheduler thread races
-     * the test and clobbers mock-call counts.
+     * Builds a service with the poll loop NOT started, so the test owns
+     * invocation timing via {@link EurUsdMonitorService#tick()}. The production
+     * service polls with a zero initial delay; a started scheduler would race
+     * the test and consume its stubbed return values.
      */
     private EurUsdMonitorService newServiceWithoutAutoStart(EurUsdClient client) {
-        // Pin to a long interval so the scheduled tick doesn't fire during
-        // the test window. We immediately call shutdown() to stop the
-        // scheduler thread, then drive ticks manually.
-        CurrencyConfig cfg = new CurrencyConfig();
-        cfg.setPollIntervalSeconds(3600);
-
-        EurUsdMonitorService service = new EurUsdMonitorService(client, cfg);
-        service.shutdown();
-        // Reset mock so the initial scheduled call (if it got off the
-        // ground before shutdown) doesn't pollute later verifications.
-        Mockito.clearInvocations(client);
-        return service;
+        return new EurUsdMonitorService(client, new CurrencyConfig(), false);
     }
 }

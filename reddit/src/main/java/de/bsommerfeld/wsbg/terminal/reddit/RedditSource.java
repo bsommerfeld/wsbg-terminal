@@ -16,11 +16,10 @@ import java.util.List;
  *   <li>{@link RssRedditScraper} — anonymous Atom feeds ({@code www.reddit.com}).
  *       No app, no token, no login. No scores / poll data; comments are a flat
  *       list capped at ~100 per post.</li>
- *   <li>{@code TestRedditScraper} — synthetic in-memory data (extends
- *       {@link RedditScraper}); used in {@code APP_MODE=TEST}.</li>
  * </ul>
  *
- * <p>Selected via {@code reddit.source} in config; bound in {@code AppModule}.
+ * <p>Auto-selected at runtime by {@link FallbackRedditSource}; bound in
+ * {@code AppModule}.
  * All implementations write the same {@code RedditThread}/{@code RedditComment}
  * objects to the shared in-memory {@link RedditRepository} as a side effect,
  * and return {@link ScrapeStats} describing what changed.

@@ -17,13 +17,13 @@ import static org.mockito.Mockito.*;
 class AgentCoordinatorTest {
 
     private ClusterRegistry registry;
-    private EditorialAgent agent;
+    private EditorialPipeline pipeline;
     private AgentCoordinator coordinator;
 
     @BeforeEach
     void setUp() {
         registry = new ClusterRegistry();
-        agent = mock(EditorialAgent.class);
+        pipeline = mock(EditorialPipeline.class);
     }
 
     @AfterEach
@@ -47,9 +47,9 @@ class AgentCoordinatorTest {
             runs.incrementAndGet();
             latch.countDown();
             return null;
-        }).when(agent).runTick(anySet());
+        }).when(pipeline).submitClusters(anySet());
 
-        coordinator = new AgentCoordinator(registry, agent, 100L);
+        coordinator = new AgentCoordinator(registry, pipeline, 100L);
         registry.add(cluster("t3_a"));
 
         assertTrue(latch.await(8, TimeUnit.SECONDS), "agent should run after debounce");
@@ -64,9 +64,9 @@ class AgentCoordinatorTest {
             runs.incrementAndGet();
             firstRun.countDown();
             return null;
-        }).when(agent).runTick(anySet());
+        }).when(pipeline).submitClusters(anySet());
 
-        coordinator = new AgentCoordinator(registry, agent, 100L);
+        coordinator = new AgentCoordinator(registry, pipeline, 100L);
         for (int i = 0; i < 10; i++) {
             registry.notifyChange("t3_" + i);
         }
@@ -93,9 +93,9 @@ class AgentCoordinatorTest {
                 secondRun.countDown();
             }
             return null;
-        }).when(agent).runTick(anySet());
+        }).when(pipeline).submitClusters(anySet());
 
-        coordinator = new AgentCoordinator(registry, agent, 100L);
+        coordinator = new AgentCoordinator(registry, pipeline, 100L);
         registry.notifyChange("t3_a");
 
         assertTrue(firstStart.await(8, TimeUnit.SECONDS), "first run must start");
@@ -108,10 +108,10 @@ class AgentCoordinatorTest {
 
     @Test
     void emptyDirtySet_doesNotInvokeAgent() throws InterruptedException {
-        coordinator = new AgentCoordinator(registry, agent, 100L);
+        coordinator = new AgentCoordinator(registry, pipeline, 100L);
         // No notifyChange — no run should happen.
         Thread.sleep(500);
-        verify(agent, never()).runTick(any());
+        verify(pipeline, never()).submitClusters(any());
     }
 
     @SuppressWarnings("unchecked")

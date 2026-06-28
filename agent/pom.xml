@@ -18,6 +18,18 @@
         </dependency>
         <dependency>
             <groupId>de.bsommerfeld</groupId>
+            <artifactId>embedding</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>source-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>aggregator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
             <artifactId>yahoo-finance</artifactId>
         </dependency>
         <dependency>

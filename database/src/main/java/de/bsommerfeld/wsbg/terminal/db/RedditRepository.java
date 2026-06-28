@@ -40,6 +40,12 @@ public class RedditRepository {
         LOG.info("Shutting down RedditRepository (in-memory, nothing to flush).");
     }
 
+    /** Drops every thread and comment. Used by the editorial-lab "Reset" action. */
+    public void clear() {
+        threadCache.clear();
+        threadCommentsCache.clear();
+    }
+
     // -- Writes --
 
     public CompletableFuture<Void> saveThread(RedditThread thread) {

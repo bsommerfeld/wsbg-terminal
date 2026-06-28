@@ -2,6 +2,7 @@ package de.bsommerfeld.wsbg.terminal.agent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import de.bsommerfeld.wsbg.terminal.agent.AgentSnapshotStore.AgentSnapshot;
+import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
 import de.bsommerfeld.wsbg.terminal.db.AgentRepository;
 import dev.langchain4j.data.embedding.Embedding;
@@ -44,18 +45,43 @@ class AgentSnapshotSerializationTest {
         AgentRepository repo = new AgentRepository();
         repo.saveHeadline("t3_abc", "NOW +606%", "ctx");
 
+        // A subject unit with evidence + a published headline + a pinned price
+        // anchor — the editorial state that MUST survive a restart (else a
+        // re-touched unit looks brand-new and the wire repeats a line).
+        SubjectUnit unit = new SubjectUnit("NOW", "ServiceNow");
+        unit.updateResolved("ServiceNow", "NOW",
+                new MarketSnapshot("NOW", 100.0, Double.NaN, 1.5, Double.NaN, Double.NaN,
+                        -1, Double.NaN, Double.NaN, "USD", "", 0, List.of()),
+                List.of());
+        unit.addEvidence(new SubjectUnit.EvidenceRef("t3_abc", "t1_x", "NOW läuft", "reddit",
+                Instant.now().getEpochSecond()));
+        unit.addHeadline("NOW +606%", false, "FOMO");
+        unit.markNewsCovered(List.of("news-uuid-1"));
+
         AgentSnapshot original = new AgentSnapshot(
                 Instant.now().getEpochSecond(),
                 Map.of("https://i.redd.it/x.jpeg", "grüner Gewinn-Screenshot"),
                 repo.getAllHeadlines(),
-                List.of(cluster.toSnapshot()));
+                List.of(cluster.toSnapshot()),
+                List.of(unit.toSnapshot()));
 
         String json = mapper.writeValueAsString(original);
         AgentSnapshot back = mapper.readValue(json, AgentSnapshot.class);
 
         assertEquals(1, back.clusters().size());
         assertEquals(1, back.headlines().size());
+        assertEquals(1, back.subjectUnits().size());
         assertEquals("grüner Gewinn-Screenshot", back.visionCache().get("https://i.redd.it/x.jpeg"));
+
+        // Rebuild the unit from the deserialized snapshot and compare verbatim.
+        SubjectUnit restoredUnit = new SubjectUnit(back.subjectUnits().get(0));
+        assertEquals("NOW", restoredUnit.id);
+        assertEquals("NOW", restoredUnit.ticker());
+        assertTrue(restoredUnit.isInstrument());
+        assertEquals(100.0, restoredUnit.firstPrice(), 1e-9, "price anchor must survive");
+        assertEquals(1, restoredUnit.evidenceCount());
+        assertEquals("NOW +606%", restoredUnit.lastHeadlineText());
+        assertTrue(restoredUnit.isNewsCovered("news-uuid-1"), "covered-news id must survive");
 
         // Rebuild the cluster from the deserialized snapshot and compare verbatim.
         InvestigationCluster restored = new InvestigationCluster(back.clusters().get(0));

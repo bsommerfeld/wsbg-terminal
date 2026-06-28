@@ -291,39 +291,23 @@ public final class TinyUpdateClient implements UpdateClient {
     // =====================================================================
 
     /**
-     * Scans the GitHub release JSON for a named asset and returns its
-     * {@code browser_download_url}.
+     * Returns the {@code browser_download_url} of a named release asset.
+     * Delegates to {@link JsonParser#extractAssetUrl}, which scopes the scan
+     * to the {@code assets} array — the release {@code body} (free markdown
+     * text) can never produce a false match.
      *
      * @throws IOException if the asset is not found in the release
      */
     private static String findAssetUrl(String releaseJson, String assetName) throws IOException {
-        int nameIdx = releaseJson.indexOf("\"name\"");
-        while (nameIdx != -1) {
-            int valueStart = releaseJson.indexOf('"', releaseJson.indexOf(':', nameIdx) + 1);
-            int valueEnd = releaseJson.indexOf('"', valueStart + 1);
-            String name = releaseJson.substring(valueStart + 1, valueEnd);
-
-            if (name.equals(assetName)) {
-                int downloadUrlKey = releaseJson.indexOf("\"browser_download_url\"", valueEnd);
-                if (downloadUrlKey != -1) {
-                    int urlStart = releaseJson.indexOf('"', releaseJson.indexOf(':', downloadUrlKey) + 1);
-                    int urlEnd = releaseJson.indexOf('"', urlStart + 1);
-                    return releaseJson.substring(urlStart + 1, urlEnd);
-                }
-            }
-
-            nameIdx = releaseJson.indexOf("\"name\"", valueEnd);
+        String url = JsonParser.extractAssetUrl(releaseJson, assetName);
+        if (url == null) {
+            throw new IOException("Asset not found in release: " + assetName);
         }
-        throw new IOException("Asset not found in release: " + assetName);
+        return url;
     }
 
     private static boolean hasAsset(String releaseJson, String assetName) {
-        try {
-            findAssetUrl(releaseJson, assetName);
-            return true;
-        } catch (IOException e) {
-            return false;
-        }
+        return JsonParser.extractAssetUrl(releaseJson, assetName) != null;
     }
 
     /**

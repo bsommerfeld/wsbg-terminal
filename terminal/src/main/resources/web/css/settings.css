@@ -1,0 +1,146 @@
+/* Settings view — replaces the centre widgets when the gear is clicked.
+   Flat, generous whitespace, one section per category. Every colour comes
+   from a token in tokens.css, so the view is covered in both themes. */
+
+/* The view sits in the .main grid, spanning both widget columns + the divider. */
+.settings-view {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  overflow: hidden;
+}
+/* The display:flex above would otherwise beat the UA [hidden] rule, leaving the
+   view permanently laid over the widgets — keep it gone until the gear opens it. */
+.settings-view[hidden] { display: none; }
+
+/* While settings are open, the widgets + divider step aside (the view takes
+   their place in the same grid cell). */
+.main.settings-open > .widget,
+.main.settings-open > .vdivider { display: none; }
+
+/* ---- header: curved back arrow + title ---- */
+.settings-head {
+  display: flex; align-items: center; gap: 16px;
+  padding: 22px 32px 10px;
+}
+.settings-back {
+  width: 40px; height: 40px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--mute); border-radius: 12px;
+  transition: color .15s, background .15s, transform .15s;
+}
+.settings-back:hover { color: var(--txt); background: var(--bg-1); transform: translateX(-3px); }
+.settings-back svg {
+  width: 23px; height: 23px;
+  stroke: currentColor; stroke-width: 1.6; fill: none;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.settings-title {
+  font-family: "Inter", sans-serif; font-weight: 600;
+  font-size: 1.3rem; letter-spacing: .03em; color: var(--txt);
+}
+
+/* ---- scroll body, centred column with lots of air ---- */
+.settings-scroll {
+  flex: 1; min-height: 0; overflow-y: auto;
+  width: 100%; max-width: 720px; margin: 0 auto;
+  padding: 12px 32px 56px;
+}
+
+.settings-cat { padding: 30px 0; border-top: 1px solid var(--line-soft); }
+.settings-cat:first-child { border-top: 0; }
+.cat-title {
+  font-family: "Inter", sans-serif; font-weight: 600;
+  font-size: .76rem; letter-spacing: .2em; text-transform: uppercase;
+  color: var(--mute); margin-bottom: 14px;
+}
+
+.setting-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 28px; padding: 16px 0;
+}
+.setting-label { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+
+/* Destructive zone (clear archive): set apart, the action reads in red and
+   "arms" on first click (text → "Wirklich löschen?") to prevent a mis-click. */
+.settings-danger { margin-top: 8px; border-top: 1px solid var(--red-soft); }
+.settings-danger .cat-title { color: var(--red); }
+.danger-btn {
+  flex: 0 0 auto; font: inherit; font-size: .9rem;
+  color: var(--red); background: none;
+  border: 1px solid var(--red); border-radius: 8px;
+  padding: 8px 16px; cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.danger-btn:hover { background: var(--red-soft); }
+.danger-btn.armed { background: var(--red); color: var(--bg); font-weight: 600; }
+.danger-btn:disabled {
+  opacity: .45; cursor: default;
+  color: var(--mute); border-color: var(--line-soft); background: none;
+}
+.setting-name { color: var(--txt); font-size: 1rem; }
+.setting-hint { color: var(--mute); font-size: .8rem; line-height: 1.45; max-width: 440px; }
+
+/* ---- custom checkbox ---- */
+.checkbox { position: relative; display: inline-flex; cursor: pointer; flex: 0 0 auto; }
+.checkbox input { position: absolute; opacity: 0; width: 0; height: 0; }
+.checkbox-box {
+  width: 22px; height: 22px; border-radius: 6px;
+  border: 1.5px solid var(--line); background: var(--bg-1);
+  display: inline-block; position: relative;
+  transition: border-color .15s, background .15s;
+}
+.checkbox:hover .checkbox-box { border-color: var(--mute); }
+.checkbox input:checked + .checkbox-box { border-color: var(--green); background: var(--green); }
+.checkbox input:checked + .checkbox-box::after {
+  content: ""; position: absolute; left: 7px; top: 3px;
+  width: 5px; height: 10px;
+  border: solid var(--bg); border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.checkbox input:focus-visible + .checkbox-box { outline: 2px solid var(--blue); outline-offset: 2px; }
+
+/* ---- select dropdown ---- */
+.select {
+  appearance: none; -webkit-appearance: none;
+  font-family: inherit; font-size: .92rem; color: var(--txt);
+  background-color: var(--bg-1); border: 1px solid var(--line); border-radius: 8px;
+  padding: 9px 36px 9px 14px; cursor: pointer; min-width: 150px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 12px center;
+  transition: border-color .15s;
+}
+.select:hover { border-color: var(--mute); }
+.select:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+
+/* ---- day/night switch (theme-driven thumb position) ---- */
+.daynight { flex: 0 0 auto; padding: 0; border: 0; background: none; cursor: pointer; }
+.daynight-track {
+  position: relative; display: inline-flex; align-items: center;
+  width: 60px; height: 30px; border-radius: 999px;
+  background: var(--bg-1); border: 1px solid var(--line);
+  transition: background .2s, border-color .2s;
+}
+.daynight-icon {
+  position: absolute; width: 15px; height: 15px;
+  stroke: currentColor; stroke-width: 1.7; fill: none;
+  stroke-linecap: round; stroke-linejoin: round; color: var(--mute);
+  transition: color .2s;
+}
+.daynight-icon.moon { left: 8px; }
+.daynight-icon.sun  { right: 8px; }
+.daynight-thumb {
+  position: absolute; left: 3px; top: 50%; transform: translateY(-50%);
+  width: 24px; height: 24px; border-radius: 50%;
+  background: var(--txt-2);
+  transition: transform .22s cubic-bezier(.4, 0, .2, 1), background .2s;
+}
+/* In light theme the thumb slides to the sun side; the active luminary glows. */
+html[data-theme="light"] .daynight-thumb     { transform: translate(30px, -50%); }
+html[data-theme="dark"]  .daynight-icon.moon { color: var(--amber); }
+html[data-theme="light"] .daynight-icon.sun  { color: var(--amber); }
+/* Disabled when "follow system" is on. */
+.daynight[aria-disabled="true"] { opacity: .4; cursor: not-allowed; }

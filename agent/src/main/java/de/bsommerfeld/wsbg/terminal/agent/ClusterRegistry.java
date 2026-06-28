@@ -70,6 +70,12 @@ public class ClusterRegistry {
         dirtyClusterIds.remove(id);
     }
 
+    /** Drops every cluster. Used by the editorial-lab "Reset" action. */
+    public void clear() {
+        byId.clear();
+        dirtyClusterIds.clear();
+    }
+
     public boolean contains(InvestigationCluster cluster) {
         return cluster != null && byId.get(cluster.id) == cluster;
     }
@@ -111,10 +117,16 @@ public class ClusterRegistry {
         }
     }
 
-    /** Returns and clears the current dirty set atomically. */
+    /**
+     * Returns and clears the current dirty set. Per-element remove (not a bulk
+     * {@code removeAll} over a snapshot): a cluster re-marked between snapshot
+     * and clear must survive into the next drain, not be silently wiped.
+     */
     public Set<String> drainDirty() {
-        Set<String> drained = new HashSet<>(dirtyClusterIds);
-        dirtyClusterIds.removeAll(drained);
+        Set<String> drained = new HashSet<>();
+        for (String id : dirtyClusterIds) {
+            if (dirtyClusterIds.remove(id)) drained.add(id);
+        }
         return drained;
     }
 

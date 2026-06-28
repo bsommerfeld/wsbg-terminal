@@ -2,16 +2,17 @@ package de.bsommerfeld.wsbg.terminal.currency;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.core.util.BrowserUserAgent;
+import de.bsommerfeld.wsbg.terminal.source.net.DirectWebFetcher;
+import de.bsommerfeld.wsbg.terminal.source.net.WebFetcher;
+import de.bsommerfeld.wsbg.terminal.source.net.WebResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -68,20 +69,34 @@ public class EurUsdClient {
      */
     private final String userAgent = BrowserUserAgent.random();
 
-    private final HttpClient http;
+    private final WebFetcher fetcher;
     private final Duration requestTimeout;
 
+    /** Test/default: plain direct transport. */
     public EurUsdClient() {
-        this(10);
+        this(new DirectWebFetcher(), 10);
     }
 
+    /** Test convenience with a custom timeout (direct transport). */
     public EurUsdClient(int requestTimeoutSeconds) {
-        int t = Math.max(2, requestTimeoutSeconds);
-        this.http = HttpClient.newBuilder()
-                .version(HttpClient.Version.HTTP_2)
-                .connectTimeout(Duration.ofSeconds(t))
-                .build();
-        this.requestTimeout = Duration.ofSeconds(t);
+        this(new DirectWebFetcher(), requestTimeoutSeconds);
+    }
+
+    /**
+     * Production: rides the shared {@link WebFetcher} chain (browser joker →
+     * direct), same as the editorial Yahoo calls — so the EUR/USD quote carries
+     * a real browser fingerprint and gets a live Yahoo {@code v8/chart} answer
+     * instead of the bare-client 429 that forced the Frankfurter fallback. The
+     * Frankfurter floor still stands when Yahoo is genuinely down.
+     */
+    @Inject
+    public EurUsdClient(WebFetcher fetcher) {
+        this(fetcher, 10);
+    }
+
+    private EurUsdClient(WebFetcher fetcher, int requestTimeoutSeconds) {
+        this.fetcher = fetcher;
+        this.requestTimeout = Duration.ofSeconds(Math.max(2, requestTimeoutSeconds));
     }
 
     /** Fetches the EUR/USD rate from Yahoo Finance. */
@@ -96,25 +111,16 @@ public class EurUsdClient {
 
     private Optional<Double> fetch(String url, String label, Parser parser) {
         try {
-            HttpRequest req = HttpRequest.newBuilder()
-                    .uri(URI.create(url))
-                    .header("User-Agent", userAgent)
-                    .header("Accept", "application/json")
-                    .timeout(requestTimeout)
-                    .GET()
-                    .build();
-
-            HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
-            if (resp.statusCode() != 200) {
-                LOG.warn("{} EUR/USD returned HTTP {}", label, resp.statusCode());
+            WebResponse resp = fetcher.fetch(url,
+                    Map.of("User-Agent", userAgent, "Accept", "application/json"),
+                    requestTimeout);
+            if (resp.status() != 200) {
+                LOG.warn("{} EUR/USD returned HTTP {}", label, resp.status());
                 return Optional.empty();
             }
             return parser.parse(resp.body());
-
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return Optional.empty();
         } catch (Exception e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
             LOG.warn("{} EUR/USD request failed: {}", label, e.getMessage());
             return Optional.empty();
         }

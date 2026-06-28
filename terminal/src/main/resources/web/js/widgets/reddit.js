@@ -20,9 +20,24 @@ const HIGHLIGHT_CLASS = {
 // subsequent renders to detect which rows are new.
 const seenKeys = new WeakMap();
 
+// The list is two stacked layers, newest at the top:
+//   liveItems    — the live 24h wire (HeadlinePublisher pushes, replaces wholesale)
+//   archiveItems — older headlines pulled from the permanent archive as the user
+//                  scrolls DOWN past the wire (prepended below, never flash).
+// Both are kept here so a live push re-renders without dropping the scroll-back rows.
+let liveItems = [];
+let archiveItems = [];
+let hostRef = null;
+let socketRef = null;
+let loadingMore = false;
+let exhausted = false;     // archive returned a short/empty page → nothing older left
+const PAGE = 50;
+
 export function renderHeadlines(host, items) {
   if (!host) return;
-  if (!items || items.length === 0) {
+  hostRef = host;
+  liveItems = items || [];
+  if (liveItems.length === 0 && archiveItems.length === 0) {
     host.innerHTML = `
       <div class="empty-cook" aria-label="Köche kochen noch">
         <img src="/icons/cook.webp" alt="">
@@ -30,15 +45,61 @@ export function renderHeadlines(host, items) {
     seenKeys.set(host, new Set());
     return;
   }
+  renderCombined();
+}
+
+/** Wires the scroll-to-bottom → load-older-archive behaviour (call once). */
+export function initHeadlineScroll(host, socket) {
+  if (!host) return;
+  hostRef = host;
+  socketRef = socket;
+  host.addEventListener('scroll', () => {
+    if (loadingMore || exhausted) return;
+    // within ~1.5 rows of the bottom → fetch the next older page
+    if (host.scrollTop + host.clientHeight >= host.scrollHeight - 120) loadMore();
+  });
+}
+
+/** Appends an older archive page (from the `archive-results` page command). */
+export function appendArchivePage(items) {
+  loadingMore = false;
+  if (!items || items.length === 0) { exhausted = true; return; }
+  const known = new Set([...liveItems, ...archiveItems].map(rowKey));
+  const fresh = items.filter(h => !known.has(rowKey(h)));
+  if (fresh.length === 0) { exhausted = true; return; }
+  if (items.length < PAGE) exhausted = true; // last page
+  archiveItems = archiveItems.concat(fresh);
+  renderCombined();
+}
+
+function loadMore() {
+  if (!socketRef) return;
+  const all = [...liveItems, ...archiveItems];
+  if (all.length === 0) return;
+  const oldest = all.reduce((m, h) => Math.min(m, h.createdAt), Infinity);
+  loadingMore = true;
+  socketRef.send('archive', { command: 'page', before: oldest, limit: PAGE, requestId: 'scrollback' });
+}
+
+// Renders live (top) + archive (below) as one list, de-duped by row key.
+// Only genuinely-new LIVE rows flash; archive rows never do. Scroll position is
+// preserved so a live push or an appended page doesn't yank the viewport.
+function renderCombined() {
+  const host = hostRef;
+  if (!host) return;
+  const byKey = new Map();
+  for (const h of [...liveItems, ...archiveItems]) byKey.set(rowKey(h), h);
+  const combined = [...byKey.values()];
 
   const prev = seenKeys.get(host) || new Set();
   const isFirstRender = prev.size === 0;
-
-  // Suppress the "new" flash on first paint — every row would flash
-  // simultaneously, which is more chaotic than communicative.
-  host.innerHTML = items.map(h => toRow(h, !isFirstRender && !prev.has(rowKey(h)))).join('');
-
-  seenKeys.set(host, new Set(items.map(rowKey)));
+  const liveKeys = new Set(liveItems.map(rowKey));
+  const scroll = host.scrollTop;
+  host.innerHTML = combined
+      .map(h => toRow(h, !isFirstRender && liveKeys.has(rowKey(h)) && !prev.has(rowKey(h))))
+      .join('');
+  host.scrollTop = scroll;
+  seenKeys.set(host, liveKeys);
 }
 
 // Per-headline identity for new-row diffing. clusterId alone is not
@@ -59,12 +120,11 @@ function toRow(h, isNew) {
 
   const time = fmtClock(h.createdAt);
   const meta = buildMeta(h);
-
-  // Subtle provenance mark: when the line was enriched with Yahoo Finance
-  // data, a faintly glowing Yahoo logo sits bottom-right, well clear of the
-  // tags. Hover reveals the disclaimer. No mark on pure 1:1 Reddit lines.
-  const yahoo = h.usedYahoo
-    ? `<div class="yahoo-mark" title="Enthält zusätzliche Informationen von Yahoo Finance News"></div>`
+  // Bottom-right "open the source thread in the browser" button. A plain external
+  // anchor — external-links.js intercepts the click and routes it to the OS browser.
+  const threadBtn = h.threadUrl
+    ? `<a class="thread-open" href="${escapeText(h.threadUrl)}" title="Thread öffnen"
+          aria-label="Thread im Browser öffnen">↗</a>`
     : '';
 
   return `<div class="${classes.join(' ')}">
@@ -73,25 +133,25 @@ function toRow(h, isNew) {
       <div class="head">${head}</div>
       ${meta ? `<div class="meta">${meta}</div>` : ''}
     </div>
-    ${yahoo}
+    ${threadBtn}
   </div>`;
 }
 
 function buildMeta(h) {
-  // Meta row, left → right: a live quote strip (sparkline + price + day%)
-  // for the primary ticker, then one coloured sentiment chip, then
-  // optional neutral sector chips. The quote leads because hard market
-  // data is the strongest scan-by signal; sentiment is the ONLY chip
-  // that gets colour (the room's mood); sectors stay neutral context.
-  const parts = [];
+  // Meta row: the live quote strip (sparkline + price + day-move) for the
+  // instrument the line is about, plus a quiet "News" provenance tag pinned to
+  // the bottom-right when the editorial compose leaned on external news.
+  // Sentiment/sector tags and the Yahoo+ticker provenance were removed — the
+  // price is now sourced from several venues, so a "Yahoo" mark misleads, and
+  // market sentiment is covered by the Fear&Greed gauge.
   const quote = buildQuote(h.snapshot);
-  if (quote) parts.push(quote);
-  if (h.sentiment && h.sentiment !== 'NEUTRAL') {
-    const cls = 'sent-' + h.sentiment.toLowerCase();
-    parts.push(`<span class="tag sentiment ${cls}">${escapeText(h.sentiment.toLowerCase())}</span>`);
-  }
-  (h.sectors || []).forEach(s => parts.push(`<span class="tag sector">${escapeText(s)}</span>`));
-  return parts.join('');
+  // Subtle provenance hint — not a highlight. CSS pushes it to the right.
+  const news = h.newsEnriched
+    ? `<span class="news-tag" title="Mit externen Nachrichten angereichert">News</span>`
+    : '';
+  if (!quote && !news) return '';
+  const quoteHtml = quote ? `<span class="meta-group quote-group">${quote}</span>` : '';
+  return quoteHtml + news;
 }
 
 // Live quote strip for the headline's primary ticker. Renders only when
@@ -107,13 +167,22 @@ function buildQuote(s) {
   const dir = chg == null ? sparkDir(s.spark)
             : chg > 0.005 ? 'up' : chg < -0.005 ? 'down' : 'flat';
 
+  const stale = isStaleQuote(s);
   const spark = buildSparkline(s.spark, dir);
   const price = `<span class="q-price">${escapeText(fmtPrice(s.price, s.currency))}</span>`;
   const chgTxt = chg == null ? ''
     : `<span class="q-chg ${dir}">${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%</span>`;
 
-  return `<span class="quote ${dir}" title="${escapeText(buildQuoteTitle(s))}">`
+  // Off-hours (every venue closed) just dims the strip — no label; the hover title
+  // explains it. With the live chain (L&S evening, NASDAQ after-hours) this is rare.
+  return `<span class="quote ${dir}${stale ? ' stale' : ''}" title="${escapeText(buildQuoteTitle(s))}">`
        + `${spark}${price}${chgTxt}</span>`;
+}
+
+// A quote whose venue last traded more than 30 min ago is a last close, not live.
+function isStaleQuote(s) {
+  if (!s || typeof s.marketTime !== 'number' || s.marketTime <= 0) return false;
+  return (Date.now() / 1000 - s.marketTime) > 1800;
 }
 
 // Builds an inline SVG micro-sparkline from the intraday close series.
@@ -164,6 +233,8 @@ function buildQuoteTitle(s) {
   if (isNum(s.dayLow) && isNum(s.dayHigh)) L.push(`Tag ${fmtNum(s.dayLow)}–${fmtNum(s.dayHigh)}`);
   if (isNum(s.fiftyTwoWeekLow) && isNum(s.fiftyTwoWeekHigh)) L.push(`52W ${fmtNum(s.fiftyTwoWeekLow)}–${fmtNum(s.fiftyTwoWeekHigh)}`);
   if (isNum(s.volume)) L.push(`Vol ${fmtVol(s.volume)}`);
+  if (s.source) L.push(`Kurs: ${s.source}`);            // which venue priced it
+  if (isStaleQuote(s)) L.push('außerhalb der Handelszeit — letzter Kurs');
   return L.join('  ·  ');
 }
 

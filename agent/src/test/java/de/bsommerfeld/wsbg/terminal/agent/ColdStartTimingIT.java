@@ -1,4 +1,6 @@
 package de.bsommerfeld.wsbg.terminal.agent;
+import de.bsommerfeld.wsbg.terminal.embedding.EmbeddingService;
+import de.bsommerfeld.wsbg.terminal.embedding.OllamaEmbeddingService;
 
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
@@ -42,9 +44,12 @@ class ColdStartTimingIT {
             ClusterRegistry registry = new ClusterRegistry();
             RssRedditScraper rss = new RssRedditScraper(redditRepo, config, bus);
 
+            ClusterEngine clusterEngine = new ClusterEngine(registry);
+
             long start = System.currentTimeMillis();
             new PassiveMonitorService(rss, brain, bus, redditRepo, agentRepo,
-                    new RedditSnapshotStore(), new AgentSnapshotStore(), registry, config);
+                    new RedditSnapshotStore(), new AgentSnapshotStore(), registry,
+                    new SubjectRegistry(), clusterEngine, config);
 
             long deadline = start + 120_000;
             while (System.currentTimeMillis() < deadline && registry.isEmpty()) {

@@ -1,5 +1,7 @@
 package de.bsommerfeld.wsbg.terminal.finanznachrichten;
 
+import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
+
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -18,22 +20,22 @@ class FnMonitorServiceTest {
 
     /** In-memory fetcher returning canned items per feed; counts how often each feed was hit. */
     private static final class StubFetcher implements FeedFetcher {
-        final Map<FnFeed, List<FnNewsItem>> items = new ConcurrentHashMap<>();
+        final Map<FnFeed, List<RawNewsItem>> items = new ConcurrentHashMap<>();
         final Map<FnFeed, AtomicInteger> hits = new ConcurrentHashMap<>();
 
-        void put(FnFeed feed, FnNewsItem... newsItems) {
+        void put(FnFeed feed, RawNewsItem... newsItems) {
             items.put(feed, List.of(newsItems));
         }
 
         @Override
-        public List<FnNewsItem> fetch(FnFeed feed) {
+        public List<RawNewsItem> fetch(FnFeed feed) {
             hits.computeIfAbsent(feed, f -> new AtomicInteger()).incrementAndGet();
             return items.getOrDefault(feed, List.of());
         }
     }
 
-    private static FnNewsItem item(String link, FnFeed feed) {
-        return new FnNewsItem("T " + link, link, "desc", null, 0, 1, feed.slug(), false);
+    private static RawNewsItem item(String link, FnFeed feed) {
+        return new RawNewsItem(link, "T " + link, "finanznachrichten", link, null, List.of());
     }
 
     /** Config with a high interval (so the scheduler never fires mid-test) and no inter-request delay. */
@@ -78,7 +80,7 @@ class FnMonitorServiceTest {
         fetcher.put(FnFeed.NEWS, item("a", FnFeed.NEWS), item("b", FnFeed.NEWS));
         fetcher.put(FnFeed.AKTIEN_ADHOC, item("c", FnFeed.AKTIEN_ADHOC));
 
-        List<FnNewsItem> received = new CopyOnWriteArrayList<>();
+        List<RawNewsItem> received = new CopyOnWriteArrayList<>();
         monitor = new FnMonitorService(fetcher, fastConfig());
         monitor.addListener(received::add);
         monitor.start(FnFeed.NEWS, FnFeed.AKTIEN_ADHOC);
@@ -96,7 +98,7 @@ class FnMonitorServiceTest {
         StubFetcher fetcher = new StubFetcher();
         fetcher.put(FnFeed.NEWS, item("a", FnFeed.NEWS));
 
-        List<FnNewsItem> received = new ArrayList<>();
+        List<RawNewsItem> received = new ArrayList<>();
         monitor = new FnMonitorService(fetcher, fastConfig());
         monitor.addListener(received::add);
         monitor.start(FnFeed.NEWS);
@@ -135,7 +137,7 @@ class FnMonitorServiceTest {
             }
             return List.of(item("ok", feed));
         };
-        List<FnNewsItem> received = new ArrayList<>();
+        List<RawNewsItem> received = new ArrayList<>();
         monitor = new FnMonitorService(fetcher, fastConfig());
         monitor.addListener(received::add);
         monitor.start(FnFeed.NEWS, FnFeed.AKTIEN_ADHOC);
@@ -156,8 +158,8 @@ class FnMonitorServiceTest {
     @Test
     void itemWithBlankLinkIsNotEmitted() {
         StubFetcher fetcher = new StubFetcher();
-        fetcher.put(FnFeed.NEWS, new FnNewsItem("t", "", "d", null, 0, 1, "rss-news", false));
-        List<FnNewsItem> received = new ArrayList<>();
+        fetcher.put(FnFeed.NEWS, new RawNewsItem("", "t", "finanznachrichten", "", null, List.of()));
+        List<RawNewsItem> received = new ArrayList<>();
         monitor = new FnMonitorService(fetcher, fastConfig());
         monitor.addListener(received::add);
         monitor.start(FnFeed.NEWS);

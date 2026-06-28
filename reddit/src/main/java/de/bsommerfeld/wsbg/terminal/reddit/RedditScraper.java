@@ -11,10 +11,14 @@ import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
 import de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.RedditHealthEvent;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
+import de.bsommerfeld.wsbg.terminal.source.net.DirectWebFetcher;
+import de.bsommerfeld.wsbg.terminal.source.net.WebFetcher;
+import de.bsommerfeld.wsbg.terminal.source.net.WebResponse;
 import jakarta.inject.Inject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -22,6 +26,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -40,8 +47,8 @@ import java.util.stream.Collectors;
  * <h3>Rate limiting</h3>
  * Reddit returns {@code x-ratelimit-remaining} and {@code x-ratelimit-reset}
  * headers on every response. When remaining requests drop below 2, the
- * scraper blocks the calling thread for the reset window to avoid HTTP 429
- * responses that would temporarily ban the IP.
+ * scraper blocks the calling thread for the reset window so it stays within
+ * Reddit's published limit and backs off cooperatively.
  *
  * <p>
  * The unauthenticated JSON endpoint has a documented soft limit of
@@ -57,18 +64,22 @@ import java.util.stream.Collectors;
  * Long-term, the correct fix for daily-use scenarios and any user
  * distribution is to switch this class to authenticated mode against
  * {@code oauth.reddit.com}. With a registered Reddit app and a
- * persisted user-token, the budget rises to ~600 req / min and the
- * 403/429 spiral goes away. The UI hook for the OAuth prompt lives in
+ * persisted user-token, the budget rises to ~600 req / min on the supported
+ * API, which removes the 403/429 friction. The UI hook for the OAuth prompt lives in
  * {@code RedditHealthPublisher} — once the user has signed in and a
  * token is on disk, this class should branch on token presence and
  * swap base URL + Authorization header. See {@code TODO(oauth-login)}
  * comments throughout the codebase for every touchpoint.
  *
  * <h3>Transport</h3>
- * The actual byte-fetching is delegated to a {@link RedditTransport}, so this
- * class is agnostic to whether a request goes out via a JDK {@code HttpClient}
- * or the embedded browser. Rate limiting and User-Agent concerns live with the
- * transport / this class respectively; see {@link JdkRedditTransport}.
+ * The actual byte-fetching is delegated to a generic {@link WebFetcher} — the
+ * same transport seam every source shares — so this class is agnostic to whether
+ * a request goes out via a plain JDK {@code HttpClient} ({@link DirectWebFetcher}),
+ * the embedded browser ({@code CefWebFetcher}), an OAuth-rewriting fetcher, or a
+ * {@code WebFetchChain} that tries several in order. Rate limiting stays here
+ * (the {@link #rateLimiter} chokepoint); the per-request {@code User-Agent} is
+ * applied by the direct transport from {@link #REQUEST_HEADERS} (browser/OAuth
+ * transports set their own).
  *
  * <h3>Data flow</h3>
  * 
@@ -84,8 +95,6 @@ import java.util.stream.Collectors;
  * A deep context fetch (expensive — one HTTP call + full comment tree parse)
  * is only triggered when the comment count has increased, avoiding redundant
  * network calls for threads that haven't changed.
- *
- * @see TestRedditScraper
  */
 @Singleton
 public class RedditScraper implements RedditSource {
@@ -127,14 +136,42 @@ public class RedditScraper implements RedditSource {
      */
     private static final Pattern URL_PATTERN = Pattern.compile("https?://\\S+");
 
+    /**
+     * Matches a Reddit inline-media reference inside selftext markdown, e.g.
+     * {@code ![img](abc123 "caption")} or {@code ![gif](xy7q9)}. The captured
+     * group is the {@code media_id} — a key into the post's
+     * {@code media_metadata} map, NOT a URL. These are the images a user
+     * embeds mid-text via the rich-text editor; {@code is_gallery} is false
+     * for such posts, so they bypass the gallery path. See
+     * {@link #extractInlineBodyImages}.
+     */
+    private static final Pattern INLINE_MEDIA_REF =
+            Pattern.compile("!\\[[^\\]]*]\\(([^)\\s\"]+)[^)]*\\)");
+
+    /**
+     * Per-request ceiling. Deep comment fetches are the slow case (large body,
+     * chunked back over the browser router); 30 s is generous headroom over a
+     * healthy fetch while still failing fast enough for a fallback to move on.
+     */
+    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(30);
+
+    /**
+     * Headers applied to every request. The direct transport sends these
+     * verbatim; the browser/OAuth transports ignore them and set their own
+     * {@code User-Agent} (browser session UA / OAuth bearer). The per-process
+     * {@code instance:} token keeps installs off a shared rate budget.
+     */
+    private static final Map<String, String> REQUEST_HEADERS =
+            Map.of("User-Agent", RedditUserAgent.VALUE);
+
     protected final RedditRepository repository;
 
     /**
-     * Fetches the actual bytes. Swapped for a browser-backed implementation in
-     * production so Reddit's bot detection on the {@code .json} endpoint is
-     * satisfied; defaults to {@link JdkRedditTransport} for tests/CLI.
+     * Fetches the actual bytes through the shared {@link WebFetcher} seam. In
+     * production this is a browser→direct chain; tests/CLI default to the plain
+     * {@link DirectWebFetcher}. The OAuth and RSS paths inject their own fetcher.
      */
-    private final RedditTransport transport;
+    private final WebFetcher fetcher;
 
     /**
      * Single shared mapper instance. Jackson's {@link ObjectMapper} is
@@ -153,8 +190,8 @@ public class RedditScraper implements RedditSource {
 
     /**
      * Health state for the unauthenticated scrape endpoint. Reddit
-     * blocks anonymous JSON access aggressively (HTTP 403/429) once a
-     * client crosses an undocumented per-IP / per-UA threshold. We
+     * returns HTTP 403/429 on anonymous JSON access once a client
+     * crosses an undocumented per-IP / per-UA threshold. We
      * track consecutive failures + the start of the current degraded
      * run so the UI can fade in a status label and — later, when the
      * outage persists — surface a Reddit-OAuth login CTA.
@@ -171,30 +208,79 @@ public class RedditScraper implements RedditSource {
     private volatile boolean degraded = false;
     private volatile long degradedSinceEpochMs = 0L;
 
+    /**
+     * Deferred comment ingestion — mirrors the RSS path so the JSON path has the
+     * same fast cold-start. Fetching one comment tree per new thread INLINE
+     * (limit=500&depth=20, rate-limited) is what made a cold-start listing crawl
+     * for minutes. Clustering only needs title+body+vision, so a new thread is
+     * enqueued here and a single daemon worker backfills its comments in the
+     * background; the listing scan returns immediately and clusters form at once.
+     */
+    private final BlockingQueue<PendingComment> commentQueue = new LinkedBlockingQueue<>();
+
+    /**
+     * Threads whose comments backfilled since the last scan — re-surfaced into the
+     * next scan's {@link ScrapeStats} so the editorial layer regenerates their
+     * headline with the new evidence (the comment tree the first pass didn't have).
+     */
+    private final Set<String> pendingResurface = ConcurrentHashMap.newKeySet();
+
+    /** One queued comment-ingestion job. */
+    private record PendingComment(String threadId, String permalink) {}
+
     @Inject
     public RedditScraper(RedditRepository repository, ApplicationEventBus eventBus,
-            RedditTransport transport, TokenBucketRateLimiter rateLimiter) {
-        this(repository, rateLimiter, eventBus, transport);
+            WebFetcher fetcher, TokenBucketRateLimiter rateLimiter) {
+        this(repository, rateLimiter, eventBus, fetcher);
     }
 
     /**
-     * Convenience constructor for {@link TestRedditScraper} and any callers
-     * that don't need health-status events posted (tests, CLI tools). Uses the
-     * plain JDK transport. Production wiring goes through the
-     * {@link Inject @Inject} constructor, which receives the browser-backed
-     * transport.
+     * Convenience constructor for callers that don't need health-status events
+     * posted (tests, CLI tools). Uses the plain direct transport. Production
+     * wiring goes through the {@link Inject @Inject} constructor, which receives
+     * the browser-backed chain.
      */
     public RedditScraper(RedditRepository repository, GlobalConfig config) {
-        this(repository, buildLimiterFromConfig(config), null, new JdkRedditTransport());
+        this(repository, buildLimiterFromConfig(config), null, new DirectWebFetcher());
     }
 
     protected RedditScraper(RedditRepository repository, TokenBucketRateLimiter rateLimiter,
-            ApplicationEventBus eventBus, RedditTransport transport) {
+            ApplicationEventBus eventBus, WebFetcher fetcher) {
         this.repository = repository;
-        this.transport = transport;
+        this.fetcher = fetcher;
         this.mapper = new ObjectMapper();
         this.rateLimiter = rateLimiter;
         this.eventBus = eventBus;
+
+        Thread commentWorker = new Thread(this::runCommentWorker, "json-comment-ingest");
+        commentWorker.setDaemon(true);
+        commentWorker.start();
+    }
+
+    /**
+     * Drains the comment-ingestion queue in the background, fetching each
+     * thread's full context (which saves its comment tree to the repository as a
+     * side effect) and marking it for re-surfacing so the next scan regenerates
+     * its headline with the freshly-arrived comments.
+     */
+    private void runCommentWorker() {
+        while (true) {
+            PendingComment pc;
+            try {
+                pc = commentQueue.take();
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+            try {
+                fetchThreadContext(pc.permalink()); // populates the repo's comment tree
+                if (repository.getThread(pc.threadId()) != null) {
+                    pendingResurface.add(pc.threadId());
+                }
+            } catch (Exception e) {
+                LOG.debug("Async comment ingest failed for {}: {}", pc.threadId(), e.getMessage());
+            }
+        }
     }
 
     /**
@@ -264,8 +350,8 @@ public class RedditScraper implements RedditSource {
         LOG.info("Fetching Thread Context: {}", url);
 
         try {
-            RedditResponse response = executeGet(url);
-            if (response.statusCode() != 200)
+            WebResponse response = executeGet(url);
+            if (response.status() != 200)
                 return context;
 
             JsonNode root = mapper.readTree(response.body());
@@ -304,6 +390,13 @@ public class RedditScraper implements RedditSource {
         context.title = data.path("title").asText(null);
         context.selftext = data.path("selftext").asText(null);
 
+        if (context.selftext == null || context.selftext.isEmpty()) {
+            JsonNode crosspostParent = firstCrosspostParent(data);
+            if (crosspostParent != null) {
+                String parentText = crosspostParent.path("selftext").asText("");
+                if (!parentText.isEmpty()) context.selftext = parentText;
+            }
+        }
         if ((context.selftext == null || context.selftext.isEmpty())
                 && data.has("url_overridden_by_dest")) {
             context.selftext = "[Link: " + data.get("url_overridden_by_dest").asText() + "]";
@@ -352,7 +445,7 @@ public class RedditScraper implements RedditSource {
             String indent = "  ".repeat(depth);
             String rawBody = data.get("body").asText().replace("\n", " ");
 
-            ImageExtractionResult extraction = extractImages(rawBody, context);
+            ImageExtractionResult extraction = extractImages(rawBody, data, context);
             String body = extraction.text();
 
             String rawAuthor = data.path("author").asText("anon");
@@ -443,10 +536,11 @@ public class RedditScraper implements RedditSource {
         ScrapeStats stats = new ScrapeStats();
 
         try {
-            RedditResponse response = executeGet(url);
-            if (response.statusCode() != 200) {
-                LOG.error("Failed to fetch subreddit data: HTTP {}", response.statusCode());
+            WebResponse response = executeGet(url);
+            if (response.status() != 200) {
+                LOG.error("Failed to fetch subreddit data: HTTP {}", response.status());
                 recordFetchOutcome(false);
+                stats.failed = true;
                 return stats;
             }
 
@@ -464,8 +558,30 @@ public class RedditScraper implements RedditSource {
         } catch (Exception e) {
             LOG.error("Error scraping subreddit {}", subreddit, e);
             recordFetchOutcome(false);
+            stats.failed = true;
         }
+        drainResurfaced(stats);
         return stats;
+    }
+
+    /**
+     * Folds threads whose comments backfilled asynchronously into this scan's
+     * stats, so the editorial layer re-evaluates them with the new comment tree.
+     * Mirrors the RSS path's re-surface — the one channel the {@link RedditSource}
+     * contract gives back to the agent.
+     */
+    private void drainResurfaced(ScrapeStats stats) {
+        if (pendingResurface.isEmpty()) return;
+        List<String> ids = new ArrayList<>(pendingResurface);
+        pendingResurface.clear();
+        for (String id : ids) {
+            if (stats.scannedIds.contains(id)) continue; // already in this batch
+            RedditThread t = repository.getThread(id);
+            if (t == null) continue;
+            stats.scannedIds.add(id);
+            stats.threadUpdates.add(t);
+            stats.newComments++; // mark hasUpdates so the cycle isn't a no-op
+        }
     }
 
     // =====================================================================
@@ -505,9 +621,9 @@ public class RedditScraper implements RedditSource {
             LOG.debug("Batch Updating {} threads...", batch.size());
 
             try {
-                RedditResponse response = executeGet(url);
-                if (response.statusCode() != 200) {
-                    LOG.warn("Batch update failed (HTTP {}): {}", response.statusCode(), url);
+                WebResponse response = executeGet(url);
+                if (response.status() != 200) {
+                    LOG.warn("Batch update failed (HTTP {}): {}", response.status(), url);
                     continue;
                 }
 
@@ -585,6 +701,14 @@ public class RedditScraper implements RedditSource {
         String author = isRealAuthor(rawAuthor) ? "u/" + rawAuthor : rawAuthor;
 
         String selftext = data.path("selftext").asText("");
+        if (selftext.isEmpty()) {
+            // Crossposts render the original post's body; pull it from the
+            // parent so the agent analyses the actual content, not a bare link.
+            JsonNode crosspostParent = firstCrosspostParent(data);
+            if (crosspostParent != null) {
+                selftext = crosspostParent.path("selftext").asText("");
+            }
+        }
         if (selftext.isEmpty()) {
             if (data.has("url_overridden_by_dest")) {
                 selftext = "[Link: " + data.get("url_overridden_by_dest").asText() + "]";
@@ -708,8 +832,11 @@ public class RedditScraper implements RedditSource {
         if (!bodySnippet.isEmpty()) {
             LOG.info("[REDDIT]   body: {}", bodySnippet);
         }
-        LOG.debug("Fetching full context for new thread: {}", thread.id());
-        fetchThreadContext(thread.permalink());
+        // Defer the comment fetch to the background worker — clustering needs only
+        // title+body+vision, so the thread can be clustered now and its comments
+        // backfilled (and the headline re-surfaced) shortly. Fetching inline here
+        // is what made the JSON cold-start crawl.
+        commentQueue.add(new PendingComment(thread.id(), thread.permalink()));
     }
 
     /**
@@ -717,6 +844,13 @@ public class RedditScraper implements RedditSource {
      * and score, only triggering a deep re-fetch if the comment count
      * increased. The thread is always added to the batch to update mutable
      * metadata (score, upvote ratio).
+     *
+     * <p><b>Only new content (comments) re-evaluates a thread, never a score
+     * change.</b> A score is pure sentiment colour, not editorial substance —
+     * re-clustering / re-headlining a cluster just because votes ticked would
+     * republish a near-identical headline off nothing new. So a score-only delta
+     * updates the stored metadata (via the batch) but is NOT added to
+     * {@code threadUpdates}, which is what drives cluster assignment downstream.
      */
     private void handleExistingThread(RedditThread thread, RedditThread existing,
             ScrapeStats stats, List<RedditThread> batchCollector) {
@@ -727,13 +861,18 @@ public class RedditScraper implements RedditSource {
             stats.newComments += commentDiff;
         if (scoreDiff > 0)
             stats.newUpvotes += scoreDiff;
-        if (commentDiff > 0 || scoreDiff > 0)
+        // New content only — a score-only change is recorded (batch below) but
+        // must not re-trigger the editorial pipeline.
+        if (commentDiff > 0)
             stats.threadUpdates.add(thread);
 
         if (commentDiff > 0) {
             LOG.info("Context Update: {} ({})\n +{} comments, Score: {}",
                     thread.title(), thread.id(), commentDiff, thread.score());
-            fetchThreadContext(thread.permalink());
+            // Deferred like the new-thread path: enqueue the comment refresh, the
+            // background worker backfills it. The thread is already in threadUpdates
+            // above (commentDiff > 0), so the cluster re-evaluates regardless.
+            commentQueue.add(new PendingComment(thread.id(), thread.permalink()));
         }
 
         batchCollector.add(thread);
@@ -759,9 +898,17 @@ public class RedditScraper implements RedditSource {
      * by the greedy match is stripped via {@link #stripTrailingPunctuation}
      * before image detection.
      *
+     * <p>
+     * After the URL pass, inline images embedded via the rich-text editor
+     * are resolved against the comment node's {@code media_metadata} (same
+     * mechanism as post bodies): the {@code ![img](<media_id>)} reference is
+     * looked up and rewritten to an {@code [Image]} marker. Inline refs carry
+     * no {@code http}, so the two passes never collide.
+     *
      * @return the modified text and a list of discovered image URLs
      */
-    private ImageExtractionResult extractImages(String text, ThreadAnalysisContext context) {
+    private ImageExtractionResult extractImages(String text, JsonNode data,
+            ThreadAnalysisContext context) {
         Matcher m = URL_PATTERN.matcher(text);
         StringBuffer sb = new StringBuffer();
         List<String> imagesFound = new ArrayList<>();
@@ -782,7 +929,41 @@ public class RedditScraper implements RedditSource {
             }
         }
         m.appendTail(sb);
-        return new ImageExtractionResult(sb.toString(), imagesFound);
+
+        String withInline = resolveInlineMediaRefs(sb.toString(), data, imagesFound, context);
+        return new ImageExtractionResult(withInline, imagesFound);
+    }
+
+    /**
+     * Resolves Reddit inline-media references ({@code ![img](<media_id>)}) in
+     * a comment body against the comment node's {@code media_metadata},
+     * appending any newly discovered image URLs to {@code imagesFound} (kept
+     * de-duplicated) and rewriting each resolved reference to an
+     * {@code [Image]} marker. Unresolvable references (videos, missing
+     * entries, or plain markdown image links whose target is a URL rather
+     * than a media_id) are left untouched.
+     */
+    private String resolveInlineMediaRefs(String text, JsonNode data,
+            List<String> imagesFound, ThreadAnalysisContext context) {
+        JsonNode metadata = data.path("media_metadata");
+        if (metadata.isMissingNode() || metadata.isNull()) return text;
+
+        Matcher m = INLINE_MEDIA_REF.matcher(text);
+        StringBuffer sb = new StringBuffer();
+        while (m.find()) {
+            String url = mediaUrlOf(metadata, m.group(1));
+            if (url != null) {
+                if (!imagesFound.contains(url)) {
+                    imagesFound.add(url);
+                    context.imageCounter++;
+                }
+                m.appendReplacement(sb, Matcher.quoteReplacement("[Image]"));
+            } else {
+                m.appendReplacement(sb, Matcher.quoteReplacement(m.group()));
+            }
+        }
+        m.appendTail(sb);
+        return sb.toString();
     }
 
     // =====================================================================
@@ -790,14 +971,14 @@ public class RedditScraper implements RedditSource {
     // =====================================================================
 
     /**
-     * Executes a GET through the configured {@link RedditTransport} with
-     * automatic rate-limit handling. Every outgoing call flows through this
-     * method so the token bucket is the single outbound chokepoint regardless
-     * of which transport is wired in.
+     * Executes a GET through the configured {@link WebFetcher} with automatic
+     * rate-limit handling. Every outgoing call flows through this method so the
+     * token bucket is the single outbound chokepoint regardless of which
+     * transport is wired in.
      */
-    private RedditResponse executeGet(String url) throws Exception {
+    private WebResponse executeGet(String url) throws Exception {
         rateLimiter.acquire();
-        RedditResponse response = transport.get(url);
+        WebResponse response = fetcher.fetch(url, REQUEST_HEADERS, REQUEST_TIMEOUT);
         checkRateLimit(response);
         return response;
     }
@@ -813,7 +994,7 @@ public class RedditScraper implements RedditSource {
      * header values are silently ignored — a malformed header should not
      * crash the scraper.
      */
-    private void checkRateLimit(RedditResponse response) {
+    private void checkRateLimit(WebResponse response) {
         response.header("x-ratelimit-remaining").ifPresent(remaining -> {
             try {
                 double rem = Double.parseDouble(remaining);
@@ -880,10 +1061,25 @@ public class RedditScraper implements RedditSource {
      * like an image URL.
      */
     private List<String> resolveImageUrls(JsonNode data) {
+        // Crossposts ("In anderer Community posten"): this node carries no
+        // media of its own — the original post sits in crosspost_parent_list
+        // and holds the gallery/inline/link images. Recurse into it so the
+        // crosspost inherits the full image-resolution logic.
+        JsonNode crosspostParent = firstCrosspostParent(data);
+        if (crosspostParent != null) {
+            List<String> fromParent = resolveImageUrls(crosspostParent);
+            if (!fromParent.isEmpty()) return fromParent;
+        }
+
         if (data.path("is_gallery").asBoolean(false)) {
             List<String> gallery = extractGalleryUrls(data);
             if (!gallery.isEmpty()) return gallery;
         }
+
+        // Images embedded mid-text in the body via the rich-text editor.
+        List<String> inline = extractInlineBodyImages(data);
+        if (!inline.isEmpty()) return inline;
+
         String url = null;
         if (data.has("url_overridden_by_dest")) {
             url = unescapeHtml(data.get("url_overridden_by_dest").asText());
@@ -894,6 +1090,52 @@ public class RedditScraper implements RedditSource {
             return List.of(url);
         }
         return List.of();
+    }
+
+    /**
+     * Returns the original post node of a crosspost (the first element of
+     * {@code crosspost_parent_list}), or {@code null} when this post isn't a
+     * crosspost. Reddit nests the source post's full data — including its
+     * {@code media_metadata}, {@code gallery_data} and {@code selftext} —
+     * inside that list; the crosspost wrapper itself is otherwise empty.
+     */
+    private JsonNode firstCrosspostParent(JsonNode data) {
+        JsonNode list = data.path("crosspost_parent_list");
+        if (list.isArray() && !list.isEmpty()) {
+            JsonNode parent = list.get(0);
+            if (parent != null && !parent.isNull() && !parent.isMissingNode()) {
+                return parent;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Collects images embedded inline in the post body. Reddit's rich-text
+     * editor stores such images in {@code media_metadata} (same map as
+     * galleries) and references each from the selftext markdown as
+     * {@code ![img](<media_id> "caption")}. We walk those references in text
+     * order, resolve each {@code media_id} against {@code media_metadata},
+     * and keep the valid image URLs (de-duplicated, capped at
+     * {@value #MAX_GALLERY_IMAGES}). Returns an empty list for posts without
+     * inline media.
+     */
+    private List<String> extractInlineBodyImages(JsonNode data) {
+        JsonNode metadata = data.path("media_metadata");
+        if (metadata.isMissingNode() || metadata.isNull()) return List.of();
+        String selftext = data.path("selftext").asText("");
+        if (selftext.isEmpty()) return List.of();
+
+        List<String> urls = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        Matcher m = INLINE_MEDIA_REF.matcher(selftext);
+        while (m.find() && urls.size() < MAX_GALLERY_IMAGES) {
+            String mediaId = m.group(1);
+            if (mediaId.isEmpty() || !seen.add(mediaId)) continue;
+            String url = mediaUrlOf(metadata, mediaId);
+            if (url != null) urls.add(url);
+        }
+        return urls;
     }
 
     /**
@@ -913,16 +1155,28 @@ public class RedditScraper implements RedditSource {
             if (urls.size() >= MAX_GALLERY_IMAGES) break;
             String mediaId = item.path("media_id").asText(null);
             if (mediaId == null || mediaId.isEmpty()) continue;
-            JsonNode entry = metadata.path(mediaId);
-            if (entry.isMissingNode() || entry.isNull()) continue;
-            if (!"valid".equals(entry.path("status").asText(""))) continue;
-            String type = entry.path("e").asText("");
-            if (!"Image".equals(type) && !"AnimatedImage".equals(type)) continue;
-            String url = entry.path("s").path("u").asText(null);
-            if (url == null || url.isEmpty()) continue;
-            urls.add(unescapeHtml(url));
+            String url = mediaUrlOf(metadata, mediaId);
+            if (url != null) urls.add(url);
         }
         return urls;
+    }
+
+    /**
+     * Resolves a single {@code media_id} against a {@code media_metadata}
+     * map, returning the full-size preview URL ({@code s.u}) for valid
+     * still/animated images, or {@code null} for missing, non-image, or
+     * invalid entries (e.g. embedded videos). Shared by the gallery and
+     * inline-body image paths.
+     */
+    private String mediaUrlOf(JsonNode metadata, String mediaId) {
+        JsonNode entry = metadata.path(mediaId);
+        if (entry.isMissingNode() || entry.isNull()) return null;
+        if (!"valid".equals(entry.path("status").asText(""))) return null;
+        String type = entry.path("e").asText("");
+        if (!"Image".equals(type) && !"AnimatedImage".equals(type)) return null;
+        String url = entry.path("s").path("u").asText(null);
+        if (url == null || url.isEmpty()) return null;
+        return unescapeHtml(url);
     }
 
     /**
@@ -996,7 +1250,7 @@ public class RedditScraper implements RedditSource {
         if (subreddit == null || subreddit.isBlank()) return false;
         try {
             String url = REDDIT_BASE + "/r/" + subreddit + "/new" + JSON_SUFFIX + "?limit=1";
-            return executeGet(url).statusCode() == 200;
+            return executeGet(url).status() == 200;
         } catch (Exception e) {
             return false;
         }
@@ -1004,8 +1258,8 @@ public class RedditScraper implements RedditSource {
 
     @Override
     public String sourceName() {
-        // Same class serves both OAuth and anonymous .json — the transport
-        // tells them apart for logging.
-        return "JSON[" + transport.getClass().getSimpleName() + "]";
+        // Same class serves both OAuth and anonymous .json — the fetcher's
+        // name tells them apart for logging (e.g. "JSON[chain[browser→direct]]").
+        return "JSON[" + fetcher.name() + "]";
     }
 }

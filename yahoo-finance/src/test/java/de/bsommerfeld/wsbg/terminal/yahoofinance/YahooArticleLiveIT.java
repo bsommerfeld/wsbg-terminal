@@ -1,5 +1,7 @@
 package de.bsommerfeld.wsbg.terminal.yahoofinance;
 
+import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
+
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
@@ -23,11 +25,11 @@ class YahooArticleLiveIT {
     @Test
     void fetchesReadableBodyFromARealNewsLink() {
         YahooFinanceClient client = new YahooFinanceClient(12, 300);
-        List<YahooNewsItem> news = client.getNewsForSymbol("NVDA", 5);
+        List<RawNewsItem> news = client.getNewsForSymbol("NVDA", 5);
         System.out.println("[ARTICLE-IT] news items: " + news.size());
 
         int hits = 0;
-        for (YahooNewsItem n : news) {
+        for (RawNewsItem n : news) {
             Optional<String> body = client.fetchArticleText(n.link());
             String preview = body.map(t -> t.substring(0, Math.min(220, t.length()))).orElse("(none)");
             System.out.println("\n[ARTICLE-IT] " + n.title());

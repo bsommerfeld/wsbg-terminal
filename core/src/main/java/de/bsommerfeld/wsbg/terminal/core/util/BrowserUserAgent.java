@@ -9,28 +9,27 @@ import java.util.List;
  * image fetches).
  *
  * <p>
- * These endpoints don't expose an API key; they simply block requests whose
- * User-Agent looks like a bot (empty, a bare HTTP-library default, etc.). A
- * single hard-coded browser string works, but every install then shares one
- * identical fingerprint — easy to block wholesale. Picking a value at random
- * from a pool of <b>real, current</b> browser strings spreads installs across
- * many fingerprints while each one still passes as a genuine browser, so the
- * request is still accepted. (This is the generic, browser-shaped analogue of
- * {@code RedditUserAgent}, which builds a Reddit-convention API string instead.)
+ * These endpoints don't expose an API key, and many reject requests that send no
+ * User-Agent or a bare HTTP-library default. Sending a real, current browser
+ * User-Agent is the straightforward way to be served. A single hard-coded string
+ * works, but then every install sends the identical value — so a problem with one
+ * string affects the whole user base at once. Picking from a pool of <b>real,
+ * current</b> browser strings spreads installs across several honest identifiers.
+ * (This is the generic, browser-shaped analogue of {@code RedditUserAgent}, which
+ * builds a Reddit-convention API string instead.)
  *
  * <h3>Stability</h3>
  * Each {@link #random()} call returns a fresh pick. Callers should grab one
  * <em>once</em> (e.g. into a {@code final} field at construction) and reuse it
- * for the client's lifetime: a real browser keeps a stable User-Agent within a
- * session, so rotating it on every request would itself look bot-like. The
- * randomness is meant to vary <em>across</em> installs and process restarts, not
- * request-to-request.
+ * for the client's lifetime, mirroring how a real browser keeps a stable
+ * User-Agent within a session. The randomness is meant to vary <em>across</em>
+ * installs and process restarts, not request-to-request.
  *
  * <h3>Keeping the pool fresh</h3>
  * Browser versions age. The strings below are real releases from 2024–2025;
- * refresh them periodically so they keep reading as current browsers. They are
- * deliberately internally consistent (matching engine/OS tokens) — an
- * implausible combination is a bot tell.
+ * refresh them periodically so they keep reflecting current browsers. They are
+ * deliberately internally consistent (matching engine/OS tokens), since that is
+ * what a genuine browser sends.
  */
 public final class BrowserUserAgent {
 

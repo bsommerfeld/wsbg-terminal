@@ -1,6 +1,7 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
 import com.google.inject.Singleton;
+import de.bsommerfeld.wsbg.terminal.core.config.OllamaEndpoint;
 import de.bsommerfeld.wsbg.terminal.core.util.StorageUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,12 +40,14 @@ public final class OllamaServerManager {
     private static final Logger LOG = LoggerFactory.getLogger(OllamaServerManager.class);
 
     /**
-     * Private port for our isolated instance — deliberately not Ollama's default
-     * 11434, so we never collide with or hijack a server the user is running.
+     * Endpoint coordinates — re-exported from {@link OllamaEndpoint} (core) so the
+     * isolated instance has a single source of truth shared with the embedding
+     * module. Deliberately not Ollama's default 11434, so we never collide with or
+     * hijack a server the user is running.
      */
-    public static final int PORT = 11500;
-    public static final String HOST = "127.0.0.1";
-    public static final String BASE_URL = "http://" + HOST + ":" + PORT;
+    public static final int PORT = OllamaEndpoint.PORT;
+    public static final String HOST = OllamaEndpoint.HOST;
+    public static final String BASE_URL = OllamaEndpoint.BASE_URL;
 
     /** Sub-directory of the app data dir holding the isolated runtime + models. */
     static final String OLLAMA_DIR = "ollama";

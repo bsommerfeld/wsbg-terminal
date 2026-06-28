@@ -25,9 +25,18 @@ public class UserConfig {
     @Comment("Timestamp of the first start")
     private long firstStartTimestamp = 0;
 
-    @Key("open-minutes")
-    @Comment("Total time spent in the software (in minutes)")
-    private long openMinutes = 0;
+    @Key("active-millis")
+    @Comment("Accurate cumulative time the app has been open (milliseconds), "
+            + "measured by TimeTracker from start/interval/stop timestamp deltas "
+            + "(not tick-counted, so it survives crashes and ignores machine sleep). "
+            + "Feeds the footer donation banner's personalised reciprocity copy.")
+    private long activeMillis = 0;
+
+    @Key("last-data-clear-epoch")
+    @Comment("Epoch seconds of the last 'Daten löschen' (full terminal wipe). The "
+            + "button is gated to once per 10 minutes so a mis-click can't wipe and "
+            + "re-wipe before the wire has refilled. 0 = never cleared.")
+    private long lastDataClearEpoch = 0;
 
     @Key("scroll-speed")
     @Comment("Mouse/trackpad scroll speed inside the terminal: pixels per OS "
@@ -96,11 +105,19 @@ public class UserConfig {
         this.firstStartTimestamp = firstStartTimestamp;
     }
 
-    public long getOpenMinutes() {
-        return openMinutes;
+    public long getActiveMillis() {
+        return activeMillis;
     }
 
-    public void setOpenMinutes(long openMinutes) {
-        this.openMinutes = openMinutes;
+    public void setActiveMillis(long activeMillis) {
+        this.activeMillis = activeMillis;
+    }
+
+    public long getLastDataClearEpoch() {
+        return lastDataClearEpoch;
+    }
+
+    public void setLastDataClearEpoch(long lastDataClearEpoch) {
+        this.lastDataClearEpoch = lastDataClearEpoch;
     }
 }

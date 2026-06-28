@@ -14,7 +14,9 @@ import java.nio.file.StandardOpenOption;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.List;
 import java.util.stream.Stream;
 
 /**
@@ -78,6 +80,21 @@ public final class LauncherMain {
         LauncherI18n i18n = new LauncherI18n(appDir);
         log(appDir, "Language: " + i18n.language());
 
+        // Auto-update is opt-out (config.toml: user.auto-update, default true).
+        // The terminal's in-app "update now" button relaunches us with
+        // --force-update so a one-off update still happens while auto-update is
+        // off. The flag is stripped before forwarding the rest to the terminal.
+        boolean force = false;
+        List<String> appArgs = new ArrayList<>();
+        for (String a : args) {
+            if ("--force-update".equals(a)) force = true;
+            else appArgs.add(a);
+        }
+        final boolean forceUpdate = force;
+        final boolean autoUpdate = configAutoUpdate(appDir);
+        final String[] forwardArgs = appArgs.toArray(new String[0]);
+        log(appDir, "auto-update=" + autoUpdate + (forceUpdate ? " (forced by in-app update)" : ""));
+
         TinyUpdateClient updateClient = new TinyUpdateClient(REPO, appDir);
         // Ollama platform install + model downloads = 2 extra steps after the
         // update pipeline. JCEF (browser runtime) and fonts are installed by
@@ -97,9 +114,9 @@ public final class LauncherMain {
 
         Thread.ofVirtual().name("update-thread").start(() -> {
             try {
-                runUpdatePhase(updateClient, window, appDir, firstRun, i18n);
+                runUpdatePhase(updateClient, window, appDir, firstRun, i18n, autoUpdate, forceUpdate);
                 runEnvironmentPhase(envSetup, updateClient, window, appDir, i18n);
-                runLaunchPhase(appDir, window, args, i18n);
+                runLaunchPhase(appDir, window, forwardArgs, i18n);
             } catch (Throwable e) {
                 handleFatalError(appDir, window, e);
             }
@@ -125,8 +142,18 @@ public final class LauncherMain {
      * a connection that drops mid-update).
      */
     private static void runUpdatePhase(TinyUpdateClient client, LauncherWindow window,
-            Path appDir, boolean showWindow, LauncherI18n i18n) {
+            Path appDir, boolean showWindow, LauncherI18n i18n,
+            boolean autoUpdate, boolean forceUpdate) {
         boolean hasCachedVersion = client.currentVersion() != null;
+
+        // Auto-update opt-out: with a cached version to fall back on and no
+        // explicit in-app "update now", skip the check entirely and launch what
+        // is installed. (A first run with nothing cached must always update.)
+        if (!autoUpdate && !forceUpdate && hasCachedVersion) {
+            log(appDir, "Auto-update disabled — skipping update, launching cached version "
+                    + client.currentVersion());
+            return;
+        }
 
         if (!ConnectivityProbe.isOnline()) {
             if (hasCachedVersion) {
@@ -391,6 +418,32 @@ public final class LauncherMain {
     // =====================================================================
     // Infrastructure
     // =====================================================================
+
+    /**
+     * Reads {@code user.auto-update} from {@code config.toml} — opt-out, so a
+     * missing key/file means {@code true}. Deliberately a tiny line scan (like
+     * {@link LauncherI18n}) rather than pulling in the config library: the
+     * launcher must stay lean and start even if the config is half-written.
+     */
+    private static boolean configAutoUpdate(Path appDir) {
+        Path configFile = appDir.resolve("config.toml");
+        if (!Files.exists(configFile)) return true;
+        try {
+            for (String line : Files.readAllLines(configFile)) {
+                String trimmed = line.strip();
+                if (trimmed.startsWith("auto-update")) {
+                    int eq = trimmed.indexOf('=');
+                    if (eq > 0) {
+                        String value = trimmed.substring(eq + 1).strip()
+                                .replace("\"", "").replace("'", "");
+                        return !"false".equalsIgnoreCase(value);
+                    }
+                }
+            }
+        } catch (IOException ignored) {
+        }
+        return true;
+    }
 
     /**
      * Creates required directories. Returns {@code false} and shows an error

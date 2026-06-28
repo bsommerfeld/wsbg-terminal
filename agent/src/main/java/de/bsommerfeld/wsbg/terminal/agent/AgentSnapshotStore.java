@@ -48,15 +48,25 @@ public final class AgentSnapshotStore {
         this.file = StorageUtils.getSnapshotsDir().resolve(FILE_NAME);
     }
 
+    /** Deletes the persisted snapshot file so a restart can't restore it — for the "Daten löschen" full reset. */
+    public synchronized void clear() {
+        try {
+            Files.deleteIfExists(file);
+        } catch (Exception e) {
+            LOG.warn("Failed to delete agent snapshot file: {}", e.getMessage());
+        }
+    }
+
     public synchronized void save(Map<String, String> visionCache,
-            List<HeadlineRecord> headlines, List<InvestigationCluster.Snapshot> clusters) {
+            List<HeadlineRecord> headlines, List<InvestigationCluster.Snapshot> clusters,
+            List<SubjectUnit.Snapshot> subjectUnits) {
         try {
             Files.createDirectories(file.getParent());
             AgentSnapshot snapshot = new AgentSnapshot(
-                    Instant.now().getEpochSecond(), visionCache, headlines, clusters);
+                    Instant.now().getEpochSecond(), visionCache, headlines, clusters, subjectUnits);
             mapper.writeValue(file.toFile(), snapshot);
-            LOG.info("Saved agent snapshot: {} vision, {} headlines, {} clusters → {}",
-                    size(visionCache), size(headlines), size(clusters), file);
+            LOG.info("Saved agent snapshot: {} vision, {} headlines, {} clusters, {} subject units → {}",
+                    size(visionCache), size(headlines), size(clusters), size(subjectUnits), file);
         } catch (Exception e) {
             LOG.warn("Failed to save agent snapshot: {}", e.getMessage());
         }
@@ -73,9 +83,9 @@ public final class AgentSnapshotStore {
                 Files.deleteIfExists(file);
                 return Optional.empty();
             }
-            LOG.info("Agent snapshot is fresh ({} min ≤ {} min TTL): {} vision, {} headlines, {} clusters.",
+            LOG.info("Agent snapshot is fresh ({} min ≤ {} min TTL): {} vision, {} headlines, {} clusters, {} subject units.",
                     ageMinutes, ttlMinutes, size(snapshot.visionCache()),
-                    size(snapshot.headlines()), size(snapshot.clusters()));
+                    size(snapshot.headlines()), size(snapshot.clusters()), size(snapshot.subjectUnits()));
             return Optional.of(snapshot);
         } catch (Exception e) {
             LOG.warn("Failed to read agent snapshot ({}); ignoring.", e.getMessage());
@@ -95,6 +105,7 @@ public final class AgentSnapshotStore {
             long savedAtEpochSeconds,
             Map<String, String> visionCache,
             List<HeadlineRecord> headlines,
-            List<InvestigationCluster.Snapshot> clusters) {
+            List<InvestigationCluster.Snapshot> clusters,
+            List<SubjectUnit.Snapshot> subjectUnits) {
     }
 }

@@ -1,8 +1,9 @@
 package de.bsommerfeld.wsbg.terminal.fj;
 
 import com.google.inject.Singleton;
-import de.bsommerfeld.wsbg.terminal.core.domain.FjNewsItem;
+import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
 import de.bsommerfeld.wsbg.terminal.core.util.BrowserUserAgent;
+import java.time.Instant;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.w3c.dom.Document;
@@ -30,7 +31,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
- * Fetches and parses the FinancialJuice RSS feed into {@link FjNewsItem}
+ * Fetches and parses the FinancialJuice RSS feed into {@link RawNewsItem}
  * objects.
  *
  * <h3>Feed format</h3>
@@ -128,7 +129,7 @@ public class FjScraper {
      *         (matching the feed's natural order). Returns an empty list on
      *         any fetch or parse failure.
      */
-    public List<FjNewsItem> fetch() {
+    public List<RawNewsItem> fetch() {
         LOG.debug("Fetching FinancialJuice RSS feed");
 
         try {
@@ -146,11 +147,11 @@ public class FjScraper {
                 return Collections.emptyList();
             }
 
-            List<FjNewsItem> allItems = parseRss(response.body());
-            List<FjNewsItem> newItems = new ArrayList<>();
+            List<RawNewsItem> allItems = parseRss(response.body());
+            List<RawNewsItem> newItems = new ArrayList<>();
 
-            for (FjNewsItem item : allItems) {
-                if (seenGuids.add(item.guid())) {
+            for (RawNewsItem item : allItems) {
+                if (seenGuids.add(item.uuid())) {
                     newItems.add(item);
                 }
             }
@@ -176,9 +177,8 @@ public class FjScraper {
      * the JDK) instead of Jackson or a third-party XML library to avoid
      * adding dependencies for a trivially simple document structure.
      */
-    List<FjNewsItem> parseRss(String xml) {
-        List<FjNewsItem> items = new ArrayList<>();
-        long now = System.currentTimeMillis() / 1000;
+    List<RawNewsItem> parseRss(String xml) {
+        List<RawNewsItem> items = new ArrayList<>();
 
         try {
             DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
@@ -204,11 +204,17 @@ public class FjScraper {
                 String description = stripHtml(rawDescription);
                 long publishedUtc = parsePubDate(pubDateStr);
                 
-                List<String> tags = extractTags(title);
-                boolean isRed = isRed(title, tags);
-
-                items.add(new FjNewsItem(guid, title, link, description,
-                        author, publishedUtc, now, imageUrl, tags, isRed));
+                items.add(new RawNewsItem(
+                        guid,
+                        title,
+                        author,
+                        link,
+                        publishedUtc == 0 ? null : Instant.ofEpochSecond(publishedUtc),
+                        List.of(),
+                        null,
+                        description,
+                        false,
+                        imageUrl));
             }
         } catch (Exception e) {
             LOG.error("Failed to parse FinancialJuice RSS XML", e);
@@ -307,50 +313,4 @@ public class FjScraper {
         return null;
     }
 
-    private List<String> extractTags(String title) {
-        List<String> tags = new ArrayList<>();
-        String lower = title.toLowerCase(Locale.ROOT);
-        
-        if (lower.contains("oil") || lower.contains("energy") || lower.contains("opec") || lower.contains("wti") || lower.contains("brent")) {
-            tags.add("Energy");
-        }
-        if (lower.matches(".*\\b(iran|israel|war|lebanon|strait|hormuz|gaza|idf|geopolitics)\\b.*")) {
-            tags.add("Geopolitics");
-        }
-        if (lower.matches(".*\\b(ecb|eur|europe|germany|france)\\b.*")) {
-            tags.add("EUR");
-            tags.add("Europe");
-        }
-        if (lower.matches(".*\\b(fed|powell|usd|us)\\b.*")) {
-            tags.add("USD");
-        }
-        if (lower.matches(".*\\b(s&p|nasdaq|dow|spy|qqq|indexes|mag 7|moo imbalance)\\b.*")) {
-            tags.add("US Indexes");
-        }
-        if (lower.matches(".*\\b(bonds|treasury|yield)\\b.*")) {
-            tags.add("US Bonds");
-        }
-        if (lower.matches(".*\\b(boj|ueda|japan|jpy)\\b.*")) {
-            tags.add("Asia");
-            tags.add("JPY");
-        }
-        if (lower.matches(".*\\b(china|pboc|cny)\\b.*")) {
-            tags.add("China");
-        }
-        if (lower.matches(".*\\b(boe|uk|gbp|starmer)\\b.*")) {
-            tags.add("UK");
-            tags.add("GBP");
-        }
-        
-        return tags.stream().distinct().toList();
-    }
-
-    private boolean isRed(String title, List<String> tags) {
-        String lower = title.toLowerCase(Locale.ROOT);
-        if (tags.contains("Geopolitics")) return true;
-        if (lower.contains("blockade") || lower.contains("attack") || lower.contains("missile") || lower.contains("urgent") || lower.contains("market moving")) {
-            return true;
-        }
-        return false;
-    }
 }

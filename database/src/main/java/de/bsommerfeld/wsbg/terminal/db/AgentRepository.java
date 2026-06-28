@@ -1,20 +1,24 @@
 package de.bsommerfeld.wsbg.terminal.db;
 
+import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
 
+import java.time.Duration;
 import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
- * In-memory store for AI-generated headlines.
- *
- * <p>
- * Per-session only — no disk persistence. When the app restarts, the editorial
- * history starts fresh. The Reddit data backing those headlines also lives
- * only for the session, so persisting the headlines would just pile up orphan
- * records pointing at clusters that no longer exist.
+ * The live headline wire: an in-memory window (24h soft TTL) over the
+ * <b>permanent</b> {@link HeadlineArchive}. Every accepted headline is appended
+ * to the archive (append-only JSONL, never deleted), and on startup the wire
+ * re-seeds itself from the archive's last 24h — so published output survives
+ * any restart, not just the short snapshot TTL. Only the <em>Reddit-derived</em>
+ * state (threads, clusters, evidence) stays session-bound: that data goes stale
+ * against the live feed; our own output never does. Coverage and ticker-throttle
+ * checks read this cache, so they too survive restarts. Stable cluster ids
+ * (= initial thread id) keep restored records linked to re-seeded clusters.
  *
  * <p>
  * Each headline can optionally carry source attribution
@@ -25,16 +29,42 @@ import java.util.concurrent.CopyOnWriteArrayList;
 @Singleton
 public class AgentRepository {
 
-    /** Soft TTL kept in memory only — prevents the list from growing forever. */
+    /** Soft TTL of the live wire — the permanent history lives in {@link HeadlineArchive}. */
     private static final long TTL_SECONDS = 86400;
 
     private final List<HeadlineRecord> headlineCache = new CopyOnWriteArrayList<>();
+
+    /**
+     * Identities of headlines that belong to the CURRENT session — published live
+     * this run, or restored from the short-TTL snapshot. NOT the ones merely
+     * re-seeded from the permanent archive at startup. Lets "Archiv löschen" drop
+     * the archived history from the wire while keeping the live session intact.
+     */
+    private final java.util.Set<String> sessionIdentities = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /** Permanent archive behind the wire; {@code null} in archive-less tests. */
+    private final HeadlineArchive archive;
+
+    @Inject
+    public AgentRepository(HeadlineArchive archive) {
+        this.archive = archive;
+        if (archive != null) {
+            // Re-seed the wire window from permanent history: headlines outlive
+            // every restart, coverage + dedupe + ticker-throttle keep working.
+            headlineCache.addAll(archive.recent(Duration.ofSeconds(TTL_SECONDS)));
+        }
+    }
+
+    /** Archive-less store for tests and ad-hoc tooling — session-only, nothing persisted. */
+    public AgentRepository() {
+        this.archive = null;
+    }
 
     /** Records a headline without source attribution and NEUTRAL sentiment. */
     public void saveHeadline(String clusterId, String headline, String context) {
         saveHeadline(clusterId, headline, context, List.of(), List.of(),
                 HeadlineHighlight.NORMAL, null, List.of(), null, List.of(), null,
-                HeadlineSentiment.NEUTRAL, null);
+                HeadlineSentiment.NEUTRAL, null, false);
     }
 
     /**
@@ -63,6 +93,10 @@ public class AgentRepository {
      *                         {@code null} when there's no ticker or Yahoo
      *                         had nothing — the UI renders the quote strip
      *                         only when present
+     * @param newsEnriched     {@code true} when the editorial compose leaned on
+     *                         at least one external news item (cited a
+     *                         {@code [news:ID]}) — a quiet provenance hint the UI
+     *                         surfaces as a subtle "News" tag
      */
     public void saveHeadline(String clusterId, String headline, String context,
             List<String> sourceThreadIds, List<String> sourceCommentIds,
@@ -70,9 +104,9 @@ public class AgentRepository {
             List<HeadlineSubject> subjects,
             Double priceMovePercent,
             List<String> sectors, String assetClass, HeadlineSentiment sentiment,
-            MarketSnapshot snapshot) {
+            MarketSnapshot snapshot, boolean newsEnriched) {
         long now = System.currentTimeMillis() / 1000;
-        headlineCache.add(new HeadlineRecord(
+        HeadlineRecord record = new HeadlineRecord(
                 clusterId,
                 headline,
                 context,
@@ -86,7 +120,16 @@ public class AgentRepository {
                 sectors == null ? List.of() : List.copyOf(sectors),
                 assetClass,
                 sentiment == null ? HeadlineSentiment.NEUTRAL : sentiment,
-                snapshot));
+                snapshot,
+                newsEnriched);
+        headlineCache.add(record);
+        sessionIdentities.add(identity(record)); // live-published this session
+        if (archive != null) archive.append(record); // permanent — survives everything
+    }
+
+    /** Identity of a headline — must match {@link HeadlineArchive}'s formula. */
+    private static String identity(HeadlineRecord r) {
+        return r.createdAt() + "|" + r.clusterId() + "|" + r.headline();
     }
 
     /** Returns every cached headline (for persistence snapshots). */
@@ -101,6 +144,10 @@ public class AgentRepository {
     public void restoreHeadlines(List<HeadlineRecord> records) {
         if (records == null || records.isEmpty()) return;
         for (HeadlineRecord r : records) {
+            // Snapshot-restored headlines ARE the current session — mark them so
+            // "Archiv löschen" keeps them, even when the archive re-seed already
+            // put an identical copy in the wire.
+            sessionIdentities.add(identity(r));
             boolean dup = headlineCache.stream().anyMatch(h ->
                     h.createdAt() == r.createdAt()
                             && java.util.Objects.equals(h.clusterId(), r.clusterId())
@@ -129,10 +176,42 @@ public class AgentRepository {
                 .toList();
     }
 
-    /** Drops entries older than the TTL. Cheap; called from the hourly cycle. */
+    /** Drops wire entries older than the TTL — the archive keeps them forever. Called from the hourly cycle. */
     public void cleanup() {
         long cutoff = (System.currentTimeMillis() / 1000) - TTL_SECONDS;
         headlineCache.removeIf(h -> h.createdAt() < cutoff);
+    }
+
+    /**
+     * Drops every headline from the live wire. Used by the editorial-lab
+     * "Reset" action. The permanent {@link HeadlineArchive} is deliberately
+     * untouched — Reset wipes the session, never history.
+     */
+    public void clear() {
+        headlineCache.clear();
+    }
+
+    /**
+     * The user's "Archiv löschen": wipes the permanent {@link HeadlineArchive} and
+     * drops every archive-only headline from the live wire, KEEPING only the
+     * current session (live-published + snapshot-restored, tracked by
+     * {@link #sessionIdentities}). So the UI clears down to "what's happening now",
+     * not to empty. No-op on the archive in archive-less tests.
+     */
+    public void clearArchiveKeepSession() {
+        if (archive != null) archive.clear();
+        headlineCache.removeIf(h -> !sessionIdentities.contains(identity(h)));
+    }
+
+    /**
+     * The user's "Daten löschen": a FULL wipe — the live wire, the permanent
+     * {@link HeadlineArchive}, and the session-identity tracking. Nothing is kept;
+     * the wire repopulates from the next scan as if the app had just started.
+     */
+    public void clearAll() {
+        headlineCache.clear();
+        sessionIdentities.clear();
+        if (archive != null) archive.clear();
     }
 
     /** Kept for API symmetry with the old persistent variant — no-op now. */
@@ -157,6 +236,26 @@ public class AgentRepository {
             List<String> sectors,
             String assetClass,
             HeadlineSentiment sentiment,
-            MarketSnapshot snapshot) {
+            MarketSnapshot snapshot,
+            boolean newsEnriched) {
+
+        /**
+         * Backward-compatible constructor for records that predate the
+         * {@code newsEnriched} provenance flag — old archive (JSONL) lines and
+         * existing call sites that never knew about news enrichment. Defaults the
+         * flag to {@code false}. (Jackson loads old lines via the canonical
+         * constructor; a missing {@code newsEnriched} primitive simply stays
+         * {@code false}, so the archive is read-compatible without this ctor — it
+         * exists only to keep positional Java call sites compiling.)
+         */
+        public HeadlineRecord(String clusterId, String headline, String context,
+                long createdAt, List<String> sourceThreadIds, List<String> sourceCommentIds,
+                HeadlineHighlight highlight, String tickerSymbol, List<HeadlineSubject> subjects,
+                Double priceMovePercent, List<String> sectors, String assetClass,
+                HeadlineSentiment sentiment, MarketSnapshot snapshot) {
+            this(clusterId, headline, context, createdAt, sourceThreadIds, sourceCommentIds,
+                    highlight, tickerSymbol, subjects, priceMovePercent, sectors, assetClass,
+                    sentiment, snapshot, false);
+        }
     }
 }

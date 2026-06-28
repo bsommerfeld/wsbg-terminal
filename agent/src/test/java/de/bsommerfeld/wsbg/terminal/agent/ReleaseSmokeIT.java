@@ -8,13 +8,13 @@ import de.bsommerfeld.wsbg.terminal.db.AgentRepository;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
 import de.bsommerfeld.wsbg.terminal.db.RedditSnapshotStore;
 import de.bsommerfeld.wsbg.terminal.reddit.FallbackRedditSource;
-import de.bsommerfeld.wsbg.terminal.reddit.JdkRedditTransport;
-import de.bsommerfeld.wsbg.terminal.reddit.OAuthRedditTransport;
+import de.bsommerfeld.wsbg.terminal.reddit.OAuthRedditFetcher;
 import de.bsommerfeld.wsbg.terminal.reddit.RedditScraper;
 import de.bsommerfeld.wsbg.terminal.reddit.RedditSource;
 import de.bsommerfeld.wsbg.terminal.reddit.RssRedditScraper;
 import de.bsommerfeld.wsbg.terminal.reddit.ThreadAnalysisContext;
 import de.bsommerfeld.wsbg.terminal.reddit.TokenBucketRateLimiter;
+import de.bsommerfeld.wsbg.terminal.source.net.DirectWebFetcher;
 import dev.langchain4j.data.embedding.Embedding;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -60,9 +60,9 @@ class ReleaseSmokeIT {
         ApplicationEventBus bus = new ApplicationEventBus();
 
         RedditScraper oauth = new RedditScraper(repo, bus,
-                new OAuthRedditTransport(config), new TokenBucketRateLimiter(20, 8));
+                new OAuthRedditFetcher(config), new TokenBucketRateLimiter(20, 8));
         RedditScraper json = new RedditScraper(repo, bus,
-                new JdkRedditTransport(), new TokenBucketRateLimiter(5, 0.15));
+                new DirectWebFetcher(), new TokenBucketRateLimiter(5, 0.15));
         RssRedditScraper rss = new RssRedditScraper(repo, config, bus);
 
         System.out.println("[SMOKE] probe OAuth = " + oauth.probe(SUB) + " (expect false: no client-id)");
@@ -71,7 +71,7 @@ class ReleaseSmokeIT {
         System.out.println("[SMOKE] probe RSS   = " + rssReachable + " (expect true)");
         assertTrue(rssReachable, "RSS must be reachable for the chain to have a fallback");
 
-        RedditSource chain = new FallbackRedditSource(List.of(oauth, json, rss), SUB, 600);
+        RedditSource chain = new FallbackRedditSource(List.of(oauth, json, rss), SUB, 600, null);
 
         // Trigger resolution with one cheap real fetch through the chain.
         String permalink = firstPermalink();
@@ -149,7 +149,7 @@ class ReleaseSmokeIT {
 
             AgentSnapshotStore store = new AgentSnapshotStore();
             store.save(Map.of("https://i.redd.it/x.jpeg", "grüner Screenshot"),
-                    repo.getAllHeadlines(), List.of(cluster.toSnapshot()));
+                    repo.getAllHeadlines(), List.of(cluster.toSnapshot()), List.of());
 
             Optional<AgentSnapshotStore.AgentSnapshot> back =
                     new AgentSnapshotStore().loadIfFresh(60);

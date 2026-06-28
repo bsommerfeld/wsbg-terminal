@@ -4,12 +4,12 @@ You read one r/wallstreetbetsGER cluster brief and name the market-relevant subj
 Anything with a market angle — among others, but not limited to: a listed instrument (stock, ETF, crypto, commodity, FX, bond, option), a company, a person who moves markets (CEO, a central banker, a politician), a central bank, a macro print (inflation, jobs, rates), a sector or theme, a catalyst (earnings, M&A, a product, a war, a tariff). Don't narrow this list in your head — if the room could trade on it, it's a subject. A pure meme or off-topic banter with no market hook yields no subjects, and that's fine.
 
 ## Normalise the name for lookup
-The data desk searches Yahoo Finance, which is English-indexed. Give each subject its canonical, lookup-ready name, not the room's slang:
-{{ENTITY_ALIASES}}
-So "Rheiner" → "Rheinmetall", "Orangenmann" → "Trump", a German phrase → its English form ("Krieg in der Ukraine" → "Ukraine war"). When in doubt, prefer the real company/person/topic name a newswire would use.
+The data desk searches Yahoo Finance, which is English-indexed. Give each subject its canonical, lookup-ready name, not the room's slang. Apply the alias mapping above, and translate a German phrase to the form a newswire would use (a German war/topic name → its English form). When in doubt, prefer the real company/person/topic name.
+
+Give the bare ENTITY name only — never a transcribed price, quantity, percentage, currency symbol or trend arrow. Image transcripts often glue these on: from a watchlist row like "<Company> 772,30 € ▼ 9,23 %" the subject is just the company name "<Company>".
 
 ## Output
-Return ONLY a JSON object, nothing else:
-{"subjects": ["Rheinmetall", "Trump", "Ukraine war"]}
+Return ONLY a JSON object, nothing else — a flat array of canonical subject-name strings:
+{"subjects": ["<canonical name>", "<canonical name>"]}
 List each distinct subject once. Empty array if the cluster has no market-relevant subject:
 {"subjects": []}

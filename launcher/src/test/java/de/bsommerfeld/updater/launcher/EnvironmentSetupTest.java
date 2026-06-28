@@ -453,4 +453,87 @@ class EnvironmentSetupTest {
         assertEquals("739 KB", EnvironmentSetup.normalizeCurlSize("739K"));
         assertEquals("1.92 GB", EnvironmentSetup.normalizeCurlSize("1.92GB"));
     }
+
+    @Test
+    void run_shouldKillScriptThatGoesSilent() throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeFalse(
+                System.getProperty("os.name", "").toLowerCase().contains("win"));
+
+        Path bin = appDir.resolve("bin");
+        java.nio.file.Files.createDirectories(bin);
+        // Emits one line, then stays silent far beyond the idle timeout.
+        java.nio.file.Files.writeString(bin.resolve("setup.sh"),
+                "#!/bin/bash\necho started\nsleep 60\n");
+
+        EnvironmentSetup setup = new EnvironmentSetup(appDir, java.time.Duration.ofMillis(500));
+        List<String[]> emissions = new ArrayList<>();
+
+        long start = System.currentTimeMillis();
+        boolean result = setup.run((phase, detail) -> emissions.add(new String[] { phase, detail }));
+        long elapsed = System.currentTimeMillis() - start;
+
+        assertFalse(result, "Silent script must be reported as failed");
+        assertTrue(elapsed < 30_000, "Watchdog must kill the script long before the sleep ends");
+        assertTrue(emissions.stream().anyMatch(e -> e[0].equals("Setup timed out")),
+                "Should emit a timeout phase");
+    }
+
+    @Test
+    void run_shouldNotKillScriptThatKeepsEmittingOutput() throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeFalse(
+                System.getProperty("os.name", "").toLowerCase().contains("win"));
+
+        Path bin = appDir.resolve("bin");
+        java.nio.file.Files.createDirectories(bin);
+        // Total runtime (~1.2s) exceeds the idle timeout (500ms), but output
+        // keeps flowing — the watchdog must treat it as alive.
+        java.nio.file.Files.writeString(bin.resolve("setup.sh"),
+                "#!/bin/bash\nfor i in 1 2 3 4 5 6; do echo tick $i; sleep 0.2; done\n");
+
+        EnvironmentSetup setup = new EnvironmentSetup(appDir, java.time.Duration.ofMillis(500));
+        List<String[]> emissions = new ArrayList<>();
+        boolean result = setup.run((phase, detail) -> emissions.add(new String[] { phase, detail }));
+
+        assertTrue(result, "Steadily emitting script must complete normally");
+    }
+
+    @Test
+    void run_shouldReportWarningsExitCodeAsDegraded() throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeFalse(
+                System.getProperty("os.name", "").toLowerCase().contains("win"));
+
+        Path bin = appDir.resolve("bin");
+        java.nio.file.Files.createDirectories(bin);
+        java.nio.file.Files.writeString(bin.resolve("setup.sh"),
+                "#!/bin/bash\necho done\nexit " + EnvironmentSetup.EXIT_WITH_WARNINGS + "\n");
+
+        EnvironmentSetup setup = new EnvironmentSetup(appDir);
+        List<String[]> emissions = new ArrayList<>();
+        boolean result = setup.run((phase, detail) -> emissions.add(new String[] { phase, detail }));
+
+        assertFalse(result);
+        assertTrue(emissions.stream().anyMatch(e -> e[0].equals("Setup completed with warnings")),
+                "Exit code 10 should surface as 'completed with warnings'");
+    }
+
+    @Test
+    void resolveScript_shouldHonorScriptDirOverride() throws Exception {
+        Path override = appDir.resolve("repo-scripts");
+        java.nio.file.Files.createDirectories(override);
+        java.nio.file.Files.writeString(override.resolve("setup.sh"), "#!/bin/bash\n");
+        java.nio.file.Files.writeString(override.resolve("setup.ps1"), "");
+
+        System.setProperty(EnvironmentSetup.SCRIPT_DIR_PROPERTY, override.toString());
+        try {
+            EnvironmentSetup setup = new EnvironmentSetup(appDir);
+            Method m = EnvironmentSetup.class.getDeclaredMethod("resolveScript");
+            m.setAccessible(true);
+
+            Path script = (Path) m.invoke(setup);
+            assertTrue(script.startsWith(override),
+                    "Override dir must win over <appDir>/bin: " + script);
+        } finally {
+            System.clearProperty(EnvironmentSetup.SCRIPT_DIR_PROPERTY);
+        }
+    }
 }

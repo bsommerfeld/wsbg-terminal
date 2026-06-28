@@ -55,11 +55,14 @@
   --red:          oklch(0.72 0.19 28);
   --red-soft:     oklch(0.72 0.19 28 / .10);
   --blue:         oklch(0.78 0.12 230);
+  --blue-deep:    oklch(0.55 0.16 255);
 
   --titlebar-h:   38px;
   --footer-h:     32px;
   --pad-x:        24px;
   --row-pad-y:    13px;
+  --meta-leiste-h: 24px;  /* shared height for the headline meta "Leisten" (chart/tags/provenance) */
+  --meta-seg-font: 0.8em; /* shared text size for meta segments (tags + ticker) — visual consistency */
 
   /* Base 16px per user request. Secondary sizes scale via em so density
      and base bumps cascade without touching every rule. Chrome stays
@@ -88,5 +91,6 @@ html[data-theme="light"] {
   --red:          oklch(0.55 0.19 28);
   --red-soft:     oklch(0.55 0.19 28 / .10);
   --blue:         oklch(0.55 0.14 240);
+  --blue-deep:    oklch(0.48 0.16 255);
 }
 

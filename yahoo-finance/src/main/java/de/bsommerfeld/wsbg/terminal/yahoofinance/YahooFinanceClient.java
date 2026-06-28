@@ -1,5 +1,12 @@
 package de.bsommerfeld.wsbg.terminal.yahoofinance;
 
+import de.bsommerfeld.wsbg.terminal.source.NewsSource;
+import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
+import de.bsommerfeld.wsbg.terminal.source.net.DirectWebFetcher;
+import de.bsommerfeld.wsbg.terminal.source.net.WebFetchChain;
+import de.bsommerfeld.wsbg.terminal.source.net.WebFetcher;
+import de.bsommerfeld.wsbg.terminal.source.net.WebResponse;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.inject.Inject;
@@ -12,16 +19,14 @@ import de.bsommerfeld.wsbg.terminal.core.util.HostReachability;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.net.URI;
 import java.net.URLEncoder;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -59,12 +64,26 @@ import java.util.regex.Pattern;
  * "Yahoo couldn't tell us", not as an exceptional state.
  */
 @Singleton
-public class YahooFinanceClient {
+public class YahooFinanceClient implements NewsSource {
 
     private static final Logger LOG = LoggerFactory.getLogger(YahooFinanceClient.class);
 
     private static final String SEARCH_URL = "https://query2.finance.yahoo.com/v1/finance/search";
     private static final String CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/";
+    /**
+     * Batched quote+sparkline for many symbols in ONE request — the big
+     * Yahoo-call saver. Returns each symbol's meta (price, prevClose, currency)
+     * plus the {@code close[]} series the UI draws as a sparkline. It does NOT
+     * carry day high/low, volume or 52-week range — those stay on {@link #CHART_URL}.
+     */
+    private static final String SPARK_URL = "https://query1.finance.yahoo.com/v7/finance/spark";
+    /**
+     * Symbols per spark request. Yahoo rejects large batches with HTTP 400
+     * (a 40-symbol request was observed 400ing while a 2-symbol one succeeded),
+     * so we keep chunks small; 10 reliably goes through. A 42-ticker cluster
+     * thus costs ~5 spark calls instead of ~42 individual chart calls.
+     */
+    private static final int SPARK_BATCH = 10;
 
     /**
      * Intraday chart granularity. 5-minute candles over one day give a
@@ -100,7 +119,13 @@ public class YahooFinanceClient {
     private static final Duration REACHABILITY_PROBE_TIMEOUT = Duration.ofSeconds(2);
     private static final Duration REACHABILITY_CACHE_TTL = Duration.ofSeconds(30);
 
-    private final HttpClient http;
+    /**
+     * The fetch strategy. In production this is a {@link WebFetchChain} of
+     * {@code [browser, direct]} so Yahoo's IP/429 block is cleared by the
+     * embedded browser with a plain-HTTP fallback; tests/lab get a direct-only
+     * chain. Rate-limit/breaker logic stays here, in the caller.
+     */
+    private final WebFetcher webFetcher;
     private final Duration requestTimeout;
     private final long cacheTtlSeconds;
 
@@ -125,11 +150,43 @@ public class YahooFinanceClient {
     private final Map<String, CachedSnapshot> snapshotCache = new ConcurrentHashMap<>();
     private final Map<String, CachedArticle> articleCache = new ConcurrentHashMap<>();
 
+    /**
+     * Rate-limit circuit breaker. A comment-heavy cluster fans out into dozens of
+     * per-subject searches; once Yahoo answers one with 429 it will 429 the rest,
+     * so the first 429 OPENS the breaker and every subsequent Yahoo call
+     * short-circuits (no HTTP) until the cooldown passes. The caller is told via
+     * {@link SearchResult#rateLimited()} so it can SKIP the subject (retry on next
+     * evidence) rather than cement a wrong tickerless unit — and we never cascade
+     * 48 more 429s. {@code 0} = closed.
+     */
+    private static final long RATE_LIMIT_COOLDOWN_SECONDS = 90;
+    private volatile long rateLimitedUntil = 0L;
+
+    boolean breakerOpen() {
+        return Instant.now().getEpochSecond() < rateLimitedUntil;
+    }
+
+    /** Yahoo status codes that mean "back off", not "not found". Package-private for testing. */
+    static boolean isRateLimitStatus(int code) {
+        return code == 429 || code == 503 || code == 999;
+    }
+
+    void tripBreaker(String what, int code) {
+        rateLimitedUntil = Instant.now().getEpochSecond() + RATE_LIMIT_COOLDOWN_SECONDS;
+        LOG.warn("Yahoo {} → HTTP {}; opening rate-limit breaker for {}s (skipping further Yahoo calls)",
+                what, code, RATE_LIMIT_COOLDOWN_SECONDS);
+    }
+
     public YahooFinanceClient() {
-        this(10, 60);
+        this(10, 120);
     }
 
     @Inject
+    public YahooFinanceClient(GlobalConfig config, WebFetcher webFetcher) {
+        this(resolveTimeout(config), resolveTtl(config), webFetcher);
+    }
+
+    /** Config-driven, direct-HTTP only — for tests/CLI without an injector. */
     public YahooFinanceClient(GlobalConfig config) {
         this(resolveTimeout(config), resolveTtl(config));
     }
@@ -141,17 +198,31 @@ public class YahooFinanceClient {
 
     private static long resolveTtl(GlobalConfig config) {
         YahooFinanceConfig y = config == null ? null : config.getYahoo();
-        return y == null ? 60 : y.getCacheTtlSeconds();
+        return y == null ? 120 : y.getCacheTtlSeconds();
     }
 
+    /** Direct-HTTP-only variant for tests/CLI/lab (no embedded browser available). */
     public YahooFinanceClient(int requestTimeoutSeconds, long cacheTtlSeconds) {
-        this.http = HttpClient.newBuilder()
-                .version(HttpClient.Version.HTTP_2)
-                .followRedirects(HttpClient.Redirect.NORMAL) // article links 30x-redirect to the publisher
-                .connectTimeout(Duration.ofSeconds(Math.max(2, requestTimeoutSeconds)))
-                .build();
+        this(requestTimeoutSeconds, cacheTtlSeconds,
+                new WebFetchChain(java.util.List.of(new DirectWebFetcher())));
+    }
+
+    public YahooFinanceClient(int requestTimeoutSeconds, long cacheTtlSeconds, WebFetcher webFetcher) {
+        this.webFetcher = webFetcher;
         this.requestTimeout = Duration.ofSeconds(Math.max(2, requestTimeoutSeconds));
         this.cacheTtlSeconds = Math.max(0, cacheTtlSeconds);
+    }
+
+    /**
+     * Performs a GET via the configured {@link WebFetcher} chain (browser→direct
+     * in production), applying the standard Yahoo headers. The {@code User-Agent}
+     * matters only for the direct strategy; the browser sets its own.
+     */
+    private WebResponse httpGet(String url, String accept) throws Exception {
+        Map<String, String> headers = new LinkedHashMap<>();
+        headers.put("User-Agent", userAgent);
+        headers.put("Accept", accept);
+        return webFetcher.fetch(url, headers, requestTimeout);
     }
 
     /**
@@ -174,6 +245,12 @@ public class YahooFinanceClient {
             return cached.result;
         }
 
+        // Breaker open from a recent 429 → don't even try; tell the caller so it
+        // skips this subject rather than treating it as "no ticker".
+        if (breakerOpen()) {
+            return SearchResult.throttled();
+        }
+
         if (!online.isReachable()) {
             LOG.debug("Offline — skipping Yahoo search '{}'", trimmed);
             return SearchResult.empty();
@@ -188,17 +265,13 @@ public class YahooFinanceClient {
                     + "&quotesQueryId=tss_match_phrase_query"
                     + "&newsQueryId=news_cie_vespa";
 
-            HttpRequest req = HttpRequest.newBuilder()
-                    .uri(URI.create(url))
-                    .header("User-Agent", userAgent)
-                    .header("Accept", "application/json")
-                    .timeout(requestTimeout)
-                    .GET()
-                    .build();
-
-            HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
-            if (resp.statusCode() != 200) {
-                LOG.warn("Yahoo search '{}' returned HTTP {}", trimmed, resp.statusCode());
+            WebResponse resp = httpGet(url, "application/json");
+            if (resp.status() != 200) {
+                if (isRateLimitStatus(resp.status())) {
+                    tripBreaker("search '" + trimmed + "'", resp.status());
+                    return SearchResult.throttled();
+                }
+                LOG.warn("Yahoo search '{}' returned HTTP {}", trimmed, resp.status());
                 return SearchResult.empty();
             }
 
@@ -229,9 +302,22 @@ public class YahooFinanceClient {
      * yields the symbol itself as the top quote and the symbol's news in
      * the {@code news} array.
      */
-    public List<YahooNewsItem> getNewsForSymbol(String symbol, int newsCount) {
+    public List<RawNewsItem> getNewsForSymbol(String symbol, int newsCount) {
         if (symbol == null || symbol.isBlank()) return List.of();
         return search(symbol.trim(), 1, Math.max(1, newsCount)).news();
+    }
+
+    // --- NewsSource -------------------------------------------------------
+
+    @Override
+    public String sourceName() {
+        return "yahoo";
+    }
+
+    /** {@link NewsSource} view over {@link #getNewsForSymbol} — the pull-by-symbol path. */
+    @Override
+    public List<RawNewsItem> newsFor(String symbol, int limit) {
+        return getNewsForSymbol(symbol, limit);
     }
 
     /**
@@ -257,6 +343,7 @@ public class YahooFinanceClient {
             return Optional.ofNullable(cached.snapshot);
         }
 
+        if (breakerOpen()) return Optional.empty();
         if (!online.isReachable()) {
             LOG.debug("Offline — skipping Yahoo chart '{}'", sym);
             return Optional.empty();
@@ -266,17 +353,10 @@ public class YahooFinanceClient {
             String url = CHART_URL + URLEncoder.encode(sym, StandardCharsets.UTF_8)
                     + "?interval=" + CHART_INTERVAL + "&range=" + CHART_RANGE;
 
-            HttpRequest req = HttpRequest.newBuilder()
-                    .uri(URI.create(url))
-                    .header("User-Agent", userAgent)
-                    .header("Accept", "application/json")
-                    .timeout(requestTimeout)
-                    .GET()
-                    .build();
-
-            HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
-            if (resp.statusCode() != 200) {
-                LOG.warn("Yahoo chart '{}' returned HTTP {}", sym, resp.statusCode());
+            WebResponse resp = httpGet(url, "application/json");
+            if (resp.status() != 200) {
+                if (isRateLimitStatus(resp.status())) tripBreaker("chart '" + sym + "'", resp.status());
+                else LOG.warn("Yahoo chart '{}' returned HTTP {}", sym, resp.status());
                 return Optional.empty();
             }
 
@@ -294,8 +374,137 @@ public class YahooFinanceClient {
     }
 
     /**
+     * Fetches snapshots for MANY symbols at once via the spark endpoint — one
+     * HTTP request instead of one per symbol. Returns a symbol → snapshot map
+     * for every symbol that resolved (cache hits + this batch). Symbols already
+     * fresh in the cache are served from there; symbols spark doesn't return
+     * fall back to a per-symbol {@link #fetchChart}, so this never returns LESS
+     * data than the one-by-one path — it just (usually) costs far fewer requests.
+     *
+     * <p>Spark snapshots carry price, day-change%, currency and the sparkline
+     * series, but NOT day high/low, volume or 52-week range (those are
+     * {@link Double#NaN}/{@code -1}); the UI's main strip + sparkline are
+     * unaffected, only the hover tooltip loses those extras.
+     */
+    public Map<String, MarketSnapshot> fetchCharts(List<String> symbols) {
+        Map<String, MarketSnapshot> out = new LinkedHashMap<>();
+        if (symbols == null || symbols.isEmpty()) return out;
+        long now = Instant.now().getEpochSecond();
+
+        LinkedHashSet<String> misses = new LinkedHashSet<>();
+        for (String raw : symbols) {
+            if (raw == null || raw.isBlank()) continue;
+            String sym = raw.trim().toUpperCase();
+            if (out.containsKey(sym) || misses.contains(sym)) continue;
+            CachedSnapshot c = snapshotCache.get(sym);
+            if (c != null && now - c.storedAt() < cacheTtlSeconds) {
+                if (c.snapshot() != null) out.put(sym, c.snapshot());
+            } else {
+                misses.add(sym);
+            }
+        }
+        if (misses.isEmpty() || breakerOpen() || !online.isReachable()) return out;
+
+        List<String> miss = new ArrayList<>(misses);
+        int sparkHits = 0, fellBack = 0;
+        for (int i = 0; i < miss.size(); i += SPARK_BATCH) {
+            // Re-check per chunk: if chunk 1 tripped the 429 breaker, chunks 2..N must
+            // not keep firing spark requests (that defeats the breaker's whole purpose).
+            if (breakerOpen()) break;
+            List<String> chunk = miss.subList(i, Math.min(miss.size(), i + SPARK_BATCH));
+            Map<String, MarketSnapshot> got = fetchSparkChunk(chunk, now);
+            for (String sym : chunk) {
+                MarketSnapshot s = got.get(sym);
+                if (s != null) {
+                    sparkHits++;
+                } else {
+                    s = fetchChart(sym).orElse(null); // fallback (caches itself)
+                    if (s != null) fellBack++;
+                }
+                if (s != null) out.put(sym, s);
+            }
+        }
+        LOG.info("Spark batch: {} symbol(s) → {} via spark, {} fell back to v8/chart",
+                miss.size(), sparkHits, fellBack);
+        return out;
+    }
+
+    /** One spark request for a chunk of symbols. Empty map on any failure → callers fall back. */
+    private Map<String, MarketSnapshot> fetchSparkChunk(List<String> chunk, long now) {
+        Map<String, MarketSnapshot> out = new LinkedHashMap<>();
+        try {
+            String url = SPARK_URL
+                    + "?symbols=" + URLEncoder.encode(String.join(",", chunk), StandardCharsets.UTF_8)
+                    + "&range=" + CHART_RANGE + "&interval=" + CHART_INTERVAL;
+            WebResponse resp = httpGet(url, "application/json");
+            if (resp.status() != 200) {
+                if (isRateLimitStatus(resp.status())) tripBreaker("spark batch", resp.status());
+                else LOG.warn("Yahoo spark batch returned HTTP {}", resp.status());
+                return out;
+            }
+            for (MarketSnapshot s : parseSpark(resp.body())) {
+                snapshotCache.put(s.symbol().toUpperCase(), new CachedSnapshot(s, now));
+                out.put(s.symbol().toUpperCase(), s);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (Exception e) {
+            LOG.warn("Yahoo spark batch failed: {}", e.getMessage());
+        }
+        return out;
+    }
+
+    /**
+     * Parses a {@code v7/spark} response into per-symbol snapshots. Tolerant: any
+     * symbol it can't read is simply omitted (the caller falls back to v8/chart).
+     * The {@code close[]} series is carried through as the sparkline — same data
+     * the UI already draws — so the chart keeps working.
+     */
+    private static List<MarketSnapshot> parseSpark(String body) throws Exception {
+        List<MarketSnapshot> out = new ArrayList<>();
+        com.fasterxml.jackson.databind.JsonNode result = JSON.readTree(body).path("spark").path("result");
+        if (!result.isArray()) return out;
+        for (com.fasterxml.jackson.databind.JsonNode r : result) {
+            com.fasterxml.jackson.databind.JsonNode resp = r.path("response");
+            com.fasterxml.jackson.databind.JsonNode r0 = resp.isArray() && !resp.isEmpty() ? resp.get(0) : resp;
+            com.fasterxml.jackson.databind.JsonNode meta = r0.path("meta");
+            String symbol = r.path("symbol").asText(meta.path("symbol").asText(""));
+            if (symbol.isEmpty()) continue;
+
+            List<Double> spark = new ArrayList<>();
+            com.fasterxml.jackson.databind.JsonNode quote = r0.path("indicators").path("quote");
+            if (quote.isArray() && !quote.isEmpty()) {
+                for (com.fasterxml.jackson.databind.JsonNode c : quote.get(0).path("close")) {
+                    if (c.isNumber()) spark.add(c.asDouble());
+                }
+            }
+            double prevClose = meta.path("previousClose").isNumber()
+                    ? meta.path("previousClose").asDouble()
+                    : meta.path("chartPreviousClose").asDouble(Double.NaN);
+            double price = meta.path("regularMarketPrice").isNumber()
+                    ? meta.path("regularMarketPrice").asDouble()
+                    : (spark.isEmpty() ? Double.NaN : spark.get(spark.size() - 1));
+            double pct = Double.isFinite(price) && Double.isFinite(prevClose) && prevClose != 0.0
+                    ? (price - prevClose) / prevClose * 100.0 : Double.NaN;
+
+            out.add(new MarketSnapshot(
+                    symbol, price, prevClose, pct,
+                    Double.NaN, Double.NaN, -1L, Double.NaN, Double.NaN,
+                    emptyToNull(meta.path("currency").asText("")),
+                    emptyToNull(meta.path("exchangeName").asText("")),
+                    meta.path("regularMarketTime").asLong(0L),
+                    spark));
+        }
+        return out;
+    }
+
+    private static String emptyToNull(String s) {
+        return s == null || s.isBlank() ? null : s;
+    }
+
+    /**
      * Best-effort full-text fetch for a news article URL (the {@code link} on a
-     * {@link YahooNewsItem}). Follows the {@code finance.yahoo.com/m/…} redirect
+     * {@link RawNewsItem}). Follows the {@code finance.yahoo.com/m/…} redirect
      * to the publisher, strips boilerplate, and returns readable body text
      * capped at {@link #ARTICLE_MAX_CHARS}.
      *
@@ -321,17 +530,9 @@ public class YahooFinanceClient {
             return Optional.empty();
         }
         try {
-            HttpRequest req = HttpRequest.newBuilder()
-                    .uri(URI.create(key))
-                    .header("User-Agent", userAgent)
-                    .header("Accept", "text/html,application/xhtml+xml")
-                    .timeout(requestTimeout)
-                    .GET()
-                    .build();
-
-            HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
-            if (resp.statusCode() != 200) {
-                LOG.warn("Yahoo article fetch '{}' returned HTTP {}", key, resp.statusCode());
+            WebResponse resp = httpGet(key, "text/html,application/xhtml+xml");
+            if (resp.status() != 200) {
+                LOG.warn("Yahoo article fetch '{}' returned HTTP {}", key, resp.status());
                 return Optional.empty();
             }
             String text = extractReadableText(resp.body());
@@ -408,11 +609,12 @@ public class YahooFinanceClient {
                             q.path("regularMarketPrice").isNumber()
                                     ? q.path("regularMarketPrice").asDouble() : Double.NaN,
                             q.path("regularMarketPercentChange").isNumber()
-                                    ? q.path("regularMarketPercentChange").asDouble() : Double.NaN));
+                                    ? q.path("regularMarketPercentChange").asDouble() : Double.NaN,
+                            q.path("score").asDouble(0.0)));
                 }
             }
 
-            List<YahooNewsItem> news = new ArrayList<>();
+            List<RawNewsItem> news = new ArrayList<>();
             JsonNode newsNode = root.path("news");
             if (newsNode.isArray()) {
                 for (JsonNode n : newsNode) {
@@ -427,7 +629,7 @@ public class YahooFinanceClient {
                             if (!s.isEmpty()) related.add(s);
                         }
                     }
-                    news.add(new YahooNewsItem(
+                    news.add(new RawNewsItem(
                             text(n, "uuid"),
                             title,
                             text(n, "publisher"),
@@ -438,7 +640,7 @@ public class YahooFinanceClient {
             }
             return new SearchResult(
                     Collections.unmodifiableList(quotes),
-                    Collections.unmodifiableList(news));
+                    Collections.unmodifiableList(news), false);
         } catch (Exception e) {
             LOG.warn("Failed to parse Yahoo search response: {}", e.getMessage());
             return SearchResult.empty();
@@ -576,9 +778,14 @@ public class YahooFinanceClient {
      * exposed together because the endpoint returns them in one response;
      * splitting into two methods would double the round-trips.
      */
-    public record SearchResult(List<YahooQuote> quotes, List<YahooNewsItem> news) {
+    public record SearchResult(List<YahooQuote> quotes, List<RawNewsItem> news, boolean rateLimited) {
         public static SearchResult empty() {
-            return new SearchResult(List.of(), List.of());
+            return new SearchResult(List.of(), List.of(), false);
+        }
+
+        /** Yahoo is rate-limiting (or the breaker is open) — distinct from "found nothing". */
+        public static SearchResult throttled() {
+            return new SearchResult(List.of(), List.of(), true);
         }
     }
 

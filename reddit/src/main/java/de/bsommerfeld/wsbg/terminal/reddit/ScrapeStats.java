@@ -30,6 +30,15 @@ public class ScrapeStats {
     public Set<String> scannedIds = new HashSet<>();
 
     /**
+     * A hard fetch failure (HTTP error / network exception), as opposed to a
+     * successful fetch that simply found nothing new. Empty stats alone can't
+     * tell the two apart; {@link FallbackRedditSource} reads this to fall
+     * through the source chain ("this source is down → try the next") instead
+     * of sitting on a dead path until the next periodic re-probe.
+     */
+    public boolean failed = false;
+
+    /**
      * Merges another stats instance into this one (used for multi-subreddit scans).
      */
     public void add(ScrapeStats other) {
@@ -38,6 +47,7 @@ public class ScrapeStats {
         this.newComments += other.newComments;
         this.threadUpdates.addAll(other.threadUpdates);
         this.scannedIds.addAll(other.scannedIds);
+        this.failed |= other.failed;
     }
 
     /** Returns {@code true} if any metric recorded a positive delta. */

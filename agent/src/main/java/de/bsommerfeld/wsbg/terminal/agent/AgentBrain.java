@@ -11,6 +11,7 @@ import dev.langchain4j.data.message.ImageContent;
 import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.model.chat.request.ResponseFormat;
 import dev.langchain4j.model.ollama.OllamaChatModel;
 import jakarta.inject.Inject;
 import org.slf4j.Logger;
@@ -58,7 +59,11 @@ public class AgentBrain {
     private final String userAgent = BrowserUserAgent.random();
 
     private final HttpClient httpClient = HttpClient.newBuilder()
-            .followRedirects(HttpClient.Redirect.NORMAL).build();
+            .followRedirects(HttpClient.Redirect.NORMAL)
+            // Bound the connect phase: image fetches run on the single vision-prefetch
+            // worker, so a hung CDN connection would otherwise stall ALL vision warming.
+            .connectTimeout(java.time.Duration.ofSeconds(10))
+            .build();
 
     private ChatModel visionModel;
     private ChatModel agentModel;
@@ -137,16 +142,19 @@ public class AgentBrain {
         int ctxTokens = config.getContextTokens();
         int visionCtxTokens = ctxTokens;
 
-        // Editorial agent — tool-use loop. Low temperature + tightened
-        // nucleus keep the tool-call JSON valid and the headlines faithful
-        // (no creative drift away from the cluster evidence). numPredict is
-        // bounded: a turn emits one tool call or a short headline, never an
-        // essay, and a tight cap discourages rambling pre-amble before the
-        // call.
+        // Editorial agent — every call in the deterministic pipeline expects a
+        // JSON reply (subjects array, headline object), so Ollama's JSON mode
+        // (constrained decoding) is on: the model CANNOT emit syntactically
+        // broken JSON anymore, which is what the EditorialAgent salvage cascade
+        // existed for (it stays as belt-and-braces). Known small-model quirk in
+        // JSON mode is whitespace-looping — the numPredict cap bounds that.
+        // Low temperature + tightened nucleus keep the headlines faithful (no
+        // creative drift away from the cluster evidence).
         this.agentModel = OllamaChatModel.builder()
                 .baseUrl(OLLAMA_BASE_URL).modelName(agentName)
                 .temperature(agentModelEnum.getTemperature()).topP(0.9).topK(40)
                 .numCtx(ctxTokens).numPredict(2048)
+                .responseFormat(ResponseFormat.JSON)
                 .timeout(timeout)
                 .build();
 
@@ -290,10 +298,22 @@ public class AgentBrain {
                 LOG.warn("Vision model returned no-image placeholder for {}: {}", imageUrl, result);
                 return "";
             }
+            if (norm.isBlank()) {
+                // Image fetched fine (no exception, not the no-image placeholder) but
+                // the model produced NOTHING. Distinguish this from a fetch failure so
+                // an empty Vision result isn't a mystery: log that the bytes arrived and
+                // how many — a tiny payload hints a bad/placeholder image, a large one
+                // points at the model simply returning empty for that picture.
+                LOG.warn("Vision model returned an EMPTY description for {} — image fetched OK "
+                        + "(~{} KB {}); NOT a fetch failure. Likely an unreadable/placeholder image "
+                        + "or the model declined this one.", imageUrl,
+                        payload.base64.length() * 3 / 4 / 1024, payload.mimeType);
+                return "";
+            }
             LOG.info("Vision result: {}", result);
             return result;
         } catch (Exception e) {
-            LOG.warn("Vision failure: {}", e.getMessage());
+            LOG.warn("Vision failure (fetch/analyze) for {}: {}", imageUrl, e.getMessage());
             return "[SYSTEM ERROR: Image retrieval failed (" + e.getMessage()
                     + "). THE IMAGE IS INVISIBLE. DO NOT HALLUCINATE OR GUESS ITS CONTENT.]";
         }
@@ -317,6 +337,15 @@ public class AgentBrain {
         return activeAgentModel;
     }
 
+    /**
+     * The agent model's context window (num_ctx) in tokens. Ollama TRUNCATES a
+     * longer prompt silently — callers use this to warn/trim before that happens,
+     * because a silently-cut brief reads like the model suddenly got dumb.
+     */
+    public int contextTokens() {
+        return config.getAgent().getContextTokens();
+    }
+
     // -- Image Processing --
 
     private record ImagePayload(String base64, String mimeType) {
@@ -325,6 +354,9 @@ public class AgentBrain {
     private ImagePayload fetchAndOptimize(String url) throws Exception {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url))
+                // Hard read deadline so a slow/stalled image host can't pin the
+                // single vision-prefetch worker indefinitely.
+                .timeout(java.time.Duration.ofSeconds(20))
                 .header("User-Agent", userAgent).GET().build();
 
         byte[] bytes = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray()).body();
