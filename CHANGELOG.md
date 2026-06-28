@@ -10,7 +10,20 @@ Denn genau dieses Geschrei **ist** die Information - man muss sie nur lesen kön
 
 Das Terminal soll den Subreddit **nicht ersetzen**. Es legt eine andere Perspektive darüber. Der Sub bleibt der Sub - laut, dreckig, genial. Das Terminal ist die Linse, durch die aus dem Lärm wieder ein Signal wird. Denn alles ist Information, wenn man richtig damit umgeht.
 
-> **[Bild einfügen: „Spotted by the Terminal" — die Schlagzeile, die das Terminal Wochen vor dem Move aus dem Geschrei gefischt hat, mit dem +100 %-Kurs daneben]**
+---
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <img src="https://github.com/user-attachments/assets/635a097c-d147-4a2a-ac06-eb5c99f489e9" alt="Screenshot 2026-06-29 at 00 44 16" style="max-width: 100%; border-radius: 6px;">
+    </td>
+    <td width="50%" align="center">
+      <img src="https://github.com/user-attachments/assets/6f646d1e-a5b0-414c-9629-73b23dc3c6c8" alt="Bildschirmfoto 2026-05-28 um 14 44 08" style="max-width: 100%; border-radius: 6px;">
+    </td>
+  </tr>
+</table>
+
+---
 
 Ja, das ist schon passiert. Wochen vorher rausgefischt, dann über +100 %. Kein Backtest, kein Im-Nachhinein-Glück - live aus dem Käfig.
 
