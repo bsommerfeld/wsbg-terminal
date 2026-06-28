@@ -126,6 +126,31 @@ a.glyph:hover { opacity: .7; }
 .widget-head .fear-greed[data-band="FEAR"]         .fg-val { color: var(--red); }
 .widget-head .fear-greed[data-band="GREED"]         .fg-val,
 .widget-head .fear-greed[data-band="EXTREME_GREED"] .fg-val { color: var(--green); }
+/* Loading skeleton (before the first reading arrives): the arc + needle dim to
+   a resting state and the figure renders as a soft blurred glow with a
+   left→right shimmer sweep — same trick as the EUR/USD badge. Tabular-nums keeps
+   the width identical so nothing shifts when the live score lands. */
+.widget-head .fear-greed:has(.fg-val.loading) .fg-track { opacity: .35; }
+.widget-head .fear-greed:has(.fg-val.loading) .fg-needle,
+.widget-head .fear-greed:has(.fg-val.loading) .fg-hub { opacity: .25; }
+.widget-head .fear-greed .fg-val.loading {
+  position: relative;
+  display: inline-block;
+  overflow: hidden;
+  color: transparent;
+  text-shadow: 0 0 5px var(--mute);
+  border-radius: 3px;
+}
+.widget-head .fear-greed .fg-val.loading::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,
+      transparent 15%, var(--txt-2) 50%, transparent 85%);
+  opacity: 0.22;
+  transform: translateX(-120%);
+  animation: eurusd-skeleton 1.5s ease-in-out infinite;
+}
 
 /* EUR/USD ticker pinned to the FJ widget header — flags flank the rate
    with no chip background. The rate text tints briefly on direction

@@ -29,31 +29,8 @@ public class UserConfig {
     @Comment("Accurate cumulative time the app has been open (milliseconds), "
             + "measured by TimeTracker from start/interval/stop timestamp deltas "
             + "(not tick-counted, so it survives crashes and ignores machine sleep). "
-            + "Drives when the footer donation banner first appears.")
+            + "Feeds the footer donation banner's personalised reciprocity copy.")
     private long activeMillis = 0;
-
-    @Key("donation-unlock-hours")
-    @Comment("Hours of cumulative active time before the footer donation banner "
-            + "is shown (default: 12). New users aren't asked to donate until the "
-            + "terminal has plausibly paid off. Set to 0 to show it immediately. "
-            + "(The persistent heart icon is always visible regardless; this only "
-            + "gates the active nudge layer — the rotating footer banner.)")
-    private double donationUnlockHours = 12.0;
-
-    @Key("donation-snooze-until")
-    @Comment("Epoch millis until which the active donation nudge layer (the "
-            + "rotating footer banner) stays suppressed. Set when the user clicks "
-            + "a banner link — the nudge was answered, so it rests for ~2 days. "
-            + "Clicking the heart icon does NOT snooze. 0 = not snoozed. The "
-            + "heart icon stays visible throughout.")
-    private long donationSnoozeUntil = 0;
-
-    @Key("donation-clicked")
-    @Comment("Whether the user has ever clicked through to the donate page "
-            + "(the heart or a banner link). Honor system — no accounts, no "
-            + "verification: the click gilds the heart icon permanently. Does "
-            + "not change any banner behaviour.")
-    private boolean donationClicked = false;
 
     @Key("last-data-clear-epoch")
     @Comment("Epoch seconds of the last 'Daten löschen' (full terminal wipe). The "
@@ -134,30 +111,6 @@ public class UserConfig {
 
     public void setActiveMillis(long activeMillis) {
         this.activeMillis = activeMillis;
-    }
-
-    public double getDonationUnlockHours() {
-        return donationUnlockHours;
-    }
-
-    public void setDonationUnlockHours(double donationUnlockHours) {
-        this.donationUnlockHours = donationUnlockHours;
-    }
-
-    public long getDonationSnoozeUntil() {
-        return donationSnoozeUntil;
-    }
-
-    public void setDonationSnoozeUntil(long donationSnoozeUntil) {
-        this.donationSnoozeUntil = donationSnoozeUntil;
-    }
-
-    public boolean isDonationClicked() {
-        return donationClicked;
-    }
-
-    public void setDonationClicked(boolean donationClicked) {
-        this.donationClicked = donationClicked;
     }
 
     public long getLastDataClearEpoch() {

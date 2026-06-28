@@ -7,10 +7,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import java.util.concurrent.atomic.AtomicInteger;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.spy;
@@ -19,8 +16,8 @@ import static org.mockito.Mockito.spy;
  * Unit tests for {@link TimeTracker}. The timing-dependent scheduler is never
  * exercised directly: the crediting logic is driven through the package-private
  * {@link TimeTracker#creditAndPersist(long)} seam with explicit elapsed values,
- * and the pure helpers ({@code creditedMillis}, {@code thresholdReached}) are
- * tested in isolation. Persistence is stubbed so no real config file is touched.
+ * and the pure helper ({@code creditedMillis}) is tested in isolation.
+ * Persistence is stubbed so no real config file is touched.
  */
 class TimeTrackerTest {
 
@@ -41,7 +38,7 @@ class TimeTrackerTest {
         if (tracker != null) tracker.shutdown();
     }
 
-    // ---- pure helpers -------------------------------------------------------
+    // ---- pure helper --------------------------------------------------------
 
     @Nested
     @DisplayName("creditedMillis")
@@ -65,26 +62,6 @@ class TimeTrackerTest {
         void zeroOrNegative() {
             assertEquals(0L, TimeTracker.creditedMillis(0L, FLUSH_CAP_MS));
             assertEquals(0L, TimeTracker.creditedMillis(-5_000L, FLUSH_CAP_MS));
-        }
-    }
-
-    @Nested
-    @DisplayName("thresholdReached")
-    class ThresholdReached {
-
-        @Test
-        @DisplayName("false below, true at and above the 12h bar")
-        void boundary() {
-            assertFalse(TimeTracker.thresholdReached(12 * HOUR_MS - 1, 12.0));
-            assertTrue(TimeTracker.thresholdReached(12 * HOUR_MS, 12.0));
-            assertTrue(TimeTracker.thresholdReached(13 * HOUR_MS, 12.0));
-        }
-
-        @Test
-        @DisplayName("hours <= 0 unlocks immediately, even at zero active time")
-        void disabledGate() {
-            assertTrue(TimeTracker.thresholdReached(0L, 0.0));
-            assertTrue(TimeTracker.thresholdReached(0L, -1.0));
         }
     }
 
@@ -112,24 +89,7 @@ class TimeTrackerTest {
         assertEquals(1_700_000_000_000L, config.getUser().getFirstStartTimestamp());
     }
 
-    @Test
-    @DisplayName("starts already unlocked when stored active time is past the bar")
-    void unlockedFromStoredState() {
-        GlobalConfig config = stubConfig();
-        config.getUser().setActiveMillis(13 * HOUR_MS);
-        tracker = new TimeTracker(config);
-
-        assertTrue(tracker.isDonationUnlocked());
-    }
-
-    @Test
-    @DisplayName("starts locked for a fresh user")
-    void lockedFromFreshState() {
-        tracker = new TimeTracker(stubConfig());
-        assertFalse(tracker.isDonationUnlocked());
-    }
-
-    // ---- crediting + unlock crossing ----------------------------------------
+    // ---- crediting ----------------------------------------------------------
 
     @Test
     @DisplayName("accumulates credited deltas into the persisted total")
@@ -143,142 +103,14 @@ class TimeTrackerTest {
     }
 
     @Test
-    @DisplayName("crossing the bar flips unlocked and fires onUnlock exactly once")
-    void unlockCrossingFiresOnce() {
+    @DisplayName("a sleep-sized delta is clamped to the cap, not credited in full")
+    void sleepDeltaClamped() {
         GlobalConfig config = stubConfig();
-        config.getUser().setActiveMillis(12 * HOUR_MS - FLUSH_CAP_MS); // one cap shy
-        tracker = new TimeTracker(config);
-        assertFalse(tracker.isDonationUnlocked());
-
-        AtomicInteger fired = new AtomicInteger();
-        tracker.onUnlock(fired::incrementAndGet);
-
-        tracker.creditAndPersist(FLUSH_CAP_MS);   // lands exactly on the bar
-        assertTrue(tracker.isDonationUnlocked());
-        assertEquals(1, fired.get());
-
-        tracker.creditAndPersist(FLUSH_CAP_MS);   // already unlocked: no re-fire
-        assertEquals(1, fired.get());
-    }
-
-    // ---- snooze / active layer ---------------------------------------------
-
-    @Test
-    @DisplayName("active layer follows the time gate when not snoozed")
-    void activeWhenUnlockedAndNotSnoozed() {
-        GlobalConfig config = stubConfig();
-        config.getUser().setActiveMillis(13 * HOUR_MS);
-        tracker = new TimeTracker(config);
-
-        assertTrue(tracker.isDonationUnlocked());
-        assertTrue(tracker.isDonationActive());
-    }
-
-    @Test
-    @DisplayName("a future snooze suppresses the active layer even when time-unlocked")
-    void snoozeSuppressesActiveLayer() {
-        GlobalConfig config = stubConfig();
-        config.getUser().setActiveMillis(13 * HOUR_MS);
-        config.getUser().setDonationSnoozeUntil(System.currentTimeMillis() + HOUR_MS);
-        tracker = new TimeTracker(config);
-
-        assertTrue(tracker.isDonationUnlocked(), "time gate is still crossed");
-        assertFalse(tracker.isDonationActive(), "but snooze suppresses the banner");
-    }
-
-    @Test
-    @DisplayName("snoozeDonation() stamps a far-future suppression and persists it")
-    void snoozeStampsFutureAndSuppresses() {
-        GlobalConfig config = stubConfig();
-        config.getUser().setActiveMillis(13 * HOUR_MS);
-        tracker = new TimeTracker(config);
-        assertTrue(tracker.isDonationActive());
-
-        long before = System.currentTimeMillis();
-        tracker.snoozeDonation();
-
-        assertTrue(config.getUser().getDonationSnoozeUntil() > before + 47L * HOUR_MS,
-                "snooze reaches ~48h into the future");
-        assertFalse(tracker.isDonationActive(), "active layer is suppressed after snooze");
-    }
-
-    @Test
-    @DisplayName("an expired snooze no longer suppresses the active layer")
-    void expiredSnoozeIsIgnored() {
-        GlobalConfig config = stubConfig();
-        config.getUser().setActiveMillis(13 * HOUR_MS);
-        config.getUser().setDonationSnoozeUntil(System.currentTimeMillis() - HOUR_MS);
-        tracker = new TimeTracker(config);
-
-        assertTrue(tracker.isDonationActive());
-    }
-
-    @Test
-    @DisplayName("onActiveChange fires when a snooze expires mid-session (60s checkpoint)")
-    void activeChangeFiresOnSnoozeExpiry() {
-        GlobalConfig config = stubConfig();
-        config.getUser().setActiveMillis(13 * HOUR_MS);
-        config.getUser().setDonationSnoozeUntil(System.currentTimeMillis() + HOUR_MS);
-        tracker = new TimeTracker(config);
-        assertFalse(tracker.isDonationActive(), "starts suppressed by the snooze");
-
-        AtomicInteger fired = new AtomicInteger();
-        tracker.onActiveChange(fired::incrementAndGet);
-
-        // The snooze expires while the session keeps running...
-        config.getUser().setDonationSnoozeUntil(System.currentTimeMillis() - 1);
-        // ...and the next periodic checkpoint notices the flip.
-        tracker.creditAndPersist(60_000L);
-
-        assertTrue(tracker.isDonationActive());
-        assertEquals(1, fired.get(), "expiry is announced exactly once");
-
-        tracker.creditAndPersist(60_000L);   // no further flip: no re-fire
-        assertEquals(1, fired.get());
-    }
-
-    @Test
-    @DisplayName("onActiveChange fires when snoozeDonation() suppresses the layer")
-    void activeChangeFiresOnSnooze() {
-        GlobalConfig config = stubConfig();
-        config.getUser().setActiveMillis(13 * HOUR_MS);
-        tracker = new TimeTracker(config);
-        assertTrue(tracker.isDonationActive());
-
-        AtomicInteger fired = new AtomicInteger();
-        tracker.onActiveChange(fired::incrementAndGet);
-
-        tracker.snoozeDonation();
-        assertEquals(1, fired.get());
-    }
-
-    // ---- supporter marker (gold heart) ---------------------------------------
-
-    @Test
-    @DisplayName("markDonationClicked persists the flag once and is idempotent")
-    void donationClickGildsOnce() {
-        GlobalConfig config = stubConfig();
-        tracker = new TimeTracker(config);
-        assertFalse(tracker.isDonationClicked());
-
-        tracker.markDonationClicked();
-        assertTrue(tracker.isDonationClicked());
-        assertTrue(config.getUser().isDonationClicked(), "flag lands in the persisted config");
-
-        tracker.markDonationClicked();   // second click: no state change
-        assertTrue(tracker.isDonationClicked());
-    }
-
-    @Test
-    @DisplayName("a sleep-sized delta is clamped, so overnight suspend can't unlock")
-    void sleepDoesNotUnlock() {
-        GlobalConfig config = stubConfig();
-        config.getUser().setActiveMillis(11 * HOUR_MS); // close, but > 1 cap to cross
+        config.getUser().setActiveMillis(11 * HOUR_MS);
         tracker = new TimeTracker(config);
 
         tracker.creditAndPersist(8 * HOUR_MS); // machine slept; clamped to the cap
 
         assertEquals(11 * HOUR_MS + FLUSH_CAP_MS, tracker.getActiveMillis());
-        assertFalse(tracker.isDonationUnlocked());
     }
 }

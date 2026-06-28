@@ -5,6 +5,8 @@ import com.google.inject.Injector;
 import de.bsommerfeld.wsbg.terminal.agent.AgentCoordinator;
 import de.bsommerfeld.wsbg.terminal.agent.OllamaServerManager;
 import de.bsommerfeld.wsbg.terminal.agent.PassiveMonitorService;
+import de.bsommerfeld.wsbg.terminal.currency.EurUsdMonitorService;
+import de.bsommerfeld.wsbg.terminal.feargreed.FearGreedMonitorService;
 import de.bsommerfeld.wsbg.terminal.db.AgentRepository;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
 import de.bsommerfeld.wsbg.terminal.ui.config.AppModule;
@@ -108,8 +110,17 @@ public final class AppMain {
         SwingUtilities.invokeLater(() -> {
             BrowserWindow window = injector.getInstance(BrowserWindow.class);
             window.setOnClose(() -> shutdownServices(injector));
-            window.open(entryUrl);
+            window.open(entryUrl);  // brings JCEF up SYNCHRONOUSLY on this (EDT) thread
             windowRef[0] = window;  // hand to the raise listener
+
+            // CEF's native init is now done, on the AWT thread, via the window. ONLY
+            // now start the background hidden-browser fetchers (FX, Fear&Greed). As
+            // eager singletons they used to poll from their own threads during DI
+            // construction — before the window — and the first fetch would trigger
+            // JCEF init off the AWT thread, racing the EDT init and deadlocking the
+            // window (no UI, unkillable JVM). Deferring them here removes the race.
+            injector.getInstance(EurUsdMonitorService.class).start();
+            injector.getInstance(FearGreedMonitorService.class).start();
         });
     }
 

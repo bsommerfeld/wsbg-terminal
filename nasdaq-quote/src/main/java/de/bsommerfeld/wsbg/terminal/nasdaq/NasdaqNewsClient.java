@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * NASDAQ.com per-symbol news as a {@link NewsSource} for the triangulation pool.
@@ -41,9 +42,18 @@ public class NasdaqNewsClient implements NewsSource {
     private static final DateTimeFormatter CREATED = DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.US);
     private static final ObjectMapper JSON = new ObjectMapper();
 
+    /** Successful responses live this long — mirrors Yahoo's news cache, which NASDAQ lacked. */
+    private static final long CACHE_TTL_SECONDS = 120;
+    /** Always page the max so one fetch serves every caller's {@code limit} (own=6, related=2). */
+    private static final int MAX_PAGE = 20;
+
     private final String userAgent = BrowserUserAgent.random();
     private final WebFetcher fetcher;
     private final Duration timeout = Duration.ofSeconds(10);
+    private final Map<String, Cached> cache = new ConcurrentHashMap<>();
+
+    /** A cached news response with the epoch-second it was stored. */
+    private record Cached(List<RawNewsItem> items, long storedAt) {}
 
     public NasdaqNewsClient() {
         this(new DirectWebFetcher());
@@ -67,23 +77,39 @@ public class NasdaqNewsClient implements NewsSource {
         if (sym.indexOf('.') >= 0 || sym.indexOf('-') >= 0 || sym.indexOf('=') >= 0 || sym.startsWith("^")) {
             return List.of();
         }
+        // Cache by the bare symbol (never by limit): we always fetch the max page and
+        // sub-list per caller, so a symbol that is one subject's own ticker (limit 6)
+        // AND several others' related ticker (limit 2) hits the network only ONCE per
+        // TTL. Without this the same ticker was re-fetched per mention (MU twice, BX
+        // five times in one observed tick).
+        long now = Instant.now().getEpochSecond();
+        Cached hit = cache.get(sym);
+        if (hit != null && now - hit.storedAt() < CACHE_TTL_SECONDS) {
+            return trim(hit.items(), limit);
+        }
         try {
-            String url = BASE + "&limit=" + Math.min(limit, 20)
+            String url = BASE + "&limit=" + MAX_PAGE
                     + "&q=" + URLEncoder.encode(sym + "|STOCKS", StandardCharsets.UTF_8);
             WebResponse resp = fetcher.fetch(url,
                     Map.of("User-Agent", userAgent, "Accept", "application/json"), timeout);
             if (resp.status() != 200) {
                 LOG.info("[NASDAQ news] {} → HTTP {}", sym, resp.status());
-                return List.of();
+                return List.of(); // a transient failure isn't cached — retry next call
             }
             List<RawNewsItem> items = parse(resp.body(), sym);
+            cache.put(sym, new Cached(items, now));
             LOG.info("[NASDAQ news] {} → {} items", sym, items.size());
-            return items;
+            return trim(items, limit);
         } catch (Exception e) {
             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
             LOG.debug("NASDAQ news {} failed: {}", sym, e.getMessage());
             return List.of();
         }
+    }
+
+    /** The newest {@code limit} of a cached/just-fetched list, as an unmodifiable view. */
+    private static List<RawNewsItem> trim(List<RawNewsItem> items, int limit) {
+        return items.size() <= limit ? items : List.copyOf(items.subList(0, limit));
     }
 
     /** Shape: {@code {"data":{"rows":[{title,url,publisher,created,ago,…}],"totalrecords":N}}}. */

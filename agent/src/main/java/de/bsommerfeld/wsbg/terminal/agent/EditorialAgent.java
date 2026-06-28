@@ -90,6 +90,15 @@ public class EditorialAgent {
      */
     private static final int EXTRACT_CHUNK_SIZE = 25;
 
+    /**
+     * How often a unit whose compose came back unusable (a model whiff, not a
+     * deliberate redundant-empty) is re-queued before it's parked. 1 = give it ONE
+     * more tick; a second consecutive whiff parks it (stop re-dirtying, but never
+     * mark it covered) so it simply waits for fresh evidence to wake it again. A
+     * persistently-unpublishable unit can't then loop the model every tick forever.
+     */
+    private static final int MAX_COMPOSE_RETRIES = 1;
+
     private final AgentBrain brain;
     private final ClusterRegistry clusterRegistry;
     private final AgentRepository agentRepository;
@@ -100,6 +109,12 @@ public class EditorialAgent {
     private final SubjectAttributor attributor;
     /** Feed-wide subject store — the editorial atom in prod after the #2 cutover. */
     private final SubjectRegistry subjectRegistry;
+    /**
+     * Per-unit count of consecutive compose whiffs (cleared on a publish, a
+     * redundant-empty, or once the unit is parked). Bounds {@link #MAX_COMPOSE_RETRIES}.
+     * Touched only from the single-threaded coordinator tick, so a plain map is safe.
+     */
+    private final Map<String, Integer> composeRetries = new java.util.HashMap<>();
     /**
      * Live config — read fresh each tick, NOT cached in the ctor, so the Settings
      * view (SettingsBridge mutates this same instance) takes effect without a
@@ -184,11 +199,11 @@ public class EditorialAgent {
      */
     public UnitDraft composeUnit(SubjectUnit unit) {
         if (unit == null) {
-            return new UnitDraft("", "", null, false, false, "", 0, List.of(), false);
+            return new UnitDraft("", "", null, false, false, "", 0, List.of(), false, false);
         }
         ChatModel model = brain.getAgentModel();
         if (model == null) {
-            return new UnitDraft(unit.id, unit.canonicalName(), null, false, false, "", 0, List.of(), false);
+            return new UnitDraft(unit.id, unit.canonicalName(), null, false, false, "", 0, List.of(), false, false);
         }
         String sys = PromptLoader.load("headline-compose-unit")
                 .replace("{{LANGUAGE}}", brain.getUserLanguage().displayName())
@@ -202,14 +217,21 @@ public class EditorialAgent {
         Draft draft = null;
         boolean isUpdate = false;
         boolean salvaged = false;
+        boolean redundant = false;
         List<String> citedNews = List.of();
         JsonNode obj = firstHeadlineObject(parseJson(text));
         if (obj != null) {
             draft = toDraft(obj);
             isUpdate = "UPDATE".equalsIgnoreCase(obj.path("mode").asText(""));
             citedNews = readStrings(obj.path("sourceNewsIds"));
+            // An explicit empty headline in a well-formed object is the model's
+            // deliberate "nothing new to add" — the prompt's one legal empty (a
+            // redundant UPDATE). That is NOT a whiff: it only holds against THIS unit's
+            // own prior headlines (each compose sees only its own story), so a unit with
+            // no priors never lands here legitimately. Park it silently, never retry it.
+            redundant = draft == null && obj.has("headline");
         }
-        if (draft == null) {
+        if (draft == null && !redundant) {
             for (JsonNode o : salvageObjects(text)) {
                 Draft d = toDraft(o);
                 if (d != null) {
@@ -221,7 +243,7 @@ public class EditorialAgent {
                 }
             }
         }
-        if (draft == null) {
+        if (draft == null && !redundant) {
             // Even balanced-object salvage failed (a stray quote like "ticker": null"
             // breaks the object) — recover the headline + scalars by regex so the line
             // isn't lost.
@@ -231,12 +253,24 @@ public class EditorialAgent {
                 salvaged = true;
             }
         }
+        // A whiff = no usable headline AND the model did NOT deliberately say "redundant"
+        // (no headline key at all / wrong shape / garbage). This is the silent-loss case:
+        // surface the raw reply — like the extraction warn — so the next one is
+        // diagnosable, and let the caller re-queue the unit once before parking it.
+        boolean whiffed = draft == null && !redundant;
+        if (whiffed) {
+            String raw = text == null ? "" : text.strip();
+            LOG.warn("[COMPOSE] no usable headline for unit {} ({}) — brief={} chars; raw reply: {}",
+                    unit.id, unit.canonicalName(), user.length(),
+                    raw.length() > 400 ? raw.substring(0, 400) + "…" : raw);
+        }
+
         // A price/% in the line is UNVERIFIED when we have no resolved market data
         // for the subject — it then comes from the room's own post/screenshot, not
         // from Yahoo. The wire is a sentiment mirror; user numbers aren't facts.
         boolean unverified = mentionsPrice(draft) && !unitHasVerifiedPrice(unit);
         return new UnitDraft(unit.id, unit.canonicalName(), draft, isUpdate, salvaged, text, elapsed,
-                citedNews, unverified);
+                citedNews, unverified, whiffed);
     }
 
     /** The headline object out of a parsed reply: a bare object, or the first of a {@code {"headlines":[…]}} wrapper. */
@@ -466,7 +500,8 @@ public class EditorialAgent {
      * be shown with an "unverified" marker, never as fact.
      */
     public record UnitDraft(String unitId, String label, Draft draft, boolean isUpdate,
-            boolean salvaged, String raw, long ms, List<String> citedNewsIds, boolean unverified) {}
+            boolean salvaged, String raw, long ms, List<String> citedNewsIds, boolean unverified,
+            boolean whiffed) {}
 
     /**
      * The production editorial tick. One dirty signal (a cluster that gained fresh
@@ -548,10 +583,14 @@ public class EditorialAgent {
                 seedHeadlineHistoryIfEmpty(u);
                 UnitDraft ud = composeUnit(u);
                 Draft d = ud.draft();
-                if (d == null || d.headline() == null || d.headline().isBlank()) continue;
+                if (d == null || d.headline() == null || d.headline().isBlank()) {
+                    handleEmptyCompose(u, ud);
+                    continue;
+                }
                 // Unchanged from the unit's last line → nothing to publish.
-                if (d.headline().equalsIgnoreCase(u.lastHeadlineText())) continue;
+                if (d.headline().equalsIgnoreCase(u.lastHeadlineText())) { composeRetries.remove(u.id); continue; }
                 if (headlineWriter.publishUnit(u, d)) {
+                    composeRetries.remove(u.id); // story moved on → fresh retry budget
                     u.addHeadline(d.headline(), ud.isUpdate(), d.sentiment());
                     u.markNewsCovered(ud.citedNewsIds());
                     published++;
@@ -562,6 +601,34 @@ public class EditorialAgent {
         }
         LOG.info("[AGENT] tick done: {} cluster(s) → {} theme + {} unit headline(s) ({} dirty unit(s))",
                 dirtyClusterIds.size(), themePublished, published, toCompose.size());
+    }
+
+    /**
+     * Handles a dirty unit whose compose yielded no usable headline. A deliberate
+     * redundant-empty (this unit's own story is fully covered) is the normal,
+     * intended case — drop it silently and clear its retry budget. A whiff (the model
+     * returned nothing usable, {@link UnitDraft#whiffed()}) must NOT be lost: re-queue
+     * the unit for the next tick up to {@link #MAX_COMPOSE_RETRIES}; a further whiff
+     * <em>parks</em> it — no more re-dirty, and crucially never marked covered — so it
+     * sleeps until the attributor re-dirties it with genuinely fresh evidence. This is
+     * a mechanical robustness fallback, not an editorial skip: the desk always wanted
+     * the line, the model just failed to emit one.
+     */
+    private void handleEmptyCompose(SubjectUnit u, UnitDraft ud) {
+        if (!ud.whiffed()) { // deliberate redundant-empty → nothing to say, nothing to retry
+            composeRetries.remove(u.id);
+            return;
+        }
+        int fails = composeRetries.merge(u.id, 1, Integer::sum);
+        if (fails <= MAX_COMPOSE_RETRIES) {
+            subjectRegistry.markDirty(u.id); // re-queue for the next tick
+            LOG.info("[COMPOSE] unit {} whiffed (attempt {}/{}) — re-queued for next tick",
+                    u.id, fails, MAX_COMPOSE_RETRIES + 1);
+        } else {
+            composeRetries.remove(u.id); // park: stop re-dirtying; fresh evidence will re-wake it
+            LOG.warn("[COMPOSE] unit {} parked after {} whiffs — waits for fresh evidence (not covered)",
+                    u.id, fails);
+        }
     }
 
     /**

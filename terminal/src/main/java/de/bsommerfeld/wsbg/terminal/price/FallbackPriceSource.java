@@ -78,12 +78,12 @@ public class FallbackPriceSource implements PriceSource {
         // Source preference is decided by the CET clock window, NOT by the (unreliable)
         // per-venue timestamp: L&S reports a "fresh"-looking stamp even when it's closed.
         PriceWindow window = windowAt(ZonedDateTime.now(BERLIN));
-        if (window == PriceWindow.GAP) {
-            // 02:00–07:30: US after-hours is over and the German venues aren't open —
-            // nothing trades. Skip every price call (save the requests) and keep the
-            // last snapshot the unit already holds; news still flows.
-            return Optional.empty();
-        }
+        // Even in the 02:00–07:30 GAP (all venues closed) we do NOT bail: the
+        // ticker sources (NASDAQ/Yahoo) still return a last close, and the
+        // freshest-stale fallback below hands it back marked stale — so a unit
+        // first seen cold during the gap still shows a (dimmed) last price instead
+        // of no number at all. German venues stay out of the gap (lsSession=false),
+        // so the gap only costs the two ticker calls, not the L&S name lookup.
         boolean lsSession = window == PriceWindow.LS;
         // L&S + Tradegate are German EQUITY venues: only in their session, and never a
         // crypto (BTC-USD), index (^IXIC) or FX pair (it mis-matches a same-named German

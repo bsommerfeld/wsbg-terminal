@@ -1,16 +1,13 @@
 // 3-position state machine: slides only ever travel right → center → left.
 //
-// The markets strip is the default; the donate banner is the gated, rotated-in
-// slide. Once unlocked (12 h gate, see main.js), the banner is shown sparingly:
-// capped to AD_CAP impressions per session and with a markets gap that *widens*
-// each time, so a terminal left open all day thins the banner out instead of
-// nagging every 5 minutes. Hovering the footer holds whatever slide is up.
+// The markets strip is the default; the donate banner rotates in on a flat,
+// slightly randomised 5–10 min cadence (see marketsWindow), shows for AD_MS,
+// then the markets strip returns — no time gate, no per-session cap, no
+// widening. Hovering the footer holds whatever slide is up.
 
-const BASE_MARKETS_MS = 5 * 60 * 1000;   // markets gap before the first banner
-const MAX_MARKETS_MS  = 20 * 60 * 1000;  // ceiling for the widening gap
-const AD_MS           = 30 * 1000;       // banner visible window
-const AD_CAP          = 6;               // max banner impressions per session
-const WIDEN_FACTOR    = 1.5;             // each successive markets gap widens gently
+const MIN_MARKETS_MS = 5 * 60 * 1000;    // shortest gap between two banners
+const MAX_MARKETS_MS = 10 * 60 * 1000;   // longest gap between two banners
+const AD_MS          = 30 * 1000;        // banner visible window
 
 // How long a hover-hold survives without fresh pointer activity. Under OSR
 // the browser's idea of "pointer is over the footer" can go stale forever
@@ -56,7 +53,7 @@ const ICONS = {
   },
 };
 
-// Reciprocity stats from the donation-gate payload (TimeTracker's persisted
+// Reciprocity stats from the donation-stats payload (TimeTracker's persisted
 // bookkeeping). Lines containing {hours}/{opens} placeholders are kept out of
 // the rotation until the corresponding stat has arrived.
 let stats = { hours: null, opens: null };
@@ -151,20 +148,12 @@ const AD_MESSAGES = [
   },
 ];
 
-// Donation gate: the ad slide stays out of the rotation until the backend
-// (TimeTracker) reports enough cumulative active time (~12 h) AND no snooze is
-// active. Defaults to false so a fresh user never sees the donation banner
-// before the gate message arrives. Flipped by setDonationAdEnabled() from the
-// 'donation-gate' socket handler in main.js.
-let adEnabled = false;
 let holdUntil = 0;     // hover-hold deadline (see HOVER_HOLD_MS)
-let adShown = 0;       // banner impressions this session (frequency cap)
-export function setDonationAdEnabled(on) { adEnabled = !!on; }
 
-// Markets gap before the next banner, widening with each impression so the
-// banner thins out over a long session instead of reappearing every 5 minutes.
+// Random gap before the next banner, 5–10 min. A flat, slightly randomised
+// cadence reads as organic without any widening/throttle machinery.
 function marketsWindow() {
-  return Math.min(MAX_MARKETS_MS, BASE_MARKETS_MS * Math.pow(WIDEN_FACTOR, adShown));
+  return MIN_MARKETS_MS + Math.random() * (MAX_MARKETS_MS - MIN_MARKETS_MS);
 }
 
 // Lines whose placeholder stat hasn't arrived yet stay out of the pool.
@@ -205,7 +194,6 @@ function renderAd(host, msg) {
     a.href = msg.link.href;
     a.target = '_blank';
     a.rel = 'noopener';
-    a.dataset.donate = '';   // engaging the banner link snoozes the nudge layer
     a.textContent = msg.link.label;
     const arrow = document.createElement('span');
     arrow.className = 'arrow';
@@ -262,14 +250,6 @@ export function initSlideCycle() {
       timer = setTimeout(swap, 1000);
       return;
     }
-    // Donation gate + frequency cap: while locked, or once this session's
-    // banner quota is spent, keep the markets strip up and re-arm with the
-    // (widening) markets window.
-    if (visible === 'markets' && (!adEnabled || adShown >= AD_CAP)) {
-      clearTimeout(timer);
-      timer = setTimeout(swap, marketsWindow());
-      return;
-    }
     const incoming = visible === 'markets' ? ad : markets;
     const outgoing = visible === 'markets' ? markets : ad;
     // Rotate the ad copy right before it snaps off-screen-right, so
@@ -281,8 +261,8 @@ export function initSlideCycle() {
       move(incoming, 'center');
     }, 20);
 
-    if (incoming === ad) { adShown++; fireAdVisibility(true); }
-    else { fireAdVisibility(false); }
+    if (incoming === ad) fireAdVisibility(true);
+    else fireAdVisibility(false);
 
     visible = visible === 'markets' ? 'ad' : 'markets';
     clearTimeout(timer);

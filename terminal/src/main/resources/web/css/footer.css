@@ -51,13 +51,36 @@ html[data-platform="other"] .footer-settings { display: inline-flex; }
 }
 .cell.exch .cd { color: var(--red); font-variant-numeric: tabular-nums; }
 
-.cell.exch.pre  .dot,
+/* Vor-/Nachbörse render an icon instead of a plain dot (sunrise/sunset),
+   so the two amber/blue phases never read as the same glowing pip. The
+   dot box becomes a tinted mask; the soft glow follows the icon shape via
+   drop-shadow (a box-shadow ring would draw a rectangle around the mask). */
+.cell.exch.pre .dot,
 .cell.exch.post .dot {
-  background: var(--amber); box-shadow: 0 0 6px var(--amber);
-  animation: pulse-amber 2.4s infinite;
+  width: 16px; height: 16px; border-radius: 0;
+  box-shadow: none; animation: none;
+  -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  -webkit-mask-position: center;  mask-position: center;
+  -webkit-mask-size: contain;     mask-size: contain;
 }
-.cell.exch.pre  .cd,
-.cell.exch.post .cd { color: var(--amber); }
+
+/* Vorbörse (pre-market) — sunrise, amber. */
+.cell.exch.pre .dot {
+  background: var(--amber);
+  filter: drop-shadow(0 0 2px var(--amber));
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17 18a5 5 0 0 0-10 0'/%3E%3Cline x1='12' y1='2' x2='12' y2='9'/%3E%3Cline x1='4.22' y1='10.22' x2='5.64' y2='11.64'/%3E%3Cline x1='1' y1='18' x2='3' y2='18'/%3E%3Cline x1='21' y1='18' x2='23' y2='18'/%3E%3Cline x1='18.36' y1='11.64' x2='19.78' y2='10.22'/%3E%3Cline x1='23' y1='22' x2='1' y2='22'/%3E%3Cpolyline points='8 6 12 2 16 6'/%3E%3C/svg%3E");
+          mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17 18a5 5 0 0 0-10 0'/%3E%3Cline x1='12' y1='2' x2='12' y2='9'/%3E%3Cline x1='4.22' y1='10.22' x2='5.64' y2='11.64'/%3E%3Cline x1='1' y1='18' x2='3' y2='18'/%3E%3Cline x1='21' y1='18' x2='23' y2='18'/%3E%3Cline x1='18.36' y1='11.64' x2='19.78' y2='10.22'/%3E%3Cline x1='23' y1='22' x2='1' y2='22'/%3E%3Cpolyline points='8 6 12 2 16 6'/%3E%3C/svg%3E");
+}
+.cell.exch.pre .cd { color: var(--amber); }
+
+/* Nachbörse (after-hours) — sunset, dark blue (à la TradingView). */
+.cell.exch.post .dot {
+  background: var(--blue-deep);
+  filter: drop-shadow(0 0 2px var(--blue-deep));
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17 18a5 5 0 0 0-10 0'/%3E%3Cline x1='12' y1='9' x2='12' y2='2'/%3E%3Cline x1='4.22' y1='10.22' x2='5.64' y2='11.64'/%3E%3Cline x1='1' y1='18' x2='3' y2='18'/%3E%3Cline x1='21' y1='18' x2='23' y2='18'/%3E%3Cline x1='18.36' y1='11.64' x2='19.78' y2='10.22'/%3E%3Cline x1='23' y1='22' x2='1' y2='22'/%3E%3Cpolyline points='16 5 12 9 8 5'/%3E%3C/svg%3E");
+          mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17 18a5 5 0 0 0-10 0'/%3E%3Cline x1='12' y1='9' x2='12' y2='2'/%3E%3Cline x1='4.22' y1='10.22' x2='5.64' y2='11.64'/%3E%3Cline x1='1' y1='18' x2='3' y2='18'/%3E%3Cline x1='21' y1='18' x2='23' y2='18'/%3E%3Cline x1='18.36' y1='11.64' x2='19.78' y2='10.22'/%3E%3Cline x1='23' y1='22' x2='1' y2='22'/%3E%3Cpolyline points='16 5 12 9 8 5'/%3E%3C/svg%3E");
+}
+.cell.exch.post .cd { color: var(--blue-deep); }
 
 .cell.exch.main .dot {
   background: var(--green); box-shadow: 0 0 6px var(--green);

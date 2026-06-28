@@ -36,12 +36,13 @@ import de.bsommerfeld.wsbg.terminal.ui.TimeTracker;
 import de.bsommerfeld.wsbg.terminal.ui.net.CefWebFetcher;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.ArchiveQueryBridge;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.CommandBridge;
-import de.bsommerfeld.wsbg.terminal.ui.bridge.DonationGatePublisher;
+import de.bsommerfeld.wsbg.terminal.ui.bridge.DonationStatsPublisher;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.EurUsdPublisher;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.FearGreedPublisher;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.FjNewsPublisher;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.HeadlinePublisher;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.MarketHoursPublisher;
+import de.bsommerfeld.wsbg.terminal.ui.bridge.OsAppearancePublisher;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.RedditHealthPublisher;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.SettingsBridge;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.UpdateService;
@@ -104,8 +105,8 @@ public class AppModule extends AbstractModule {
             bind(AgentCoordinator.class).asEagerSingleton();
             bind(PassiveMonitorService.class).asEagerSingleton();
             // TimeTracker must be eager so it starts its start/interval/stop
-            // checkpointing at boot; DonationGatePublisher reads it to gate the
-            // footer donation banner.
+            // checkpointing at boot; DonationStatsPublisher reads it for the
+            // footer banner's reciprocity copy.
             bind(TimeTracker.class).asEagerSingleton();
 
             // Publishers must be eager so they subscribe to the event bus
@@ -115,7 +116,7 @@ public class AppModule extends AbstractModule {
             bind(FjNewsPublisher.class).asEagerSingleton();
             bind(MarketHoursPublisher.class).asEagerSingleton();
             bind(RedditHealthPublisher.class).asEagerSingleton();
-            bind(DonationGatePublisher.class).asEagerSingleton();
+            bind(DonationStatsPublisher.class).asEagerSingleton();
             // EurUsdMonitorService must come before EurUsdPublisher so the
             // publisher can register its listener against a running poll loop.
             bind(EurUsdMonitorService.class).asEagerSingleton();
@@ -137,6 +138,10 @@ public class AppModule extends AbstractModule {
             // (headline mode, language, auto-update) and
             // pushes the current snapshot on client open.
             bind(SettingsBridge.class).asEagerSingleton();
+            // Pushes the host OS dark/light appearance to the page. Needed because the
+            // OSR Chromium can't see the real macOS theme, so the page's matchMedia
+            // can't drive "follow system". Eager so it polls + pushes from boot.
+            bind(OsAppearancePublisher.class).asEagerSingleton();
             // In-app update indicator (titlebar green button) + relaunch, the
             // counterpart to the launcher's auto-update opt-out. Eager so its
             // hub handlers + the periodic check are live from boot.

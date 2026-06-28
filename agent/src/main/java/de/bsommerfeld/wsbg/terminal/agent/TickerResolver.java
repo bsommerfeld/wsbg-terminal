@@ -276,9 +276,9 @@ public final class TickerResolver {
                         .ifPresent(s -> snaps.put(key, s));
             }
             // Own tickers are fully the chain's job — it already includes Yahoo as a
-            // fallback, and intentionally returns nothing in the 02:00–07:30 gap so the
-            // unit keeps its last snapshot. So the Yahoo batch covers ONLY related/context
-            // tickers; never re-fetch an own ticker the chain deliberately skipped.
+            // fallback (and in the overnight gap returns the last close, marked stale,
+            // rather than nothing). So the Yahoo batch covers ONLY related/context
+            // tickers; never re-fetch an own ticker the chain already handled.
             LinkedHashSet<String> ownTickers = new LinkedHashSet<>();
             for (Pending p : pending) {
                 if (p.ownTicker != null) ownTickers.add(p.ownTicker.toUpperCase(Locale.ROOT));

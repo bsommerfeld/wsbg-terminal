@@ -11,6 +11,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
@@ -26,7 +27,15 @@ public class FearGreedMonitorService {
 
     private static final Logger LOG = LoggerFactory.getLogger(FearGreedMonitorService.class);
 
-    private static final long INITIAL_DELAY_SECONDS = 8;
+    /**
+     * Zero initial delay: the first fetch fires immediately on the scheduler's
+     * daemon thread at construction. It runs off-thread (never blocks the DI
+     * graph) and the fan-out is harmless if the publisher's listener isn't wired
+     * yet — the reading is cached in {@link #current} and re-sent on the next
+     * {@code onClientOpen}. So the gauge fills as soon as CNN answers instead of
+     * waiting out a fixed delay after boot.
+     */
+    private static final long INITIAL_DELAY_SECONDS = 0;
     /** 5 min — CNN refreshes the composite only periodically through the session. */
     private static final long POLL_INTERVAL_SECONDS = 300;
 
@@ -41,18 +50,29 @@ public class FearGreedMonitorService {
 
     private final AtomicReference<FearGreedIndex> current = new AtomicReference<>(null);
     private final List<Consumer<FearGreedIndex>> listeners = new CopyOnWriteArrayList<>();
+    private final AtomicBoolean started = new AtomicBoolean(false);
 
     public FearGreedMonitorService() {
-        this(new FearGreedClient());
+        this(new FearGreedClient(), true);
     }
 
     @Inject
     public FearGreedMonitorService(FearGreedClient client) {
-        this.client = client;
-        start();
+        // Production (Guice) path: build WITHOUT auto-starting. The poll loop hits the
+        // browser transport, which must not trigger JCEF's native init off the AWT
+        // thread before the window does — that races the EDT init and deadlocks the
+        // window. AppMain calls start() only after the window has brought CEF up.
+        this(client, false);
     }
 
-    private void start() {
+    FearGreedMonitorService(FearGreedClient client, boolean autoStart) {
+        this.client = client;
+        if (autoStart) start();
+    }
+
+    /** Starts the poll loop. Idempotent — safe whether called by the ctor or AppMain. */
+    public void start() {
+        if (!started.compareAndSet(false, true)) return;
         LOG.info("Starting Fear&Greed monitor (interval: {} seconds)", POLL_INTERVAL_SECONDS);
         scheduler.scheduleAtFixedRate(this::tick,
                 INITIAL_DELAY_SECONDS, POLL_INTERVAL_SECONDS, TimeUnit.SECONDS);

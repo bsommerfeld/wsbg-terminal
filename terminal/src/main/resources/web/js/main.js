@@ -3,11 +3,11 @@
 
 import { Socket } from './bridge/socket.js';
 import { initTitlebar } from './chrome/titlebar.js';
-import { initTheme } from './chrome/theme.js';
+import { initTheme, setSystemAppearance } from './chrome/theme.js';
 import { initSettings } from './chrome/settings.js';
 import { initFooter } from './chrome/footer.js';
-import { setDonationAdEnabled, setDonationStats } from './chrome/slider.js';
-import { initDonate, setSupporter } from './chrome/donate.js';
+import { setDonationStats } from './chrome/slider.js';
+import { initDonate } from './chrome/donate.js';
 import { initExternalLinks } from './chrome/external-links.js';
 import { initKeyboardCopy } from './chrome/copy-fx.js';
 import { renderHeadlines, initHeadlineScroll, appendArchivePage } from './widgets/reddit.js';
@@ -75,21 +75,24 @@ socket.on('reddit-status', payload => {
   live.textContent = state === 'DEGRADED' ? 'Defekt' : 'Live';
 });
 
-// Donation gate: the footer ad only joins the slide rotation once the backend
-// TimeTracker reports enough cumulative active time (~12 h). Payload:
-// { unlocked, supporter, activeHours, openCount } — supporter gilds the heart,
-// the stats personalise the banner copy ({hours}/{opens} placeholders).
-socket.on('donation-gate', payload => {
-  setDonationAdEnabled(!!(payload && payload.unlocked));
+// Donation stats: the footer banner runs unconditionally now; this payload only
+// carries the reciprocity figures the copy personalises with. Payload:
+// { activeHours, openCount } → the {hours}/{opens} placeholders.
+socket.on('donation-stats', payload => {
   setDonationStats(payload);
-  setSupporter(!!(payload && payload.supporter));
+});
+
+// Host OS dark/light appearance, detected on the Java side. Authoritative for
+// "follow system" because the OSR browser can't read the real macOS theme itself.
+socket.on('os-appearance', payload => {
+  if (payload) setSystemAppearance(payload.mode);
 });
 
 initTheme();
 initSettings(socket);
 initTitlebar(socket);
 initFooter();
-initDonate(socket);
+initDonate();
 initExternalLinks(socket);
 initKeyboardCopy();
 
