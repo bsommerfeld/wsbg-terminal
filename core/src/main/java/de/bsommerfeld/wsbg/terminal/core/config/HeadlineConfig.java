@@ -22,6 +22,13 @@ public class HeadlineConfig {
             + "richer thread-narrative coverage.")
     private boolean clusterThemeEnabled = false;
 
+    @Key("analyze-images")
+    @Comment("When true (default), the editorial pipeline runs image/vision analysis on "
+            + "Reddit threads and comment images, feeding the descriptions into clustering "
+            + "and headlines. When false, all vision is skipped for faster, text-only "
+            + "headlines (no image cache-warming, no gallery transcription).")
+    private boolean analyzeImages = true;
+
     @Key("news-coverage-enabled")
     @Comment("When true, a news item already cited by one headline of a subject is "
             + "hidden from that subject's next compose (no two headlines on the same "
@@ -43,6 +50,14 @@ public class HeadlineConfig {
 
     public void setClusterThemeEnabled(boolean clusterThemeEnabled) {
         this.clusterThemeEnabled = clusterThemeEnabled;
+    }
+
+    public boolean isAnalyzeImages() {
+        return analyzeImages;
+    }
+
+    public void setAnalyzeImages(boolean analyzeImages) {
+        this.analyzeImages = analyzeImages;
     }
 
     public boolean isNewsCoverageEnabled() {

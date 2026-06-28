@@ -29,6 +29,8 @@ import java.util.Map;
  * <ul>
  *   <li>{@code headlinesMode} — {@code "all"} (cluster-theme + subjects) vs
  *       {@code "tickers"} (subjects only, default) → {@code headlines.cluster-theme-enabled};</li>
+ *   <li>{@code analyzeImages} — boolean (default true) → {@code headlines.analyze-images}
+ *       (off = skip all vision for fast text-only headlines);</li>
  *   <li>{@code language} — {@code "de"}/{@code "en"} → {@code user.language};</li>
  *   <li>{@code autoUpdate} — boolean → {@code user.auto-update}.</li>
  * </ul>
@@ -140,6 +142,10 @@ public final class SettingsBridge {
                 config.getUser().setAutoUpdate(asBool(value));
                 return true;
             }
+            case "analyzeImages" -> {
+                config.getHeadlines().setAnalyzeImages(asBool(value));
+                return true;
+            }
             default -> {
                 LOG.debug("settings: ignoring unknown key '{}'", key);
                 return false;
@@ -160,6 +166,7 @@ public final class SettingsBridge {
     static Map<String, Object> snapshot(GlobalConfig config) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("headlinesMode", config.getHeadlines().isClusterThemeEnabled() ? "all" : "tickers");
+        out.put("analyzeImages", config.getHeadlines().isAnalyzeImages());
         out.put("language", config.getUser().getLanguage());
         out.put("autoUpdate", config.getUser().isAutoUpdate());
         return out;

@@ -19,6 +19,7 @@ class SettingsBridgeTest {
         GlobalConfig c = new GlobalConfig();
         var snap = SettingsBridge.snapshot(c);
         assertEquals("tickers", snap.get("headlinesMode"), "cluster-theme off ⇒ NUR TICKER");
+        assertEquals(true, snap.get("analyzeImages"), "image analysis on by default");
         assertEquals("de", snap.get("language"));
         assertEquals(true, snap.get("autoUpdate"));
     }
@@ -41,6 +42,11 @@ class SettingsBridgeTest {
         assertFalse(c.getUser().isAutoUpdate());
         assertTrue(SettingsBridge.apply(c, "autoUpdate", "true"));
         assertTrue(c.getUser().isAutoUpdate());
+
+        assertTrue(SettingsBridge.apply(c, "analyzeImages", false));
+        assertFalse(c.getHeadlines().isAnalyzeImages());
+        assertTrue(SettingsBridge.apply(c, "analyzeImages", "true"));
+        assertTrue(c.getHeadlines().isAnalyzeImages());
     }
 
     @Test

@@ -46,11 +46,14 @@ export function initSettings(socket) {
 
   // ---- Config-backed settings (over the socket) ----
   const mode = view.querySelector('.js-headlines-mode');
+  const images = view.querySelector('.js-analyze-images');
   const lang = view.querySelector('.js-language');
   const auto = view.querySelector('.js-auto-update');
 
   if (mode) mode.addEventListener('change',
       () => socket.send('settings', { command: 'set', key: 'headlinesMode', value: mode.value }));
+  if (images) images.addEventListener('change',
+      () => socket.send('settings', { command: 'set', key: 'analyzeImages', value: images.checked }));
   if (lang) lang.addEventListener('change',
       () => socket.send('settings', { command: 'set', key: 'language', value: lang.value }));
   if (auto) auto.addEventListener('change',
@@ -60,6 +63,7 @@ export function initSettings(socket) {
   socket.on('settings', payload => {
     if (!payload) return;
     if (mode && payload.headlinesMode) mode.value = payload.headlinesMode;
+    if (images && typeof payload.analyzeImages === 'boolean') images.checked = payload.analyzeImages;
     if (lang && payload.language) lang.value = payload.language;
     if (auto && typeof payload.autoUpdate === 'boolean') auto.checked = payload.autoUpdate;
   });

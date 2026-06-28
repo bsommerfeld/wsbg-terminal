@@ -419,12 +419,18 @@ public class PassiveMonitorService {
             // is. The remaining slides are prefetched async below and shown
             // in the report when ready — so a 10-slide DD deck reaches the
             // headline without stalling clustering.
+            // Vision is opt-out (headlines.analyze-images, read live so the toggle
+            // takes effect without a restart). When off, visionFutures stays empty:
+            // every assign() below falls through to a "" vision block (title+body
+            // only) and the fire-and-forget cache-warm paths below no-op too.
             Map<String, CompletableFuture<String>> visionFutures = new HashMap<>();
-            for (RedditThread t : updates) {
-                List<String> urls = t.imageUrls();
-                if (urls.isEmpty()) continue;
-                visionFutures.put(t.id(),
-                        CompletableFuture.supplyAsync(() -> describeAll(urls), visionExecutor));
+            if (analyzeImages()) {
+                for (RedditThread t : updates) {
+                    List<String> urls = t.imageUrls();
+                    if (urls.isEmpty()) continue;
+                    visionFutures.put(t.id(),
+                            CompletableFuture.supplyAsync(() -> describeAll(urls), visionExecutor));
+                }
             }
 
             // Cache-warm the images that don't feed the embedding — gallery
@@ -473,6 +479,7 @@ public class PassiveMonitorService {
      * being computed by the thread's vision future, so we start past them.
      */
     private void prefetchThreadImages(RedditThread t) {
+        if (!analyzeImages()) return; // vision opt-out — no cache-warming
         List<String> urls = t.imageUrls();
         for (int i = EMBED_GALLERY_IMAGES; i < urls.size(); i++) {
             String url = urls.get(i);
@@ -493,6 +500,7 @@ public class PassiveMonitorService {
      * the scrape loop or the agent.
      */
     private void prefetchCommentImages(String threadId) {
+        if (!analyzeImages()) return; // vision opt-out — no cache-warming
         List<RedditComment> comments = repository.getCommentsForThread(threadId, 0);
         if (comments.isEmpty()) return;
         comments.stream()
@@ -504,6 +512,17 @@ public class PassiveMonitorService {
                         visionExecutor.submit(() -> brain.describeImage(url));
                     }
                 });
+    }
+
+    /**
+     * Live read of the {@code headlines.analyze-images} opt-out (default true).
+     * Read per scan, never cached at construction, because {@code SettingsBridge}
+     * mutates the in-memory {@link GlobalConfig} — so toggling it off takes effect
+     * on the next scan with no restart. When false, all vision is skipped (no
+     * {@code describeAll} embedding block, no fire-and-forget cache-warming).
+     */
+    private boolean analyzeImages() {
+        return config.getHeadlines().isAnalyzeImages();
     }
 
     /**
