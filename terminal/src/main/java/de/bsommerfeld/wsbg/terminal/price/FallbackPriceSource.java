@@ -22,7 +22,9 @@ import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
 /**
@@ -50,6 +52,20 @@ public class FallbackPriceSource implements PriceSource {
     /** A snapshot whose quote is younger than this counts as fresh/live. */
     private static final long FRESH_SECONDS = 30 * 60;
 
+    /**
+     * Resolved snapshots (EUR price + day-move + spark) are reused this long. The same
+     * ticker is priced once per subject AND re-priced across many clusters within one
+     * editorial tick, and each miss is up to TWO slow browser fetches (info + chart) per
+     * source — that serial I/O was the dominant per-tick blocker. Mirrors the NASDAQ news
+     * cache; off-hours the underlying value doesn't move, in-session 2 min is well inside
+     * the venues' own refresh cadence. Keyed by ticker (or name).
+     */
+    private static final long CACHE_TTL_SECONDS = 120;
+    private final Map<String, Cached> cache = new ConcurrentHashMap<>();
+
+    /** A cached resolved snapshot with the epoch-second it was stored. */
+    private record Cached(MarketSnapshot snapshot, long storedAt) {}
+
     private final LangSchwarzClient ls;
     private final TradegateClient tradegate;
     private final NasdaqClient nasdaq;
@@ -74,6 +90,17 @@ public class FallbackPriceSource implements PriceSource {
     @Override
     public Optional<MarketSnapshot> snapshot(PriceRef ref) {
         if (ref == null) return Optional.empty();
+
+        // Reuse a recently resolved snapshot before touching any venue — this is the
+        // big per-tick saving (the same ticker is otherwise re-fetched for every cluster
+        // that names it, each a multi-second browser round-trip).
+        String key = cacheKey(ref);
+        if (key != null) {
+            Cached hit = cache.get(key);
+            if (hit != null && Instant.now().getEpochSecond() - hit.storedAt() < CACHE_TTL_SECONDS) {
+                return Optional.of(hit.snapshot());
+            }
+        }
 
         // Source preference is decided by the CET clock window, NOT by the (unreliable)
         // per-venue timestamp: L&S reports a "fresh"-looking stamp even when it's closed.
@@ -158,8 +185,10 @@ public class FallbackPriceSource implements PriceSource {
         return !t.isBefore(from) && t.isBefore(toExclusive);
     }
 
-    /** Logs which source won (price + currency + venue + freshness) and returns it. */
+    /** Logs which source won (price + currency + venue + freshness), caches it, and returns it. */
     private Optional<MarketSnapshot> win(PriceRef ref, MarketSnapshot s, boolean live) {
+        String key = cacheKey(ref);
+        if (key != null) cache.put(key, new Cached(s, Instant.now().getEpochSecond()));
         LOG.info("[PRICE] {} → {} {} via {} ({})",
                 ref.hasTicker() ? ref.ticker() : ref.name(),
                 String.format(Locale.ROOT, "%.2f", s.price()),
@@ -167,6 +196,13 @@ public class FallbackPriceSource implements PriceSource {
                 s.exchangeName() == null ? "?" : s.exchangeName(),
                 live ? "live" : "stale/last-close");
         return Optional.of(s);
+    }
+
+    /** Cache identity: the ticker (upper) when present, else the normalised name; null if neither. */
+    private static String cacheKey(PriceRef ref) {
+        if (ref.hasTicker()) return ref.ticker().toUpperCase(Locale.ROOT);
+        if (ref.hasName()) return "name:" + ref.name().trim().toLowerCase(Locale.ROOT);
+        return null;
     }
 
     private MarketSnapshot yahooSnapshot(String ticker) {
