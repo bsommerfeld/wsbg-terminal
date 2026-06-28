@@ -194,21 +194,49 @@ public class EditorialAgent {
      * Returns the resolved subjects for the trace.
      */
     public List<ResolvedSubject> attributeCluster(String clusterId, SubjectRegistry registry) {
+        List<ResolvedSubject> resolved = resolveClusterSubjects(clusterId);
+        attributeResolved(clusterId, registry, resolved);
+        return resolved;
+    }
+
+    /**
+     * Step 3a — the <b>lock-free</b> half of {@link #attributeCluster}: builds the
+     * cluster brief, extracts subjects (one LLM call), and resolves each to a Yahoo
+     * ticker/news/price. Touches <b>no</b> shared {@link SubjectRegistry} state, so the
+     * #3 pipeline runs it <em>outside</em> the registry lock — the 10–120 s of LLM +
+     * Yahoo work then no longer blocks the merge cadence (which would otherwise starve
+     * ALL headline composition behind one in-flight extract). Returns the resolved
+     * subjects to hand to {@link #attributeResolved}.
+     *
+     * <p>Extraction must see ALL evidence (no coverage filter) — a subject named only
+     * in an older, already-covered comment must still be extracted and attributed, or
+     * its unit would stop accumulating. Coverage is applied at COMPOSE time (the per-unit
+     * brief / the cluster-theme brief), never at extraction.
+     */
+    public List<ResolvedSubject> resolveClusterSubjects(String clusterId) {
         ChatModel model = brain.getAgentModel();
         InvestigationCluster cluster = clusterRegistry.getCluster(clusterId);
         if (model == null || cluster == null) return List.of();
 
-        // Extraction must see ALL evidence (no coverage filter) — a subject named
-        // only in an older, already-covered comment must still be extracted and
-        // attributed, or its unit would stop accumulating. Coverage is applied at
-        // COMPOSE time (the cluster-theme brief in publishClusterTheme, and the
-        // per-unit brief), never at extraction.
         String brief = reportBuilder.buildReportData(cluster);
         Subjects subjects = extractSubjects(model, cluster, brief);
         int[] relatedAlloc = distributeRelated(subjects.names().size(), RELATED_BUDGET, RELATED_PER_SUBJECT);
-        List<ResolvedSubject> resolved = tickerResolver.resolveAll(subjects.names(), relatedAlloc);
+        return tickerResolver.resolveAll(subjects.names(), relatedAlloc);
+    }
+
+    /**
+     * Step 3b — the registry-mutating half of {@link #attributeCluster}: folds the
+     * already-resolved subjects into the feed-wide {@link SubjectRegistry}. This is the
+     * <b>only</b> part that touches shared registry state ({@code findOrCreate} +
+     * {@code markDirty}), so the #3 pipeline holds the registry READ lock around just
+     * this call — shared across concurrent prep folds, exclusive with the merge
+     * cadence's write lock. A no-op if the cluster vanished since it was resolved.
+     */
+    public void attributeResolved(String clusterId, SubjectRegistry registry, List<ResolvedSubject> resolved) {
+        if (resolved == null) return;
+        InvestigationCluster cluster = clusterRegistry.getCluster(clusterId);
+        if (cluster == null) return;
         attributor.attribute(registry, cluster, resolved);
-        return resolved;
     }
 
     /**

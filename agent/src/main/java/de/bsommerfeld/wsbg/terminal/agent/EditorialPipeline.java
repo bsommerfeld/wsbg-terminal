@@ -61,11 +61,13 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  * ConcurrentHashMap-backed, so concurrent {@code attribute} from many prep threads is
  * safe on its own. The one unsafe interaction is {@code attribute} overlapping
  * {@code mergeIdentities} (absorb could miss a concurrently-added evidence ref). A
- * {@link ReentrantReadWriteLock} (fair, to avoid writer starvation) closes that window:
- * prep attributes hold the READ lock (shared — they run concurrently), the merge cadence
- * holds the WRITE lock (exclusive). The read lock spans the whole prep call for simplicity;
- * the merge then waits at most one in-flight extract, which is acceptable for a background
- * cadence.
+ * {@link ReentrantReadWriteLock} (fair) closes that window: the registry fold
+ * ({@link EditorialAgent#attributeResolved}) holds the READ lock (shared — folds run
+ * concurrently), the merge cadence holds the WRITE lock (exclusive). Crucially the lock
+ * wraps ONLY the fold, NOT the preceding extract (LLM) + resolve (Yahoo)
+ * ({@link EditorialAgent#resolveClusterSubjects}) — those touch no registry state and run
+ * lock-free, so a 10–120 s extract never blocks the merge cadence (which enqueues every
+ * compose job). The merge waits at most one in-flight, millisecond-long fold.
  */
 @Singleton
 public final class EditorialPipeline {
@@ -78,6 +80,14 @@ public final class EditorialPipeline {
     private static final int WORKER_THREADS = 2;
     /** How often duplicate identities are folded + freshly-dirty units enqueued. */
     private static final long MERGE_INTERVAL_MS = 1_500;
+    /**
+     * How often stale evidence is rolled back to the context-relief window. This is the
+     * documented pipeline step 1 ({@link EditorialAgent#runUnitTick} did it inline); the
+     * #3 producer/consumer path replaces that serial tick, so the prune has its own
+     * cadence here — without it a {@link SubjectUnit}'s evidence map grows unbounded for
+     * the whole process lifetime (and is serialized whole into the snapshot).
+     */
+    private static final long PRUNE_INTERVAL_MS = 60_000;
 
     private final EditorialAgent agent;
     private final ClusterRegistry clusterRegistry;
@@ -120,8 +130,10 @@ public final class EditorialPipeline {
         for (int i = 0; i < WORKER_THREADS; i++) workerPool.submit(this::workerLoop);
         mergeScheduler.scheduleWithFixedDelay(this::mergeAndEnqueue,
                 MERGE_INTERVAL_MS, MERGE_INTERVAL_MS, TimeUnit.MILLISECONDS);
-        LOG.info("EditorialPipeline started ({} prep, {} compose worker(s), merge every {}ms).",
-                PREP_THREADS, WORKER_THREADS, MERGE_INTERVAL_MS);
+        mergeScheduler.scheduleWithFixedDelay(this::pruneContent,
+                PRUNE_INTERVAL_MS, PRUNE_INTERVAL_MS, TimeUnit.MILLISECONDS);
+        LOG.info("EditorialPipeline started ({} prep, {} compose worker(s), merge every {}ms, prune every {}ms).",
+                PREP_THREADS, WORKER_THREADS, MERGE_INTERVAL_MS, PRUNE_INTERVAL_MS);
     }
 
     // -- submission (called by AgentCoordinator after debounce) --
@@ -155,13 +167,17 @@ public final class EditorialPipeline {
         LOG.info("[PIPE] prep START cluster {} (prep-active={})", clusterId, active);
         int themeEnqueued = 0;
         try {
-            List<ResolvedSubject> resolved;
-            // READ lock spans the whole attribute (extract + resolve + fold): the LLM/Yahoo
-            // work doesn't touch the registry, but folding does, and the read lock simply
-            // keeps it from overlapping a merge. Reads are shared, so prep stays parallel.
+            // extract (LLM) + resolve (Yahoo) hold NO registry lock — they touch no shared
+            // registry state, so they run fully parallel across prep threads AND, crucially,
+            // never block the merge cadence that enqueues every compose job. The old wide
+            // read lock spanned this 10–120 s of work and (fair mode) let the periodic merge
+            // writer stall every other prep behind it → the whole pipeline went serial.
+            List<ResolvedSubject> resolved = agent.resolveClusterSubjects(clusterId);
+            // Only the registry FOLD takes the read lock: shared with other preps' folds,
+            // exclusive with the merge write lock. Millisecond critical section.
             registryLock.readLock().lock();
             try {
-                resolved = agent.attributeCluster(clusterId, subjectRegistry);
+                agent.attributeResolved(clusterId, subjectRegistry, resolved);
             } finally {
                 registryLock.readLock().unlock();
             }
@@ -223,6 +239,33 @@ public final class EditorialPipeline {
             }
         } catch (Exception e) {
             LOG.warn("EditorialPipeline: merge/enqueue failed: {}", e.getMessage());
+        }
+    }
+
+    // -- context relief: roll stale evidence back to the TTL window --
+
+    /**
+     * Prunes each {@link SubjectUnit}'s evidence older than the snapshot TTL (the same
+     * rolling window the lab + restore use). Story-memory (published headlines) is kept
+     * forever — only evidence is rolled back. Held under the WRITE lock so it is exclusive
+     * with the concurrent prep folds, matching {@link #mergeAndEnqueue}'s contract. Runs
+     * on the single merge thread, so it never overlaps a merge.
+     */
+    private void pruneContent() {
+        if (!running) return;
+        long ttlMinutes = config.getReddit().getSnapshotTtlMinutes();
+        if (ttlMinutes <= 0) return; // TTL disabled → unbounded retention is intentional
+        try {
+            int pruned;
+            registryLock.writeLock().lock();
+            try {
+                pruned = subjectRegistry.pruneContentOlderThan(java.time.Duration.ofMinutes(ttlMinutes));
+            } finally {
+                registryLock.writeLock().unlock();
+            }
+            if (pruned > 0) LOG.debug("[PIPE] context-relief: pruned {} stale evidence ref(s)", pruned);
+        } catch (Exception e) {
+            LOG.warn("EditorialPipeline: context-relief prune failed: {}", e.getMessage());
         }
     }
 
