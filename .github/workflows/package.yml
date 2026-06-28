@@ -54,6 +54,25 @@ jobs:
     runs-on: ${{ matrix.os }}
     name: Build ${{ matrix.jpackage-type }}
 
+    # Secrets surfaced as job-level env so step `if:` conditions can gate on them
+    # reliably — a step's OWN env block is not readable in that same step's `if:`,
+    # which silently skipped the old signing step. All of these are OPTIONAL: with
+    # none set, the build still produces an UNSIGNED installer (dev/test releases).
+    env:
+      # Developer ID Application certificate (.p12 with its private key), base64-encoded,
+      # plus the .p12 export password. THIS is the cert type required to ship a DMG
+      # outside the App Store — not "Apple Development" / "Mac App Distribution".
+      APPLE_CERT_BASE64: ${{ secrets.APPLE_CERT_BASE64 }}
+      APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+      # Notarization — provide EITHER the App Store Connect API-key trio …
+      AC_API_KEY_P8_BASE64: ${{ secrets.AC_API_KEY_P8_BASE64 }}
+      AC_API_KEY_ID: ${{ secrets.AC_API_KEY_ID }}
+      AC_API_ISSUER_ID: ${{ secrets.AC_API_ISSUER_ID }}
+      # … OR the Apple-ID + app-specific-password trio. Whichever set is present is used.
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -112,22 +131,41 @@ jobs:
           echo "JAR_NAME=$JAR_NAME" >> $GITHUB_ENV
           echo "APP_VERSION=$APP_VERSION" >> $GITHUB_ENV
 
-      - name: Install macOS Developer Certificate
-        if: matrix.os == 'macos-latest' && env.MAC_CERTS != ''
-        env:
-          MAC_CERTS: ${{ secrets.APPLE_CERT_BASE64 }}
-          MAC_CERTS_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+      - name: Import Developer ID certificate (macOS)
+        if: matrix.os == 'macos-latest' && env.APPLE_CERT_BASE64 != ''
         run: |
-          CERT_PATH=$RUNNER_TEMP/build_certificate.p12
-          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          CERT_PATH="$RUNNER_TEMP/developer_id.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          KEYCHAIN_PW="$(openssl rand -base64 24)"  # ephemeral, throwaway
 
-          echo "$MAC_CERTS" | base64 --decode > "$CERT_PATH"
-          security create-keychain -p "actions" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "actions" "$KEYCHAIN_PATH"
-          security default-keychain -s "$KEYCHAIN_PATH"
-          security import "$CERT_PATH" -P "$MAC_CERTS_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "actions" "$KEYCHAIN_PATH"
+          echo -n "$APPLE_CERT_BASE64" | base64 --decode > "$CERT_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PW" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"   # stay unlocked for the whole job
+          security unlock-keychain -p "$KEYCHAIN_PW" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -P "$APPLE_CERT_PASSWORD" \
+            -k "$KEYCHAIN_PATH" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PW" "$KEYCHAIN_PATH" >/dev/null
+          # CRITICAL fix vs. the old setup: codesign / jpackage search the keychain
+          # SEARCH LIST, not the default keychain. Add ours to it (keeping the login
+          # keychain) — without this, signing reported "no identity found" and no-op'd.
+          security list-keychains -d user -s "$KEYCHAIN_PATH" \
+            $(security list-keychains -d user | sed s/\"//g)
+
+          # Resolve the exact Developer ID Application identity to hand jpackage — no
+          # extra secret needed, and a clear error if the wrong cert type was imported.
+          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" \
+            | sed -n 's/.*"\(Developer ID Application: .*\)".*/\1/p' | head -1)
+          if [ -z "$IDENTITY" ]; then
+            echo "::error::No 'Developer ID Application' identity in the imported .p12. Export a"
+            echo "::error::Developer ID Application certificate WITH its private key as .p12 (base64 -> APPLE_CERT_BASE64)."
+            security find-identity -v -p codesigning "$KEYCHAIN_PATH" || true
+            exit 1
+          fi
+          echo "Signing identity: $IDENTITY"
+          echo "MAC_SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+          echo "MAC_SIGN_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
 
       # Build the bundled runtime ourselves. jpackage's own jlink run adds
       # --strip-native-commands, which REMOVES bin/java(.exe) from the runtime.
@@ -155,32 +193,76 @@ jobs:
       - name: Package with JPackage
         shell: bash
         run: |
-          EXTRA_ARGS=""
+          # Build the arg list as an ARRAY so values containing spaces (the signing
+          # identity, the app name) never word-split — the old flat $EXTRA_ARGS would
+          # have mangled a "Developer ID Application: Name (TEAM)" identity.
+          # --runtime-image bundles OUR jlink image (with bin/java) verbatim, so
+          # AppLauncher can spawn the terminal even on a machine with no system Java.
+          ARGS=(
+            --type "${{ matrix.jpackage-type }}"
+            --name "WSBG Terminal"
+            --app-version "$APP_VERSION"
+            --vendor "bsommerfeld"
+            --description "WSBG Terminal Launcher"
+            --input jpackage-input
+            --main-jar "$JAR_NAME"
+            --main-class de.bsommerfeld.updater.launcher.LauncherMain
+            --runtime-image runtime-image
+            --java-options "--enable-preview"
+            --icon "${{ matrix.icon-file }}"
+            --dest jpackage-output
+          )
           if [ "${{ matrix.jpackage-type }}" = "exe" ]; then
             # Desktop shortcut + Start Menu entry so the app is immediately visible
-            EXTRA_ARGS="--win-shortcut --win-menu --win-menu-group WSBG"
+            ARGS+=( --win-shortcut --win-menu --win-menu-group WSBG )
           fi
-          if [ "${{ matrix.os }}" = "macos-latest" ] && [ -n "${{ secrets.APPLE_CERT_BASE64 }}" ]; then
-            EXTRA_ARGS="$EXTRA_ARGS --mac-sign"
+          if [ "${{ matrix.os }}" = "macos-latest" ] && [ -n "$MAC_SIGN_IDENTITY" ]; then
+            # Hardened-runtime Developer ID signing (jpackage adds --options runtime +
+            # a secure timestamp), identity + keychain made explicit so codesign never
+            # guesses. --mac-signing-key-user-name wants the part AFTER the prefix.
+            ARGS+=(
+              --mac-sign
+              --mac-signing-key-user-name "${MAC_SIGN_IDENTITY#Developer ID Application: }"
+              --mac-signing-keychain "$MAC_SIGN_KEYCHAIN"
+            )
+          fi
+          jpackage "${ARGS[@]}"
+
+      # Notarize + staple the signed DMG. Signing ALONE is not enough: a downloaded,
+      # quarantined DMG is blocked by Gatekeeper unless Apple has notarized it and the
+      # ticket is stapled (so it validates offline). This is the step that was missing —
+      # without it, even a correctly signed build still showed "cannot check it for
+      # malicious software". Runs only when a cert is configured; self-skips (build still
+      # succeeds, unsigned/un-notarized) when no notarization credentials are present.
+      - name: Notarize and staple (macOS)
+        if: matrix.jpackage-type == 'dmg' && env.APPLE_CERT_BASE64 != ''
+        shell: bash
+        run: |
+          DMG=$(find jpackage-output -maxdepth 1 -type f -name '*.dmg' | head -1)
+          if [ -z "$DMG" ]; then echo "::error::no DMG found to notarize"; exit 1; fi
+
+          if [ -n "$AC_API_KEY_P8_BASE64" ] && [ -n "$AC_API_KEY_ID" ] && [ -n "$AC_API_ISSUER_ID" ]; then
+            KEY="$RUNNER_TEMP/AuthKey.p8"
+            echo -n "$AC_API_KEY_P8_BASE64" | base64 --decode > "$KEY"
+            echo "Notarizing via App Store Connect API key…"
+            xcrun notarytool submit "$DMG" \
+              --key "$KEY" --key-id "$AC_API_KEY_ID" --issuer "$AC_API_ISSUER_ID" --wait
+          elif [ -n "$APPLE_ID" ] && [ -n "$APPLE_APP_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
+            echo "Notarizing via Apple ID + app-specific password…"
+            xcrun notarytool submit "$DMG" \
+              --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+          else
+            echo "::warning::Cert is set but NO notarization credentials — the DMG is signed but"
+            echo "::warning::NOT notarized, so Gatekeeper still warns on download. Add the App Store"
+            echo "::warning::Connect API-key trio OR the Apple-ID trio to notarize. Skipping."
+            exit 0
           fi
 
-          # --runtime-image: bundle OUR jlink image (with bin/java) verbatim, so
-          # AppLauncher can spawn the terminal with the shipped runtime even on a
-          # machine that has no system Java.
-          jpackage \
-            --type ${{ matrix.jpackage-type }} \
-            --name "WSBG Terminal" \
-            --app-version "$APP_VERSION" \
-            --vendor "bsommerfeld" \
-            --description "WSBG Terminal Launcher" \
-            --input jpackage-input \
-            --main-jar "$JAR_NAME" \
-            --main-class de.bsommerfeld.updater.launcher.LauncherMain \
-            --runtime-image runtime-image \
-            --java-options "--enable-preview" \
-            --icon ${{ matrix.icon-file }} \
-            --dest jpackage-output \
-            $EXTRA_ARGS
+          # Staple the Apple ticket into the DMG so it validates without a network call,
+          # then verify. A non-zero notarytool/stapler exit fails the build on purpose.
+          xcrun stapler staple "$DMG"
+          xcrun stapler validate "$DMG"
+          echo "Notarized + stapled: $DMG"
 
       # Rename to a STABLE, version-less, platform-named asset so the CHANGELOG /
       # release-body download links (/releases/latest/download/<name>) resolve to
