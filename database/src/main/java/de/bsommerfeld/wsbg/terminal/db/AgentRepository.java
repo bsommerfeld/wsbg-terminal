@@ -64,7 +64,7 @@ public class AgentRepository {
     public void saveHeadline(String clusterId, String headline, String context) {
         saveHeadline(clusterId, headline, context, List.of(), List.of(),
                 HeadlineHighlight.NORMAL, null, List.of(), null, List.of(), null,
-                HeadlineSentiment.NEUTRAL, null);
+                HeadlineSentiment.NEUTRAL, null, false);
     }
 
     /**
@@ -93,6 +93,10 @@ public class AgentRepository {
      *                         {@code null} when there's no ticker or Yahoo
      *                         had nothing — the UI renders the quote strip
      *                         only when present
+     * @param newsEnriched     {@code true} when the editorial compose leaned on
+     *                         at least one external news item (cited a
+     *                         {@code [news:ID]}) — a quiet provenance hint the UI
+     *                         surfaces as a subtle "News" tag
      */
     public void saveHeadline(String clusterId, String headline, String context,
             List<String> sourceThreadIds, List<String> sourceCommentIds,
@@ -100,7 +104,7 @@ public class AgentRepository {
             List<HeadlineSubject> subjects,
             Double priceMovePercent,
             List<String> sectors, String assetClass, HeadlineSentiment sentiment,
-            MarketSnapshot snapshot) {
+            MarketSnapshot snapshot, boolean newsEnriched) {
         long now = System.currentTimeMillis() / 1000;
         HeadlineRecord record = new HeadlineRecord(
                 clusterId,
@@ -116,7 +120,8 @@ public class AgentRepository {
                 sectors == null ? List.of() : List.copyOf(sectors),
                 assetClass,
                 sentiment == null ? HeadlineSentiment.NEUTRAL : sentiment,
-                snapshot);
+                snapshot,
+                newsEnriched);
         headlineCache.add(record);
         sessionIdentities.add(identity(record)); // live-published this session
         if (archive != null) archive.append(record); // permanent — survives everything
@@ -231,6 +236,26 @@ public class AgentRepository {
             List<String> sectors,
             String assetClass,
             HeadlineSentiment sentiment,
-            MarketSnapshot snapshot) {
+            MarketSnapshot snapshot,
+            boolean newsEnriched) {
+
+        /**
+         * Backward-compatible constructor for records that predate the
+         * {@code newsEnriched} provenance flag — old archive (JSONL) lines and
+         * existing call sites that never knew about news enrichment. Defaults the
+         * flag to {@code false}. (Jackson loads old lines via the canonical
+         * constructor; a missing {@code newsEnriched} primitive simply stays
+         * {@code false}, so the archive is read-compatible without this ctor — it
+         * exists only to keep positional Java call sites compiling.)
+         */
+        public HeadlineRecord(String clusterId, String headline, String context,
+                long createdAt, List<String> sourceThreadIds, List<String> sourceCommentIds,
+                HeadlineHighlight highlight, String tickerSymbol, List<HeadlineSubject> subjects,
+                Double priceMovePercent, List<String> sectors, String assetClass,
+                HeadlineSentiment sentiment, MarketSnapshot snapshot) {
+            this(clusterId, headline, context, createdAt, sourceThreadIds, sourceCommentIds,
+                    highlight, tickerSymbol, subjects, priceMovePercent, sectors, assetClass,
+                    sentiment, snapshot, false);
+        }
     }
 }

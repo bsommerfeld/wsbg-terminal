@@ -3,6 +3,7 @@ package de.bsommerfeld.wsbg.terminal.ui;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
 import de.bsommerfeld.wsbg.terminal.agent.AgentCoordinator;
+import de.bsommerfeld.wsbg.terminal.agent.EditorialPipeline;
 import de.bsommerfeld.wsbg.terminal.agent.OllamaServerManager;
 import de.bsommerfeld.wsbg.terminal.agent.PassiveMonitorService;
 import de.bsommerfeld.wsbg.terminal.currency.EurUsdMonitorService;
@@ -179,6 +180,7 @@ public final class AppMain {
         // Stop the scan loop first so no fresh embedding/vision/cluster work is
         // submitted while the services it depends on are torn down below.
         safeStop(() -> injector.getInstance(PassiveMonitorService.class).shutdown(), "PassiveMonitorService");
+        safeStop(() -> injector.getInstance(EditorialPipeline.class).shutdown(), "EditorialPipeline");
         safeStop(() -> injector.getInstance(AgentCoordinator.class).shutdown(), "AgentCoordinator");
         safeStop(() -> injector.getInstance(RedditRepository.class).shutdown(), "RedditRepository");
         safeStop(() -> injector.getInstance(AgentRepository.class).shutdown(), "AgentRepository");

@@ -41,6 +41,7 @@ import java.util.regex.Pattern;
 import java.util.Comparator;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Turns the dirty clusters of one editorial tick into published headlines via a
@@ -112,9 +113,29 @@ public class EditorialAgent {
     /**
      * Per-unit count of consecutive compose whiffs (cleared on a publish, a
      * redundant-empty, or once the unit is parked). Bounds {@link #MAX_COMPOSE_RETRIES}.
-     * Touched only from the single-threaded coordinator tick, so a plain map is safe.
+     * Concurrent: under the #3 pipeline {@code composeAndPublishUnit} runs on several
+     * compose worker threads (for DIFFERENT units), and {@code merge}'s atomic ops here
+     * must stay race-free.
      */
-    private final Map<String, Integer> composeRetries = new java.util.HashMap<>();
+    private final Map<String, Integer> composeRetries = new ConcurrentHashMap<>();
+
+    /**
+     * Caps how many editorial model calls run at once across BOTH tiers of the #3
+     * pipeline — prep-stage subject extraction AND compose-worker headline writing both
+     * funnel through {@link #chat}, and this single {@link EditorialAgent} singleton is
+     * where they meet. Held only around the {@code model.chat} call so the two tiers
+     * together never exceed Ollama's {@code NUM_PARALLEL=2}. (In the single-threaded
+     * fallback tick it's uncontended, near-zero overhead.)
+     */
+    private static final int LLM_PARALLELISM = 2;
+    private final java.util.concurrent.Semaphore llmSlots =
+            new java.util.concurrent.Semaphore(LLM_PARALLELISM);
+
+    /** Free LLM permits right now (0..{@value #LLM_PARALLELISM}) — for the pipeline's contention logging. */
+    public int availableLlmPermits() {
+        return llmSlots.availablePermits();
+    }
+
     /**
      * Live config — read fresh each tick, NOT cached in the ctor, so the Settings
      * view (SettingsBridge mutates this same instance) takes effect without a
@@ -580,27 +601,64 @@ public class EditorialAgent {
         int published = 0;
         for (SubjectUnit u : toCompose) {
             try {
-                seedHeadlineHistoryIfEmpty(u);
-                UnitDraft ud = composeUnit(u);
-                Draft d = ud.draft();
-                if (d == null || d.headline() == null || d.headline().isBlank()) {
-                    handleEmptyCompose(u, ud);
-                    continue;
-                }
-                // Unchanged from the unit's last line → nothing to publish.
-                if (d.headline().equalsIgnoreCase(u.lastHeadlineText())) { composeRetries.remove(u.id); continue; }
-                if (headlineWriter.publishUnit(u, d)) {
-                    composeRetries.remove(u.id); // story moved on → fresh retry budget
-                    u.addHeadline(d.headline(), ud.isUpdate(), d.sentiment());
-                    u.markNewsCovered(ud.citedNewsIds());
-                    published++;
-                }
+                if (composeAndPublishUnit(u)) published++;
             } catch (Exception e) {
                 LOG.warn("EditorialAgent: unit {} failed: {}", u.id, e.getMessage());
             }
         }
         LOG.info("[AGENT] tick done: {} cluster(s) → {} theme + {} unit headline(s) ({} dirty unit(s))",
                 dirtyClusterIds.size(), themePublished, published, toCompose.size());
+    }
+
+    /**
+     * Composes + publishes ONE headline for a dirty {@link SubjectUnit} (seed story
+     * memory → {@link #composeUnit} → QA-write), routing the empty/whiff/redundant
+     * cases through {@link #handleEmptyCompose}. Extracted from {@link #runUnitTick}
+     * so the #3 producer/consumer pipeline's compose worker and the fallback batch
+     * tick drive the <em>exact same</em> per-unit logic.
+     *
+     * <p>Thread-safe for parallel workers on DIFFERENT units: per-unit state is
+     * synchronized on the unit, {@link #composeRetries} is concurrent, and the model
+     * call inside {@link #composeUnit} is semaphore-gated. Returns whether a headline
+     * was actually published (false on empty/whiff/redundant/unchanged/QA-reject).
+     */
+    public boolean composeAndPublishUnit(SubjectUnit u) {
+        if (u == null) return false;
+        seedHeadlineHistoryIfEmpty(u);
+        UnitDraft ud = composeUnit(u);
+        Draft d = ud.draft();
+        if (d == null || d.headline() == null || d.headline().isBlank()) {
+            handleEmptyCompose(u, ud);
+            return false;
+        }
+        // Unchanged from the unit's last line → nothing to publish.
+        if (d.headline().equalsIgnoreCase(u.lastHeadlineText())) {
+            composeRetries.remove(u.id);
+            return false;
+        }
+        // News-enriched is DETERMINISTIC: a headline counts as news-enriched when its
+        // SubjectUnit actually carried ≥1 attached news item at compose time — NOT when
+        // the 4B model happened to cite one in sourceNewsIds (which it rarely does, so
+        // the old `!ud.citedNewsIds().isEmpty()` left the "News" tag almost always off).
+        if (headlineWriter.publishUnit(u, d, !u.news().isEmpty())) {
+            composeRetries.remove(u.id); // story moved on → fresh retry budget
+            u.addHeadline(d.headline(), ud.isUpdate(), d.sentiment());
+            u.markNewsCovered(ud.citedNewsIds());
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Compose-worker entry point for a cluster THEME job (#3): composes + publishes the
+     * cluster's theme headline from the prep-stage resolved subjects (passed in so the
+     * worker does no I/O), delegating to the unchanged {@link #publishClusterTheme}.
+     * Returns how many lines were published (0 or 1).
+     */
+    public int runThemeJob(String clusterId, List<ResolvedSubject> resolved) {
+        ChatModel model = brain.getAgentModel();
+        if (model == null) return 0;
+        return publishClusterTheme(model, clusterId, resolved);
     }
 
     /**
@@ -1098,9 +1156,17 @@ public class EditorialAgent {
         }
         List<ChatMessage> messages = List.of(
                 SystemMessage.from(systemPrompt), UserMessage.from(userMessage));
-        ChatResponse response = model.chat(ChatRequest.builder().messages(messages).build());
-        AiMessage ai = response.aiMessage();
-        return ai == null || ai.text() == null ? "" : ai.text();
+        // Gate the actual model call so prep extraction + worker composition together
+        // never exceed Ollama's NUM_PARALLEL=2 (see llmSlots). Uninterruptible: a daemon
+        // worker shut down mid-acquire would otherwise abandon a permit it never took.
+        llmSlots.acquireUninterruptibly();
+        try {
+            ChatResponse response = model.chat(ChatRequest.builder().messages(messages).build());
+            AiMessage ai = response.aiMessage();
+            return ai == null || ai.text() == null ? "" : ai.text();
+        } finally {
+            llmSlots.release();
+        }
     }
 
     /**

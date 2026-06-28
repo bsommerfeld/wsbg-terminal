@@ -459,6 +459,24 @@ html[data-theme="dark"] .row .body .meta .provenance .prov-yahoo {
    Just dim the whole strip — no label (the hover title explains it). */
 .row .body .meta .quote.stale { opacity: .55; }
 
+/* "News" provenance tag — a quiet hint that the compose stage leaned on external
+   news, pinned to the bottom-right of the meta row (roughly the price strip's
+   weight). Deliberately low-contrast: muted colour, no coloured pill, no border —
+   it must never compete with the IMPORTANT red wash or the price figure. The
+   right margin clears the bottom-right ".thread-open" (↗) corner on hover. */
+.row .body .meta .news-tag {
+  margin-left: auto;                 /* push to the right end of the meta row */
+  margin-right: 16px;                /* clear the hover-revealed ↗ open button */
+  flex: 0 0 auto;
+  color: var(--txt-2);
+  opacity: .6;
+  font-weight: 500;
+  font-size: var(--font-meta);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  cursor: help;
+}
+
 /* FinancialJuice expandable detail.
    Some FJ items carry a multi-line body (earnings breakdowns, data
    splits). The row shows only its headline by default; clicking an

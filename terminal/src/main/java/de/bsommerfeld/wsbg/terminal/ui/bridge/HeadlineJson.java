@@ -48,6 +48,9 @@ final class HeadlineJson {
         // from persisted fields, so it needs no schema/snapshot change.
         m.put("usedYahoo", r.tickerSymbol() != null || r.snapshot() != null
                 || r.priceMovePercent() != null);
+        // Provenance: the compose stage leaned on ≥1 external news item. A quiet
+        // bottom-right "News" tag in the UI; defaults false for old archive lines.
+        m.put("newsEnriched", r.newsEnriched());
         // Source thread → a permalink the UI offers as an "open in browser" button.
         String threadId = primaryThreadId(r);
         if (threadId != null) {

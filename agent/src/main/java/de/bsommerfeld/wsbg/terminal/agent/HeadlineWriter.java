@@ -174,7 +174,7 @@ public final class HeadlineWriter {
 
         agentRepository.saveHeadline(cluster.id, headline, "",
                 threadIds, commentIds, highlight, tickerSymbol, subjects, priceMove,
-                sectors, assetClass, sentiment, snapshot);
+                sectors, assetClass, sentiment, snapshot, false);
 
         LOG.info("[WRITE] {} [{}{} {}{}]: {}", cluster.id, highlight,
                 tickerSymbol == null ? "" : " " + tickerSymbol, sentiment,
@@ -196,6 +196,17 @@ public final class HeadlineWriter {
      * guard. Never throws on bad model output.
      */
     public boolean publishUnit(SubjectUnit unit, Draft draft) {
+        return publishUnit(unit, draft, false);
+    }
+
+    /**
+     * Same as {@link #publishUnit(SubjectUnit, Draft)} but records whether the
+     * compose stage leaned on at least one external news item ({@code newsEnriched}
+     * = the draft cited a {@code [news:ID]}). The flag is derived by the caller
+     * (which holds the cited-news list), persisted on the record, and surfaced by
+     * the UI as a subtle "News" provenance tag.
+     */
+    public boolean publishUnit(SubjectUnit unit, Draft draft, boolean newsEnriched) {
         if (unit == null || draft == null) return false;
         String headline = stripHtml(draft.headline()).trim();
         if (headline.isEmpty()) return false;
@@ -247,7 +258,7 @@ public final class HeadlineWriter {
 
         agentRepository.saveHeadline(unit.id, headline, "",
                 threadIds, commentIds, highlight, tickerSymbol, subjects, priceMove,
-                sectors, assetClass, sentiment, snapshot);
+                sectors, assetClass, sentiment, snapshot, newsEnriched);
 
         LOG.info("[WRITE] unit {} [{}{} {}{}]: {}", unit.id, highlight,
                 tickerSymbol == null ? "" : " " + tickerSymbol, sentiment,

@@ -138,12 +138,20 @@ function toRow(h, isNew) {
 }
 
 function buildMeta(h) {
-  // Meta row: just the live quote strip (sparkline + price + day-move) for the
-  // instrument the line is about. Sentiment/sector tags and the Yahoo+ticker
-  // provenance were removed — the price is now sourced from several venues, so a
-  // "Yahoo" mark misleads, and market sentiment is covered by the Fear&Greed gauge.
+  // Meta row: the live quote strip (sparkline + price + day-move) for the
+  // instrument the line is about, plus a quiet "News" provenance tag pinned to
+  // the bottom-right when the editorial compose leaned on external news.
+  // Sentiment/sector tags and the Yahoo+ticker provenance were removed — the
+  // price is now sourced from several venues, so a "Yahoo" mark misleads, and
+  // market sentiment is covered by the Fear&Greed gauge.
   const quote = buildQuote(h.snapshot);
-  return quote ? `<span class="meta-group quote-group">${quote}</span>` : '';
+  // Subtle provenance hint — not a highlight. CSS pushes it to the right.
+  const news = h.newsEnriched
+    ? `<span class="news-tag" title="Mit externen Nachrichten angereichert">News</span>`
+    : '';
+  if (!quote && !news) return '';
+  const quoteHtml = quote ? `<span class="meta-group quote-group">${quote}</span>` : '';
+  return quoteHtml + news;
 }
 
 // Live quote strip for the headline's primary ticker. Renders only when

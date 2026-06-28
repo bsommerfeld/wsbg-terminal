@@ -6,6 +6,7 @@ import com.google.inject.Singleton;
 import com.google.inject.multibindings.Multibinder;
 import de.bsommerfeld.jshepherd.core.ConfigurationLoader;
 import de.bsommerfeld.wsbg.terminal.agent.AgentCoordinator;
+import de.bsommerfeld.wsbg.terminal.agent.EditorialPipeline;
 import de.bsommerfeld.wsbg.terminal.embedding.EmbeddingService;
 import de.bsommerfeld.wsbg.terminal.embedding.OllamaEmbeddingService;
 import de.bsommerfeld.wsbg.terminal.agent.PassiveMonitorService;
@@ -100,8 +101,12 @@ public class AppModule extends AbstractModule {
             // auto-selects a working path (OAuth → .json → RSS) at runtime, so
             // there is no configured source and every install finds its own way.
 
-            // AgentCoordinator must be eager so it subscribes to ClusterRegistry
-            // changes before PassiveMonitorService starts emitting them.
+            // EditorialPipeline (#3) owns the prep/compose/merge pools that turn
+            // changed clusters into headlines; eager so its pools are up before any
+            // cluster change is submitted. AgentCoordinator must be eager so it
+            // subscribes to ClusterRegistry changes before PassiveMonitorService
+            // starts emitting them, and routes them into the pipeline.
+            bind(EditorialPipeline.class).asEagerSingleton();
             bind(AgentCoordinator.class).asEagerSingleton();
             bind(PassiveMonitorService.class).asEagerSingleton();
             // TimeTracker must be eager so it starts its start/interval/stop

@@ -252,7 +252,7 @@ public final class LabRunner {
                     u.ticker(), java.util.List.of(), ud.draft().priceMovePercent(),
                     ud.draft().sectors(), ud.draft().assetClass(),
                     de.bsommerfeld.wsbg.terminal.db.HeadlineSentiment.fromString(ud.draft().sentiment()),
-                    u.snapshot());
+                    u.snapshot(), !ud.citedNewsIds().isEmpty());
             // Collation: a near-duplicate of a still-on-screen headline replaces it
             // in place instead of stacking a new row.
             HeadlineCollator.Decision col = collator.offer(u.id, text);
