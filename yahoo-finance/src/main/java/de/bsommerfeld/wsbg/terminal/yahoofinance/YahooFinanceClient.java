@@ -408,6 +408,9 @@ public class YahooFinanceClient implements NewsSource {
         List<String> miss = new ArrayList<>(misses);
         int sparkHits = 0, fellBack = 0;
         for (int i = 0; i < miss.size(); i += SPARK_BATCH) {
+            // Re-check per chunk: if chunk 1 tripped the 429 breaker, chunks 2..N must
+            // not keep firing spark requests (that defeats the breaker's whole purpose).
+            if (breakerOpen()) break;
             List<String> chunk = miss.subList(i, Math.min(miss.size(), i + SPARK_BATCH));
             Map<String, MarketSnapshot> got = fetchSparkChunk(chunk, now);
             for (String sym : chunk) {
