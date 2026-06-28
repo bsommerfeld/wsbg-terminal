@@ -138,8 +138,9 @@ is the feed-wide **subject unit** (not the cluster):
    `title + body + visionDescription` and joins the nearest cluster centroid (cosine ≥
    similarity-threshold, default 0.55) with EMA centroid drift, or creates a new cluster. Clusters
    are assign-only **ingestion buckets** — there is no cluster merge/prune step.
-3. **Debounce** — every registry change triggers `AgentCoordinator` (3 s debounce → one
-   `EditorialAgent.runUnitTick`).
+3. **Debounce** — every registry change triggers `AgentCoordinator` (3 s debounce →
+   `EditorialPipeline.submitClusters`, the parallel prep → strength-ranked compose queue since
+   the #3 cutover; the serial `EditorialAgent.runUnitTick` survives as the `.lab`/test fallback).
 4. **Attribute** — per dirty cluster: `ReportBuilder` brief → **subject extraction** (one LLM call,
    uncapped) → `TickerResolver` (Yahoo ticker + quote + news per subject) → `SubjectAttributor`
    folds the evidence into the feed-wide `SubjectRegistry`, then `mergeIdentities` folds name units
