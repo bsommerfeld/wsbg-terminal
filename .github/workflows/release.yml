@@ -88,9 +88,25 @@ jobs:
           # Fixed/Removed default) — the changelog IS the release-notes
           # body end users read: one universal "Was hat sich geändert?"
           # heading, free-form story underneath. The action resets
-          # CHANGELOG.md to this skeleton after every release.
+          # CHANGELOG.md to this skeleton after every release — note the
+          # permanent download footer below: it carries forward into every
+          # future CHANGELOG (and therefore every release body), and its
+          # links use the /releases/latest/download/ form so they always
+          # resolve to the current release's installers. The matching stable
+          # asset names are produced by package.yml's rename step.
           changelog-template: |
             # Was hat sich geändert?
+
+            ---
+
+            ## Holt es euch in den Käfig
+
+            [![Windows](https://img.shields.io/badge/Windows-Installer-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/bsommerfeld/wsbg-terminal/releases/latest/download/WSBG-Terminal-Windows.exe)
+            [![macOS](https://img.shields.io/badge/macOS-Installer-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/bsommerfeld/wsbg-terminal/releases/latest/download/WSBG-Terminal-macOS.dmg)
+            [![Linux deb](https://img.shields.io/badge/Linux-.deb-E95420?style=for-the-badge&logo=debian&logoColor=white)](https://github.com/bsommerfeld/wsbg-terminal/releases/latest/download/WSBG-Terminal-Linux.deb)
+            [![Linux rpm](https://img.shields.io/badge/Linux-.rpm-EE0000?style=for-the-badge&logo=redhat&logoColor=white)](https://github.com/bsommerfeld/wsbg-terminal/releases/latest/download/WSBG-Terminal-Linux.rpm)
+
+            Immer die neueste Version — die Links zeigen automatisch auf die aktuelle Release.
           prepend-text: |
             ${{ steps.badges.outputs.build-badge }} ${{ steps.badges.outputs.test-badge }}
 

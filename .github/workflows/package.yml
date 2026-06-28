@@ -182,11 +182,36 @@ jobs:
             --dest jpackage-output \
             $EXTRA_ARGS
 
+      # Rename to a STABLE, version-less, platform-named asset so the CHANGELOG /
+      # release-body download links (/releases/latest/download/<name>) resolve to
+      # the right installer on every release. jpackage bakes the version (and, for
+      # deb/rpm, a transformed package name) into its own filename, which a static
+      # link cannot track — so we normalise it here. These names MUST match the
+      # links in release.yml's changelog-template and CHANGELOG.md.
+      - name: Rename installer to a stable platform name
+        id: rename
+        shell: bash
+        run: |
+          case "${{ matrix.jpackage-type }}" in
+            exe) STABLE="WSBG-Terminal-Windows.exe" ;;
+            dmg) STABLE="WSBG-Terminal-macOS.dmg" ;;
+            deb) STABLE="WSBG-Terminal-Linux.deb" ;;
+            rpm) STABLE="WSBG-Terminal-Linux.rpm" ;;
+            *)   echo "::error::unknown jpackage-type '${{ matrix.jpackage-type }}'"; exit 1 ;;
+          esac
+          SRC=$(find jpackage-output -maxdepth 1 -type f -name "*.${{ matrix.jpackage-type }}" | head -1)
+          if [ -z "$SRC" ]; then
+            echo "::error::no .${{ matrix.jpackage-type }} produced in jpackage-output/"; exit 1
+          fi
+          mv "$SRC" "jpackage-output/$STABLE"
+          echo "asset=jpackage-output/$STABLE" >> "$GITHUB_OUTPUT"
+          echo "Renamed $(basename "$SRC") -> $STABLE"
+
       - name: Upload to Release
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload "${{ github.event.release.tag_name }}" \
-            jpackage-output/* \
+            "${{ steps.rename.outputs.asset }}" \
             --clobber
