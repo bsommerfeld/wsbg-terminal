@@ -133,6 +133,10 @@ jobs:
 
       - name: Import Developer ID certificate (macOS)
         if: matrix.os == 'macos-latest' && env.APPLE_CERT_BASE64 != ''
+        # Best-effort: a missing/wrong/expired cert (or wrong password) must NEVER block
+        # the release. On failure this step is marked failed-but-continued, MAC_SIGN_IDENTITY
+        # stays unset, and jpackage simply produces an UNSIGNED installer that still ships.
+        continue-on-error: true
         run: |
           CERT_PATH="$RUNNER_TEMP/developer_id.p12"
           KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
@@ -235,7 +239,11 @@ jobs:
       # malicious software". Runs only when a cert is configured; self-skips (build still
       # succeeds, unsigned/un-notarized) when no notarization credentials are present.
       - name: Notarize and staple (macOS)
-        if: matrix.jpackage-type == 'dmg' && env.APPLE_CERT_BASE64 != ''
+        # Only when the DMG was actually SIGNED (notarizing an unsigned DMG can't work).
+        if: matrix.jpackage-type == 'dmg' && env.MAC_SIGN_IDENTITY != ''
+        # Best-effort: bad/expired notary creds degrade to "signed but not notarized"
+        # (Gatekeeper warns, README workaround applies) instead of failing the release.
+        continue-on-error: true
         shell: bash
         run: |
           DMG=$(find jpackage-output -maxdepth 1 -type f -name '*.dmg' | head -1)
