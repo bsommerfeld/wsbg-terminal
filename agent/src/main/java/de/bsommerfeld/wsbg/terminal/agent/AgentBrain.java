@@ -67,6 +67,8 @@ public class AgentBrain {
 
     private ChatModel visionModel;
     private ChatModel agentModel;
+    /** Same gemma4 model as {@link #agentModel}, but a TIGHT numPredict — for headline composition. */
+    private ChatModel composeModel;
     private String activeAgentModel;
 
     /**
@@ -153,7 +155,25 @@ public class AgentBrain {
         this.agentModel = OllamaChatModel.builder()
                 .baseUrl(OLLAMA_BASE_URL).modelName(agentName)
                 .temperature(agentModelEnum.getTemperature()).topP(0.9).topK(40)
-                .numCtx(ctxTokens).numPredict(2048)
+                // 768 backstop for the batched subjects array (~300 tokens); bounds the
+                // JSON-mode whitespace-loop. (No `\n\n` stop — it truncated extraction to
+                // empty when the model led with a blank line; see composeModel.)
+                .numCtx(ctxTokens).numPredict(768)
+                .responseFormat(ResponseFormat.JSON)
+                .timeout(timeout)
+                .build();
+
+        // Compose model — the SAME gemma4 (no extra load), numPredict 192: a single headline
+        // JSON is ~100 tokens (incl. the source-id arrays), so 192 never truncates it while
+        // bounding the JSON-mode whitespace-loop tighter than the old 256. (A `\n\n` stop was
+        // tried to cut the loop dead but the model sometimes leads with a blank line, so the
+        // stop fired immediately and returned EMPTY JSON — it killed extraction; removed. The
+        // robust loop-kill is streaming brace-balance early-stop, deferred.) Extraction keeps
+        // agentModel's 768. composeUnit/composeTheme use this.
+        this.composeModel = OllamaChatModel.builder()
+                .baseUrl(OLLAMA_BASE_URL).modelName(agentName)
+                .temperature(agentModelEnum.getTemperature()).topP(0.9).topK(40)
+                .numCtx(ctxTokens).numPredict(192)
                 .responseFormat(ResponseFormat.JSON)
                 .timeout(timeout)
                 .build();
@@ -165,10 +185,15 @@ public class AgentBrain {
         // for a full per-row transcription of dense screenshots (a 10–12 line
         // depot), and a real one measured ~1300 output tokens — 1024 truncated
         // it mid-table, dropping positions the desk needs.
+        // numPredict 512 (was 2048): vision was the throughput killer — a full multi-chart
+        // transcription ran 30–60s and, since vision shares the model with the editorial
+        // composes, starved them. 512 holds a typical broker view but caps the runaway
+        // multi-asset paragraphs (some hit 2048), so each image is ~5–10s. Trade: a very long
+        // (10–12 row) depot may truncate; throughput wins. Paired with the shared LLM gate.
         this.visionModel = OllamaChatModel.builder()
                 .baseUrl(OLLAMA_BASE_URL).modelName(visionName)
                 .temperature(0.2).topP(0.9).topK(40)
-                .numCtx(visionCtxTokens).numPredict(2048)
+                .numCtx(visionCtxTokens).numPredict(512)
                 .timeout(timeout)
                 .maxRetries(1).build();
     }
@@ -267,6 +292,20 @@ public class AgentBrain {
         cache.forEach(imageDescriptionCache::putIfAbsent);
     }
 
+    /**
+     * The ONE gemma4 concurrency gate, shared by the editorial composes/extraction AND the
+     * vision prefetch (both hit the single model). Sized to match Ollama's {@code NUM_PARALLEL}
+     * ({@link OllamaServerManager#llmParallelism()}) so the two never over-subscribe each other
+     * — vision used to run un-gated and starve the compose workers. {@code EditorialAgent}
+     * delegates its compose gating here.
+     */
+    private final java.util.concurrent.Semaphore llmGate =
+            new java.util.concurrent.Semaphore(OllamaServerManager.llmParallelism());
+
+    public int availableLlmPermits() { return llmGate.availablePermits(); }
+    public void acquireLlm() { llmGate.acquireUninterruptibly(); }
+    public void releaseLlm() { llmGate.release(); }
+
     /** Performs blocking vision analysis on the given image URL. */
     public String see(String imageUrl) {
         if (visionModel == null)
@@ -279,7 +318,16 @@ public class AgentBrain {
                     TextContent.from(PromptLoader.load("vision")),
                     ImageContent.from(payload.base64, payload.mimeType));
 
-            String result = visionModel.chat(msg).aiMessage().text();
+            // Vision shares the one gemma4 model with the editorial composes, so it acquires
+            // the SAME LLM gate — vision can no longer over-subscribe Ollama and starve the
+            // wire (it now waits its turn behind a compose instead of blocking the slot).
+            acquireLlm();
+            String result;
+            try {
+                result = visionModel.chat(msg).aiMessage().text();
+            } finally {
+                releaseLlm();
+            }
             // Some model builds (notably the MLX gemma4 variant) silently
             // drop the multimodal payload and respond with a templated
             // "I need the image" / "Please provide the image" / "No image
@@ -330,6 +378,11 @@ public class AgentBrain {
      */
     public ChatModel getAgentModel() {
         return agentModel;
+    }
+
+    /** The tight-numPredict compose model (headline composition); see {@link #composeModel}. */
+    public ChatModel getComposeModel() {
+        return composeModel;
     }
 
     /** Returns the resolved Ollama model name used by {@link #getAgentModel()}. */

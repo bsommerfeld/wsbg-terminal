@@ -23,7 +23,7 @@ class LangSchwarzClientTest {
              {"id":4222135,"displayname":"NVIDIA CDR","isin":"CA67080A1093","instrumentId":4222135,
               "categorySymbol":"STK"}]
             """;
-        Optional<LsInstrument> inst = client.parseSearch(body);
+        Optional<LsInstrument> inst = client.parseSearch(body, "NVIDIA");
         assertTrue(inst.isPresent());
         assertEquals(43763L, inst.get().instrumentId());
         assertEquals("US67066G1040", inst.get().isin());
@@ -31,8 +31,80 @@ class LangSchwarzClientTest {
 
     @Test
     void searchEmptyArrayYieldsNothing() {
-        assertFalse(client.parseSearch("[]").isPresent());
-        assertFalse(client.parseSearch("not json").isPresent());
+        assertFalse(client.parseSearch("[]", "X").isPresent());
+        assertFalse(client.parseSearch("not json", "X").isPresent());
+    }
+
+    @Test
+    void searchRanksFullNameAndPicksThePlainTracker() {
+        // Real-shaped "MSCI World" list: must reject MSCI Inc (the stock), MSCI USA
+        // and the factor variant, and pick a plain World tracker.
+        String body = """
+            [{"instrumentId":1,"displayname":"MSCI INC. A DL-,01","isin":"US55354G1004","categorySymbol":"STK"},
+             {"instrumentId":2,"displayname":"MSCI WORLD QUALITY FACTOR UCITS ETF","isin":"IE00BP3QZ601","categorySymbol":"ETF"},
+             {"instrumentId":3,"displayname":"UBS MSCI WORLD","isin":"LU0340285161","categorySymbol":"ETF"},
+             {"instrumentId":4,"displayname":"DK MSCI USA","isin":"DE000ETFL268","categorySymbol":"ETF"}]
+            """;
+        Optional<LsInstrument> inst = client.parseSearch(body, "MSCI World");
+        assertTrue(inst.isPresent());
+        assertEquals(3L, inst.get().instrumentId(), "plain UBS MSCI WORLD, not Inc/USA/factor");
+        assertEquals("LU0340285161", inst.get().isin());
+    }
+
+    @Test
+    void searchRejectsTheWrongSameNamedTwin() {
+        // "Mullen Automotive" — L&S only carries the unrelated "Mullen Group" (Canada).
+        // Coverage of {mullen, automotive} is 0.5 (only "mullen") → below the bar → empty,
+        // so the chain falls through instead of pricing the wrong company.
+        String body = """
+            [{"instrumentId":741078,"displayname":"MULLEN GROUP LTD","isin":"CA6252841045","categorySymbol":"STK"}]
+            """;
+        assertFalse(client.parseSearch(body, "Mullen Automotive").isPresent());
+    }
+
+    @Test
+    void parseByIsinPicksTheExactIsinMatch() {
+        // L&S search by ISIN returns the one listing; pick by exact ISIN, not name coverage.
+        String body = """
+            [{"instrumentId":43763,"displayname":"NVIDIA CORP. DL-,001","isin":"US67066G1040","categorySymbol":"STK"}]
+            """;
+        var inst = client.parseByIsin(body, "US67066G1040");
+        assertTrue(inst.isPresent());
+        assertEquals(43763L, inst.get().instrumentId());
+        assertFalse(client.parseByIsin(body, "DE0007164600").isPresent(), "no ISIN match → empty");
+    }
+
+    @Test
+    void searchStripsLegalSuffixesSoMegacapsStillMatch() {
+        // Yahoo hands "Microsoft Corporation" / "Eli Lilly and Company"; L&S abbreviates
+        // ("MICROSOFT", "ELI LILLY"). The legal/connector words must be stripped from BOTH
+        // sides, else coverage drops to 0.5 and the megacap is wrongly rejected (a real
+        // regression caught in the live smoke test).
+        String msft = """
+            [{"instrumentId":1,"displayname":"MICROSOFT DL-,00000625","isin":"US5949181045","categorySymbol":"STK"},
+             {"instrumentId":2,"displayname":"MICROSOFT CORP. CDR","isin":"CA59516M1041","categorySymbol":"STK"}]
+            """;
+        var m = client.parseSearch(msft, "Microsoft Corporation");
+        assertTrue(m.isPresent());
+        assertEquals("US5949181045", m.get().isin(), "home line, not the Canadian CDR");
+
+        String lly = """
+            [{"instrumentId":3,"displayname":"ELI LILLY","isin":"US5324571083","categorySymbol":"STK"}]
+            """;
+        var l = client.parseSearch(lly, "Eli Lilly and Company");
+        assertTrue(l.isPresent());
+        assertEquals("US5324571083", l.get().isin());
+    }
+
+    @Test
+    void searchToleratesAbbreviatedNames() {
+        // L&S abbreviates "Therapeutics" → "THERAP."; the prefix match must still cover it.
+        String body = """
+            [{"instrumentId":3169641,"displayname":"OUTLOOK THERAP. DL-,01","isin":"US69012T3059","categorySymbol":"STK"}]
+            """;
+        Optional<LsInstrument> inst = client.parseSearch(body, "Outlook Therapeutics");
+        assertTrue(inst.isPresent());
+        assertEquals("US69012T3059", inst.get().isin());
     }
 
     @Test
@@ -77,6 +149,18 @@ class LangSchwarzClientTest {
         assertEquals("Wendy's", LangSchwarzClient.cleanForSearch("The Wendy's Company"));
         assertEquals("Novo Nordisk", LangSchwarzClient.cleanForSearch("Novo Nordisk A/S"));
         assertEquals("SK hynix", LangSchwarzClient.cleanForSearch("SK hynix Inc."));
+        assertEquals("Amazon", LangSchwarzClient.cleanForSearch("Amazon.com, Inc."), "drop the .com so L&S finds it");
+    }
+
+    @Test
+    void searchResolvesDotcomNames() {
+        // "Amazon.com, Inc." must reach L&S's "AMAZON.COM" listing.
+        String body = """
+            [{"instrumentId":42,"displayname":"AMAZON.COM INC.","isin":"US0231351067","categorySymbol":"STK"}]
+            """;
+        var inst = client.parseSearch(body, "Amazon.com, Inc.");
+        assertTrue(inst.isPresent());
+        assertEquals("US0231351067", inst.get().isin());
     }
 
     @Test

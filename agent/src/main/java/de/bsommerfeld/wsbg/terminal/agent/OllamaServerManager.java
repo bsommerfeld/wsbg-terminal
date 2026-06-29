@@ -91,6 +91,21 @@ public final class OllamaServerManager {
     }
 
     /**
+     * Concurrent gemma4 request slots — both Ollama's {@code NUM_PARALLEL} AND the app-side
+     * LLM gate ({@link AgentBrain}) read this, so they always agree. Fixed at 2.
+     *
+     * <p>3 was tried (RAM-adaptive) on the theory that the dominant compose gate-wait was a
+     * permit shortage. Profiling refuted it: gemma4 is GPU-bound, so at 2 slots the GPU is
+     * already ~saturated — a 3rd concurrent request just time-slices the GPU, so every call's
+     * gen-time rose (compose 8→12s, extraction 13→28s), gate-hold grew with it, and net
+     * throughput FELL (4.0→3.5 composes/min). The real lever is less GPU work per call
+     * (smaller prefill / killing the JSON whitespace-loop), not more parallelism.
+     */
+    public static int llmParallelism() {
+        return 2;
+    }
+
+    /**
      * Ensures our isolated Ollama server on {@link #PORT} is reachable, starting
      * it from the bundled binary if needed.
      *
@@ -210,13 +225,11 @@ public final class OllamaServerManager {
                 pb.directory(neutralDir);
             }
 
-            // Two concurrent slots per model. KV cache scales with
-            // num_ctx × num_parallel, and we just raised num_ctx to 8192,
-            // so 3 slots would triple an already-bigger cache. Two is the
-            // safe default on a 16 GB M-series box: the editorial agent
-            // (its own model instance) and the vision prefetch model run as
-            // separate Ollama models, so neither starves the other.
-            pb.environment().putIfAbsent("OLLAMA_NUM_PARALLEL", "2");
+            // Concurrent gemma4 slots — RAM-adaptive (see llmParallelism()). The KV cache
+            // scales with num_ctx × this, so 2 stays the floor on a 16 GB box, but a roomier
+            // machine runs 3, which directly cuts the editorial gate-wait (compose-vs-
+            // extraction contention) that profiling showed dominates compose latency.
+            pb.environment().putIfAbsent("OLLAMA_NUM_PARALLEL", String.valueOf(llmParallelism()));
 
             // Flash attention + quantised KV cache roughly halve the KV-cache
             // memory at negligible quality loss — this is what makes an 8192
@@ -227,9 +240,9 @@ public final class OllamaServerManager {
             pb.environment().putIfAbsent("OLLAMA_KV_CACHE_TYPE", "q8_0");
 
             serverProcess = pb.start();
-            LOG.info("Started isolated '{} serve' on {}:{} (models={}, NUM_PARALLEL=2, "
+            LOG.info("Started isolated '{} serve' on {}:{} (models={}, NUM_PARALLEL={}, "
                             + "FLASH_ATTENTION=1, KV_CACHE_TYPE=q8_0, PID={})",
-                    binary, HOST, PORT, models, serverProcess.pid());
+                    binary, HOST, PORT, models, llmParallelism(), serverProcess.pid());
         } catch (Exception e) {
             LOG.error("Failed to start isolated 'ollama serve' — was the bundled binary "
                     + "installed under {}/{}/bin by the setup script?", appDataDir, OLLAMA_DIR, e);

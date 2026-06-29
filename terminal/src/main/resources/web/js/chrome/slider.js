@@ -88,7 +88,7 @@ const AD_MESSAGES = [
   },
   {
     icon: 'gem',
-    text: 'MSCI oder Terminal, was wählst du?',
+    text: 'ETF oder Terminal, was wählst du?',
     link: DONATE_LINK,
   },
 ];

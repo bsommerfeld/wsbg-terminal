@@ -2,6 +2,7 @@ package de.bsommerfeld.wsbg.terminal.price;
 
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
+import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
 import de.bsommerfeld.wsbg.terminal.core.price.PriceRef;
 import de.bsommerfeld.wsbg.terminal.core.price.PriceSource;
@@ -9,7 +10,9 @@ import de.bsommerfeld.wsbg.terminal.currency.EurUsdMonitorService;
 import de.bsommerfeld.wsbg.terminal.langschwarz.LangSchwarzClient;
 import de.bsommerfeld.wsbg.terminal.langschwarz.LsInstrument;
 import de.bsommerfeld.wsbg.terminal.nasdaq.NasdaqClient;
-import de.bsommerfeld.wsbg.terminal.tradegate.TradegateClient;
+import de.bsommerfeld.wsbg.terminal.deutscheboerse.DeutscheBoerseClient;
+import de.bsommerfeld.wsbg.terminal.wallstreetonline.WallstreetOnlineClient;
+import de.bsommerfeld.wsbg.terminal.wallstreetonline.WsoInstrument;
 import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooFinanceClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,14 +38,18 @@ import java.util.function.Supplier;
  *
  * <ol>
  *   <li><b>Lang &amp; Schwarz Tradecenter</b> — by name, EUR, with sparkline + after-hours.
- *       Also yields the ISIN the Tradegate step needs.</li>
- *   <li><b>Tradegate</b> — by ISIN, EUR, daytime fallback.</li>
- *   <li><b>NASDAQ.com</b> — by ticker, USD→EUR, covers the US after-hours window.</li>
+ *       Also yields the ISIN the Deutsche Börse step needs. Leads at every hour
+ *       (the audience's actual venue); off-session its quote is marked stale.</li>
+ *   <li><b>Deutsche Börse</b> (Xetra/Frankfurt) — by ISIN, EUR, official day-move,
+ *       honest timestamp. Replaces the old Tradegate fallback.</li>
+ *   <li><b>NASDAQ.com</b> — by ticker, USD→EUR, US fallback.</li>
  *   <li><b>Yahoo</b> — by ticker, USD→EUR, last-resort (Yahoo stays the news source elsewhere).</li>
  * </ol>
  *
- * All four ride the shared browser-joker {@code WebFetcher}. Any provider that throws
- * or returns empty is simply skipped.
+ * The first two are the EUR venues the DAX-room audience trades; Yahoo/NASDAQ are
+ * the fallback for what they can't resolve (US-only names, crypto, indices). All
+ * ride the shared browser-joker {@code WebFetcher}; any provider that throws or
+ * returns empty is simply skipped.
  */
 @Singleton
 public class FallbackPriceSource implements PriceSource {
@@ -67,24 +74,30 @@ public class FallbackPriceSource implements PriceSource {
     private record Cached(MarketSnapshot snapshot, long storedAt) {}
 
     private final LangSchwarzClient ls;
-    private final TradegateClient tradegate;
+    private final DeutscheBoerseClient db;
+    private final WallstreetOnlineClient wso;
     private final NasdaqClient nasdaq;
     private final YahooFinanceClient yahoo;
     private final EurUsdMonitorService fx;
+    /** Read fresh each call so the Settings toggle takes effect live; null in tests/lab. */
+    private final GlobalConfig config;
 
     @Inject
-    public FallbackPriceSource(LangSchwarzClient ls, TradegateClient tradegate,
-            NasdaqClient nasdaq, YahooFinanceClient yahoo, EurUsdMonitorService fx) {
+    public FallbackPriceSource(LangSchwarzClient ls, DeutscheBoerseClient db,
+            WallstreetOnlineClient wso, NasdaqClient nasdaq, YahooFinanceClient yahoo,
+            EurUsdMonitorService fx, GlobalConfig config) {
         this.ls = ls;
-        this.tradegate = tradegate;
+        this.db = db;
+        this.wso = wso;
         this.nasdaq = nasdaq;
         this.yahoo = yahoo;
         this.fx = fx;
+        this.config = config;
     }
 
     @Override
     public String name() {
-        return "chain[time-windowed: L&S | NASDAQ | Yahoo | Tradegate]";
+        return "chain[L&S (EUR) | (US opt-in fallback) Yahoo]";
     }
 
     @Override
@@ -112,43 +125,106 @@ public class FallbackPriceSource implements PriceSource {
         // of no number at all. German venues stay out of the gap (lsSession=false),
         // so the gap only costs the two ticker calls, not the L&S name lookup.
         boolean lsSession = window == PriceWindow.LS;
-        // L&S + Tradegate are German EQUITY venues: only in their session, and never a
-        // crypto (BTC-USD), index (^IXIC) or FX pair (it mis-matches a same-named German
-        // share, e.g. "Bitcoin" → "Bitcoin Group SE"). Those go to NASDAQ/Yahoo.
-        boolean germanVenueEligible = lsSession && isEquityTicker(ref.ticker());
+        // The target audience trades EUR on L&S (Trade Republic's venue) + Deutsche Börse, so
+        // those German EQUITY venues LEAD at every hour — including overnight, where they
+        // return a last EUR close (marked stale below). This is what fixes a US-ETF (SOXX)
+        // being priced from its $590 US listing instead of the EUR product. They stay out
+        // only for non-equities — crypto (BTC-USD), index (^IXIC), FX (=X) — which would
+        // mis-match a same-named German share ("Bitcoin" → "Bitcoin Group SE"); those go
+        // to Yahoo. The L&S resolver itself now rejects wrong-twin name hits (min coverage).
+        boolean germanVenueEligible = isEquityTicker(ref.ticker());
+        // US price fallback (Yahoo/NASDAQ) for an equity/ETF the EUR venues couldn't
+        // resolve is OPT-IN (default off) — a US-listing price converted to EUR is the
+        // wrong product for this audience. A NON-equity (index ^…, crypto -USD, FX =X)
+        // has no EU listing, so Yahoo is its legit/only source and is ALWAYS allowed.
+        // The US opt-in setting was removed (2026-06-30): equities are L&S-only. Yahoo stays
+        // ONLY for non-equities (index points ^…, crypto -USD, FX =X) that have no EU listing.
+        boolean usAllowed = !germanVenueEligible;
+        // For an EQUITY that fell through to the US fallback we keep the NATIVE US price
+        // ($, the honest US listing — not a misleading EUR conversion of the wrong product).
+        // A non-equity normalises through toEur (index → points, crypto → EUR).
+        boolean convertUs = !germanVenueEligible;
         final String[] isin = { ref.hasIsin() ? ref.isin() : null };
 
-        // Ordered attempts for this window. In the L&S session L&S leads (real-time EUR
-        // + sparkline) and Tradegate is the absolute last resort; in the US after-hours
-        // window (23:00–02:00) the German venues are closed, so NASDAQ leads.
-        List<Supplier<Optional<MarketSnapshot>>> attempts = new ArrayList<>(4);
-        if (lsSession) {
-            attempts.add(() -> {
-                if (!ref.hasName() || !germanVenueEligible) return Optional.empty();
-                Optional<LsInstrument> inst = safe(() -> ls.resolveInstrument(ref.name()));
-                if (inst.isEmpty()) return Optional.empty();
-                if (isin[0] == null) isin[0] = blankToNull(inst.get().isin()); // hand the ISIN to Tradegate
-                return safe(() -> ls.fetchSnapshot(inst.get()));
-            });
+        // wallstreet-online resolves the German listing's ISIN from a STRUCTURED search —
+        // a more reliable anchor than L&S's fuzzy name-pick. It (a) feeds the official
+        // Deutsche Börse quote ISIN-exactly and (b) cross-checks L&S: a name hit whose ISIN
+        // disagrees with this anchor matched a wrong twin and is dropped. L&S name-resolution
+        // stays the fallback when WSO has no hit.
+        if (isin[0] == null && germanVenueEligible && ref.hasName()) {
+            isin[0] = wso.resolve(ref.name(), ref.hasTicker() ? ref.ticker() : null)
+                    .map(WsoInstrument::isin).orElse(null);
         }
-        attempts.add(() -> ref.hasTicker()
-                ? safe(() -> nasdaq.fetchSnapshot(ref.ticker())).map(this::toEur) : Optional.empty());
-        attempts.add(() -> ref.hasTicker()
-                ? Optional.ofNullable(yahooSnapshot(ref.ticker())) : Optional.empty());
-        if (lsSession) {
-            attempts.add(() -> (isin[0] != null && germanVenueEligible)
-                    ? safe(() -> tradegate.fetchSnapshot(isin[0])) : Optional.empty());
-        }
+        final String anchorIsin = isin[0];
+
+        // Ordered attempts. Prices are taken from L&S ONLY (the audience's EUR venue, and it
+        // carries the sparkline) — "weniger ist mehr" (2026-06-30). Deutsche Börse / NASDAQ
+        // stay BUILT (isolated modules) but are NOT in the active chain; Yahoo remains the
+        // opt-in US fallback for what L&S can't price (and the always-on source for index
+        // points / crypto, which have no L&S listing).
+        List<Supplier<Optional<MarketSnapshot>>> attempts = new ArrayList<>(3);
+        attempts.add(() -> {
+            if (!germanVenueEligible) return Optional.empty();
+            // Prefer the WSO anchor ISIN — L&S search resolves an ISIN EXACTLY (no name fuzz,
+            // no wrong-twin risk). Fall back to the name (with the country cross-check) only
+            // when there is no anchor or L&S doesn't list that ISIN.
+            LsInstrument inst = anchorIsin != null
+                    ? safe(() -> ls.resolveByIsin(anchorIsin)).orElse(null) : null;
+            if (inst == null && ref.hasName()) {
+                LsInstrument byName = safe(() -> ls.resolveInstrument(ref.name())).orElse(null);
+                if (byName != null) {
+                    String lsIsin = blankToNull(byName.isin());
+                    // A name hit on a different ISIN COUNTRY than the anchor is a wrong twin
+                    // abroad ("Mullen Automotive" US vs L&S's "Mullen Group" CA) → drop it.
+                    if (anchorIsin != null && lsIsin != null && lsIsin.length() >= 2
+                            && !anchorIsin.regionMatches(true, 0, lsIsin, 0, 2)) {
+                        LOG.debug("[L&S] dropped '{}' → {} (country ≠ WSO anchor {})", ref.name(), lsIsin, anchorIsin);
+                    } else {
+                        inst = byName;
+                    }
+                }
+            }
+            if (inst == null) return Optional.empty();
+            if (isin[0] == null) isin[0] = blankToNull(inst.isin());
+            LsInstrument fi = inst;
+            return safe(() -> ls.fetchSnapshot(fi));
+        });
+        // US fallback — Yahoo only (opt-in for equities; always on for index points / crypto).
+        attempts.add(() -> {
+            if (!usAllowed || !ref.hasTicker()) return Optional.empty();
+            MarketSnapshot s = yahooSnapshotRaw(ref.ticker());
+            return s == null ? Optional.empty() : Optional.of(convertUs ? toEur(s) : s);
+        });
 
         MarketSnapshot freshestStale = null;
         for (Supplier<Optional<MarketSnapshot>> attempt : attempts) {
             MarketSnapshot s = attempt.get().orElse(null);
             if (s == null) continue;
-            if (isFresh(s)) return win(ref, s, true);
+            // Dimming is for the dead-of-night GAP only, NOT during active trading hours: a
+            // quote counts as live if it's genuinely fresh OR we're simply not in the GAP
+            // window (the audience doesn't want a grayed price while the German exchange is
+            // open — e.g. a US index showing its last close at 14:00 CET should read live,
+            // not closed). EXCEPTION: a German venue (L&S) off its own session reports a
+            // fresh-looking stamp on a last close, so it's only live inside the L&S window.
+            boolean live = (isFresh(s) || window != PriceWindow.GAP)
+                    && !(isGermanVenue(s) && !lsSession);
+            if (live) return win(ref, s, true);
             freshestStale = fresher(freshestStale, s);
         }
         if (freshestStale != null) return win(ref, freshestStale, false);
         return Optional.empty();
+    }
+
+    /**
+     * True for an L&amp;S snapshot — the one venue that reports a fresh-looking
+     * timestamp even when closed, so off-session it must be forced stale. Deutsche
+     * Börse and Yahoo/NASDAQ carry an honest last-trade timestamp and need no override.
+     */
+    private static boolean isGermanVenue(MarketSnapshot s) {
+        String x = s == null ? null : s.exchangeName();
+        if (x == null) return false;
+        String t = x.toLowerCase(Locale.ROOT);
+        return t.contains("l&s") || t.contains("lang");
     }
 
     /** Which trading window the CET clock is in — drives which price source leads. */
@@ -205,12 +281,13 @@ public class FallbackPriceSource implements PriceSource {
         return null;
     }
 
-    private MarketSnapshot yahooSnapshot(String ticker) {
+    /** Raw Yahoo snapshot (native currency, NOT converted) — the caller decides whether to toEur. */
+    private MarketSnapshot yahooSnapshotRaw(String ticker) {
         try {
             var map = yahoo.fetchCharts(List.of(ticker));
             MarketSnapshot s = map.get(ticker.toUpperCase(Locale.ROOT));
             if (s == null) s = map.get(ticker);
-            return s == null ? null : toEur(s);
+            return s;
         } catch (Exception e) {
             LOG.debug("Yahoo snapshot failed for {}: {}", ticker, e.getMessage());
             return null;
@@ -240,8 +317,17 @@ public class FallbackPriceSource implements PriceSource {
         return b.marketTimeEpochSeconds() > a.marketTimeEpochSeconds() ? b : a;
     }
 
+    /** Currency marker for a stock index: priced in points, never FX-converted. */
+    static final String POINTS = "PTS";
+
     /** Converts a USD snapshot to EUR via the live rate; leaves non-USD (or rate-less) untouched. */
     MarketSnapshot toEur(MarketSnapshot s) {
+        // A stock index (^GDAXI, ^IXIC, …) is quoted in points, not a currency —
+        // Yahoo labels it EUR/USD anyway, but converting 24 000 "USD" → EUR is
+        // nonsense. Keep the number, relabel it as points, skip FX entirely.
+        if (s != null && s.symbol() != null && s.symbol().startsWith("^")) {
+            return POINTS.equals(s.currency()) ? s : withCurrency(s, POINTS);
+        }
         double r = fx == null ? 0 : fx.getCurrent().map(q -> q.rate()).orElse(0.0);
         if (s != null && "USD".equalsIgnoreCase(s.currency())) {
             LOG.info("[FX] {} {} USD @ rate {} → {} EUR", s.symbol(),
@@ -269,6 +355,15 @@ public class FallbackPriceSource implements PriceSource {
 
     private static double div(double v, double r) {
         return Double.isFinite(v) ? v / r : v;
+    }
+
+    /** Returns a copy of {@code s} with the currency relabelled (numbers untouched). */
+    static MarketSnapshot withCurrency(MarketSnapshot s, String currency) {
+        if (s == null) return null;
+        return new MarketSnapshot(s.symbol(), s.price(), s.previousClose(),
+                s.dayChangePercent(), s.dayHigh(), s.dayLow(), s.volume(),
+                s.fiftyTwoWeekHigh(), s.fiftyTwoWeekLow(), currency,
+                s.exchangeName(), s.marketTimeEpochSeconds(), s.spark());
     }
 
     private static String blankToNull(String s) {

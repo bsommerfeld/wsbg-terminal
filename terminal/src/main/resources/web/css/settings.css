@@ -81,6 +81,17 @@
   opacity: .45; cursor: default;
   color: var(--mute); border-color: var(--line-soft); background: none;
 }
+/* Neutral action button (e.g. "Zu den Logs"): same shape as the danger button
+   but in the regular foreground colour, no arming behaviour. */
+.plain-btn {
+  flex: 0 0 auto; font: inherit; font-size: .9rem;
+  color: var(--txt); background: none;
+  border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 16px; cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+.plain-btn:hover { background: var(--bg-1); border-color: var(--mute); }
+
 .setting-name { color: var(--txt); font-size: 1rem; }
 .setting-hint { color: var(--mute); font-size: .8rem; line-height: 1.45; max-width: 440px; }
 

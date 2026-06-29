@@ -126,6 +126,16 @@ public final class EditorialQueue {
         }
     }
 
+    /** Snapshot of the queued job ids in insertion order — for queue-content diagnostics. */
+    public List<String> pendingIds() {
+        lock.lock();
+        try {
+            return jobs.stream().map(ComposeJob::id).toList();
+        } finally {
+            lock.unlock();
+        }
+    }
+
     /** True if a job with this id is queued or in-flight. Test/diagnostics helper. */
     public boolean isPending(String id) {
         return inFlight.contains(id);

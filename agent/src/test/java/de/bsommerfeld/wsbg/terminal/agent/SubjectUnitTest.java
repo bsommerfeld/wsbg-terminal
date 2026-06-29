@@ -84,6 +84,45 @@ class SubjectUnitTest {
         assertEquals(100.0, u.firstPrice(), 1e-9, "anchor survives the evidence prune");
     }
 
+    private static SubjectUnit.EvidenceRef ev(String threadId) {
+        return new SubjectUnit.EvidenceRef(threadId, null, "snippet", "reddit",
+                Instant.now().getEpochSecond());
+    }
+
+    @Test
+    void uncomposedEvidenceGuardSuppressesRedundantRecompose() {
+        SubjectUnit u = new SubjectUnit("NVDA", "NVIDIA");
+        // Fresh unit with evidence has something to say.
+        assertTrue(u.addEvidence(ev("t1")));
+        assertTrue(u.hasUncomposedEvidence(), "new evidence → eligible to compose");
+
+        // A compose runs against the version captured before it started.
+        long composedV = u.evidenceVersion();
+        u.markComposedAt(composedV);
+        assertFalse(u.hasUncomposedEvidence(),
+                "same evidence already composed → a second compose is redundant");
+
+        // A duplicate source bumps nothing (not new evidence).
+        assertFalse(u.addEvidence(ev("t1")));
+        assertFalse(u.hasUncomposedEvidence(), "duplicate evidence is not a reason to recompose");
+
+        // Genuinely new evidence re-arms it.
+        assertTrue(u.addEvidence(ev("t2")));
+        assertTrue(u.hasUncomposedEvidence(), "fresh evidence → recompose warranted");
+    }
+
+    @Test
+    void markComposedIsMonotonic() {
+        SubjectUnit u = new SubjectUnit("NVDA", "NVIDIA");
+        u.addEvidence(ev("t1"));
+        u.addEvidence(ev("t2")); // version == 2
+        u.markComposedAt(2);
+        // A stale stamp from a slower path can't drag the watermark back below where
+        // a later compose already advanced it (would otherwise re-open a closed gap).
+        u.markComposedAt(1);
+        assertFalse(u.hasUncomposedEvidence(), "older stamp must not move the watermark backwards");
+    }
+
     @Test
     void headlineRecordsSentimentAndPriceOfItsMoment() {
         SubjectUnit u = new SubjectUnit("NVDA", "NVIDIA");

@@ -89,7 +89,7 @@ final class HeadlineJson {
         m.put("fiftyTwoWeekLow", finite(s.fiftyTwoWeekLow()));
         m.put("volume", s.volume() < 0 ? null : s.volume());
         m.put("currency", s.currency());
-        // Provenance + freshness: which venue priced it (L&S / Tradegate / NASDAQ /
+        // Provenance + freshness: which venue priced it (L&S / Deutsche Börse / NASDAQ /
         // Yahoo exchange) and when, so the UI can label the source and dim the quote
         // once the market has closed (no live venue → the figure is a last close).
         m.put("source", s.exchangeName());

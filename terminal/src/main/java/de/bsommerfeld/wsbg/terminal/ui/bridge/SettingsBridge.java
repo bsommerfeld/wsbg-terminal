@@ -9,6 +9,8 @@ import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.db.AgentRepository;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
 import de.bsommerfeld.wsbg.terminal.db.RedditSnapshotStore;
+import de.bsommerfeld.wsbg.terminal.core.util.StorageUtils;
+import de.bsommerfeld.wsbg.terminal.ui.CefHost;
 import de.bsommerfeld.wsbg.terminal.ui.web.PushHub;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,7 +38,9 @@ import java.util.Map;
  * </ul>
  * Also handles {@code {command:"clear-data"}}: a full terminal wipe (threads,
  * clusters, subject units, the live wire AND the permanent archive), gated to once
- * per 10 minutes; the wire then refills from the next scan.
+ * per 10 minutes; the wire then refills from the next scan. And
+ * {@code {command:"open-logs"}}: reveals the app-data folder (which holds
+ * {@code logs/}) in the OS file manager.
  *
  * <p>Outbound (after every {@code set}, on {@code get}, and on client open): one
  * {@code settings} broadcast carrying the current value of every key.
@@ -86,6 +90,8 @@ public final class SettingsBridge {
                 }
             } else if ("clear-data".equals(cmd)) {
                 clearData();
+            } else if ("open-logs".equals(cmd)) {
+                CefHost.openFolder(StorageUtils.getAppDataDir());
             }
             // "get" (and any "set") answers with the full snapshot.
             push();

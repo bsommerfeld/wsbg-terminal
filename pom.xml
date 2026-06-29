@@ -18,7 +18,8 @@
         <module>currency</module>
         <module>fear-greed</module>
         <module>lang-schwarz</module>
-        <module>tradegate</module>
+        <module>deutsche-boerse</module>
+        <module>wallstreet-online</module>
         <module>nasdaq-quote</module>
         <module>finanznachrichten</module>
         <module>source-api</module>
@@ -102,7 +103,12 @@
             </dependency>
             <dependency>
                 <groupId>de.bsommerfeld</groupId>
-                <artifactId>tradegate</artifactId>
+                <artifactId>deutsche-boerse</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>wallstreet-online</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

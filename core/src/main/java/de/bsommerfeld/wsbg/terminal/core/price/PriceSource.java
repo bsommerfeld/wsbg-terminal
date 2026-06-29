@@ -7,7 +7,7 @@ import java.util.Optional;
 /**
  * A live price provider for one instrument. The editorial resolver consults a
  * single {@code PriceSource} for every snapshot; in production that's a fallback
- * chain (Lang &amp; Schwarz → Tradegate → NASDAQ → Yahoo) assembled in the
+ * chain (Lang &amp; Schwarz → Deutsche Börse → NASDAQ → Yahoo) assembled in the
  * composition root, so the resolver itself stays source-agnostic.
  *
  * <p>Implementations return {@link Optional#empty()} when they have nothing for

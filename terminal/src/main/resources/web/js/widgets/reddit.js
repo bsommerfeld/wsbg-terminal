@@ -220,8 +220,10 @@ function sparkDir(spark) {
 }
 
 // Price with a currency glyph for the majors; pennystocks (< 1) get more
-// decimals so a 0.0042 → 0.0061 move is still legible.
+// decimals so a 0.0042 → 0.0061 move is still legible. A stock index carries
+// the "PTS" marker (priced in points, not a currency) → "24.013 Pkt".
 function fmtPrice(p, ccy) {
+  if (ccy === 'PTS') return Math.round(p).toLocaleString('de-DE') + ' Pkt';
   const sym = ccy === 'USD' ? '$' : ccy === 'EUR' ? '€' : ccy === 'GBP' ? '£' : '';
   const v = Math.abs(p) < 1 ? p.toFixed(4) : p.toFixed(2);
   return sym + v;

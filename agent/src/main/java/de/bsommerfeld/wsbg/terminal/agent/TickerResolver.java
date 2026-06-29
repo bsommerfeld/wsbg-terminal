@@ -128,7 +128,7 @@ public final class TickerResolver {
     private final EmbeddingService embeddings; // Tier 2; null disables it
 
     /**
-     * The live price chain (L&amp;S → Tradegate → NASDAQ → Yahoo, EUR). Optional:
+     * The live price chain (L&amp;S → Deutsche Börse → NASDAQ → Yahoo, EUR). Optional:
      * injected only in production (AppModule); null in tests and the lab harness,
      * where snapshots fall back to the Yahoo batch below. Yahoo stays the SEARCH +
      * NEWS source regardless — the chain only supplies the price snapshot.
@@ -221,8 +221,15 @@ public final class TickerResolver {
                 if (strong == null) {
                     strong = embedMatch(query, sr.quotes()); // Tier 2: semantic fallback
                 }
-                String ownTicker = strong == null ? null : strong.symbol();
-                String canonical = strong == null ? query : strong.displayName();
+                // A known stock index (DAX, S&P 500, …) binds straight to its Yahoo
+                // ^-symbol — bypassing the exact-symbol fast-path that would otherwise
+                // grab a same-named tradeable ticker (e.g. „DAX" → a $44 US ETF) and
+                // FX-convert it into nonsense. Index symbols are priced in points.
+                IndexCatalog.Index index = IndexCatalog.lookup(query);
+                String ownTicker = index != null ? index.symbol()
+                        : (strong == null ? null : strong.symbol());
+                String canonical = index != null ? index.displayName()
+                        : (strong == null ? query : strong.displayName());
 
                 // News: triangulated across all sources by the resolved ticker (Yahoo +
                 // NASDAQ + …) so the wire doesn't depend on Yahoo alone. A ticker-less
@@ -263,7 +270,7 @@ public final class TickerResolver {
         }
 
         // Phase 2 — snapshots. With the live price chain each subject's OWN ticker
-        // goes through L&S→Tradegate→NASDAQ→Yahoo (EUR, looked up by name); related
+        // goes through L&S→Deutsche Börse→NASDAQ→Yahoo (EUR, looked up by name); related
         // tickers (second-hop context, ticker-only) stay on the Yahoo batch. Without
         // a chain (tests / lab harness) everything uses the Yahoo batch as before.
         Map<String, MarketSnapshot> snaps = new LinkedHashMap<>();

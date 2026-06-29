@@ -39,6 +39,28 @@ class FallbackPriceSourceTest {
         assertSame(s, FallbackPriceSource.convertToEur(s, 0.0), "no rate → don't fabricate EUR");
     }
 
+    @Test
+    void indexSymbolIsLabelledPointsAndNeverFxConverted() {
+        // ^GDAXI at 24013 "USD" must stay 24013, relabelled as points — NOT
+        // divided by the EUR/USD rate into a nonsensical ~21000 "EUR".
+        MarketSnapshot dax = new MarketSnapshot("^GDAXI", 24013.0, 23900.0, 0.47,
+                24100.0, 23850.0, -1, 24500.0, 18000.0, "USD", "XETRA", 1782342000L, List.of());
+        // fx==null path: toEur must short-circuit on the ^ symbol before any rate use.
+        MarketSnapshot pts = new FallbackPriceSource(null, null, null, null, null, null, null).toEur(dax);
+        assertEquals("PTS", pts.currency(), "index quoted in points, not a currency");
+        assertEquals(24013.0, pts.price(), 1e-9, "index level untouched (no FX division)");
+    }
+
+    @Test
+    void withCurrencyRelabelsButKeepsNumbers() {
+        MarketSnapshot s = usd(110.0, 3.5, List.of(100.0, 110.0));
+        MarketSnapshot pts = FallbackPriceSource.withCurrency(s, "PTS");
+        assertEquals("PTS", pts.currency());
+        assertEquals(110.0, pts.price(), 1e-9);
+        assertEquals(List.of(100.0, 110.0), pts.spark());
+        assertEquals("NASDAQ", pts.exchangeName());
+    }
+
     // ---- time-window source selection (CET). 2026-06: 22=Mon … 26=Fri, 27=Sat, 28=Sun ----
 
     private static java.time.ZonedDateTime berlin(int day, int hour, int min) {

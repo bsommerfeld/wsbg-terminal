@@ -1,2 +1,17 @@
 # Was hat sich geändert?
 
+**Die Schlagzeilen kommen jetzt spürbar schneller in den Wire.** Im Hintergrund hatte sich die Bild-Analyse vorgedrängelt: Jeder Broker-Screenshot, jeder Chart wurde so ausführlich vom Modell abgetippt, dass die KI minutenlang nur mit Bildern beschäftigt war — und die eigentlichen Schlagzeilen warteten in der Schlange. Das ist behoben: Die Bild-Analyse wird jetzt gezähmt und muss sich hinten anstellen, das Schlagzeilen-Schreiben hat Vorfahrt. Ergebnis aus dem Profiling: rund **dreimal so viele Schlagzeilen pro Minute**, und der Stau, der sich vorher aufgebaut hatte, löst sich auf.
+
+> 📸 **[Bild einfügen: Wire, der sich zügig mit frischen Schlagzeilen füllt]**
+
+Gleichzeitig sind die **Kurse ehrlicher und ruhiger** geworden: Sie kommen jetzt durchgängig von **einer** Euro-Börse (Lang & Schwarz, dem Trade-Republic-Handelsplatz) — dem Kurs, den du auch im Depot siehst, samt Chart. Weniger Quellen, weniger Verwechslung. Und: **kein ausgegrauter Kurs mehr, solange die Börse offen ist** — ein US-Index, der mittags noch auf seinem letzten Schlusskurs steht, wird nicht mehr fälschlich als „zu" dargestellt. Gedimmt wird nur noch tief in der Nacht, wenn wirklich alles geschlossen hat.
+
+## Restliches
+
+- **Indizes zeigen endlich Punkte statt Fantasiepreise.** Schlagzeilen zu DAX, Nasdaq, S&P 500, Euro Stoxx & Co. trugen bisher teils absurde Kurse (der DAX mit „38,86 €"), weil dahinter aus Versehen ein gleichnamiger Mini-Fonds gelandet ist. Jetzt steht der echte Indexstand in Punkten dran – „24.013 Pkt" statt Euro-Unsinn.
+- **Weniger Verwechslungen bei der Börsensuche.** „Mullen Automotive" landete schon mal beim gleichnamigen, aber völlig anderen „Mullen Group" aus Kanada. Jetzt wird die ISIN über eine zweite, strukturierte Quelle (wallstreet-online) ermittelt und der Börsenplatz **exakt über diese ISIN** angesteuert statt über den Namen — passt der Treffer nicht zum gemeinten Wert, fliegt er raus, statt einen falschen Kurs mit voller Überzeugung anzuzeigen.
+- **Reine US-Werte ohne Euro-Pendant zeigen jetzt einfach keinen Kurs** (statt eines umgerechneten US-Kurses, der das falsche Produkt trifft) — Nachrichten dazu kommen weiterhin. Der frühere Schalter „US-Kurse als Fallback" ist damit entfallen: weniger ist mehr.
+- Das rote **„Hier ist Geld zu holen"** wird wieder selten – und damit wieder ernst zu nehmen. Rot gibt es nur noch für den eindeutigen Volltreffer, bei dem man nicht lange überlegen muss; alles, was eher „könnte laufen" ist, bleibt normal. Neu leuchtet Rot zusätzlich, wenn die Richtung **glasklar** ist – wo Stimmung, News *und* Kurs alle hart in dieselbe Richtung zeigen. (Dasselbe Thema darf jetzt auch wieder rot werden, wenn es das verdient – die alte Sperre dagegen ist weg.)
+- **Schärfere Schlagzeilen.** Sie benennen jetzt konkreter, worum es geht (statt „der Tech-Sektor" die Aktien, die ihn ziehen; statt „ein Catalyst" das tatsächliche Ereignis), und halten die Stimmung aus dem Käfig stärker gegen die geprüften Nachrichten.
+- **Schluss mit Doppel-Schlagzeilen.** Zu vielen Themen erschien kurz hintereinander fast dieselbe Zeile noch einmal – einmal normal, einmal als „-Update:", obwohl sich nichts geändert hatte. Jetzt wird **gesammelt statt sofort gefeuert**: eine Schlagzeile entsteht erst, wenn das Material kurz „gesetzt" hat, und fast identische Wiederholungen werden abgefangen.
+- In den Einstellungen öffnet **„Zu den Logs"** den wsbg-terminal-Ordner direkt im Dateimanager – dort, wo unter anderem die Logs liegen.

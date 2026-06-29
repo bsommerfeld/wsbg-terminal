@@ -204,4 +204,33 @@ class HeadlineWriterTest {
         assertFalse(w.publish(c, d, resolvedNow()), "identical text within guard window skipped");
         assertEquals(1, repo.getAllHeadlines().size());
     }
+
+    @Test
+    void nearDuplicate_catchesUpdateSuffixAndLightRewords() {
+        String base = "Microsoft Corporation: Die Affen verlagern Spielgeld von Rüstung in Software";
+        // Same line re-emitted as an "-Update:" — the live duplicate pattern.
+        assertTrue(HeadlineWriter.isNearDuplicate(base, base + " -Update:"));
+        // One-word reword ("hat"→"hält").
+        assertTrue(HeadlineWriter.isNearDuplicate(
+                "Alphabet hat trotz Tech-Rout weiterhin Potenzial für die kommenden Jahre",
+                "Alphabet hält trotz Tech-Rout weiterhin Potenzial für die kommenden Jahre"));
+        // Genuinely different angles on the same subject must NOT be flagged.
+        assertFalse(HeadlineWriter.isNearDuplicate(
+                "Microsoft: Die Affen spekulieren mit Short-Positionen wegen Software-Unsicherheit",
+                "Microsoft: Die Affen verlagern Spielgeld von Rüstung in Pharma und SAP"));
+    }
+
+    @Test
+    void publishUnit_skipsNearDuplicateUpdate() {
+        AgentRepository repo = new AgentRepository();
+        HeadlineWriter w = new HeadlineWriter(repo, new ApplicationEventBus());
+        SubjectUnit u = instrumentUnit();
+        Draft first = new Draft("ServiceNow verlagert Kapital in Software", "MIXED", "NORMAL", null,
+                List.of(), null, List.of(), null, List.of(), List.of());
+        Draft asUpdate = new Draft("ServiceNow verlagert Kapital in Software -Update:", "MIXED",
+                "NORMAL", null, List.of(), null, List.of(), null, List.of(), List.of());
+        assertTrue(w.publishUnit(u, first));
+        assertFalse(w.publishUnit(u, asUpdate), "same line as an -Update: must be skipped");
+        assertEquals(1, repo.getHeadlinesByClusterId("NOW").size());
+    }
 }

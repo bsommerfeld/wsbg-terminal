@@ -14,6 +14,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -37,20 +38,22 @@ import java.util.stream.Collector;
  * normalisation, market-snapshot attach. Dropped — the reject/throttle gates
  * that suppressed the 1:1 mirror: the hard ≤20-word reject (now prompt guidance
  * only), the 10-minute per-(cluster,ticker) cooldown, and the cross-cluster
- * ticker reject. The single soft throttle retained is the
- * IMPORTANT→NORMAL downgrade when the same ticker was just flagged, so the wire
- * doesn't light up red five times for one symbol — it still prints every line.
- * A short identical-text guard prevents an accidental double-publish.
+ * ticker reject. The former IMPORTANT→NORMAL anti-spam downgrade (same ticker
+ * flagged recently) was also removed — a subject CAN re-flag IMPORTANT.
+ * A short near-duplicate guard prevents an accidental double-publish.
  */
 @Singleton
 public final class HeadlineWriter {
 
     private static final Logger LOG = LoggerFactory.getLogger(HeadlineWriter.class);
     private static final Pattern HTML_TAG = Pattern.compile("<[^>]+>");
-    /** Same ticker flagged IMPORTANT within this window → downgrade to NORMAL. */
-    private static final long TICKER_FLAG_WINDOW_SECS = 900;
     /** Skip an identical headline text for the same cluster within this window. */
     private static final long DUP_TEXT_GUARD_SECS = 120;
+    /** Skip a NEAR-duplicate of a unit's recent headline within this window. Much longer than
+     *  the rapid-double guard: with the compose settle/cooldown, a unit's re-composes are
+     *  spaced minutes apart, so a near-identical „-Update:" of a line from a few minutes ago
+     *  must still be caught. */
+    private static final long NEAR_DUP_GUARD_SECS = 1800;
 
     private final AgentRepository agentRepository;
     private final ApplicationEventBus eventBus;
@@ -153,13 +156,6 @@ public final class HeadlineWriter {
         }
 
         HeadlineHighlight highlight = HeadlineHighlight.fromString(draft.highlight());
-        // Soft anti-over-flag: if this ticker was flagged IMPORTANT very
-        // recently (any cluster), downgrade to NORMAL so the wire shows the
-        // line without lighting red again. Does NOT drop the headline.
-        if (highlight == HeadlineHighlight.IMPORTANT && tickerSymbol != null
-                && recentlyFlagged(tickerSymbol, now)) {
-            highlight = HeadlineHighlight.NORMAL;
-        }
 
         Double priceMove = sanePriceMove(draft.priceMovePercent(), headline);
 
@@ -211,13 +207,17 @@ public final class HeadlineWriter {
         String headline = stripHtml(draft.headline()).trim();
         if (headline.isEmpty()) return false;
 
-        // Identical-text guard against an accidental re-fire for the same unit.
+        // Near-duplicate guard against a re-fire for the same unit. The 4B model often
+        // re-emits the SAME line as an "-Update:" or a light reword ("hat"→"hält") on
+        // fresh-but-story-redundant evidence, which a strict equals() misses — so compare
+        // the NORMALISED core (strip the "-Update:" marker + punctuation) and a high
+        // token-similarity, not the raw string.
         long now = System.currentTimeMillis() / 1000;
         boolean dup = agentRepository.getHeadlinesByClusterId(unit.id).stream()
-                .anyMatch(h -> headline.equalsIgnoreCase(h.headline())
-                        && (now - h.createdAt()) < DUP_TEXT_GUARD_SECS);
+                .filter(h -> (now - h.createdAt()) < NEAR_DUP_GUARD_SECS)
+                .anyMatch(h -> isNearDuplicate(headline, h.headline()));
         if (dup) {
-            LOG.debug("[WRITE] skip duplicate headline text for unit {}", unit.id);
+            LOG.info("[WRITE] skip near-duplicate headline for unit {}", unit.id);
             return false;
         }
 
@@ -243,11 +243,6 @@ public final class HeadlineWriter {
         }
 
         HeadlineHighlight highlight = HeadlineHighlight.fromString(draft.highlight());
-        // Same soft anti-over-flag as the cluster path.
-        if (highlight == HeadlineHighlight.IMPORTANT && tickerSymbol != null
-                && recentlyFlagged(tickerSymbol, now)) {
-            highlight = HeadlineHighlight.NORMAL;
-        }
 
         Double priceMove = sanePriceMove(draft.priceMovePercent(), headline);
         List<String> sectors = clean(draft.sectors()).stream()
@@ -270,18 +265,46 @@ public final class HeadlineWriter {
         return true;
     }
 
-    private boolean recentlyFlagged(String ticker, long now) {
-        long horizon = now - TICKER_FLAG_WINDOW_SECS;
-        return agentRepository.getRecentHeadlines().stream()
-                .filter(h -> h.createdAt() >= horizon)
-                .filter(h -> h.highlight() == HeadlineHighlight.IMPORTANT)
-                .anyMatch(h -> ticker.equalsIgnoreCase(h.tickerSymbol()));
-    }
-
     // ---- sanitisers ported verbatim from the old PublishHeadlineTool ----
 
     private static String stripHtml(String s) {
         return s == null ? "" : HTML_TAG.matcher(s).replaceAll("");
+    }
+
+    /** Token-overlap above which two normalised headlines count as the same line. */
+    private static final double DUP_SIM_THRESHOLD = 0.8;
+
+    /**
+     * True when {@code a} is essentially the same line as {@code b} — identical once the
+     * "-Update:" continuation marker + punctuation are stripped (the model re-emitting a
+     * line as an update), or a light reword above {@link #DUP_SIM_THRESHOLD} token overlap
+     * ("hat"→"hält"). Package-private for testing.
+     */
+    static boolean isNearDuplicate(String a, String b) {
+        String na = normalizeForDup(a), nb = normalizeForDup(b);
+        if (na.isEmpty() || nb.isEmpty()) return false;
+        if (na.equals(nb)) return true;
+        return tokenJaccard(na, nb) >= DUP_SIM_THRESHOLD;
+    }
+
+    /** Lower-cased core of a headline: HTML, the "-Update:" marker and punctuation removed. */
+    static String normalizeForDup(String s) {
+        String t = stripHtml(s).toLowerCase(Locale.ROOT);
+        t = t.replaceAll("(?i)-?\\s*update\\s*:", " ");          // drop the "-Update:" continuation label
+        t = t.replaceAll("[^a-z0-9äöüß ]", " ").replaceAll("\\s+", " ").trim();
+        return t;
+    }
+
+    /** Jaccard token overlap of two normalised strings (0..1). */
+    private static double tokenJaccard(String a, String b) {
+        Set<String> ta = new HashSet<>(Arrays.asList(a.split(" ")));
+        Set<String> tb = new HashSet<>(Arrays.asList(b.split(" ")));
+        if (ta.isEmpty() || tb.isEmpty()) return 0.0;
+        Set<String> inter = new HashSet<>(ta);
+        inter.retainAll(tb);
+        Set<String> union = new HashSet<>(ta);
+        union.addAll(tb);
+        return (double) inter.size() / union.size();
     }
 
     private static Double sanePriceMove(Double priceMove, String headline) {

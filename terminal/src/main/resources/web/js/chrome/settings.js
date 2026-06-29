@@ -76,6 +76,11 @@ export function initSettings(socket) {
   if (updateBtn) updateBtn.addEventListener('click',
       () => socket.send('update', { command: 'apply' }));
 
+  // ---- Open the app-data folder ("Zu den Logs") ----
+  const openLogsBtn = view.querySelector('.js-open-logs');
+  if (openLogsBtn) openLogsBtn.addEventListener('click',
+      () => socket.send('settings', { command: 'open-logs' }));
+
   // ---- Destructive: full data wipe (two-click arm, no OSR-unfriendly confirm()) ----
   const clearBtn = view.querySelector('.js-clear-data');
   if (clearBtn) {

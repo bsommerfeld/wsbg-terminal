@@ -120,20 +120,12 @@ public class EditorialAgent {
     private final Map<String, Integer> composeRetries = new ConcurrentHashMap<>();
 
     /**
-     * Caps how many editorial model calls run at once across BOTH tiers of the #3
-     * pipeline — prep-stage subject extraction AND compose-worker headline writing both
-     * funnel through {@link #chat}, and this single {@link EditorialAgent} singleton is
-     * where they meet. Held only around the {@code model.chat} call so the two tiers
-     * together never exceed Ollama's {@code NUM_PARALLEL=2}. (In the single-threaded
-     * fallback tick it's uncontended, near-zero overhead.)
+     * Free gemma4 permits right now — for the pipeline's contention logging. The gate itself
+     * now lives in {@link AgentBrain} (shared with the vision prefetch, since both hit the one
+     * model); prep extraction + compose + vision together never exceed Ollama's NUM_PARALLEL=2.
      */
-    private static final int LLM_PARALLELISM = 2;
-    private final java.util.concurrent.Semaphore llmSlots =
-            new java.util.concurrent.Semaphore(LLM_PARALLELISM);
-
-    /** Free LLM permits right now (0..{@value #LLM_PARALLELISM}) — for the pipeline's contention logging. */
     public int availableLlmPermits() {
-        return llmSlots.availablePermits();
+        return brain.availableLlmPermits();
     }
 
     /**
@@ -164,7 +156,7 @@ public class EditorialAgent {
     }
 
     /**
-     * Installs the live price chain (L&amp;S → Tradegate → NASDAQ → Yahoo, EUR) onto
+     * Installs the live price chain (L&amp;S → Deutsche Börse → NASDAQ → Yahoo, EUR) onto
      * the resolver. Optional Guice method-injection: present in production
      * (AppModule binds {@link PriceSource}), absent in the lab harness + tests,
      * where the resolver keeps the Yahoo-only snapshot path. Fires after the
@@ -250,7 +242,7 @@ public class EditorialAgent {
         if (unit == null) {
             return new UnitDraft("", "", null, false, false, "", 0, List.of(), false, false);
         }
-        ChatModel model = brain.getAgentModel();
+        ChatModel model = brain.getComposeModel(); // tight numPredict — one short headline JSON
         if (model == null) {
             return new UnitDraft(unit.id, unit.canonicalName(), null, false, false, "", 0, List.of(), false, false);
         }
@@ -361,11 +353,17 @@ public class EditorialAgent {
         Instant now = Instant.now();
         MarketSnapshot s = unit.snapshot();
         if (s != null && s.hasPrice()) {
-            // Multi-source now (L&S / Tradegate / NASDAQ / Yahoo) — name the venue,
+            // Multi-source now (L&S / Deutsche Börse / NASDAQ / Yahoo) — name the venue,
             // don't hard-code "Yahoo", so the model never mislabels an EUR L&S price.
             String venue = s.exchangeName() == null || s.exchangeName().isBlank() ? "Markt" : s.exchangeName();
-            sb.append(String.format(Locale.ROOT, "Live market data (%s): %.2f%s", venue, s.price(),
-                    s.currency() == null || s.currency().isEmpty() ? "" : " " + s.currency()));
+            if ("PTS".equals(s.currency())) {
+                // A stock index is quoted in points, not a currency — tell the model
+                // so the headline reads „DAX unter 24.000 Punkte", never „… Euro".
+                sb.append(String.format(Locale.ROOT, "Live market data (%s): %.0f Punkte (Index)", venue, s.price()));
+            } else {
+                sb.append(String.format(Locale.ROOT, "Live market data (%s): %.2f%s", venue, s.price(),
+                        s.currency() == null || s.currency().isEmpty() ? "" : " " + s.currency()));
+            }
             if (Double.isFinite(s.dayChangePercent())) {
                 sb.append(String.format(Locale.ROOT, ", day %+.2f%%", s.dayChangePercent()));
             }
@@ -652,22 +650,34 @@ public class EditorialAgent {
      */
     public boolean composeAndPublishUnit(SubjectUnit u) {
         if (u == null) return false;
+        // Snapshot the evidence version BEFORE composing: every non-whiff outcome below
+        // stamps it back, so the merge cadence won't re-compose this unit until fresh
+        // evidence arrives. Captured up front (not at publish) so evidence racing in
+        // mid-compose leaves the unit eligible for a genuine follow-up.
+        long composedV = u.evidenceVersion();
         seedHeadlineHistoryIfEmpty(u);
         UnitDraft ud = composeUnit(u);
         Draft d = ud.draft();
         if (d == null || d.headline() == null || d.headline().isBlank()) {
             handleEmptyCompose(u, ud);
+            // A deliberate redundant-empty has been composed against this evidence; a
+            // whiff (model failure) must stay eligible so its re-queue actually retries.
+            if (!ud.whiffed()) u.markComposedAt(composedV);
             return false;
         }
-        // Unchanged from the unit's last line → nothing to publish.
+        // Unchanged from the unit's last line → nothing to publish (but it WAS composed).
         if (d.headline().equalsIgnoreCase(u.lastHeadlineText())) {
             composeRetries.remove(u.id);
+            u.markComposedAt(composedV);
             return false;
         }
         // News-enriched is DETERMINISTIC: a headline counts as news-enriched when its
         // SubjectUnit actually carried ≥1 attached news item at compose time — NOT when
         // the 4B model happened to cite one in sourceNewsIds (which it rarely does, so
         // the old `!ud.citedNewsIds().isEmpty()` left the "News" tag almost always off).
+        // A real headline was produced — composed against this evidence either way,
+        // whether the writer saved it or dropped it on its own dup guard.
+        u.markComposedAt(composedV);
         if (headlineWriter.publishUnit(u, d, !u.news().isEmpty())) {
             composeRetries.remove(u.id); // story moved on → fresh retry budget
             u.addHeadline(d.headline(), ud.isUpdate(), d.sentiment());
@@ -1184,16 +1194,28 @@ public class EditorialAgent {
         }
         List<ChatMessage> messages = List.of(
                 SystemMessage.from(systemPrompt), UserMessage.from(userMessage));
-        // Gate the actual model call so prep extraction + worker composition together
-        // never exceed Ollama's NUM_PARALLEL=2 (see llmSlots). Uninterruptible: a daemon
-        // worker shut down mid-acquire would otherwise abandon a permit it never took.
-        llmSlots.acquireUninterruptibly();
+        // Gate the actual model call through AgentBrain's SHARED gemma4 gate so prep
+        // extraction + worker composition + vision together never exceed Ollama's
+        // NUM_PARALLEL=2. Uninterruptible: a daemon worker shut down mid-acquire would
+        // otherwise abandon a permit it never took.
+        long t0 = System.nanoTime();
+        brain.acquireLlm();
+        long tAcq = System.nanoTime();
         try {
             ChatResponse response = model.chat(ChatRequest.builder().messages(messages).build());
+            long t1 = System.nanoTime();
             AiMessage ai = response.aiMessage();
+            // PROFILING: gate-wait (semaphore contention) vs gen (the model itself); in/out
+            // token counts expose a JSON-mode whitespace-loop (out ≫ the ~80 a headline needs)
+            // and a heavy prefill (in). Thread name (editorial-worker vs editorial-prep) tells
+            // compose from extraction.
+            var tu = response.tokenUsage();
+            LOG.info("[LLM] gate-wait={}ms gen={}ms in={} out={}",
+                    (tAcq - t0) / 1_000_000, (t1 - tAcq) / 1_000_000,
+                    tu == null ? -1 : tu.inputTokenCount(), tu == null ? -1 : tu.outputTokenCount());
             return ai == null || ai.text() == null ? "" : ai.text();
         } finally {
-            llmSlots.release();
+            brain.releaseLlm();
         }
     }
 

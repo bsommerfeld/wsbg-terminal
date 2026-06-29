@@ -23,7 +23,6 @@ class SettingsBridgeTest {
         assertEquals("de", snap.get("language"));
         assertEquals(true, snap.get("autoUpdate"));
     }
-
     @Test
     void headlinesModeMapsToClusterThemeFlag() {
         GlobalConfig c = new GlobalConfig();

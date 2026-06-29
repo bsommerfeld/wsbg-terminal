@@ -95,7 +95,11 @@ public class AppModule extends AbstractModule {
             Multibinder<NewsSource> newsSources =
                     Multibinder.newSetBinder(binder(), NewsSource.class);
             newsSources.addBinding().to(YahooFinanceClient.class);
-            newsSources.addBinding().to(NasdaqNewsClient.class);
+            // NASDAQ news is DISABLED (2026-06-30): its per-ticker news was thin/low-quality
+            // (missed e.g. SpaceX→Nasdaq-100 inclusion that Yahoo carried) and just diluted
+            // the pool. Yahoo carries what the wire needs. The NasdaqNewsClient/quote classes
+            // stay built — they're isolated, re-bind here if NASDAQ ever earns its slot back.
+            // newsSources.addBinding().to(NasdaqNewsClient.class);
 
             // RedditSource is assembled in provideRedditSource() below — it
             // auto-selects a working path (OAuth → .json → RSS) at runtime, so
@@ -129,8 +133,9 @@ public class AppModule extends AbstractModule {
             // Same ordering: the monitor's poll loop must exist before the publisher subscribes.
             bind(FearGreedMonitorService.class).asEagerSingleton();
             bind(FearGreedPublisher.class).asEagerSingleton();
-            // The live price chain (L&S → Tradegate → NASDAQ → Yahoo, EUR). Optionally
-            // injected into TickerResolver; Yahoo stays the search + news source.
+            // The live price chain (EUR-first: L&S → Deutsche Börse, then US fallback
+            // NASDAQ → Yahoo). Optionally injected into TickerResolver; Yahoo stays the
+            // search + news source.
             bind(PriceSource.class).to(FallbackPriceSource.class).in(com.google.inject.Singleton.class);
             bind(CommandBridge.class).asEagerSingleton();
             // Archive layer: search/byTicker queries + scroll-back pagination, and

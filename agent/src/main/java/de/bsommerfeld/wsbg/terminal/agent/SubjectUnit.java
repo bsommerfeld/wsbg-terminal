@@ -56,6 +56,24 @@ public final class SubjectUnit {
     /** Evidence keyed by thread/comment so the same source is never double-counted. */
     private final Map<String, EvidenceRef> evidence = new LinkedHashMap<>();
 
+    /**
+     * Monotonic counter bumped every time genuinely-new evidence is added (the same
+     * trigger that marks the unit dirty). Paired with {@link #composedEvidenceVersion}
+     * it answers "has anything actually changed since the last compose?" — the guard
+     * that stops a unit from being re-composed when an in-flight copy already covered
+     * its current evidence (the merge cadence would otherwise keep a unit dirty across
+     * a long compose and fire a redundant, near-identical follow-up). NOT snapshotted:
+     * a restored unit starts at 0/0 so its re-seeded story isn't re-published — only
+     * fresh post-restart evidence (which bumps this) re-wakes it.
+     */
+    private long evidenceVersion;
+    /** The {@link #evidenceVersion} the last completed compose ran against (see above). */
+    private long composedEvidenceVersion;
+    /** Wall-clock ms of the last completed compose — drives the per-unit compose cooldown (evidence batching). */
+    private long lastComposedAtMs;
+    /** Wall-clock ms the unit first became dirty since its last compose (0 = clean) — drives the settle delay. */
+    private long dirtySinceMs;
+
     /** Headlines already published for this unit — context for the NEW/UPDATE call. */
     private final List<UnitHeadline> headlines = new ArrayList<>();
 
@@ -157,7 +175,11 @@ public final class SubjectUnit {
     /** Adds one piece of evidence; returns {@code true} if it was new (not a duplicate source). */
     public synchronized boolean addEvidence(EvidenceRef ref) {
         boolean added = evidence.putIfAbsent(ref.key(), ref) == null;
-        if (added) lastActivity = Instant.now();
+        if (added) {
+            lastActivity = Instant.now();
+            if (evidenceVersion == composedEvidenceVersion) dirtySinceMs = System.currentTimeMillis();
+            evidenceVersion++;
+        }
         return added;
     }
 
@@ -172,6 +194,34 @@ public final class SubjectUnit {
 
     public synchronized List<EvidenceRef> evidence() { return new ArrayList<>(evidence.values()); }
     public synchronized int evidenceCount() { return evidence.size(); }
+
+    /** Current evidence version — snapshot it before composing, hand it back via {@link #markComposedAt}. */
+    public synchronized long evidenceVersion() { return evidenceVersion; }
+
+    /**
+     * Records that a compose ran against version {@code version} (captured before the
+     * compose started). Monotonic: a stale stamp from a slower path can't move it
+     * backwards. After this, {@link #hasUncomposedEvidence()} is false until fresh
+     * evidence bumps {@link #evidenceVersion} again — so a redundant recompose of the
+     * same evidence is suppressed while a genuine update (new evidence, even mid-compose)
+     * still re-fires.
+     */
+    public synchronized void markComposedAt(long version) {
+        if (version > composedEvidenceVersion) composedEvidenceVersion = version;
+        lastComposedAtMs = System.currentTimeMillis();
+        dirtySinceMs = 0; // composed → clean; the next fresh evidence restarts the settle clock
+    }
+
+    /** Wall-clock ms of the last completed compose (0 = never) — for the compose cooldown. */
+    public synchronized long lastComposedAtMs() { return lastComposedAtMs; }
+
+    /** Wall-clock ms the unit first became dirty since its last compose (0 = clean) — for the settle delay. */
+    public synchronized long dirtySinceMs() { return dirtySinceMs; }
+
+    /** True when evidence has been added since the last completed compose — i.e. there's something new to say. */
+    public synchronized boolean hasUncomposedEvidence() {
+        return evidenceVersion > composedEvidenceVersion;
+    }
 
     /** Source keys of this unit's evidence — used to detect a shared mention with another unit. */
     public synchronized Set<String> evidenceKeys() { return new HashSet<>(evidence.keySet()); }

@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -76,6 +77,14 @@ public final class EditorialPipeline {
 
     /** Prep parallelism — resolution is mostly cached I/O + one extract LLM (which the semaphore caps). */
     private static final int PREP_THREADS = 4;
+    /**
+     * Per-cluster prep cooldown: a cluster re-prepped within this window waits — its fresh
+     * evidence accumulates and is extracted ONCE when the window passes. Prep (LLM subject
+     * extraction + Yahoo resolution) is the expensive tier; without this a hot thread re-extracts
+     * on every new comment, floods the model and starves the compose workers, so the wire never
+     * catches up. The first prep of a cluster is immediate; only re-preps are batched.
+     */
+    private static final long PREP_COOLDOWN_MS = 60_000;
     /** Compose workers — the shared {@code Semaphore(2)} in {@link EditorialAgent} is the real LLM limiter. */
     private static final int WORKER_THREADS = 2;
     /** How often duplicate identities are folded + freshly-dirty units enqueued. */
@@ -88,6 +97,22 @@ public final class EditorialPipeline {
      * the whole process lifetime (and is serialized whole into the snapshot).
      */
     private static final long PRUNE_INTERVAL_MS = 60_000;
+    /**
+     * Per-unit compose cooldown: after a unit composes, hold off re-composing it for this
+     * long even as fresh evidence arrives — the evidence keeps accumulating on the unit and
+     * the next compose runs ONCE against the whole batch. Without it, every single new
+     * comment re-wakes the unit (one compose per evidence increment), which both floods the
+     * compose queue and produces a stream of near-identical "-Update:" lines on a story that
+     * hasn't actually moved. A genuine fresh story still surfaces — just batched, not per-tick.
+     */
+    private static final long COMPOSE_COOLDOWN_MS = 60_000;
+    /**
+     * Settle delay before a freshly-dirty unit is FIRST composed: give its evidence time to
+     * accumulate AND its price/chart time to resolve, so the line is fuller and carries a
+     * quote/sparkline instead of firing on a bare first mention. The audience prefers a
+     * slightly later but richer headline over an instant thin one.
+     */
+    private static final long COMPOSE_SETTLE_MS = 30_000;
 
     private final EditorialAgent agent;
     private final ClusterRegistry clusterRegistry;
@@ -106,8 +131,14 @@ public final class EditorialPipeline {
     private final Set<String> inProgress = ConcurrentHashMap.newKeySet();
     /** Clusters re-requested while their prep ran — replayed once it finishes (no lost evidence). */
     private final Set<String> rerunRequested = ConcurrentHashMap.newKeySet();
+    /** Wall-clock ms a cluster was last prepped — drives the per-cluster prep cooldown (batching). */
+    private final Map<String, Long> lastPreppedMs = new ConcurrentHashMap<>();
+    /** Clusters whose re-prep is deferred to the end of the cooldown — coalesces the wait. */
+    private final Set<String> deferredClusters = ConcurrentHashMap.newKeySet();
     /** Prep tasks actively RUNNING (not just queued) — logged so parallel prep is visible. */
     private final AtomicInteger activePreps = new AtomicInteger();
+    /** Last logged queue-depth bucket (size/10) — log only on a threshold crossing, no spam. */
+    private final AtomicInteger lastQueueBucket = new AtomicInteger(0);
 
     /**
      * Fair RW lock: prep {@code attribute} = read (shared), merge cadence = write
@@ -152,6 +183,21 @@ public final class EditorialPipeline {
      */
     public void submitCluster(String clusterId) {
         if (clusterId == null || !running) return;
+        // Per-cluster prep cooldown: a cluster prepped within PREP_COOLDOWN_MS waits, so a
+        // hot thread's evidence batches into ONE re-extraction instead of flooding the model.
+        long last = lastPreppedMs.getOrDefault(clusterId, 0L);
+        long since = System.currentTimeMillis() - last;
+        if (last > 0 && since < PREP_COOLDOWN_MS) {
+            if (deferredClusters.add(clusterId)) {
+                mergeScheduler.schedule(() -> {
+                    deferredClusters.remove(clusterId);
+                    submitCluster(clusterId);
+                }, PREP_COOLDOWN_MS - since, TimeUnit.MILLISECONDS);
+                LOG.info("[PIPE] cluster {} re-prep deferred {}s (batching)", clusterId,
+                        (PREP_COOLDOWN_MS - since) / 1000);
+            }
+            return;
+        }
         if (!inProgress.add(clusterId)) {
             rerunRequested.add(clusterId);
             LOG.info("[PIPE] cluster {} already prepping → rerun queued", clusterId);
@@ -197,13 +243,27 @@ public final class EditorialPipeline {
             // cadence (its own [PIPE] line), so this reports the theme + the live queue depth.
             LOG.info("[PIPE] prep DONE cluster {} → theme={} enqueued, subjects via merge cadence (queue={})",
                     clusterId, themeEnqueued, queue.size());
+            lastPreppedMs.put(clusterId, System.currentTimeMillis()); // start the prep cooldown
             inProgress.remove(clusterId);
-            // Replay a request that landed mid-run so fresh evidence is re-attributed.
+            // Replay a request that landed mid-run — but submitCluster now applies the prep
+            // cooldown, so the replay batches (deferred) instead of re-extracting back-to-back.
             if (rerunRequested.remove(clusterId)) submitCluster(clusterId);
         }
     }
 
     // -- merge cadence: fold identities + enqueue freshly-dirty units --
+
+    /** Logs only when the compose-queue depth crosses a 10-job threshold (10/20/30/…), no spam. */
+    private void noteQueueDepth(int size) {
+        int bucket = size / 10;
+        int prev = lastQueueBucket.getAndSet(bucket);
+        if (bucket != prev) {
+            // Dump the queued ids (insertion order) so we SEE what's piling up + in what order.
+            LOG.info("[PIPE] compose queue {} {} jobs ({}) :: {}",
+                    bucket > prev ? "▲ over" : "▼ under", Math.max(bucket, prev) * 10, size,
+                    queue.pendingIds());
+        }
+    }
 
     private void mergeAndEnqueue() {
         if (!running) return;
@@ -218,7 +278,39 @@ public final class EditorialPipeline {
                 registryLock.writeLock().unlock();
             }
             int enqueued = 0;
+            int stale = 0;
+            int cooling = 0;
+            long nowMs = System.currentTimeMillis();
             for (String unitId : dirty) {
+                SubjectUnit unit = subjectRegistry.get(unitId);
+                if (unit == null) continue; // merged/removed since it was marked dirty
+                // Drop a dirty mark whose evidence an in-flight copy already composed
+                // against. Without this, a long in-flight compose lets the 1.5s cadence
+                // keep re-marking the unit dirty, and once that copy finishes the lingering
+                // mark fires a second, near-identical "-Update:" line over the same facts.
+                if (!unit.hasUncomposedEvidence()) {
+                    stale++;
+                    continue;
+                }
+                // Settle: hold a freshly-dirty unit until its evidence + price/chart have had
+                // COMPOSE_SETTLE_MS to land, so the first line is fuller and carries a quote,
+                // not a bare first mention.
+                long sinceDirty = nowMs - unit.dirtySinceMs();
+                if (unit.dirtySinceMs() > 0 && sinceDirty < COMPOSE_SETTLE_MS) {
+                    subjectRegistry.markDirty(unitId);
+                    cooling++;
+                    continue;
+                }
+                // Per-unit compose cooldown: a unit composed within COMPOSE_COOLDOWN_MS keeps
+                // its dirty mark but is NOT re-enqueued yet — fresh evidence accumulates on it
+                // and composes once when the window passes (batching, not one compose per
+                // comment). The first compose is gated only by the settle above.
+                long since = nowMs - unit.lastComposedAtMs();
+                if (unit.lastComposedAtMs() > 0 && since < COMPOSE_COOLDOWN_MS) {
+                    subjectRegistry.markDirty(unitId);
+                    cooling++;
+                    continue;
+                }
                 if (queue.offer(new ComposeJob.SubjectJob(unitId))) {
                     enqueued++;
                 } else {
@@ -228,10 +320,13 @@ public final class EditorialPipeline {
                     LOG.info("[PIPE] re-mark dirty {} (compose in-flight)", unitId);
                 }
             }
+            noteQueueDepth(queue.size());
             // M>0 is the interesting case (subjects flowing) → INFO; an idle tick → DEBUG.
             if (!dirty.isEmpty()) {
-                LOG.info("[PIPE] merge cadence: {} unit(s) dirty → {} enqueued{} (queue={})",
+                LOG.info("[PIPE] merge cadence: {} unit(s) dirty → {} enqueued{}{}{} (queue={})",
                         dirty.size(), enqueued,
+                        cooling > 0 ? ", " + cooling + " cooling" : "",
+                        stale > 0 ? ", " + stale + " stale-dropped" : "",
                         merged > 0 ? " (" + merged + " identity-merged)" : "", queue.size());
             } else {
                 LOG.debug("[PIPE] merge cadence: 0 unit(s) dirty{}",

@@ -248,6 +248,26 @@ public final class CefHost {
         }
     }
 
+    /**
+     * Reveals {@code dir} in the OS file manager (Finder / Explorer / Nautilus);
+     * the directory is created first if it's missing so the OPEN action never
+     * fails on a fresh install. Failures are logged, never thrown. Used by the
+     * Settings "Zu den Logs" button to open the app-data folder.
+     */
+    public static void openFolder(Path dir) {
+        try {
+            java.nio.file.Files.createDirectories(dir);
+            if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.OPEN)) {
+                LOG.info("Opening folder in OS file manager: {}", dir);
+                Desktop.getDesktop().open(dir.toFile());
+            } else {
+                LOG.warn("Desktop OPEN action unsupported — cannot open {}", dir);
+            }
+        } catch (Exception e) {
+            LOG.warn("Failed to open folder {}: {}", dir, e.getMessage());
+        }
+    }
+
     public CefBrowser createBrowser(String url) {
         // Our own software OSR browser (SwingCefBrowser) instead of jcef's
         // stock CefBrowserOsr: CEF's onPaint buffer is blitted into a lightweight
