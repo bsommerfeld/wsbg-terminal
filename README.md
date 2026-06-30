@@ -28,7 +28,7 @@ Das WSBG Terminal ist eure Kommandozentrale für [**r/wallstreetbetsGER**](https
 ### 📸 Loss Porn (Visuals)
 
 <p align="center">
-  <img width="850" alt="Dashboard" src="https://github.com/user-attachments/assets/68145c7f-b869-45de-b321-2246d7761edb" />
+  <img width="850" alt="Dashboard" src="https://github.com/user-attachments/assets/56cd68a9-7ce3-4387-bbfe-ab3a662020fc" />
   <br>
   <em>Hier könnte Ihre Werbung stehen (wenn ihr noch Geld hättet).</em>
 </p>
