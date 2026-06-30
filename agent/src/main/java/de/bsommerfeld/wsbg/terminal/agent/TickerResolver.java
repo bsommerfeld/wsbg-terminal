@@ -542,7 +542,13 @@ public final class TickerResolver {
 
     private static Set<String> tokenize(String s) {
         if (s == null) return Set.of();
-        String norm = s.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9 ]", " ");
+        // Strip diacritics FIRST (é→e, è→e, ü→u, ç→c, à→a …). Without this the [^a-z0-9 ]
+        // filter below turns an accented letter into a SPACE, splitting "Hermès" → "herm"+"s"
+        // so it never matches Yahoo's "Hermes International" (RMS.PA) → no ticker, no price.
+        // NFD decomposes each accent into a combining mark, which \p{M} then removes.
+        String deAccented = java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "");
+        String norm = deAccented.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9 ]", " ");
         Set<String> out = new HashSet<>();
         for (String t : Arrays.asList(norm.trim().split("\\s+"))) {
             if (t.length() < 3) continue;
