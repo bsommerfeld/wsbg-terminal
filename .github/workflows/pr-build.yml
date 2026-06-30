@@ -44,11 +44,13 @@ jobs:
           distribution: 'zulu'
           cache: maven
 
-      - name: Run Unit Tests
-        run: ./mvnw clean test --no-transfer-progress -U
-
-      - name: Build with Maven
-        run: ./mvnw package -DskipTests --no-transfer-progress
+      # clean install (not package): runs the unit tests AND installs every
+      # module JAR into the local ~/.m2, so the isolated
+      # `dependency:copy-dependencies -pl terminal` step below can resolve the
+      # sibling modules (core, reddit, agent, …). `package` leaves them only in
+      # each module's target/, where an isolated -pl run can't find them.
+      - name: Build & Test with Maven
+        run: ./mvnw clean install --no-transfer-progress -U
 
       # ── Launcher JAR ──────────────────────────────────────────────────
       # The shade plugin produces the fat JAR we need. The "original-"
