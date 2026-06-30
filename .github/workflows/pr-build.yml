@@ -44,8 +44,11 @@ jobs:
           distribution: 'zulu'
           cache: maven
 
+      - name: Run Unit Tests
+        run: ./mvnw clean test --no-transfer-progress -U
+
       - name: Build with Maven
-        run: mvn clean package -DskipTests -U
+        run: ./mvnw package -DskipTests --no-transfer-progress
 
       # ── Launcher JAR ──────────────────────────────────────────────────
       # The shade plugin produces the fat JAR we need. The "original-"
@@ -80,7 +83,7 @@ jobs:
 
           mkdir -p pr-artifacts/terminal
 
-          mvn dependency:copy-dependencies \
+          ./mvnw dependency:copy-dependencies \
             -pl terminal \
             -DincludeScope=runtime \
             -DoutputDirectory=terminal/target/deps
