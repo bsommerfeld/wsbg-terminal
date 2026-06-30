@@ -8,7 +8,14 @@
 // headlines over its life, so keying on clusterId alone would flash
 // only the first one and silently skip every follow-up.
 
-import { highlightSubjects } from '../format/ticker.js';
+import { highlightTickers, highlightSubjects } from '../format/ticker.js';
+
+// Gold subject highlight is OFF until subject CONSOLIDATION lands. Today a single event
+// over-extracts into several subjects (e.g. D-Wave + National Science Foundation + Chips
+// and Science Act all headline the same funding story), and the unit's canonical name is
+// the legal one ("Salesforce, Inc.") while the line uses the short form — so the gild is
+// inconsistent and sometimes absent. Flip to true once one event == one clean subject.
+const GOLD_SUBJECTS = false;
 import { colorizeSignedNumbers } from '../format/numbers.js';
 import { fmtClock } from '../format/time.js';
 
@@ -110,9 +117,11 @@ function rowKey(h) {
 }
 
 function toRow(h, isNew) {
-  // highlightSubjects escapes its input internally and emits <span class="subject">s
-  // around the company name(s) the line is about — the gold cue.
-  const head = colorizeSignedNumbers(highlightSubjects(h.headline, h.subjects));
+  // Both escape internally + emit <span>s. Subject gild is gated off (see GOLD_SUBJECTS)
+  // until consolidation makes one event == one clean subject; until then, the ticker cue.
+  const head = colorizeSignedNumbers(
+    GOLD_SUBJECTS ? highlightSubjects(h.headline, h.subjects)
+                  : highlightTickers(h.headline, h.tickerSymbol));
 
   const classes = ['row'];
   const cls = HIGHLIGHT_CLASS[h.highlight];
