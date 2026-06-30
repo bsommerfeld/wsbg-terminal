@@ -1261,8 +1261,11 @@ public class EditorialAgent {
         // extraction + worker composition + vision together never exceed Ollama's
         // NUM_PARALLEL=2. Uninterruptible: a daemon worker shut down mid-acquire would
         // otherwise abandon a permit it never took.
+        // Compose calls get the reserved compose slot; extraction shares the prep slot with
+        // vision, so a cold-start extraction flood can't starve the compose workers.
+        boolean compose = model == brain.getComposeModel();
         long t0 = System.nanoTime();
-        brain.acquireLlm();
+        brain.acquireLlm(compose);
         long tAcq = System.nanoTime();
         try {
             ChatResponse response = model.chat(ChatRequest.builder().messages(messages).build());
@@ -1278,7 +1281,7 @@ public class EditorialAgent {
                     tu == null ? -1 : tu.inputTokenCount(), tu == null ? -1 : tu.outputTokenCount());
             return ai == null || ai.text() == null ? "" : ai.text();
         } finally {
-            brain.releaseLlm();
+            brain.releaseLlm(compose);
         }
     }
 
