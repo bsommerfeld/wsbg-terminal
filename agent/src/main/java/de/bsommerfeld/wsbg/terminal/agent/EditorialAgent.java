@@ -103,6 +103,15 @@ public class EditorialAgent {
     private static final int EXTRACT_CHUNK_CHARS = 1800;
 
     /**
+     * Extra compose attempts when a subject with NO prior headline comes back empty. 1:1 mirror:
+     * a FIRST line is never dropped — the room talking IS the story (we attach price + news), so
+     * the only legitimate {@code {"headline":""}} is a redundant UPDATE against the unit's OWN
+     * priors. The 4B model occasionally returns empty on a thin/question thread anyway; its random
+     * seed varies, so a retry almost always yields the line.
+     */
+    private static final int FIRST_COMPOSE_EMPTY_RETRIES = 2;
+
+    /**
      * How often a unit whose compose came back unusable (a model whiff, not a
      * deliberate redundant-empty) is re-queued before it's parked. 1 = give it ONE
      * more tick; a second consecutive whiff parks it (stop re-dirtying, but never
@@ -269,49 +278,73 @@ public class EditorialAgent {
                 .replace("{{ROOM_SLANG}}", WsbgJargon.roomSlangForPrompt(lang));
         String user = unitBrief(unit, config.getHeadlines().isNewsCoverageEnabled(), BriefLabels.of(lang));
 
+        boolean hasPriors = !unit.headlines().isEmpty();
+        // When the redundancy filter is OFF (user setting), the wire is a strict 1:1 mirror:
+        // every dirty signal writes a line, even a duplicate — so an empty reply is NEVER honored
+        // and we retry it exactly like a first line. When ON (default), a redundant UPDATE against
+        // the unit's own priors is the one legal empty.
+        boolean suppressRedundant = config.getHeadlines().isSuppressRedundant();
         long t0 = System.nanoTime();
-        String text = chat(model, sys, user);
-        long elapsed = ms(t0, System.nanoTime());
-
+        String text = null;
         Draft draft = null;
         boolean isUpdate = false;
         boolean salvaged = false;
         boolean redundant = false;
         List<String> citedNews = List.of();
-        JsonNode obj = firstHeadlineObject(parseJson(text));
-        if (obj != null) {
-            draft = toDraft(obj);
-            isUpdate = "UPDATE".equalsIgnoreCase(obj.path("mode").asText(""));
-            citedNews = readStrings(obj.path("sourceNewsIds"));
-            // An explicit empty headline in a well-formed object is the model's
-            // deliberate "nothing new to add" — the prompt's one legal empty (a
-            // redundant UPDATE). That is NOT a whiff: it only holds against THIS unit's
-            // own prior headlines (each compose sees only its own story), so a unit with
-            // no priors never lands here legitimately. Park it silently, never retry it.
-            redundant = draft == null && obj.has("headline");
-        }
-        if (draft == null && !redundant) {
-            for (JsonNode o : salvageObjects(text)) {
-                Draft d = toDraft(o);
-                if (d != null) {
-                    draft = d;
-                    isUpdate = "UPDATE".equalsIgnoreCase(o.path("mode").asText(""));
-                    citedNews = readStrings(o.path("sourceNewsIds"));
-                    salvaged = true;
-                    break;
+        // 1:1 mirror: a FIRST line is NEVER dropped. The room talking about a subject IS the
+        // story (we attach price + news ourselves), so the only legitimate {"headline":""} is a
+        // redundant UPDATE against the unit's OWN priors. The 4B model sometimes lazily returns
+        // empty on a thin/question thread even with no priors — retry (its seed varies) before
+        // accepting an empty/garbage first compose.
+        for (int attempt = 0; ; attempt++) {
+            text = chat(model, sys, user);
+            draft = null;
+            isUpdate = false;
+            salvaged = false;
+            redundant = false;
+            citedNews = List.of();
+            JsonNode obj = firstHeadlineObject(parseJson(text));
+            if (obj != null) {
+                draft = toDraft(obj);
+                isUpdate = "UPDATE".equalsIgnoreCase(obj.path("mode").asText(""));
+                citedNews = readStrings(obj.path("sourceNewsIds"));
+                // Empty headline is redundant ONLY against the unit's own priors AND only when
+                // the redundancy filter is on — NEVER for a first line, and never at all in strict
+                // 1:1 mode. Otherwise an empty reply is a model lapse, not "nothing to say".
+                redundant = draft == null && obj.has("headline") && hasPriors && suppressRedundant;
+            }
+            if (draft == null && !redundant) {
+                for (JsonNode o : salvageObjects(text)) {
+                    Draft d = toDraft(o);
+                    if (d != null) {
+                        draft = d;
+                        isUpdate = "UPDATE".equalsIgnoreCase(o.path("mode").asText(""));
+                        citedNews = readStrings(o.path("sourceNewsIds"));
+                        salvaged = true;
+                        break;
+                    }
                 }
             }
-        }
-        if (draft == null && !redundant) {
-            // Even balanced-object salvage failed (a stray quote like "ticker": null"
-            // breaks the object) — recover the headline + scalars by regex so the line
-            // isn't lost.
-            draft = salvageDraftByRegex(text);
-            if (draft != null) {
-                isUpdate = "UPDATE".equalsIgnoreCase(orEmpty(regexStringField(text, "mode")));
-                salvaged = true;
+            if (draft == null && !redundant) {
+                // Even balanced-object salvage failed (a stray quote like "ticker": null"
+                // breaks the object) — recover the headline + scalars by regex so the line
+                // isn't lost.
+                draft = salvageDraftByRegex(text);
+                if (draft != null) {
+                    isUpdate = "UPDATE".equalsIgnoreCase(orEmpty(regexStringField(text, "mode")));
+                    salvaged = true;
+                }
             }
+            // Retry an empty/garbage reply when we must NOT drop it: a first line (no priors), or
+            // strict 1:1 mode (redundancy filter off → every dirty writes). A usable line, a legit
+            // redundant, or (priors AND filter on) → stop.
+            if (draft != null || redundant || (hasPriors && suppressRedundant)
+                    || attempt >= FIRST_COMPOSE_EMPTY_RETRIES) break;
+            LOG.info("[COMPOSE] empty line for {} ({}) — retry {}/{} ({})",
+                    unit.id, unit.canonicalName(), attempt + 1, FIRST_COMPOSE_EMPTY_RETRIES,
+                    hasPriors ? "1:1 mode, no redundancy filter" : "a first line is never dropped");
         }
+        long elapsed = ms(t0, System.nanoTime());
         // A whiff = no usable headline AND the model did NOT deliberately say "redundant"
         // (no headline key at all / wrong shape / garbage). This is the silent-loss case:
         // surface the raw reply — like the extraction warn — so the next one is
@@ -686,7 +719,8 @@ public class EditorialAgent {
         // A real headline was produced — composed against this evidence either way,
         // whether the writer saved it or dropped it on its own dup guard.
         u.markComposedAt(composedV);
-        if (headlineWriter.publishUnit(u, d, !u.news().isEmpty())) {
+        if (headlineWriter.publishUnit(u, d, !u.news().isEmpty(),
+                config.getHeadlines().isSuppressRedundant())) {
             composeRetries.remove(u.id); // story moved on → fresh retry budget
             u.addHeadline(d.headline(), ud.isUpdate(), d.sentiment());
             u.markNewsCovered(ud.citedNewsIds());

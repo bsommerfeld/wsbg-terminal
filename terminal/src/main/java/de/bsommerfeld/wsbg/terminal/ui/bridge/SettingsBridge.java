@@ -152,6 +152,10 @@ public final class SettingsBridge {
                 config.getHeadlines().setAnalyzeImages(asBool(value));
                 return true;
             }
+            case "suppressRedundant" -> {
+                config.getHeadlines().setSuppressRedundant(asBool(value));
+                return true;
+            }
             default -> {
                 LOG.debug("settings: ignoring unknown key '{}'", key);
                 return false;
@@ -173,6 +177,7 @@ public final class SettingsBridge {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("headlinesMode", config.getHeadlines().isClusterThemeEnabled() ? "all" : "tickers");
         out.put("analyzeImages", config.getHeadlines().isAnalyzeImages());
+        out.put("suppressRedundant", config.getHeadlines().isSuppressRedundant());
         out.put("language", config.getUser().getLanguage());
         out.put("autoUpdate", config.getUser().isAutoUpdate());
         return out;

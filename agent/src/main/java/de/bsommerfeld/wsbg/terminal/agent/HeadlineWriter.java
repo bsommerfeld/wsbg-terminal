@@ -192,17 +192,21 @@ public final class HeadlineWriter {
      * guard. Never throws on bad model output.
      */
     public boolean publishUnit(SubjectUnit unit, Draft draft) {
-        return publishUnit(unit, draft, false);
+        return publishUnit(unit, draft, false, true);
+    }
+
+    public boolean publishUnit(SubjectUnit unit, Draft draft, boolean newsEnriched) {
+        return publishUnit(unit, draft, newsEnriched, true);
     }
 
     /**
      * Same as {@link #publishUnit(SubjectUnit, Draft)} but records whether the
      * compose stage leaned on at least one external news item ({@code newsEnriched}
-     * = the draft cited a {@code [news:ID]}). The flag is derived by the caller
-     * (which holds the cited-news list), persisted on the record, and surfaced by
-     * the UI as a subtle "News" provenance tag.
+     * = the draft cited a {@code [news:ID]}), and honours the {@code suppressRedundant}
+     * setting: when false the near-duplicate guard is skipped so a strict 1:1 mirror
+     * publishes every dirty line, even a duplicate.
      */
-    public boolean publishUnit(SubjectUnit unit, Draft draft, boolean newsEnriched) {
+    public boolean publishUnit(SubjectUnit unit, Draft draft, boolean newsEnriched, boolean suppressRedundant) {
         if (unit == null || draft == null) return false;
         String headline = stripHtml(draft.headline()).trim();
         if (headline.isEmpty()) return false;
@@ -211,9 +215,9 @@ public final class HeadlineWriter {
         // re-emits the SAME line as an "-Update:" or a light reword ("hat"→"hält") on
         // fresh-but-story-redundant evidence, which a strict equals() misses — so compare
         // the NORMALISED core (strip the "-Update:" marker + punctuation) and a high
-        // token-similarity, not the raw string.
+        // token-similarity, not the raw string. Skipped entirely in strict 1:1 mode.
         long now = System.currentTimeMillis() / 1000;
-        boolean dup = agentRepository.getHeadlinesByClusterId(unit.id).stream()
+        boolean dup = suppressRedundant && agentRepository.getHeadlinesByClusterId(unit.id).stream()
                 .filter(h -> (now - h.createdAt()) < NEAR_DUP_GUARD_SECS)
                 .anyMatch(h -> isNearDuplicate(headline, h.headline()));
         if (dup) {
