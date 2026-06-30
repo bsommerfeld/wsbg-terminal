@@ -91,6 +91,16 @@ const AD_MESSAGES = [
     text: 'ETF oder Terminal, was wählst du?',
     link: DONATE_LINK,
   },
+  {
+    icon: 'skull',
+    text: 'Du hast einen Fehler gefunden? Erstelle ein Issue!',
+    link: { href: 'https://wsbg.app', label: 'wsbg.app' },
+  },
+  {
+    icon: 'gem',
+    text: 'Dir fehlt das eine entscheidende Feature? Erstelle ein Issue!',
+    link: { href: 'https://wsbg.app', label: 'wsbg.app' },
+  },
 ];
 
 let holdUntil = 0;     // hover-hold deadline (see HOVER_HOLD_MS)
