@@ -51,6 +51,11 @@ public final class ReportBuilder {
         return buildReportData(inv, Collections.emptyList());
     }
 
+    /** English (default/fallback) report — language-neutral callers and tests. */
+    public String buildReportData(InvestigationCluster inv, List<HeadlineRecord> priorHeadlines) {
+        return buildReportData(inv, priorHeadlines, "en");
+    }
+
     /**
      * Builds a structured text block containing cluster metadata, thread content,
      * comments, and vision analysis for up to 3 source threads. This is the raw
@@ -64,14 +69,15 @@ public final class ReportBuilder {
      * has been covered and which is genuinely new — and either skip or write
      * a follow-up that addresses only the new material.
      */
-    public String buildReportData(InvestigationCluster inv, List<HeadlineRecord> priorHeadlines) {
+    public String buildReportData(InvestigationCluster inv, List<HeadlineRecord> priorHeadlines, String langCode) {
+        BriefLabels lbl = BriefLabels.of(langCode);
         StringBuilder sb = new StringBuilder();
-        sb.append("--- CASE ID: ").append(inv.id).append(" ---\n");
-        sb.append("Cluster Topic: ").append(inv.initialTitle).append("\n");
-        sb.append("Cluster Age: ").append(formatAge(inv.threadCreatedUTC)).append("\n");
-        sb.append("Active Threads: ").append(inv.activeThreadIds.size()).append("\n");
+        sb.append(lbl.caseId(inv.id));
+        sb.append(lbl.clusterTopic()).append(inv.initialTitle).append("\n");
+        sb.append(lbl.clusterAge()).append(formatAge(inv.threadCreatedUTC, lbl)).append("\n");
+        sb.append(lbl.activeThreads()).append(inv.activeThreadIds.size()).append("\n");
         if (!inv.tickers.isEmpty()) {
-            sb.append("Tickers seen: ").append(inv.tickers).append("\n");
+            sb.append(lbl.tickersSeen()).append(inv.tickers).append("\n");
         }
 
         // Index sources used by prior headlines so we can tell which
@@ -85,14 +91,12 @@ public final class ReportBuilder {
         Set<String> coveredThreadIds = new HashSet<>();
         Set<String> coveredCommentIds = new HashSet<>();
         if (!priorHeadlines.isEmpty()) {
-            sb.append("\nPRIOR HEADLINES FOR THIS CLUSTER (chronological — already published, do NOT repeat):\n");
+            sb.append(lbl.priorHeadlinesHeader());
             long coveredBeforeEpoch = 0L;
             for (int i = 0; i < priorHeadlines.size(); i++) {
                 HeadlineRecord h = priorHeadlines.get(i);
                 long secsAgo = Instant.now().getEpochSecond() - h.createdAt();
-                sb.append("  H").append(i + 1)
-                        .append(" [").append(formatRelativeSeconds(secsAgo)).append(" ago]: ")
-                        .append(h.headline()).append("\n");
+                sb.append(lbl.priorHeadlineLine(i + 1, formatRelativeSeconds(secsAgo), h.headline()));
                 if (h.createdAt() > coveredBeforeEpoch) coveredBeforeEpoch = h.createdAt();
             }
             // Time-based coverage (robust, model-citation-independent): everything
@@ -111,14 +115,11 @@ public final class ReportBuilder {
                     if (c.createdUtc() <= coveredBeforeEpoch) coveredCommentIds.add(c.id());
                 }
             }
-            sb.append("Only the FRESH evidence below (new since the last headline) is shown in full; "
-                    + "what the prior headlines already covered is omitted. If the fresh material carries "
-                    + "new information, publish a follow-up. If nothing fresh is shown, this cluster has "
-                    + "nothing new — move on to the next dirty cluster.\n");
+            sb.append(lbl.onlyFreshEvidence());
         }
         sb.append("\n");
 
-        appendThreadSources(sb, inv, coveredThreadIds, coveredCommentIds, priorHeadlines);
+        appendThreadSources(sb, inv, coveredThreadIds, coveredCommentIds, priorHeadlines, lbl);
 
         sb.append("-----------------------------\n\n");
         return sb.toString();
@@ -142,7 +143,7 @@ public final class ReportBuilder {
      */
     private void appendThreadSources(StringBuilder sb, InvestigationCluster inv,
             Set<String> coveredThreadIds, Set<String> coveredCommentIds,
-            List<HeadlineRecord> priorHeadlines) {
+            List<HeadlineRecord> priorHeadlines, BriefLabels lbl) {
         // A covered thread collapses to a reference showing the most recent
         // headline this cluster already produced — so the agent recognises "I've
         // said this" instead of re-deriving it. priorHeadlines is chronological,
@@ -192,31 +193,28 @@ public final class ReportBuilder {
         int idx = 1;
         for (RedditThread thread : fresh) {
             boolean threadCovered = coveredThreadIds.contains(thread.id());
-            sb.append("=== THREAD SOURCE ").append(idx++)
-                    .append(threadCovered ? " [✓ POST COVERED — only new comments/images below]" : "")
-                    .append(" ===\n");
-            sb.append("ID: ").append(thread.id()).append("\n");
-            sb.append("Title: ").append(thread.title()).append("\n");
+            sb.append(lbl.threadSourceHeader(idx++, threadCovered));
+            sb.append(lbl.idLine(thread.id()));
+            sb.append(lbl.titleLine(thread.title()));
             if (isCommunityQuestion(thread)) {
-                sb.append("POST TYPE: COMMUNITY QUESTION — the title is a prompt;"
-                        + " the real signal lives in the comments below.\n");
+                sb.append(lbl.communityQuestion());
             }
             // A covered post's body already fed a headline; show only its NEW
             // material (late images + fresh comments). A fresh post shows its
             // body + all images + poll too.
             if (!threadCovered) {
-                appendImages(sb, thread.imageUrls(), shown, false);
-                appendTextSnippet(sb, thread.textContent());
-                appendPollIfPresent(sb, thread.pollData());
+                appendImages(sb, thread.imageUrls(), shown, false, lbl);
+                appendTextSnippet(sb, thread.textContent(), lbl);
+                appendPollIfPresent(sb, thread.pollData(), lbl);
             } else {
-                appendImages(sb, thread.imageUrls(), shown, true);
+                appendImages(sb, thread.imageUrls(), shown, true, lbl);
             }
-            appendComments(sb, thread.id(), coveredCommentIds, shown);
+            appendComments(sb, thread.id(), coveredCommentIds, shown, lbl);
             sb.append("\n");
         }
 
         if (!covered.isEmpty()) {
-            sb.append("ALREADY COVERED (you already published these — do NOT repeat them):\n");
+            sb.append(lbl.alreadyCoveredHeader());
             for (RedditThread thread : covered) {
                 String headline = threadToHeadline.get(thread.id());
                 sb.append("  - [").append(thread.id()).append("] ");
@@ -278,7 +276,8 @@ public final class ReportBuilder {
      * {@code onlyNew} is set (a covered post being re-surfaced), already-shown
      * slides are skipped — only the freshly-analysed ones print.
      */
-    private void appendImages(StringBuilder sb, List<String> imageUrls, Set<String> shown, boolean onlyNew) {
+    private void appendImages(StringBuilder sb, List<String> imageUrls, Set<String> shown, boolean onlyNew,
+            BriefLabels lbl) {
         if (imageUrls == null || imageUrls.isEmpty())
             return;
         int total = imageUrls.size();
@@ -287,21 +286,18 @@ public final class ReportBuilder {
             if (onlyNew && shown.contains(url)) continue;
             String desc = brain.describeImageIfCached(url);
             if (desc.isEmpty()) continue;
-            String label = total == 1 ? "[IMAGE ANALYSIS]"
-                    : "[IMAGE " + (i + 1) + "/" + total + " ANALYSIS]";
-            if (onlyNew) label = "[NEW IMAGE " + (i + 1) + "/" + total
-                    + " — analysed since the last headline]";
+            String label = onlyNew ? lbl.newImageLabel(i + 1, total) : lbl.imageLabel(i + 1, total);
             sb.append(label).append(": ").append(desc).append("\n");
             shown.add(url);
         }
     }
 
-    private void appendTextSnippet(StringBuilder sb, String text) {
+    private void appendTextSnippet(StringBuilder sb, String text, BriefLabels lbl) {
         if (text == null || text.isEmpty())
             return;
         String clean = stripHandles(text);
         String snippet = clean.length() > 500 ? clean.substring(0, 500) + "..." : clean;
-        sb.append("Content Snippet: ").append(snippet).append("\n");
+        sb.append(lbl.contentSnippet()).append(snippet).append("\n");
     }
 
     /** Replaces {@code u/handle} / {@code /u/handle} mentions in free text with {@link #ANON_AUTHOR}. */
@@ -318,25 +314,25 @@ public final class ReportBuilder {
      * report; the trailing „(LIVE)" / „(ENDED)" marker keeps the
      * temporal context obvious.
      */
-    private void appendPollIfPresent(StringBuilder sb, PollData poll) {
+    private void appendPollIfPresent(StringBuilder sb, PollData poll, BriefLabels lbl) {
         if (poll == null || poll.options() == null || poll.options().isEmpty()) return;
-        sb.append("POLL: ");
+        sb.append(lbl.pollPrefix());
         boolean first = true;
         for (PollData.PollOption opt : poll.options()) {
             if (!first) sb.append(" · ");
             sb.append(opt.text()).append(" ").append(opt.voteCount());
             first = false;
         }
-        sb.append("  (total ").append(poll.totalVoteCount());
+        sb.append(lbl.pollTotalOpen()).append(poll.totalVoteCount());
         long now = Instant.now().getEpochSecond();
         if (poll.votingEndsAtEpoch() > 0) {
-            sb.append(poll.votingEndsAtEpoch() > now ? ", LIVE" : ", ENDED");
+            sb.append(poll.votingEndsAtEpoch() > now ? lbl.pollLive() : lbl.pollEnded());
         }
         sb.append(")\n");
     }
 
     private void appendComments(StringBuilder sb, String threadId, Set<String> coveredCommentIds,
-            Set<String> shown) {
+            Set<String> shown, BriefLabels lbl) {
         // Render the comments as the REPLY TREE the source preserved, in
         // conversation order, replies indented under what they answer — so a
         // pick named deep in a chain ("E.ON und Constellation") stays attached
@@ -358,12 +354,11 @@ public final class ReportBuilder {
 
         StringBuilder block = new StringBuilder();
         for (RedditComment root : tree.roots()) {
-            renderCommentSubtree(block, root, 0, tree, coveredCommentIds, shown);
+            renderCommentSubtree(block, root, 0, tree, coveredCommentIds, shown, lbl);
         }
         if (block.length() == 0)
             return;
-        sb.append("RELEVANT COMMENTS (fresh + new image evidence, in conversation order — "
-                + "replies are indented under the comment they answer):\n");
+        sb.append(lbl.relevantCommentsHeader());
         sb.append(block);
     }
 
@@ -376,15 +371,15 @@ public final class ReportBuilder {
      * keeps the conversational anchor it answered.
      */
     private boolean renderCommentSubtree(StringBuilder out, RedditComment c, int depth,
-            CommentTree tree, Set<String> coveredCommentIds, Set<String> shown) {
+            CommentTree tree, Set<String> coveredCommentIds, Set<String> shown, BriefLabels lbl) {
         String indent = "  ".repeat(depth);
         StringBuilder self = new StringBuilder();
-        boolean selfEmitted = renderComment(self, c, indent, coveredCommentIds, shown);
+        boolean selfEmitted = renderComment(self, c, indent, coveredCommentIds, shown, lbl);
 
         StringBuilder kids = new StringBuilder();
         boolean kidsEmitted = false;
         for (RedditComment child : tree.childrenOf(c.id())) {
-            kidsEmitted |= renderCommentSubtree(kids, child, depth + 1, tree, coveredCommentIds, shown);
+            kidsEmitted |= renderCommentSubtree(kids, child, depth + 1, tree, coveredCommentIds, shown, lbl);
         }
 
         if (selfEmitted) {
@@ -397,7 +392,7 @@ public final class ReportBuilder {
             String stub = c.body() == null ? "" : stripHandles(c.body());
             if (stub.length() > 140) stub = stub.substring(0, 140) + "…";
             out.append(indent).append("- [").append(c.id()).append("] ").append(ANON_AUTHOR)
-                    .append(" [earlier — already covered]: ").append(stub).append("\n");
+                    .append(lbl.earlierCoveredTag()).append(stub).append("\n");
             out.append(kids);
             return true;
         }
@@ -411,21 +406,18 @@ public final class ReportBuilder {
      * → nothing.
      */
     private boolean renderComment(StringBuilder out, RedditComment c, String indent,
-            Set<String> coveredCommentIds, Set<String> shown) {
+            Set<String> coveredCommentIds, Set<String> shown, BriefLabels lbl) {
         if (!coveredCommentIds.contains(c.id())) {
             String body = stripHandles(c.body() != null ? c.body() : "[deleted]");
-            String scoreTag = c.score() < 0
-                    ? "Score: " + c.score() + " — downvoted by the crowd"
-                    : "Score: " + c.score();
             out.append(indent).append("- [").append(c.id()).append("] ");
-            out.append(ANON_AUTHOR).append(" (").append(scoreTag).append("): ")
+            out.append(ANON_AUTHOR).append(" (").append(lbl.scoreTag(c.score())).append("): ")
                     .append(body).append("\n");
-            appendCommentImages(out, c, shown, false, indent);
+            appendCommentImages(out, c, shown, false, indent, lbl);
             return true;
         } else if (hasUnshownCachedImage(c.imageUrls(), shown)) {
             out.append(indent).append("- [").append(c.id()).append("] ").append(ANON_AUTHOR)
-                    .append(" [new image evidence since the last headline]:\n");
-            appendCommentImages(out, c, shown, true, indent);
+                    .append(lbl.newImageEvidence());
+            appendCommentImages(out, c, shown, true, indent, lbl);
             return true;
         }
         return false;
@@ -442,13 +434,13 @@ public final class ReportBuilder {
      * freshly-analysed ones print.
      */
     private void appendCommentImages(StringBuilder sb, RedditComment c, Set<String> shown,
-            boolean onlyNew, String indent) {
+            boolean onlyNew, String indent, BriefLabels lbl) {
         if (c.imageUrls().isEmpty()) return;
         for (String url : c.imageUrls()) {
             if (onlyNew && shown.contains(url)) continue;
             String desc = brain.describeImageIfCached(url);
             if (desc.isEmpty()) continue;
-            sb.append(indent).append("    [COMMENT IMAGE]: ").append(desc).append("\n");
+            sb.append(indent).append(lbl.commentImage()).append(desc).append("\n");
             shown.add(url);
         }
     }
@@ -466,9 +458,9 @@ public final class ReportBuilder {
         return isQuestion && thinBody;
     }
 
-    private String formatAge(long createdUTC) {
+    private String formatAge(long createdUTC, BriefLabels lbl) {
         if (createdUTC <= 0)
-            return "Unknown";
+            return lbl.unknown();
         long minutes = Duration.between(Instant.ofEpochSecond(createdUTC), Instant.now()).toMinutes();
         return String.format("%dh %dm", minutes / 60, minutes % 60);
     }

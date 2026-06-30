@@ -226,11 +226,10 @@ public final class HeadlineWriter {
                 ? unit.ticker().toUpperCase(Locale.ROOT) : null;
         MarketSnapshot snapshot = unit.snapshot();
 
-        // Source-id hygiene: comment ids must look like Reddit comment fullnames;
-        // thread ids are kept as-is (a unit legitimately spans many threads).
-        List<String> threadIds = clean(draft.sourceThreadIds());
-        List<String> commentIds = clean(draft.sourceCommentIds());
-        commentIds.removeIf(id -> !id.startsWith("t1_"));
+        // The slim compose output is just {headline, highlight, mode} — the model no longer
+        // cites source ids; the unit IS the evidence, so we don't track per-headline citations.
+        List<String> threadIds = List.of();
+        List<String> commentIds = List.of();
 
         // The subject for the UI glow is the unit itself: keep it only when the
         // unit has a validated ticker and its name appears verbatim in the line.
@@ -244,12 +243,15 @@ public final class HeadlineWriter {
 
         HeadlineHighlight highlight = HeadlineHighlight.fromString(draft.highlight());
 
-        Double priceMove = sanePriceMove(draft.priceMovePercent(), headline);
-        List<String> sectors = clean(draft.sectors()).stream()
-                .collect(distinctByLower()).stream().limit(2).toList();
-        String assetClass = normalizeAssetClass(draft.assetClass());
-        HeadlineSentiment sentiment = reconcileSentiment(
-                HeadlineSentiment.fromString(draft.sentiment()), priceMove);
+        // Price move + sentiment are DERIVED from the resolver snapshot, not asked of the model.
+        // The model's old priceMovePercent was "prefer the resolved day%" anyway, and sentiment
+        // isn't consumed by the UI — a price-reconciled default is plenty. Keeping the model's
+        // job to just {headline, highlight, mode} is what stops it whitespace-looping on big briefs.
+        Double priceMove = sanePriceMove(
+                snapshot != null && snapshot.hasPrice() ? snapshot.dayChangePercent() : null, headline);
+        List<String> sectors = List.of();
+        String assetClass = null;
+        HeadlineSentiment sentiment = reconcileSentiment(HeadlineSentiment.NEUTRAL, priceMove);
 
         agentRepository.saveHeadline(unit.id, headline, "",
                 threadIds, commentIds, highlight, tickerSymbol, subjects, priceMove,

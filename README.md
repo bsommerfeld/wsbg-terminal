@@ -16,7 +16,7 @@ Das WSBG Terminal ist eure Kommandozentrale für [**r/wallstreetbetsGER**](https
 | Feature              | Beschreibung                                                                                                                                                   |
 |:---------------------|:---------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | **Auto-Fetch**       | Der Algo zieht sich die neusten Threads automatisch rein. Nie wieder F5 drücken, während der Kurs fällt.                                                       |
-| **KI-Headlines**     | Das Terminal fasst das Affengeschrei zusammen, damit ihr wisst, ob Long oder Short.                                                                            |
+| **KI-Headlines**     | Das Terminal fasst das Affengeschrei zusammen, damit ihr wisst, ob Long oder Short.   |
 | **Echtzeit-Kurse**   | Live-Kurs direkt an der Schlagzeile. Tagsüber von Lang & Schwarz, nachts die **US-Nachbörse bis 2 Uhr** (falls Micron mal wieder +600 % nach Earnings rennt)   |
 | **News-Ergänzungen** | Passend zum Thema zieht das Terminal Nachrichten aus **mehreren Quellen**, trianguliert und entdoppelt - damit die Headlines wenigstens *etwas* Substanz haben |
 | **Raketen-Radar**    | Ein rotes Aufleuchten einer Headline um euch klar zu machen, wo ihr gerade massive Gewinne verpasst habt.                                                      |

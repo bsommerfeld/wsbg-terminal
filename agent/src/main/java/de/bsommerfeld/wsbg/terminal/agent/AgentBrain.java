@@ -163,17 +163,16 @@ public class AgentBrain {
                 .timeout(timeout)
                 .build();
 
-        // Compose model — the SAME gemma4 (no extra load), numPredict 192: a single headline
-        // JSON is ~100 tokens (incl. the source-id arrays), so 192 never truncates it while
-        // bounding the JSON-mode whitespace-loop tighter than the old 256. (A `\n\n` stop was
-        // tried to cut the loop dead but the model sometimes leads with a blank line, so the
-        // stop fired immediately and returned EMPTY JSON — it killed extraction; removed. The
-        // robust loop-kill is streaming brace-balance early-stop, deferred.) Extraction keeps
-        // agentModel's 768. composeUnit/composeTheme use this.
+        // Compose model — the SAME gemma4 (no extra load). The real loop fix is SLIMMING the
+        // compose output to {headline, highlight, mode} (everything else — ticker, price,
+        // priceMove, subjects — we already have from extraction+enrichment and attach in code),
+        // so the model's job is tiny and it stops degenerating into whitespace on big briefs.
+        // numPredict 1024 is deliberately generous (the slim JSON is ~50 tokens): give the model
+        // room rather than clip it. JSON-mode on for a clean parse of the small object.
         this.composeModel = OllamaChatModel.builder()
                 .baseUrl(OLLAMA_BASE_URL).modelName(agentName)
                 .temperature(agentModelEnum.getTemperature()).topP(0.9).topK(40)
-                .numCtx(ctxTokens).numPredict(192)
+                .numCtx(ctxTokens).numPredict(1024)
                 .responseFormat(ResponseFormat.JSON)
                 .timeout(timeout)
                 .build();
@@ -315,7 +314,7 @@ public class AgentBrain {
             ImagePayload payload = fetchAndOptimize(imageUrl);
 
             UserMessage msg = UserMessage.from(
-                    TextContent.from(PromptLoader.load("vision")),
+                    TextContent.from(PromptLoader.loadLocalized("vision", userLanguage.code())),
                     ImageContent.from(payload.base64, payload.mimeType));
 
             // Vision shares the one gemma4 model with the editorial composes, so it acquires

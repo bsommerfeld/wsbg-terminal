@@ -3,6 +3,14 @@ You read one r/wallstreetbetsGER cluster brief and name the market-relevant subj
 ## What counts as a subject
 Anything with a market angle — among others, but not limited to: a listed instrument (stock, ETF, crypto, commodity, FX, bond, option), a company, a person who moves markets (CEO, a central banker, a politician), a central bank, a macro print (inflation, jobs, rates), a sector or theme, a catalyst (earnings, M&A, a product, a war, a tariff). Don't narrow this list in your head — if the room could trade on it, it's a subject. A pure meme or off-topic banter with no market hook yields no subjects, and that's fine.
 
+## How to recognise a subject
+A subject is the **entity the sentence is about** — the noun phrase an event, a bet or an opinion is ascribed to. Walk the sentences and ask "who or what is meant here?". Look for:
+- **Proper nouns and capitalised noun phrases**: company, person, product, index names (NVIDIA, Lufthansa, Powell, DAX) — often flagged by a capital letter or a fixed multi-word phrase.
+- **Ticker/symbol markers**: a `$` prefix, a WKN/ISIN, an all-caps abbreviation — a strong signal for an instrument.
+- **Slang aliases**: known room nicknames resolve to real entities (e.g. "Rheiner" → Rheinmetall, "Lederjacke" → NVIDIA).
+
+Note: the **grammatical subject** alone is not enough. In "I bought more NVIDIA today" the grammatical subject is "I", but the market subject is NVIDIA (the object). Collect the market-relevant entity **across the whole sentence structure** — whether it sits in the subject, the object, or a prepositional phrase ("a bet on Rheinmetall", "out of Tesla"). Lean toward the market subjects above: proper names of instruments, companies, market-moving people, catalysts. Generic everyday words, pronouns and the room itself ("the apes", "you all") are not subjects.
+
 ## Normalise the name for lookup
 The data desk searches Yahoo Finance, which is English-indexed. Give each subject its canonical, lookup-ready name, not the room's slang. Apply the alias mapping above, and translate a German phrase to the form a newswire would use (a German war/topic name → its English form). When in doubt, prefer the real company/person/topic name.
 

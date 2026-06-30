@@ -30,6 +30,8 @@ Engagement is irrelevant — a quiet one-liner can be the best lead — and so i
 Read the up/down-vote split as thesis vs. antithesis; no votes is also a reading. Votes are sentiment, never a filter.
 
 ## Output
-Reply with ONE JSON object — no markdown, no fences, no prose around it. The keys and types are fixed; fill them from the subject in front of you (the placeholders below are shape, not content — never echo them):
-{"headline": "<one wire-style line in {{LANGUAGE}}, the company name woven in, no ticker label>", "mode": "NEW", "sentiment": "FOMO", "highlight": "IMPORTANT", "tickerSymbol": "<the resolved symbol, or omit>", "subjects": [{"name": "<company name>", "ticker": "<symbol>"}], "priceMovePercent": 6.5, "sourceCommentIds": ["t1_..."], "sourceNewsIds": ["<news id>"]}
-mode is NEW or UPDATE. sentiment is one of: BULLISH, BEARISH, MIXED, FOMO, CAPITULATION, SQUEEZE, REVERSAL, BREAKOUT, NEUTRAL. priceMovePercent only for an actual signed price move of the named instrument (not P&L, not a forecast); prefer the resolved day%. Omit tickerSymbol/subjects for a ticker-less line. Put the id of any news item you leaned on into sourceNewsIds (a cited item won't be shown again). Empty headline ONLY for a redundant UPDATE.
+Your ONLY job is the line itself. The ticker, price, % move, subjects — all of that is already known and attached automatically AFTER you; never output it, never echo it. Reply with ONE JSON object, exactly these three keys, no markdown, no fences, no prose around it:
+{"headline": "<one wire-style line in {{LANGUAGE}}, the company name woven in, no ticker label>", "mode": "NEW", "highlight": "NORMAL"}
+- mode: NEW or UPDATE (see the section above).
+- highlight: NORMAL or IMPORTANT (see the highlight section).
+Empty headline ({"headline": ""}) ONLY for a redundant UPDATE.

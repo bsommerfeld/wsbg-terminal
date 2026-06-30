@@ -41,4 +41,31 @@ class PromptLoaderTest {
         String raw = PromptLoader.load("headline-theme");
         assertTrue(raw.contains("{{"), "Raw template should still contain placeholders");
     }
+
+    @Test
+    void loadLocalized_shouldReturnGermanVariantForDe() {
+        String de = PromptLoader.loadLocalized("headline-compose-unit", "de");
+        assertTrue(de.contains("auf Deutsch"), "the German prompt is written natively in German");
+        assertFalse(de.contains("Reply with ONE JSON object"), "not the English base");
+    }
+
+    @Test
+    void loadLocalized_shouldFallBackToBaseForEnglishAndUnknownLanguages() {
+        String base = PromptLoader.load("headline-compose-unit");
+        assertSame(base, PromptLoader.loadLocalized("headline-compose-unit", "en"),
+                "English maps straight to the base file");
+        assertSame(base, PromptLoader.loadLocalized("headline-compose-unit", "fr"),
+                "an unsupported language falls back to the English base (with {{LANGUAGE}})");
+        assertSame(base, PromptLoader.loadLocalized("headline-compose-unit", null),
+                "null language falls back to the base");
+    }
+
+    @Test
+    void loadLocalized_germanPromptsExistForEveryLanguageSensitiveStage() {
+        for (String name : new String[] {"headline-compose-unit", "headline-theme", "subject-extraction"}) {
+            String de = PromptLoader.loadLocalized(name, "de");
+            assertNotSame(PromptLoader.load(name), de, name + " has a distinct German variant");
+            assertFalse(de.isBlank());
+        }
+    }
 }

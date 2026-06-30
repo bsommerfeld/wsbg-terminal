@@ -23,6 +23,32 @@ final class PromptLoader {
     }
 
     /**
+     * Returns the language-localised prompt: {@code prompts/<name>.<lang>.txt}
+     * when that file exists, otherwise the base {@code prompts/<name>.txt}.
+     * <p>
+     * The base file is the English original and doubles as the universal
+     * fallback — an unsupported language (or {@code "en"}) lands there, where the
+     * {@code {{LANGUAGE}}} placeholder still names the requested output language.
+     * A localised file is the prompt written natively in that language, which is
+     * what stops a 4B model code-switching English structure into a German line.
+     */
+    static String loadLocalized(String name, String langCode) {
+        // NOTE (2026-06-30): localization is ON for extraction + vision (they handle German
+        // fine — extraction.de proven in run18). The COMPOSE stage deliberately bypasses this
+        // and loads the English base directly (see EditorialAgent.composeUnit/composeTheme):
+        // a German compose scaffold whitespace-loops the 4B model in JSON mode. Output is still
+        // German via {{LANGUAGE}}. Re-enable the German compose prompt once it's shortened.
+        if (langCode == null || langCode.isBlank() || "en".equalsIgnoreCase(langCode)) {
+            return load(name);
+        }
+        String lang = langCode.toLowerCase();
+        return CACHE.computeIfAbsent(name + "@" + lang, key -> {
+            String localized = tryReadResource("prompts/" + name + "." + lang + ".txt");
+            return localized != null ? localized : load(name);
+        });
+    }
+
+    /**
      * Returns the prompt with all {@code {{KEY}}} placeholders replaced
      * by the corresponding values in the map.
      */
@@ -36,9 +62,18 @@ final class PromptLoader {
 
     private static String readResource(String name) {
         String path = "prompts/" + name + ".txt";
+        String body = tryReadResource(path);
+        if (body == null) {
+            throw new IllegalStateException("Prompt resource not found: " + path);
+        }
+        return body;
+    }
+
+    /** Reads a classpath prompt resource, or {@code null} when it does not exist. */
+    private static String tryReadResource(String path) {
         try (InputStream in = PromptLoader.class.getClassLoader().getResourceAsStream(path)) {
             if (in == null) {
-                throw new IllegalStateException("Prompt resource not found: " + path);
+                return null;
             }
             return new String(in.readAllBytes(), StandardCharsets.UTF_8).trim();
         } catch (IOException e) {

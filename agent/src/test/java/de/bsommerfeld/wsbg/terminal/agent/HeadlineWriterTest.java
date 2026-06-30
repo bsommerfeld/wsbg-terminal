@@ -165,7 +165,8 @@ class HeadlineWriterTest {
         assertEquals("NOW", h.tickerSymbol(), "ticker comes from the unit, never the model");
         assertEquals(1, h.subjects().size(), "name appears in line → glow subject kept");
         assertEquals("NOW", h.subjects().get(0).ticker());
-        assertEquals(List.of("t1_c1"), h.sourceCommentIds(), "non-t1_ comment id dropped");
+        assertTrue(h.sourceCommentIds().isEmpty(),
+                "slim compose output no longer carries model source ids — the unit is the evidence");
     }
 
     @Test

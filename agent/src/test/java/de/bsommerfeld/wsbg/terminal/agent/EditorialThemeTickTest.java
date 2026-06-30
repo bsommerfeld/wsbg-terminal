@@ -40,7 +40,11 @@ import static org.mockito.Mockito.when;
  */
 class EditorialThemeTickTest {
 
-    /** Branch the fake on a phrase unique to the theme system prompt. */
+    /**
+     * Branch the fake on a token unique to the theme system prompt's output contract
+     * ({@code sourceThreadIds} — present in the theme prompt in every language, absent
+     * from extraction/compose), so the discrimination survives prompt localisation.
+     */
     private static final String THEME_REPLY =
             "{\"headline\": \"Waffenstillstand-Thread: Raum jubelt, dazu Rheinmetall-Chart −8% gepostet\","
             + " \"sentiment\": \"MIXED\", \"highlight\": \"NORMAL\", \"sourceThreadIds\": [\"t3_x\"]}";
@@ -63,7 +67,7 @@ class EditorialThemeTickTest {
                     .filter(m -> m instanceof SystemMessage)
                     .map(m -> ((SystemMessage) m).text())
                     .findFirst().orElse("");
-            String reply = sys.contains("THIS thread") ? THEME_REPLY : "{\"subjects\": []}";
+            String reply = sys.contains("sourceThreadIds") ? THEME_REPLY : "{\"subjects\": []}";
             return ChatResponse.builder().aiMessage(AiMessage.from(reply)).build();
         });
 

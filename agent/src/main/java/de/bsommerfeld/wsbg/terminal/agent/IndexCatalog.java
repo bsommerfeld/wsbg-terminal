@@ -40,7 +40,9 @@ public final class IndexCatalog {
     static {
         // --- German indices ---
         Index dax = new Index("^GDAXI", "DAX");
-        put(dax, "DAX", "DAX 40", "DAX40", "Deutscher Aktienindex", "Germany 40", "Germany40", "GER40", "DE40");
+        put(dax, "DAX", "DAX 40", "DAX40", "Deutscher Aktienindex", "Germany 40", "Germany40", "GER40", "DE40",
+                // WSBG-GER nicknames for the DAX (the room rarely writes the bare „DAX").
+                "Rentnerindex", "DAX Rentnerindex", "Deutscher Rentnerindex");
         put(new Index("^MDAXI", "MDAX"), "MDAX");
         put(new Index("^TECDAX", "TecDAX"), "TecDAX");
         put(new Index("^SDAXI", "SDAX"), "SDAX");

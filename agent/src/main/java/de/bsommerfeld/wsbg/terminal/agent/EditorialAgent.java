@@ -210,7 +210,8 @@ public class EditorialAgent {
         InvestigationCluster cluster = clusterRegistry.getCluster(clusterId);
         if (model == null || cluster == null) return List.of();
 
-        String brief = reportBuilder.buildReportData(cluster);
+        String brief = reportBuilder.buildReportData(
+                cluster, List.of(), brain.getUserLanguage().code());
         Subjects subjects = extractSubjects(model, cluster, brief);
         int[] relatedAlloc = distributeRelated(subjects.names().size(), RELATED_BUDGET, RELATED_PER_SUBJECT);
         return tickerResolver.resolveAll(subjects.names(), relatedAlloc);
@@ -246,10 +247,16 @@ public class EditorialAgent {
         if (model == null) {
             return new UnitDraft(unit.id, unit.canonicalName(), null, false, false, "", 0, List.of(), false, false);
         }
-        String sys = PromptLoader.load("headline-compose-unit")
+        // Fully localized compose scaffold (German prompt + German room-slang + German brief
+        // labels). This was held to English while the compose OUTPUT was a fat 9-field JSON —
+        // the German scaffold on top of that big task whitespace-looped the 4B model. Now that
+        // the output is slimmed to {headline, highlight, mode}, the model's job is tiny and it
+        // commits cleanly regardless of scaffold language (proven: 0 whiffs in run27).
+        String lang = brain.getUserLanguage().code();
+        String sys = PromptLoader.loadLocalized("headline-compose-unit", lang)
                 .replace("{{LANGUAGE}}", brain.getUserLanguage().displayName())
-                .replace("{{ROOM_SLANG}}", WsbgJargon.roomSlangForPrompt());
-        String user = unitBrief(unit, config.getHeadlines().isNewsCoverageEnabled());
+                .replace("{{ROOM_SLANG}}", WsbgJargon.roomSlangForPrompt(lang));
+        String user = unitBrief(unit, config.getHeadlines().isNewsCoverageEnabled(), BriefLabels.of(lang));
 
         long t0 = System.nanoTime();
         String text = chat(model, sys, user);
@@ -345,32 +352,34 @@ public class EditorialAgent {
 
     /** Builds the per-unit brief: Yahoo data + the room's evidence about this subject + its story memory. Static for testability. */
     static String unitBrief(SubjectUnit unit, boolean newsCoverageEnabled) {
+        return unitBrief(unit, newsCoverageEnabled, BriefLabels.EN);
+    }
+
+    static String unitBrief(SubjectUnit unit, boolean newsCoverageEnabled, BriefLabels lbl) {
         StringBuilder sb = new StringBuilder();
-        sb.append("=== SUBJECT: ").append(unit.canonicalName());
-        if (unit.isInstrument()) sb.append(" (").append(unit.ticker()).append(")");
-        sb.append(" ===\n");
+        sb.append(lbl.subjectHeader(unit.canonicalName(), unit.isInstrument() ? unit.ticker() : null));
 
         Instant now = Instant.now();
         MarketSnapshot s = unit.snapshot();
         if (s != null && s.hasPrice()) {
             // Multi-source now (L&S / Deutsche Börse / NASDAQ / Yahoo) — name the venue,
             // don't hard-code "Yahoo", so the model never mislabels an EUR L&S price.
-            String venue = s.exchangeName() == null || s.exchangeName().isBlank() ? "Markt" : s.exchangeName();
+            String venue = s.exchangeName() == null || s.exchangeName().isBlank() ? lbl.defaultVenue() : s.exchangeName();
             if ("PTS".equals(s.currency())) {
                 // A stock index is quoted in points, not a currency — tell the model
                 // so the headline reads „DAX unter 24.000 Punkte", never „… Euro".
-                sb.append(String.format(Locale.ROOT, "Live market data (%s): %.0f Punkte (Index)", venue, s.price()));
+                sb.append(lbl.liveDataIndex(venue, s.price()));
             } else {
-                sb.append(String.format(Locale.ROOT, "Live market data (%s): %.2f%s", venue, s.price(),
+                sb.append(lbl.liveData(venue, s.price(),
                         s.currency() == null || s.currency().isEmpty() ? "" : " " + s.currency()));
             }
             if (Double.isFinite(s.dayChangePercent())) {
-                sb.append(String.format(Locale.ROOT, ", day %+.2f%%", s.dayChangePercent()));
+                sb.append(lbl.dayMove(s.dayChangePercent()));
             }
             // Off-hours honesty: a quote older than 30 min is a last close, not live.
             long quoteAge = now.getEpochSecond() - s.marketTimeEpochSeconds();
             if (s.marketTimeEpochSeconds() > 0 && quoteAge > 1800) {
-                sb.append(" [Markt geschlossen — letzter Kurs, KEIN Live-Preis: nicht als frische Bewegung darstellen]");
+                sb.append(lbl.marketClosed());
             }
             // Price anchor: where the subject stood when the room first surfaced
             // it. Survives the evidence prune — the "since first mention" arc is
@@ -378,13 +387,11 @@ public class EditorialAgent {
             Double anchor = unit.firstPrice();
             if (anchor != null && anchor > 0 && unit.firstPriceAt() != null) {
                 double sinceFirst = (s.price() - anchor) / anchor * 100.0;
-                sb.append(String.format(Locale.ROOT,
-                        "; since first mention (%s ago): %+.2f%% (%.2f → %.2f)",
-                        age(unit.firstPriceAt(), now), sinceFirst, anchor, s.price()));
+                sb.append(lbl.sinceFirstMention(age(unit.firstPriceAt(), now), sinceFirst, anchor, s.price()));
             }
             sb.append('\n');
         } else if (!unit.isInstrument()) {
-            sb.append("No ticker — theme/person; write from the room's sentiment, no ticker.\n");
+            sb.append(lbl.noTicker());
         }
 
         // News not yet cited by a prior headline for THIS subject (covered ones are
@@ -400,13 +407,11 @@ public class EditorialAgent {
             if (!newsCoverageEnabled || !unit.isNewsCovered(n.uuid())) freshNews.add(n);
         }
         if (!freshNews.isEmpty()) {
-            sb.append("News (context & attribution — NOT the subject; cite any you lean on by its"
-                    + " [news:ID] in sourceNewsIds, a cited item won't be offered again."
-                    + " [STALE] = older background, NOT a fresh catalyst):\n");
+            sb.append(lbl.newsHeader());
             for (RawNewsItem n : freshNews) {
                 sb.append("  - [news:").append(n.uuid() == null || n.uuid().isBlank() ? "?" : n.uuid()).append("] ");
                 if (n.publishedAt() != null) {
-                    sb.append(age(n.publishedAt(), now)).append(" ago ");
+                    sb.append(lbl.ago(age(n.publishedAt(), now))).append(' ');
                     if (Duration.between(n.publishedAt(), now).compareTo(NEWS_STALE_AFTER) > 0) {
                         sb.append("[STALE] ");
                     }
@@ -452,17 +457,12 @@ public class EditorialAgent {
             budget -= visible.get(start).snippet().length() + 24;
         }
         boolean haveHeadlines = lastHeadlineEpoch > 0;
-        sb.append("\nWhat the room said about THIS subject")
-                .append(haveHeadlines
-                        ? " (NEW since the last headline — older mentions are already covered by the headlines below):\n"
-                        : " (evidence — the story):\n");
+        sb.append(lbl.evidenceHeader(haveHeadlines));
         if (coveredOmitted > 0) {
-            sb.append("  (").append(coveredOmitted).append(" earlier mention(s) already reflected in the"
-                    + " prior headlines below — omitted; write a follow-up only from the new material here)\n");
+            sb.append(lbl.coveredOmitted(coveredOmitted));
         }
         if (start > 0) {
-            sb.append("  (").append(start).append(" further older mention(s) omitted to fit the context"
-                    + " budget — prior headlines below reflect them)\n");
+            sb.append(lbl.budgetOmitted(start));
         }
         List<SubjectUnit.EvidenceRef> context = new ArrayList<>();
         for (SubjectUnit.EvidenceRef e : visible.subList(start, visible.size())) {
@@ -470,21 +470,20 @@ public class EditorialAgent {
                 context.add(e); // a reply chain this subject was named in — rendered below
                 continue;
             }
-            String loc = "vision".equals(e.source()) ? "image"
+            String loc = "vision".equals(e.source()) ? lbl.visionLoc()
                     : (e.commentId() == null ? e.threadId() : e.commentId());
             sb.append("  - [").append(loc).append(", ")
-                    .append(age(Instant.ofEpochSecond(e.addedAtEpoch()), now)).append(" ago] ")
+                    .append(lbl.ago(age(Instant.ofEpochSecond(e.addedAtEpoch()), now))).append("] ")
                     .append(e.snippet()).append('\n');
         }
         if (!context.isEmpty()) {
-            sb.append("Conversation those mentions were a reply to (context — NOT the subject "
-                    + "itself, but the thread of discussion it was named in):\n");
+            sb.append(lbl.conversationContext());
             for (SubjectUnit.EvidenceRef e : context) {
                 sb.append("    ↳ ").append(e.snippet()).append('\n');
             }
         }
 
-        appendStoryMemory(sb, unit.headlines(), now);
+        appendStoryMemory(sb, unit.headlines(), now, lbl);
         return sb.toString();
     }
 
@@ -496,25 +495,21 @@ public class EditorialAgent {
      * headlines → always write" rule re-published the old story verbatim.
      */
     private static void appendStoryMemory(StringBuilder sb, List<SubjectUnit.UnitHeadline> prior,
-            Instant now) {
+            Instant now, BriefLabels lbl) {
         if (prior.isEmpty()) return;
-        sb.append("\nHEADLINES ALREADY PUBLISHED FOR THIS SUBJECT (story memory — classify NEW vs"
-                + " UPDATE against ALL of these; never repeat verbatim):\n");
+        sb.append(lbl.storyMemoryHeader());
         int shownFrom = Math.max(0, prior.size() - PRIOR_HEADLINES_SHOWN);
         if (shownFrom > 0) {
             SubjectUnit.UnitHeadline first = prior.get(0);
-            sb.append("  (+").append(shownFrom).append(" earlier headline(s) since ")
-                    .append(age(Instant.ofEpochSecond(first.atEpoch()), now))
-                    .append(" ago — the story is OLDER than the lines shown; do NOT re-open an"
-                            + " already-covered angle as NEW)\n");
+            sb.append(lbl.earlierHeadlines(shownFrom, age(Instant.ofEpochSecond(first.atEpoch()), now)));
         }
         for (SubjectUnit.UnitHeadline h : prior.subList(shownFrom, prior.size())) {
-            sb.append("  - [").append(age(Instant.ofEpochSecond(h.atEpoch()), now)).append(" ago");
+            sb.append("  - [").append(lbl.ago(age(Instant.ofEpochSecond(h.atEpoch()), now)));
             if (h.sentiment() != null && !h.sentiment().isBlank()) sb.append(", ").append(h.sentiment());
             sb.append("] ").append(h.text()).append('\n');
         }
         String arc = sentimentArc(prior);
-        if (!arc.isEmpty()) sb.append("Sentiment arc so far: ").append(arc).append('\n');
+        if (!arc.isEmpty()) sb.append(lbl.sentimentArcPrefix()).append(arc).append('\n');
     }
 
     /**
@@ -737,7 +732,7 @@ public class EditorialAgent {
         InvestigationCluster cluster = clusterRegistry.getCluster(clusterId);
         if (cluster == null) return 0;
         String brief = reportBuilder.buildReportData(
-                cluster, agentRepository.getHeadlinesByClusterId(clusterId));
+                cluster, agentRepository.getHeadlinesByClusterId(clusterId), brain.getUserLanguage().code());
         Draft d = composeTheme(model, brief);
         if (d == null || d.headline() == null || d.headline().isBlank()) return 0;
         return headlineWriter.publish(cluster, d, resolved) ? 1 : 0;
@@ -794,7 +789,7 @@ public class EditorialAgent {
     // ---- Stage 1: subject extraction ----
 
     private Subjects extractSubjects(ChatModel model, InvestigationCluster cluster, String brief) {
-        String sys = PromptLoader.load("subject-extraction")
+        String sys = PromptLoader.loadLocalized("subject-extraction", brain.getUserLanguage().code())
                 .replace("{{ENTITY_ALIASES}}", WsbgJargon.entityAliasesForPrompt());
 
         int comments = countComments(cluster);
@@ -1011,9 +1006,11 @@ public class EditorialAgent {
      * {@link Draft}, or {@code null} when the thread carries nothing worth a line.
      */
     public Draft composeTheme(ChatModel model, String brief) {
-        String sys = PromptLoader.load("headline-theme")
+        // Fully localized like composeUnit — safe now that the output schema is slim.
+        String lang = brain.getUserLanguage().code();
+        String sys = PromptLoader.loadLocalized("headline-theme", lang)
                 .replace("{{LANGUAGE}}", brain.getUserLanguage().displayName())
-                .replace("{{ROOM_SLANG}}", WsbgJargon.roomSlangForPrompt());
+                .replace("{{ROOM_SLANG}}", WsbgJargon.roomSlangForPrompt(lang));
         return parseDraft(chat(model, sys, brief));
     }
 
