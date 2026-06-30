@@ -147,42 +147,28 @@ public class FallbackPriceSource implements PriceSource {
         boolean convertUs = !germanVenueEligible;
         final String[] isin = { ref.hasIsin() ? ref.isin() : null };
 
-        // wallstreet-online resolves the German listing's ISIN from a STRUCTURED search —
-        // a more reliable anchor than L&S's fuzzy name-pick. It (a) feeds the official
-        // Deutsche Börse quote ISIN-exactly and (b) cross-checks L&S: a name hit whose ISIN
-        // disagrees with this anchor matched a wrong twin and is dropped. L&S name-resolution
-        // stays the fallback when WSO has no hit.
-        if (isin[0] == null && germanVenueEligible && ref.hasName()) {
-            isin[0] = wso.resolve(ref.name(), ref.hasTicker() ? ref.ticker() : null)
-                    .map(WsoInstrument::isin).orElse(null);
-        }
-        final String anchorIsin = isin[0];
-
-        // Ordered attempts. Prices are taken from L&S ONLY (the audience's EUR venue, and it
-        // carries the sparkline) — "weniger ist mehr" (2026-06-30). Deutsche Börse / NASDAQ
-        // stay BUILT (isolated modules) but are NOT in the active chain; Yahoo remains the
-        // opt-in US fallback for what L&S can't price (and the always-on source for index
-        // points / crypto, which have no L&S listing).
+        // L&S BY NAME FIRST (2026-06-30): the audience's EUR venue resolves ~80% of subjects
+        // straight from a name search (and carries the sparkline) — NO WSO call for the common
+        // case. Only when the name search MISSES do we pay wallstreet-online for a structured
+        // ISIN anchor and retry L&S by that exact ISIN. So WSO is the FALLBACK, not the per-equity
+        // primary (it stays cached either way). Prices are L&S-only ("weniger ist mehr"); Yahoo
+        // remains the opt-in US fallback + the always-on source for index points / crypto.
         List<Supplier<Optional<MarketSnapshot>>> attempts = new ArrayList<>(3);
         attempts.add(() -> {
             if (!germanVenueEligible) return Optional.empty();
-            // Prefer the WSO anchor ISIN — L&S search resolves an ISIN EXACTLY (no name fuzz,
-            // no wrong-twin risk). Fall back to the name (with the country cross-check) only
-            // when there is no anchor or L&S doesn't list that ISIN.
-            LsInstrument inst = anchorIsin != null
-                    ? safe(() -> ls.resolveByIsin(anchorIsin)).orElse(null) : null;
-            if (inst == null && ref.hasName()) {
-                LsInstrument byName = safe(() -> ls.resolveInstrument(ref.name())).orElse(null);
-                if (byName != null) {
-                    String lsIsin = blankToNull(byName.isin());
-                    // A name hit on a different ISIN COUNTRY than the anchor is a wrong twin
-                    // abroad ("Mullen Automotive" US vs L&S's "Mullen Group" CA) → drop it.
-                    if (anchorIsin != null && lsIsin != null && lsIsin.length() >= 2
-                            && !anchorIsin.regionMatches(true, 0, lsIsin, 0, 2)) {
-                        LOG.debug("[L&S] dropped '{}' → {} (country ≠ WSO anchor {})", ref.name(), lsIsin, anchorIsin);
-                    } else {
-                        inst = byName;
-                    }
+            // 1) L&S by name — the cheap 80% common path, no WSO.
+            LsInstrument inst = ref.hasName()
+                    ? safe(() -> ls.resolveInstrument(ref.name())).orElse(null) : null;
+            // 2) Name missed → wallstreet-online's structured ISIN, then L&S by that exact ISIN.
+            if (inst == null) {
+                String wsoIsin = isin[0] != null ? isin[0]
+                        : (ref.hasName()
+                            ? safe(() -> wso.resolve(ref.name(), ref.hasTicker() ? ref.ticker() : null))
+                                    .map(WsoInstrument::isin).orElse(null)
+                            : null);
+                if (wsoIsin != null) {
+                    if (isin[0] == null) isin[0] = wsoIsin;
+                    inst = safe(() -> ls.resolveByIsin(wsoIsin)).orElse(null);
                 }
             }
             if (inst == null) return Optional.empty();
