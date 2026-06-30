@@ -31,7 +31,15 @@ Threads" UI toggle is already removed (locked subjects-only); consolidation subs
   `Trade Republic → a derivative` (it's PRIVATE, not listed), `Cyber Security → HUBC`
   (Hub Cyber Security — the room meant the sector, not that small-cap).
 - **Missed known tickers:** `MicroStrategy → name:micro strategy` (should be MSTR + price),
-  `Yen → name:yen` (no FX quote — could be JPY=X).
+  `Yen → name:yen` (no FX quote — could be JPY=X), `RENK → name:renk` (should be `R3NK.DE`).
+- **Mis-attribution:** a `name:google` unit carried an *Oracle* headline (run33) — the unit and the
+  line disagreed. Watch the subject→headline binding once consolidation lands.
+- **Under-extraction of long ticker lists.** The "potential picks" thread (12 comments naming ~48
+  tickers: Münchener Rück, Microsoft, Alphabet, Oracle, Siemens Energy, Nucera, …) extracted only
+  **4 unique subjects** — the 4B model does not enumerate a long list. Most picks are silently
+  dropped. (This particular thread-type is ALSO the consolidation case — a watchlist shouldn't spawn
+  N headlines — but the extraction simply missing 44/48 is a separate quality gap: a list-aware
+  extraction pass, or chunk-per-comment, would capture them.)
 - **L&S resolver chain ("Item 2") — needs rework before re-attempting.** Reverted from the
   RC because it (a) added a Yahoo `lookupByIsin` call per equity → tipped Yahoo into
   rate-limiting → companies un-enriched, and (b) L&S-by-name "first result" grabbed wrong
@@ -105,12 +113,19 @@ Note: the L&S name-search can be simplified to "take the first result" (~90% cov
 
 ## Throughput
 
-- **LLM gate — compose-priority gate: DONE (landed pre-release).** At cold start prep (extraction
-  + vision) flooded the shared 2-slot gate ~20:5 vs compose → compose starved → ~1 headline/min
-  (50–70s gate-waits). Now a `ReentrantLock`+2-`Condition` pool: compose-first (a freed slot goes
-  to a waiting compose; prep yields), prep uses BOTH slots when nothing's composing (fast cold-start
-  fill). Same GPU load (NUM_PARALLEL=2). (A hard 1+1 `Semaphore` split was tried first but halved
-  prep at cold start → first headline came LATER; the priority gate fixes that.)
+- **Throughput is fundamentally gemma4-bound — the LLM gate only REBALANCES, it is NOT a speedup.**
+  2 GPU slots × ~25 s/call ≈ **~5 LLM calls/min total**, shared by extraction AND compose. We tried
+  three gates and **reverted to the plain `Semaphore(2)`** (the wire lives with it for now):
+  - *shared `Semaphore(2)`* (current): at cold start prep floods ~20:5 → compose starves (~1
+    headline/min, 50–70 s gate-waits) and the compose queue grows unbounded, but lots of subjects
+    get ingested.
+  - *hard 1+1 `Semaphore` split*: balanced (1 prep + 1 compose) but halves prep → first headline LATE.
+  - *compose-priority gate* (`ReentrantLock`+2 `Condition`s): headlines flow fast + queue bounded,
+    BUT it STARVES extraction (RESOLVE 46 → 8) → the wire feels thin/latent. Reverted for that reason.
+  None beats ~5/min. **The real speed levers are elsewhere:** (1) shorten the ~2 200-token compose
+  prompt — the PREFILL is what eats the ~25 s, not the slim output; (2) consolidation → fewer compose
+  jobs per event; (3) extraction quality (see below) → fewer wasted/dropped calls; (4) faster hardware
+  (the README already says "for high-speed headlines, more RAM").
 - **Ollama `keep_alive` = -1 (keep gemma resident) + harden the cleanup.** Default keep_alive is
   5 min, so a >5 min steady-state lull unloads the model → the next headline pays a ~seconds reload.
   Rare during active market hours, so deferred. `OLLAMA_KEEP_ALIVE=-1` (server env in

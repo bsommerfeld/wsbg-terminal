@@ -23,11 +23,13 @@ public class HeadlineConfig {
     private boolean clusterThemeEnabled = false;
 
     @Key("analyze-images")
-    @Comment("When true (default), the editorial pipeline runs image/vision analysis on "
-            + "Reddit threads and comment images, feeding the descriptions into clustering "
-            + "and headlines. When false, all vision is skipped for faster, text-only "
-            + "headlines (no image cache-warming, no gallery transcription).")
-    private boolean analyzeImages = true;
+    @Comment("When true, the editorial pipeline runs image/vision analysis on Reddit threads and "
+            + "comment images, feeding the descriptions into clustering and headlines. Default "
+            + "FALSE (2026-06-30): vision is the HEAVIEST prep load on the shared 2-slot gemma4 "
+            + "budget, so skipping it frees slots for extraction + compose → noticeably faster "
+            + "headlines. Turn it on in Settings for richer image-aware coverage at the cost of "
+            + "throughput (no image cache-warming, no gallery transcription when off).")
+    private boolean analyzeImages = false;
 
     @Key("news-coverage-enabled")
     @Comment("When true, a news item already cited by one headline of a subject is "

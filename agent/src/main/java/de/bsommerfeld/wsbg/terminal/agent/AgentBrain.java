@@ -292,60 +292,18 @@ public class AgentBrain {
     }
 
     /**
-     * The gemma4 concurrency budget — a {@code NUM_PARALLEL}-permit pool shared by prep
-     * (extraction + vision) and compose, but COMPOSE-FIRST: a freed slot goes to a waiting
-     * compose before a waiting prep, and a prep won't take a free slot while a compose is waiting.
-     * So at cold start (nothing to compose yet) prep uses BOTH slots → fast queue fill; the moment
-     * compose has work it jumps ahead → headlines flow steadily, and a prep flood can never starve
-     * the compose workers. Same GPU load as a plain {@code Semaphore(2)} (never more than
-     * NUM_PARALLEL concurrent), no slot waste, no prep-halving (the downside of a hard 1+1 split).
-     * {@code EditorialAgent.chat} passes {@code compose=true} for the compose model, {@code false}
-     * for extraction; vision ({@link #see}) is prep.
+     * The ONE gemma4 concurrency gate, shared by the editorial composes/extraction AND the
+     * vision prefetch (both hit the single model). Sized to match Ollama's {@code NUM_PARALLEL}
+     * ({@link OllamaServerManager#llmParallelism()}) so the two never over-subscribe each other
+     * — vision used to run un-gated and starve the compose workers. {@code EditorialAgent}
+     * delegates its compose gating here.
      */
-    private final java.util.concurrent.locks.ReentrantLock llmLock = new java.util.concurrent.locks.ReentrantLock();
-    private final java.util.concurrent.locks.Condition composeReady = llmLock.newCondition();
-    private final java.util.concurrent.locks.Condition prepReady = llmLock.newCondition();
-    private int llmPermits = OllamaServerManager.llmParallelism();
-    private int composeWaiting = 0;
+    private final java.util.concurrent.Semaphore llmGate =
+            new java.util.concurrent.Semaphore(OllamaServerManager.llmParallelism());
 
-    public int availableLlmPermits() {
-        llmLock.lock();
-        try {
-            return llmPermits;
-        } finally {
-            llmLock.unlock();
-        }
-    }
-
-    public void acquireLlm(boolean compose) {
-        llmLock.lock();
-        try {
-            if (compose) composeWaiting++;
-            // A prep yields a free slot to any waiting compose; everyone waits when the pool is full.
-            while (llmPermits == 0 || (!compose && composeWaiting > 0)) {
-                (compose ? composeReady : prepReady).awaitUninterruptibly();
-            }
-            if (compose) composeWaiting--;
-            llmPermits--;
-        } finally {
-            llmLock.unlock();
-        }
-    }
-
-    public void releaseLlm(boolean compose) {
-        llmLock.lock();
-        try {
-            llmPermits++;
-            // Wake a compose first (it has priority); otherwise let the prep waiters re-contend.
-            if (composeWaiting > 0) {
-                composeReady.signal();
-            } else {
-                prepReady.signalAll();
-            }
-        } finally {
-            llmLock.unlock();
-        }
-    }
+    public int availableLlmPermits() { return llmGate.availablePermits(); }
+    public void acquireLlm() { llmGate.acquireUninterruptibly(); }
+    public void releaseLlm() { llmGate.release(); }
 
     /** Performs blocking vision analysis on the given image URL. */
     public String see(String imageUrl) {
@@ -359,14 +317,15 @@ public class AgentBrain {
                     TextContent.from(PromptLoader.loadLocalized("vision", userLanguage.code())),
                     ImageContent.from(payload.base64, payload.mimeType));
 
-            // Vision is PREP — it shares the prep slot with extraction, never the reserved
-            // compose slot, so image analysis can no longer starve the compose workers.
-            acquireLlm(false);
+            // Vision shares the one gemma4 model with the editorial composes, so it acquires
+            // the SAME LLM gate — vision can no longer over-subscribe Ollama and starve the
+            // wire (it now waits its turn behind a compose instead of blocking the slot).
+            acquireLlm();
             String result;
             try {
                 result = visionModel.chat(msg).aiMessage().text();
             } finally {
-                releaseLlm(false);
+                releaseLlm();
             }
             // Some model builds (notably the MLX gemma4 variant) silently
             // drop the multimodal payload and respond with a templated
