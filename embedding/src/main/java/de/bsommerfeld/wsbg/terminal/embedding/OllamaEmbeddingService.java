@@ -28,7 +28,12 @@ public final class OllamaEmbeddingService implements EmbeddingService {
         this.model = OllamaEmbeddingModel.builder()
                 .baseUrl(OllamaEndpoint.BASE_URL)
                 .modelName(Model.EMBEDDING.getModelName())
-                .timeout(Duration.ofSeconds(60))
+                // Generous: the embed itself is milliseconds once resident, but at cold
+                // start it can queue behind the two GPU-saturating gemma4 slots while
+                // both models load. 120 s absorbs that one-time spike instead of burning
+                // langchain4j retries (which log a scary timeout WARN). Steady-state is
+                // unaffected — embeddinggemma is pinned resident (OLLAMA_KEEP_ALIVE=-1).
+                .timeout(Duration.ofSeconds(120))
                 .build();
     }
 

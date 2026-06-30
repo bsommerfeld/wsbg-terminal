@@ -239,9 +239,20 @@ public final class OllamaServerManager {
             pb.environment().putIfAbsent("OLLAMA_FLASH_ATTENTION", "1");
             pb.environment().putIfAbsent("OLLAMA_KV_CACHE_TYPE", "q8_0");
 
+            // Pin both resident models in memory. Without this Ollama unloads the
+            // tiny embeddinggemma after its 5-min default keep-alive; the next embed
+            // (TickerResolver tier-2) then forces a reload that has to wait for the
+            // GPU-saturating gemma4 generation to free a slot — which is exactly what
+            // blows past the embedding HTTP timeout and triggers the retry WARN. Both
+            // models (~4 GB + ~0.6 GB) coexist comfortably, so keep them loaded and let
+            // the two slots hold them.
+            pb.environment().putIfAbsent("OLLAMA_KEEP_ALIVE", "-1");
+            pb.environment().putIfAbsent("OLLAMA_MAX_LOADED_MODELS", "2");
+
             serverProcess = pb.start();
             LOG.info("Started isolated '{} serve' on {}:{} (models={}, NUM_PARALLEL={}, "
-                            + "FLASH_ATTENTION=1, KV_CACHE_TYPE=q8_0, PID={})",
+                            + "FLASH_ATTENTION=1, KV_CACHE_TYPE=q8_0, KEEP_ALIVE=-1, "
+                            + "MAX_LOADED_MODELS=2, PID={})",
                     binary, HOST, PORT, models, llmParallelism(), serverProcess.pid());
         } catch (Exception e) {
             LOG.error("Failed to start isolated 'ollama serve' — was the bundled binary "
