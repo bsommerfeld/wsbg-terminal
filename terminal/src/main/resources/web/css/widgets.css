@@ -303,6 +303,10 @@ html[data-theme="dark"] .row .body .meta .provenance .prov-yahoo {
 }
 .row .body .head { color: var(--txt); font-weight: 500; }
 .row .body .head .ticker { color: var(--amber); font-weight: 600; }
+/* The subject(s) the line is about — the company name woven into the headline,
+   highlighted gold so the reader instantly sees the asset (the prompt forbids a
+   ticker label, so the NAME is the cue). Same gold as the ticker tag + new-row flash. */
+.row .body .head .subject { color: var(--amber); font-weight: 600; }
 .row .body .head .pct { font-variant-numeric: tabular-nums; }
 .row .body .head .pct.up   { color: var(--green); }
 .row .body .head .pct.down { color: var(--red); }

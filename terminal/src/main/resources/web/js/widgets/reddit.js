@@ -8,7 +8,7 @@
 // headlines over its life, so keying on clusterId alone would flash
 // only the first one and silently skip every follow-up.
 
-import { highlightTickers } from '../format/ticker.js';
+import { highlightSubjects } from '../format/ticker.js';
 import { colorizeSignedNumbers } from '../format/numbers.js';
 import { fmtClock } from '../format/time.js';
 
@@ -110,8 +110,9 @@ function rowKey(h) {
 }
 
 function toRow(h, isNew) {
-  // highlightTickers escapes its input internally and emits <span>s.
-  const head = colorizeSignedNumbers(highlightTickers(h.headline, h.tickerSymbol));
+  // highlightSubjects escapes its input internally and emits <span class="subject">s
+  // around the company name(s) the line is about — the gold cue.
+  const head = colorizeSignedNumbers(highlightSubjects(h.headline, h.subjects));
 
   const classes = ['row'];
   const cls = HIGHLIGHT_CLASS[h.highlight];
