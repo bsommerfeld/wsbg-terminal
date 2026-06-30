@@ -100,3 +100,5 @@ credentials.json
 
 # Local AI assistant guidance — not part of the repo
 CLAUDE.md
+# Local-only internal backlog (the post-release to-do notes)
+POST-RELEASE.md
