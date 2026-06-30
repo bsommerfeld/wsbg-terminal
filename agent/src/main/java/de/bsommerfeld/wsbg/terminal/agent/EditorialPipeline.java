@@ -417,11 +417,20 @@ public final class EditorialPipeline {
      * A unit/cluster removed or merged away since enqueue scores {@code -1} so it sorts
      * last (the worker's {@code process} then no-ops it and {@code done()} clears its id).
      */
+    /**
+     * First-compose priority: a subject with NO published headline yet is boosted above any
+     * re-compose, so a fresh tip isn't starved behind re-composes of an already-covered hot
+     * subject. Larger than any realistic evidence count, smaller than the queue's age-promotion
+     * bonus (anti-starvation always wins). Within a tier, live evidence still orders.
+     */
+    static final int FIRST_COMPOSE_BONUS = 10_000;
+
     private int strengthOf(ComposeJob job) {
         return switch (job) {
             case ComposeJob.SubjectJob s -> {
                 SubjectUnit u = subjectRegistry.get(s.unitId());
-                yield u == null ? -1 : u.evidenceCount();
+                if (u == null) yield -1;
+                yield u.evidenceCount() + (u.hasPublishedHeadline() ? 0 : FIRST_COMPOSE_BONUS);
             }
             case ComposeJob.ThemeJob t -> {
                 InvestigationCluster c = clusterRegistry.getCluster(t.clusterId());

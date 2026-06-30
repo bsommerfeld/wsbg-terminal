@@ -38,6 +38,22 @@ class WallstreetOnlineClientTest {
     }
 
     @Test
+    void parsePicksTheDominantlyPopularStockOverASameNamedTwin() {
+        // SpaceX: the room writes the long name, but the real stock's official short name is
+        // "SpaceX" (zero word-overlap → fails coverage), while an obscure Canadian twin matches
+        // the words. Popularity (992371 vs 201) must override coverage and pick the real one.
+        String body = """
+            {"status":1,"result":[
+              {"name":"SpaceX","isin":"US84615Q1031","wkn":"A42D4F","class":"stock","popularity":992371},
+              {"name":"Space Exploration Technologies Corporation","isin":"CA8459291081","wkn":"A42DG1","class":"stock","popularity":201},
+              {"name":"Space Exploration Technologies CEDEARS","isin":"AR0922353138","wkn":"X","class":"stock","popularity":6}]}
+            """;
+        var w = client.parse(body, "Space Exploration Technologies Corp.");
+        assertTrue(w.isPresent());
+        assertEquals("US84615Q1031", w.get().isin(), "the dominant 'SpaceX', not the CA twin");
+    }
+
+    @Test
     void parseSkipsResultsWithoutAValidIsin() {
         String body = """
             {"status":1,"result":[

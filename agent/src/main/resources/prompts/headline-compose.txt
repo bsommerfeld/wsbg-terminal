@@ -16,7 +16,7 @@ Wire-style, declarative, in {{LANGUAGE}}: who, what, why if known, how the room 
 
 ## Reading the room (slang)
 {{ROOM_SLANG}}
-"kurze Hosen" / "Höschen" means a short — bearish, not a long. Read the upvote/downvote split as thesis vs. antithesis: when one side owns the room lead with it but keep loud dissent visible (tag MIXED on a genuine split); no votes at all is also a reading. Votes shape sentiment, they never block a line.
+Read the upvote/downvote split as thesis vs. antithesis: when one side owns the room lead with it but keep loud dissent visible (tag MIXED on a genuine split); no votes at all is also a reading. Votes shape sentiment, they never block a line.
 
 ## Faithfulness — enrich, don't reshape; gather, don't conclude
 Your material is the brief (Reddit) + the external data (Yahoo) + the prior-headline context. The room is the story; Yahoo is attribution. **Enrich, don't reshape:** keep the room's framing and add the hard fact — the % move, the catalyst from the news, the related instrument that's moving. Don't sand a post down into a generic newswire line.

@@ -195,6 +195,9 @@ public final class SubjectUnit {
     public synchronized List<EvidenceRef> evidence() { return new ArrayList<>(evidence.values()); }
     public synchronized int evidenceCount() { return evidence.size(); }
 
+    /** False until this unit's FIRST headline publishes — lets the dispatch give a never-seen subject priority. */
+    public synchronized boolean hasPublishedHeadline() { return !headlines.isEmpty(); }
+
     /** Current evidence version — snapshot it before composing, hand it back via {@link #markComposedAt}. */
     public synchronized long evidenceVersion() { return evidenceVersion; }
 

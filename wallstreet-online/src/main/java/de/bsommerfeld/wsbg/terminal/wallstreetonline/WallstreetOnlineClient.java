@@ -54,6 +54,10 @@ public class WallstreetOnlineClient {
 
     /** Minimum share of the query's significant name tokens a hit must cover to be trusted. */
     static final double MIN_NAME_COVERAGE = 0.5;
+    /** A non-coverage hit overrides the coverage pick only if its popularity ≥ this × the coverage pick's… */
+    static final long POP_DOMINANCE = 20;
+    /** …and is itself at least this popular (so obscure-vs-obscure never triggers the override). */
+    static final long POP_DOMINANCE_FLOOR = 1000;
 
     private static final Set<String> NAME_STOP = Set.of(
             "etf", "ucits", "the", "and", "und", "com",
@@ -198,15 +202,28 @@ public class WallstreetOnlineClient {
             JsonNode results = JSON.readTree(body).path("result");
             if (!results.isArray() || results.isEmpty()) return Optional.empty();
             List<String> want = nameTokens(query);
-            JsonNode best = null;
-            long bestPop = -1;
+            JsonNode covBest = null; long covBestPop = -1;   // most-popular that PASSES name coverage
+            JsonNode popBest = null; long popBestPop = -1;   // most-popular overall (any coverage)
             for (JsonNode r : results) {
                 if (!ALLOWED_CLASS.contains(r.path("class").asText("").toLowerCase(Locale.ROOT))) continue;
                 String isin = r.path("isin").asText("").trim().toUpperCase(Locale.ROOT);
                 if (!isValidIsin(isin)) continue;
-                if (coverage(want, nameTokens(r.path("name").asText(""))) < MIN_NAME_COVERAGE) continue;
+                if (looksLikeDerivative(r.path("name").asText(""))) continue; // belt: a 'stock'-class derivative
                 long pop = r.path("popularity").asLong(0);
-                if (pop > bestPop) { bestPop = pop; best = r; }
+                if (pop > popBestPop) { popBestPop = pop; popBest = r; }
+                if (coverage(want, nameTokens(r.path("name").asText(""))) >= MIN_NAME_COVERAGE
+                        && pop > covBestPop) { covBestPop = pop; covBest = r; }
+            }
+            // Normally take the conservative coverage pick. BUT WSO's `popularity` is the
+            // strongest disambiguator, and a company's official short name needn't share words
+            // with the room's descriptive long name — "SpaceX" (US84615Q1031, pop 992371) carries
+            // ZERO coverage of "Space Exploration Technologies" and was being discarded for an
+            // obscure same-named Canadian twin (pop 201). So when one instrument's popularity
+            // DOMINATES (≥20× the coverage pick) and is itself substantial, trust it.
+            JsonNode best = covBest;
+            if (popBest != null && popBestPop >= POP_DOMINANCE_FLOOR
+                    && (covBest == null || popBestPop >= covBestPop * POP_DOMINANCE)) {
+                best = popBest;
             }
             if (best == null) return Optional.empty();
             return Optional.of(new WsoInstrument(

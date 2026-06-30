@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.Condition;
@@ -56,6 +57,14 @@ public final class EditorialQueue {
     /** Ids that are queued OR in-flight — the add-only/de-dup guard. */
     private final Set<String> inFlight = ConcurrentHashMap.newKeySet();
 
+    /** When each queued job was enqueued — feeds the age-promotion anti-starvation bonus. */
+    private final Map<ComposeJob, Long> enqueuedAt = new java.util.HashMap<>();
+
+    /** A job waiting longer than this is promoted to the front, no matter what's hotter. */
+    static final long AGE_PROMOTE_MS = 5 * 60 * 1000L;
+    /** Age-promotion bonus — dwarfs any evidence/first-compose score, so an aged job always wins. */
+    static final int AGE_BONUS = 1_000_000;
+
     /**
      * Enqueues {@code job} iff its id isn't already queued/in-flight.
      *
@@ -73,6 +82,7 @@ public final class EditorialQueue {
         lock.lock();
         try {
             jobs.add(job);
+            enqueuedAt.put(job, System.currentTimeMillis());
             notEmpty.signal();
         } finally {
             lock.unlock();
@@ -89,21 +99,31 @@ public final class EditorialQueue {
         lock.lock();
         try {
             while (jobs.isEmpty()) notEmpty.await();
+            long now = System.currentTimeMillis();
             int bestIdx = 0;
-            int bestStrength = strength.applyAsInt(jobs.get(0));
+            int bestStrength = effectiveStrength(jobs.get(0), strength, now);
             // Strict ">" keeps the earliest-inserted job among equal-strength peers,
             // so equal strength dispatches FIFO and no equal peer can be starved.
             for (int i = 1; i < jobs.size(); i++) {
-                int s = strength.applyAsInt(jobs.get(i));
+                int s = effectiveStrength(jobs.get(i), strength, now);
                 if (s > bestStrength) {
                     bestStrength = s;
                     bestIdx = i;
                 }
             }
-            return jobs.remove(bestIdx);
+            ComposeJob picked = jobs.remove(bestIdx);
+            enqueuedAt.remove(picked);
+            return picked;
         } finally {
             lock.unlock();
         }
+    }
+
+    /** External evidence/first-compose strength PLUS the age-promotion bonus once a job has waited too long. */
+    private int effectiveStrength(ComposeJob job, ToIntFunction<ComposeJob> strength, long now) {
+        int base = strength.applyAsInt(job);
+        long age = now - enqueuedAt.getOrDefault(job, now);
+        return age > AGE_PROMOTE_MS ? base + AGE_BONUS : base;
     }
 
     /** FIFO convenience (equal strength for all) — used by tests/diagnostics. */
@@ -151,6 +171,7 @@ public final class EditorialQueue {
         lock.lock();
         try {
             jobs.clear();
+            enqueuedAt.clear();
         } finally {
             lock.unlock();
         }
