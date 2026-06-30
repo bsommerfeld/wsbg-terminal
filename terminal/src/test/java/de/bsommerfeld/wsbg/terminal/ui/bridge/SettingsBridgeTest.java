@@ -18,20 +18,21 @@ class SettingsBridgeTest {
     void snapshotReflectsDefaults() {
         GlobalConfig c = new GlobalConfig();
         var snap = SettingsBridge.snapshot(c);
-        assertEquals("tickers", snap.get("headlinesMode"), "cluster-theme off ⇒ NUR TICKER");
         assertEquals(true, snap.get("analyzeImages"), "image analysis on by default");
+        assertEquals(true, snap.get("suppressRedundant"), "redundancy filter on by default");
         assertEquals("de", snap.get("language"));
         assertEquals(true, snap.get("autoUpdate"));
     }
-    @Test
-    void headlinesModeMapsToClusterThemeFlag() {
-        GlobalConfig c = new GlobalConfig();
-        assertTrue(SettingsBridge.apply(c, "headlinesMode", "all"));
-        assertTrue(c.getHeadlines().isClusterThemeEnabled());
-        assertEquals("all", SettingsBridge.snapshot(c).get("headlinesMode"));
 
-        assertTrue(SettingsBridge.apply(c, "headlinesMode", "tickers"));
-        assertFalse(c.getHeadlines().isClusterThemeEnabled());
+    @Test
+    void suppressRedundantMapsToFlag() {
+        GlobalConfig c = new GlobalConfig();
+        assertTrue(SettingsBridge.apply(c, "suppressRedundant", false));
+        assertFalse(c.getHeadlines().isSuppressRedundant());
+        assertEquals(false, SettingsBridge.snapshot(c).get("suppressRedundant"));
+
+        assertTrue(SettingsBridge.apply(c, "suppressRedundant", "true"));
+        assertTrue(c.getHeadlines().isSuppressRedundant());
     }
 
     @Test

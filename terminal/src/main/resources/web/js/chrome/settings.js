@@ -45,14 +45,11 @@ export function initSettings(socket) {
   syncAppearance();
 
   // ---- Config-backed settings (over the socket) ----
-  const mode = view.querySelector('.js-headlines-mode');
   const images = view.querySelector('.js-analyze-images');
   const redund = view.querySelector('.js-suppress-redundant');
   const lang = view.querySelector('.js-language');
   const auto = view.querySelector('.js-auto-update');
 
-  if (mode) mode.addEventListener('change',
-      () => socket.send('settings', { command: 'set', key: 'headlinesMode', value: mode.value }));
   if (images) images.addEventListener('change',
       () => socket.send('settings', { command: 'set', key: 'analyzeImages', value: images.checked }));
   if (redund) redund.addEventListener('change',
@@ -65,7 +62,6 @@ export function initSettings(socket) {
   // Backend echoes the persisted snapshot on connect + after every change.
   socket.on('settings', payload => {
     if (!payload) return;
-    if (mode && payload.headlinesMode) mode.value = payload.headlinesMode;
     if (images && typeof payload.analyzeImages === 'boolean') images.checked = payload.analyzeImages;
     if (redund && typeof payload.suppressRedundant === 'boolean') redund.checked = payload.suppressRedundant;
     if (lang && payload.language) lang.value = payload.language;

@@ -62,6 +62,13 @@ Yahoo läuft eh für News, der Typ ist also gratis.
 4. **Fonds / Anleihen** — `categorySymbol FONDS` / Anleihe, analog, niedrigere
    Priorität (selten Wire-Thema).
 
+## Vereinfachung der Namenssuche
+
+**Der erste L&S-Suchtreffer reicht — er deckt ~90 % der Fälle ab.** Die aufwändige
+Coverage-/Prefix-Rangordnung in `LangSchwarzClient.parseSearch` kann auf „nimm den
+ersten Treffer" eingedampft werden (die wenigen Twins fängt der WSO-ISIN-Cross-Check
+bzw. die Yahoo-Typ-Weiche). Weniger Code, gleiche Trefferquote.
+
 ## Offene Fragen / zu verifizieren
 
 - Liefert die L&S-**Quote**-API (chart) für `WÄHRUNG`/`ROHSTOFF`/Derivat dieselbe

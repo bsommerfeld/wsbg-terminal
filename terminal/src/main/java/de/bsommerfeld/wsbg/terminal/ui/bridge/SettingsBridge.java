@@ -29,10 +29,10 @@ import java.util.Map;
  * <p>Inbound: {@code {type:"settings", payload:{command:"get"|"set", key?, value?}}}.
  * Keys (all optional on the wire, ignored if unknown):
  * <ul>
- *   <li>{@code headlinesMode} — {@code "all"} (cluster-theme + subjects) vs
- *       {@code "tickers"} (subjects only, default) → {@code headlines.cluster-theme-enabled};</li>
  *   <li>{@code analyzeImages} — boolean (default true) → {@code headlines.analyze-images}
  *       (off = skip all vision for fast text-only headlines);</li>
+ *   <li>{@code suppressRedundant} — boolean (default true) → {@code headlines.suppress-redundant}
+ *       (off = strict 1:1 mirror, every dirty signal writes even a duplicate);</li>
  *   <li>{@code language} — {@code "de"}/{@code "en"} → {@code user.language};</li>
  *   <li>{@code autoUpdate} — boolean → {@code user.auto-update}.</li>
  * </ul>
@@ -131,12 +131,6 @@ public final class SettingsBridge {
     /** Applies one key=value to the config. Returns whether anything changed. Package-private for testing. */
     static boolean apply(GlobalConfig config, String key, Object value) {
         switch (key) {
-            case "headlinesMode" -> {
-                // "all" = cluster-theme + per-subject; "tickers" = subjects only.
-                boolean all = "all".equals(value);
-                config.getHeadlines().setClusterThemeEnabled(all);
-                return true;
-            }
             case "language" -> {
                 if (value instanceof String s && (s.equals("de") || s.equals("en"))) {
                     config.getUser().setLanguage(s);
@@ -175,7 +169,6 @@ public final class SettingsBridge {
     /** The full settings payload the page reads. Package-private for testing. */
     static Map<String, Object> snapshot(GlobalConfig config) {
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("headlinesMode", config.getHeadlines().isClusterThemeEnabled() ? "all" : "tickers");
         out.put("analyzeImages", config.getHeadlines().isAnalyzeImages());
         out.put("suppressRedundant", config.getHeadlines().isSuppressRedundant());
         out.put("language", config.getUser().getLanguage());
