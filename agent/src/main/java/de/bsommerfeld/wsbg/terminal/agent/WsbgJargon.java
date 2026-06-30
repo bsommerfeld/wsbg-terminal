@@ -44,6 +44,39 @@ public final class WsbgJargon {
             "Telekom / Magenta", "Deutsche Telekom",
             "Bumsbude", "(generic junk/penny stock — resolve the actual ticker the post names, not this word)");
 
+    /**
+     * Deterministic alias → canonical lookup, built by splitting the slash-listed
+     * {@link #ENTITY_ALIASES} keys into individual aliases. The 4B extraction model applies
+     * the prompt-rendered aliases UNRELIABLY (sometimes „Rheiner" → Rheinmetall, sometimes it
+     * stays „Rheiner" → a tickerless split), so the resolver normalises every subject name
+     * with THIS first for a 100%-consistent mapping. Parenthetical hint-only entries
+     * (e.g. „Bumsbude") are skipped — they're guidance for the model, not a rename.
+     */
+    private static final Map<String, String> CANONICAL_BY_ALIAS = buildCanonicalMap();
+
+    private static Map<String, String> buildCanonicalMap() {
+        Map<String, String> m = new java.util.HashMap<>();
+        ENTITY_ALIASES.forEach((slangList, canonical) -> {
+            if (canonical.startsWith("(")) return; // a prompt-only hint, not a deterministic rename
+            for (String alias : slangList.split("/")) {
+                String key = alias.trim().toLowerCase(java.util.Locale.ROOT);
+                if (!key.isEmpty()) m.putIfAbsent(key, canonical);
+            }
+        });
+        return m;
+    }
+
+    /**
+     * Deterministically maps a WSBG slang subject to its canonical entity (case-insensitive,
+     * whole-name match), or returns it unchanged. So „Rheiner"/„Rheini" reliably become
+     * „Rheinmetall" before resolution — no longer at the 4B model's mercy.
+     */
+    public static String canonicalize(String subject) {
+        if (subject == null) return null;
+        String c = CANONICAL_BY_ALIAS.get(subject.trim().toLowerCase(java.util.Locale.ROOT));
+        return c != null ? c : subject;
+    }
+
     /** Slang → sentiment/role meaning for reading the room. */
     public static final Map<String, String> ROOM_SLANG = ordered(
             "kurze Hosen / Höschen / Shorts", "a short position — bearish bet",

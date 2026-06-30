@@ -96,10 +96,12 @@ public final class LauncherMain {
         log(appDir, "auto-update=" + autoUpdate + (forceUpdate ? " (forced by in-app update)" : ""));
 
         TinyUpdateClient updateClient = new TinyUpdateClient(REPO, appDir);
-        // Ollama platform install + model downloads = 2 extra steps after the
-        // update pipeline. JCEF (browser runtime) and fonts are installed by
-        // the setup script (setup.sh / setup.ps1), not the launcher.
-        updateClient.setExtraSteps(2);
+        // Three extra steps after the update pipeline: the Ollama platform
+        // install, the model downloads, and the browser (JCEF) runtime — the
+        // last is a ~150 MB download that deserves its own step instead of
+        // hiding under "Setting up environment". Fonts are a fast tail with no
+        // numbered step. All are driven by the setup script (setup.sh/.ps1).
+        updateClient.setExtraSteps(3);
 
         boolean firstRun = updateClient.currentVersion() == null;
         LauncherWindow window = new LauncherWindow();
@@ -240,12 +242,13 @@ public final class LauncherMain {
         window.resetProgress();
         window.setSpeed(-1);
 
-        // After the update download steps, the Ollama install + model pulls
-        // slot in as the final two steps. (JCEF + fonts are handled inside
-        // the setup script itself.)
+        // After the update download steps, the Ollama install, the model pulls,
+        // and the browser (JCEF) runtime slot in as the final three numbered
+        // steps. Fonts run after as a quick, unnumbered tail.
         int platformStep = client.lastDownloadStepCount() + 1;
         int modelStep = platformStep + 1;
-        int totalSteps = modelStep;
+        int browserStep = modelStep + 1;
+        int totalSteps = browserStep;
 
         // Periodic logging — ollama emits many lines per second
         long[] logTracker = {0}; // [0]=lastLogTime
@@ -253,6 +256,9 @@ public final class LauncherMain {
         long[] speedTracker = {0, 0}; // [0]=lastBytes, [1]=lastTime
         // Track last logged message to log transitions immediately
         String[] lastLoggedPhase = {""};
+        // Last step-group seen, so a transition between the platform/model/
+        // browser steps snaps the bar back to the dot and drops any stale speed.
+        String[] lastGroup = {""};
 
         boolean success = setup.run((phase, detail) -> {
             long now = System.currentTimeMillis();
@@ -267,46 +273,71 @@ public final class LauncherMain {
             }
 
             boolean isWork = phase.startsWith("Pulling")
-                    || phase.equals("Installing AI platform");
+                    || phase.equals("Installing AI platform")
+                    || phase.equals("Installing browser runtime");
             if (!window.isVisible() && isWork) {
                 SwingUtilities.invokeLater(() -> window.setVisible(true));
             }
 
-            // Ollama platform install → step N, model pulls → step N+1
+            // Snap to the dot and drop the stale speed whenever the work group
+            // changes (platform → models → browser), so the next step's bar and
+            // readouts start clean instead of inheriting the previous fill.
+            String group = phase.startsWith("Pulling") ? "models" : phase;
+            if (!group.equals(lastGroup[0])) {
+                lastGroup[0] = group;
+                window.resetProgress();
+                speedTracker[0] = 0;
+                speedTracker[1] = 0;
+            }
+
+            // Numbered work steps get a "(n/total)" label; everything else
+            // (fonts, config) shows its plain translated phase.
             if (phase.equals("Installing AI platform")) {
-                String label = i18n.get("Installing AI platform")
-                        + " (" + platformStep + "/" + totalSteps + ")";
-                window.setStatus(label);
+                window.setStatus(i18n.get("Installing AI platform")
+                        + " (" + platformStep + "/" + totalSteps + ")");
             } else if (phase.startsWith("Pulling")) {
-                String label = i18n.get("Installing AI models")
-                        + " (" + modelStep + "/" + totalSteps + ")";
-                window.setStatus(label);
+                window.setStatus(i18n.get("Installing AI models")
+                        + " (" + modelStep + "/" + totalSteps + ")");
+            } else if (phase.equals("Installing browser runtime")) {
+                window.setStatus(i18n.get("Installing browser runtime")
+                        + " (" + browserStep + "/" + totalSteps + ")");
             } else {
                 window.setStatus(i18n.get(phase));
             }
 
-            // Drive progress bar + speed from percentage in detail
-            if (detail != null && !detail.isEmpty() && Character.isDigit(detail.charAt(0))) {
-                int pctIdx = detail.indexOf('%');
-                if (pctIdx > 0) {
-                    try {
-                        int pct = Integer.parseInt(detail.substring(0, pctIdx).strip());
-                        window.setProgress(pct / 100.0);
+            // Drive the progress bar + speed from the detail. A detail with no
+            // percentage (a status word like "verifying", or a phase transition)
+            // means there is nothing downloading right now, so the speed readout
+            // is cleared rather than left showing a stale "0 B/s".
+            int pct = parsePercent(detail);
+            if (pct < 0) {
+                window.setSpeed(-1);
+                speedTracker[0] = 0;
+                speedTracker[1] = 0;
+                return;
+            }
+            window.setProgress(pct / 100.0);
 
-                        int dashIdx = detail.indexOf('—');
-                        if (dashIdx > 0) {
-                            long currentBytes = parseByteSize(detail.substring(dashIdx + 1).strip().split("/")[0].strip());
-                            if (speedTracker[1] > 0 && now - speedTracker[1] >= 500) {
-                                long speed = ((currentBytes - speedTracker[0]) * 1000) / (now - speedTracker[1]);
-                                if (speed >= 0) window.setSpeed(speed);
-                            }
-                            speedTracker[0] = currentBytes;
-                            speedTracker[1] = now;
-                        }
-                        return;
-                    } catch (NumberFormatException | ArrayIndexOutOfBoundsException ignored) {
-                    }
-                }
+            long currentBytes = parseProgressBytes(detail);
+            if (currentBytes < 0) {
+                // Bar-only progress (curl --progress-bar) carries no byte
+                // figures — keep the bar moving but show no speed.
+                window.setSpeed(-1);
+                speedTracker[0] = 0;
+                speedTracker[1] = 0;
+                return;
+            }
+            if (speedTracker[1] == 0) {
+                speedTracker[0] = currentBytes;
+                speedTracker[1] = now;
+            } else if (now - speedTracker[1] >= 500) {
+                long delta = currentBytes - speedTracker[0];
+                // A non-advancing sample (brief stall) or a backwards jump (the
+                // next model restarting at 0%) hides the speed rather than
+                // rendering a misleading "0 B/s".
+                window.setSpeed(delta > 0 ? (delta * 1000) / (now - speedTracker[1]) : -1);
+                speedTracker[0] = currentBytes;
+                speedTracker[1] = now;
             }
         });
 
@@ -316,6 +347,40 @@ public final class LauncherMain {
             log(appDir, "Environment setup returned non-zero — proceeding anyway");
             window.setStatus(i18n.get("Setup completed with warnings"));
             sleep(2000);
+        }
+    }
+
+    /**
+     * Parses the leading "NN%" out of a setup detail string ("45% — 739 MB /
+     * 3.3 GB" or a bare "45%"), or {@code -1} when the detail carries no
+     * percentage (a status word, or {@code null} on a phase transition).
+     */
+    private static int parsePercent(String detail) {
+        if (detail == null || detail.isEmpty() || !Character.isDigit(detail.charAt(0))) {
+            return -1;
+        }
+        int pctIdx = detail.indexOf('%');
+        if (pctIdx <= 0) return -1;
+        try {
+            return Integer.parseInt(detail.substring(0, pctIdx).strip());
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    /**
+     * Parses the downloaded-bytes figure from a rich "NN% — downloaded / total"
+     * detail, or {@code -1} when the detail has no byte figures (e.g. curl's
+     * {@code --progress-bar} output, which is a bar + percent only).
+     */
+    private static long parseProgressBytes(String detail) {
+        if (detail == null) return -1;
+        int dashIdx = detail.indexOf('—');
+        if (dashIdx <= 0) return -1;
+        try {
+            return parseByteSize(detail.substring(dashIdx + 1).strip().split("/")[0].strip());
+        } catch (NumberFormatException | ArrayIndexOutOfBoundsException e) {
+            return -1;
         }
     }
 

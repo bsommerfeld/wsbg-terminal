@@ -354,6 +354,80 @@ class EnvironmentSetupTest {
     }
 
     @Test
+    void classifyAndEmit_shouldDetectBrowserRuntimeInstall() throws Exception {
+        EnvironmentSetup setup = new EnvironmentSetup(appDir);
+        Method m = EnvironmentSetup.class.getDeclaredMethod("classifyAndEmit", String.class,
+                BiConsumer.class);
+        m.setAccessible(true);
+
+        List<String[]> emissions = new ArrayList<>();
+        m.invoke(setup, "[*] Installing browser runtime (macosx-arm64)...",
+                (BiConsumer<String, String>) (phase, detail) -> emissions.add(new String[] { phase, detail }));
+
+        assertFalse(emissions.isEmpty());
+        assertEquals("Installing browser runtime", emissions.get(0)[0]);
+        assertNull(emissions.get(0)[1]);
+    }
+
+    @Test
+    void classifyAndEmit_shouldEmitCurlProgressDuringBrowserInstall() throws Exception {
+        EnvironmentSetup setup = new EnvironmentSetup(appDir);
+        Method classify = EnvironmentSetup.class.getDeclaredMethod("classifyAndEmit", String.class,
+                BiConsumer.class);
+        classify.setAccessible(true);
+
+        List<String[]> emissions = new ArrayList<>();
+        BiConsumer<String, String> collector = (phase, detail) -> emissions.add(new String[] { phase, detail });
+
+        classify.invoke(setup, "[*] Installing browser runtime (linux-amd64)...", collector);
+        emissions.clear();
+
+        // curl --progress-bar output (trailing percent, no byte figures)
+        classify.invoke(setup, "######            45.0%", collector);
+
+        assertFalse(emissions.isEmpty());
+        assertEquals("Installing browser runtime", emissions.get(0)[0]);
+        assertEquals("45%", emissions.get(0)[1]);
+    }
+
+    @Test
+    void classifyAndEmit_shouldEndBrowserInstallOnReadyLine() throws Exception {
+        EnvironmentSetup setup = new EnvironmentSetup(appDir);
+        Method classify = EnvironmentSetup.class.getDeclaredMethod("classifyAndEmit", String.class,
+                BiConsumer.class);
+        classify.setAccessible(true);
+
+        List<String[]> emissions = new ArrayList<>();
+        BiConsumer<String, String> collector = (phase, detail) -> emissions.add(new String[] { phase, detail });
+
+        classify.invoke(setup, "[*] Installing browser runtime (macosx-arm64)...", collector);
+        classify.invoke(setup, "    Browser runtime ready.", collector);
+        emissions.clear();
+
+        // After the ready line the phase must be back to generic, not browser.
+        classify.invoke(setup, "some generic line", collector);
+
+        assertFalse(emissions.isEmpty());
+        assertEquals("Setting up environment", emissions.get(0)[0]);
+    }
+
+    @Test
+    void classifyAndEmit_shouldDetectFontInstall() throws Exception {
+        EnvironmentSetup setup = new EnvironmentSetup(appDir);
+        Method m = EnvironmentSetup.class.getDeclaredMethod("classifyAndEmit", String.class,
+                BiConsumer.class);
+        m.setAccessible(true);
+
+        List<String[]> emissions = new ArrayList<>();
+        m.invoke(setup, "[*] Installing terminal fonts...",
+                (BiConsumer<String, String>) (phase, detail) -> emissions.add(new String[] { phase, detail }));
+
+        assertFalse(emissions.isEmpty());
+        assertEquals("Installing fonts", emissions.get(0)[0]);
+        assertNull(emissions.get(0)[1]);
+    }
+
+    @Test
     void parseBytes_shouldConvertAllUnits() throws Exception {
         EnvironmentSetup setup = new EnvironmentSetup(appDir);
         Method m = EnvironmentSetup.class.getDeclaredMethod("parseBytes", String.class);

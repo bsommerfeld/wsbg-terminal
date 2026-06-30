@@ -94,6 +94,10 @@ final class HeadlineJson {
         // once the market has closed (no live venue → the figure is a last close).
         m.put("source", s.exchangeName());
         m.put("marketTime", s.marketTimeEpochSeconds() > 0 ? s.marketTimeEpochSeconds() : null);
+        // The AUTHORITATIVE dim flag, GAP-aware (computed server-side against the CET clock):
+        // the page must use THIS, not re-derive staleness from marketTime — else a US/index
+        // quote on its last close would read "closed" all through German trading hours.
+        m.put("priceStale", !de.bsommerfeld.wsbg.terminal.price.FallbackPriceSource.isLive(s));
         m.put("spark", s.spark());
         return m;
     }

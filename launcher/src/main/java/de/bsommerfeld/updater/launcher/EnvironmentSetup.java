@@ -89,6 +89,19 @@ final class EnvironmentSetup {
     private static final Pattern OLLAMA_INSTALL_PATTERN = Pattern.compile(
             "(?i)\\[\\*]\\s*(?:installing|updating)\\b.*\\bollama");
 
+    // The script's "[*] Installing browser runtime (macosx-arm64)..." line —
+    // the JCEF (~150 MB Chromium) download, which is otherwise the slowest
+    // step with no dedicated phase. Only the active install matches; the
+    // "[*] Browser runtime already installed." short-circuit deliberately does
+    // not (no download happens, so no phase is needed).
+    private static final Pattern JCEF_INSTALL_PATTERN = Pattern.compile(
+            "(?i)\\[\\*]\\s*installing\\s+browser\\s+runtime");
+
+    // The script's "[*] Installing terminal fonts..." line — a handful of small
+    // woff2 files, fast enough that it needs only a label, not a progress bar.
+    private static final Pattern FONTS_INSTALL_PATTERN = Pattern.compile(
+            "(?i)\\[\\*]\\s*installing\\s+(?:terminal\\s+)?fonts");
+
     // Extracts trailing percentage from curl-style progress lines
     // (e.g. "####   8.8%" → group 1 = "8.8").
     private static final Pattern CURL_PROGRESS_PATTERN = Pattern.compile(
@@ -144,6 +157,12 @@ final class EnvironmentSetup {
      * when the script transitions to model config/pulls.
      */
     private boolean installingOllama;
+
+    /**
+     * Active while the script downloads the JCEF (browser) runtime. Cleared
+     * when the script reports the runtime ready or moves on to fonts/config.
+     */
+    private boolean installingBrowser;
 
     EnvironmentSetup(Path appDirectory) {
         this(appDirectory, DEFAULT_IDLE_TIMEOUT);
@@ -297,6 +316,10 @@ final class EnvironmentSetup {
     private void classifyAndEmit(String line, BiConsumer<String, String> consumer) {
         if (tryEmitOllamaInstall(line, consumer))
             return;
+        if (tryEmitBrowserInstall(line, consumer))
+            return;
+        if (tryEmitFontsInstall(line, consumer))
+            return;
         if (tryEmitOllamaPull(line, consumer))
             return;
         if (tryEmitOllamaProgress(line, consumer))
@@ -323,6 +346,19 @@ final class EnvironmentSetup {
             // speed + ETA for the (large) Ollama binary download, not just a bar.
             String detail = parseDownloadDetail(line);
             consumer.accept("Installing AI platform", detail != null ? detail : line);
+            return;
+        }
+
+        if (installingBrowser) {
+            // The runtime-ready line ends the phase; anything else is the curl
+            // --progress-bar transfer, surfaced as a bare "pct%" bar (no byte
+            // figures in --progress-bar output, hence no speed/ETA).
+            if (line.contains("Browser runtime ready")) {
+                installingBrowser = false;
+                return;
+            }
+            String detail = parseDownloadDetail(line);
+            consumer.accept("Installing browser runtime", detail);
             return;
         }
 
@@ -405,7 +441,38 @@ final class EnvironmentSetup {
     private boolean tryEmitOllamaInstall(String line, BiConsumer<String, String> consumer) {
         if (OLLAMA_INSTALL_PATTERN.matcher(line).find()) {
             installingOllama = true;
+            installingBrowser = false;
             consumer.accept("Installing AI platform", null);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Activates the browser-runtime (JCEF) download phase when the script
+     * announces "[*] Installing browser runtime ...". The ~150 MB Chromium
+     * download is the slowest single step, so it gets its own phase rather
+     * than hiding under a generic "Setting up environment".
+     */
+    private boolean tryEmitBrowserInstall(String line, BiConsumer<String, String> consumer) {
+        if (JCEF_INSTALL_PATTERN.matcher(line).find()) {
+            installingBrowser = true;
+            installingOllama = false;
+            consumer.accept("Installing browser runtime", null);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Surfaces the font-install step under its own label. The downloads are a
+     * few small woff2 files, so there is no progress to track — just the phase.
+     */
+    private boolean tryEmitFontsInstall(String line, BiConsumer<String, String> consumer) {
+        if (FONTS_INSTALL_PATTERN.matcher(line).find()) {
+            installingOllama = false;
+            installingBrowser = false;
+            consumer.accept("Installing fonts", null);
             return true;
         }
         return false;
@@ -419,6 +486,7 @@ final class EnvironmentSetup {
         Matcher m = OLLAMA_PULL_PATTERN.matcher(line);
         if (m.find()) {
             installingOllama = false;
+            installingBrowser = false;
             currentModelName = m.group(1).strip();
             maxTotalBytes = 0; // Reset for new model
             consumer.accept("Pulling " + currentModelName, null);

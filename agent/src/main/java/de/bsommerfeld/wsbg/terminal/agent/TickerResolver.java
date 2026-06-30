@@ -80,6 +80,24 @@ public final class TickerResolver {
     private static final double MIN_CONFIDENT_SCORE = 100_000.0;
 
     /**
+     * Minimum Yahoo relevance for a FUZZY crypto match (non-cashtag). Cryptos score on a
+     * different, lower scale than equities (a megacap clears 6–7 figures; Bitcoin tops out
+     * ~37&nbsp;000, Ethereum ~32&nbsp;000), while the obscure same-named memecoins that trap a
+     * product/person name ("Starlink", "Elon Musk") sit at Yahoo's base ~20&nbsp;000. 25k cleanly
+     * separates the coins the room genuinely means from the namesake junk. {@code exactSymbol}
+     * (a cashtag the user wrote) bypasses this.
+     */
+    private static final double CRYPTO_MIN_SCORE = 25_000.0;
+
+    /** A crypto quote: a {@code …-USD}/{@code …-EUR} pair or Yahoo {@code CRYPTOCURRENCY} type. */
+    private static boolean isCryptoQuote(YahooQuote q) {
+        if (q == null) return false;
+        String sym = q.symbol() == null ? "" : q.symbol().toUpperCase(Locale.ROOT);
+        String type = q.quoteType() == null ? "" : q.quoteType().trim().toUpperCase(Locale.ROOT);
+        return sym.endsWith("-USD") || sym.endsWith("-EUR") || type.equals("CRYPTOCURRENCY");
+    }
+
+    /**
      * Cap on the second-hop: distinct {@code relatedTickers} mentioned across a
      * subject's news that we pull a live snapshot for. This is what lets a
      * person/theme subject ("Trump") surface the instruments its news is about
@@ -203,7 +221,10 @@ public final class TickerResolver {
         // Phase 1 — search each subject, pick its ticker, gather related tickers
         // (+ their news). No snapshots yet; just collect the symbols we'll need.
         for (int i = 0; i < n; i++) {
-            String query = names.get(i) == null ? "" : names.get(i).trim();
+            // Deterministic slang→canonical FIRST (the 4B model applies the prompt aliases
+            // unreliably): „Rheiner" becomes „Rheinmetall" here, every time, so it resolves to
+            // RHM.DE and merges instead of splitting off as a tickerless name-unit.
+            String query = WsbgJargon.canonicalize(names.get(i) == null ? "" : names.get(i).trim());
             int maxRelated = relatedAlloc != null && i < relatedAlloc.length ? Math.max(0, relatedAlloc[i]) : 0;
             if (query.isEmpty() || yahoo == null) {
                 pending.add(Pending.empty(query));
@@ -226,9 +247,15 @@ public final class TickerResolver {
                 // grab a same-named tradeable ticker (e.g. „DAX" → a $44 US ETF) and
                 // FX-convert it into nonsense. Index symbols are priced in points.
                 IndexCatalog.Index index = IndexCatalog.lookup(query);
+                // A known commodity („Gold", „Öl", …) binds to its Yahoo future (GC=F, CL=F)
+                // — the actual commodity price, not a same-named mining stock or a „Gold.com"
+                // pennystock. NOT a guess: „Gold" IS gold. Priced in native USD, not FX-converted.
+                CommodityCatalog.Commodity commodity = index == null ? CommodityCatalog.lookup(query) : null;
                 String ownTicker = index != null ? index.symbol()
+                        : commodity != null ? commodity.symbol()
                         : (strong == null ? null : strong.symbol());
                 String canonical = index != null ? index.displayName()
+                        : commodity != null ? commodity.displayName()
                         : (strong == null ? query : strong.displayName());
 
                 // News: triangulated across all sources by the resolved ticker (Yahoo +
@@ -399,6 +426,17 @@ public final class TickerResolver {
                 // obscure fuzzy hit does not. (Tier 2, embedding, is the fallback
                 // for the legitimate low-score names this still rejects.)
                 strong = q.score() >= MIN_CONFIDENT_SCORE;
+            }
+            // The MEMECOIN TRAP: a fuzzy (non-cashtag) name match to a CRYPTO is almost always
+            // a wrong same-named coin namesake — "Starlink" (the SpaceX product) → the STARL
+            // coin, "Elon Musk" (the person) → a Musk-themed coin. These sit at Yahoo's base
+            // relevance (~20000), while a coin the room genuinely means (Bitcoin, Ethereum)
+            // scores far higher. So a fuzzy crypto hit must clear the higher crypto bar; below
+            // it, drop to tickerless → the line stays news-only, never a guessed memecoin. The
+            // room writing the symbol itself (exactSymbol, a cashtag) always passes — that IS
+            // faithful, the user named the coin.
+            if (strong && !exactSymbol && isCryptoQuote(q) && q.score() < CRYPTO_MIN_SCORE) {
+                strong = false;
             }
             if (exactSymbol) strong = true;
             if (!strong) continue;

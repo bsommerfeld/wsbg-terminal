@@ -22,8 +22,9 @@ import java.util.concurrent.ConcurrentHashMap;
  *   When maximized we inset by the frame overhang so content isn't clipped.</li>
  *   <li><b>WM_NCHITTEST</b> — synthesize every resize edge/corner from a thin
  *   border band, report the title-bar strip as {@code HTCAPTION} (native drag +
- *   Aero Snap + double-click-maximize), and leave the buttons + theme toggle +
- *   page body as {@code HTCLIENT} so their clicks reach the HTML.</li>
+ *   Aero Snap + double-click-maximize), and leave the window buttons + the left
+ *   action group (gear/heart/update) + page body as {@code HTCLIENT} so their
+ *   clicks reach the HTML.</li>
  * </ul>
  *
  * <p>
@@ -62,10 +63,16 @@ final class WindowsCustomChrome {
     private static final int SWP_FRAMECHANGED = 0x0001 | 0x0002 | 0x0004 | 0x0020;
 
     // Title-bar geometry in logical (DIP) px — kept in sync with titlebar.css:
-    //   --titlebar-h = 38; window buttons (right) 3×46 = 138; theme toggle (left).
+    //   --titlebar-h = 38; window buttons (right) 3×46 = 138.
+    //   Left action group (.tb-actions): up to 3 iconbtns (30px) + 2 gaps (6px)
+    //   + horizontal padding (2×10px) ≈ 122px → 130 with margin. This used to be
+    //   a single 52px theme toggle; the gear + heart (+ update) now live there,
+    //   so the click-through band has to span the whole group or the buttons
+    //   sitting past 52px fall into the HTCAPTION drag region and never get the
+    //   click (the Settings gear bug).
     private static final int TITLEBAR_H_DIP = 38;
     private static final int BUTTONS_W_DIP = 138;
-    private static final int THEME_W_DIP = 52;
+    private static final int ACTIONS_W_DIP = 130;
     private static final int RESIZE_DIP = 6;
 
     // Strong refs to installed callbacks — a GC'd JNA callback crashes the next
@@ -228,8 +235,8 @@ final class WindowsCustomChrome {
     /**
      * Classifies a screen point into a Win32 hit-test code against the frame's
      * client rect: a thin border band → resize edges/corners; the title-bar
-     * strip (minus the left theme toggle and right window buttons) → HTCAPTION;
-     * everything else → HTCLIENT.
+     * strip (minus the left action group and the right window buttons) →
+     * HTCAPTION; everything else → HTCLIENT.
      */
     private static int hitTest(Pointer frame, int screenX, int screenY) {
         try {
@@ -249,7 +256,7 @@ final class WindowsCustomChrome {
             if (dpi <= 0) dpi = 96;
             int tbH = TITLEBAR_H_DIP * dpi / 96;
             int btnW = BUTTONS_W_DIP * dpi / 96;
-            int themeW = THEME_W_DIP * dpi / 96;
+            int actionsW = ACTIONS_W_DIP * dpi / 96;
             int rs = RESIZE_DIP * dpi / 96;
 
             if (!User32.INSTANCE.IsZoomed(frame)) {
@@ -265,7 +272,10 @@ final class WindowsCustomChrome {
             }
 
             if (y < tbH) {
-                if (x < themeW || x >= cw - btnW) return HTCLIENT; // theme + buttons
+                // Left: the .tb-actions group (gear/heart/update). Right: the
+                // window buttons. Both must stay click-through (HTCLIENT); only
+                // the strip between them is the drag caption.
+                if (x < actionsW || x >= cw - btnW) return HTCLIENT;
                 return HTCAPTION;
             }
             return HTCLIENT;

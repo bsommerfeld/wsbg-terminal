@@ -29,6 +29,21 @@ class TickerResolverTest {
     }
 
     @Test
+    void rejectsAFuzzyMemecoinNamesakeButKeepsAMajorAndACashtag() {
+        // "Starlink" (the SpaceX product) collides with an obscure same-named coin sitting at
+        // Yahoo's base relevance — must NOT resolve to it (→ tickerless, line stays news-only).
+        assertNull(TickerResolver.strongMatch("Starlink",
+                List.of(q("STARL-USD", "Starlink USD", "CCC", "CRYPTOCURRENCY", 20002))),
+                "obscure memecoin namesake is dropped");
+        // Bitcoin: the coin the room genuinely means, far higher relevance → kept.
+        assertEquals("BTC-USD", TickerResolver.strongMatch("Bitcoin",
+                List.of(q("BTC-USD", "Bitcoin USD", "CCC", "CRYPTOCURRENCY", 37112))).symbol());
+        // A cashtag the user wrote (exact symbol) is faithful — passes even at a low score.
+        assertEquals("STARL-USD", TickerResolver.strongMatch("STARL-USD",
+                List.of(q("STARL-USD", "Starlink USD", "CCC", "CRYPTOCURRENCY", 20002))).symbol());
+    }
+
+    @Test
     void prefersHomeListingOverNumericPrefixedSecondary() {
         // 1MUV2.MI is the Borsa Italiana secondary line of Munich Re; MUV2.DE is home.
         List<YahooQuote> quotes = List.of(

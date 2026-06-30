@@ -660,9 +660,11 @@ public class EditorialAgent {
         Draft d = ud.draft();
         if (d == null || d.headline() == null || d.headline().isBlank()) {
             handleEmptyCompose(u, ud);
-            // A deliberate redundant-empty has been composed against this evidence; a
-            // whiff (model failure) must stay eligible so its re-queue actually retries.
-            if (!ud.whiffed()) u.markComposedAt(composedV);
+            // BOTH a deliberate redundant-empty AND a whiff (the model usually MEANT to skip
+            // but emitted nothing parseable instead of {"headline":""}) count as composed
+            // against THIS evidence: do NOT busy-retry. The unit only re-composes once
+            // GENUINELY new evidence bumps its version — idle workers are fine, churn is not.
+            u.markComposedAt(composedV);
             return false;
         }
         // Unchanged from the unit's last line → nothing to publish (but it WAS composed).
@@ -711,19 +713,13 @@ public class EditorialAgent {
      * the line, the model just failed to emit one.
      */
     private void handleEmptyCompose(SubjectUnit u, UnitDraft ud) {
-        if (!ud.whiffed()) { // deliberate redundant-empty → nothing to say, nothing to retry
-            composeRetries.remove(u.id);
-            return;
-        }
-        int fails = composeRetries.merge(u.id, 1, Integer::sum);
-        if (fails <= MAX_COMPOSE_RETRIES) {
-            subjectRegistry.markDirty(u.id); // re-queue for the next tick
-            LOG.info("[COMPOSE] unit {} whiffed (attempt {}/{}) — re-queued for next tick",
-                    u.id, fails, MAX_COMPOSE_RETRIES + 1);
-        } else {
-            composeRetries.remove(u.id); // park: stop re-dirtying; fresh evidence will re-wake it
-            LOG.warn("[COMPOSE] unit {} parked after {} whiffs — waits for fresh evidence (not covered)",
-                    u.id, fails);
+        composeRetries.remove(u.id);
+        // No busy-retry on a whiff anymore (the caller marks the unit composed against this
+        // evidence, so it simply waits for genuinely-new evidence to re-wake it). The empty
+        // reply is almost always the model MEANING to skip — re-firing it on the same evidence
+        // just whiffs again and floods the 4B model, starving the wire. Logged for diagnostics.
+        if (ud.whiffed()) {
+            LOG.info("[COMPOSE] unit {} produced no usable headline — waiting for fresh evidence (no retry)", u.id);
         }
     }
 

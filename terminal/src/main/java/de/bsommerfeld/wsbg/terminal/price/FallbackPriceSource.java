@@ -133,16 +133,17 @@ public class FallbackPriceSource implements PriceSource {
         // mis-match a same-named German share ("Bitcoin" → "Bitcoin Group SE"); those go
         // to Yahoo. The L&S resolver itself now rejects wrong-twin name hits (min coverage).
         boolean germanVenueEligible = isEquityTicker(ref.ticker());
-        // US price fallback (Yahoo/NASDAQ) for an equity/ETF the EUR venues couldn't
-        // resolve is OPT-IN (default off) — a US-listing price converted to EUR is the
-        // wrong product for this audience. A NON-equity (index ^…, crypto -USD, FX =X)
-        // has no EU listing, so Yahoo is its legit/only source and is ALWAYS allowed.
-        // The US opt-in setting was removed (2026-06-30): equities are L&S-only. Yahoo stays
-        // ONLY for non-equities (index points ^…, crypto -USD, FX =X) that have no EU listing.
-        boolean usAllowed = !germanVenueEligible;
-        // For an EQUITY that fell through to the US fallback we keep the NATIVE US price
-        // ($, the honest US listing — not a misleading EUR conversion of the wrong product).
-        // A non-equity normalises through toEur (index → points, crypto → EUR).
+        // Yahoo is a SAFETY NET, not a competitor: the attempts run L&S FIRST, so for an
+        // equity Yahoo only ever fires when L&S genuinely found nothing — the "are you SURE
+        // there's no price?" check (2026-06-30). It rescues real stocks L&S simply doesn't
+        // list (Abivax FR0012333284, foreign small-caps) instead of leaving them price-less.
+        // Non-equities (index ^…, crypto -USD, FX =X) have no EU listing, so Yahoo is their
+        // legit/only source anyway. So Yahoo is always allowed; L&S-first ordering keeps the
+        // EUR venue primary for everything it can resolve.
+        boolean usAllowed = true;
+        // For an EQUITY that fell through to the Yahoo net we keep the NATIVE price
+        // ($, the honest listing — not a misleading EUR conversion of the wrong product).
+        // A non-equity normalises through toEur (index → points, crypto → EUR, commodity → USD).
         boolean convertUs = !germanVenueEligible;
         final String[] isin = { ref.hasIsin() ? ref.isin() : null };
 
@@ -200,19 +201,27 @@ public class FallbackPriceSource implements PriceSource {
         for (Supplier<Optional<MarketSnapshot>> attempt : attempts) {
             MarketSnapshot s = attempt.get().orElse(null);
             if (s == null) continue;
-            // Dimming is for the dead-of-night GAP only, NOT during active trading hours: a
-            // quote counts as live if it's genuinely fresh OR we're simply not in the GAP
-            // window (the audience doesn't want a grayed price while the German exchange is
-            // open — e.g. a US index showing its last close at 14:00 CET should read live,
-            // not closed). EXCEPTION: a German venue (L&S) off its own session reports a
-            // fresh-looking stamp on a last close, so it's only live inside the L&S window.
-            boolean live = (isFresh(s) || window != PriceWindow.GAP)
-                    && !(isGermanVenue(s) && !lsSession);
-            if (live) return win(ref, s, true);
+            if (isLive(s)) return win(ref, s, true);
             freshestStale = fresher(freshestStale, s);
         }
         if (freshestStale != null) return win(ref, freshestStale, false);
         return Optional.empty();
+    }
+
+    /**
+     * GAP-aware DISPLAY liveness — the single source of truth for both source selection here
+     * AND the UI's dim flag ({@code HeadlineJson} sends {@code priceStale = !isLive(s)}; the
+     * page must NOT re-derive staleness from the raw timestamp, or a US/index quote on its last
+     * close reads "closed" all through German trading hours). A quote is live (not dimmed) when
+     * it's genuinely fresh OR we're simply not in the dead-of-night GAP — EXCEPT an L&S quote
+     * off its own session (it reports a fresh-looking stamp on a last close, so force it stale).
+     * Computed against the live CET clock, so the flag updates as the day moves through windows.
+     */
+    public static boolean isLive(MarketSnapshot s) {
+        if (s == null) return false;
+        PriceWindow window = windowAt(ZonedDateTime.now(BERLIN));
+        boolean lsSession = window == PriceWindow.LS;
+        return (isFresh(s) || window != PriceWindow.GAP) && !(isGermanVenue(s) && !lsSession);
     }
 
     /**
@@ -327,6 +336,12 @@ public class FallbackPriceSource implements PriceSource {
         // nonsense. Keep the number, relabel it as points, skip FX entirely.
         if (s != null && s.symbol() != null && s.symbol().startsWith("^")) {
             return POINTS.equals(s.currency()) ? s : withCurrency(s, POINTS);
+        }
+        // A commodity future (GC=F gold, CL=F oil, …) is quoted in its native unit
+        // (USD/oz, USD/bbl — the universal benchmark). Don't FX-convert it: gold-in-EUR
+        // isn't how the market reads it, and the room says „Gold", not „Gold in Euro".
+        if (s != null && s.symbol() != null && s.symbol().endsWith("=F")) {
+            return s;
         }
         double r = fx == null ? 0 : fx.getCurrent().map(q -> q.rate()).orElse(0.0);
         if (s != null && "USD".equalsIgnoreCase(s.currency())) {

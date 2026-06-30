@@ -49,6 +49,8 @@ Deshalb ist unser *Software-Setup* komplett idiotensicher. Der Installer nimmt e
 > - **Mac-Affen:** Oben rechts aufs **"?"** am Fenster klicken, dann auf den Link zu Datenschutz & Sicherheit. Runterscrollen und auf **"Trotzdem öffnen"** klicken (oder einfach in die Mac-Settings zu Datenschutz & Sicherheit scrollen). Im Zweifel: Google, lol.
 > - **Windows-Degenerates:** Blauer SmartScreen poppt auf ➔ Klickt auf **"Weitere Informationen"** ➔ **"Trotzdem ausführen"**.
 
+Den Installer findet ihr hier: https://github.com/bsommerfeld/wsbg-terminal/releases/latest
+
 ### 💻 Systemanforderungen (Der Gerät)
 
 Euer Computer sollte nicht nur schön blinken, sondern auch performen können. Ollama zieht gut was weg, besonders wenn das Affengeschrei groß ist, weil die Fetten kommen.

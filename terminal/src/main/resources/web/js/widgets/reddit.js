@@ -179,9 +179,15 @@ function buildQuote(s) {
        + `${spark}${price}${chgTxt}</span>`;
 }
 
-// A quote whose venue last traded more than 30 min ago is a last close, not live.
+// Dim a quote ONLY when the server says so. priceStale is GAP-aware (computed against the
+// CET clock): a US/index quote on its last close is NOT dimmed while the German market is
+// open — only the dead-of-night gap dims. We must NOT re-derive this from marketTime here,
+// or every overseas/index price would read "closed" all day. (Older payloads without the
+// flag fall back to the 30-min timestamp check.)
 function isStaleQuote(s) {
-  if (!s || typeof s.marketTime !== 'number' || s.marketTime <= 0) return false;
+  if (!s) return false;
+  if (typeof s.priceStale === 'boolean') return s.priceStale;
+  if (typeof s.marketTime !== 'number' || s.marketTime <= 0) return false;
   return (Date.now() / 1000 - s.marketTime) > 1800;
 }
 
