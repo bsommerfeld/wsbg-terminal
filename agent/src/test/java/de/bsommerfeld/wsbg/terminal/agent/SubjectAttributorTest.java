@@ -37,11 +37,14 @@ class SubjectAttributorTest {
     @Test
     void matchesNativeFormViaCanonicalWord() {
         // Query normalised to English "Munich Re"; the room writes "Münchener rück".
-        // The German canonical carries the word "münchener" → match.
+        // The German canonical carries the word "münchener", umlaut-transliterated to
+        // "muenchener" → matches the room whether it writes "Münchener" or "Muenchener".
         Set<String> words = SubjectAttributor.nameWords(
                 "Munich Re", "Münchener Rückversicherungs-Gesellschaft Aktiengesellschaft in München");
-        assertTrue(words.contains("münchener"));
+        assertTrue(words.contains("muenchener"));
         assertTrue(SubjectAttributor.matches("Asml oder allianz oder Münchener rück", words, "1MUV2.MI"));
+        assertTrue(SubjectAttributor.matches("Asml oder allianz oder Muenchener rueck", words, "1MUV2.MI"),
+                "the ue-spelling matches the umlaut canonical too");
     }
 
     @Test

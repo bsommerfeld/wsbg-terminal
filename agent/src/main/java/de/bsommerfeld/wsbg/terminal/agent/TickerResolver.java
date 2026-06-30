@@ -542,13 +542,19 @@ public final class TickerResolver {
 
     private static Set<String> tokenize(String s) {
         if (s == null) return Set.of();
-        // Strip diacritics FIRST (é→e, è→e, ü→u, ç→c, à→a …). Without this the [^a-z0-9 ]
-        // filter below turns an accented letter into a SPACE, splitting "Hermès" → "herm"+"s"
-        // so it never matches Yahoo's "Hermes International" (RMS.PA) → no ticker, no price.
-        // NFD decomposes each accent into a combining mark, which \p{M} then removes.
-        String deAccented = java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD)
+        // German umlauts → their ae/oe/ue transliteration (ß→ss) FIRST, so "Münchener" and the
+        // expanded spelling "Muenchener" both normalise to "muenchener". Bare NFD would only
+        // strip the dots ("münchener"→"munchener" ≠ "muenchener") and miss the match — German
+        // names are exactly where one source carries the umlaut and another the ue-form.
+        String deUmlaut = s.toLowerCase(Locale.ROOT)
+                .replace("ä", "ae").replace("ö", "oe").replace("ü", "ue").replace("ß", "ss");
+        // Then strip the REMAINING diacritics (é→e, è→e, ç→c, à→a …). Without this the
+        // [^a-z0-9 ] filter below turns an accented letter into a SPACE, splitting "Hermès" →
+        // "herm"+"s" so it never matches Yahoo's "Hermes International" (RMS.PA) — no ticker, no
+        // price. NFD decomposes each accent into a combining mark, which \p{M} then removes.
+        String deAccented = java.text.Normalizer.normalize(deUmlaut, java.text.Normalizer.Form.NFD)
                 .replaceAll("\\p{M}+", "");
-        String norm = deAccented.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9 ]", " ");
+        String norm = deAccented.replaceAll("[^a-z0-9 ]", " ");
         Set<String> out = new HashSet<>();
         for (String t : Arrays.asList(norm.trim().split("\\s+"))) {
             if (t.length() < 3) continue;

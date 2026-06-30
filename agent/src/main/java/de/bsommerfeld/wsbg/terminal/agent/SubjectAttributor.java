@@ -203,9 +203,19 @@ public final class SubjectAttributor {
 
     private static void addWords(Set<String> out, String s) {
         if (s == null) return;
-        for (String w : s.toLowerCase(Locale.ROOT).split("[^a-z0-9äöüß]+")) {
+        for (String w : deUmlaut(s).split("[^a-z0-9]+")) {
             if (w.length() >= 3 && !STOP.contains(w)) out.add(w);
         }
+    }
+
+    /**
+     * Lowercase + German umlaut transliteration (ä→ae, ö→oe, ü→ue, ß→ss) so the room's
+     * "Muenchener" and a canonical "Münchener" tokenise to the SAME word ("muenchener") and
+     * match. Applied symmetrically to both the name words and the scanned text.
+     */
+    static String deUmlaut(String s) {
+        return s.toLowerCase(Locale.ROOT)
+                .replace("ä", "ae").replace("ö", "oe").replace("ü", "ue").replace("ß", "ss");
     }
 
     /**
@@ -312,7 +322,7 @@ public final class SubjectAttributor {
     /** {@code {distinctiveHits, totalHits}} of {@code nameWords} present in {@code text}. */
     private static int[] overlap(String text, Set<String> nameWords, Set<String> ambiguous) {
         Set<String> textWords = new HashSet<>(Arrays.asList(
-                text.toLowerCase(Locale.ROOT).split("[^a-z0-9äöüß]+")));
+                deUmlaut(text).split("[^a-z0-9]+")));
         int distinctive = 0;
         int total = 0;
         for (String w : nameWords) {
