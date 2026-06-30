@@ -92,6 +92,17 @@ public class EditorialAgent {
     private static final int EXTRACT_CHUNK_SIZE = 25;
 
     /**
+     * A single extraction call over a brief larger than this is chunked even if the
+     * comment COUNT is small — a handful of LONG comments (or a big vision transcript)
+     * still overflows the 4B model into a degenerate blank reply (the same failure the
+     * per-count chunking guards, just triggered by length instead of count).
+     */
+    private static final int EXTRACT_CHAR_BUDGET = 2800;
+
+    /** Max characters of COMMENT text per extraction chunk (the shared preamble rides on top). */
+    private static final int EXTRACT_CHUNK_CHARS = 1800;
+
+    /**
      * How often a unit whose compose came back unusable (a model whiff, not a
      * deliberate redundant-empty) is re-queued before it's parked. 1 = give it ONE
      * more tick; a second consecutive whiff parks it (stop re-dirtying, but never
@@ -348,7 +359,7 @@ public class EditorialAgent {
      * mentions are dropped first, with an explicit "omitted" line so the model
      * knows the story is longer than what it sees.
      */
-    static final int EVIDENCE_CHAR_BUDGET = 6000;
+    static final int EVIDENCE_CHAR_BUDGET = 4500;
 
     /** Builds the per-unit brief: Yahoo data + the room's evidence about this subject + its story memory. Static for testability. */
     static String unitBrief(SubjectUnit unit, boolean newsCoverageEnabled) {
@@ -793,10 +804,10 @@ public class EditorialAgent {
                 .replace("{{ENTITY_ALIASES}}", WsbgJargon.entityAliasesForPrompt());
 
         int comments = countComments(cluster);
-        if (comments <= EXTRACT_CHUNK_SIZE) {
-            // Common path, unchanged: one call over the full rich brief (vision,
-            // poll, covered-split all intact).
-            String text = chat(model, sys, brief);
+        if (comments <= EXTRACT_CHUNK_SIZE && brief.length() <= EXTRACT_CHAR_BUDGET) {
+            // Common path: one call over the full rich brief (vision, poll,
+            // covered-split all intact) — only when it's small enough to be safe.
+            String text = extractChat(model, sys, brief);
             List<String> out = dedupClean(parseSubjectNames(text));
             if (out.isEmpty()) {
                 String raw = text == null ? "" : text.strip();
@@ -812,7 +823,7 @@ public class EditorialAgent {
         List<String> chunks = commentChunks(cluster, EXTRACT_CHUNK_SIZE);
         Map<String, String> union = new LinkedHashMap<>(); // lower-case key → first-seen spelling
         for (String chunk : chunks) {
-            String text = chat(model, sys, chunk);
+            String text = extractChat(model, sys, chunk);
             for (String name : parseSubjectNames(text)) {
                 String clean = cleanSubjectName(name);
                 if (!clean.isEmpty()) union.putIfAbsent(clean.toLowerCase(Locale.ROOT), clean);
@@ -822,6 +833,21 @@ public class EditorialAgent {
                 comments, chunks.size(), union.size());
         List<String> names = new ArrayList<>(union.values());
         return new Subjects(names, names.size(), "<chunked: " + chunks.size() + " batch(es)>");
+    }
+
+    /**
+     * One extraction model call, with a single retry on a degenerate BLANK reply. The 4B
+     * model occasionally returns an empty string in JSON mode even on a small input (a random
+     * degeneration, not a real "no subjects" — that comes back as {@code {"subjects":[]}}).
+     * Ollama uses a fresh random seed per call, so the retry genuinely varies. A legit empty
+     * array is returned as-is (no retry); only a truly blank reply is retried.
+     */
+    private String extractChat(ChatModel model, String sys, String input) {
+        String text = chat(model, sys, input);
+        if (text == null || text.strip().isEmpty()) {
+            text = chat(model, sys, input);
+        }
+        return text;
     }
 
     /**
@@ -935,11 +961,21 @@ public class EditorialAgent {
             chunks.add(preamble.toString());
             return chunks;
         }
-        for (int i = 0; i < lines.size(); i += perChunk) {
+        int i = 0;
+        while (i < lines.size()) {
             StringBuilder sb = new StringBuilder(preamble);
             sb.append("\nCOMMENTS (batch ").append(chunks.size() + 1).append("):\n");
-            for (int j = i; j < Math.min(i + perChunk, lines.size()); j++) {
-                sb.append(lines.get(j)).append('\n');
+            // Stop a batch at perChunk lines OR the char budget, whichever comes first —
+            // a few long comments must not balloon one batch back into the degenerate zone.
+            // `count == 0` forces at least one line so the loop always advances.
+            int count = 0, commentChars = 0;
+            while (i < lines.size() && count < perChunk
+                    && (count == 0 || commentChars < EXTRACT_CHUNK_CHARS)) {
+                String line = lines.get(i);
+                sb.append(line).append('\n');
+                commentChars += line.length() + 1;
+                i++;
+                count++;
             }
             chunks.add(sb.toString());
         }
