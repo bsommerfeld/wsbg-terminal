@@ -301,6 +301,12 @@ html[data-theme="dark"] .row .body .meta .provenance .prov-yahoo {
   color: var(--mute); font-size: var(--font-time);
   font-variant-numeric: tabular-nums; padding-top: 3px;
 }
+/* The body sits in the grid's `1fr` track, whose default min-width is `auto`
+   (= its content's min-content). A long unbreakable string in the expanded
+   .detail block (an earnings breakdown / data dump rendered as one long line)
+   would otherwise push that track — and the whole widget — wider than the pane.
+   min-width:0 lets the track shrink to the container; .detail wraps instead. */
+.row .body { min-width: 0; }
 .row .body .head { color: var(--txt); font-weight: 500; }
 .row .body .head .ticker { color: var(--amber); font-weight: 600; }
 /* The subject(s) the line is about — the company name woven into the headline,
@@ -496,6 +502,9 @@ html[data-theme="dark"] .row .body .meta .provenance .prov-yahoo {
   color: var(--txt-2);
   font-size: var(--font-meta);
   line-height: 1.55;
+  /* Break even a long unbroken token (a wide numeric/tabular "chart" line)
+     so the detail wraps within the pane instead of forcing the row wider. */
+  overflow-wrap: anywhere;
 }
 .row.expanded .body .detail { display: block; }
 .row .body .detail .ticker { color: var(--amber); font-weight: 600; }
