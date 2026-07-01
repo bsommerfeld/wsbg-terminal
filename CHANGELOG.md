@@ -13,7 +13,10 @@ Die Anzeigesprache lässt sich jetzt live umschalten.
 
 ## Restliches
 
+- Die Installation zeigt jetzt per Punkten, wie viele KI-Modelle geladen werden, und der Browser-Runtime Step friert nicht mehr ein.
+
 #### Microsoft Short (Windows)
+- Nach der Installation startet das Terminal jetzt von selbst.
 - Die ScrollBar in den Einstellungen ist nun kein dicker Klumpen mehr.
 - JCEF Hintergrundprozesse werden jetzt sauber aufgeräumt.
 - CURL 35 Fehler bei der Installation werden jetzt sauber abgefangen [#3](https://github.com/bsommerfeld/wsbg-terminal/issues/3)

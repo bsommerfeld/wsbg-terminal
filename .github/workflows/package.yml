@@ -28,6 +28,17 @@ name: Package Native Launcher
 on:
   release:
     types: [published]
+  # Manual test builds: produces the same installers but uploads them as
+  # workflow ARTIFACTS instead of release assets (there is no release to
+  # attach them to). The version input defaults high so a test installer
+  # always installs OVER an existing install (downgrades are blocked by
+  # the MSI upgrade logic).
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Installer version for the test build'
+        required: false
+        default: '9.9.9'
 
 permissions:
   contents: write
@@ -123,8 +134,11 @@ jobs:
           cp "$SHADED_JAR" jpackage-input/
 
           # Strip "v" prefix from tag for JPackage — it only accepts numeric versions
-          # (e.g. "1.2.0"), not "v1.2.0". Falls back to "1.0.0" if tag is empty.
+          # (e.g. "1.2.0"), not "v1.2.0". Manual (workflow_dispatch) test builds
+          # have no release tag and use the version input instead; final fallback
+          # is "1.0.0" if both are empty.
           RAW_TAG="${{ github.event.release.tag_name }}"
+          RAW_TAG="${RAW_TAG:-${{ github.event.inputs.version }}}"
           APP_VERSION="${RAW_TAG#v}"
           APP_VERSION="${APP_VERSION:-1.0.0}"
 
@@ -217,8 +231,11 @@ jobs:
             --dest jpackage-output
           )
           if [ "${{ matrix.jpackage-type }}" = "exe" ]; then
-            # Desktop shortcut + Start Menu entry so the app is immediately visible
-            ARGS+=( --win-shortcut --win-menu --win-menu-group WSBG )
+            # Desktop shortcut + Start Menu entry so the app is immediately visible.
+            # --resource-dir provides a custom WiX main.wxs (copy of the JDK default
+            # plus a WsbgLaunchApp custom action) so the installer LAUNCHES the app
+            # right after installing — jpackage has no built-in flag for that.
+            ARGS+=( --win-shortcut --win-menu --win-menu-group WSBG --resource-dir .assets/wix )
           fi
           if [ "${{ matrix.os }}" = "macos-latest" ] && [ -n "$MAC_SIGN_IDENTITY" ]; then
             # Hardened-runtime Developer ID signing (jpackage adds --options runtime +
@@ -297,7 +314,18 @@ jobs:
           echo "asset=jpackage-output/$STABLE" >> "$GITHUB_OUTPUT"
           echo "Renamed $(basename "$SRC") -> $STABLE"
 
+      # Manual test builds have no release — expose the installer as a
+      # downloadable workflow artifact instead.
+      - name: Upload as workflow artifact (manual test build)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: WSBG-Terminal-${{ matrix.jpackage-type }}
+          path: ${{ steps.rename.outputs.asset }}
+          if-no-files-found: error
+
       - name: Upload to Release
+        if: github.event_name == 'release'
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
