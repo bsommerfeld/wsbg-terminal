@@ -1,6 +1,6 @@
 # Was hat sich geändert?
 
-Die KI hat bisher vor jeder einzelnen Schlagzeile heimlich seitenweise vor sich hin gegrübelt - gelesen hat das nie jemand, gekostet hat es fast die ganze Rechenzeit. Damit ist Schluss: Schlagzeilen entstehen jetzt bis zu zehnmal schneller, die Wire kommt auch bei viel Betrieb im Käfig nicht mehr ins Stocken, und nebenbei verschluckt die KI deutlich seltener eine Zeile oder liefert eine leere Antwort.
+Die KI hat bisher vor jeder einzelnen Schlagzeile heimlich seitenweise vor sich hin gegrübelt - gelesen hat das nie jemand, gekostet hat es fast die ganze Rechenzeit. Damit ist Schluss: Schlagzeilen entstehen jetzt **bis zu zehnmal schneller**, die Wire kommt auch bei viel Betrieb im Käfig nicht mehr ins Stocken, und nebenbei verschluckt die KI deutlich seltener eine Zeile oder liefert eine leere Antwort.
 
 ---
 
@@ -18,7 +18,7 @@ Die Anzeigesprache lässt sich jetzt live umschalten.
 ## Restliches
 
 - Die Installation zeigt jetzt per Punkten, wie viele KI-Modelle geladen werden, und der Browser-Runtime Step friert nicht mehr ein.
-- Beim Deinstallieren wird jetzt auch der Datenordner mit aufgeräumt - KI-Modelle, Cache und Einstellungen verschwinden restlos von der Platte (auf dem Mac per beiliegendem Deinstallations-Skript im Download-Image).
+- Ganz unten in den Einstellungen gibt es jetzt einen „Deinstallieren"-Knopf: ein Klick entfernt das Terminal restlos vom Rechner - App, KI-Modelle, Cache, Einstellungen und Archiv, auf jedem Betriebssystem. Auch wer klassisch über das System deinstalliert, lässt keine Datenreste mehr zurück.
 
 #### Microsoft Short (Windows)
 - Nach der Installation startet das Terminal jetzt von selbst.

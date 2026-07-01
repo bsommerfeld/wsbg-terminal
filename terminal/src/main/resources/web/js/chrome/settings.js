@@ -125,4 +125,33 @@ export function initSettings(socket) {
       setTimeout(() => { clearBtn.disabled = false; clearBtn.textContent = t('settings.data.clear.btn'); }, 600000);
     });
   }
+
+  // ---- Destructive: full uninstall (same two-click arm; the app exits) ----
+  const uninstallBtn = view.querySelector('.js-uninstall');
+  if (uninstallBtn) {
+    let armed = false;
+    let armTimer = null;
+    const disarm = () => {
+      armed = false;
+      uninstallBtn.classList.remove('armed');
+      uninstallBtn.textContent = t('settings.data.uninstall.btn');
+    };
+    uninstallBtn.addEventListener('click', () => {
+      if (uninstallBtn.disabled) return;
+      if (!armed) {
+        armed = true;
+        uninstallBtn.classList.add('armed');
+        uninstallBtn.textContent = t('settings.data.uninstall.confirm');
+        clearTimeout(armTimer);
+        armTimer = setTimeout(disarm, 4000); // un-arm if not confirmed
+        return;
+      }
+      clearTimeout(armTimer);
+      socket.send('uninstall', { command: 'apply' });
+      // No re-enable: the backend shuts the app down and the OS takes over.
+      uninstallBtn.disabled = true;
+      uninstallBtn.classList.remove('armed');
+      uninstallBtn.textContent = t('settings.data.uninstall.working');
+    });
+  }
 }

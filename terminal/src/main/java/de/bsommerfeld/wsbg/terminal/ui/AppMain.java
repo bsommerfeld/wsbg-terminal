@@ -159,6 +159,34 @@ public final class AppMain {
         });
     }
 
+    /**
+     * Closes the app cleanly and hands the actual removal to a detached OS
+     * process — the action behind the Settings view's "Deinstallieren" button
+     * (UninstallService, which builds the platform-specific command). Same
+     * proven order as {@link #relaunchForUpdate()}: stop services first, spawn
+     * the detached cleanup (it sleeps before acting, so it always runs against
+     * a fully dead install — anything earlier and our own snapshot writes or
+     * the CEF cache flush would re-create files the wipe just removed), then
+     * tear CEF down and exit.
+     */
+    public static void uninstallAndExit(java.util.List<String> detachedCleanup) {
+        SwingUtilities.invokeLater(() -> {
+            shutdownServices(INJECTOR);
+            try {
+                new ProcessBuilder(detachedCleanup)
+                        .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                        .redirectError(ProcessBuilder.Redirect.DISCARD)
+                        .start();
+                LOG.info("Spawned detached uninstall cleanup.");
+            } catch (Exception e) {
+                LOG.error("Failed to spawn uninstall cleanup: {}", e.getMessage());
+            }
+            safeStop(() -> INJECTOR.getInstance(CefHost.class).dispose(), "CefHost");
+            safeStop(CefHost::reapHelperProcesses, "reapHelperProcesses");
+            System.exit(0);
+        });
+    }
+
     private static void spawnLauncherForceUpdate() {
         String exe = System.getenv("WSBG_LAUNCHER_EXECUTABLE");
         if (exe == null || exe.isBlank()) {

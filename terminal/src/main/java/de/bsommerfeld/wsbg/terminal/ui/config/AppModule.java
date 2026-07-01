@@ -46,6 +46,7 @@ import de.bsommerfeld.wsbg.terminal.ui.bridge.MarketHoursPublisher;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.OsAppearancePublisher;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.RedditHealthPublisher;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.SettingsBridge;
+import de.bsommerfeld.wsbg.terminal.ui.bridge.UninstallService;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.UpdateService;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.WatchlistBridge;
 import de.bsommerfeld.wsbg.terminal.ui.scroll.PixelScaledWheelScrollPolicy;
@@ -148,6 +149,9 @@ public class AppModule extends AbstractModule {
             // (headline mode, language, auto-update) and
             // pushes the current snapshot on client open.
             bind(SettingsBridge.class).asEagerSingleton();
+            // The Settings view's "Deinstallieren": one-click full removal
+            // (launcher + data dir) via a detached OS-specific cleanup.
+            bind(UninstallService.class).asEagerSingleton();
             // Pushes the host OS dark/light appearance to the page. Needed because the
             // OSR Chromium can't see the real macOS theme, so the page's matchMedia
             // can't drive "follow system". Eager so it polls + pushes from boot.

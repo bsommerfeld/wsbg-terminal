@@ -242,14 +242,10 @@ jobs:
             # Desktop shortcut + Start Menu entry so the app is immediately visible
             ARGS+=( --win-shortcut --win-menu --win-menu-group WSBG )
           fi
-          if [ "${{ matrix.jpackage-type }}" = "dmg" ]; then
-            # macOS has no uninstall hook (drag-to-Trash fires nothing), so the
-            # DMG ships a visible uninstall script next to the app instead.
-            # NO spaces in the file name: jpackage treats them as separators
-            # in the --mac-dmg-content list (proven: run 28545239443 failed
-            # with NoSuchFileException on the first path segment).
-            ARGS+=( --mac-dmg-content ".assets/dmg/WSBG-Terminal-deinstallieren.command" )
-          fi
+          # macOS ships NO extra dmg content: uninstall lives in the app itself
+          # (Settings → "Deinstallieren", UninstallService), same as every OS.
+          # If --mac-dmg-content is ever reintroduced: NO spaces in file names,
+          # jpackage treats them as list separators (proven: run 28545239443).
           if [ "${{ matrix.os }}" = "macos-latest" ] && [ -n "$MAC_SIGN_IDENTITY" ]; then
             # Hardened-runtime Developer ID signing (jpackage adds --options runtime +
             # a secure timestamp), identity + keychain made explicit so codesign never

@@ -65,6 +65,12 @@ const DICT = {
     'settings.data.clear.btn': 'Daten löschen',
     'settings.data.clear.confirm': 'Wirklich löschen?',
     'settings.data.clear.done': 'Gelöscht',
+    'settings.data.uninstall.name': 'Deinstallieren',
+    'settings.data.uninstall.hint': 'Entfernt das Terminal komplett vom Rechner - App, KI-Modelle, Cache und alle Daten.',
+    'settings.data.uninstall.more': 'Auch das Schlagzeilen-Archiv geht verloren. Unter Windows startet die Deinstallation des Systems, auf dem Mac räumt sich die App selbst weg, unter Linux fragt das System einmal nach dem Passwort.',
+    'settings.data.uninstall.btn': 'Deinstallieren',
+    'settings.data.uninstall.confirm': 'Wirklich alles entfernen?',
+    'settings.data.uninstall.working': 'Wird deinstalliert…',
 
     // --- reddit rows ---
     'reddit.empty': 'Köche kochen noch',
@@ -151,6 +157,12 @@ const DICT = {
     'settings.data.clear.btn': 'Clear data',
     'settings.data.clear.confirm': 'Really delete?',
     'settings.data.clear.done': 'Cleared',
+    'settings.data.uninstall.name': 'Uninstall',
+    'settings.data.uninstall.hint': 'Removes the terminal from this machine entirely - app, AI models, cache and all data.',
+    'settings.data.uninstall.more': 'The headline archive is lost too. On Windows the system uninstall opens, on macOS the app removes itself, on Linux the system asks for your password once.',
+    'settings.data.uninstall.btn': 'Uninstall',
+    'settings.data.uninstall.confirm': 'Really remove everything?',
+    'settings.data.uninstall.working': 'Uninstalling…',
 
     // --- reddit rows ---
     'reddit.empty': 'The cooks are still cooking',
