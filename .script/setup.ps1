@@ -107,6 +107,16 @@ if ($haveVer -eq $OllamaVersion) {
         # large zips. curl streams to disk; bsdtar (tar.exe) extracts the zip.
         Write-Host "    Downloading $url ..."
         & curl.exe -fL --retry 3 --retry-delay 2 -o $tmpZip $url
+        # curl exit 35 with schannel is usually CRYPT_E_NO_REVOCATION_CHECK: the
+        # machine (corporate proxy / AV TLS-interception / blocked OCSP+CRL hosts)
+        # can't reach the CA's revocation endpoint, and schannel treats "couldn't
+        # check" as fatal before a single byte transfers. Retry once telling
+        # schannel to skip the revocation *check* only (the cert is still
+        # validated) so these locked-down networks can still install.
+        if ($LASTEXITCODE -eq 35) {
+            Write-Warn "Ollama download hit a TLS revocation-check failure -- retrying without revocation check."
+            & curl.exe -fL --ssl-no-revoke --retry 3 --retry-delay 2 -o $tmpZip $url
+        }
         if ($LASTEXITCODE -ne 0) {
             Write-Warn "Ollama download failed (curl exit $LASTEXITCODE) -- continuing."
         } else {

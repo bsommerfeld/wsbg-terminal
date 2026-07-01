@@ -8,3 +8,4 @@ Sobald eine neue Version verfügbar ist, leuchtet nun ein grüner Update Knopf i
 
 - **Scrollbar in den Einstellungen unter Windows entschlackt.** Statt der klobigen Windows-Leiste zeigen die Einstellungen jetzt die gewollte Terminal-Scrollbar.
 - **Sauberes Beenden unter Windows.** Beim Schließen des Terminals blieben bisher verwaiste Hintergrundprozesse hängen - wir haben nun stets unseren besten Mann darauf ausgesetzt, diese nach jedem Beenden zu eliminieren.
+- **Installation hinter strengen Firmen-Netzwerken gefixt.** In abgeschotteten Netzen (Proxy/Virenscanner) brach die Einrichtung beim Download der KI-Plattform ab und das Terminal startete nie - dieser Fall wird jetzt abgefangen und die Installation läuft durch.
