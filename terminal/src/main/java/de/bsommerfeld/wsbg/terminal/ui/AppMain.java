@@ -102,6 +102,10 @@ public final class AppMain {
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             shutdownServices(injector);
             safeStop(() -> injector.getInstance(CefHost.class).dispose(), "CefHost");
+            // A bare SIGTERM/kill reaches only this hook; cefApp.dispose() is
+            // async, so reap the Chromium helpers before the JVM exits — else
+            // they orphan on Windows (no POSIX orphan reaping).
+            safeStop(CefHost::reapHelperProcesses, "reapHelperProcesses");
         }, "wsbg-shutdown"));
 
         String entryUrl = String.format("http://127.0.0.1:%d/?ws=%d",
@@ -147,6 +151,10 @@ public final class AppMain {
             shutdownServices(INJECTOR);
             spawnLauncherForceUpdate();
             safeStop(() -> INJECTOR.getInstance(CefHost.class).dispose(), "CefHost");
+            // Reap the Chromium helpers before exiting so they don't orphan on
+            // Windows. The reaper matches on the "jcef" command name only, so it
+            // never touches the launcher we just spawned above.
+            safeStop(CefHost::reapHelperProcesses, "reapHelperProcesses");
             System.exit(0);
         });
     }

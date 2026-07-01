@@ -242,6 +242,10 @@ public final class BrowserWindow {
         try { browser.close(true); } catch (Throwable ignored) {}
         try { cefHost.dispose(); } catch (Throwable ignored) {}
         try { if (frame != null) frame.dispose(); } catch (Throwable ignored) {}
+        // Window is gone; cefApp.dispose() only *started* the async helper
+        // teardown. Reap any Chromium "jcef Helper" still shutting down before
+        // the exit, else on Windows (no POSIX orphan reaping) they linger.
+        CefHost.reapHelperProcesses();
         System.exit(0);
     }
 

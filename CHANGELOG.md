@@ -7,3 +7,4 @@ Der grüne Update-Knopf oben im Terminal leuchtet jetzt auf, sobald eine neue Ve
 ## Restliches
 
 - **Scrollbar in den Einstellungen unter Windows entschlackt.** Statt der klobigen Windows-System-Leiste zeigt der Einstellungen-Bereich jetzt die schlanke Terminal-Scrollbar wie überall sonst im Käfig.
+- **Sauberes Beenden unter Windows.** Beim Schließen des Terminals blieben bisher verwaiste Hintergrundprozesse hängen — die werden jetzt zuverlässig mit heruntergefahren, statt weiterzulaufen.
