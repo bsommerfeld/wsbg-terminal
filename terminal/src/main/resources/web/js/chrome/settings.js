@@ -7,6 +7,7 @@
 // controls reflect the stored state on every client.
 
 import { currentTheme, toggleTheme, isFollowingSystem, setFollowSystem } from './theme.js';
+import { setLang, t } from '../i18n/i18n.js';
 
 export function initSettings(socket) {
   const main = document.querySelector('.main');
@@ -66,6 +67,9 @@ export function initSettings(socket) {
     if (redund && typeof payload.suppressRedundant === 'boolean') redund.checked = payload.suppressRedundant;
     if (lang && payload.language) lang.value = payload.language;
     if (auto && typeof payload.autoUpdate === 'boolean') auto.checked = payload.autoUpdate;
+    // Drive the whole UI language off the persisted setting: applies on connect
+    // (the backend echoes the snapshot) and live after every change — no restart.
+    if (payload.language) setLang(payload.language);
   });
 
   // ---- Update indicator (titlebar green download button; backend in Phase 5) ----
@@ -89,14 +93,14 @@ export function initSettings(socket) {
     const disarm = () => {
       armed = false;
       clearBtn.classList.remove('armed');
-      clearBtn.textContent = 'Daten löschen';
+      clearBtn.textContent = t('settings.data.clear.btn');
     };
     clearBtn.addEventListener('click', () => {
       if (clearBtn.disabled) return;
       if (!armed) {
         armed = true;
         clearBtn.classList.add('armed');
-        clearBtn.textContent = 'Wirklich löschen?';
+        clearBtn.textContent = t('settings.data.clear.confirm');
         clearTimeout(armTimer);
         armTimer = setTimeout(disarm, 4000); // un-arm if not confirmed
         return;
@@ -106,8 +110,8 @@ export function initSettings(socket) {
       socket.send('settings', { command: 'clear-data' });
       // Visual 10-min cooldown that mirrors the server-side gate.
       clearBtn.disabled = true;
-      clearBtn.textContent = 'Gelöscht';
-      setTimeout(() => { clearBtn.disabled = false; clearBtn.textContent = 'Daten löschen'; }, 600000);
+      clearBtn.textContent = t('settings.data.clear.done');
+      setTimeout(() => { clearBtn.disabled = false; clearBtn.textContent = t('settings.data.clear.btn'); }, 600000);
     });
   }
 }

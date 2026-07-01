@@ -5,6 +5,8 @@
 // then the markets strip returns — no time gate, no per-session cap, no
 // widening. Hovering the footer holds whatever slide is up.
 
+import { t } from '../i18n/i18n.js';
+
 const MIN_MARKETS_MS = 5 * 60 * 1000;    // shortest gap between two banners
 const MAX_MARKETS_MS = 10 * 60 * 1000;   // longest gap between two banners
 const AD_MS          = 30 * 1000;        // banner visible window
@@ -68,40 +70,22 @@ export function setDonationStats(payload) {
 
 const DONATE_LINK = { href: 'https://wsbg.app/donate', label: 'wsbg.app/donate' };
 
-// Each entry: { icon?: key of ICONS, text: string, link?: { href, label } }.
+// Each entry: { icon?: key of ICONS, key: i18n key, link?: { href, label } }.
+// The copy is resolved via t(key) at render time so it follows the UI language.
 // {hours} / {opens} are filled from the reciprocity stats at render time.
 const AD_MESSAGES = [
-  {
-    icon: 'heart',
-    text: 'Zur Abwechslung mal Gewinne realisiert? Finanziere den nächsten Loss-Porn',
-    link: DONATE_LINK,
-  },
-  {
-    icon: 'heart',
-    text: 'Dir hat das WSBG-Terminal geholfen? Hilf beim Verlusttopf ausgleichen',
-    link: DONATE_LINK,
-  },
-  {
-    icon: 'star',
-    text: 'Alles verloren und trotzdem den Drang zu spenden? Ein Stern ist fast so viel Wert wie ein Euro',
-    link: { href: 'https://wsbg.app', label: 'wsbg.app' },
-  },
-  {
-    icon: 'gem',
-    text: 'ETF oder Terminal, was wählst du?',
-    link: DONATE_LINK,
-  },
-  {
-    icon: 'skull',
-    text: 'Du hast einen Fehler gefunden? Erstelle ein Issue!',
-    link: { href: 'https://wsbg.app', label: 'wsbg.app' },
-  },
-  {
-    icon: 'gem',
-    text: 'Dir fehlt das eine entscheidende Feature? Erstelle ein Issue!',
-    link: { href: 'https://wsbg.app', label: 'wsbg.app' },
-  },
+  { icon: 'heart', key: 'ad.gains',   link: DONATE_LINK },
+  { icon: 'heart', key: 'ad.helped',  link: DONATE_LINK },
+  { icon: 'star',  key: 'ad.star',    link: { href: 'https://wsbg.app', label: 'wsbg.app' } },
+  { icon: 'gem',   key: 'ad.etf',     link: DONATE_LINK },
+  { icon: 'skull', key: 'ad.bug',     link: { href: 'https://wsbg.app', label: 'wsbg.app' } },
+  { icon: 'gem',   key: 'ad.feature', link: { href: 'https://wsbg.app', label: 'wsbg.app' } },
 ];
+
+// Resolved (translated) copy for a message, placeholders still intact.
+function msgText(m) {
+  return t(m.key);
+}
 
 let holdUntil = 0;     // hover-hold deadline (see HOVER_HOLD_MS)
 
@@ -113,9 +97,11 @@ function marketsWindow() {
 
 // Lines whose placeholder stat hasn't arrived yet stay out of the pool.
 function eligibleMessages() {
-  return AD_MESSAGES.filter(m =>
-    (!m.text.includes('{hours}') || stats.hours != null) &&
-    (!m.text.includes('{opens}') || stats.opens != null));
+  return AD_MESSAGES.filter(m => {
+    const text = msgText(m);
+    return (!text.includes('{hours}') || stats.hours != null) &&
+           (!text.includes('{opens}') || stats.opens != null);
+  });
 }
 
 let lastAd = null;
@@ -139,7 +125,7 @@ function renderAd(host, msg) {
   }
 
   const text = document.createElement('span');
-  text.textContent = msg.text
+  text.textContent = msgText(msg)
     .replace('{hours}', stats.hours)
     .replace('{opens}', stats.opens);
   host.appendChild(text);
@@ -166,7 +152,14 @@ export function initSlideCycle() {
 
   // Seed the first ad so it isn't empty if anything ever short-circuits
   // the swap path before the first rotation.
-  renderAd(adInner, pickAdMessage());
+  let currentMsg = pickAdMessage();
+  renderAd(adInner, currentMsg);
+
+  // Live language switch: re-render whatever banner copy is currently mounted
+  // so it flips language in place, without waiting for the next rotation.
+  window.addEventListener('wsbg:languagechange', () => {
+    if (currentMsg) renderAd(adInner, currentMsg);
+  });
 
   // Pause-on-hover: pointer activity over the footer freezes whatever slide
   // is up, so a noticed banner doesn't slide away mid-read. The hold decays
@@ -209,7 +202,7 @@ export function initSlideCycle() {
     const outgoing = visible === 'markets' ? markets : ad;
     // Rotate the ad copy right before it snaps off-screen-right, so
     // the new line is in place before it animates into view.
-    if (incoming === ad) renderAd(adInner, pickAdMessage());
+    if (incoming === ad) { currentMsg = pickAdMessage(); renderAd(adInner, currentMsg); }
     snap(incoming, 'right');
     setTimeout(() => {
       move(outgoing, 'left');

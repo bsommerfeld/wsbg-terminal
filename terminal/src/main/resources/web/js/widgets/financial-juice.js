@@ -12,6 +12,7 @@
 import { highlightTickers } from '../format/ticker.js';
 import { colorizeSignedNumbers } from '../format/numbers.js';
 import { fmtClock } from '../format/time.js';
+import { t } from '../i18n/i18n.js';
 
 const seenKeys = new WeakMap();      // host -> Set of guids seen last render
 const expandedKeys = new WeakMap();  // host -> Set of guids currently expanded
@@ -22,7 +23,7 @@ export function renderFjNews(host, items) {
   wireToggle(host);
 
   if (!items || items.length === 0) {
-    host.innerHTML = `<div class="row placeholder"><div class="time"></div><div class="body">Warte auf Financial Juice…</div></div>`;
+    host.innerHTML = `<div class="row placeholder"><div class="time"></div><div class="body">${escapeText(t('fj.waiting'))}</div></div>`;
     seenKeys.set(host, new Set());
     return;
   }

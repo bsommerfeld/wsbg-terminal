@@ -8,12 +8,15 @@
 import { regionStatus, onCalendarUpdate, regions } from '../markets/state.js';
 import { fmtDuration } from '../format/time.js';
 import { initSlideCycle } from './slider.js';
+import { t } from '../i18n/i18n.js';
 
 const DEFAULT_SYMBOLS = ['DE', 'US', 'ASIEN', 'AUSTRALIEN'];
 
-// Shown instead of a countdown when the market is closed for a whole
-// non-trading day (weekend/holiday). See regionStatus().longClosure.
-const CLOSED_LABEL = 'FREI';
+// Localised chip label for a region code (DE/US stay as-is; ASIEN/AUSTRALIEN
+// translate). The raw code stays in data-sym as the stable identity.
+function regionLabel(sym) {
+  return t('region.' + sym, sym);
+}
 
 export function initFooter() {
   const markets = document.getElementById('markets');
@@ -33,6 +36,16 @@ export function initFooter() {
   setInterval(() => updateChips(markets), 1000);
   updateChips(markets);
 
+  // Live language switch: re-label the chips (their .sym text) in place. The
+  // "FREI"/countdown text follows on the next 1s tick via updateChips.
+  window.addEventListener('wsbg:languagechange', () => {
+    markets.querySelectorAll('.cell.exch').forEach(el => {
+      const label = el.querySelector('.sym');
+      if (label) label.textContent = regionLabel(el.dataset.sym);
+    });
+    updateChips(markets);
+  });
+
   initSlideCycle();
 }
 
@@ -49,7 +62,7 @@ function ensureChips(host, symbols) {
   host.innerHTML = symbols.map(sym => `
     <div class="cell exch closed" data-sym="${sym}">
       <span class="dot"></span>
-      <span class="sym">${sym}</span>
+      <span class="sym">${regionLabel(sym)}</span>
       <span class="cd"></span>
     </div>`).join('');
 }
@@ -78,7 +91,7 @@ function updateChips(host) {
     // transitioned, next session not yet resolved) — better to show
     // a one-second-stale value than to flash a placeholder.
     const cd = el.querySelector('.cd');
-    if (state === 'closed' && longClosure) cd.textContent = CLOSED_LABEL;
+    if (state === 'closed' && longClosure) cd.textContent = t('footer.closed');
     else if (remainMs > 0) cd.textContent = fmtDuration(remainMs);
     else if (!cd.textContent) cd.textContent = '—';
   });

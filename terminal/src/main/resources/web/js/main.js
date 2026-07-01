@@ -15,6 +15,7 @@ import { renderFjNews } from './widgets/financial-juice.js';
 import { renderEurUsd } from './widgets/eurusd.js';
 import { renderFearGreed } from './widgets/fear-greed.js';
 import { setMarketCalendar } from './markets/state.js';
+import { t } from './i18n/i18n.js';
 
 // [data-platform] drives the title-bar split in CSS:
 //   "mac"   — HTML titlebar over the native NSWindow traffic lights (title +
@@ -33,8 +34,14 @@ document.documentElement.dataset.platform = isMac ? 'mac' : (isWin ? 'win' : 'ot
 const wsPort = new URLSearchParams(location.search).get('ws');
 const socket = new Socket(`ws://127.0.0.1:${wsPort}`);
 
+// Last payload per widget, so a live language switch can re-paint the dynamic
+// content (translated strings live inside these renderers) without waiting for
+// the next server push. Static markup is handled by applyStatic() in setLang().
+const last = { headlines: [], fjNews: [], fearGreed: null, redditStatus: null };
+
 const redditBody = document.querySelector('#widget-reddit [data-rows]');
 socket.on('headlines', payload => {
+  last.headlines = payload || [];
   renderHeadlines(redditBody, payload);
 });
 // Scroll-back: load older archived headlines as the user scrolls past the live wire.
@@ -44,6 +51,7 @@ socket.on('archive-results', payload => {
 });
 
 socket.on('fj-news', payload => {
+  last.fjNews = payload || [];
   renderFjNews(document.querySelector('#widget-fj [data-rows]'), payload);
 });
 
@@ -57,6 +65,7 @@ socket.on('market-hours', payload => {
 
 // Fear & Greed gauge (Reddit header): whole-market sentiment.
 socket.on('fear-greed', payload => {
+  last.fearGreed = payload;
   renderFearGreed(document.getElementById('fear-greed-badge'), payload);
 });
 
@@ -67,12 +76,27 @@ socket.on('fear-greed', payload => {
 // TODO(oauth-login): when payload.suggestLogin is true (future flag,
 // set server-side once degraded > N min), swap the static label for
 // a clickable "Sign in to Reddit" CTA wired to the OAuth flow.
-socket.on('reddit-status', payload => {
+function applyRedditStatus(payload) {
   const live = document.querySelector('#widget-reddit .live');
   if (!live || !payload) return;
   const state = payload.state || 'OK';
   live.dataset.state = state;
-  live.textContent = state === 'DEGRADED' ? 'Defekt' : 'Live';
+  live.textContent = state === 'DEGRADED' ? t('common.degraded') : t('common.live');
+}
+socket.on('reddit-status', payload => {
+  last.redditStatus = payload;
+  applyRedditStatus(payload);
+});
+
+// Live language switch: setLang() has already rewritten the static markup;
+// re-render the dynamic widgets from their last payload so their translated
+// strings update too, and re-apply the Reddit health label (JS-owned, no
+// data-i18n, so it needs an explicit re-apply here).
+window.addEventListener('wsbg:languagechange', () => {
+  renderHeadlines(redditBody, last.headlines);
+  renderFjNews(document.querySelector('#widget-fj [data-rows]'), last.fjNews);
+  if (last.fearGreed) renderFearGreed(document.getElementById('fear-greed-badge'), last.fearGreed);
+  if (last.redditStatus) applyRedditStatus(last.redditStatus);
 });
 
 // Donation stats: the footer banner runs unconditionally now; this payload only

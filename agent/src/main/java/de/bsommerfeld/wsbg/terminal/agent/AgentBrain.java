@@ -366,9 +366,14 @@ public class AgentBrain {
         }
     }
 
-    /** Returns the resolved user language. */
+    /**
+     * Returns the user language, read <b>live</b> from the config each call so a
+     * runtime change (Settings → Anzeigesprache, persisted via {@code config.save()})
+     * takes effect on the next composed headline without a restart. The cached
+     * {@link #userLanguage} field is kept only for the one-shot init log line.
+     */
     public UserLanguage getUserLanguage() {
-        return userLanguage;
+        return config.getUser().getUserLanguage();
     }
 
     /**

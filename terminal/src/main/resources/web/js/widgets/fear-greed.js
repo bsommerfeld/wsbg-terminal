@@ -2,15 +2,11 @@
 // Sits beside the room's BULLISH/BEARISH badge in the Reddit header. Fed by the
 // `fear-greed` socket payload {score, rating, band, previousClose}.
 
+import { t } from '../i18n/i18n.js';
+
 const FG_LIVE = true; // kill switch
 
-const BAND_LABEL = {
-  EXTREME_FEAR: 'Extreme Angst',
-  FEAR: 'Angst',
-  NEUTRAL: 'Neutral',
-  GREED: 'Gier',
-  EXTREME_GREED: 'Extreme Gier',
-};
+const BANDS = ['EXTREME_FEAR', 'FEAR', 'NEUTRAL', 'GREED', 'EXTREME_GREED'];
 
 // Build the gauge markup for a given score (0–100). The arc + hub are static;
 // only the needle angle and the figure change. `loading` renders the value as a
@@ -52,7 +48,7 @@ export function renderFearGreed(host, d) {
   const score = Math.max(0, Math.min(100, d.score));
   const band = d.band || 'NEUTRAL';
 
-  const label = BAND_LABEL[band] || d.rating || '';
+  const label = BANDS.includes(band) ? t('fg.' + band) : (d.rating || '');
   host.dataset.band = band;
   host.title = `Fear & Greed Index: ${Math.round(score)} — ${label}`;
   host.innerHTML = gaugeSvg(score, false);

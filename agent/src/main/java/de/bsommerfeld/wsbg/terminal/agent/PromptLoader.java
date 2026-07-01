@@ -33,11 +33,13 @@ final class PromptLoader {
      * what stops a 4B model code-switching English structure into a German line.
      */
     static String loadLocalized(String name, String langCode) {
-        // NOTE (2026-06-30): localization is ON for extraction + vision (they handle German
-        // fine — extraction.de proven in run18). The COMPOSE stage deliberately bypasses this
-        // and loads the English base directly (see EditorialAgent.composeUnit/composeTheme):
-        // a German compose scaffold whitespace-loops the 4B model in JSON mode. Output is still
-        // German via {{LANGUAGE}}. Re-enable the German compose prompt once it's shortened.
+        // NOTE (2026-07-01): localization is ON for EVERY stage — extraction + vision
+        // (extraction.de proven in run18) AND compose + theme (EditorialAgent.composeUnit/
+        // composeTheme both load via this method now). The compose stage used to be held to
+        // the English base because a German scaffold on top of the old fat 9-field JSON output
+        // whitespace-looped the 4B model; now that the output is slimmed to {headline, highlight,
+        // mode} the model commits cleanly on the localized scaffold too (0 whiffs in run27).
+        // The output language is still named explicitly by {{LANGUAGE}} regardless of scaffold.
         if (langCode == null || langCode.isBlank() || "en".equalsIgnoreCase(langCode)) {
             return load(name);
         }

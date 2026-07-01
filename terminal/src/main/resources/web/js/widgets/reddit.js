@@ -18,6 +18,7 @@ import { highlightTickers, highlightSubjects } from '../format/ticker.js';
 const GOLD_SUBJECTS = false;
 import { colorizeSignedNumbers } from '../format/numbers.js';
 import { fmtClock } from '../format/time.js';
+import { t, currentLang } from '../i18n/i18n.js';
 
 const HIGHLIGHT_CLASS = {
   IMPORTANT: 'highlight-important',
@@ -46,7 +47,7 @@ export function renderHeadlines(host, items) {
   liveItems = items || [];
   if (liveItems.length === 0 && archiveItems.length === 0) {
     host.innerHTML = `
-      <div class="empty-cook" aria-label="Köche kochen noch">
+      <div class="empty-cook" aria-label="${escapeText(t('reddit.empty'))}">
         <img src="/icons/cook.webp" alt="">
       </div>`;
     seenKeys.set(host, new Set());
@@ -133,8 +134,8 @@ function toRow(h, isNew) {
   // Bottom-right "open the source thread in the browser" button. A plain external
   // anchor — external-links.js intercepts the click and routes it to the OS browser.
   const threadBtn = h.threadUrl
-    ? `<a class="thread-open" href="${escapeText(h.threadUrl)}" title="Thread öffnen"
-          aria-label="Thread im Browser öffnen">↗</a>`
+    ? `<a class="thread-open" href="${escapeText(h.threadUrl)}" title="${escapeText(t('reddit.thread.open.title'))}"
+          aria-label="${escapeText(t('reddit.thread.open.aria'))}">↗</a>`
     : '';
 
   return `<div class="${classes.join(' ')}">
@@ -157,7 +158,7 @@ function buildMeta(h) {
   const quote = buildQuote(h.snapshot);
   // Subtle provenance hint — not a highlight. CSS pushes it to the right.
   const news = h.newsEnriched
-    ? `<span class="news-tag" title="Mit externen Nachrichten angereichert">News</span>`
+    ? `<span class="news-tag" title="${escapeText(t('reddit.news.title'))}">${escapeText(t('reddit.news.tag'))}</span>`
     : '';
   if (!quote && !news) return '';
   const quoteHtml = quote ? `<span class="meta-group quote-group">${quote}</span>` : '';
@@ -239,7 +240,7 @@ function sparkDir(spark) {
 // decimals so a 0.0042 → 0.0061 move is still legible. A stock index carries
 // the "PTS" marker (priced in points, not a currency) → "24.013 Pkt".
 function fmtPrice(p, ccy) {
-  if (ccy === 'PTS') return Math.round(p).toLocaleString('de-DE') + ' Pkt';
+  if (ccy === 'PTS') return Math.round(p).toLocaleString(currentLang() === 'de' ? 'de-DE' : 'en-US') + ' ' + t('quote.points');
   const sym = ccy === 'USD' ? '$' : ccy === 'EUR' ? '€' : ccy === 'GBP' ? '£' : '';
   const v = Math.abs(p) < 1 ? p.toFixed(4) : p.toFixed(2);
   return sym + v;
@@ -248,11 +249,11 @@ function fmtPrice(p, ccy) {
 function buildQuoteTitle(s) {
   const L = [];
   if (s.symbol) L.push(s.symbol);
-  if (isNum(s.dayLow) && isNum(s.dayHigh)) L.push(`Tag ${fmtNum(s.dayLow)}–${fmtNum(s.dayHigh)}`);
+  if (isNum(s.dayLow) && isNum(s.dayHigh)) L.push(`${t('quote.day')} ${fmtNum(s.dayLow)}–${fmtNum(s.dayHigh)}`);
   if (isNum(s.fiftyTwoWeekLow) && isNum(s.fiftyTwoWeekHigh)) L.push(`52W ${fmtNum(s.fiftyTwoWeekLow)}–${fmtNum(s.fiftyTwoWeekHigh)}`);
   if (isNum(s.volume)) L.push(`Vol ${fmtVol(s.volume)}`);
-  if (s.source) L.push(`Kurs: ${s.source}`);            // which venue priced it
-  if (isStaleQuote(s)) L.push('außerhalb der Handelszeit — letzter Kurs');
+  if (s.source) L.push(`${t('quote.source')} ${s.source}`);   // which venue priced it
+  if (isStaleQuote(s)) L.push(t('quote.stale'));
   return L.join('  ·  ');
 }
 
