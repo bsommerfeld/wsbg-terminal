@@ -151,8 +151,15 @@
           <h2 class="cat-title" data-i18n="settings.headlines.title">Schlagzeilen</h2>
           <div class="setting-row">
             <div class="setting-label">
-              <span class="setting-name" data-i18n="settings.headlines.images.name">Bilder mitanalysieren</span>
-              <span class="setting-hint" data-i18n="settings.headlines.images.hint">Wertet Bilder aus Threads und Kommentaren per Vision-Modell aus und lässt sie in Schlagzeilen einfließen. Aus = schnellere, reine Text-Schlagzeilen ohne Bildanalyse.</span>
+              <div class="setting-name-row">
+                <span class="setting-name" data-i18n="settings.headlines.images.name">Bilder mitanalysieren</span>
+                <button class="setting-info js-info" type="button" aria-expanded="false" title="Mehr Infos"
+                        aria-label="Mehr Infos" data-i18n-title="settings.more.aria" data-i18n-aria-label="settings.more.aria">
+                  <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                </button>
+              </div>
+              <span class="setting-hint" data-i18n="settings.headlines.images.hint">Wertet Bilder aus Threads und Kommentaren aus und lässt sie in Schlagzeilen einfließen.</span>
+              <p class="setting-more" hidden data-i18n="settings.headlines.images.more">Aus = schnellere, reine Text-Schlagzeilen ohne Bildanalyse.</p>
             </div>
             <label class="checkbox">
               <input type="checkbox" class="js-analyze-images">
@@ -161,8 +168,15 @@
           </div>
           <div class="setting-row">
             <div class="setting-label">
-              <span class="setting-name" data-i18n="settings.headlines.redund.name">Wiederholungen filtern</span>
-              <span class="setting-hint" data-i18n="settings.headlines.redund.hint">An (Standard): wiederholt sich eine Story ohne echte Neuigkeit, schweigt der Wire statt eine Zeile umzuformulieren. Aus = strikte 1:1-Spiegelung: jedes Signal schreibt eine Zeile, auch doppelt. (Die erste Zeile eines Subjekts kommt immer.)</span>
+              <div class="setting-name-row">
+                <span class="setting-name" data-i18n="settings.headlines.redund.name">Wiederholungen filtern</span>
+                <button class="setting-info js-info" type="button" aria-expanded="false" title="Mehr Infos"
+                        aria-label="Mehr Infos" data-i18n-title="settings.more.aria" data-i18n-aria-label="settings.more.aria">
+                  <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                </button>
+              </div>
+              <span class="setting-hint" data-i18n="settings.headlines.redund.hint">Unterdrückt wiederholte Stories ohne echte Neuigkeit.</span>
+              <p class="setting-more" hidden data-i18n="settings.headlines.redund.more">Aus = strikte 1:1-Spiegelung: jedes Signal schreibt eine Zeile, auch doppelt. Die erste Zeile eines Subjekts kommt immer.</p>
             </div>
             <label class="checkbox">
               <input type="checkbox" class="js-suppress-redundant">
@@ -189,8 +203,15 @@
           <h2 class="cat-title" data-i18n="settings.updates.title">Updates</h2>
           <div class="setting-row">
             <div class="setting-label">
-              <span class="setting-name" data-i18n="settings.updates.auto.name">Automatisch aktualisieren</span>
-              <span class="setting-hint" data-i18n="settings.updates.auto.hint">Aktualisiert beim Start automatisch. Wenn aus, meldet ein Hinweis in der Titelleiste neue Versionen.</span>
+              <div class="setting-name-row">
+                <span class="setting-name" data-i18n="settings.updates.auto.name">Automatisch aktualisieren</span>
+                <button class="setting-info js-info" type="button" aria-expanded="false" title="Mehr Infos"
+                        aria-label="Mehr Infos" data-i18n-title="settings.more.aria" data-i18n-aria-label="settings.more.aria">
+                  <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                </button>
+              </div>
+              <span class="setting-hint" data-i18n="settings.updates.auto.hint">Aktualisiert beim Start automatisch.</span>
+              <p class="setting-more" hidden data-i18n="settings.updates.auto.more">Wenn aus, meldet ein Hinweis in der Titelleiste neue Versionen.</p>
             </div>
             <label class="checkbox">
               <input type="checkbox" class="js-auto-update">
@@ -211,8 +232,15 @@
           </div>
           <div class="setting-row">
             <div class="setting-label">
-              <span class="setting-name" data-i18n="settings.data.clear.name">Daten löschen</span>
-              <span class="setting-hint" data-i18n="settings.data.clear.hint">Setzt das Terminal komplett zurück: Threads, Cluster, Schlagzeilen und das Archiv. Danach füllt sich die Wire vom nächsten Scan neu. Höchstens alle 10 Minuten.</span>
+              <div class="setting-name-row">
+                <span class="setting-name" data-i18n="settings.data.clear.name">Daten löschen</span>
+                <button class="setting-info js-info" type="button" aria-expanded="false" title="Mehr Infos"
+                        aria-label="Mehr Infos" data-i18n-title="settings.more.aria" data-i18n-aria-label="settings.more.aria">
+                  <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                </button>
+              </div>
+              <span class="setting-hint" data-i18n="settings.data.clear.hint">Setzt das Terminal komplett zurück - Threads, Cluster, Schlagzeilen und Archiv.</span>
+              <p class="setting-more" hidden data-i18n="settings.data.clear.more">Danach füllt sich die Wire vom nächsten Scan neu. Höchstens alle 10 Minuten.</p>
             </div>
             <button class="danger-btn js-clear-data" data-i18n="settings.data.clear.btn">Daten löschen</button>
           </div>

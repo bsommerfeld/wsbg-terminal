@@ -45,6 +45,17 @@ export function initSettings(socket) {
   });
   syncAppearance();
 
+  // ---- Inline "ⓘ" info toggles: reveal the longer explanation on demand ----
+  view.querySelectorAll('.js-info').forEach(btn => {
+    const more = btn.closest('.setting-label')?.querySelector('.setting-more');
+    if (!more) return;
+    btn.addEventListener('click', () => {
+      const reveal = more.hidden;
+      more.hidden = !reveal;
+      btn.setAttribute('aria-expanded', String(reveal));
+    });
+  });
+
   // ---- Config-backed settings (over the socket) ----
   const images = view.querySelector('.js-analyze-images');
   const redund = view.querySelector('.js-suppress-redundant');

@@ -99,6 +99,31 @@
 .setting-name { color: var(--txt); font-size: 1rem; }
 .setting-hint { color: var(--mute); font-size: .8rem; line-height: 1.45; max-width: 440px; }
 
+/* Name + inline "ⓘ" toggle on one line. The ⓘ reveals the longer explanation
+   on demand, so the default view stays a scannable one-liner per setting. */
+.setting-name-row { display: flex; align-items: center; gap: 7px; }
+.setting-info {
+  flex: 0 0 auto; width: 18px; height: 18px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--mute); background: none; border: 0; border-radius: 50%;
+  cursor: pointer; transition: color .15s, background .15s;
+}
+.setting-info svg {
+  width: 15px; height: 15px;
+  stroke: currentColor; stroke-width: 1.7; fill: none;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.setting-info:hover { color: var(--txt); background: var(--bg-1); }
+.setting-info[aria-expanded="true"] { color: var(--blue); }
+
+/* The revealed detail: sits under the short hint, indented + dimmer so it
+   reads as the secondary "why/nuance" layer. Hidden until the ⓘ is clicked. */
+.setting-more {
+  color: var(--mute); font-size: .8rem; line-height: 1.45; max-width: 430px;
+  margin: 3px 0 0; padding-left: 11px; border-left: 2px solid var(--line-soft);
+}
+.setting-more[hidden] { display: none; }
+
 /* ---- custom checkbox ---- */
 .checkbox { position: relative; display: inline-flex; cursor: pointer; flex: 0 0 auto; }
 .checkbox input { position: absolute; opacity: 0; width: 0; height: 0; }
