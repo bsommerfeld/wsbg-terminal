@@ -239,11 +239,18 @@ remote_digest() {
 # <model>..." wording -- keep extra detail on its own line, never appended.
 if [ -x "$OLLAMA" ]; then
     ALL_PRESENT=true
+    # 1-based position + total in the desired set, appended to each "> Pulling"
+    # line as "(idx/total)". The launcher reads this to render one pip per model
+    # so the user sees HOW MANY models are being installed, not just the current
+    # one. Keep the "(idx/total)" token EXACTLY here -- EnvironmentSetup parses it.
+    midx=0
+    mtotal=${#DESIRED_MODELS[@]}
     for model in "${DESIRED_MODELS[@]}"; do
+        midx=$((midx + 1))
         have=$(local_digest "$model")
         want=$(remote_digest "$model")
         if [ -z "$have" ]; then
-            echo "    > Pulling $model..."
+            echo "    > Pulling $model ($midx/$mtotal)..."
             "$OLLAMA" pull "$model" || { warn "Failed to pull $model -- continuing"; ALL_PRESENT=false; }
         elif [ -z "$want" ]; then
             echo "    [OK] $model present (update check skipped -- registry unreachable)"
@@ -251,7 +258,7 @@ if [ -x "$OLLAMA" ]; then
             echo "    [OK] $model up to date ($have)"
         else
             echo "    Update available: $model ($have -> $want)"
-            echo "    > Pulling $model..."
+            echo "    > Pulling $model ($midx/$mtotal)..."
             "$OLLAMA" pull "$model" || warn "Failed to update $model -- keeping $have"
         fi
     done

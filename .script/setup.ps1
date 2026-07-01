@@ -232,13 +232,20 @@ function Get-RemoteDigest($model) {
 
 if (Test-Path $ollamaExe) {
     $allPresent = $true
+    # 1-based position + total in the desired set, appended to each "> Pulling"
+    # line as "(idx/total)". The launcher reads this to render one pip per model
+    # so the user sees HOW MANY models are being installed, not just the current
+    # one. Keep the "(idx/total)" token EXACTLY here -- EnvironmentSetup parses it.
+    $midx = 0
+    $mtotal = $desiredModels.Count
     foreach ($model in $desiredModels) {
+        $midx++
         $have = Get-LocalDigest $model
         $want = Get-RemoteDigest $model
         # The launcher tracks model names from the exact "> Pulling <model>..."
         # wording -- keep extra detail on its own line, never appended.
         if (-not $have) {
-            Write-Host "    > Pulling $model..."
+            Write-Host "    > Pulling $model ($midx/$mtotal)..."
             & $ollamaExe pull $model
             if ($LASTEXITCODE -ne 0) {
                 Write-Warn "Failed to pull $model"
@@ -250,7 +257,7 @@ if (Test-Path $ollamaExe) {
             Write-Host "    [OK] $model up to date ($have)" -ForegroundColor Green
         } else {
             Write-Host "    Update available: $model ($have -> $want)"
-            Write-Host "    > Pulling $model..."
+            Write-Host "    > Pulling $model ($midx/$mtotal)..."
             & $ollamaExe pull $model
             if ($LASTEXITCODE -ne 0) { Write-Warn "Failed to update $model -- keeping $have" }
         }

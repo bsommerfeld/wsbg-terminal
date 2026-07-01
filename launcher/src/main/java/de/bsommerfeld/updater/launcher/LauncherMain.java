@@ -263,6 +263,16 @@ public final class LauncherMain {
         boolean success = setup.run((phase, detail) -> {
             long now = System.currentTimeMillis();
 
+            // "ModelCount" is a control message, not a user-visible phase: detail
+            // is "total/completed" and drives the model pips (one dot per model),
+            // so the user sees how many models install, not just the current one.
+            // Handled first and never surfaced as a status line.
+            if (phase.equals("ModelCount")) {
+                int[] tc = parseModelCount(detail);
+                if (tc != null) window.setModelPips(tc[0], tc[1]);
+                return;
+            }
+
             // Log transitions immediately, everything else periodically
             String logKey = phase + (detail != null && detail.contains("%") ? "" : detail);
             boolean isTransition = !logKey.equals(lastLoggedPhase[0]);
@@ -284,6 +294,11 @@ public final class LauncherMain {
             // readouts start clean instead of inheriting the previous fill.
             String group = phase.startsWith("Pulling") ? "models" : phase;
             if (!group.equals(lastGroup[0])) {
+                // Leaving the model pulls (→ browser/fonts): drop the pips so
+                // they don't linger under a later phase's bar.
+                if (lastGroup[0].equals("models")) {
+                    window.clearModelPips();
+                }
                 lastGroup[0] = group;
                 window.resetProgress();
                 speedTracker[0] = 0;
@@ -311,6 +326,13 @@ public final class LauncherMain {
             // is cleared rather than left showing a stale "0 B/s".
             int pct = parsePercent(detail);
             if (pct < 0) {
+                // The browser-runtime step has long stretches with no
+                // percentage at all (unzip + tar extraction emit nothing), so
+                // drive the bar into its indeterminate shimmer instead of
+                // freezing on the idle dot. Other phases just idle.
+                if (phase.equals("Installing browser runtime")) {
+                    window.setProgress(-1);
+                }
                 window.setSpeed(-1);
                 speedTracker[0] = 0;
                 speedTracker[1] = 0;
@@ -365,6 +387,25 @@ public final class LauncherMain {
             return Integer.parseInt(detail.substring(0, pctIdx).strip());
         } catch (NumberFormatException e) {
             return -1;
+        }
+    }
+
+    /**
+     * Parses a {@code "total/completed"} model-count control detail into
+     * {@code [total, completed]}, or {@code null} if it is malformed. Feeds the
+     * model pips (one dot per model, the completed ones filled).
+     */
+    private static int[] parseModelCount(String detail) {
+        if (detail == null) return null;
+        String[] parts = detail.split("/");
+        if (parts.length != 2) return null;
+        try {
+            return new int[]{
+                    Integer.parseInt(parts[0].strip()),
+                    Integer.parseInt(parts[1].strip())
+            };
+        } catch (NumberFormatException e) {
+            return null;
         }
     }
 

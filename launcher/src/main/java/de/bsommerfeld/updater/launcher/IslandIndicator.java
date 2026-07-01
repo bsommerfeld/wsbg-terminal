@@ -3,6 +3,7 @@ package de.bsommerfeld.updater.launcher;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.geom.Ellipse2D;
+import java.awt.geom.RoundRectangle2D;
 
 /**
  * Morphing indicator inspired by Apple's Dynamic Island.
@@ -27,7 +28,12 @@ final class IslandIndicator extends JComponent {
     private static final Color TRACK_COLOR = new Color(45, 45, 50);
     // Terminal accent (--amber oklch(0.82 0.14 75) ≈ #F9B64F).
     private static final Color FILL_COLOR = new Color(0xF9, 0xB6, 0x4F);
+    // Same accent, fully transparent — the fade-out stops of the shimmer sweep.
+    private static final Color FILL_TRANSPARENT = new Color(0xF9, 0xB6, 0x4F, 0);
     private static final Color DOT_COLOR = new Color(90, 90, 90);
+
+    // Shimmer sweep advance per frame; fraction of a full pass at ~60fps.
+    private static final float SHIMMER_SPEED = 0.02f;
 
     private static final float DOT_MIN_ALPHA = 0.15f;
     private static final float DOT_MAX_ALPHA = 0.70f;
@@ -52,6 +58,12 @@ final class IslandIndicator extends JComponent {
     private long lastUpdateTime = 0;
     private boolean completeRequested = false;
 
+    // Indeterminate mode: an expanded bar with no known fill, driven by a
+    // highlight sweeping across it (used when a phase has no % to report, e.g.
+    // the browser-runtime unzip/extract). Set by update(progress < 0).
+    private boolean indeterminate = false;
+    private float shimmerPhase = 0f;
+
     IslandIndicator() {
         setPreferredSize(new Dimension(BAR_WIDTH, COMPONENT_HEIGHT));
         // Opaque tells Swing we handle our own background — prevents
@@ -75,6 +87,7 @@ final class IslandIndicator extends JComponent {
         targetFill = 0;
         currentFill = 0;
         completeRequested = false;
+        indeterminate = false;
     }
 
     void update(double progress) {
@@ -110,22 +123,34 @@ final class IslandIndicator extends JComponent {
         // the expand animation.
         if (morphT < 1.0f) return;
 
-        if (progress >= 0) {
-            // A significant drop (>10%) signals a new phase
-            if (progress < targetFill - 0.10) {
-                currentFill = 0;
-                targetFill = 0;
-            }
+        // Negative progress = indeterminate: no known fill, show the sweeping
+        // shimmer instead. A later real percentage flips back to determinate.
+        if (progress < 0) {
+            indeterminate = true;
+            return;
+        }
+        indeterminate = false;
 
-            if (Math.abs(progress - targetFill) >= 0.02) {
-                targetFill = progress;
-            }
+        // A significant drop (>10%) signals a new phase
+        if (progress < targetFill - 0.10) {
+            currentFill = 0;
+            targetFill = 0;
+        }
+
+        if (Math.abs(progress - targetFill) >= 0.02) {
+            targetFill = progress;
         }
     }
 
     private void tick() {
         breathPhase += 0.035f;
         if (breathPhase > 2 * Math.PI) breathPhase -= (float) (2 * Math.PI);
+
+        // Advance the indeterminate sweep only while it is actually shown.
+        if (indeterminate && morphT >= 1.0f) {
+            shimmerPhase += SHIMMER_SPEED;
+            if (shimmerPhase > 1f) shimmerPhase -= 1f;
+        }
 
         if (state == State.EXPANDED) {
             morphT = Math.min(1f, morphT + EXPAND_SPEED);
@@ -203,10 +228,36 @@ final class IslandIndicator extends JComponent {
         g2.setColor(TRACK_COLOR);
         g2.fillRoundRect(x, y, currentWidth, BAR_HEIGHT, arc, arc);
 
+        // Only sweep once fully expanded — a partial bar would clip oddly.
+        if (indeterminate && morphT >= 1.0f) {
+            paintShimmer(g2, x, y, currentWidth, arc);
+            return;
+        }
+
         int fillWidth = (int) (currentWidth * currentFill);
         if (fillWidth > 0) {
             g2.setColor(FILL_COLOR);
             g2.fillRoundRect(x, y, Math.min(fillWidth, currentWidth), BAR_HEIGHT, arc, arc);
         }
+    }
+
+    /**
+     * Draws the indeterminate sweep: a soft amber highlight (transparent →
+     * amber → transparent) gliding left-to-right across the track, clipped to
+     * the bar's rounded rect so it never bleeds past the edges.
+     */
+    private void paintShimmer(Graphics2D g2, int x, int y, int width, int arc) {
+        int segW = Math.max(24, width / 3);
+        // Sweep the segment from fully off the left edge to fully off the right.
+        int sx = x + Math.round((width + segW) * shimmerPhase) - segW;
+
+        Shape oldClip = g2.getClip();
+        g2.clip(new RoundRectangle2D.Float(x, y, width, BAR_HEIGHT, arc, arc));
+        g2.setPaint(new LinearGradientPaint(
+                sx, y, sx + segW, y,
+                new float[]{0f, 0.5f, 1f},
+                new Color[]{FILL_TRANSPARENT, FILL_COLOR, FILL_TRANSPARENT}));
+        g2.fillRect(sx, y, segW, BAR_HEIGHT);
+        g2.setClip(oldClip);
     }
 }

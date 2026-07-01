@@ -73,10 +73,14 @@ final class EnvironmentSetup {
 
     private static final Pattern ANSI_PATTERN = Pattern.compile("\u001B\\[[0-9;?]*[a-zA-Z]");
 
-    // Only matches "> Pulling model..." from our script — not ollama-internal
-    // "pulling manifest" / "pulling <hash>" lines, which would overwrite the
-    // tracked model name with garbage.
-    private static final Pattern OLLAMA_PULL_PATTERN = Pattern.compile(">\\s*[Pp]ulling\\s+(.+?)(?:\\.{2,3})?$");
+    // Only matches "> Pulling model (idx/total)..." from our script — not
+    // ollama-internal "pulling manifest" / "pulling <hash>" lines, which would
+    // overwrite the tracked model name with garbage. Group 1 is the model name
+    // (no spaces, e.g. "gemma4:e4b"); the optional "(idx/total)" (groups 2/3)
+    // lets the launcher render one pip per model. The count is optional so a
+    // bare legacy "> Pulling model..." line still matches.
+    private static final Pattern OLLAMA_PULL_PATTERN = Pattern.compile(
+            ">\\s*[Pp]ulling\\s+(\\S+?)(?:\\s+\\((\\d+)/(\\d+)\\))?(?:\\.{2,3})?$");
     private static final Pattern OLLAMA_PROGRESS_PATTERN = Pattern
             .compile("(\\d+)%.*?(\\d+(?:\\.\\d+)?\\s*(?:MB|GB|KB|B))\\s*/\\s*(\\d+(?:\\.\\d+)?\\s*(?:MB|GB|KB|B))");
 
@@ -489,6 +493,17 @@ final class EnvironmentSetup {
             installingBrowser = false;
             currentModelName = m.group(1).strip();
             maxTotalBytes = 0; // Reset for new model
+
+            // "ModelCount" is a control message (not a user-visible phase): it
+            // carries "total/completed" so the launcher can draw one pip per
+            // model. Emitted before the "Pulling" phase; the index is 1-based,
+            // so "completed" = idx - 1 (the models pulled before this one).
+            if (m.group(2) != null && m.group(3) != null) {
+                int idx = Integer.parseInt(m.group(2));
+                int total = Integer.parseInt(m.group(3));
+                consumer.accept("ModelCount", total + "/" + (idx - 1));
+            }
+
             consumer.accept("Pulling " + currentModelName, null);
             return true;
         }

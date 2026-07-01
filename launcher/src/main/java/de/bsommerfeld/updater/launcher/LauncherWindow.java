@@ -60,6 +60,7 @@ final class LauncherWindow extends JFrame {
 
     private final JLabel statusLabel;
     private final IslandIndicator islandIndicator;
+    private final ModelPips modelPips;
     private final ProgressInfoLine infoLine;
 
     // Progress-ratio samples for the ETA velocity fit. EDT-only — touched solely
@@ -81,6 +82,7 @@ final class LauncherWindow extends JFrame {
         configureFrame();
         statusLabel = createStatusLabel();
         islandIndicator = new IslandIndicator();
+        modelPips = new ModelPips();
         infoLine = new ProgressInfoLine();
         setContentPane(buildLayout());
         installDragSupport();
@@ -121,6 +123,19 @@ final class LauncherWindow extends JFrame {
             etaLastRatio = -1;
             infoLine.clear();
         });
+    }
+
+    /**
+     * Shows one pip per installing AI model, with {@code completed} of them
+     * filled. Conveys how many models install (the download bar alone can't).
+     */
+    void setModelPips(int total, int completed) {
+        SwingUtilities.invokeLater(() -> modelPips.set(total, completed));
+    }
+
+    /** Hides the model pips (called when the model-install phase ends). */
+    void clearModelPips() {
+        SwingUtilities.invokeLater(modelPips::clear);
     }
 
     /**
@@ -190,21 +205,28 @@ final class LauncherWindow extends JFrame {
 
         // Dynamic Island indicator
         gbc.gridy = 2;
-        gbc.insets = new Insets(0, 0, 16, 0);
+        gbc.insets = new Insets(0, 0, 8, 0);
         root.add(islandIndicator, gbc);
 
-        // Status label
+        // Model pips — one dot per installing AI model (hidden otherwise). Sits
+        // directly under the bar, reserving fixed height so it never shifts the
+        // layout when it appears/disappears.
         gbc.gridy = 3;
+        gbc.insets = new Insets(0, 0, 10, 0);
+        root.add(modelPips, gbc);
+
+        // Status label
+        gbc.gridy = 4;
         gbc.insets = new Insets(0, 20, 2, 20);
         root.add(statusLabel, gbc);
 
         // Remaining-time + speed, side by side, centered directly under status.
-        gbc.gridy = 4;
+        gbc.gridy = 5;
         gbc.insets = new Insets(0, 20, 0, 20);
         root.add(infoLine, gbc);
 
         // Bottom spacer — absorbs remaining height so the stack stays top-weighted
-        gbc.gridy = 5;
+        gbc.gridy = 6;
         gbc.weighty = 1.0;
         gbc.insets = new Insets(0, 0, 0, 0);
         root.add(Box.createGlue(), gbc);
