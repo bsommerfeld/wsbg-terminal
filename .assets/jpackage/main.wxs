@@ -1,17 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Custom jpackage WiX resource (passed via `-resource-dir .assets/wix` in
-  package.yml, Windows/exe build only).
+  Custom jpackage WiX resource (passed via `-resource-dir .assets/jpackage` in
+  package.yml; only the Windows/exe bundler picks this file up).
 
   This is a VERBATIM copy of the JDK 25 default main.wxs
   (src/jdk.jpackage/windows/classes/jdk/jpackage/internal/resources/main.wxs)
-  with ONE addition, marked "WSBG:" below: a custom action that launches the
-  installed app right after a successful install. jpackage has no CLI flag for
-  launch-after-install, and overrides.wxi is included OUTSIDE <Product>, so
-  overriding main.wxs is the only supported hook.
+  with TWO additions, marked "WSBG:" below: a custom action that launches the
+  installed app right after a successful install, and one that wipes the app
+  data directory on a real uninstall. jpackage has no CLI flags for either,
+  and overrides.wxi is included OUTSIDE <Product>, so overriding main.wxs is
+  the only supported hook.
 
   When bumping the CI JDK major version, re-diff this file against that JDK's
-  default main.wxs and re-apply the marked addition.
+  default main.wxs and re-apply the marked additions.
 -->
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi"
      xmlns:util="http://schemas.microsoft.com/wix/UtilExtension">
@@ -98,14 +99,31 @@
     <CustomAction Id="JpSetARPCONTACT" Property="ARPCONTACT" Value="$(var.JpAppVendor)" />
     <CustomAction Id="JpSetARPSIZE" Property="ARPSIZE" Value="$(var.JpAppSizeKb)" />
 
-    <!-- WSBG: launch the freshly installed launcher as the installing user once
-         the install (or an upgrade) finished successfully. asyncNoWait so the
-         installer UI never blocks on the app; runs only on install, never on
-         uninstall (Installed is set there). -->
+    <!-- WSBG: launch the freshly installed launcher once the install (or an
+         upgrade) finished. MUST be deferred + impersonated: an immediate action
+         in the execute sequence of a per-machine install runs inside the msiexec
+         SERVICE (LocalSystem, session 0), so the app would start invisibly in
+         the wrong context — proven on the first test build. Deferred+impersonate
+         runs it as the actual installing user on their desktop. asyncNoWait so
+         the installer never blocks on the app. -->
     <CustomAction Id="WsbgLaunchApp"
                   Directory="INSTALLDIR"
                   ExeCommand="&quot;[INSTALLDIR]$(var.JpAppName).exe&quot;"
+                  Execute="deferred"
+                  Impersonate="yes"
                   Return="asyncNoWait" />
+
+    <!-- WSBG: on a REAL uninstall (not the uninstall half of an upgrade), wipe
+         the app's data directory (%LOCALAPPDATA%\wsbg-terminal — config, Ollama
+         store, JCEF cache, headline archive). Impersonated so LocalAppDataFolder
+         resolves to the uninstalling user, not the SYSTEM profile. Return=ignore:
+         locked files (a still-running Ollama) must never fail the uninstall. -->
+    <CustomAction Id="WsbgCleanAppData"
+                  Directory="TARGETDIR"
+                  ExeCommand="&quot;[SystemFolder]cmd.exe&quot; /c rd /s /q &quot;[LocalAppDataFolder]wsbg-terminal&quot;"
+                  Execute="deferred"
+                  Impersonate="yes"
+                  Return="ignore" />
 
     <?ifdef JpHelpURL ?>
       <CustomAction Id="JpSetARPHELPLINK" Property="ARPHELPLINK" Value="$(var.JpHelpURL)" />
@@ -151,8 +169,12 @@
       <RemoveExistingProducts Before="CostInitialize"/>
       <Custom Action="JpFindRelatedProducts" After="FindRelatedProducts"/>
 
-      <!-- WSBG: fire only after everything is on disk and committed -->
-      <Custom Action="WsbgLaunchApp" After="InstallFinalize">NOT Installed</Custom>
+      <!-- WSBG: deferred actions must sit between InstallInitialize and
+           InstallFinalize; Before=InstallFinalize puts them at the very end of
+           the script, after all files/shortcuts are on disk. The conditions are
+           mutually exclusive: launch on (up)install, clean on real uninstall. -->
+      <Custom Action="WsbgLaunchApp" Before="InstallFinalize">NOT Installed</Custom>
+      <Custom Action="WsbgCleanAppData" Before="WsbgLaunchApp">REMOVE~="ALL" AND NOT UPGRADINGPRODUCTCODE</Custom>
     </InstallExecuteSequence>
 
     <InstallUISequence>

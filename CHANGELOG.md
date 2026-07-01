@@ -1,5 +1,9 @@
 # Was hat sich geändert?
 
+Die KI hat bisher vor jeder einzelnen Schlagzeile heimlich seitenweise vor sich hin gegrübelt - gelesen hat das nie jemand, gekostet hat es fast die ganze Rechenzeit. Damit ist Schluss: Schlagzeilen entstehen jetzt bis zu zehnmal schneller, die Wire kommt auch bei viel Betrieb im Käfig nicht mehr ins Stocken, und nebenbei verschluckt die KI deutlich seltener eine Zeile oder liefert eine leere Antwort.
+
+---
+
 Sobald eine neue Version verfügbar ist, leuchtet nun ein grüner Update Knopf in der Titelleiste auf.
 
 <img width="1304" height="112" alt="Screenshot 2026-07-01 at 20 40 13" src="https://github.com/user-attachments/assets/e543055e-579b-47bb-a6fa-2dc846cb5045" />
@@ -14,6 +18,7 @@ Die Anzeigesprache lässt sich jetzt live umschalten.
 ## Restliches
 
 - Die Installation zeigt jetzt per Punkten, wie viele KI-Modelle geladen werden, und der Browser-Runtime Step friert nicht mehr ein.
+- Beim Deinstallieren wird jetzt auch der Datenordner mit aufgeräumt - KI-Modelle, Cache und Einstellungen verschwinden restlos von der Platte (auf dem Mac per beiliegendem Deinstallations-Skript im Download-Image).
 
 #### Microsoft Short (Windows)
 - Nach der Installation startet das Terminal jetzt von selbst.
