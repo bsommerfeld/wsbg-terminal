@@ -445,12 +445,13 @@ public final class LauncherMain {
         logStackTrace(appDir, e);
         e.printStackTrace(System.err);
 
+        LauncherI18n i18n = new LauncherI18n(appDir);
         SwingUtilities.invokeLater(() -> {
             window.setVisible(true);
-            window.setStatus("Error: " + e.getMessage());
+            window.setStatus(i18n.get("Error") + ": " + e.getMessage());
             window.setProgress(0);
         });
-        showErrorDialog("Launcher failed", e);
+        showErrorDialog(i18n.get("Launcher failed"), "WSBG Terminal - " + i18n.get("Error"), e);
         System.exit(1);
     }
 
@@ -470,13 +471,13 @@ public final class LauncherMain {
      * Presents a Swing error dialog with the exception's stack trace, truncated
      * to 500 characters to avoid overflowing the dialog bounds.
      */
-    private static void showErrorDialog(String message, Throwable e) {
+    private static void showErrorDialog(String message, String title, Throwable e) {
         StringWriter sw = new StringWriter();
         e.printStackTrace(new PrintWriter(sw));
         String trace = sw.toString();
         JOptionPane.showMessageDialog(null,
                 message + "\n\n" + trace.substring(0, Math.min(trace.length(), 500)),
-                "WSBG Terminal — Error",
+                title,
                 JOptionPane.ERROR_MESSAGE);
     }
 
@@ -521,7 +522,9 @@ public final class LauncherMain {
             Files.createDirectories(appDir.resolve("logs/launcher"));
             return true;
         } catch (IOException e) {
-            showErrorDialog("Cannot create app directory: " + appDir, e);
+            LauncherI18n i18n = new LauncherI18n(appDir);
+            showErrorDialog(i18n.get("Cannot create app directory") + ": " + appDir,
+                    "WSBG Terminal - " + i18n.get("Error"), e);
             return false;
         }
     }

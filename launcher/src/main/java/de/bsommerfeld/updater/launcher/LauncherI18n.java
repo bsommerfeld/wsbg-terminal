@@ -43,7 +43,10 @@ final class LauncherI18n {
             Map.entry("Installing fonts", "Schriftarten installieren"),
             Map.entry("Fonts ready", "Schriftarten bereit"),
             Map.entry("Fonts partial", "Schriftarten unvollständig"),
-            Map.entry("Font install failed", "Schriftart-Installation fehlgeschlagen")
+            Map.entry("Font install failed", "Schriftart-Installation fehlgeschlagen"),
+            Map.entry("Error", "Fehler"),
+            Map.entry("Launcher failed", "Start fehlgeschlagen"),
+            Map.entry("Cannot create app directory", "Anwendungsverzeichnis kann nicht erstellt werden")
     );
 
     private final String language;
