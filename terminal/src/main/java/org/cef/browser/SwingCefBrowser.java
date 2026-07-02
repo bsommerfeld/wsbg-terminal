@@ -86,20 +86,23 @@ public class SwingCefBrowser extends CefBrowser_N implements CefRenderHandler {
     private boolean justCreated_ = false;
     private final Rectangle browser_rect_ = new Rectangle(0, 0, 1, 1); // CEF issue #1437.
 
-    // Live-resize signal gate. componentResized fires per AWT event (well
-    // above 60/s during a macOS live resize) and every wasResized queues a
-    // full re-layout + re-raster of the page in the renderer. Signalled
-    // unthrottled, an excessive drag puts the renderer SECONDS behind: after
-    // release a stale frame sits on screen until the backlog drains, and
-    // further resizing only lengthens the queue. So at most ONE resize render
-    // is ever in flight — newer sizes coalesce into resizePendingSignal_ and
-    // go out when the previous frame arrives (getViewRect reads the live
-    // browser_rect_, so a coalesced signal still renders the NEWEST size, and
-    // the pending signal guarantees the final size always renders). The
-    // timeout frees the gate when CEF never delivers a size-changed frame
-    // (size unchanged, frame coalesced away) so it can't wedge shut.
-    // All three fields are EDT-confined.
+    // Live-resize gate. componentResized fires per AWT event (well above
+    // 60/s during a macOS live resize) and CEF re-lays-out + re-rasters the
+    // FULL page for every size it observes. Crucially, CEF polls getViewRect
+    // on its own schedule, so merely throttling wasResized does NOT help —
+    // measured: an excessive drag on a heavy view queued dozens of stale-size
+    // re-layouts in the renderer and the frames drained up to ~50s late (the
+    // "crippled frame sits there after release" zombie; further resizing only
+    // lengthened the queue). Therefore the LIVE size is tracked in
+    // desiredW_/H_ only, and browser_rect_ — the only thing CEF ever sees —
+    // is committed exclusively inside signalResize(): one new size per gate
+    // cycle, renderer queue depth capped at ~1. The ack is the arrival of a
+    // size-changed frame; the timeout frees the gate when CEF never delivers
+    // one (size unchanged, frame coalesced away) so it can't wedge shut.
+    // All gate fields are EDT-confined; browser_rect_ is read from CEF
+    // threads but was always mutated on the EDT (unchanged).
     private static final int RESIZE_ACK_TIMEOUT_MS = 250;
+    private int desiredW_ = 1, desiredH_ = 1; // live panel size (EDT)
     private boolean resizeSignalInFlight_;
     private boolean resizePendingSignal_;
     private final javax.swing.Timer resizeAckTimeout_ =
@@ -289,25 +292,37 @@ public class SwingCefBrowser extends CefBrowser_N implements CefRenderHandler {
     }
 
     private void refreshGeometry() {
-        browser_rect_.setBounds(0, 0, Math.max(1, panel_.getWidth()), Math.max(1, panel_.getHeight()));
+        desiredW_ = Math.max(1, panel_.getWidth());
+        desiredH_ = Math.max(1, panel_.getHeight());
         if (panel_.isShowing()) {
             screenPoint_ = panel_.getLocationOnScreen();
         }
         scaleFactor_ = currentScale();
     }
 
+    // Commits the newest live size to browser_rect_ (CEF's view of the world)
+    // and signals it — the ONLY place either happens, so CEF sees exactly one
+    // new size per gate cycle no matter how often it polls getViewRect.
     private void signalResize() {
         if (isClosed()) return;
+        browser_rect_.setBounds(0, 0, desiredW_, desiredH_);
         resizeSignalInFlight_ = true;
         resizePendingSignal_ = false;
         resizeAckTimeout_.restart();
-        wasResized(browser_rect_.width, browser_rect_.height);
+        wasResized(desiredW_, desiredH_);
+        // Software OSR only composites on DAMAGE — on a static view the
+        // resized frame otherwise waits for the next organic repaint (the 1Hz
+        // footer clock was the only pacer on the settings view: measured, the
+        // final size arrived a full second per gate cycle). Invalidate marks
+        // the whole view dirty so the post-resize composite happens NOW.
+        invalidate();
     }
 
-    // Geometry always tracks the live size (getViewRect reads browser_rect_);
-    // only the expensive wasResized re-raster is gated to one in flight.
     private void onLiveResize() {
         refreshGeometry();
+        if (browser_rect_.width == desiredW_ && browser_rect_.height == desiredH_) {
+            return; // already committed at this size
+        }
         if (resizeSignalInFlight_) {
             resizePendingSignal_ = true;
         } else {
@@ -316,12 +331,15 @@ public class SwingCefBrowser extends CefBrowser_N implements CefRenderHandler {
     }
 
     // The in-flight resize render arrived (a size-changed frame, posted from
-    // the CEF paint thread) or timed out — open the gate and send the newest
-    // pending size, if any.
+    // the CEF paint thread) or timed out — open the gate and commit the
+    // newest size if it moved on.
     private void resizeUnblocked() {
         resizeAckTimeout_.stop();
         resizeSignalInFlight_ = false;
-        if (resizePendingSignal_) signalResize();
+        if (resizePendingSignal_
+                || browser_rect_.width != desiredW_ || browser_rect_.height != desiredH_) {
+            signalResize();
+        }
     }
 
     private void wireInput() {
