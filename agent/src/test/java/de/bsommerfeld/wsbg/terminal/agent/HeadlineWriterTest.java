@@ -352,4 +352,105 @@ class HeadlineWriterTest {
                 "Der Raum diskutiert Quantencomputer", "D-Wave Quantum Inc."),
                 "no form in the line → no gild");
     }
+
+    @Test
+    void displayFormInHandlesDomainFirstWordsAndDroppedBrandWords() {
+        // "Amazon.com, Inc." — the line writes "Amazon"; the domain suffix never
+        // appears in prose (live false drop 2026-07-02).
+        assertEquals("Amazon", HeadlineWriter.displayFormIn(
+                "Amazon könnte durch eigene KI-Chips einen Schub bekommen", "Amazon.com, Inc."));
+        // "iShares Core MSCI EM IMI …" — the line drops the brand word entirely
+        // (live false drop 2026-07-02); one retry without the first word.
+        assertEquals("Core MSCI EM IMI", HeadlineWriter.displayFormIn(
+                "Ein Rückgang beim Core MSCI EM IMI lässt den Raum reagieren",
+                "iShares Core MSCI EM IMI UCITS ETF USD (Acc)"));
+        // The retry must not create false KEEPS: a line about other companies still
+        // yields null for an unrelated unit (live: SK hynix unit, Lam-Research line).
+        org.junit.jupiter.api.Assertions.assertNull(HeadlineWriter.displayFormIn(
+                "Europoors spekulieren auf eine Rakete für Lam Research und Applied Materials",
+                "SK hynix Inc."));
+        // …and a lone legal word after the drop never gilds ("Corporation").
+        org.junit.jupiter.api.Assertions.assertNull(HeadlineWriter.displayFormIn(
+                "Microsoft Corporation bündelt Copilot-Bots", "Bio-Techne Corporation"));
+    }
+
+    @Test
+    void displayFormInAcceptsTheGermanGenitive() {
+        // "Rheinmetalls Auftrag" — the name IS in the line, inflected. A lone
+        // trailing "s" is a boundary, a longer suffix is not.
+        assertEquals("Rheinmetall", HeadlineWriter.displayFormIn(
+                "Rheinmetalls Großauftrag treibt den Kurs", "Rheinmetall AG"));
+        org.junit.jupiter.api.Assertions.assertNull(HeadlineWriter.displayFormIn(
+                "Rheinmetallitis grassiert im Käfig", "Rheinmetall AG"),
+                "a longer suffix is a different word, not a genitive");
+    }
+
+    // ---- near-dup patterns lifted verbatim from the live archive (2026-07-02) ----
+
+    @Test
+    void nearDuplicate_catchesAPriorLineWithAnAppendedClause() {
+        // The MU wire published the same GM-Chip line three times, the later two with a
+        // tacked-on subclause. Jaccard alone dropped below the threshold (the union grew);
+        // the containment side must catch it.
+        String base = "General Motors sichert sich Chip-Lieferung bei Micron, "
+                + "was die allgemeine Chip-Nachfrage stützt.";
+        String extended = "General Motors sichert sich Chip-Lieferung bei Micron, "
+                + "was die allgemeine Chip-Nachfrage stützt, während der Raum die Aktie hält.";
+        assertTrue(HeadlineWriter.isNearDuplicate(base, extended));
+    }
+
+    @Test
+    void nearDuplicate_catchesANumberOnlyTick() {
+        // The ^GDAXI wire published the same "wartet auf Katalysator" line at +1,66 %,
+        // +1,78 % and +2,01 % — the ticking day-move is on the quote strip, not a development.
+        assertTrue(HeadlineWriter.isNearDuplicate(
+                "Marktverlauf zeigt, dass der DAX trotz der jüngsten Kursgewinne von +1,66% "
+                        + "weiterhin auf einen klaren, neuen Katalysator wartet",
+                "Marktverlauf zeigt, dass der DAX trotz des heutigen Anstiegs von +2,01% "
+                        + "weiterhin auf einen klaren, neuen Katalysator wartet"));
+    }
+
+    @Test
+    void nearDuplicate_aGenuinelyNewNumberStoryIsNotFlagged() {
+        // Numbers are stripped for the comparison, so a NEW story must differ in its
+        // words, not merely its figures — and it does: a price-target line and a
+        // short-squeeze line share the subject but nothing else.
+        assertFalse(HeadlineWriter.isNearDuplicate(
+                "Analysten heben das Kursziel für Rheinmetall auf 2.100 Euro an",
+                "Shortseller kapitulieren bei Rheinmetall, der Käfig feiert den Squeeze"));
+    }
+
+    @Test
+    void publishUnit_skipsACrossUnitNearDuplicate() {
+        // The merz/friedrich-merz twin units once wrote the same Reformpaket line 5 min
+        // apart — invisible to the per-unit guard, caught by the wire-level window.
+        AgentRepository repo = new AgentRepository();
+        HeadlineWriter w = new HeadlineWriter(repo, new ApplicationEventBus());
+        SubjectUnit merz = new SubjectUnit("name:merz", "Merz");
+        SubjectUnit friedrich = new SubjectUnit("name:friedrich merz", "Friedrich Merz");
+        Draft line = new Draft("Merz präsentiert umfassendes Reformpaket mit Steuerkürzungen "
+                + "und Rentenüberarbeitung", "NEUTRAL", "NORMAL", null,
+                List.of(), null, List.of(), null, List.of(), List.of());
+        assertTrue(w.publishUnit(merz, line));
+        assertFalse(w.publishUnit(friedrich, line),
+                "the same sentence from a twin unit within the window must be skipped");
+        assertEquals(1, repo.getRecentHeadlines().size());
+    }
+
+    @Test
+    void publishUnit_dropsTickerWhenTheLineNeverNamesTheUnit() {
+        // A unit-line disagreement (the SPCX Daiwa-Kursziel case): the line publishes,
+        // but it carries no claim to an instrument it never names — no ticker, no snapshot.
+        AgentRepository repo = new AgentRepository();
+        HeadlineWriter w = new HeadlineWriter(repo, new ApplicationEventBus());
+        SubjectUnit u = instrumentUnit(); // NOW / ServiceNow
+        Draft d = new Draft("Analysten von Daiwa Securities initiieren die Position mit "
+                + "einem Kursziel von 175 Euro", "BULLISH", "NORMAL", null,
+                List.of(), null, List.of(), null, List.of(), List.of());
+        assertTrue(w.publishUnit(u, d), "the line itself still publishes — the mirror stays 1:1");
+        HeadlineRecord h = repo.getHeadlinesByClusterId("NOW").get(0);
+        assertNull(h.tickerSymbol(), "a line that never names the unit carries no ticker");
+        assertNull(h.snapshot(), "…and no price snapshot");
+        assertTrue(h.subjects().isEmpty(), "…and no glow subject");
+    }
 }

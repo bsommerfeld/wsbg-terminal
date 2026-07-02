@@ -67,6 +67,19 @@ public class AgentRepository {
                 HeadlineSentiment.NEUTRAL, null, false);
     }
 
+    /** Records a headline without concrete news references (legacy/cluster path). */
+    public void saveHeadline(String clusterId, String headline, String context,
+            List<String> sourceThreadIds, List<String> sourceCommentIds,
+            HeadlineHighlight highlight, String tickerSymbol,
+            List<HeadlineSubject> subjects,
+            Double priceMovePercent,
+            List<String> sectors, String assetClass, HeadlineSentiment sentiment,
+            MarketSnapshot snapshot, boolean newsEnriched) {
+        saveHeadline(clusterId, headline, context, sourceThreadIds, sourceCommentIds,
+                highlight, tickerSymbol, subjects, priceMovePercent, sectors, assetClass,
+                sentiment, snapshot, newsEnriched, List.of());
+    }
+
     /**
      * Records a headline with explicit attribution, editorial flags, and the
      * crowd-sentiment classifier. Sectors + assetClass are neutral chips for
@@ -97,6 +110,9 @@ public class AgentRepository {
      *                         at least one external news item (cited a
      *                         {@code [news:ID]}) — a quiet provenance hint the UI
      *                         surfaces as a subtle "News" tag
+     * @param newsRefs         the concrete external articles behind that hint
+     *                         (title + publisher + permalink), so the UI can list
+     *                         the original sources behind the tag; may be empty
      */
     public void saveHeadline(String clusterId, String headline, String context,
             List<String> sourceThreadIds, List<String> sourceCommentIds,
@@ -104,7 +120,7 @@ public class AgentRepository {
             List<HeadlineSubject> subjects,
             Double priceMovePercent,
             List<String> sectors, String assetClass, HeadlineSentiment sentiment,
-            MarketSnapshot snapshot, boolean newsEnriched) {
+            MarketSnapshot snapshot, boolean newsEnriched, List<HeadlineNewsRef> newsRefs) {
         long now = System.currentTimeMillis() / 1000;
         HeadlineRecord record = new HeadlineRecord(
                 clusterId,
@@ -121,7 +137,8 @@ public class AgentRepository {
                 assetClass,
                 sentiment == null ? HeadlineSentiment.NEUTRAL : sentiment,
                 snapshot,
-                newsEnriched);
+                newsEnriched,
+                newsRefs == null ? List.of() : List.copyOf(newsRefs));
         headlineCache.add(record);
         sessionIdentities.add(identity(record)); // live-published this session
         if (archive != null) archive.append(record); // permanent — survives everything
@@ -237,7 +254,17 @@ public class AgentRepository {
             String assetClass,
             HeadlineSentiment sentiment,
             MarketSnapshot snapshot,
-            boolean newsEnriched) {
+            boolean newsEnriched,
+            List<HeadlineNewsRef> newsRefs) {
+
+        /**
+         * Archive lines that predate {@code newsRefs} deserialize with a
+         * {@code null} list — normalise it away so no consumer ever needs a
+         * null-guard on the field.
+         */
+        public HeadlineRecord {
+            newsRefs = newsRefs == null ? List.of() : newsRefs;
+        }
 
         /**
          * Backward-compatible constructor for records that predate the
@@ -255,7 +282,18 @@ public class AgentRepository {
                 HeadlineSentiment sentiment, MarketSnapshot snapshot) {
             this(clusterId, headline, context, createdAt, sourceThreadIds, sourceCommentIds,
                     highlight, tickerSymbol, subjects, priceMovePercent, sectors, assetClass,
-                    sentiment, snapshot, false);
+                    sentiment, snapshot, false, List.of());
+        }
+
+        /** Positional-compatibility constructor from before {@code newsRefs}. */
+        public HeadlineRecord(String clusterId, String headline, String context,
+                long createdAt, List<String> sourceThreadIds, List<String> sourceCommentIds,
+                HeadlineHighlight highlight, String tickerSymbol, List<HeadlineSubject> subjects,
+                Double priceMovePercent, List<String> sectors, String assetClass,
+                HeadlineSentiment sentiment, MarketSnapshot snapshot, boolean newsEnriched) {
+            this(clusterId, headline, context, createdAt, sourceThreadIds, sourceCommentIds,
+                    highlight, tickerSymbol, subjects, priceMovePercent, sectors, assetClass,
+                    sentiment, snapshot, newsEnriched, List.of());
         }
     }
 }

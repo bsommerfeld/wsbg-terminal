@@ -127,6 +127,33 @@ class HeadlineArchiveTest {
     }
 
     @Test
+    void newsRefsSurviveTheArchiveAndOldLinesLoadWithout() throws Exception {
+        HeadlineArchive a = new HeadlineArchive(file());
+        HeadlineRecord withRefs = new HeadlineRecord("t3_a", "NVIDIA +5% nach Zahlen", "",
+                now(), List.of(), List.of(), HeadlineHighlight.NORMAL, "NVDA", List.of(),
+                null, List.of(), "stock", HeadlineSentiment.BULLISH, null, true,
+                List.of(new HeadlineNewsRef("Nvidia beats estimates", "Reuters",
+                        "https://example.com/nvda", 1700000000L)));
+        a.append(withRefs);
+        // A pre-newsRefs archive line (field absent entirely) must still load.
+        Files.writeString(file(),
+                "{\"clusterId\":\"t3_old\",\"headline\":\"Alte Zeile\",\"context\":\"\","
+                        + "\"createdAt\":" + now() + ",\"sourceThreadIds\":[],\"sourceCommentIds\":[],"
+                        + "\"highlight\":\"NORMAL\",\"newsEnriched\":true}\n",
+                StandardCharsets.UTF_8, StandardOpenOption.APPEND);
+
+        List<HeadlineRecord> reloaded = new HeadlineArchive(file()).all();
+        assertEquals(2, reloaded.size());
+        HeadlineNewsRef ref = reloaded.get(0).newsRefs().get(0);
+        assertEquals("Nvidia beats estimates", ref.title());
+        assertEquals("Reuters", ref.publisher());
+        assertEquals("https://example.com/nvda", ref.url());
+        assertEquals(1700000000L, ref.publishedAt());
+        assertEquals(List.of(), reloaded.get(1).newsRefs(),
+                "missing field normalises to an empty list, never null");
+    }
+
+    @Test
     void pageReturnsOlderHeadlinesNewestFirst() {
         HeadlineArchive a = new HeadlineArchive(file());
         a.append(rec("t3_a", "Älteste", 1000, null, List.of(), null));

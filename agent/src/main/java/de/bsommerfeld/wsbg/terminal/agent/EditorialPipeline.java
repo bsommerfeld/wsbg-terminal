@@ -104,8 +104,12 @@ public final class EditorialPipeline {
      * comment re-wakes the unit (one compose per evidence increment), which both floods the
      * compose queue and produces a stream of near-identical "-Update:" lines on a story that
      * hasn't actually moved. A genuine fresh story still surfaces — just batched, not per-tick.
+     * 3 min, up from the original 60 s: at 60 s a hot thread (the DAX daily) re-composed its
+     * unit up to once a minute, and a 4B model rewords rather than returns the redundant-empty,
+     * so the wire filled with same-ticker variants faster than the near-dup guard's window.
+     * The first compose is untouched (only the settle gates it) — this spaces REPEATS.
      */
-    private static final long COMPOSE_COOLDOWN_MS = 60_000;
+    private static final long COMPOSE_COOLDOWN_MS = 180_000;
     /**
      * Settle delay before a freshly-dirty unit is FIRST composed: give its evidence time to
      * accumulate AND its price/chart time to resolve, so the line is fuller and carries a

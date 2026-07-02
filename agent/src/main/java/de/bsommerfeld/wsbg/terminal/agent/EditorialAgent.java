@@ -793,17 +793,28 @@ public class EditorialAgent {
         return false;
     }
 
-    /** Similarity above which a new line counts as the same story re-worded. */
-    static final double SEMANTIC_DUP_SIM = 0.92;
-    /** Only priors this recent are compared — an old story may legitimately resurface. */
-    private static final long SEMANTIC_DUP_WINDOW_SECS = 1800;
+    /** Similarity above which a new line counts as the same story re-worded. Calibrated
+     *  2026-07-02 on live wire pairs (embeddinggemma): actual re-words scored 0.80–1.00
+     *  ("Copilot-Bots bündelt Microsoft…" vs "Microsoft bündelt Copilot-Bots…" = 0.88),
+     *  genuinely-new angles on the same subject scored ≤ 0.58 — the old 0.92 sat above
+     *  the entire re-word band and caught nothing. 0.78 keeps ~0.2 margin to both sides. */
+    static final double SEMANTIC_DUP_SIM = 0.78;
+    /** Above this, the line is the SAME SENTENCE with at most a ticked figure — the
+     *  novel-number exception does not apply (a re-stated day-move is not a development). */
+    static final double SEMANTIC_DUP_HARD_SIM = 0.92;
+    /** Only priors this recent are compared — an old story may legitimately resurface.
+     *  2h: live pairs 1.5h apart were still verbatim re-tells of an unmoved story. */
+    private static final long SEMANTIC_DUP_WINDOW_SECS = 7200;
 
     /**
      * True when {@code line} is a semantic re-word of one of the unit's recent
      * headlines: embedding similarity ≥ {@link #SEMANTIC_DUP_SIM} against a prior
      * from the last {@link #SEMANTIC_DUP_WINDOW_SECS}, UNLESS the new line carries
      * a number the prior didn't — a fresh figure is a real development, never a
-     * re-word. Fail-open: an embedding error never blocks a publish.
+     * re-word. That exception is itself capped: at ≥ {@link #SEMANTIC_DUP_HARD_SIM}
+     * the "new" line is the same sentence with a ticked figure (the day-move
+     * updating is not a development — the quote strip carries it live), so it is a
+     * dup regardless. Fail-open: an embedding error never blocks a publish.
      */
     private boolean isSemanticRepeat(String line, List<SubjectUnit.UnitHeadline> priors) {
         if (embeddings == null || line == null || line.isBlank() || priors.isEmpty()) return false;
@@ -812,8 +823,10 @@ public class EditorialAgent {
             for (int i = priors.size() - 1; i >= 0; i--) {
                 SubjectUnit.UnitHeadline prior = priors.get(i);
                 if (now - prior.atEpoch() > SEMANTIC_DUP_WINDOW_SECS) break; // list is chronological
-                if (hasNovelNumber(line, prior.text())) continue;
-                if (embeddings.similarity(line, prior.text()) >= SEMANTIC_DUP_SIM) return true;
+                double sim = embeddings.similarity(line, prior.text());
+                if (sim >= SEMANTIC_DUP_HARD_SIM) return true; // same sentence, ticked figure at most
+                if (hasNovelNumber(line, prior.text())) continue; // a fresh figure IS a development
+                if (sim >= SEMANTIC_DUP_SIM) return true;
             }
         } catch (Exception e) {
             LOG.debug("semantic dup check failed (fail-open): {}", e.getMessage());

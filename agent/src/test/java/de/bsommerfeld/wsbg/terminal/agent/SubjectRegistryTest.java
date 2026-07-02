@@ -107,4 +107,49 @@ class SubjectRegistryTest {
         assertFalse(u.isNewsCovered("uuid-3"));
         assertEquals(2, u.coveredNewsIds().size(), "blank/null ids are not tracked");
     }
+
+    @Test
+    void foldsASubsetNameUnitIntoTheFullerNameUnit() {
+        // The live merz/friedrich-merz twins: same person, two name units, both
+        // published the same Reformpaket line. Subset words + shared evidence → fold,
+        // the fuller name survives as the canonical form.
+        SubjectRegistry reg = new SubjectRegistry();
+        EvidenceRef shared = ev("t3_x", "t1_a", "Merz präsentiert das Reformpaket");
+        reg.findOrCreate("name:merz", "Merz").addEvidence(shared);
+        reg.findOrCreate("name:friedrich merz", "Friedrich Merz").addEvidence(shared);
+
+        assertEquals(1, reg.mergeIdentities());
+        assertNull(reg.get("name:merz"), "the subset-name unit is absorbed");
+        assertEquals("Friedrich Merz", reg.get("name:friedrich merz").canonicalName());
+        assertEquals(1, reg.get("name:friedrich merz").evidenceCount(),
+                "shared evidence deduped, not doubled");
+    }
+
+    @Test
+    void neverFoldsSharedWordNameUnitsThatAreNoSubset() {
+        // "Deutsche Bank" and "Deutsche Telekom" share a word AND may share a comment —
+        // still two subjects. The subset test is the fence.
+        SubjectRegistry reg = new SubjectRegistry();
+        EvidenceRef shared = ev("t3_x", "t1_a", "Deutsche Bank und Deutsche Telekom im Depot");
+        reg.findOrCreate("name:deutsche bank", "Deutsche Bank").addEvidence(shared);
+        reg.findOrCreate("name:deutsche telekom", "Deutsche Telekom").addEvidence(shared);
+
+        assertEquals(0, reg.mergeIdentities());
+        assertNotNull(reg.get("name:deutsche bank"));
+        assertNotNull(reg.get("name:deutsche telekom"));
+    }
+
+    @Test
+    void nameNameFoldNeedsSharedEvidenceToo() {
+        // Subset words alone are not identity: a "Merz" unit fed by a different
+        // thread does not fold (deterministic, no false swallow).
+        SubjectRegistry reg = new SubjectRegistry();
+        reg.findOrCreate("name:merz", "Merz").addEvidence(ev("t3_x", "t1_a", "Merz hier"));
+        reg.findOrCreate("name:friedrich merz", "Friedrich Merz")
+                .addEvidence(ev("t3_y", "t1_b", "Friedrich Merz dort"));
+
+        assertEquals(0, reg.mergeIdentities());
+        assertNotNull(reg.get("name:merz"));
+        assertNotNull(reg.get("name:friedrich merz"));
+    }
 }

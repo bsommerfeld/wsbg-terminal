@@ -68,6 +68,13 @@ public final class SubjectRegistry {
      * merge would <em>swallow</em> data, so we'd rather leave a harmless duplicate.
      * Ticker↔ticker units never merge (distinct tickers = distinct subjects).
      *
+     * <p>A second pass folds a name unit into ANOTHER name unit when the shorter
+     * name's significant words are a SUBSET of the longer's AND they share evidence
+     * — "Merz" into "Friedrich Merz" (the twin units once published the same
+     * Reformpaket line twice, 5 min apart). The subset test is stricter than the
+     * ticker pass's any-shared-word on purpose: "Deutsche Bank" and "Deutsche
+     * Telekom" share a word but are no subset of each other.
+     *
      * @return how many units were absorbed
      */
     public int mergeIdentities() {
@@ -95,6 +102,26 @@ public final class SubjectRegistry {
                     // co-subject (consolidation) sneak back into a compose via a
                     // later identity-merge.
                     if (dirty.remove(n.id)) dirty.add(t.id);
+                    merged++;
+                    break;
+                }
+            }
+        }
+        // Pass 2 — name-unit into name-unit. Longer names are the absorbers, so the
+        // surviving unit carries the more specific canonical form.
+        for (SubjectUnit n : nameUnits) {
+            if (byId.get(n.id) != n) continue; // absorbed above or by an earlier pair
+            Set<String> nWords = SubjectAttributor.significantWords(n.canonicalName());
+            Set<String> nKeys = n.evidenceKeys();
+            if (nWords.isEmpty() || nKeys.isEmpty()) continue;
+            for (SubjectUnit m : nameUnits) {
+                if (m == n || byId.get(m.id) != m) continue;
+                Set<String> mWords = SubjectAttributor.significantWords(m.canonicalName());
+                boolean subset = mWords.size() > nWords.size() && mWords.containsAll(nWords);
+                if (subset && !Collections.disjoint(nKeys, m.evidenceKeys())) {
+                    m.absorb(n);
+                    byId.remove(n.id);
+                    if (dirty.remove(n.id)) dirty.add(m.id);
                     merged++;
                     break;
                 }
