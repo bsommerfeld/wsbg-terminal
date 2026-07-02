@@ -102,3 +102,6 @@ credentials.json
 CLAUDE.md
 # Local-only internal backlog (the post-release to-do notes)
 POST-RELEASE.md
+
+# Internal working notes - never committed (user directive 2026-07-03)
+docs/
