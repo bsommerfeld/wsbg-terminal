@@ -239,33 +239,58 @@ final class LauncherWindow extends JFrame {
         if (logoSource == null) return new JPanel();
 
         // Pre-render the glyph at full opacity, scaled to fit the LOGO_W×LOGO_H
-        // box while preserving its source aspect ratio.
+        // box while preserving its source aspect ratio. The glyph asset is
+        // shipped at 2x-retina resolution, so a single bilinear pass would
+        // undersample (2x2 taps across a ~7x reduction) and shred the thin
+        // diamond strokes — halve progressively until within 2x of the target,
+        // then do the final fractional step.
         int sw = logoSource.getWidth(null);
         int sh = logoSource.getHeight(null);
         double scale = Math.min((double) LOGO_W / sw, (double) LOGO_H / sh);
         int w = Math.max(1, (int) Math.round(sw * scale));
         int h = Math.max(1, (int) Math.round(sh * scale));
 
-        BufferedImage scaledLogo = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
-        Graphics2D g2 = scaledLogo.createGraphics();
-        g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        g2.drawImage(logoSource, 0, 0, w, h, null);
-        g2.dispose();
+        // Pre-render at 2x the logical size and draw scaled down in paint:
+        // on a HiDPI (Retina) display the device transform then maps the
+        // bitmap ~1:1 instead of upscaling a tiny pre-scaled image.
+        BufferedImage stage = toArgb(logoSource, sw, sh);
+        while (stage.getWidth() / 2 >= w * 2 && stage.getHeight() / 2 >= h * 2) {
+            stage = resizeBilinear(stage, stage.getWidth() / 2, stage.getHeight() / 2);
+        }
+        BufferedImage scaledLogo = resizeBilinear(stage, w * 2, h * 2);
 
         JPanel panel = new JPanel() {
             @Override
             protected void paintComponent(Graphics g) {
                 Graphics2D g2d = (Graphics2D) g;
                 g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                int x = (getWidth() - scaledLogo.getWidth()) / 2;
-                int y = (getHeight() - scaledLogo.getHeight()) / 2;
-                g2d.drawImage(scaledLogo, x, y, null);
+                g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+                int x = (getWidth() - w) / 2;
+                int y = (getHeight() - h) / 2;
+                g2d.drawImage(scaledLogo, x, y, w, h, null);
             }
         };
         panel.setOpaque(false);
         panel.setPreferredSize(new Dimension(LOGO_W, LOGO_H));
         return panel;
+    }
+
+    private static BufferedImage toArgb(Image src, int w, int h) {
+        BufferedImage out = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g2 = out.createGraphics();
+        g2.drawImage(src, 0, 0, null);
+        g2.dispose();
+        return out;
+    }
+
+    private static BufferedImage resizeBilinear(BufferedImage src, int w, int h) {
+        BufferedImage out = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g2 = out.createGraphics();
+        g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g2.drawImage(src, 0, 0, w, h, null);
+        g2.dispose();
+        return out;
     }
 
     private Image loadLogoImage() {
