@@ -328,9 +328,6 @@ public final class EditorialPipeline {
                         cooling > 0 ? ", " + cooling + " cooling" : "",
                         stale > 0 ? ", " + stale + " stale-dropped" : "",
                         merged > 0 ? " (" + merged + " identity-merged)" : "", queue.size());
-            } else {
-                LOG.debug("[PIPE] merge cadence: 0 unit(s) dirty{}",
-                        merged > 0 ? " (" + merged + " identity-merged)" : "");
             }
         } catch (Exception e) {
             LOG.warn("EditorialPipeline: merge/enqueue failed: {}", e.getMessage());
