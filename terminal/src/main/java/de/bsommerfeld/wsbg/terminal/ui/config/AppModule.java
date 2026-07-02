@@ -29,6 +29,7 @@ import de.bsommerfeld.wsbg.terminal.reddit.TokenBucketRateLimiter;
 import de.bsommerfeld.wsbg.terminal.nasdaq.NasdaqNewsClient;
 import de.bsommerfeld.wsbg.terminal.source.NewsSource;
 import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooFinanceClient;
+import de.bsommerfeld.wsbg.terminal.source.net.CachingWebFetcher;
 import de.bsommerfeld.wsbg.terminal.source.net.DirectWebFetcher;
 import de.bsommerfeld.wsbg.terminal.source.net.WebFetchChain;
 import de.bsommerfeld.wsbg.terminal.source.net.WebFetcher;
@@ -196,22 +197,35 @@ public class AppModule extends AbstractModule {
      * served like an ordinary browser) leads, with plain {@link DirectWebFetcher} as the fallback;
      * toggled off, it's direct-only. New news wires opt in just by taking a
      * {@link WebFetcher} and choosing their chain order — no per-source plumbing.
+     *
+     * <p>When {@code net.conditional-requests} is on (default), the chain is
+     * wrapped in a {@link CachingWebFetcher} — OUTSIDE the chain, so it sees the
+     * final answer — which revalidates unchanged endpoints via
+     * {@code If-None-Match}/{@code If-Modified-Since} and serves 304s from an
+     * in-memory cache (traffic blending, Hebel 2). The browser transport sets
+     * its own headers and drops the conditional ones; that path just keeps
+     * returning full 200s — a clean fallback, not a bug.
      */
     @Provides
     @Singleton
     WebFetcher provideWebFetcher(GlobalConfig config, CefHost cefHost) {
         DirectWebFetcher direct = new DirectWebFetcher();
+        WebFetcher chain;
         if (config.getYahoo().isBrowserFetchEnabled()) {
-            LOG.info("WebFetcher: browser → direct (browser joker enabled)");
             // NOTE: the Yahoo origin browsers warm up lazily on first use. Eager
             // prewarming was tried and reverted — kicking it at injector time
             // forced CEF init off the EDT (before the window initializes it on the
             // EDT), which hangs on macOS. A correct prewarm must run AFTER the
             // window has brought CEF up; deferred until that hook exists.
-            return new WebFetchChain(List.of(new CefWebFetcher(cefHost), direct));
+            chain = new WebFetchChain(List.of(new CefWebFetcher(cefHost), direct));
+        } else {
+            chain = new WebFetchChain(List.of(direct));
         }
-        LOG.info("WebFetcher: direct only (browser joker disabled)");
-        return new WebFetchChain(List.of(direct));
+        WebFetcher fetcher = config.getNet().isConditionalRequests()
+                ? new CachingWebFetcher(chain)
+                : chain;
+        LOG.info("WebFetcher: {}", fetcher.name());
+        return fetcher;
     }
 
     /**

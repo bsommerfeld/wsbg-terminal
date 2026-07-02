@@ -4,6 +4,8 @@ import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.core.config.CurrencyConfig;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
+import de.bsommerfeld.wsbg.terminal.core.config.NetConfig;
+import de.bsommerfeld.wsbg.terminal.core.util.JitteredScheduler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -87,6 +89,7 @@ public class EurUsdMonitorService {
 
     private final EurUsdClient client;
     private final long pollIntervalSeconds;
+    private final double pollJitterPercent;
 
     private final ScheduledExecutorService scheduler =
             Executors.newSingleThreadScheduledExecutor(r -> {
@@ -109,11 +112,18 @@ public class EurUsdMonitorService {
         // browser transport, which must not trigger JCEF's native init off the AWT
         // thread before the window does — that races the EDT init and deadlocks the
         // window. AppMain calls start() only after the window has brought CEF up.
-        this(client, resolveCurrencyConfig(config), false);
+        this(client, resolveCurrencyConfig(config), false,
+                config == null || config.getNet() == null
+                        ? new NetConfig().getPollJitterPercent()
+                        : config.getNet().getPollJitterPercent());
     }
 
     public EurUsdMonitorService(EurUsdClient client, CurrencyConfig config) {
-        this(client, config, true);
+        this(client, config, true, new NetConfig().getPollJitterPercent());
+    }
+
+    EurUsdMonitorService(EurUsdClient client, CurrencyConfig config, boolean autoStart) {
+        this(client, config, autoStart, new NetConfig().getPollJitterPercent());
     }
 
     /**
@@ -122,12 +132,14 @@ public class EurUsdMonitorService {
      * and must not race a zero-delay scheduled tick (which would consume their
      * stubbed return values). Production always starts.
      */
-    EurUsdMonitorService(EurUsdClient client, CurrencyConfig config, boolean autoStart) {
+    EurUsdMonitorService(EurUsdClient client, CurrencyConfig config, boolean autoStart,
+            double pollJitterPercent) {
         this.client = client;
         // 30 s floor — the Yahoo v8/chart spot quote only refreshes ~once
         // per minute, so polling faster than this just re-fetches an
         // unchanged value.
         this.pollIntervalSeconds = Math.max(30, config.getPollIntervalSeconds());
+        this.pollJitterPercent = pollJitterPercent;
         if (autoStart) start();
     }
 
@@ -139,9 +151,12 @@ public class EurUsdMonitorService {
     /** Starts the poll loop. Idempotent — safe whether called by the ctor (tests) or AppMain. */
     public void start() {
         if (!started.compareAndSet(false, true)) return;
-        LOG.info("Starting EUR/USD monitor (interval: {} seconds)", pollIntervalSeconds);
-        scheduler.scheduleAtFixedRate(this::tick,
-                INITIAL_DELAY_SECONDS, pollIntervalSeconds, TimeUnit.SECONDS);
+        LOG.info("Starting EUR/USD monitor (interval: {} seconds, jitter {}%)",
+                pollIntervalSeconds, pollJitterPercent);
+        // Jittered cadence (traffic blending): the first tick still fires
+        // immediately, only the repeat interval varies around the base.
+        JitteredScheduler.schedule(scheduler, this::tick,
+                INITIAL_DELAY_SECONDS, pollIntervalSeconds, TimeUnit.SECONDS, pollJitterPercent);
     }
 
     /**

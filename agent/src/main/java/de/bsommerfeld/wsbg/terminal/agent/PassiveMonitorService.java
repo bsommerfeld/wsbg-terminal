@@ -8,6 +8,7 @@ import de.bsommerfeld.wsbg.terminal.core.domain.RedditComment;
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
 import de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.LogEvent;
+import de.bsommerfeld.wsbg.terminal.core.util.JitteredScheduler;
 import de.bsommerfeld.wsbg.terminal.db.AgentRepository;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
 import de.bsommerfeld.wsbg.terminal.db.RedditSnapshotStore;
@@ -130,7 +131,11 @@ public class PassiveMonitorService {
     private void startMonitoring() {
         LOG.info("Starting Passive Reddit Monitor...");
         scannerExecutor.execute(this::performInitialStartup);
-        scannerExecutor.scheduleAtFixedRate(this::scanCycle, 30, updateIntervalSeconds, TimeUnit.SECONDS);
+        // Jittered, not fixed-rate: an exactly periodic scan is the one bot
+        // signal the browser fingerprint can't hide (traffic blending, Hebel 1).
+        JitteredScheduler.schedule(scannerExecutor, this::scanCycle,
+                30, updateIntervalSeconds, TimeUnit.SECONDS,
+                config.getNet().getPollJitterPercent());
 
         if (snapshotsEnabled) {
             // Persist a fresh snapshot periodically and on exit so a quick

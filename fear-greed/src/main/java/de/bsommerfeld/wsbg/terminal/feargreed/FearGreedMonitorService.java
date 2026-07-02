@@ -2,6 +2,9 @@ package de.bsommerfeld.wsbg.terminal.feargreed;
 
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
+import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
+import de.bsommerfeld.wsbg.terminal.core.config.NetConfig;
+import de.bsommerfeld.wsbg.terminal.core.util.JitteredScheduler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -40,6 +43,7 @@ public class FearGreedMonitorService {
     private static final long POLL_INTERVAL_SECONDS = 300;
 
     private final FearGreedClient client;
+    private final double pollJitterPercent;
 
     private final ScheduledExecutorService scheduler =
             Executors.newSingleThreadScheduledExecutor(r -> {
@@ -53,29 +57,40 @@ public class FearGreedMonitorService {
     private final AtomicBoolean started = new AtomicBoolean(false);
 
     public FearGreedMonitorService() {
-        this(new FearGreedClient(), true);
+        this(new FearGreedClient(), true, new NetConfig().getPollJitterPercent());
     }
 
     @Inject
-    public FearGreedMonitorService(FearGreedClient client) {
+    public FearGreedMonitorService(FearGreedClient client, GlobalConfig config) {
         // Production (Guice) path: build WITHOUT auto-starting. The poll loop hits the
         // browser transport, which must not trigger JCEF's native init off the AWT
         // thread before the window does — that races the EDT init and deadlocks the
         // window. AppMain calls start() only after the window has brought CEF up.
-        this(client, false);
+        this(client, false,
+                config == null || config.getNet() == null
+                        ? new NetConfig().getPollJitterPercent()
+                        : config.getNet().getPollJitterPercent());
     }
 
     FearGreedMonitorService(FearGreedClient client, boolean autoStart) {
+        this(client, autoStart, new NetConfig().getPollJitterPercent());
+    }
+
+    FearGreedMonitorService(FearGreedClient client, boolean autoStart, double pollJitterPercent) {
         this.client = client;
+        this.pollJitterPercent = pollJitterPercent;
         if (autoStart) start();
     }
 
     /** Starts the poll loop. Idempotent — safe whether called by the ctor or AppMain. */
     public void start() {
         if (!started.compareAndSet(false, true)) return;
-        LOG.info("Starting Fear&Greed monitor (interval: {} seconds)", POLL_INTERVAL_SECONDS);
-        scheduler.scheduleAtFixedRate(this::tick,
-                INITIAL_DELAY_SECONDS, POLL_INTERVAL_SECONDS, TimeUnit.SECONDS);
+        LOG.info("Starting Fear&Greed monitor (interval: {} seconds, jitter {}%)",
+                POLL_INTERVAL_SECONDS, pollJitterPercent);
+        // Jittered cadence (traffic blending): first tick still at t=0 for a
+        // fast first paint, only the repeat interval varies around the base.
+        JitteredScheduler.schedule(scheduler, this::tick,
+                INITIAL_DELAY_SECONDS, POLL_INTERVAL_SECONDS, TimeUnit.SECONDS, pollJitterPercent);
     }
 
     /** Single poll cycle: fetch, update the cache, fan out. Never lets the executor see an exception. */

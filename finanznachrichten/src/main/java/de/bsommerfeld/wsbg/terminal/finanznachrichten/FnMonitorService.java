@@ -1,5 +1,6 @@
 package de.bsommerfeld.wsbg.terminal.finanznachrichten;
 
+import de.bsommerfeld.wsbg.terminal.core.util.JitteredScheduler;
 import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
 
 import com.google.inject.Inject;
@@ -16,7 +17,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
@@ -72,6 +72,7 @@ public class FnMonitorService {
     private final FeedFetcher fetcher;
     private final long pollIntervalSeconds;
     private final long interRequestDelayMillis;
+    private final double pollJitterPercent;
 
     private final ScheduledExecutorService scheduler =
             Executors.newSingleThreadScheduledExecutor(r -> {
@@ -85,7 +86,7 @@ public class FnMonitorService {
     private final List<Consumer<RawNewsItem>> listeners = new CopyOnWriteArrayList<>();
 
     private volatile List<FnFeed> feeds = List.of();
-    private volatile ScheduledFuture<?> task;
+    private volatile JitteredScheduler.Handle task;
 
     /** Convenience: a real {@link FnRssClient} with default config. */
     public FnMonitorService() {
@@ -102,6 +103,7 @@ public class FnMonitorService {
         this.fetcher = fetcher;
         this.pollIntervalSeconds = Math.max(MIN_POLL_INTERVAL_SECONDS, config.getPollIntervalSeconds());
         this.interRequestDelayMillis = Math.max(0, config.getInterRequestDelayMillis());
+        this.pollJitterPercent = config.getPollJitterPercent();
     }
 
     /**
@@ -125,8 +127,10 @@ public class FnMonitorService {
                 feeds.size(), pollIntervalSeconds,
                 (feeds.size() * interRequestDelayMillis) / 1000);
 
-        this.task = scheduler.scheduleAtFixedRate(this::tick,
-                INITIAL_DELAY_SECONDS, pollIntervalSeconds, TimeUnit.SECONDS);
+        // Jittered cadence (traffic blending): sweeps vary around the base
+        // interval instead of firing machine-exactly.
+        this.task = JitteredScheduler.schedule(scheduler, this::tick,
+                INITIAL_DELAY_SECONDS, pollIntervalSeconds, TimeUnit.SECONDS, pollJitterPercent);
         return feeds;
     }
 
@@ -215,9 +219,9 @@ public class FnMonitorService {
 
     /** Stops the current polling task without tearing down the scheduler. */
     public synchronized void stop() {
-        ScheduledFuture<?> t = this.task;
+        JitteredScheduler.Handle t = this.task;
         if (t != null) {
-            t.cancel(false);
+            t.cancel();
             this.task = null;
         }
     }

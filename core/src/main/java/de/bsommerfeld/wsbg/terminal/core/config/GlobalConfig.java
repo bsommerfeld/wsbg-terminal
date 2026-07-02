@@ -31,6 +31,10 @@ public class GlobalConfig extends ConfigurablePojo<GlobalConfig> {
     @Comment("EUR/USD Currency Monitor Settings")
     private CurrencyConfig currency = new CurrencyConfig();
 
+    @Section("net")
+    @Comment("Network Traffic Blending (poll jitter, conditional requests)")
+    private NetConfig net = new NetConfig();
+
     public AgentConfig getAgent() {
         return agent;
     }
@@ -53,5 +57,9 @@ public class GlobalConfig extends ConfigurablePojo<GlobalConfig> {
 
     public CurrencyConfig getCurrency() {
         return currency;
+    }
+
+    public NetConfig getNet() {
+        return net;
     }
 }

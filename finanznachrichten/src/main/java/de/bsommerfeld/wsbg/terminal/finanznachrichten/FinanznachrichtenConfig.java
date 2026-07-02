@@ -30,6 +30,14 @@ public class FinanznachrichtenConfig {
      */
     private long interRequestDelayMillis = 200;
 
+    /**
+     * Random jitter applied to the sweep interval, in percent of the base
+     * (traffic blending — a machine-exact cadence is a bot signal). Mirrors
+     * the terminal's {@code net.poll-jitter-percent} default; {@code 0}
+     * restores the exact fixed cadence.
+     */
+    private int pollJitterPercent = 20;
+
     public int getPollIntervalSeconds() {
         return pollIntervalSeconds;
     }
@@ -52,5 +60,13 @@ public class FinanznachrichtenConfig {
 
     public void setInterRequestDelayMillis(long interRequestDelayMillis) {
         this.interRequestDelayMillis = interRequestDelayMillis;
+    }
+
+    public int getPollJitterPercent() {
+        return pollJitterPercent;
+    }
+
+    public void setPollJitterPercent(int pollJitterPercent) {
+        this.pollJitterPercent = pollJitterPercent;
     }
 }
