@@ -51,6 +51,19 @@ final class HeadlineJson {
         // Provenance: the compose stage leaned on ≥1 external news item. A quiet
         // bottom-right "News" tag in the UI; defaults false for old archive lines.
         m.put("newsEnriched", r.newsEnriched());
+        // The concrete articles behind that tag — title/publisher/permalink per
+        // item, so the tag can open a source list. Omitted (not an empty array)
+        // for lines without refs, incl. all pre-newsRefs archive lines.
+        if (r.newsRefs() != null && !r.newsRefs().isEmpty()) {
+            m.put("newsRefs", r.newsRefs().stream().map(n -> {
+                Map<String, Object> nm = new LinkedHashMap<>();
+                nm.put("title", n.title());
+                nm.put("publisher", n.publisher());
+                nm.put("url", n.url());
+                nm.put("publishedAt", n.publishedAt());
+                return nm;
+            }).toList());
+        }
         // Source thread → a permalink the UI offers as an "open in browser" button.
         String threadId = primaryThreadId(r);
         if (threadId != null) {

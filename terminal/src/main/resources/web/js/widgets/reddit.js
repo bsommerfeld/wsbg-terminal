@@ -18,6 +18,7 @@ const GOLD_SUBJECTS = true;
 import { colorizeSignedNumbers } from '../format/numbers.js';
 import { fmtClock } from '../format/time.js';
 import { t, currentLang } from '../i18n/i18n.js';
+import { openNewsSources } from '../chrome/news-sources.js';
 
 const HIGHLIGHT_CLASS = {
   IMPORTANT: 'highlight-important',
@@ -154,6 +155,10 @@ function buildRow(h, isNew) {
   const tpl = document.createElement('template');
   tpl.innerHTML = toRow(h, isNew);
   const el = tpl.content.firstElementChild;
+  // The News tag opens the source-article overlay when the record carries the
+  // concrete refs (older archive lines only have the boolean → plain span).
+  const newsTag = el.querySelector('button.news-tag');
+  if (newsTag) newsTag.addEventListener('click', () => openNewsSources(h));
   if (isNew) {
     // Rows now live across renders, so drop the flash class once it played —
     // a row born offscreen (content-visibility skips it) would otherwise
@@ -212,9 +217,16 @@ function buildMeta(h) {
   // market sentiment is covered by the Fear&Greed gauge.
   const quote = buildQuote(h.snapshot);
   // Subtle provenance hint — not a highlight. CSS pushes it to the right.
-  const news = h.newsEnriched
-    ? `<span class="news-tag" title="${escapeText(t('reddit.news.title'))}">${escapeText(t('reddit.news.tag'))}</span>`
-    : '';
+  // With concrete source refs on the record the tag becomes a button that
+  // opens the news-sources overlay; old archive lines only carry the boolean
+  // and keep the plain hover-hint span.
+  const hasRefs = Array.isArray(h.newsRefs) && h.newsRefs.length > 0;
+  const news = hasRefs
+    ? `<button type="button" class="news-tag has-sources" title="${escapeText(t('reddit.news.sources.open'))}"
+              aria-label="${escapeText(t('reddit.news.sources.open'))}">${escapeText(t('reddit.news.tag'))}</button>`
+    : h.newsEnriched
+      ? `<span class="news-tag" title="${escapeText(t('reddit.news.title'))}">${escapeText(t('reddit.news.tag'))}</span>`
+      : '';
   if (!quote && !news) return '';
   const quoteHtml = quote ? `<span class="meta-group quote-group">${quote}</span>` : '';
   return quoteHtml + news;

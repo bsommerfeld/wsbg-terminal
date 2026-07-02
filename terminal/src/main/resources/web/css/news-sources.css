@@ -1,0 +1,37 @@
+/* News-sources overlay — the article list behind a headline's "News" tag.
+   Rides the shared overlay skeleton (overlay.css); this file styles only the
+   list itself: article title as an amber external link, publisher + time as
+   a muted second line. */
+
+/* The headline the sources belong to, quoted under the overlay title. */
+.news-src-headline {
+  color: var(--txt-2);
+  font-family: "Inter", sans-serif;
+  font-size: .9rem; line-height: 1.5;
+  overflow: hidden; text-overflow: ellipsis;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+
+.news-src-list {
+  list-style: none;
+  margin: 0; padding: 10px 36px 28px;
+}
+.news-src-item {
+  padding: 12px 0;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.news-src-item + .news-src-item { border-top: 1px solid var(--line-soft); }
+
+.news-src-link {
+  color: var(--amber); text-decoration: none;
+  font-family: "Inter", sans-serif;
+  font-size: .93rem; font-weight: 500; line-height: 1.45;
+}
+.news-src-link:hover { text-decoration: underline; }
+
+.news-src-meta {
+  color: var(--mute);
+  font-family: "JetBrains Mono", monospace;
+  font-size: .74rem;
+  font-variant-numeric: tabular-nums;
+}

@@ -490,6 +490,19 @@ html[data-theme="dark"] .row .body .meta .provenance .prov-yahoo {
   text-transform: uppercase;
   cursor: help;
 }
+/* Clickable variant (a <button>): the record carries the concrete source
+   articles, clicking opens the news-sources overlay. Same quiet look at rest
+   (button chrome reset), only the hover betrays the affordance. */
+.row .body .meta .news-tag.has-sources {
+  background: none; border: 0; padding: 0;
+  font-family: inherit; line-height: inherit;
+  cursor: pointer;
+  transition: opacity .15s, color .15s;
+}
+.row .body .meta .news-tag.has-sources:hover {
+  opacity: 1;
+  color: var(--amber);
+}
 
 /* FinancialJuice expandable detail.
    Some FJ items carry a multi-line body (earnings breakdowns, data

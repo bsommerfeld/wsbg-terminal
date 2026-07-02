@@ -1,14 +1,8 @@
-/* "Was hat sich geändert" overlay — flat panel over ~3/4 of the app after a
-   fresh update. Every colour descends from tokens.css so both themes are
-   covered. The close X is deliberately platform-uniform: this is in-content
-   chrome (like the settings back arrow), not window chrome. */
-
-.changelog-overlay {
-  position: fixed; inset: 0; z-index: 60;
-  display: flex; align-items: center; justify-content: center;
-  background: oklch(0.08 0.005 60 / .72);
-}
-.changelog-overlay[hidden] { display: none; }
+/* "Was hat sich geändert" overlay — release notes after a fresh update.
+   The overlay/panel/header/close/scroll skeleton comes from overlay.css
+   (shared with every in-app overlay); this file keeps only the changelog's
+   own dressing: the amber edge shimmer, the version breadcrumb, and the
+   rendered-Markdown typography of the notes body. */
 
 /* Organic edge shimmer: two amber rim lights breathe and drift with
    incommensurate periods (7s vs 11s), so the compound pattern never visibly
@@ -44,51 +38,6 @@
   50%      { opacity: 1;   transform: translate(-49.75%, -49.65%); }
 }
 
-/* Close: the panel "claps shut" (shrinks toward its own centre) while the
-   whole overlay — scrim and shimmer included — fades. changelog.js adds
-   .closing, waits for the transition, then flips [hidden]. */
-.changelog-overlay { transition: opacity .22s ease; }
-.changelog-panel { transition: opacity .22s ease, transform .22s ease; }
-.changelog-overlay.closing { opacity: 0; pointer-events: none; }
-.changelog-overlay.closing .changelog-panel {
-  opacity: 0;
-  transform: scale(.94);
-}
-
-.changelog-panel {
-  width: min(78%, 1040px);
-  height: 76%;
-  display: flex; flex-direction: column; min-height: 0;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  overflow: hidden;
-  /* Lift off the dimmed app behind: the depth shadow lives here, the amber
-     glow lives in the overlay's animated aura pseudo-elements (above) — one
-     amber source, so the shimmer peak can't stack into an over-glow. */
-  box-shadow: 0 24px 80px oklch(0 0 0 / .5);
-  animation: changelog-in .16s ease-out;
-}
-@keyframes changelog-in {
-  from { opacity: 0; transform: scale(.985); }
-  to   { opacity: 1; transform: none; }
-}
-
-/* ---- header: title + version breadcrumb left, uniform X right ---- */
-.changelog-head {
-  display: flex; align-items: flex-start; gap: 16px;
-  padding: 24px 28px 16px 36px;
-  border-bottom: 1px solid var(--line-soft);
-}
-.changelog-head-text {
-  display: flex; flex-direction: column; gap: 10px;
-  min-width: 0; flex: 1;
-}
-.changelog-title {
-  font-family: "Inter", sans-serif; font-weight: 600;
-  font-size: 1.25rem; letter-spacing: .03em; color: var(--txt);
-}
-
 /* Breadcrumb: newest → oldest, "/"-separated; the selected release reads
    gold and a touch larger. Version figures are set in the mono face. */
 .changelog-crumbs {
@@ -111,28 +60,6 @@
   color: var(--amber); font-size: .95rem; font-weight: 600;
   cursor: default; background: none;
 }
-
-.changelog-close {
-  flex: 0 0 auto; width: 36px; height: 36px; margin-top: -4px;
-  display: inline-flex; align-items: center; justify-content: center;
-  color: var(--mute); background: none; border: 0; border-radius: 10px;
-  cursor: pointer; transition: color .15s, background .15s;
-}
-.changelog-close:hover { color: var(--txt); background: var(--bg-1); }
-.changelog-close svg {
-  width: 20px; height: 20px;
-  stroke: currentColor; stroke-width: 1.7; fill: none;
-  stroke-linecap: round; stroke-linejoin: round;
-}
-
-/* ---- scrollable notes body ---- */
-.changelog-scroll {
-  flex: 1; min-height: 0; overflow-y: auto;
-  scrollbar-width: thin; scrollbar-color: var(--line) transparent;
-}
-.changelog-scroll::-webkit-scrollbar { width: 6px; }
-.changelog-scroll::-webkit-scrollbar-thumb { background: var(--line-soft); border-radius: 8px; }
-.changelog-scroll::-webkit-scrollbar-thumb:hover { background: var(--line); }
 
 .changelog-body {
   max-width: 720px; margin: 0 auto;

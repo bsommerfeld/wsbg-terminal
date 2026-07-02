@@ -9,6 +9,7 @@
 // `seen` so the overlay stays away until the next update.
 
 import { renderMarkdown } from '../format/markdown.js';
+import { attachOverlay } from './overlay.js';
 
 // Release bodies carry build badges + an update hint above the actual notes
 // and a download-CTA footer below them; both are release-page chrome, not
@@ -35,12 +36,16 @@ export function initChangelog(socket) {
   if (!overlay) return;
   const crumbs = overlay.querySelector('.changelog-crumbs');
   const body = overlay.querySelector('.changelog-body');
-  const scroll = overlay.querySelector('.changelog-scroll');
-  const closeBtn = overlay.querySelector('.changelog-close');
+  const scroll = overlay.querySelector('.overlay-scroll');
+
+  // Shared overlay mechanics (close X / backdrop / Escape / clap-shut exit);
+  // closing reports `seen` so the overlay stays away until the next update.
+  const ctl = attachOverlay(overlay, {
+    onClose: () => socket.send('changelog', { command: 'seen' }),
+  });
 
   let releases = [];
   let selected = null;
-  let closeTimer = null;
 
   function renderCrumbs() {
     // Oldest → newest, so the freshest release always sits on the right.
@@ -64,34 +69,12 @@ export function initChangelog(socket) {
     scroll.scrollTop = 0;
   }
 
-  function close() {
-    if (overlay.hidden || overlay.classList.contains('closing')) return;
-    socket.send('changelog', { command: 'seen' });
-    // Clap-shut exit: .closing plays the CSS fade/shrink, then the overlay
-    // actually hides. Timeout instead of transitionend — robust even if the
-    // transition is skipped (e.g. reduced painting).
-    overlay.classList.add('closing');
-    closeTimer = setTimeout(() => {
-      overlay.hidden = true;
-      overlay.classList.remove('closing');
-    }, 240);
-  }
-
-  closeBtn.addEventListener('click', close);
-  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
-  document.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && !overlay.hidden) close();
-  });
-
   socket.on('changelog', payload => {
     if (!payload || !payload.show || !Array.isArray(payload.releases) || !payload.releases.length) return;
     releases = payload.releases;
     selected = null;
     const cur = releases.some(r => r.tag === payload.current) ? payload.current : releases[0].tag;
     select(cur);
-    // A push mid-close must not be swallowed by the pending hide.
-    clearTimeout(closeTimer);
-    overlay.classList.remove('closing');
-    overlay.hidden = false;
+    ctl.open();
   });
 }

@@ -1,0 +1,87 @@
+/* Generic modal-overlay skeleton — scrim, centered panel, header with title +
+   uniform close X, scrollable body. Extracted from the changelog overlay so
+   any in-app overlay (release notes, news sources, …) shares one look and one
+   open/close behaviour (js/chrome/overlay.js). Feature-specific dressing
+   (the changelog's amber aura, its breadcrumb, the news source list) stays in
+   the feature's own CSS. Every colour descends from tokens.css so both themes
+   are covered. The close X is deliberately platform-uniform: in-content
+   chrome (like the settings back arrow), not window chrome. */
+
+.overlay {
+  position: fixed; inset: 0; z-index: 60;
+  display: flex; align-items: center; justify-content: center;
+  background: oklch(0.08 0.005 60 / .72);
+  transition: opacity .22s ease;
+}
+.overlay[hidden] { display: none; }
+
+/* Close: the panel "claps shut" (shrinks toward its own centre) while the
+   whole overlay — scrim included — fades. overlay.js adds .closing, waits
+   for the transition, then flips [hidden]. */
+.overlay.closing { opacity: 0; pointer-events: none; }
+.overlay.closing .overlay-panel {
+  opacity: 0;
+  transform: scale(.94);
+}
+
+.overlay-panel {
+  width: min(78%, 1040px);
+  height: 76%;
+  display: flex; flex-direction: column; min-height: 0;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 24px 80px oklch(0 0 0 / .5);
+  animation: overlay-in .16s ease-out;
+  transition: opacity .22s ease, transform .22s ease;
+}
+@keyframes overlay-in {
+  from { opacity: 0; transform: scale(.985); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Compact variant for list-sized content (e.g. a headline's news sources):
+   narrower, and only as tall as its content up to a cap. */
+.overlay-panel.overlay-panel-sm {
+  width: min(560px, 86%);
+  height: auto;
+  max-height: 72%;
+}
+
+/* ---- header: title (+ optional feature content) left, uniform X right ---- */
+.overlay-head {
+  display: flex; align-items: flex-start; gap: 16px;
+  padding: 24px 28px 16px 36px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.overlay-head-text {
+  display: flex; flex-direction: column; gap: 10px;
+  min-width: 0; flex: 1;
+}
+.overlay-title {
+  font-family: "Inter", sans-serif; font-weight: 600;
+  font-size: 1.25rem; letter-spacing: .03em; color: var(--txt);
+}
+
+.overlay-close {
+  flex: 0 0 auto; width: 36px; height: 36px; margin-top: -4px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--mute); background: none; border: 0; border-radius: 10px;
+  cursor: pointer; transition: color .15s, background .15s;
+}
+.overlay-close:hover { color: var(--txt); background: var(--bg-1); }
+.overlay-close svg {
+  width: 20px; height: 20px;
+  stroke: currentColor; stroke-width: 1.7; fill: none;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+
+/* ---- scrollable body ---- */
+.overlay-scroll {
+  flex: 1; min-height: 0; overflow-y: auto;
+  scrollbar-width: thin; scrollbar-color: var(--line) transparent;
+}
+.overlay-scroll::-webkit-scrollbar { width: 6px; }
+.overlay-scroll::-webkit-scrollbar-thumb { background: var(--line-soft); border-radius: 8px; }
+.overlay-scroll::-webkit-scrollbar-thumb:hover { background: var(--line); }

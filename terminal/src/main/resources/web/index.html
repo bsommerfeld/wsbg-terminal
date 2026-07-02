@@ -11,7 +11,9 @@
   <link rel="stylesheet" href="/css/footer.css">
   <link rel="stylesheet" href="/css/donate.css">
   <link rel="stylesheet" href="/css/settings.css">
+  <link rel="stylesheet" href="/css/overlay.css">
   <link rel="stylesheet" href="/css/changelog.css">
+  <link rel="stylesheet" href="/css/news-sources.css">
 </head>
 <body>
 <div class="app">
@@ -290,24 +292,49 @@
 
 <!-- "Was hat sich geändert" overlay: opens once after a fresh update with the
      GitHub release notes (changelog.js renders the Markdown). The header
-     breadcrumb switches between recent releases; the X is platform-uniform
-     (in-content chrome, like the settings back arrow — not window chrome). -->
-<div class="changelog-overlay" id="changelog-overlay" hidden role="dialog" aria-modal="true"
+     breadcrumb switches between recent releases. Skeleton classes (.overlay*)
+     come from overlay.css and are shared with every in-app overlay; the X is
+     platform-uniform (in-content chrome, like the settings back arrow — not
+     window chrome). -->
+<div class="overlay changelog-overlay" id="changelog-overlay" hidden role="dialog" aria-modal="true"
      aria-label="Was hat sich geändert?" data-i18n-aria-label="changelog.title">
-  <div class="changelog-panel">
-    <header class="changelog-head">
-      <div class="changelog-head-text">
-        <h1 class="changelog-title" data-i18n="changelog.title">Was hat sich geändert?</h1>
+  <div class="overlay-panel">
+    <header class="overlay-head">
+      <div class="overlay-head-text">
+        <h1 class="overlay-title" data-i18n="changelog.title">Was hat sich geändert?</h1>
         <nav class="changelog-crumbs" aria-label="Frühere Versionen"
              data-i18n-aria-label="changelog.versions"></nav>
       </div>
-      <button class="changelog-close" title="Schließen" aria-label="Schließen"
+      <button class="overlay-close" title="Schließen" aria-label="Schließen"
               data-i18n-title="changelog.close" data-i18n-aria-label="changelog.close">
         <svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
       </button>
     </header>
-    <div class="changelog-scroll">
+    <div class="overlay-scroll">
       <article class="changelog-body"></article>
+    </div>
+  </div>
+</div>
+
+<!-- News-sources overlay: opened by the "News" tag on a headline row, lists
+     the external articles (title + publisher + time, links open in the OS
+     browser) the line's subject carried at compose time. Same skeleton as
+     the changelog overlay, compact panel. -->
+<div class="overlay news-src-overlay" id="news-sources-overlay" hidden role="dialog" aria-modal="true"
+     aria-label="Nachrichtenquellen" data-i18n-aria-label="reddit.news.sources.title">
+  <div class="overlay-panel overlay-panel-sm">
+    <header class="overlay-head">
+      <div class="overlay-head-text">
+        <h1 class="overlay-title" data-i18n="reddit.news.sources.title">Nachrichtenquellen</h1>
+        <p class="news-src-headline"></p>
+      </div>
+      <button class="overlay-close" title="Schließen" aria-label="Schließen"
+              data-i18n-title="overlay.close" data-i18n-aria-label="overlay.close">
+        <svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+      </button>
+    </header>
+    <div class="overlay-scroll">
+      <ul class="news-src-list"></ul>
     </div>
   </div>
 </div>
