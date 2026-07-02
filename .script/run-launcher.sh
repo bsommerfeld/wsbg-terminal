@@ -14,4 +14,4 @@ mvn clean install -pl updater,launcher -am -DskipTests
 export WSBG_SETUP_SCRIPT_DIR="$PWD/.script"
 
 echo "Starting Launcher (setup scripts from $WSBG_SETUP_SCRIPT_DIR)..."
-java -jar launcher/target/launcher-1.0.0.jar "$@"
+java -jar launcher/target/launcher-*.jar "$@"

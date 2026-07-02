@@ -85,6 +85,25 @@ public class SwingCefBrowser extends CefBrowser_N implements CefRenderHandler {
     private final RenderPanel panel_;
     private boolean justCreated_ = false;
     private final Rectangle browser_rect_ = new Rectangle(0, 0, 1, 1); // CEF issue #1437.
+
+    // Live-resize signal gate. componentResized fires per AWT event (well
+    // above 60/s during a macOS live resize) and every wasResized queues a
+    // full re-layout + re-raster of the page in the renderer. Signalled
+    // unthrottled, an excessive drag puts the renderer SECONDS behind: after
+    // release a stale frame sits on screen until the backlog drains, and
+    // further resizing only lengthens the queue. So at most ONE resize render
+    // is ever in flight — newer sizes coalesce into resizePendingSignal_ and
+    // go out when the previous frame arrives (getViewRect reads the live
+    // browser_rect_, so a coalesced signal still renders the NEWEST size, and
+    // the pending signal guarantees the final size always renders). The
+    // timeout frees the gate when CEF never delivers a size-changed frame
+    // (size unchanged, frame coalesced away) so it can't wedge shut.
+    // All three fields are EDT-confined.
+    private static final int RESIZE_ACK_TIMEOUT_MS = 250;
+    private boolean resizeSignalInFlight_;
+    private boolean resizePendingSignal_;
+    private final javax.swing.Timer resizeAckTimeout_ =
+            new javax.swing.Timer(RESIZE_ACK_TIMEOUT_MS, e -> resizeUnblocked());
     private Point screenPoint_ = new Point(0, 0);
     private double scaleFactor_ = 1.0;
     private final boolean isTransparent_;
@@ -109,6 +128,7 @@ public class SwingCefBrowser extends CefBrowser_N implements CefRenderHandler {
         wheelScrollPolicy_ = wheelScrollPolicy != null
                 ? wheelScrollPolicy : new PassthroughWheelScrollPolicy();
         panel_ = new RenderPanel();
+        resizeSettleTimer_.setRepeats(false);
         wireInput();
     }
 
@@ -271,7 +291,24 @@ public class SwingCefBrowser extends CefBrowser_N implements CefRenderHandler {
             screenPoint_ = panel_.getLocationOnScreen();
         }
         scaleFactor_ = currentScale();
+    }
+
+    private void signalResize() {
+        resizeSettleTimer_.stop();
+        lastResizeSignalMs_ = System.currentTimeMillis();
         wasResized(browser_rect_.width, browser_rect_.height);
+    }
+
+    // Geometry always tracks the live size (getViewRect reads browser_rect_);
+    // only the expensive wasResized re-raster is throttled. The settle timer
+    // guarantees a trailing signal at the final size after the last event.
+    private void onLiveResize() {
+        refreshGeometry();
+        if (System.currentTimeMillis() - lastResizeSignalMs_ >= RESIZE_SIGNAL_INTERVAL_MS) {
+            signalResize();
+        } else {
+            resizeSettleTimer_.restart();
+        }
     }
 
     private void wireInput() {
@@ -311,7 +348,7 @@ public class SwingCefBrowser extends CefBrowser_N implements CefRenderHandler {
             }
         });
         panel_.addComponentListener(new ComponentAdapter() {
-            @Override public void componentResized(ComponentEvent e) { refreshGeometry(); }
+            @Override public void componentResized(ComponentEvent e) { onLiveResize(); }
             @Override public void componentMoved(ComponentEvent e) {
                 if (panel_.isShowing()) screenPoint_ = panel_.getLocationOnScreen();
             }
@@ -393,6 +430,7 @@ public class SwingCefBrowser extends CefBrowser_N implements CefRenderHandler {
         private VolatileImage vram_;
         private final Rectangle vramDirty_ = new Rectangle(); // device px pending upload
         private boolean vramFull_ = true;                     // full re-upload needed
+        private boolean resizeFrame_ = false;                 // buffer size just changed
 
         RenderPanel() {
             setOpaque(true);
@@ -482,6 +520,10 @@ public class SwingCefBrowser extends CefBrowser_N implements CefRenderHandler {
                             (int) Math.ceil(devicePx.height / s)), 2);
                 } else {
                     // First frame, resize, or an unusable dirty list → full copy.
+                    if (image_ == null || image_.getWidth() != width
+                            || image_.getHeight() != height) {
+                        resizeFrame_ = true;
+                    }
                     image_ = blit(image_, src, width, height);
                     vramFull_ = true;
                 }
@@ -544,9 +586,21 @@ public class SwingCefBrowser extends CefBrowser_N implements CefRenderHandler {
             GraphicsConfiguration gc = getGraphicsConfiguration();
             if (gc == null) return image_;
             if (vram_ == null || vram_.getWidth() != w || vram_.getHeight() != h) {
+                // A live resize delivers a NEW buffer size on every frame —
+                // recreating the volatile surface + a full upload per frame is
+                // slower than the plain unmanaged draw ever was (the content
+                // visibly trails the window edge). Draw image_ directly for
+                // size-changing frames and rebuild the mirror once, on the
+                // first stable-size paint after the drag settles.
+                if (resizeFrame_) {
+                    resizeFrame_ = false;
+                    return image_;
+                }
                 if (vram_ != null) vram_.flush();
                 vram_ = createVolatileImage(w, h);
                 vramFull_ = true;
+            } else {
+                resizeFrame_ = false;
             }
             if (vram_ == null) return image_;
             int state = vram_.validate(gc);
