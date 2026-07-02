@@ -32,6 +32,13 @@ public class UserConfig {
             + "Feeds the footer donation banner's personalised reciprocity copy.")
     private long activeMillis = 0;
 
+    @Key("last-seen-changelog-version")
+    @Comment("Version tag whose release notes were already shown in the "
+            + "'Was hat sich geändert' overlay. Differs from the installed version "
+            + "after an update, which opens the overlay once; closing it stores the "
+            + "installed version here. Empty = fresh install (set silently, no overlay).")
+    private String lastSeenChangelogVersion = "";
+
     @Key("last-data-clear-epoch")
     @Comment("Epoch seconds of the last 'Daten löschen' (full terminal wipe). The "
             + "button is gated to once per 10 minutes so a mis-click can't wipe and "
@@ -111,6 +118,14 @@ public class UserConfig {
 
     public void setActiveMillis(long activeMillis) {
         this.activeMillis = activeMillis;
+    }
+
+    public String getLastSeenChangelogVersion() {
+        return lastSeenChangelogVersion;
+    }
+
+    public void setLastSeenChangelogVersion(String lastSeenChangelogVersion) {
+        this.lastSeenChangelogVersion = lastSeenChangelogVersion;
     }
 
     public long getLastDataClearEpoch() {

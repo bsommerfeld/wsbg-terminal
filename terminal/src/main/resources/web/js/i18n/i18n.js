@@ -48,6 +48,11 @@ const DICT = {
     'settings.headlines.redund.name': 'Wiederholungen filtern',
     'settings.headlines.redund.hint': 'Unterdrückt wiederholte Stories ohne echte Neuigkeit.',
     'settings.headlines.redund.more': 'Aus = strikte 1:1-Spiegelung: jedes Signal schreibt eine Zeile, auch doppelt. Die erste Zeile eines Subjekts kommt immer.',
+    // --- changelog overlay ---
+    'changelog.title': 'Was hat sich geändert?',
+    'changelog.close': 'Schließen',
+    'changelog.versions': 'Frühere Versionen',
+
     'settings.language.title': 'Sprache',
     'settings.language.name': 'Anzeigesprache',
     'settings.language.hint': 'Wird sofort übernommen.',
@@ -140,6 +145,11 @@ const DICT = {
     'settings.headlines.redund.name': 'Filter repeats',
     'settings.headlines.redund.hint': 'Suppresses repeated stories that carry no real news.',
     'settings.headlines.redund.more': "Off = strict 1:1 mirror: every signal writes a line, even a duplicate. A subject's first line always comes through.",
+    // --- changelog overlay ---
+    'changelog.title': "What's changed?",
+    'changelog.close': 'Close',
+    'changelog.versions': 'Previous versions',
+
     'settings.language.title': 'Language',
     'settings.language.name': 'Display language',
     'settings.language.hint': 'Applied immediately.',

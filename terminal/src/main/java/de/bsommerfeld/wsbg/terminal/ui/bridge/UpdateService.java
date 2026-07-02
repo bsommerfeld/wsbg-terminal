@@ -121,8 +121,11 @@ public final class UpdateService {
         hub.broadcast("update-available", m);
     }
 
-    /** Reads the installed version tag the launcher wrote to {@code version.txt}. */
-    private static String readLocalVersion() {
+    /**
+     * Reads the installed version tag the launcher wrote to {@code version.txt}.
+     * Package-private: {@link ChangelogBridge} shares it for its fresh-update check.
+     */
+    static String readLocalVersion() {
         try {
             Path vf = StorageUtils.getAppDataDir().resolve("version.txt");
             if (!Files.exists(vf)) return null;

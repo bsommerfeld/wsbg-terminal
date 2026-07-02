@@ -23,6 +23,7 @@ Das WSBG Terminal ist eure Kommandozentrale für [**r/wallstreetbetsGER**](https
 | **Fear & Greed-Tacho** | CNNs FEAR-and-GREED-Index als Tacho im Reddit-Header, damit ihr wisst, ob eure FOMO wenigstens Gesellschaft hat.                                               |
 | **Live News-Ticker** | Financial Juice & EUR/USD-Kurs laufen direkt mit - damit ihr wisst, warum euer Depot blutet, noch bevor es im Subreddit steht.                                 |
 | **Marktzeiten**      | Internationale Marktzeiten samt Urlaubstage direkt in der Fußnote. Wahre Affen wissen wann sie liquidiert werden.                                              |
+| **Update-Ansage**    | Nach jedem Update zeigt euch das Terminal einmal, was neu ist - Release Notes samt Bildern direkt in der App, ohne dass ihr GitHub lesen müsst.                |
 | **100 % Lokal**      | Die KI läuft komplett auf eurer Kiste. Keine Cloud, kein Abo, kein fremder Mensch - eure Verluste bleiben streng privat.                                       |
 
 ### 📸 Loss Porn (Visuals)

@@ -5,6 +5,7 @@ import { Socket } from './bridge/socket.js';
 import { initTitlebar } from './chrome/titlebar.js';
 import { initTheme, setSystemAppearance } from './chrome/theme.js';
 import { initSettings } from './chrome/settings.js';
+import { initChangelog } from './chrome/changelog.js';
 import { initFooter } from './chrome/footer.js';
 import { setDonationStats } from './chrome/slider.js';
 import { initDonate } from './chrome/donate.js';
@@ -114,6 +115,7 @@ socket.on('os-appearance', payload => {
 
 initTheme();
 initSettings(socket);
+initChangelog(socket);
 initTitlebar(socket);
 initFooter();
 initDonate();

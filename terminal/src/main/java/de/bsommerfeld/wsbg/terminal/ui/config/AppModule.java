@@ -36,6 +36,7 @@ import de.bsommerfeld.wsbg.terminal.ui.CefHost;
 import de.bsommerfeld.wsbg.terminal.ui.TimeTracker;
 import de.bsommerfeld.wsbg.terminal.ui.net.CefWebFetcher;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.ArchiveQueryBridge;
+import de.bsommerfeld.wsbg.terminal.ui.bridge.ChangelogBridge;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.CommandBridge;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.DonationStatsPublisher;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.EurUsdPublisher;
@@ -166,6 +167,10 @@ public class AppModule extends AbstractModule {
             // counterpart to the launcher's auto-update opt-out. Eager so its
             // hub handlers + the periodic check are live from boot.
             bind(UpdateService.class).asEagerSingleton();
+            // "Was hat sich geändert" overlay: pushes the GitHub release notes
+            // once after a fresh update (installed version ≠ last seen). Eager so
+            // its hub handlers exist before the first client connects.
+            bind(ChangelogBridge.class).asEagerSingleton();
 
             // OSR wheel-scroll seam (see ui/scroll/). The off-screen browser gets
             // no native OS wheel message, so we re-scale the AWT delta: precise
