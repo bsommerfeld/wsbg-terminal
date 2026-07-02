@@ -298,6 +298,149 @@ class SubjectAttributorTest {
                 "the comment's unlabelled image rides along on the comment that named NVIDIA");
     }
 
+    // ---- Consolidation: ONE primary per event, co-subjects demoted to context ----
+
+    @Test
+    void onlyTheTitleNamedInstrumentComposes_coSubjectsAccumulateAsNamedContext() {
+        long now = System.currentTimeMillis() / 1000;
+        var thread = new RedditThread("t3_1", "wsb", "D-Wave nach NSF-Förderung +18%", "op",
+                "QBTS läuft nach der Förderzusage", now, "/p", 50, 0.95, 2, now, null);
+        var c1 = new RedditComment("t1_a", "t3_1", "t3_1", "ape",
+                "Die National Science Foundation pumpt richtig Geld rein", 5, now, now, now);
+        var c2 = new RedditComment("t1_b", "t3_1", "t3_1", "ape",
+                "Chips and Science Act macht das möglich, D-Wave profitiert", 3, now, now, now);
+        var repository = mock(RedditRepository.class);
+        when(repository.getThread("t3_1")).thenReturn(thread);
+        when(repository.getCommentsForThread("t3_1", 0)).thenReturn(List.of(c1, c2));
+        var brain = mock(AgentBrain.class);
+        when(brain.describeImageIfCached(org.mockito.ArgumentMatchers.anyString())).thenReturn("");
+
+        var cluster = new InvestigationCluster(thread, Embedding.from(new float[768]));
+        var registry = new SubjectRegistry();
+        new SubjectAttributor(repository, brain).attribute(registry, cluster, List.of(
+                instrument("D-Wave", "D-Wave Quantum Inc.", "QBTS"),
+                new ResolvedSubject("National Science Foundation", "National Science Foundation",
+                        null, null, List.of(), List.of(), false),
+                new ResolvedSubject("Chips and Science Act", "Chips and Science Act",
+                        null, null, List.of(), List.of(), false)));
+
+        // Only the event's primary (title-named + tradeable) is dirty — one headline per event.
+        assertEquals(Set.of("QBTS"), registry.drainDirty(), "only the primary composes");
+        // The co-subjects still became units and accumulated their evidence feed-wide.
+        assertNotNull(registry.get("name:national science foundation"));
+        assertNotNull(registry.get("name:chips and science act"));
+        // The primary's brief carries the co-subject mentions as NAMED context.
+        SubjectUnit qbts = registry.get("QBTS");
+        assertTrue(qbts.evidence().stream().anyMatch(e -> "reddit-context".equals(e.source())
+                        && e.snippet().startsWith("[National Science Foundation]")),
+                "the co-subject's mention rides on the primary as named context");
+    }
+
+    @Test
+    void picksThread_eachTradeableOwnMentionComposesItsOwnStory() {
+        // "Sagt mir eure Invests": AMD has its OWN comment the primary doesn't share —
+        // an independent pick, so it composes too (the quiet one-liner is the gem).
+        long now = System.currentTimeMillis() / 1000;
+        var thread = new RedditThread("t3_1", "wsb", "Was kauft ihr diese Woche?", "op", "", now,
+                "/p", 10, 0.9, 3, now, null);
+        var c1 = new RedditComment("t1_a", "t3_1", "t3_1", "ape", "Nvidia, ganz klar", 5, now, now, now);
+        var c2 = new RedditComment("t1_b", "t3_1", "t3_1", "ape", "Nvidia vor den Earnings", 2, now, now, now);
+        var c3 = new RedditComment("t1_c", "t3_1", "t3_1", "ape", "AMD ist günstiger", 1, now, now, now);
+        var repository = mock(RedditRepository.class);
+        when(repository.getThread("t3_1")).thenReturn(thread);
+        when(repository.getCommentsForThread("t3_1", 0)).thenReturn(List.of(c1, c2, c3));
+        var brain = mock(AgentBrain.class);
+        when(brain.describeImageIfCached(org.mockito.ArgumentMatchers.anyString())).thenReturn("");
+
+        var cluster = new InvestigationCluster(thread, Embedding.from(new float[768]));
+        var registry = new SubjectRegistry();
+        new SubjectAttributor(repository, brain).attribute(registry, cluster, List.of(
+                instrument("Nvidia", "NVIDIA Corporation", "NVDA"),
+                instrument("AMD", "Advanced Micro Devices, Inc.", "AMD")));
+
+        assertEquals(Set.of("NVDA", "AMD"), registry.drainDirty(),
+                "the primary AND the own-pick co-subject compose — a picks thread is a container of stories");
+        assertTrue(registry.get("NVDA").evidence().stream().anyMatch(
+                        e -> "reddit-context".equals(e.source()) && e.snippet().startsWith("[AMD]")),
+                "the AMD mention still rides on the primary as named context");
+    }
+
+    @Test
+    void modelPrimaryOverridesTheHeuristic_evenWhenNotTradeable() {
+        // Extraction read the whole thread and named the NON-tradeable protagonist.
+        // The heuristic would pick the more-mentioned instrument — the model wins.
+        long now = System.currentTimeMillis() / 1000;
+        var thread = new RedditThread("t3_1", "wsb", "Spritpreise explodieren wieder", "op", "", now,
+                "/p", 10, 0.9, 2, now, null);
+        var c1 = new RedditComment("t1_a", "t3_1", "t3_1", "ape",
+                "Diesel bei 1,90, tanke nur noch nachts", 5, now, now, now);
+        var c2 = new RedditComment("t1_b", "t3_1", "t3_1", "ape",
+                "Shell verdient sich dumm daran, Shell long, Shell!", 3, now, now, now);
+        var repository = mock(RedditRepository.class);
+        when(repository.getThread("t3_1")).thenReturn(thread);
+        when(repository.getCommentsForThread("t3_1", 0)).thenReturn(List.of(c1, c2));
+        var brain = mock(AgentBrain.class);
+        when(brain.describeImageIfCached(org.mockito.ArgumentMatchers.anyString())).thenReturn("");
+
+        var cluster = new InvestigationCluster(thread, Embedding.from(new float[768]));
+        var registry = new SubjectRegistry();
+        new SubjectAttributor(repository, brain).attribute(registry, cluster, List.of(
+                instrument("Shell", "Shell plc", "SHEL"),
+                new ResolvedSubject("Diesel", "Diesel", null, null, List.of(), List.of(), false)),
+                "Diesel");
+
+        assertTrue(registry.drainDirty().contains("name:diesel"),
+                "the model's protagonist composes, tradeable or not");
+    }
+
+    @Test
+    void phantomModelPrimaryFallsBackToTheHeuristic() {
+        long now = System.currentTimeMillis() / 1000;
+        var thread = new RedditThread("t3_1", "wsb", "Nvidia läuft", "op", "", now,
+                "/p", 10, 0.9, 1, now, null);
+        var c1 = new RedditComment("t1_a", "t3_1", "t3_1", "ape", "Nvidia knallt", 5, now, now, now);
+        var repository = mock(RedditRepository.class);
+        when(repository.getThread("t3_1")).thenReturn(thread);
+        when(repository.getCommentsForThread("t3_1", 0)).thenReturn(List.of(c1));
+        var brain = mock(AgentBrain.class);
+        when(brain.describeImageIfCached(org.mockito.ArgumentMatchers.anyString())).thenReturn("");
+
+        var cluster = new InvestigationCluster(thread, Embedding.from(new float[768]));
+        var registry = new SubjectRegistry();
+        // The model claims a primary nothing in the thread evidences → heuristic decides.
+        new SubjectAttributor(repository, brain).attribute(registry, cluster,
+                List.of(instrument("Nvidia", "NVIDIA Corporation", "NVDA")), "Quantum Hype AG");
+
+        assertEquals(Set.of("NVDA"), registry.drainDirty(),
+                "an evidence-less model pick never becomes a phantom primary");
+    }
+
+    @Test
+    void coInstrumentSharingAllEvidenceWithThePrimaryStaysSilent() {
+        // "Juli-Saisonalität bei Apple und Microsoft": both title-named, both in the
+        // same comment — ONE story, so only the primary composes (no near-dup pair).
+        long now = System.currentTimeMillis() / 1000;
+        var thread = new RedditThread("t3_1", "wsb", "Juli-Saisonalität bei Apple und Microsoft",
+                "op", "", now, "/p", 10, 0.9, 1, now, null);
+        var c1 = new RedditComment("t1_a", "t3_1", "t3_1", "ape",
+                "Apple und Microsoft sind der Free-Money-Glitch im Juli", 5, now, now, now);
+        var repository = mock(RedditRepository.class);
+        when(repository.getThread("t3_1")).thenReturn(thread);
+        when(repository.getCommentsForThread("t3_1", 0)).thenReturn(List.of(c1));
+        var brain = mock(AgentBrain.class);
+        when(brain.describeImageIfCached(org.mockito.ArgumentMatchers.anyString())).thenReturn("");
+
+        var cluster = new InvestigationCluster(thread, Embedding.from(new float[768]));
+        var registry = new SubjectRegistry();
+        new SubjectAttributor(repository, brain).attribute(registry, cluster, List.of(
+                instrument("Apple", "Apple Inc.", "AAPL"),
+                instrument("Microsoft", "Microsoft Corporation", "MSFT")));
+
+        assertEquals(Set.of("AAPL"), registry.drainDirty(),
+                "same title + same comment = same story → one headline, not two near-dups");
+        assertNotNull(registry.get("MSFT"), "the co-subject still accumulates its evidence");
+    }
+
     @Test
     void imageNamingNothingOnAPostNamingNothingIsNotAttributed() {
         // No phantom: an off-topic image on a post that never names the subject must

@@ -10,12 +10,11 @@
 
 import { highlightTickers, highlightSubjects } from '../format/ticker.js';
 
-// Gold subject highlight is OFF until subject CONSOLIDATION lands. Today a single event
-// over-extracts into several subjects (e.g. D-Wave + National Science Foundation + Chips
-// and Science Act all headline the same funding story), and the unit's canonical name is
-// the legal one ("Salesforce, Inc.") while the line uses the short form — so the gild is
-// inconsistent and sometimes absent. Flip to true once one event == one clean subject.
-const GOLD_SUBJECTS = false;
+// Gold subject highlight — LIVE since subject CONSOLIDATION (2026-07-01): one event now
+// composes exactly ONE headline under its primary subject, and the backend gilds the
+// longest form of the subject's name the line actually wrote (HeadlineWriter.displayFormIn,
+// so "Salesforce, Inc." gilds "Salesforce"), which is what makes the glow consistent.
+const GOLD_SUBJECTS = true;
 import { colorizeSignedNumbers } from '../format/numbers.js';
 import { fmtClock } from '../format/time.js';
 import { t, currentLang } from '../i18n/i18n.js';
@@ -118,11 +117,13 @@ function rowKey(h) {
 }
 
 function toRow(h, isNew) {
-  // Both escape internally + emit <span>s. Subject gild is gated off (see GOLD_SUBJECTS)
-  // until consolidation makes one event == one clean subject; until then, the ticker cue.
+  // Both escape internally + emit <span>s. The subject gild carries the row when the
+  // backend resolved a name form in the line (see GOLD_SUBJECTS); a row without one
+  // (no ticker, or the line never wrote the name) keeps the plain ticker cue.
   const head = colorizeSignedNumbers(
-    GOLD_SUBJECTS ? highlightSubjects(h.headline, h.subjects)
-                  : highlightTickers(h.headline, h.tickerSymbol));
+    GOLD_SUBJECTS && Array.isArray(h.subjects) && h.subjects.length
+      ? highlightSubjects(h.headline, h.subjects)
+      : highlightTickers(h.headline, h.tickerSymbol));
 
   const classes = ['row'];
   const cls = HIGHLIGHT_CLASS[h.highlight];

@@ -324,4 +324,19 @@ class EditorialAgentTest {
     void parseDraftReturnsNullForGarbage() {
         assertNull(EditorialAgent.parseDraft("ich kann das leider nicht beantworten"));
     }
+
+    // ---- news coverage is earned by USE: token overlap = "konkret eingewoben" ----
+
+    @org.junit.jupiter.api.Test
+    void newsIsCoveredOnlyWhenTheLineActuallyWoveItIn() {
+        var n = new de.bsommerfeld.wsbg.terminal.source.RawNewsItem("u1",
+                "Meta Wolf AG: Wandlung zu CERAM TECH abgeschlossen",
+                "wso", "https://x", null, java.util.List.of());
+        org.junit.jupiter.api.Assertions.assertTrue(EditorialAgent.headlineReflectsNews(
+                "Meta Wolf AG springt +25,8 % nach der abgeschlossenen Wandlung zu CERAM TECH", n),
+                "the line names the event's players → woven in");
+        org.junit.jupiter.api.Assertions.assertFalse(EditorialAgent.headlineReflectsNews(
+                "Affen feiern den kleinen Keramik-Laden, alle wollen rein", n),
+                "a sentiment-only line leaves the item fresh for the next compose");
+    }
 }

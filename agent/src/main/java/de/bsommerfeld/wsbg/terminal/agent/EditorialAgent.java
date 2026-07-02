@@ -84,23 +84,27 @@ public class EditorialAgent {
 
     /**
      * When a cluster carries more than this many comments, subject extraction is
-     * run in batches of this size and the names unioned — a long single brief made
-     * the 4B model emit a malformed/truncated subjects array (or overrun num_ctx),
-     * losing the whole thread. Smaller batches keep each output array short and
-     * reliable; no comment is dropped (every batch is extracted, names deduped).
+     * run in batches of this size and the names unioned; no comment is dropped
+     * (every batch is extracted, names deduped). This is a num_ctx overflow guard
+     * for monster threads now, NOT a degeneration guard: the old tight thresholds
+     * (25 comments / 2 800 chars) dated from the hidden-thinking era, where the
+     * invisible reasoning ate the token budget and long briefs came back
+     * blank/truncated. With think=false the model enumerates a 48-name watchlist
+     * from a single 12k-char brief cleanly (verified 2026-07-01) — which also
+     * fixed the "under-extraction of long ticker lists" quality gap that the
+     * chunking itself was causing.
      */
-    private static final int EXTRACT_CHUNK_SIZE = 25;
+    private static final int EXTRACT_CHUNK_SIZE = 80;
 
     /**
      * A single extraction call over a brief larger than this is chunked even if the
-     * comment COUNT is small — a handful of LONG comments (or a big vision transcript)
-     * still overflows the 4B model into a degenerate blank reply (the same failure the
-     * per-count chunking guards, just triggered by length instead of count).
+     * comment COUNT is small — purely to stay well inside num_ctx (12 000 chars
+     * ≈ 3k tokens + ~800 system + 768 reply ≪ 8192). Validated live at this size.
      */
-    private static final int EXTRACT_CHAR_BUDGET = 2800;
+    private static final int EXTRACT_CHAR_BUDGET = 12_000;
 
     /** Max characters of COMMENT text per extraction chunk (the shared preamble rides on top). */
-    private static final int EXTRACT_CHUNK_CHARS = 1800;
+    private static final int EXTRACT_CHUNK_CHARS = 9_000;
 
     /**
      * Extra compose attempts when a subject with NO prior headline comes back empty. 1:1 mirror:
@@ -128,6 +132,8 @@ public class EditorialAgent {
     private final TickerResolver tickerResolver;
     private final HeadlineWriter headlineWriter;
     private final SubjectAttributor attributor;
+    /** Shared embedding seam — powers the semantic near-duplicate guard here (and tier-2 resolution). */
+    private final EmbeddingService embeddings;
     /** Feed-wide subject store — the editorial atom in prod after the #2 cutover. */
     private final SubjectRegistry subjectRegistry;
     /**
@@ -171,6 +177,7 @@ public class EditorialAgent {
         this.tickerResolver = new TickerResolver(yahooFinance, embeddings); // Tier 2 enabled
         this.headlineWriter = new HeadlineWriter(agentRepository, eventBus);
         this.attributor = new SubjectAttributor(redditRepository, brain);
+        this.embeddings = embeddings;
         this.subjectRegistry = subjectRegistry;
         this.config = config;
     }
@@ -233,9 +240,23 @@ public class EditorialAgent {
         String brief = reportBuilder.buildReportData(
                 cluster, List.of(), brain.getUserLanguage().code());
         Subjects subjects = extractSubjects(model, cluster, brief);
+        // The MODEL's event cut: extraction names the protagonist ({primary}) itself —
+        // it read the whole thread, so its judgment beats the title/tradeable/count
+        // heuristic. Stash the hint for the attribution half (same-cluster prep is
+        // single-flight, so this simple handoff map is race-free).
+        if (subjects.primaryName().isEmpty()) {
+            primaryHints.remove(clusterId);
+        } else {
+            // Canonicalized like the resolver canonicalizes each query, so the
+            // attribution-side match compares like with like.
+            primaryHints.put(clusterId, WsbgJargon.canonicalize(subjects.primaryName()));
+        }
         int[] relatedAlloc = distributeRelated(subjects.names().size(), RELATED_BUDGET, RELATED_PER_SUBJECT);
         return tickerResolver.resolveAll(subjects.names(), relatedAlloc);
     }
+
+    /** Per-cluster primary-subject hint from extraction, consumed by {@link #attributeResolved}. */
+    private final Map<String, String> primaryHints = new ConcurrentHashMap<>();
 
     /**
      * Step 3b — the registry-mutating half of {@link #attributeCluster}: folds the
@@ -249,7 +270,7 @@ public class EditorialAgent {
         if (resolved == null) return;
         InvestigationCluster cluster = clusterRegistry.getCluster(clusterId);
         if (cluster == null) return;
-        attributor.attribute(registry, cluster, resolved);
+        attributor.attribute(registry, cluster, resolved, primaryHints.remove(clusterId));
     }
 
     /**
@@ -420,6 +441,14 @@ public class EditorialAgent {
             if (Double.isFinite(s.dayChangePercent())) {
                 sb.append(lbl.dayMove(s.dayChangePercent()));
             }
+            // Multi-day arc (L&S series=history): 5-day + 1-month move and the gap to
+            // the 52-week high — raw numbers, no reading. This is what lets the model
+            // tell "ran for days, corrects today" from a plain red day, and gives the
+            // RUNNER/BREAKOUT/EXTREME_DIRECTION triggers verified data to stand on.
+            Double offHigh = (s.hasPrice() && Double.isFinite(s.fiftyTwoWeekHigh())
+                    && s.fiftyTwoWeekHigh() > 0 && s.price() < s.fiftyTwoWeekHigh())
+                    ? (s.price() - s.fiftyTwoWeekHigh()) / s.fiftyTwoWeekHigh() * 100.0 : null;
+            sb.append(lbl.trend(s.changeOverTradingDays(5), s.changeOverTradingDays(21), offHigh));
             // Off-hours honesty: a quote older than 30 min is a last close, not live.
             long quoteAge = now.getEpochSecond() - s.marketTimeEpochSeconds();
             if (s.marketTimeEpochSeconds() > 0 && quoteAge > 1800) {
@@ -444,14 +473,22 @@ public class EditorialAgent {
         // Old items are kept (no fresh news is also a situation worth reporting
         // from) but tagged STALE so they're never sold as a fresh catalyst.
         List<RawNewsItem> freshNews = new ArrayList<>();
+        List<RawNewsItem> toldNews = new ArrayList<>();
         for (RawNewsItem n : unit.news()) {
             // News coverage is OFF by default: news enriches freely and may back
             // several headlines on a topic (it's cached, so reuse is free). Only when
             // explicitly enabled do we hide a unit's already-cited news.
             if (!newsCoverageEnabled || !unit.isNewsCovered(n.uuid())) freshNews.add(n);
+            else toldNews.add(n);
         }
-        if (!freshNews.isEmpty()) {
+        if (!freshNews.isEmpty() || !toldNews.isEmpty()) {
             sb.append(lbl.newsHeader());
+            // Already-woven items stay VISIBLE — a known fact remains the anchor the
+            // room's next development hangs on — but compact (title only) and tagged,
+            // so it frames the next line without being re-sold as fresh news.
+            for (RawNewsItem n : toldNews) {
+                sb.append("  - ").append(lbl.newsToldTag()).append(' ').append(n.title()).append('\n');
+            }
             for (RawNewsItem n : freshNews) {
                 sb.append("  - [news:").append(n.uuid() == null || n.uuid().isBlank() ? "?" : n.uuid()).append("] ");
                 if (n.publishedAt() != null) {
@@ -712,6 +749,21 @@ public class EditorialAgent {
             u.markComposedAt(composedV);
             return false;
         }
+        // Semantic near-duplicate guard (2026-07-01): the 4B model sometimes re-words
+        // an already-published line as a fresh NEW instead of returning the
+        // redundant-empty (live: two "Absturz trifft die überbewerteten KI-Giganten
+        // wie Nvidia" lines ~70 s apart) — token-Jaccard misses the paraphrase,
+        // embeddings don't. A line semantically ≥ SEMANTIC_DUP_SIM to a recent prior
+        // AND carrying no number the prior didn't (a fresh figure IS a development)
+        // is the same story re-worded → treated like a deliberate redundant-empty.
+        // Skipped in strict 1:1 mode, like the writer's own guard.
+        if (config.getHeadlines().isSuppressRedundant()
+                && isSemanticRepeat(d.headline(), u.headlines())) {
+            LOG.info("[COMPOSE] semantic near-duplicate for unit {} — dropped (same story re-worded)", u.id);
+            composeRetries.remove(u.id);
+            u.markComposedAt(composedV);
+            return false;
+        }
         // News-enriched is DETERMINISTIC: a headline counts as news-enriched when its
         // SubjectUnit actually carried ≥1 attached news item at compose time — NOT when
         // the 4B model happened to cite one in sourceNewsIds (which it rarely does, so
@@ -723,8 +775,61 @@ public class EditorialAgent {
                 config.getHeadlines().isSuppressRedundant())) {
             composeRetries.remove(u.id); // story moved on → fresh retry budget
             u.addHeadline(d.headline(), ud.isUpdate(), d.sentiment());
-            u.markNewsCovered(ud.citedNewsIds());
+            // News coverage is DETERMINISTIC and PER UNIT — and only earned by USE:
+            // an item counts as covered when the published line actually WOVE IT IN
+            // (significant-token overlap between line and news title/summary — the
+            // "konkret eingewoben" test). A sentiment-only line leaves its news fresh
+            // for the next compose; a unit's next line then orients on its prior
+            // headlines instead of re-milking the same item. Another unit pulling the
+            // same news item is untouched (covered ids live on the unit). The old
+            // model-cited sourceNewsIds died with the slim output; the woven-in check
+            // is exact where a 4B citation never was.
+            u.markNewsCovered(u.news().stream()
+                    .filter(n -> headlineReflectsNews(d.headline(), n))
+                    .map(de.bsommerfeld.wsbg.terminal.source.RawNewsItem::uuid)
+                    .filter(Objects::nonNull).toList());
             return true;
+        }
+        return false;
+    }
+
+    /** Similarity above which a new line counts as the same story re-worded. */
+    static final double SEMANTIC_DUP_SIM = 0.92;
+    /** Only priors this recent are compared — an old story may legitimately resurface. */
+    private static final long SEMANTIC_DUP_WINDOW_SECS = 1800;
+
+    /**
+     * True when {@code line} is a semantic re-word of one of the unit's recent
+     * headlines: embedding similarity ≥ {@link #SEMANTIC_DUP_SIM} against a prior
+     * from the last {@link #SEMANTIC_DUP_WINDOW_SECS}, UNLESS the new line carries
+     * a number the prior didn't — a fresh figure is a real development, never a
+     * re-word. Fail-open: an embedding error never blocks a publish.
+     */
+    private boolean isSemanticRepeat(String line, List<SubjectUnit.UnitHeadline> priors) {
+        if (embeddings == null || line == null || line.isBlank() || priors.isEmpty()) return false;
+        long now = Instant.now().getEpochSecond();
+        try {
+            for (int i = priors.size() - 1; i >= 0; i--) {
+                SubjectUnit.UnitHeadline prior = priors.get(i);
+                if (now - prior.atEpoch() > SEMANTIC_DUP_WINDOW_SECS) break; // list is chronological
+                if (hasNovelNumber(line, prior.text())) continue;
+                if (embeddings.similarity(line, prior.text()) >= SEMANTIC_DUP_SIM) return true;
+            }
+        } catch (Exception e) {
+            LOG.debug("semantic dup check failed (fail-open): {}", e.getMessage());
+        }
+        return false;
+    }
+
+    private static final Pattern NUMBER_TOKEN = Pattern.compile("\\d+(?:[.,]\\d+)?");
+
+    /** True when {@code line} contains a number token that {@code prior} does not. */
+    static boolean hasNovelNumber(String line, String prior) {
+        if (line == null) return false;
+        String p = prior == null ? "" : prior;
+        Matcher m = NUMBER_TOKEN.matcher(line);
+        while (m.find()) {
+            if (!p.contains(m.group())) return true;
         }
         return false;
     }
@@ -803,6 +908,36 @@ public class EditorialAgent {
         }
     }
 
+    /**
+     * The "konkret eingewoben" test: the published line reflects a news item when it
+     * shares at least {@link #NEWS_WOVEN_MIN_OVERLAP} significant tokens (length ≥ 4,
+     * umlaut-normalised) with the item's title+summary — company names, event words,
+     * figures. A sentiment-only line shares none and leaves the item uncovered.
+     * Package-private for testing.
+     */
+    static final int NEWS_WOVEN_MIN_OVERLAP = 2;
+
+    static boolean headlineReflectsNews(String headline, RawNewsItem n) {
+        if (headline == null || n == null) return false;
+        Set<String> line = significantTokens(headline);
+        Set<String> news = significantTokens(nz(n.title()) + " " + nz(n.summary()));
+        int overlap = 0;
+        for (String tok : line) {
+            if (news.contains(tok) && ++overlap >= NEWS_WOVEN_MIN_OVERLAP) return true;
+        }
+        return false;
+    }
+
+    private static Set<String> significantTokens(String s) {
+        Set<String> out = new java.util.HashSet<>();
+        for (String w : SubjectAttributor.deUmlaut(s).split("[^a-z0-9]+")) {
+            if (w.length() >= 4) out.add(w);
+        }
+        return out;
+    }
+
+    private static String nz(String s) { return s == null ? "" : s; }
+
     /** Elapsed milliseconds between two {@link System#nanoTime()} reads. */
     private static long ms(long startNanos, long endNanos) {
         return (endNanos - startNanos) / 1_000_000L;
@@ -842,31 +977,44 @@ public class EditorialAgent {
             // Common path: one call over the full rich brief (vision, poll,
             // covered-split all intact) — only when it's small enough to be safe.
             String text = extractChat(model, sys, brief);
-            List<String> out = dedupClean(parseSubjectNames(text));
+            Extraction ex = parseExtraction(text);
+            List<String> out = dedupClean(ex.names());
+            String primary = cleanSubjectName(ex.primary());
             if (out.isEmpty()) {
                 String raw = text == null ? "" : text.strip();
                 LOG.warn("[EXTRACT] 0 subjects — brief={} chars (~{} tok), system={} chars; raw reply: {}",
                         brief.length(), brief.length() / 4, sys.length(),
                         raw.length() > 400 ? raw.substring(0, 400) + "…" : raw);
             }
-            return new Subjects(out, out.size(), text);
+            return new Subjects(out, primary, out.size(), text);
         }
 
         // Many comments → batch the extraction so each output array stays short
-        // and reliable, then union the names. No comment is dropped.
+        // and reliable, then union the names. No comment is dropped. Each batch
+        // votes its own primary; the most-voted name wins (first-seen on a tie) —
+        // a monster thread is usually a container anyway, and the attribution
+        // heuristic (initial title) still backstops a bad vote.
         List<String> chunks = commentChunks(cluster, EXTRACT_CHUNK_SIZE);
         Map<String, String> union = new LinkedHashMap<>(); // lower-case key → first-seen spelling
+        Map<String, Integer> primaryVotes = new LinkedHashMap<>();
         for (String chunk : chunks) {
             String text = extractChat(model, sys, chunk);
-            for (String name : parseSubjectNames(text)) {
+            Extraction ex = parseExtraction(text);
+            for (String name : ex.names()) {
                 String clean = cleanSubjectName(name);
                 if (!clean.isEmpty()) union.putIfAbsent(clean.toLowerCase(Locale.ROOT), clean);
             }
+            String p = cleanSubjectName(ex.primary());
+            if (!p.isEmpty()) primaryVotes.merge(p.toLowerCase(Locale.ROOT), 1, Integer::sum);
         }
-        LOG.info("[EXTRACT] chunked {} comments into {} batch(es) → {} unique subject(s)",
-                comments, chunks.size(), union.size());
+        String primary = primaryVotes.entrySet().stream()
+                .max(Map.Entry.comparingByValue())
+                .map(e -> union.getOrDefault(e.getKey(), e.getKey()))
+                .orElse("");
+        LOG.info("[EXTRACT] chunked {} comments into {} batch(es) → {} unique subject(s), primary '{}'",
+                comments, chunks.size(), union.size(), primary);
         List<String> names = new ArrayList<>(union.values());
-        return new Subjects(names, names.size(), "<chunked: " + chunks.size() + " batch(es)>");
+        return new Subjects(names, primary, names.size(), "<chunked: " + chunks.size() + " batch(es)>");
     }
 
     /**
@@ -929,27 +1077,52 @@ public class EditorialAgent {
         return new ArrayList<>(seen.values());
     }
 
-    /** Strict parse of the subjects array, with a salvage pass for a broken/truncated reply. */
-    private List<String> parseSubjectNames(String text) {
+    /**
+     * The model's event cut out of one extraction reply: the {@code primary}
+     * (protagonist — the entity the headline will be about, tradeable or not) and
+     * {@code names} = primary first + every related subject. Both legacy shapes
+     * still parse: a bare {@code {"subjects":[…]}} yields an empty primary (the
+     * attribution heuristic then decides).
+     */
+    record Extraction(String primary, List<String> names) {
+        static final Extraction EMPTY = new Extraction("", List.of());
+    }
+
+    /** Strict parse of the extraction reply, with a salvage pass for a broken/truncated reply. */
+    private Extraction parseExtraction(String text) {
+        String primary = "";
         List<String> out = new ArrayList<>();
         JsonNode root = parseJson(text);
-        if (root != null && root.path("subjects").isArray()) {
+        if (root != null) {
+            primary = root.path("primary").asText("").trim();
+            if (!primary.isEmpty()) out.add(primary);
+            for (JsonNode s : root.path("related")) {
+                String name = s.asText("").trim();
+                if (!name.isEmpty()) out.add(name);
+            }
+            // Legacy shape ({"subjects":[…]}) — pre-primary replies and old snapshots.
             for (JsonNode s : root.path("subjects")) {
                 String name = s.asText("").trim();
                 if (!name.isEmpty()) out.add(name);
             }
         }
         if (out.isEmpty()) {
-            // The 4B model occasionally emits a malformed/truncated subjects array
-            // (long arrays are where it degenerates) → recover whatever names came
+            // The 4B model occasionally emits a malformed/truncated array (long
+            // arrays are where it degenerates) → recover whatever names came
             // through intact rather than losing the whole batch.
-            List<String> salvaged = salvageSubjectNames(text);
+            String salvagedPrimary = regexStringField(text, "primary");
+            if (salvagedPrimary != null && !salvagedPrimary.isBlank()) {
+                primary = salvagedPrimary.trim();
+                out.add(primary);
+            }
+            List<String> salvaged = new ArrayList<>(salvageArrayNames(text, "related"));
+            salvaged.addAll(salvageArrayNames(text, "subjects"));
             if (!salvaged.isEmpty()) {
                 LOG.warn("[EXTRACT] strict parse failed, salvaged {} subject name(s)", salvaged.size());
                 out.addAll(salvaged);
             }
         }
-        return out;
+        return out.isEmpty() ? Extraction.EMPTY : new Extraction(primary, out);
     }
 
     private int countComments(InvestigationCluster cluster) {
@@ -1038,8 +1211,12 @@ public class EditorialAgent {
         }
     }
 
-    /** Stage-1 output: the named subjects (uncapped), their count, and the raw reply. */
-    private record Subjects(List<String> names, int namedByModel, String raw) {}
+    /**
+     * Stage-1 output: the named subjects (uncapped, primary first), the model's
+     * primary pick ({@code ""} when the reply carried none — legacy shape or no
+     * market subject), their count, and the raw reply.
+     */
+    private record Subjects(List<String> names, String primaryName, int namedByModel, String raw) {}
 
     /**
      * Recovers subject names from a reply whose JSON is broken/truncated: finds the
@@ -1050,11 +1227,16 @@ public class EditorialAgent {
      * Package-private for testing.
      */
     static List<String> salvageSubjectNames(String text) {
+        return salvageArrayNames(text, "subjects");
+    }
+
+    /** Pulls every complete quoted string out of the (possibly truncated) array under {@code key}. */
+    static List<String> salvageArrayNames(String text, String key) {
         List<String> out = new ArrayList<>();
         if (text == null) return out;
-        int key = text.indexOf("\"subjects\"");
-        if (key < 0) return out;
-        int lb = text.indexOf('[', key);
+        int at = text.indexOf("\"" + key + "\"");
+        if (at < 0) return out;
+        int lb = text.indexOf('[', at);
         if (lb < 0) return out;
         int rb = text.indexOf(']', lb);
         String arr = rb < 0 ? text.substring(lb) : text.substring(lb, rb);
@@ -1171,6 +1353,7 @@ public class EditorialAgent {
                 headline,
                 h.path("sentiment").asText(""),
                 h.path("highlight").asText(""),
+                h.path("trigger").asText(""),
                 emptyToNull(h.path("tickerSymbol").asText("")),
                 subjects,
                 priceMove,
@@ -1194,6 +1377,7 @@ public class EditorialAgent {
                 headline,
                 orEmpty(regexStringField(text, "sentiment")),
                 orEmpty(regexStringField(text, "highlight")),
+                orEmpty(regexStringField(text, "trigger")),
                 emptyToNull(orEmpty(regexStringField(text, "tickerSymbol"))),
                 List.of(),
                 regexNumberField(text, "priceMovePercent"),

@@ -36,7 +36,7 @@ public class HeadlineConfig {
             + "hidden from that subject's next compose (no two headlines on the same "
             + "news). Default false: news is enrichment and may legitimately back "
             + "several headlines on the same topic; reuse is free since news is cached.")
-    private boolean newsCoverageEnabled = false;
+    private boolean newsCoverageEnabled = true;
 
     @Key("suppress-redundant")
     @Comment("When true (default), a re-composed line that just repeats a subject's own recent "

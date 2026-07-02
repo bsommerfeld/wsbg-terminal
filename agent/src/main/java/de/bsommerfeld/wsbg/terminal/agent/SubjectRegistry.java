@@ -89,8 +89,12 @@ public final class SubjectRegistry {
                 if (sharesWord && sharesEvidence) {
                     t.absorb(n);
                     byId.remove(n.id);
-                    dirty.remove(n.id);
-                    dirty.add(t.id);
+                    // The merge itself is not new evidence: the ticker unit only
+                    // inherits a PENDING headline claim (dirty) if the absorbed name
+                    // unit carried one. Unconditionally dirtying here let a demoted
+                    // co-subject (consolidation) sneak back into a compose via a
+                    // later identity-merge.
+                    if (dirty.remove(n.id)) dirty.add(t.id);
                     merged++;
                     break;
                 }

@@ -51,7 +51,7 @@ public class LangSchwarzClient {
             "https://www.ls-tc.de/_rpc/json/.lstc/instrument/search/main?localeId=2&q=";
     private static final String CHART_URL =
             "https://www.ls-tc.de/_rpc/json/instrument/chart/dataForInstrument"
-                    + "?marketId=1&quotetype=mid&series=intraday&localeId=2&container=chart&instrumentId=";
+                    + "?marketId=1&quotetype=mid&series=intraday,history&localeId=2&container=chart&instrumentId=";
 
     private static final int SPARK_POINTS = 40;
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -359,6 +359,29 @@ public class LangSchwarzClient {
             double dayChange = (Double.isFinite(prevClose) && prevClose > 0)
                     ? (last - prevClose) / prevClose * 100.0 : Double.NaN;
 
+            // series=history rides the SAME call: daily closes back to the listing's
+            // start. The tail carries the multi-day context ("runs for days, corrects
+            // today") the intraday spark can't, and the last ~252 trading days give an
+            // honest 52-week high/low the L&S quote box doesn't expose.
+            List<Double> dailyCloses = new ArrayList<>();
+            for (JsonNode pt : root.path("series").path("history").path("data")) {
+                if (!pt.isArray() || pt.size() < 2 || !pt.get(1).isNumber()) continue;
+                double v = pt.get(1).asDouble();
+                if (Double.isFinite(v)) dailyCloses.add(v);
+            }
+            double week52High = Double.NaN, week52Low = Double.NaN;
+            if (!dailyCloses.isEmpty()) {
+                int yearFrom = Math.max(0, dailyCloses.size() - 252);
+                week52High = Double.NEGATIVE_INFINITY;
+                week52Low = Double.POSITIVE_INFINITY;
+                for (double v : dailyCloses.subList(yearFrom, dailyCloses.size())) {
+                    week52High = Math.max(week52High, v);
+                    week52Low = Math.min(week52Low, v);
+                }
+                dailyCloses = new ArrayList<>(dailyCloses.subList(
+                        Math.max(0, dailyCloses.size() - 31), dailyCloses.size()));
+            }
+
             long ageMin = (System.currentTimeMillis() - lastTsMs) / 60000;
             LOG.info("[L&S] chart {} → {} EUR, prevClose={}, {} pts, last point {} min old",
                     isin, String.format(Locale.ROOT, "%.2f", last),
@@ -368,8 +391,8 @@ public class LangSchwarzClient {
             return Optional.of(new MarketSnapshot(
                     isin == null ? "" : isin, last,
                     Double.isFinite(prevClose) ? prevClose : Double.NaN, dayChange,
-                    high, low, -1, Double.NaN, Double.NaN,
-                    "EUR", "L&S", lastTsMs / 1000, downsample(prices)));
+                    high, low, -1, week52High, week52Low,
+                    "EUR", "L&S", lastTsMs / 1000, downsample(prices), dailyCloses));
         } catch (Exception e) {
             LOG.warn("L&S chart parse failure: {}", e.getMessage());
             return Optional.empty();

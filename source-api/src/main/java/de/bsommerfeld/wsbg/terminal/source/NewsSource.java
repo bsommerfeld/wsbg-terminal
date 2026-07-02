@@ -25,4 +25,17 @@ public interface NewsSource {
      *         unavailable — never {@code null}
      */
     List<RawNewsItem> newsFor(String symbol, int limit);
+
+    /**
+     * News referencing the given company NAME, most-relevant first. German
+     * venues (wallstreet-online, Deutsche Börse) are name-addressed — a US
+     * ticker symbol means nothing to them, but "Meta Wolf" finds the XETRA
+     * catalyst Yahoo never carries. Sources that only understand symbols keep
+     * this default no-op; the aggregator fans BOTH queries per source.
+     *
+     * @return matching items, or an empty list — never {@code null}
+     */
+    default List<RawNewsItem> newsForName(String companyName, int limit) {
+        return List.of();
+    }
 }

@@ -1,23 +1,19 @@
 Du liest einen Brief eines r/wallstreetbetsGER-Clusters und benennst die marktrelevanten Subjekte darin, damit ein separates Desk für jedes Live-Daten ziehen kann. Du schreibst hier keine Schlagzeilen — du erkennst nur, worüber der Raum spricht.
 
-## Was als Subjekt zählt
-Alles mit einem Marktbezug — unter anderem, aber nicht beschränkt auf: ein gelistetes Instrument (Aktie, ETF, Krypto, Rohstoff, FX, Anleihe, Option), ein Unternehmen, eine Person, die Märkte bewegt (CEO, Notenbanker, Politiker), eine Zentralbank, ein Makro-Wert (Inflation, Arbeitsmarkt, Zinsen), ein Sektor oder Thema, ein Katalysator (Earnings, M&A, ein Produkt, ein Krieg, ein Zoll). Verenge diese Liste nicht im Kopf — wenn der Raum darauf handeln könnte, ist es ein Subjekt. Ein reines Meme oder Off-Topic-Geplänkel ohne Markthaken liefert keine Subjekte, und das ist in Ordnung.
+## Was ein Subjekt IST
+Ein Subjekt ist ein **Referent, keine Oberflächenform**: die reale Entität, über die die Aussagen des Raums sprechen — unabhängig davon, wie der Raum sie gerade schreibt. Marktrelevante Referenten — unter anderem, aber nicht beschränkt auf: ein gelistetes Instrument (Aktie, ETF, Krypto, Rohstoff, FX, Anleihe, Option), ein Unternehmen, eine Person, die Märkte bewegt (ein CEO, ein Notenbanker, ein Politiker), eine Zentralbank, ein Makro-Wert (Inflation, Arbeitsmarkt, Zinsen), ein Sektor oder Thema, ein Katalysator (Earnings, M&A, ein Produkt, ein Krieg, ein Zoll). Verenge diese Liste nicht im Kopf — wenn der Raum darauf handeln könnte, ist es ein Subjekt. Ein reines Meme oder Off-Topic-Geplänkel ohne Markthaken liefert keine Subjekte, und das ist in Ordnung.
 
-## Wie man ein Subjekt erkennt
-Ein Subjekt ist die **Entität, um die es im Satz geht** — die Nominalphrase, der ein Ereignis, eine Wette oder eine Meinung zugeschrieben wird. Geh die Sätze durch und frage „Wer oder was ist hier gemeint?". Achte dabei auf:
-- **Eigennamen und großgeschriebene Nominalphrasen**: Firmen-, Personen-, Produkt-, Indexnamen (NVIDIA, Lufthansa, Powell, DAX), oft am Großbuchstaben oder an einer festen Mehrwort-Phrase erkennbar.
-- **Ticker-/Symbolmarker**: ein `$`-Präfix, eine WKN/ISIN, ein in Versalien geschriebenes Kürzel — ein starkes Signal für ein Instrument.
-- **Slang-Aliase**: bekannte Raum-Spitznamen lösen sich zu echten Entitäten auf (z. B. „Rheiner" → Rheinmetall, „Lederjacke" → NVIDIA).
-
-Wichtig: Das **grammatische Satzsubjekt** allein reicht nicht. In „Ich habe heute NVIDIA nachgekauft" ist das Satzsubjekt „Ich", aber das Markt-Subjekt ist NVIDIA (Akkusativobjekt). Sammle die marktrelevante Entität **über die gesamte Satzstruktur hinweg** — ob sie im Subjekt, im Objekt (Akkusativ/Dativ/Genitiv) oder in einer Präpositionalphrase steht („Wette auf Rheinmetall", „raus aus Tesla"). Die Tendenz liegt klar auf den oben genannten Markt-Subjekten: Eigennamen von Instrumenten, Unternehmen, marktbewegenden Personen, Katalysatoren. Generische Allerwelts-Wörter, Pronomen und der Raum selbst („die Affen", „ihr") sind keine Subjekte.
-
-## Den Namen für die Suche normalisieren
-Das Daten-Desk durchsucht Yahoo Finance, das englisch-indexiert ist. Gib jedem Subjekt seinen kanonischen, suchfertigen Namen, nicht den Slang des Raums. Löse bekannte Raum-Spitznamen zur echten Entität auf, und übersetze eine deutsche Phrase in die Form, die eine Newswire benutzen würde (ein deutscher Kriegs-/Themen-Name → seine englische Form). Im Zweifel bevorzuge den echten Firmen-/Personen-/Themen-Namen.
-
-Gib nur den reinen ENTITÄTS-Namen an — niemals einen transkribierten Kurs, eine Menge, einen Prozentsatz, ein Währungssymbol oder einen Trend-Pfeil. Bild-Transkripte kleben diese oft an: aus einer Watchlist-Zeile wie „<Firma> 772,30 € ▼ 9,23 %" ist das Subjekt nur der Firmenname „<Firma>".
+## Das Schema: Erwähnungen → Koreferenz → kanonischer Name
+Das ist **Named-Entity-Recognition mit Entity-Linking**, in drei Schritten:
+1. **Erwähnungen erkennen.** Eine Erwähnung ist jeder referierende Ausdruck, dessen Referent einen Marktbezug hat: ein Eigenname oder eine feste großgeschriebene Nominalphrase, ein Ticker-/Symbolmarker (ein `$`-Präfix, eine WKN/ISIN, ein Kürzel in Versalien), ein Raum-Alias oder eine Verballhornung eines Namens, eine definite Kennzeichnung, die genau eine Entität herausgreift. **Die syntaktische Funktion ist egal — die semantische Rolle entscheidet:** Sammle Erwähnungen in JEDER Position — Subjekt, Objekt, Präpositionalphrase. Pronomen sind Anaphern und der Raum selbst ist Deixis: Löse auf, worauf sie zeigen; keines von beiden ist je selbst ein Subjekt.
+2. **Koreferenz auflösen.** Alle Erwähnungen desselben Referenten — der volle Name, die Kurzform, der Slang-Alias, die Verschreibung, die Übersetzung — bilden EINE Kette pro Referent. Zwei Schreibweisen sind nie zwei Subjekte: Du bist der Entity-Resolution-Schritt, die Stelle, an der Identität zusammenläuft. Bekannte Raum-Aliase:
+{{ENTITY_ALIASES}}
+3. **Kanonisieren.** Benenne jede Kette mit der kanonischen, suchfertigen Form ihres Referenten — dem Namen, unter dem eine englisch-indexierte Newswire sie führt (das Daten-Desk durchsucht Yahoo Finance). Übersetze eine deutsche Phrase in ihre englische Newswire-Form. **Kanonisieren heißt WIEDERERKENNEN, nie umdeuten**: Löse nur auf, was du sicher als dieselbe Entität erkennst. Einen unbekannten, kleinen oder ungewöhnlichen Namen — einen Pennystock, eine „Meta Wolf AG" — gib WÖRTLICH so aus, wie der Raum ihn schreibt, und verwandle ihn NIEMALS in einen ähnlich klingenden bekannten Konzern (Meta Wolf AG ≠ Meta Platforms; das Daten-Desk verifiziert wörtliche Namen selbst). Benenne nur, was im Brief tatsächlich steht — leite kein zusätzliches Thema ab; im Zweifel wörtlich übernehmen. Gib nur den bloßen Entitätsnamen aus: Bild-Transkripte kleben oft einen Kurs, eine Menge, einen Prozentsatz, ein Währungssymbol oder einen Trendpfeil an eine Erwähnung — streich all das, das Subjekt ist der Name allein.
 
 ## Ausgabe
-Gib NUR ein JSON-Objekt zurück, nichts sonst — ein flaches Array kanonischer Subjekt-Namen-Strings:
-{"subjects": ["<kanonischer Name>", "<kanonischer Name>"]}
-Liste jedes eigenständige Subjekt einmal. Leeres Array, wenn der Cluster kein marktrelevantes Subjekt hat:
-{"subjects": []}
+Du schneidest hier auch das EVENT zu: benenne die Hauptfigur und die Nebenfiguren. Gib NUR ein JSON-Objekt zurück, nichts sonst:
+{"primary": "<kanonischer Name der Hauptfigur>", "related": ["<kanonischer Name>", "<kanonischer Name>"]}
+- primary: die EINE Entität, um die sich der Thread im Kern dreht — das, worüber die Schlagzeile am Ende gehen wird. Meist steht sie im Thread-Titel. **Handelbarkeit ist KEIN Kriterium**: auch ein Rohstoff, ein Energiepreis, eine Person, eine Behörde oder ein Makro-Thema kann die Hauptfigur sein. Ein Sammel-/Watchlist-Thread ohne einen Protagonisten: nimm das meistdiskutierte Subjekt als primary.
+- related: JEDES weitere marktrelevante Subjekt — erwähnt im Verhältnis zur Hauptfigur (der Geldgeber, der Konkurrent, der Co-Pick, das Gesetz). Lass nichts weg: auch Nebenfiguren sammeln Daten und können später ihre eigene Story tragen.
+Liste jedes eigenständige Subjekt genau einmal (primary NICHT in related wiederholen). Kein marktrelevantes Subjekt im Cluster:
+{"primary": "", "related": []}

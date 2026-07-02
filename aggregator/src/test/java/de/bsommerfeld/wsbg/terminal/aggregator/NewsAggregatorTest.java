@@ -89,4 +89,49 @@ class NewsAggregatorTest {
     void noSourcesYieldsEmpty() {
         assertTrue(aggregator().newsFor("NVDA", 10).isEmpty());
     }
+
+    // ---- name-addressed fan-out + relevance tiering ----
+
+    /** A source that only answers the NAME query (like wallstreet-online). */
+    private static NewsSource nameSource(String name, RawNewsItem... items) {
+        return new NewsSource() {
+            @Override public String sourceName() { return name; }
+            @Override public List<RawNewsItem> newsFor(String symbol, int limit) { return List.of(); }
+            @Override public List<RawNewsItem> newsForName(String companyName, int limit) {
+                return List.of(items);
+            }
+        };
+    }
+
+    @Test
+    void nameQueryReachesNameAddressedSources() {
+        Instant t = Instant.now();
+        NewsSource yahooish = source("yahoo", false, item("y1", "Symbol news", t));
+        NewsSource wsoish = nameSource("wso", item("w1", "Meta Wolf AG: CERAM TECH", t));
+
+        List<RawNewsItem> out = aggregator(yahooish, wsoish).newsFor("WOLF.DE", "Meta Wolf AG", 10);
+        assertEquals(2, out.size(), "both the symbol and the name fan contribute");
+        assertTrue(out.stream().anyMatch(i -> i.uuid().equals("w1")));
+    }
+
+    @Test
+    void rankingPrefersFreshTitleNamedOverFreshOverStale() {
+        Instant fresh = Instant.now().minusSeconds(3600);
+        Instant stale = Instant.now().minusSeconds(7L * 24 * 3600);
+        RawNewsItem freshNamed = item("fn", "Rheinmetall gewinnt Großauftrag", fresh);
+        RawNewsItem freshOther = item("fo", "Rüstungssektor im Aufwind", fresh.plusSeconds(600));
+        RawNewsItem staleNamed = item("sn", "Rheinmetall Rückblick", stale);
+
+        List<RawNewsItem> out = aggregator(source("a", false, freshOther, staleNamed, freshNamed))
+                .newsFor("RHM.DE", "Rheinmetall", 10);
+
+        assertEquals(List.of("fn", "fo", "sn"), out.stream().map(RawNewsItem::uuid).toList(),
+                "fresh+named beats fresh beats stale — despite freshOther being newer");
+    }
+
+    @Test
+    void nameOnlyQueryWorksWithoutASymbol() {
+        NewsSource wsoish = nameSource("wso", item("w1", "Meta Wolf AG: CERAM TECH", Instant.now()));
+        assertEquals(1, aggregator(wsoish).newsFor(null, "Meta Wolf AG", 5).size());
+    }
 }

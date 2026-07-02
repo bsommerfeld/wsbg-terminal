@@ -72,6 +72,28 @@ final class BriefLabels {
                 : " [Market closed — last close, NOT a live price: do not present as a fresh move]";
     }
 
+    /**
+     * Multi-day price context, numbers only — the model reads the arc, we never
+     * interpret it. Renders only the parts that exist; empty when none do.
+     */
+    String trend(Double fiveDayPct, Double monthPct, Double offHighPct) {
+        StringBuilder sb = new StringBuilder();
+        if (fiveDayPct != null) {
+            sb.append(String.format(Locale.ROOT,
+                    de ? ", 5 Handelstage %+.1f%%" : ", 5 trading days %+.1f%%", fiveDayPct));
+        }
+        if (monthPct != null) {
+            sb.append(String.format(Locale.ROOT,
+                    de ? ", 1 Monat %+.1f%%" : ", 1 month %+.1f%%", monthPct));
+        }
+        if (offHighPct != null) {
+            sb.append(String.format(Locale.ROOT,
+                    de ? ", %.0f%% unter dem 52-Wochen-Hoch" : ", %.0f%% below the 52-week high",
+                    Math.abs(offHighPct)));
+        }
+        return sb.toString();
+    }
+
     String sinceFirstMention(String ageStr, double pct, double anchor, double price) {
         return String.format(Locale.ROOT,
                 de ? "; seit Erstnennung (vor %s): %+.2f%% (%.2f → %.2f)"
@@ -87,12 +109,16 @@ final class BriefLabels {
 
     String newsHeader() {
         return de
-                ? "News (Kontext & Beleg — NICHT das Thema selbst; gib jede, auf die du dich stützt,"
-                + " per [news:ID] in sourceNewsIds an, eine zitierte wird nicht erneut angeboten."
+                ? "News (dein verifizierter Anker — nimm daraus die harten Fakten."
                 + " [STALE] = älterer Hintergrund, KEIN frischer Katalysator):\n"
-                : "News (context & attribution — NOT the subject; cite any you lean on by its"
-                + " [news:ID] in sourceNewsIds, a cited item won't be offered again."
+                : "News (your verified anchor — take the hard facts from it."
                 + " [STALE] = older background, NOT a fresh catalyst):\n";
+    }
+
+    String newsToldTag() {
+        return de
+                ? "[ERZÄHLT — steckt schon in deinen Schlagzeilen unten; als Anker nutzbar, nicht als Neuigkeit]"
+                : "[TOLD — already woven into your headlines below; usable as the anchor, not as news]";
     }
 
     String visionLoc() {
@@ -139,18 +165,18 @@ final class BriefLabels {
 
     String storyMemoryHeader() {
         return de
-                ? "\nBEREITS VERÖFFENTLICHTE SCHLAGZEILEN ZU DIESEM THEMA (Story-Gedächtnis — klassifiziere"
-                + " NEU vs. UPDATE gegen ALLE davon; niemals wortwörtlich wiederholen):\n"
-                : "\nHEADLINES ALREADY PUBLISHED FOR THIS SUBJECT (story memory — classify NEW vs"
-                + " UPDATE against ALL of these; never repeat verbatim):\n";
+                ? "\nDEINE BISHERIGEN SCHLAGZEILEN ZU DIESEM THEMA (die Geschichte bisher —"
+                + " deine nächste Zeile ist ihr nächster Satz):\n"
+                : "\nYOUR HEADLINES SO FAR FOR THIS SUBJECT (the story so far —"
+                + " your next line is its next sentence):\n";
     }
 
     String earlierHeadlines(int n, String ageStr) {
         return de
                 ? "  (+" + n + " frühere Schlagzeile(n) seit " + ago(ageStr) + " — die Story ist ÄLTER als"
-                + " die gezeigten Zeilen; einen bereits abgedeckten Aspekt NICHT als NEU wiederaufgreifen)\n"
+                + " die gezeigten Zeilen; ein dort schon erzählter Aspekt ist keine Neuigkeit mehr)\n"
                 : "  (+" + n + " earlier headline(s) since " + ago(ageStr) + " — the story is OLDER than the"
-                + " lines shown; do NOT re-open an already-covered angle as NEW)\n";
+                + " lines shown; an angle already told there is no longer news)\n";
     }
 
     String sentimentArcPrefix() {

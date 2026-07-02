@@ -96,6 +96,12 @@ public class AppModule extends AbstractModule {
             Multibinder<NewsSource> newsSources =
                     Multibinder.newSetBinder(binder(), NewsSource.class);
             newsSources.addBinding().to(YahooFinanceClient.class);
+            // wallstreet-online closes the German-stock news GAP: Yahoo carries no
+            // XETRA small-cap catalysts (Meta Wolf/CERAM TECH ran +25.8% with the news
+            // only on the German venues). Name-addressed — it answers the aggregator's
+            // newsForName() fan, not the symbol query.
+            newsSources.addBinding().to(
+                    de.bsommerfeld.wsbg.terminal.wallstreetonline.WsoNewsClient.class);
             // NASDAQ news is DISABLED (2026-06-30): its per-ticker news was thin/low-quality
             // (missed e.g. SpaceX→Nasdaq-100 inclusion that Yahoo carried) and just diluted
             // the pool. Yahoo carries what the wire needs. The NasdaqNewsClient/quote classes

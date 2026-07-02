@@ -74,6 +74,7 @@ public final class HeadlineWriter {
             String headline,
             String sentiment,
             String highlight,
+            String trigger,
             String tickerSymbol,
             List<DraftSubject> subjects,
             Double priceMovePercent,
@@ -81,6 +82,14 @@ public final class HeadlineWriter {
             String assetClass,
             List<String> sourceThreadIds,
             List<String> sourceCommentIds) {
+
+        /** Trigger-less variant for the legacy cluster/theme path and tests ({@code trigger = ""}). */
+        public Draft(String headline, String sentiment, String highlight, String tickerSymbol,
+                List<DraftSubject> subjects, Double priceMovePercent, List<String> sectors,
+                String assetClass, List<String> sourceThreadIds, List<String> sourceCommentIds) {
+            this(headline, sentiment, highlight, "", tickerSymbol, subjects, priceMovePercent,
+                    sectors, assetClass, sourceThreadIds, sourceCommentIds);
+        }
     }
 
     public record DraftSubject(String name, String ticker) {
@@ -236,32 +245,48 @@ public final class HeadlineWriter {
         List<String> commentIds = List.of();
 
         // The subject for the UI glow is the unit itself: keep it only when the
-        // unit has a validated ticker and its name appears verbatim in the line.
+        // unit has a validated ticker and a form of its name appears verbatim in
+        // the line. The canonical name is Yahoo's LEGAL form ("Salesforce, Inc.")
+        // while the line writes the short one ("Salesforce"), so the gild takes
+        // the longest word-prefix of the canonical name the line actually contains.
         List<HeadlineSubject> subjects = new ArrayList<>();
         if (tickerSymbol != null) {
-            String name = unit.canonicalName();
-            if (name != null && !name.isBlank() && headline.contains(name)) {
+            String name = displayFormIn(headline, unit.canonicalName());
+            if (name != null) {
                 subjects.add(new HeadlineSubject(name, tickerSymbol));
             }
         }
 
-        HeadlineHighlight highlight = HeadlineHighlight.fromString(draft.highlight());
+        HeadlineHighlight modelHighlight = HeadlineHighlight.fromString(draft.highlight());
+        HeadlineHighlight highlight = reconcileHighlight(modelHighlight, draft.trigger(), unit.snapshot());
+        if (highlight != modelHighlight) {
+            LOG.info("[WRITE] demote IMPORTANT→NORMAL for unit {} — trigger '{}' {}",
+                    unit.id, draft.trigger(),
+                    PRICE_TRIGGERS.contains(normalizeTrigger(draft.trigger()))
+                            ? "is price-shaped but the unit has no verified price"
+                            : "does not justify red");
+        }
 
-        // Price move + sentiment are DERIVED from the resolver snapshot, not asked of the model.
-        // The model's old priceMovePercent was "prefer the resolved day%" anyway, and sentiment
-        // isn't consumed by the UI — a price-reconciled default is plenty. Keeping the model's
-        // job to just {headline, highlight, mode} is what stops it whitespace-looping on big briefs.
+        // Price move is DERIVED from the resolver snapshot, not asked of the model.
+        // Sentiment IS the model's (schema-forced enum since 2026-07-01): the slim
+        // 3-key contract had left every line NEUTRAL, which starved the mood badge
+        // and the unit's sentiment arc — the room's read is editorial data the
+        // price can't supply. reconcileSentiment still flips a camp that
+        // contradicts a hard day-move.
         Double priceMove = sanePriceMove(
                 snapshot != null && snapshot.hasPrice() ? snapshot.dayChangePercent() : null, headline);
         List<String> sectors = List.of();
         String assetClass = null;
-        HeadlineSentiment sentiment = reconcileSentiment(HeadlineSentiment.NEUTRAL, priceMove);
+        HeadlineSentiment sentiment = reconcileSentiment(
+                HeadlineSentiment.fromString(draft.sentiment()), priceMove);
 
         agentRepository.saveHeadline(unit.id, headline, "",
                 threadIds, commentIds, highlight, tickerSymbol, subjects, priceMove,
                 sectors, assetClass, sentiment, snapshot, newsEnriched);
 
-        LOG.info("[WRITE] unit {} [{}{} {}{}]: {}", unit.id, highlight,
+        LOG.info("[WRITE] unit {} [{}{} {}{}]: {}", unit.id,
+                highlight == HeadlineHighlight.IMPORTANT
+                        ? "IMPORTANT/" + normalizeTrigger(draft.trigger()) : highlight,
                 tickerSymbol == null ? "" : " " + tickerSymbol, sentiment,
                 priceMove == null ? "" : String.format(Locale.ROOT, " %+.1f%%", priceMove),
                 headline);
@@ -269,6 +294,84 @@ public final class HeadlineWriter {
         eventBus.post(new AgentStreamEndEvent(
                 "||PASSIVE||" + headline + "||REF||ID:" + unit.id));
         return true;
+    }
+
+    /** Words that must never be gilded on their own (a one-word "match" like "The"). */
+    private static final Set<String> GILD_STOP = Set.of(
+            "the", "and", "der", "die", "das", "inc", "corp", "group", "holdings", "aktiengesellschaft");
+
+    /**
+     * The longest word-prefix of {@code canonicalName} that appears in the headline
+     * — the display form the UI gilds. Matching is CASE-INSENSITIVE (the line writes
+     * "Nvidia", Yahoo's legal name is "NVIDIA Corporation") and the returned form is
+     * the LINE's own spelling, so the front-end regex finds it verbatim.
+     * "Salesforce, Inc." gilds "Salesforce"; "D-Wave Quantum Inc." gilds "D-Wave
+     * Quantum" or "D-Wave", whichever the line wrote. Trailing commas/periods are
+     * stripped per candidate; a lone generic word never gilds. {@code null} when no
+     * form is in the line. Package-private for testing.
+     */
+    static String displayFormIn(String headline, String canonicalName) {
+        if (headline == null || canonicalName == null || canonicalName.isBlank()) return null;
+        String headlineLower = headline.toLowerCase(Locale.ROOT);
+        String[] words = canonicalName.trim().split("\\s+");
+        for (int k = words.length; k >= 1; k--) {
+            String cand = String.join(" ", Arrays.copyOfRange(words, 0, k))
+                    .replaceAll("[,.]+$", "").trim();
+            if (cand.length() < 3) continue;
+            if (k == 1 && GILD_STOP.contains(cand.toLowerCase(Locale.ROOT))) continue;
+            int idx = headlineLower.indexOf(cand.toLowerCase(Locale.ROOT));
+            // Word-boundary guard: "Aris" must not gild inside "Paris".
+            if (idx >= 0
+                    && (idx == 0 || !Character.isLetterOrDigit(headline.charAt(idx - 1)))
+                    && (idx + cand.length() >= headline.length()
+                        || !Character.isLetterOrDigit(headline.charAt(idx + cand.length())))) {
+                return headline.substring(idx, idx + cand.length());
+            }
+        }
+        return null;
+    }
+
+    // ---- IMPORTANT gate: the trigger is the mechanical anchor for red ----
+
+    /** Triggers that justify IMPORTANT on their own — catalyst-shaped, no price needed
+     *  (the quiet pennystock pooled call must stay red-capable without an L&S listing). */
+    private static final Set<String> CATALYST_TRIGGERS = Set.of("HARD_CATALYST", "POOLED_CALL");
+    /** Triggers whose whole case IS price action — without a resolver-verified price the
+     *  "move" is the room's own screenshot claim, which never earns red on its own. */
+    private static final Set<String> PRICE_TRIGGERS =
+            Set.of("RUNNER", "SQUEEZE", "BREAKOUT", "EXTREME_DIRECTION");
+
+    static String normalizeTrigger(String trigger) {
+        return trigger == null ? "" : trigger.trim().toUpperCase(Locale.ROOT);
+    }
+
+    /**
+     * Deterministic backstop for the IMPORTANT rubric: red must name the concrete
+     * trigger that fired (schema-forced {@code trigger} field), so a "feels
+     * important" classification with no nameable play demotes to NORMAL. Rules,
+     * mirroring the prompt rubric verbatim:
+     * <ul>
+     *   <li>NORMAL passes through untouched — this gate only ever demotes, never
+     *       promotes (red must stay scarce; a missed red is cheaper than a false one).</li>
+     *   <li>IMPORTANT with a catalyst-shaped trigger (HARD_CATALYST, POOLED_CALL)
+     *       stands — these are evidence-borne and legal without any price.</li>
+     *   <li>IMPORTANT with a price-shaped trigger (RUNNER, SQUEEZE, BREAKOUT,
+     *       EXTREME_DIRECTION) needs a resolver-verified price on the unit —
+     *       the rubric's "an unverified screenshot % never earns red on its own".</li>
+     *   <li>IMPORTANT with trigger NONE / blank / unknown (a salvage-path reply,
+     *       a legacy draft) is the doubt case, and doubt reads NORMAL.</li>
+     * </ul>
+     * Package-private for testing.
+     */
+    static HeadlineHighlight reconcileHighlight(HeadlineHighlight highlight, String trigger,
+            MarketSnapshot snapshot) {
+        if (highlight != HeadlineHighlight.IMPORTANT) return highlight;
+        String t = normalizeTrigger(trigger);
+        if (CATALYST_TRIGGERS.contains(t)) return HeadlineHighlight.IMPORTANT;
+        if (PRICE_TRIGGERS.contains(t) && snapshot != null && snapshot.hasPrice()) {
+            return HeadlineHighlight.IMPORTANT;
+        }
+        return HeadlineHighlight.NORMAL;
     }
 
     // ---- sanitisers ported verbatim from the old PublishHeadlineTool ----

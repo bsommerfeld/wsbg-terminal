@@ -12,6 +12,9 @@ import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ResponseFormat;
+import dev.langchain4j.model.chat.request.ResponseFormatType;
+import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
+import dev.langchain4j.model.chat.request.json.JsonSchema;
 import dev.langchain4j.model.ollama.OllamaChatModel;
 import jakarta.inject.Inject;
 import org.slf4j.Logger;
@@ -144,36 +147,78 @@ public class AgentBrain {
         int ctxTokens = config.getContextTokens();
         int visionCtxTokens = ctxTokens;
 
+        // gemma4 is a HYBRID THINKING model and Ollama defaults thinking ON — without an
+        // explicit think=false every call silently generated ~2k chars of hidden English
+        // "Thinking Process" (~500 tokens, 6–10 s GPU time) that nothing ever read. That,
+        // not prefill and not parallelism, was the throughput ceiling (~5 calls/min): with
+        // thinking off the same compose measures ~1 s instead of ~10 s at IDENTICAL headline
+        // quality (A/B'd 2026-07-01 on real briefs). It also explains the historical
+        // "JSON-mode whitespace-loop" / empty-reply lore: with a tight numPredict the
+        // thinking consumed the whole token budget and the visible content came back
+        // truncated or empty — the loop was the model reasoning, invisibly.
+        final boolean think = false;
+
         // Editorial agent — every call in the deterministic pipeline expects a
-        // JSON reply (subjects array, headline object), so Ollama's JSON mode
+        // JSON reply (subjects array, theme-headline object), so Ollama's JSON mode
         // (constrained decoding) is on: the model CANNOT emit syntactically
         // broken JSON anymore, which is what the EditorialAgent salvage cascade
-        // existed for (it stays as belt-and-braces). Known small-model quirk in
-        // JSON mode is whitespace-looping — the numPredict cap bounds that.
+        // existed for (it stays as belt-and-braces). Plain JSON (no schema) because
+        // this one model instance serves TWO output shapes (extraction + theme).
         // Low temperature + tightened nucleus keep the headlines faithful (no
         // creative drift away from the cluster evidence).
         this.agentModel = OllamaChatModel.builder()
                 .baseUrl(OLLAMA_BASE_URL).modelName(agentName)
                 .temperature(agentModelEnum.getTemperature()).topP(0.9).topK(40)
-                // 768 backstop for the batched subjects array (~300 tokens); bounds the
-                // JSON-mode whitespace-loop. (No `\n\n` stop — it truncated extraction to
-                // empty when the model led with a blank line; see composeModel.)
+                // 768 backstop for the batched subjects array (~300 tokens). (No `\n\n`
+                // stop — it truncated extraction to empty when the model led with a
+                // blank line; see composeModel.)
                 .numCtx(ctxTokens).numPredict(768)
                 .responseFormat(ResponseFormat.JSON)
+                .think(think)
                 .timeout(timeout)
                 .build();
 
-        // Compose model — the SAME gemma4 (no extra load). The real loop fix is SLIMMING the
-        // compose output to {headline, highlight, mode} (everything else — ticker, price,
-        // priceMove, subjects — we already have from extraction+enrichment and attach in code),
-        // so the model's job is tiny and it stops degenerating into whitespace on big briefs.
-        // numPredict 1024 is deliberately generous (the slim JSON is ~50 tokens): give the model
-        // room rather than clip it. JSON-mode on for a clean parse of the small object.
+        // Compose model — the SAME gemma4 (no extra load), with the compose output
+        // SCHEMA-constrained (not just JSON mode): the grammar forces exactly
+        // {headline, mode, trigger, highlight, sentiment} with the enums closed,
+        // so a malformed or truncated compose object is mechanically impossible —
+        // the salvage cascade and the empty-first-line retries become true
+        // belt-and-braces. The deliberate redundant-empty stays legal (headline
+        // may be ""). numPredict 1024 is a harmless backstop (the slim JSON is
+        // ~60 tokens). sentiment came BACK into the output 2026-07-01: the slim
+        // 3-key contract had left every published line NEUTRAL, starving the
+        // mood badge and the unit's sentiment arc — with thinking off and the
+        // schema closed, the ~5 extra tokens are free and loop-safe.
+        // trigger (2026-07-01) is the IMPORTANT anchor: the model must NAME the
+        // concrete red trigger BEFORE it sets highlight (property order matters —
+        // the grammar emits trigger first, so highlight becomes a near-mechanical
+        // consequence instead of a vibe), and HeadlineWriter.reconcileHighlight
+        // demotes an IMPORTANT whose trigger doesn't hold up. A 4B model is far
+        // more consistent at "which of these 7 discrete cases" than at judging
+        // "unambiguous?" in the abstract.
+        ResponseFormat composeFormat = ResponseFormat.builder()
+                .type(ResponseFormatType.JSON)
+                .jsonSchema(JsonSchema.builder()
+                        .name("headline")
+                        .rootElement(JsonObjectSchema.builder()
+                                .addStringProperty("headline")
+                                .addEnumProperty("trigger", java.util.List.of(
+                                        "NONE", "RUNNER", "SQUEEZE", "BREAKOUT",
+                                        "HARD_CATALYST", "POOLED_CALL", "EXTREME_DIRECTION"))
+                                .addEnumProperty("highlight", java.util.List.of("NORMAL", "IMPORTANT"))
+                                .addEnumProperty("sentiment", java.util.List.of(
+                                        "BULLISH", "BEARISH", "MIXED", "FOMO", "CAPITULATION",
+                                        "SQUEEZE", "REVERSAL", "BREAKOUT", "NEUTRAL"))
+                                .required("headline", "trigger", "highlight", "sentiment")
+                                .build())
+                        .build())
+                .build();
         this.composeModel = OllamaChatModel.builder()
                 .baseUrl(OLLAMA_BASE_URL).modelName(agentName)
                 .temperature(agentModelEnum.getTemperature()).topP(0.9).topK(40)
                 .numCtx(ctxTokens).numPredict(1024)
-                .responseFormat(ResponseFormat.JSON)
+                .responseFormat(composeFormat)
+                .think(think)
                 .timeout(timeout)
                 .build();
 
@@ -189,10 +234,13 @@ public class AgentBrain {
         // composes, starved them. 512 holds a typical broker view but caps the runaway
         // multi-asset paragraphs (some hit 2048), so each image is ~5–10s. Trade: a very long
         // (10–12 row) depot may truncate; throughput wins. Paired with the shared LLM gate.
+        // think=false matters doubly here: with the 512 numPredict cap, hidden
+        // thinking could consume the entire budget and return an EMPTY transcript.
         this.visionModel = OllamaChatModel.builder()
                 .baseUrl(OLLAMA_BASE_URL).modelName(visionName)
                 .temperature(0.2).topP(0.9).topK(40)
                 .numCtx(visionCtxTokens).numPredict(512)
+                .think(think)
                 .timeout(timeout)
                 .maxRetries(1).build();
     }

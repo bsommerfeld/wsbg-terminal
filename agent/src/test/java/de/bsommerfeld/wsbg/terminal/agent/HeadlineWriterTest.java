@@ -234,4 +234,114 @@ class HeadlineWriterTest {
         assertFalse(w.publishUnit(u, asUpdate), "same line as an -Update: must be skipped");
         assertEquals(1, repo.getHeadlinesByClusterId("NOW").size());
     }
+
+    // ---- reconcileHighlight: red must name a trigger that holds up ----
+
+    private static de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot pricedSnapshot() {
+        return new de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot(
+                "NOW", 100.0, 98.0, 2.04, Double.NaN, Double.NaN, -1,
+                Double.NaN, Double.NaN, "EUR", "LS", 0, List.of());
+    }
+
+    @Test
+    void reconcileHighlight_importantWithoutATriggerDemotes() {
+        assertEquals(de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.NORMAL,
+                HeadlineWriter.reconcileHighlight(
+                        de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.IMPORTANT, "NONE", pricedSnapshot()),
+                "IMPORTANT with trigger NONE is the contradiction case → NORMAL");
+        assertEquals(de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.NORMAL,
+                HeadlineWriter.reconcileHighlight(
+                        de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.IMPORTANT, "", pricedSnapshot()),
+                "a salvage-path/legacy draft (blank trigger) is doubt → NORMAL");
+        assertEquals(de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.NORMAL,
+                HeadlineWriter.reconcileHighlight(
+                        de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.IMPORTANT, "VIBES", pricedSnapshot()),
+                "an unknown trigger value never justifies red");
+    }
+
+    @Test
+    void reconcileHighlight_catalystTriggersStandWithoutAPrice() {
+        // The quiet pennystock pooled call / hard news catalyst must stay red-capable
+        // even when L&S has no listing (SpaceX-style price-less subjects).
+        assertEquals(de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.IMPORTANT,
+                HeadlineWriter.reconcileHighlight(
+                        de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.IMPORTANT, "HARD_CATALYST", null));
+        assertEquals(de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.IMPORTANT,
+                HeadlineWriter.reconcileHighlight(
+                        de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.IMPORTANT, "POOLED_CALL", null));
+    }
+
+    @Test
+    void reconcileHighlight_priceShapedTriggersNeedAVerifiedPrice() {
+        // A "runner" whose move exists only in the room's screenshot is the rubric's
+        // "an unverified price never earns red on its own".
+        assertEquals(de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.NORMAL,
+                HeadlineWriter.reconcileHighlight(
+                        de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.IMPORTANT, "RUNNER", null));
+        assertEquals(de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.NORMAL,
+                HeadlineWriter.reconcileHighlight(
+                        de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.IMPORTANT, "EXTREME_DIRECTION", null));
+        assertEquals(de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.IMPORTANT,
+                HeadlineWriter.reconcileHighlight(
+                        de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.IMPORTANT, "RUNNER", pricedSnapshot()));
+        assertEquals(de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.IMPORTANT,
+                HeadlineWriter.reconcileHighlight(
+                        de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.IMPORTANT, "extreme_direction",
+                        pricedSnapshot()),
+                "trigger match is case-insensitive");
+    }
+
+    @Test
+    void reconcileHighlight_neverPromotesNormal() {
+        assertEquals(de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.NORMAL,
+                HeadlineWriter.reconcileHighlight(
+                        de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.NORMAL, "HARD_CATALYST", pricedSnapshot()),
+                "the gate only demotes — a NORMAL with a trigger stays NORMAL");
+    }
+
+    @Test
+    void publishUnit_demotesImportantWhoseTriggerDoesNotHoldUp() {
+        AgentRepository repo = new AgentRepository();
+        HeadlineWriter w = new HeadlineWriter(repo, new ApplicationEventBus());
+        // Model flags IMPORTANT but names no trigger — the classic "feels important".
+        Draft d = new Draft("ServiceNow läuft heiß", "FOMO", "IMPORTANT", "NONE", null,
+                List.of(), null, List.of(), null, List.of(), List.of());
+        assertTrue(w.publishUnit(instrumentUnit(), d));
+        assertEquals(de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.NORMAL,
+                repo.getHeadlinesByClusterId("NOW").get(0).highlight(),
+                "IMPORTANT without a real trigger publishes as NORMAL");
+    }
+
+    // ---- displayFormIn: the gilded name is the form the LINE wrote, not Yahoo's legal one ----
+
+    @Test
+    void displayFormInIsCaseInsensitiveAndReturnsTheLinesSpelling() {
+        // The line writes "Nvidia", Yahoo's legal name shouts "NVIDIA Corporation" —
+        // the gild must find it and return the LINE's spelling so the UI regex matches.
+        assertEquals("Nvidia", HeadlineWriter.displayFormIn(
+                "Nvidia dominiert das KI-Rennen weiter", "NVIDIA Corporation"));
+        // Word-boundary guard: "Aris" must not gild inside "Paris".
+        org.junit.jupiter.api.Assertions.assertNull(HeadlineWriter.displayFormIn(
+                "Paris feiert den Deal", "Aris Water Solutions"));
+    }
+
+    @Test
+    void displayFormInFindsTheShortFormOfALegalName() {
+        assertEquals("Salesforce", HeadlineWriter.displayFormIn(
+                "Salesforce zieht nach starken Zahlen an", "Salesforce, Inc."));
+        assertEquals("D-Wave Quantum", HeadlineWriter.displayFormIn(
+                "D-Wave Quantum sichert sich die NSF-Förderung", "D-Wave Quantum Inc."));
+        assertEquals("D-Wave", HeadlineWriter.displayFormIn(
+                "D-Wave sichert sich die NSF-Förderung", "D-Wave Quantum Inc."));
+    }
+
+    @Test
+    void displayFormInNeverGildsALoneGenericWordAndNullsWhenAbsent() {
+        org.junit.jupiter.api.Assertions.assertNull(HeadlineWriter.displayFormIn(
+                "The Raum feiert den Deal", "The Metals Company"), // only "The" would match
+                "a lone generic word never gilds");
+        org.junit.jupiter.api.Assertions.assertNull(HeadlineWriter.displayFormIn(
+                "Der Raum diskutiert Quantencomputer", "D-Wave Quantum Inc."),
+                "no form in the line → no gild");
+    }
 }

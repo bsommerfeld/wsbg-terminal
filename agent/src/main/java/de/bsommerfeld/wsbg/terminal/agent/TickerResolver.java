@@ -258,12 +258,14 @@ public final class TickerResolver {
                         : commodity != null ? commodity.displayName()
                         : (strong == null ? query : strong.displayName());
 
-                // News: triangulated across all sources by the resolved ticker (Yahoo +
-                // NASDAQ + …) so the wire doesn't depend on Yahoo alone. A ticker-less
-                // theme keeps Yahoo's query-news (the only handle without a symbol); the
-                // lab/tests (no aggregator) also keep the search news.
+                // News: triangulated across all sources by the resolved ticker AND the
+                // company name — Yahoo answers the symbol, the German name-addressed
+                // venues (wallstreet-online) answer the name, which closes the German
+                // small-cap news gap Yahoo leaves (Meta Wolf/CERAM TECH case). A
+                // ticker-less theme keeps Yahoo's query-news (the only handle without
+                // a symbol); the lab/tests (no aggregator) also keep the search news.
                 List<RawNewsItem> news = (newsAggregator != null && ownTicker != null)
-                        ? newsAggregator.newsFor(ownTicker, NEWS_COUNT)
+                        ? newsAggregator.newsFor(ownTicker, canonical, NEWS_COUNT)
                         : (sr.news() != null ? sr.news() : List.of());
 
                 List<String> relSyms = new ArrayList<>();
