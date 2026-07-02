@@ -155,7 +155,9 @@ html[data-theme="light"] .tb-title .flag {
 .update-btn[hidden] { display: none; }
 .update-btn { color: var(--green); }
 .update-btn:hover { color: var(--green); background: var(--bg-1); }
-.update-btn:not([hidden]) { animation: update-glow 2.4s ease-in-out infinite; }
+/* Finite: a few pulses draw the eye when the button appears, then it settles
+   steady — an infinite glow would force continuous full-window OSR paints. */
+.update-btn:not([hidden]) { animation: update-glow 2.4s ease-in-out 6; }
 @keyframes update-glow {
   0%, 100% { opacity: .65; }
   50%      { opacity: 1; }

@@ -84,7 +84,8 @@ html[data-platform="other"] .footer-settings { display: inline-flex; }
 
 .cell.exch.main .dot {
   background: var(--green); box-shadow: 0 0 6px var(--green);
-  animation: pulse 2s infinite;
+  /* No infinite pulse — see .live .dot in widgets.css: continuous animations
+     anywhere on screen force full-window OSR blits. Static glow suffices. */
 }
 .cell.exch.main .cd { color: var(--green); }
 

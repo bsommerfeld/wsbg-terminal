@@ -26,6 +26,13 @@ const HIGHLIGHT_CLASS = {
 // Per-widget seen-keys cache — populated on first render, diffed on
 // subsequent renders to detect which rows are new.
 const seenKeys = new WeakMap();
+// Per-widget key → row element. Rows are immutable per key (the row key IS the
+// record's identity), so a re-render only creates/removes/moves elements — it
+// never rebuilds existing ones. A wholesale innerHTML rebuild on every live
+// push was the left column's scroll-jank source: it re-laid-out hundreds of
+// rows (each with an inline SVG sparkline) and threw away the
+// content-visibility height cache mid-scroll.
+const rowEls = new WeakMap();
 
 // The list is two stacked layers, newest at the top:
 //   liveItems    — the live 24h wire (HeadlinePublisher pushes, replaces wholesale)
@@ -39,6 +46,9 @@ let socketRef = null;
 let loadingMore = false;
 let exhausted = false;     // archive returned a short/empty page → nothing older left
 const PAGE = 50;
+// Scroll-back rows kept in memory/DOM. Trimmed (oldest first) on a live push
+// while the user is reading the top of the wire — never under their viewport.
+const ARCHIVE_CAP = 300;
 
 export function renderHeadlines(host, items) {
   if (!host) return;
@@ -50,7 +60,12 @@ export function renderHeadlines(host, items) {
         <img src="/icons/cook.webp" alt="">
       </div>`;
     seenKeys.set(host, new Set());
+    rowEls.set(host, new Map());
     return;
+  }
+  if (archiveItems.length > ARCHIVE_CAP && host.scrollTop < host.clientHeight) {
+    archiveItems = archiveItems.slice(0, ARCHIVE_CAP);
+    exhausted = false; // scrolling back down re-pages the trimmed rows
   }
   renderCombined();
 }
@@ -64,7 +79,7 @@ export function initHeadlineScroll(host, socket) {
     if (loadingMore || exhausted) return;
     // within ~1.5 rows of the bottom → fetch the next older page
     if (host.scrollTop + host.clientHeight >= host.scrollHeight - 120) loadMore();
-  });
+  }, { passive: true });
 }
 
 /** Appends an older archive page (from the `archive-results` page command). */
@@ -89,24 +104,63 @@ function loadMore() {
 }
 
 // Renders live (top) + archive (below) as one list, de-duped by row key.
-// Only genuinely-new LIVE rows flash; archive rows never do. Scroll position is
-// preserved so a live push or an appended page doesn't yank the viewport.
+// Only genuinely-new LIVE rows flash; archive rows never do.
+//
+// Incremental keyed sync, NOT an innerHTML rebuild: existing row elements are
+// kept (a row is immutable per key), new ones are created where they belong,
+// vanished ones removed. A live push therefore costs a handful of node
+// insertions instead of re-laying-out the whole list, the browser's remembered
+// content-visibility row heights survive, and an in-flight scroll isn't
+// interrupted by a layout storm.
 function renderCombined() {
   const host = hostRef;
   if (!host) return;
   const byKey = new Map();
   for (const h of [...liveItems, ...archiveItems]) byKey.set(rowKey(h), h);
-  const combined = [...byKey.values()];
 
   const prev = seenKeys.get(host) || new Set();
   const isFirstRender = prev.size === 0;
   const liveKeys = new Set(liveItems.map(rowKey));
-  const scroll = host.scrollTop;
-  host.innerHTML = combined
-      .map(h => toRow(h, !isFirstRender && liveKeys.has(rowKey(h)) && !prev.has(rowKey(h))))
-      .join('');
-  host.scrollTop = scroll;
+
+  let els = rowEls.get(host);
+  if (!els) { els = new Map(); rowEls.set(host, els); }
+  if (els.size === 0) host.innerHTML = ''; // clear the empty-state placeholder
+
+  for (const [key, el] of els) {
+    if (!byKey.has(key)) { el.remove(); els.delete(key); }
+  }
+
+  // One ordered walk: reuse the element under the cursor when it matches,
+  // otherwise insert (a new node, or an existing one moved) before it.
+  let cursor = host.firstElementChild;
+  for (const [key, h] of byKey) {
+    const existing = els.get(key);
+    if (existing) {
+      if (existing === cursor) {
+        cursor = cursor.nextElementSibling;
+      } else {
+        host.insertBefore(existing, cursor);
+      }
+    } else {
+      const el = buildRow(h, !isFirstRender && liveKeys.has(key) && !prev.has(key));
+      els.set(key, el);
+      host.insertBefore(el, cursor);
+    }
+  }
   seenKeys.set(host, liveKeys);
+}
+
+function buildRow(h, isNew) {
+  const tpl = document.createElement('template');
+  tpl.innerHTML = toRow(h, isNew);
+  const el = tpl.content.firstElementChild;
+  if (isNew) {
+    // Rows now live across renders, so drop the flash class once it played —
+    // a row born offscreen (content-visibility skips it) would otherwise
+    // replay the gold flash whenever it first scrolls into view.
+    el.addEventListener('animationend', () => el.classList.remove('new-row'), { once: true });
+  }
+  return el;
 }
 
 // Per-headline identity for new-row diffing. clusterId alone is not

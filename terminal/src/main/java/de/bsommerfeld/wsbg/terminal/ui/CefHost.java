@@ -159,7 +159,9 @@ public final class CefHost {
                     //     http://localhost:9222
                     // Cheaper than wiring a right-click context menu and
                     // doesn't require the user to remember a shortcut.
-                    "--remote-debugging-port=9222");
+                    "--remote-debugging-port=9222",
+                    // Loopback-only port; allow tooling (CDP scripts) to attach.
+                    "--remote-allow-origins=*");
 
             cefApp = builder.build();
             cefClient = cefApp.createClient();

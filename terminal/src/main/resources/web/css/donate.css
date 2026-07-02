@@ -35,7 +35,10 @@
   stroke: var(--red);
 }
 .heart-btn.hint svg {
-  animation: beat 1.4s ease-in-out infinite;
+  /* Finite: the hint beats a few times when the banner appears, then holds the
+     red fill. An infinite titlebar beat + the footer banner's own animations
+     union to a full-window damage rect on every OSR frame (top + bottom). */
+  animation: beat 1.4s ease-in-out 4;
 }
 
 /* Linux-only footer heart: mirror the footer theme toggle's visibility. */

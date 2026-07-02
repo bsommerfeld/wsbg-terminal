@@ -30,10 +30,12 @@ import org.cef.callback.CefDragData;
 import org.cef.handler.CefRenderHandler;
 import org.cef.handler.CefScreenInfo;
 
+import java.awt.AlphaComposite;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Cursor;
 import java.awt.Graphics;
+import java.awt.Graphics2D;
 import java.awt.GraphicsConfiguration;
 import java.awt.Point;
 import java.awt.Rectangle;
@@ -59,6 +61,7 @@ import java.awt.event.MouseWheelEvent;
 import java.awt.event.MouseWheelListener;
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferInt;
+import java.awt.image.VolatileImage;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.IntBuffer;
@@ -73,6 +76,12 @@ import javax.swing.MenuSelectionManager;
 import javax.swing.SwingUtilities;
 
 public class SwingCefBrowser extends CefBrowser_N implements CefRenderHandler {
+    // Paint-path diagnostics (WSBG_PAINT_PROFILE=true): logs slow EDT paints and
+    // the CEF dirty-rect sizes, to tell "CEF reports full-frame damage" apart
+    // from "the Swing blit is slow" when hunting size-dependent jank.
+    private static final boolean PAINT_PROFILE =
+            Boolean.parseBoolean(System.getenv("WSBG_PAINT_PROFILE"));
+
     private final RenderPanel panel_;
     private boolean justCreated_ = false;
     private final Rectangle browser_rect_ = new Rectangle(0, 0, 1, 1); // CEF issue #1437.
@@ -165,7 +174,7 @@ public class SwingCefBrowser extends CefBrowser_N implements CefRenderHandler {
     @Override
     public void onPaint(CefBrowser browser, boolean popup, Rectangle[] dirtyRects,
             ByteBuffer buffer, int width, int height) {
-        panel_.onPaint(popup, buffer, width, height);
+        panel_.onPaint(popup, dirtyRects, buffer, width, height);
         if (!onPaintListeners.isEmpty()) {
             CefPaintEvent paintEvent =
                     new CefPaintEvent(browser, popup, dirtyRects, buffer, width, height);
@@ -374,6 +383,17 @@ public class SwingCefBrowser extends CefBrowser_N implements CefRenderHandler {
         private final Rectangle popupRect_ = new Rectangle();
         private boolean popupVisible_ = false;
 
+        // GPU-resident mirror of image_. image_'s raster is written directly,
+        // which makes it permanently "unmanaged" for Java2D — drawing it to the
+        // screen re-uploads the ENTIRE buffer as a texture on EVERY paint
+        // (measured: a fixed ~6ms at 2.5K, ~24ms at 6.7K device px, regardless
+        // of clip size — the big-window jank). Instead, paintComponent uploads
+        // only the accumulated dirty region into this VolatileImage and blits
+        // that to the screen: VRAM→VRAM, effectively free at any window size.
+        private VolatileImage vram_;
+        private final Rectangle vramDirty_ = new Rectangle(); // device px pending upload
+        private boolean vramFull_ = true;                     // full re-upload needed
+
         RenderPanel() {
             setOpaque(true);
             setBackground(Color.BLACK);
@@ -387,6 +407,13 @@ public class SwingCefBrowser extends CefBrowser_N implements CefRenderHandler {
 
         @Override
         public void removeNotify() {
+            synchronized (lock) {
+                if (vram_ != null) {
+                    vram_.flush();   // surface is tied to the peer being removed
+                    vram_ = null;
+                    vramFull_ = true;
+                }
+            }
             if (!isClosed()) notifyAfterParentChanged();
             super.removeNotify();
         }
@@ -405,17 +432,65 @@ public class SwingCefBrowser extends CefBrowser_N implements CefRenderHandler {
             repaint();
         }
 
-        void onPaint(boolean popup, ByteBuffer buffer, int width, int height) {
+        // Copies only the dirty region out of CEF's buffer and schedules an
+        // equally narrow Swing repaint. A full-frame copy at 60fps is a
+        // multi-GB/s memcpy on a Retina display and was the app-wide scroll
+        // bottleneck; the dirty path also shrinks the lock's critical section
+        // to the changed rows, so CEF's paint thread and the EDT no longer
+        // stall each other on busy frames.
+        void onPaint(boolean popup, Rectangle[] dirtyRects, ByteBuffer buffer,
+                int width, int height) {
             if (width <= 0 || height <= 0) return;
             IntBuffer src = buffer.duplicate().order(ByteOrder.LITTLE_ENDIAN).asIntBuffer();
+            Rectangle repaintArea = null; // null = repaint the whole component
+            long t0 = PAINT_PROFILE ? System.nanoTime() : 0;
+            long tLocked = 0;
             synchronized (lock) {
+                if (PAINT_PROFILE) tLocked = System.nanoTime();
                 if (popup) {
                     popupImage_ = blit(popupImage_, src, width, height);
+                    if (popupVisible_) {
+                        // popupRect_ is already in component (logical) space.
+                        repaintArea = grow(new Rectangle(popupRect_), 2);
+                    }
+                } else if (image_ != null && image_.getWidth() == width
+                        && image_.getHeight() == height && dirtyRects != null
+                        && dirtyRects.length > 0 && src.remaining() >= width * height) {
+                    Rectangle devicePx = blitDirty(image_, src, width, dirtyRects, height);
+                    if (PAINT_PROFILE) {
+                        long now = System.nanoTime();
+                        System.out.println("[PAINT] cef dirty=" + devicePx.width + "x"
+                                + devicePx.height + " of " + width + "x" + height
+                                + " rects=" + dirtyRects.length
+                                + " lockWait=" + (tLocked - t0) / 1_000_000 + "ms"
+                                + " copy=" + (now - tLocked) / 1_000_000 + "ms");
+                    }
+                    if (devicePx.isEmpty()) return; // nothing visible changed
+                    if (vramDirty_.isEmpty()) {
+                        vramDirty_.setBounds(devicePx);
+                    } else {
+                        vramDirty_.add(devicePx);
+                    }
+                    // The image is a device-pixel buffer drawn at bufferPx/scale;
+                    // map the dirty union into component space, padded for the
+                    // scale rounding.
+                    double s = scaleFactor_ <= 0 ? 1.0 : scaleFactor_;
+                    repaintArea = grow(new Rectangle(
+                            (int) Math.floor(devicePx.x / s),
+                            (int) Math.floor(devicePx.y / s),
+                            (int) Math.ceil(devicePx.width / s),
+                            (int) Math.ceil(devicePx.height / s)), 2);
                 } else {
+                    // First frame, resize, or an unusable dirty list → full copy.
                     image_ = blit(image_, src, width, height);
+                    vramFull_ = true;
                 }
             }
-            repaint();
+            if (repaintArea == null) {
+                repaint();
+            } else {
+                repaint(repaintArea);
+            }
         }
 
         // BGRA little-endian bytes read as a little-endian int yield 0xAARRGGBB
@@ -429,26 +504,170 @@ public class SwingCefBrowser extends CefBrowser_N implements CefRenderHandler {
             return img;
         }
 
+        /**
+         * Copies only {@code dirtyRects} (device px, row by row — src and dst
+         * share the buffer's row stride) into the existing image and returns
+         * their union, empty when no rect intersected the buffer.
+         */
+        private Rectangle blitDirty(BufferedImage img, IntBuffer src, int w,
+                Rectangle[] dirtyRects, int h) {
+            int[] dst = ((DataBufferInt) img.getRaster().getDataBuffer()).getData();
+            Rectangle bounds = new Rectangle(0, 0, w, h);
+            Rectangle union = null;
+            for (Rectangle r : dirtyRects) {
+                Rectangle c = r.intersection(bounds);
+                if (c.isEmpty()) continue;
+                for (int row = 0; row < c.height; row++) {
+                    int off = (c.y + row) * w + c.x;
+                    src.position(off);
+                    src.get(dst, off, c.width);
+                }
+                union = union == null ? c : union.union(c);
+            }
+            return union == null ? new Rectangle() : union;
+        }
+
+        private Rectangle grow(Rectangle r, int pad) {
+            r.grow(pad, pad);
+            return r;
+        }
+
+        /**
+         * Brings {@link #vram_} up to date with {@link #image_} (dirty-region
+         * sub-rect upload) and returns the surface to draw — {@code vram_}
+         * normally, {@code image_} itself when no volatile surface is available
+         * (component not displayable, incompatible surface). Runs on the EDT
+         * under {@code lock}.
+         */
+        private java.awt.Image syncVram() {
+            int w = image_.getWidth(), h = image_.getHeight();
+            GraphicsConfiguration gc = getGraphicsConfiguration();
+            if (gc == null) return image_;
+            if (vram_ == null || vram_.getWidth() != w || vram_.getHeight() != h) {
+                if (vram_ != null) vram_.flush();
+                vram_ = createVolatileImage(w, h);
+                vramFull_ = true;
+            }
+            if (vram_ == null) return image_;
+            int state = vram_.validate(gc);
+            if (state == VolatileImage.IMAGE_INCOMPATIBLE) {
+                vram_.flush();
+                vram_ = createVolatileImage(w, h);
+                vramFull_ = true;
+                if (vram_ == null) return image_;
+                if (vram_.validate(gc) == VolatileImage.IMAGE_INCOMPATIBLE) return image_;
+            } else if (state == VolatileImage.IMAGE_RESTORED) {
+                vramFull_ = true;
+            }
+            Rectangle up = vramFull_ ? new Rectangle(0, 0, w, h)
+                    : vramDirty_.intersection(new Rectangle(0, 0, w, h));
+            if (!up.isEmpty()) {
+                long m0 = PAINT_PROFILE ? System.nanoTime() : 0;
+                Graphics2D vg = vram_.createGraphics();
+                long m1 = PAINT_PROFILE ? System.nanoTime() : 0;
+                try {
+                    vg.setComposite(AlphaComposite.Src);
+                    if (vramFull_) {
+                        vg.drawImage(image_, 0, 0, null);
+                    } else {
+                        // Metal's sw→VRAM blit re-uploads the ENTIRE source image
+                        // for an unmanaged source — a clip does NOT bound it
+                        // (measured: a 113x36 clipped draw cost the same ~9ms as
+                        // full-frame at 6.7K device px). A subimage VIEW (shared
+                        // raster, no pixel copy) bounds the source itself, so the
+                        // upload is dirty-sized.
+                        vg.drawImage(image_.getSubimage(up.x, up.y, up.width, up.height),
+                                up.x, up.y, null);
+                    }
+                } finally {
+                    vg.dispose();
+                }
+                if (PAINT_PROFILE) {
+                    long m2 = System.nanoTime();
+                    if ((m2 - m0) / 1_000_000 >= 3) {
+                        System.out.println("[PAINT] vram-up rect=" + up.width + "x" + up.height
+                                + " mkG=" + (m1 - m0) / 1_000_000 + "ms"
+                                + " draw+disp=" + (m2 - m1) / 1_000_000 + "ms"
+                                + " full=" + vramFull_);
+                    }
+                }
+            }
+            vramDirty_.setBounds(0, 0, 0, 0);
+            vramFull_ = false;
+            return vram_;
+        }
+
         @Override
         protected void paintComponent(Graphics g) {
+            long t0 = PAINT_PROFILE ? System.nanoTime() : 0;
+            long tLocked = 0;
             super.paintComponent(g); // fills the (black) background
+            Rectangle clip = g.getClipBounds();
             synchronized (lock) {
+                if (PAINT_PROFILE) tLocked = System.nanoTime();
                 if (image_ != null) {
+                    // Sync the GPU mirror: upload only the dirty device-px
+                    // region of image_ into vram_ (a sub-rect sw→VRAM upload),
+                    // then blit vram_ to the screen — VRAM→VRAM, cheap at any
+                    // window size. Drawing image_ directly would re-upload the
+                    // whole (unmanaged) buffer every paint. Falls back to the
+                    // direct draw when a volatile surface isn't available.
+                    java.awt.Image toDraw = syncVram();
+
                     // image_ is a device-pixel buffer; its intended on-screen
                     // size is bufferPx / deviceScale. Never draw it LARGER than
                     // that — on a big jump (maximize) stretching the stale buffer
                     // to the new bounds balloons the text for a frame until CEF
                     // repaints. Cap to the native logical size (the freshly-sized
                     // frame arrives in a tick and fills the rest of the bg).
+                    // Only the clip region is drawn, mapped to its source rect
+                    // with per-coordinate rounding so adjacent clips share
+                    // identical source edges (no seams).
+                    long tSync = PAINT_PROFILE ? System.nanoTime() : 0;
                     double s = scaleFactor_ <= 0 ? 1.0 : scaleFactor_;
                     int logW = (int) Math.round(image_.getWidth() / s);
                     int logH = (int) Math.round(image_.getHeight() / s);
-                    g.drawImage(image_, 0, 0,
-                            Math.min(getWidth(), logW), Math.min(getHeight(), logH), null);
+                    int maxW = Math.min(getWidth(), logW);
+                    int maxH = Math.min(getHeight(), logH);
+                    int dx1 = 0, dy1 = 0, dx2 = maxW, dy2 = maxH;
+                    if (clip != null) {
+                        dx1 = Math.max(0, clip.x);
+                        dy1 = Math.max(0, clip.y);
+                        dx2 = Math.min(maxW, clip.x + clip.width);
+                        dy2 = Math.min(maxH, clip.y + clip.height);
+                    }
+                    if (dx1 < dx2 && dy1 < dy2) {
+                        g.drawImage(toDraw, dx1, dy1, dx2, dy2,
+                                (int) Math.round(dx1 * s), (int) Math.round(dy1 * s),
+                                (int) Math.round(dx2 * s), (int) Math.round(dy2 * s), null);
+                    }
+                    if (toDraw == vram_ && vram_.contentsLost()) {
+                        vramFull_ = true; // surface evicted mid-paint → redo fully
+                        repaint();
+                    }
+                    if (PAINT_PROFILE) {
+                        long now = System.nanoTime();
+                        long total = (now - t0) / 1_000_000;
+                        if (total >= 4) {
+                            System.out.println("[PAINT] edt-split sync="
+                                    + (tSync - tLocked) / 1_000_000 + "ms blit="
+                                    + (now - tSync) / 1_000_000 + "ms vram=" + (toDraw == vram_));
+                        }
+                    }
                 }
                 if (popupVisible_ && popupImage_ != null) {
                     g.drawImage(popupImage_, popupRect_.x, popupRect_.y,
                             popupRect_.width, popupRect_.height, null);
+                }
+            }
+            if (PAINT_PROFILE && clip != null) {
+                long now = System.nanoTime();
+                long ms = (now - t0) / 1_000_000;
+                if (ms >= 4) {
+                    System.out.println("[PAINT] edt clip=" + clip.width + "x" + clip.height
+                            + " took=" + ms + "ms"
+                            + " lockWait=" + (tLocked - t0) / 1_000_000 + "ms"
+                            + " draw=" + (now - tLocked) / 1_000_000 + "ms");
                 }
             }
         }

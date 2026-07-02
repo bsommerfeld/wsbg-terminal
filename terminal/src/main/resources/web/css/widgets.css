@@ -51,7 +51,11 @@ a.glyph:hover { opacity: .7; }
 .widget-head .live::before {
   content: ""; width: 5px; height: 5px; border-radius: 50%;
   background: var(--green); box-shadow: 0 0 6px var(--green);
-  animation: pulse 2s infinite;
+  /* No infinite pulse: under software OSR every animation frame forces a
+     paint whose damage UNIONS with everything else animating on screen —
+     a top-of-window pulse + a footer pulse = full-window blits at 60fps,
+     which is what made big windows janky. The static glow carries the
+     "live" read; animate only on real state changes. */
 }
 
 /* Scraper health on the LIVE indicator itself (the old standalone
