@@ -453,4 +453,36 @@ class HeadlineWriterTest {
         assertNull(h.snapshot(), "…and no price snapshot");
         assertTrue(h.subjects().isEmpty(), "…and no glow subject");
     }
+
+    // ---- trimInterpretiveTail: the mechanical gate for the ~20% interpretation-clause class ----
+
+    @Test
+    void trimsAnAbstractTrailingWasClause() {
+        // The stable live pattern: concrete head, interpretive tail.
+        assertEquals("Direxion lanciert einen 2X-ETF auf SK hynix.",
+                HeadlineWriter.trimInterpretiveTail(
+                        "Direxion lanciert einen 2X-ETF auf SK hynix, "
+                                + "was die Diskussion um den Halbleitersektor weiter anheizt"));
+        assertEquals("Trump-Aktivitäten treiben den Dow Jones nach unten.",
+                HeadlineWriter.trimInterpretiveTail(
+                        "Trump-Aktivitäten treiben den Dow Jones nach unten, "
+                                + "wodurch die anhaltende Einflussnahme sichtbar wird"));
+    }
+
+    @Test
+    void keepsAFigureBearingWasClause() {
+        // A clause with a number/currency is detail, not interpretation — never cut.
+        String line = "EU-Gericht bestätigt Anti-Trust-Strafen gegen Alphabet, "
+                + "was die Anleger mit -1,7% quittieren";
+        assertEquals(line, HeadlineWriter.trimInterpretiveTail(line));
+    }
+
+    @Test
+    void keepsLinesWithoutATailAndTooShortHeads() {
+        String plain = "Rheinmetall erhält Großauftrag über Artilleriemunition";
+        assertEquals(plain, HeadlineWriter.trimInterpretiveTail(plain));
+        // Head below the minimum stays untouched — cutting would leave a stump.
+        String shortHead = "Kurs fällt, was den Raum beunruhigt";
+        assertEquals(shortHead, HeadlineWriter.trimInterpretiveTail(shortHead));
+    }
 }
