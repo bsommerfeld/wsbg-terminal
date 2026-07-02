@@ -326,6 +326,14 @@ class HeadlineWriterTest {
     }
 
     @Test
+    void displayFormInStripsALeadingArticle() {
+        // "The Wendy's Company" could never gild via pure prefixes — every prefix
+        // starts with "The". The article is stripped before the prefix descent.
+        assertEquals("Wendy's", HeadlineWriter.displayFormIn(
+                "Institutionelle Käufe bei Wendy's gelten als Kaufgelegenheit", "The Wendy's Company"));
+    }
+
+    @Test
     void displayFormInFindsTheShortFormOfALegalName() {
         assertEquals("Salesforce", HeadlineWriter.displayFormIn(
                 "Salesforce zieht nach starken Zahlen an", "Salesforce, Inc."));

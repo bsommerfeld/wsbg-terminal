@@ -313,7 +313,10 @@ public final class HeadlineWriter {
     static String displayFormIn(String headline, String canonicalName) {
         if (headline == null || canonicalName == null || canonicalName.isBlank()) return null;
         String headlineLower = headline.toLowerCase(Locale.ROOT);
-        String[] words = canonicalName.trim().split("\\s+");
+        // A leading article makes every prefix start with it, so "The Wendy's
+        // Company" could never gild the line's "Wendy's" — strip it up front.
+        String name = canonicalName.trim().replaceFirst("(?i)^(the|der|die|das)\\s+", "");
+        String[] words = name.split("\\s+");
         for (int k = words.length; k >= 1; k--) {
             String cand = String.join(" ", Arrays.copyOfRange(words, 0, k))
                     .replaceAll("[,.]+$", "").trim();
