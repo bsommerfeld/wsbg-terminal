@@ -9,3 +9,4 @@ Nach jedem Update legt sich einmalig eine "Was hat sich geändert?"-Übersicht �
 - Das generelle UI Ruckeln wurde behoben
 - Deutschland Farben sind nun im Titel & Logo mehr gesättigt
 - Das Terminal fragt seine Datenquellen (Reddit, Kurse, News) jetzt unauffälliger und sparsamer ab - weniger Gefahr, unterwegs ausgebremst oder geblockt zu werden, gleiche Frische
+- Schlagzeilen werden konkreter und schlauer: statt vager Wertungen nennen sie die Zahl, das Ereignis und den Akteur selbst, begründen öfter das Warum hinter einem Move - und lassen weg, was sich aus der Zeile ohnehin ergibt

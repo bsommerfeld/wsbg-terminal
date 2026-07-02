@@ -1,30 +1,19 @@
 package de.bsommerfeld.wsbg.terminal.agent;
-import de.bsommerfeld.wsbg.terminal.embedding.EmbeddingService;
-import de.bsommerfeld.wsbg.terminal.embedding.OllamaEmbeddingService;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import de.bsommerfeld.wsbg.terminal.agent.HeadlineWriter.Draft;
-import de.bsommerfeld.wsbg.terminal.agent.HeadlineWriter.DraftSubject;
 import de.bsommerfeld.wsbg.terminal.agent.TickerResolver.ResolvedSubject;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
+import de.bsommerfeld.wsbg.terminal.core.i18n.I18nService;
 import de.bsommerfeld.wsbg.terminal.core.util.StorageUtils;
 import de.bsommerfeld.wsbg.terminal.db.AgentRepository;
 import de.bsommerfeld.wsbg.terminal.db.AgentRepository.HeadlineRecord;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
 import de.bsommerfeld.wsbg.terminal.db.RedditSnapshotStore;
+import de.bsommerfeld.wsbg.terminal.embedding.OllamaEmbeddingService;
 import de.bsommerfeld.wsbg.terminal.reddit.RssRedditScraper;
-import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooFinanceClient;
 import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
-import dev.langchain4j.data.message.AiMessage;
-import dev.langchain4j.data.message.ChatMessage;
-import dev.langchain4j.data.message.SystemMessage;
-import dev.langchain4j.data.message.UserMessage;
-import dev.langchain4j.model.chat.ChatModel;
-import dev.langchain4j.model.chat.request.ChatRequest;
-import dev.langchain4j.model.chat.response.ChatResponse;
+import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooFinanceClient;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
@@ -34,8 +23,10 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -51,19 +42,18 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
  * </pre>
  *
  * <p>It wires the production graph ({@link PassiveMonitorService} does the real
- * clustering), waits for live clusters to form, then walks each cluster through
- * the four production stages with full visibility — so the human can judge
- * <em>cluster quality</em>, <em>information density</em> and <em>headline +
- * data quality</em> from one transcript. The model-call glue mirrors
- * {@link EditorialAgent} verbatim (the only two private methods); every other
- * stage uses the production class directly.
+ * clustering), waits for live clusters to form, then drives the PRODUCTION
+ * subject-unit path — {@link EditorialAgent#attributeCluster} per cluster, then
+ * {@code mergeIdentities} + {@link EditorialAgent#composeAndPublishUnit} per dirty
+ * {@link SubjectUnit} — with full visibility, so the human can judge <em>cluster
+ * quality</em>, <em>information density</em> and <em>headline + data quality</em>
+ * from one transcript. Every stage uses the production class directly; nothing is
+ * mirrored by hand.
  */
 @Tag("integration")
 @EnabledIfEnvironmentVariable(named = "PIPELINE_SMOKE", matches = "true")
 class PipelineSmokeIT {
 
-    private static final ObjectMapper JSON = new ObjectMapper();
-    private static final int MAX_SUBJECTS = 6;
     private static final String SUB = "wallstreetbetsGER";
 
     @Test
@@ -79,6 +69,7 @@ class PipelineSmokeIT {
             OllamaServerManager osm = new OllamaServerManager();
             AgentBrain brain = new AgentBrain(config, bus, osm);
             ClusterRegistry registry = new ClusterRegistry();
+            SubjectRegistry subjectRegistry = new SubjectRegistry();
             YahooFinanceClient yahoo = new YahooFinanceClient(config);
             RssRedditScraper rss = new RssRedditScraper(redditRepo, config, bus);
 
@@ -86,7 +77,12 @@ class PipelineSmokeIT {
             ClusterEngine clusterEngine = new ClusterEngine(registry);
             new PassiveMonitorService(rss, brain, bus, redditRepo, agentRepo,
                     new RedditSnapshotStore(), new AgentSnapshotStore(), registry,
-                    new SubjectRegistry(), clusterEngine, config);
+                    subjectRegistry, clusterEngine, config);
+
+            // The production editorial pipeline (same wiring as PipelineStagesIT).
+            EditorialAgent editorial = new EditorialAgent(brain, registry, agentRepo, redditRepo,
+                    bus, new I18nService(config), yahoo, new OllamaEmbeddingService(),
+                    subjectRegistry, config);
 
             // RSS cold-start is slow: scanSubreddit fetches every thread context
             // serially (anon rate limiter, ~7s each) and only clusters the whole
@@ -98,52 +94,46 @@ class PipelineSmokeIT {
 
             List<InvestigationCluster> all = new ArrayList<>(registry.getAllClusters());
             assertFalse(all.isEmpty(), "no clusters formed from live Reddit — cannot judge quality");
-            // Bound the model work: evaluate at most the first 8 clusters.
+            assertNotNull(brain.getAgentModel(), "agent model not ready");
+            // Bound the model work: evaluate at most the first 6 clusters.
             List<InvestigationCluster> clusters = all.size() > 6 ? all.subList(0, 6) : all;
             System.out.println("[SMOKE] " + all.size() + " live cluster(s) formed; evaluating "
                     + clusters.size() + ".\n");
 
-            ChatModel model = brain.getAgentModel();
-            assertNotNull(model, "agent model not ready");
-
             ReportBuilder reportBuilder = new ReportBuilder(redditRepo, brain);
-            TickerResolver resolver = new TickerResolver(yahoo);
-            HeadlineWriter writer = new HeadlineWriter(agentRepo, bus);
-
-            AtomicInteger totalHeadlines = new AtomicInteger();
-            AtomicInteger tickerHeadlines = new AtomicInteger();
-            AtomicInteger withMarketData = new AtomicInteger();
             AtomicInteger newsBackedSubjects = new AtomicInteger();
 
+            // Stage 1+2 — per cluster: extract + resolve + attribute into the
+            // feed-wide SubjectRegistry (production attributeCluster).
             int idx = 0;
             for (InvestigationCluster cluster : clusters) {
                 idx++;
                 List<HeadlineRecord> prior = agentRepo.getHeadlinesByClusterId(cluster.id);
                 String brief = reportBuilder.buildReportData(cluster, prior);
-
                 printClusterHeader(idx, clusters.size(), cluster, brief);
-
-                // Stage 1 — subjects (mirrors EditorialAgent.extractSubjects)
-                List<String> subjects = extractSubjects(model, brief);
-                System.out.println("  SUBJECTS: " + (subjects.isEmpty() ? "(none)" : subjects));
-
-                // Stage 2 — deterministic Yahoo resolution (production TickerResolver)
-                List<ResolvedSubject> resolved = new ArrayList<>();
-                for (String s : subjects) resolved.add(resolver.resolve(s));
+                List<ResolvedSubject> resolved = editorial.attributeCluster(cluster.id, subjectRegistry);
                 printResolved(resolved, newsBackedSubjects);
-
-                // Stage 3 — headline drafts (mirrors EditorialAgent.composeHeadlines)
-                List<Draft> drafts = composeHeadlines(model, brain, brief, resolved);
-
-                // Stage 4 — production QA + persist
-                System.out.println("  HEADLINES:");
-                for (Draft d : drafts) {
-                    boolean published = writer.publish(cluster, d, resolved);
-                    printDraft(d, published, totalHeadlines, tickerHeadlines, withMarketData, resolved);
-                }
-                if (drafts.isEmpty()) System.out.println("    (none — empty draft list)");
                 System.out.println();
             }
+
+            // Stage 3 — identity merge, then one headline per dirty unit
+            // (production composeAndPublishUnit, heaviest evidence first).
+            subjectRegistry.mergeIdentities();
+            List<SubjectUnit> toCompose = subjectRegistry.drainDirty().stream()
+                    .map(subjectRegistry::get).filter(Objects::nonNull)
+                    .sorted(Comparator.comparingInt(SubjectUnit::evidenceCount).reversed())
+                    .toList();
+            System.out.println("[SMOKE] " + toCompose.size() + " dirty subject unit(s) to compose.\n");
+
+            AtomicInteger totalHeadlines = new AtomicInteger();
+            AtomicInteger tickerHeadlines = new AtomicInteger();
+            AtomicInteger withMarketData = new AtomicInteger();
+            System.out.println("  HEADLINES:");
+            for (SubjectUnit unit : toCompose) {
+                boolean published = editorial.composeAndPublishUnit(unit);
+                printUnitOutcome(unit, published, agentRepo, totalHeadlines, tickerHeadlines, withMarketData);
+            }
+            if (toCompose.isEmpty()) System.out.println("    (none — no dirty units)");
 
             printSummary(clusters.size(), totalHeadlines.get(), tickerHeadlines.get(),
                     withMarketData.get(), newsBackedSubjects.get());
@@ -201,142 +191,45 @@ class PipelineSmokeIT {
         }
     }
 
-    private static void printDraft(Draft d, boolean published, AtomicInteger total,
-            AtomicInteger withTicker, AtomicInteger withData, List<ResolvedSubject> resolved) {
+    /** Prints the unit's compose outcome — the freshly published record, or the silence. */
+    private static void printUnitOutcome(SubjectUnit unit, boolean published, AgentRepository repo,
+            AtomicInteger total, AtomicInteger withTicker, AtomicInteger withData) {
+        if (!published) {
+            System.out.printf(Locale.ROOT, "    [silent]    %s (%d evidence)%n",
+                    unit.canonicalName(), unit.evidenceCount());
+            return;
+        }
         total.incrementAndGet();
-        if (d.tickerSymbol() != null && !d.tickerSymbol().isBlank()) withTicker.incrementAndGet();
-        boolean dataBacked = d.tickerSymbol() != null && resolved.stream()
-                .anyMatch(r -> r.isInstrument() && r.ticker().equalsIgnoreCase(d.tickerSymbol())
-                        && r.snapshot() != null && r.snapshot().hasPrice());
-        if (dataBacked) withData.incrementAndGet();
+        List<HeadlineRecord> records = repo.getHeadlinesByClusterId(unit.id);
+        HeadlineRecord r = records.isEmpty() ? null : records.get(records.size() - 1);
+        if (r == null) {
+            System.out.printf(Locale.ROOT, "    [PUBLISHED] %s — record not found in repo?!%n",
+                    unit.canonicalName());
+            return;
+        }
+        if (r.tickerSymbol() != null && !r.tickerSymbol().isBlank()) withTicker.incrementAndGet();
+        if (r.snapshot() != null && r.snapshot().hasPrice()) withData.incrementAndGet();
         System.out.printf(Locale.ROOT,
-                "    [%s] %-9s %-5s %s%s%n      \"%s\"%n",
-                published ? "PUBLISHED" : "dropped",
-                nz(d.highlight()), nz(d.sentiment()),
-                d.tickerSymbol() == null ? "" : d.tickerSymbol(),
-                d.priceMovePercent() == null ? "" : String.format(Locale.ROOT, " %+.1f%%", d.priceMovePercent()),
-                d.headline());
+                "    [PUBLISHED] %-9s %-7s %s%s%n      \"%s\"%n",
+                nz(String.valueOf(r.highlight())), nz(String.valueOf(r.sentiment())),
+                r.tickerSymbol() == null ? "" : r.tickerSymbol(),
+                r.priceMovePercent() == null ? "" : String.format(Locale.ROOT, " %+.1f%%", r.priceMovePercent()),
+                r.headline());
     }
 
     private static void printSummary(int clusters, int headlines, int withTicker, int withData, int newsBacked) {
         System.out.println("============================================================");
         System.out.println("[SMOKE] SUMMARY");
         System.out.println("  clusters evaluated   : " + clusters);
-        System.out.println("  headlines drafted    : " + headlines);
+        System.out.println("  headlines published  : " + headlines);
         System.out.println("  …carrying a ticker   : " + withTicker);
         System.out.println("  …backed by live data : " + withData);
         System.out.println("  news-backed subjects : " + newsBacked);
         System.out.println("============================================================");
     }
 
-    // ---- stage-1 / stage-3 model glue (mirrors EditorialAgent) ----
-
-    private static List<String> extractSubjects(ChatModel model, String brief) {
-        String sys = PromptLoader.load("subject-extraction")
-                .replace("{{ENTITY_ALIASES}}", WsbgJargon.entityAliasesForPrompt());
-        JsonNode root = parseJson(chat(model, sys, brief));
-        List<String> out = new ArrayList<>();
-        if (root != null && root.path("subjects").isArray()) {
-            for (JsonNode s : root.path("subjects")) {
-                String name = s.asText("").trim();
-                if (!name.isEmpty() && out.size() < MAX_SUBJECTS) out.add(name);
-            }
-        }
-        return out;
-    }
-
-    private static List<Draft> composeHeadlines(ChatModel model, AgentBrain brain,
-            String brief, List<ResolvedSubject> resolved) {
-        String sys = PromptLoader.load("headline-compose")
-                .replace("{{LANGUAGE}}", brain.getUserLanguage().displayName())
-                .replace("{{ROOM_SLANG}}", WsbgJargon.roomSlangForPrompt());
-        String user = brief + "\n\n=== RESOLVED SUBJECTS ===\n" + renderResolved(resolved);
-        JsonNode root = parseJson(chat(model, sys, user));
-        List<Draft> out = new ArrayList<>();
-        if (root != null && root.path("headlines").isArray()) {
-            for (JsonNode h : root.path("headlines")) {
-                String headline = h.path("headline").asText("").trim();
-                if (headline.isEmpty()) continue;
-                Double priceMove = h.path("priceMovePercent").isNumber() ? h.path("priceMovePercent").asDouble() : null;
-                List<DraftSubject> subs = new ArrayList<>();
-                if (h.path("subjects").isArray()) {
-                    for (JsonNode s : h.path("subjects")) {
-                        String name = s.path("name").asText("").trim();
-                        String ticker = s.path("ticker").asText("").trim();
-                        if (!name.isEmpty() && !ticker.isEmpty()) subs.add(new DraftSubject(name, ticker));
-                    }
-                }
-                out.add(new Draft(headline, h.path("sentiment").asText(""), h.path("highlight").asText(""),
-                        emptyToNull(h.path("tickerSymbol").asText("")), subs, priceMove,
-                        readStrings(h.path("sectors")), emptyToNull(h.path("assetClass").asText("")),
-                        readStrings(h.path("sourceThreadIds")), readStrings(h.path("sourceCommentIds"))));
-            }
-        }
-        return out;
-    }
-
-    private static String renderResolved(List<ResolvedSubject> resolved) {
-        if (resolved.isEmpty()) return "(no market subjects detected — write from the cluster's own sentiment)\n";
-        StringBuilder sb = new StringBuilder();
-        Instant now = Instant.now();
-        for (ResolvedSubject r : resolved) {
-            sb.append("- ").append(r.canonicalName());
-            if (r.isInstrument()) {
-                sb.append(" → ticker ").append(r.ticker());
-                MarketSnapshot s = r.snapshot();
-                if (s != null && s.hasPrice()) {
-                    sb.append(String.format(Locale.ROOT, " | price %.2f%s", s.price(), nz(s.currency()).isEmpty() ? "" : " " + nz(s.currency())));
-                    if (Double.isFinite(s.dayChangePercent())) sb.append(String.format(Locale.ROOT, ", day %+.2f%%", s.dayChangePercent()));
-                }
-            } else {
-                sb.append(" → no ticker (theme/person — news only, write without a ticker)");
-            }
-            sb.append('\n');
-            for (RawNewsItem n : r.news()) {
-                sb.append("    Yahoo news: ");
-                if (n.publishedAt() != null) sb.append(humanAge(Duration.between(n.publishedAt(), now).toMinutes())).append(" — ");
-                sb.append(n.title());
-                if (n.publisher() != null && !n.publisher().isEmpty()) sb.append(" · ").append(n.publisher());
-                sb.append('\n');
-            }
-            for (TickerResolver.RelatedInstrument ri : r.related()) {
-                MarketSnapshot s = ri.snapshot();
-                sb.append("    related instrument (from the news above): ").append(ri.ticker());
-                if (s != null && s.hasPrice() && Double.isFinite(s.dayChangePercent())) {
-                    sb.append(String.format(Locale.ROOT, " %+.2f%% today", s.dayChangePercent()));
-                }
-                sb.append('\n');
-            }
-        }
-        return sb.toString();
-    }
-
     // ---- helpers ----
 
-    private static String chat(ChatModel model, String sys, String user) {
-        List<ChatMessage> messages = List.of(SystemMessage.from(sys), UserMessage.from(user));
-        ChatResponse resp = model.chat(ChatRequest.builder().messages(messages).build());
-        AiMessage ai = resp.aiMessage();
-        return ai == null || ai.text() == null ? "" : ai.text();
-    }
-
-    private static JsonNode parseJson(String text) {
-        if (text == null) return null;
-        int start = text.indexOf('{'), end = text.lastIndexOf('}');
-        if (start < 0 || end <= start) return null;
-        try { return JSON.readTree(text.substring(start, end + 1)); } catch (Exception e) { return null; }
-    }
-
-    private static List<String> readStrings(JsonNode node) {
-        List<String> out = new ArrayList<>();
-        if (node != null && node.isArray()) for (JsonNode el : node) {
-            String s = el.asText("").trim();
-            if (!s.isEmpty()) out.add(s);
-        }
-        return out;
-    }
-
-    private static String emptyToNull(String s) { return s == null || s.isBlank() ? null : s; }
     private static String nz(String s) { return s == null ? "" : s; }
     private static String humanAge(long mins) {
         return mins < 60 ? mins + "m ago" : mins < 1440 ? (mins / 60) + "h ago" : (mins / 1440) + "d ago";
