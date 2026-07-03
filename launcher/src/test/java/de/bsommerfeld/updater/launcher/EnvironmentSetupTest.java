@@ -100,11 +100,12 @@ class EnvironmentSetupTest {
                     emissions.add(new String[] { phase, detail });
                 });
 
-        // First a ModelCount control message "total/completed" (idx 2 → 1 done),
-        // then the visible pull phase with a clean model name (no count/dots).
+        // First a ModelCount control message "total/started" (idx 2 → both
+        // pips lit: the second model's pull just began), then the visible pull
+        // phase with a clean model name (no count/dots).
         assertEquals(2, emissions.size());
         assertEquals("ModelCount", emissions.get(0)[0]);
-        assertEquals("2/1", emissions.get(0)[1]);
+        assertEquals("2/2", emissions.get(0)[1]);
         assertEquals("Pulling embeddinggemma:latest", emissions.get(1)[0]);
         assertNull(emissions.get(1)[1]);
     }

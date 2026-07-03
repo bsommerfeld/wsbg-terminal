@@ -36,8 +36,11 @@ final class ProgressInfoLine extends JComponent {
     // Gap between the ETA and speed groups.
     private static final int PART_GAP = 16;
 
-    private long etaSeconds = -1; // -1 => not shown
-    private long speedBytes = -1; // -1 => not shown
+    // The ETA is stored as an absolute deadline so the readout counts down in
+    // real time between estimator updates instead of freezing on the last
+    // handed-over value.
+    private long etaDeadlineMs = -1; // -1 => not shown
+    private long speedBytes = -1;    // -1 => not shown
 
     private float opacity = 0f;
     private boolean active = false;
@@ -52,7 +55,7 @@ final class ProgressInfoLine extends JComponent {
 
     /** Sets remaining seconds (negative hides the ETA group). */
     void setEta(long secs) {
-        etaSeconds = secs < 0 ? -1 : secs;
+        etaDeadlineMs = secs < 0 ? -1 : System.currentTimeMillis() + secs * 1000;
         refreshActive();
     }
 
@@ -64,13 +67,13 @@ final class ProgressInfoLine extends JComponent {
 
     /** Hides the whole line (both groups). */
     void clear() {
-        etaSeconds = -1;
+        etaDeadlineMs = -1;
         speedBytes = -1;
         requestDismiss();
     }
 
     private void refreshActive() {
-        if (etaSeconds >= 0 || speedBytes >= 0) {
+        if (etaDeadlineMs >= 0 || speedBytes >= 0) {
             active = true;
             dismissRequestTime = 0;
         } else {
@@ -97,7 +100,7 @@ final class ProgressInfoLine extends JComponent {
             opacity = Math.max(0f, opacity - 0.06f);
             if (opacity < 0.02f) {
                 opacity = 0f;
-                etaSeconds = -1;
+                etaDeadlineMs = -1;
                 speedBytes = -1;
                 if (getParent() != null) {
                     getParent().repaint(getX(), getY(), getWidth(), getHeight());
@@ -115,9 +118,13 @@ final class ProgressInfoLine extends JComponent {
         super.paintComponent(g);
         if (opacity <= 0f) return;
 
-        long eta = etaSeconds;
+        // Live countdown: the remaining time is derived from the deadline at
+        // paint time (the 16 ms tick repaints while visible), clamped so a
+        // passed deadline holds at "1s" until the estimator corrects it.
+        long eta = etaDeadlineMs < 0 ? -1
+                : Math.max(0, Math.round((etaDeadlineMs - System.currentTimeMillis()) / 1000.0));
         long speed = speedBytes;
-        boolean hasEta = eta >= 0;
+        boolean hasEta = etaDeadlineMs >= 0;
         boolean hasSpeed = speed >= 0;
         if (!hasEta && !hasSpeed) return;
 

@@ -6,8 +6,9 @@ import java.awt.geom.Ellipse2D;
 
 /**
  * A tiny row of page-style dots beneath the {@link IslandIndicator} — one pip
- * per AI model being installed. Completed models are filled amber; the current
- * and pending ones stay a dim track colour. It exists so the user can see
+ * per AI model being installed. A model's pip fills amber the moment its
+ * install begins; only the not-yet-started ones stay a dim track colour. It
+ * exists so the user can see
  * <em>how many</em> models install (two, currently), which the single download
  * bar cannot convey on its own — the bar collapses and re-expands between
  * models, reading as one repeated install rather than a set.
@@ -24,28 +25,28 @@ final class ModelPips extends JComponent {
     private static final int HEIGHT = DOT + 6;
 
     // Matches IslandIndicator's fill/track so the pips read as the same family.
-    private static final Color DONE = new Color(0xF9, 0xB6, 0x4F);
+    private static final Color LIT = new Color(0xF9, 0xB6, 0x4F);
     private static final Color PENDING = new Color(60, 60, 66);
 
     private int total = 0;
-    private int completed = 0;
+    private int lit = 0;
 
     ModelPips() {
         setOpaque(false);
         setPreferredSize(new Dimension(120, HEIGHT));
     }
 
-    /** Sets the pip count and how many are done, clamping to a sane range. */
-    void set(int total, int completed) {
+    /** Sets the pip count and how many are lit, clamping to a sane range. */
+    void set(int total, int lit) {
         this.total = Math.max(0, total);
-        this.completed = Math.max(0, Math.min(completed, this.total));
+        this.lit = Math.max(0, Math.min(lit, this.total));
         repaint();
     }
 
     /** Hides the row (no dots painted) until the next {@link #set}. */
     void clear() {
         total = 0;
-        completed = 0;
+        lit = 0;
         repaint();
     }
 
@@ -61,7 +62,7 @@ final class ModelPips extends JComponent {
         double cy = getHeight() / 2.0;
 
         for (int i = 0; i < total; i++) {
-            g2.setColor(i < completed ? DONE : PENDING);
+            g2.setColor(i < lit ? LIT : PENDING);
             g2.fill(new Ellipse2D.Double(x, cy - DOT / 2.0, DOT, DOT));
             x += DOT + GAP;
         }

@@ -495,13 +495,14 @@ final class EnvironmentSetup {
             maxTotalBytes = 0; // Reset for new model
 
             // "ModelCount" is a control message (not a user-visible phase): it
-            // carries "total/completed" so the launcher can draw one pip per
-            // model. Emitted before the "Pulling" phase; the index is 1-based,
-            // so "completed" = idx - 1 (the models pulled before this one).
+            // carries "total/started" so the launcher can draw one pip per
+            // model. Emitted before the "Pulling" phase; the 1-based index IS
+            // the started count, so the current model's pip lights up the
+            // moment its pull begins, not only once it finished.
             if (m.group(2) != null && m.group(3) != null) {
                 int idx = Integer.parseInt(m.group(2));
                 int total = Integer.parseInt(m.group(3));
-                consumer.accept("ModelCount", total + "/" + (idx - 1));
+                consumer.accept("ModelCount", total + "/" + idx);
             }
 
             consumer.accept("Pulling " + currentModelName, null);

@@ -42,6 +42,14 @@ public final class LauncherMain {
 
     private static final GitHubRepository REPO = GitHubRepository.of("bsommerfeld/wsbg-terminal");
     private static final int MAX_LOG_FILES = 10;
+
+    /**
+     * How long the download-byte figure may sit unchanged before the speed
+     * readout hides as genuinely stalled. Generous, because the figure's
+     * coarse units (100 MB steps in the GB range) make long flat stretches
+     * normal during a healthy download.
+     */
+    private static final long SPEED_STALL_HIDE_MS = 30_000;
     private static final DateTimeFormatter LOG_TIMESTAMP = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final DateTimeFormatter LOG_FILENAME = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss");
 
@@ -264,9 +272,10 @@ public final class LauncherMain {
             long now = System.currentTimeMillis();
 
             // "ModelCount" is a control message, not a user-visible phase: detail
-            // is "total/completed" and drives the model pips (one dot per model),
-            // so the user sees how many models install, not just the current one.
-            // Handled first and never surfaced as a status line.
+            // is "total/started" and drives the model pips (one dot per model,
+            // lit from the moment its pull begins), so the user sees how many
+            // models install, not just the current one. Handled first and never
+            // surfaced as a status line.
             if (phase.equals("ModelCount")) {
                 int[] tc = parseModelCount(detail);
                 if (tc != null) window.setModelPips(tc[0], tc[1]);
@@ -349,16 +358,32 @@ public final class LauncherMain {
                 speedTracker[1] = 0;
                 return;
             }
+            // The byte figure is coarse (whole MB below 1 GB, 100 MB steps
+            // above), so mid-download samples routinely repeat the same value.
+            // The anchor therefore only moves when the figure actually
+            // advances — the speed is then the true average across the whole
+            // flat stretch — and a repeated value keeps the last reading on
+            // screen instead of flapping the label off and on.
             if (speedTracker[1] == 0) {
                 speedTracker[0] = currentBytes;
                 speedTracker[1] = now;
-            } else if (now - speedTracker[1] >= 500) {
-                long delta = currentBytes - speedTracker[0];
-                // A non-advancing sample (brief stall) or a backwards jump (the
-                // next model restarting at 0%) hides the speed rather than
-                // rendering a misleading "0 B/s".
-                window.setSpeed(delta > 0 ? (delta * 1000) / (now - speedTracker[1]) : -1);
+            } else if (currentBytes < speedTracker[0]) {
+                // Backwards jump (the next model restarting at 0%) — hide and
+                // re-anchor so the new download measures fresh.
+                window.setSpeed(-1);
                 speedTracker[0] = currentBytes;
+                speedTracker[1] = now;
+            } else if (currentBytes > speedTracker[0]) {
+                if (now - speedTracker[1] >= 500) {
+                    window.setSpeed((currentBytes - speedTracker[0]) * 1000
+                            / (now - speedTracker[1]));
+                    speedTracker[0] = currentBytes;
+                    speedTracker[1] = now;
+                }
+            } else if (now - speedTracker[1] >= SPEED_STALL_HIDE_MS) {
+                // Genuinely stalled (no advance for a long while) — better no
+                // readout than a stale one.
+                window.setSpeed(-1);
                 speedTracker[1] = now;
             }
         });
@@ -391,9 +416,9 @@ public final class LauncherMain {
     }
 
     /**
-     * Parses a {@code "total/completed"} model-count control detail into
-     * {@code [total, completed]}, or {@code null} if it is malformed. Feeds the
-     * model pips (one dot per model, the completed ones filled).
+     * Parses a {@code "total/started"} model-count control detail into
+     * {@code [total, started]}, or {@code null} if it is malformed. Feeds the
+     * model pips (one dot per model, filled once its install has begun).
      */
     private static int[] parseModelCount(String detail) {
         if (detail == null) return null;

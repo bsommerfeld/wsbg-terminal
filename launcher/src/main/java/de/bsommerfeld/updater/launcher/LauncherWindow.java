@@ -57,6 +57,11 @@ final class LauncherWindow extends JFrame {
     // 1%-granularity of ollama's model-pull output, short enough to track real
     // rate changes (a download throttling) within a few seconds.
     private static final long ETA_WINDOW_MS = 10_000;
+    // Time constant of the exponential smoothing on the ETA estimate: a fresh
+    // regression estimate takes about this long to fully pull the displayed
+    // value over, so the readout counts down steadily instead of jumping with
+    // every re-extrapolation.
+    private static final long ETA_SMOOTH_TAU_MS = 4_000;
 
     private final JLabel statusLabel;
     private final IslandIndicator islandIndicator;
@@ -68,6 +73,11 @@ final class LauncherWindow extends JFrame {
     private final Deque<long[]> etaSamples = new ArrayDeque<>(); // [time, ratioBits]
     private long etaPhaseStart;
     private double etaLastRatio = -1;
+    // Smoothed remaining-time estimate (ms), -1 while none. Decays with wall
+    // time between updates and is only nudged toward each fresh regression
+    // estimate, so the displayed ETA never jumps.
+    private double etaSmoothedRemainingMs = -1;
+    private long etaSmoothedAt;
 
     private volatile String pendingStatus;
 
@@ -121,16 +131,18 @@ final class LauncherWindow extends JFrame {
             // starts fresh instead of inheriting the previous slope.
             etaSamples.clear();
             etaLastRatio = -1;
+            etaSmoothedRemainingMs = -1;
             infoLine.clear();
         });
     }
 
     /**
-     * Shows one pip per installing AI model, with {@code completed} of them
-     * filled. Conveys how many models install (the download bar alone can't).
+     * Shows one pip per installing AI model, with {@code started} of them
+     * filled (a pip lights the moment its model's pull begins). Conveys how
+     * many models install (the download bar alone can't).
      */
-    void setModelPips(int total, int completed) {
-        SwingUtilities.invokeLater(() -> modelPips.set(total, completed));
+    void setModelPips(int total, int started) {
+        SwingUtilities.invokeLater(() -> modelPips.set(total, started));
     }
 
     /** Hides the model pips (called when the model-install phase ends). */
@@ -392,7 +404,10 @@ final class LauncherWindow extends JFrame {
      * slope of the most recent {@link #ETA_WINDOW_MS} of (time, ratio) samples —
      * i.e. the observed velocity — extrapolated to ratio 1.0. It is surfaced once
      * the phase has past the brief {@link #ETA_SHOW_AFTER_MS} warm-up and the
-     * velocity is positive, so a stall or a not-yet-moving phase shows no guess.
+     * velocity is positive, so a not-yet-moving phase shows no guess. The raw
+     * extrapolation is smoothed over {@link #ETA_SMOOTH_TAU_MS} before display,
+     * and the {@link ProgressInfoLine} counts the handed-over value down on its
+     * own between updates.
      */
     private void updateEta(double ratio) {
         long now = System.currentTimeMillis();
@@ -402,15 +417,17 @@ final class LauncherWindow extends JFrame {
         if (ratio < 0 || ratio >= 1.0) {
             etaSamples.clear();
             etaLastRatio = -1;
+            etaSmoothedRemainingMs = -1;
             infoLine.setEta(-1);
             return;
         }
 
         // Start of a phase, or a backwards jump (a new sub-step reusing the bar)
-        // restarts the fit and the warm-up clock.
+        // restarts the fit, the smoothing, and the warm-up clock.
         if (etaSamples.isEmpty() || ratio + 0.0005 < etaLastRatio) {
             etaSamples.clear();
             etaPhaseStart = now;
+            etaSmoothedRemainingMs = -1;
         }
         etaLastRatio = ratio;
         etaSamples.addLast(new long[]{now, Double.doubleToRawLongBits(ratio)});
@@ -427,13 +444,33 @@ final class LauncherWindow extends JFrame {
         }
 
         double slope = ratioSlopePerMs(); // ratio units per millisecond
-        if (slope <= 1e-9) {              // stalled or not yet moving
-            infoLine.setEta(-1);
+        if (slope <= 1e-9) {
+            // Stalled or not yet moving. With a running estimate the info
+            // line just keeps counting down on its own (the 1%-granularity of
+            // ollama's output makes flat stretches normal); without one there
+            // is nothing worth guessing yet.
+            if (etaSmoothedRemainingMs < 0) infoLine.setEta(-1);
             return;
         }
 
-        double remainingMs = (1.0 - ratio) / slope;
-        infoLine.setEta(Math.round(remainingMs / 1000.0));
+        double estimateMs = (1.0 - ratio) / slope;
+        if (etaSmoothedRemainingMs < 0) {
+            etaSmoothedRemainingMs = estimateMs;
+        } else {
+            // Let the previous value tick down with the elapsed wall time,
+            // then pull it a time-proportional step toward the fresh estimate
+            // — the readout counts down steadily and only drifts toward the
+            // regression instead of jumping with every re-extrapolation.
+            // Capped at half the gap per update: coarse 1%-steps can space
+            // fresh estimates far apart, and even then the readout must never
+            // snap fully onto a new extrapolation in one go.
+            double elapsed = now - etaSmoothedAt;
+            double predicted = Math.max(0, etaSmoothedRemainingMs - elapsed);
+            double alpha = Math.min(0.5, elapsed / ETA_SMOOTH_TAU_MS);
+            etaSmoothedRemainingMs = predicted + alpha * (estimateMs - predicted);
+        }
+        etaSmoothedAt = now;
+        infoLine.setEta(Math.round(etaSmoothedRemainingMs / 1000.0));
     }
 
     /**
