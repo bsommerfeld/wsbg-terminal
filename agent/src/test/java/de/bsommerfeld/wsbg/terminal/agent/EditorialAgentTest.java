@@ -367,6 +367,29 @@ class EditorialAgentTest {
                 "no citation → no inheritance");
     }
 
+    @org.junit.jupiter.api.Test
+    void inheritanceNeedsTextualContinuityNotJustACitation() {
+        // A schema-required array makes the 4B cite eagerly; an unconnected citation
+        // must inherit nothing (live: a BMW line cited a seeded prior and laundered
+        // SpaceX/gold-exploration pool refs onto itself).
+        var priors = java.util.List.of(new SubjectUnit.UnitHeadline(
+                "Rheinmetall erhält Rahmenvertrag über Artilleriemunition im Milliardenvolumen",
+                false, 0, "", null));
+        var r1 = new de.bsommerfeld.wsbg.terminal.db.HeadlineNewsRef("T", "p", "https://1", null);
+        var records = java.util.List.of(record(
+                "Rheinmetall erhält Rahmenvertrag über Artilleriemunition im Milliardenvolumen",
+                java.util.List.of(r1)));
+
+        org.junit.jupiter.api.Assertions.assertTrue(EditorialAgent.inheritedRefs(priors,
+                java.util.List.of(1), records,
+                "BMW bleibt das Lieblingsthema der Sparplan-Fraktion").isEmpty(),
+                "unconnected lines inherit nothing, however loudly cited");
+        org.junit.jupiter.api.Assertions.assertEquals(1, EditorialAgent.inheritedRefs(priors,
+                java.util.List.of(1), records,
+                "Rheinmetall liefert erste Tranche des Artilleriemunition-Rahmenvertrags aus").size(),
+                "a genuinely continued story inherits its sources");
+    }
+
     private static de.bsommerfeld.wsbg.terminal.db.AgentRepository.HeadlineRecord record(
             String headline, java.util.List<de.bsommerfeld.wsbg.terminal.db.HeadlineNewsRef> refs) {
         return new de.bsommerfeld.wsbg.terminal.db.AgentRepository.HeadlineRecord(

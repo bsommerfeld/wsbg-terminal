@@ -792,7 +792,7 @@ public class EditorialAgent {
         // (without this, paraphrase through the story memory laundered provenance away).
         List<de.bsommerfeld.wsbg.terminal.db.HeadlineNewsRef> inherited =
                 inheritedRefs(u.headlines(), ud.derivedFrom(),
-                        agentRepository.getHeadlinesByClusterId(u.id));
+                        agentRepository.getHeadlinesByClusterId(u.id), d.headline());
         u.markComposedAt(composedV);
         if (headlineWriter.publishUnit(u, d, newsUsed, inherited,
                 config.getHeadlines().isSuppressRedundant())) {
@@ -1536,6 +1536,21 @@ public class EditorialAgent {
     static List<de.bsommerfeld.wsbg.terminal.db.HeadlineNewsRef> inheritedRefs(
             List<SubjectUnit.UnitHeadline> priors, List<Integer> derivedFrom,
             List<HeadlineRecord> records) {
+        return inheritedRefs(priors, derivedFrom, records, null);
+    }
+
+    /**
+     * Same, gated on textual CONTINUITY when {@code newHeadline} is given: a citation
+     * only inherits when the new line demonstrably shares content with the cited one
+     * (significant-token overlap, the woven-in test's sibling). A schema-required
+     * array makes a 4B cite EAGERLY — live, nearly every line cited [1] — and an
+     * unconnected citation then launders whatever the old record carried (including
+     * pool-scoped refs from before the line-scoped cutover) onto an unrelated line.
+     * Citation is the model's claim; the overlap is the evidence check.
+     */
+    static List<de.bsommerfeld.wsbg.terminal.db.HeadlineNewsRef> inheritedRefs(
+            List<SubjectUnit.UnitHeadline> priors, List<Integer> derivedFrom,
+            List<HeadlineRecord> records, String newHeadline) {
         if (priors == null || priors.isEmpty() || derivedFrom == null || derivedFrom.isEmpty()
                 || records == null || records.isEmpty()) {
             return List.of();
@@ -1547,6 +1562,7 @@ public class EditorialAgent {
         for (Integer ord : derivedFrom) {
             if (ord == null || ord < 1 || ord > shown.size()) continue;
             String citedText = shown.get(ord - 1).text();
+            if (newHeadline != null && !linesConnect(newHeadline, citedText)) continue;
             for (HeadlineRecord r : records) {
                 if (!citedText.equals(r.headline())) continue;
                 for (de.bsommerfeld.wsbg.terminal.db.HeadlineNewsRef ref : r.newsRefs()) {
@@ -1555,6 +1571,18 @@ public class EditorialAgent {
             }
         }
         return out;
+    }
+
+    /** True when two headlines share enough significant tokens to be one continued
+     *  story — the continuity evidence behind a derivedFrom citation. */
+    static boolean linesConnect(String a, String b) {
+        Set<String> ta = significantTokens(a);
+        Set<String> tb = significantTokens(b);
+        int overlap = 0;
+        for (String tok : ta) {
+            if (tb.contains(tok) && ++overlap >= NEWS_WOVEN_MIN_OVERLAP) return true;
+        }
+        return false;
     }
 
     /** Integers out of a JSON array node; non-numbers and anything else → skipped. */
