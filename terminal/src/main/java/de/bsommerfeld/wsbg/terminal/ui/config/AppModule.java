@@ -7,8 +7,6 @@ import com.google.inject.multibindings.Multibinder;
 import de.bsommerfeld.jshepherd.core.ConfigurationLoader;
 import de.bsommerfeld.wsbg.terminal.agent.AgentCoordinator;
 import de.bsommerfeld.wsbg.terminal.agent.EditorialPipeline;
-import de.bsommerfeld.wsbg.terminal.embedding.EmbeddingService;
-import de.bsommerfeld.wsbg.terminal.embedding.OllamaEmbeddingService;
 import de.bsommerfeld.wsbg.terminal.agent.PassiveMonitorService;
 import de.bsommerfeld.wsbg.terminal.core.config.AgentConfig;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
@@ -85,9 +83,6 @@ public class AppModule extends AbstractModule {
 
             bind(GlobalConfig.class).toInstance(config);
             bind(AgentConfig.class).toInstance(config.getAgent());
-            // Shared embedding seam (clustering, collation, …) → Ollama-backed impl.
-            bind(EmbeddingService.class).to(OllamaEmbeddingService.class);
-
             // News sources are collected into a Set<NewsSource> (Guice
             // multibindings) so NewsAggregator can fan a query across all of
             // them; adding/dropping a source is a binding change here, never a
@@ -178,8 +173,7 @@ public class AppModule extends AbstractModule {
             // rotation × OS lines-per-notch × scroll-speed inherits both the OS
             // speed setting and (via the sign) the OS 'natural scrolling' setting.
             // Speed + invert come from UserConfig. Block-mode (Windows page-scroll)
-            // is rare; derive it from the line speed. Wrap in LoggingWheelScrollPolicy
-            // to re-enable per-event diagnostics.
+            // is rare; derive it from the line speed.
             double scrollSpeed = config.getUser().getScrollSpeed();
             boolean scrollInvert = config.getUser().isScrollInvert();
             bind(WheelScrollPolicy.class).toInstance(new PixelScaledWheelScrollPolicy(
@@ -226,6 +220,26 @@ public class AppModule extends AbstractModule {
                 : chain;
         LOG.info("WebFetcher: {}", fetcher.name());
         return fetcher;
+    }
+
+    /**
+     * The tier-3 local instrument corpus: SEC US listings (official daily JSON) +
+     * the learned wallstreet-online ISIN memory, persisted under
+     * {@code <app-data>/instruments/} and refreshed asynchronously when stale.
+     * Grounds the resolver's identity judge in live feed facts instead of
+     * training-time memory; consumed by {@code EditorialAgent} via its optional
+     * setter. The direct fetcher suffices — sec.gov has no bot wall.
+     */
+    @Provides
+    @Singleton
+    de.bsommerfeld.wsbg.terminal.instruments.InstrumentCorpus provideInstrumentCorpus() {
+        java.nio.file.Path appData = StorageUtils.getAppDataDir();
+        var corpus = new de.bsommerfeld.wsbg.terminal.instruments.InstrumentCorpus(
+                appData.resolve("instruments").resolve("instruments.jsonl"),
+                List.of(new de.bsommerfeld.wsbg.terminal.instruments.SecTickerSource(new DirectWebFetcher()),
+                        new de.bsommerfeld.wsbg.terminal.instruments.WsoIsinSource(appData.resolve("wso-isin.jsonl"))));
+        corpus.start();
+        return corpus;
     }
 
     /**

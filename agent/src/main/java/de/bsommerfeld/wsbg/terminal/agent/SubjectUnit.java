@@ -235,17 +235,17 @@ public final class SubjectUnit {
         headlines.addAll(other.headlines());
     }
 
-    /** Records a headline published for this unit (NEW or UPDATE), with its sentiment + the verified price at publish time. */
-    public synchronized void addHeadline(String text, boolean update, String sentiment) {
+    /** Records a headline published for this unit, with its sentiment + the verified price at publish time. */
+    public synchronized void addHeadline(String text, String sentiment) {
         Double price = snapshot != null && snapshot.hasPrice() ? snapshot.price() : null;
-        headlines.add(new UnitHeadline(text, update, Instant.now().getEpochSecond(),
+        headlines.add(new UnitHeadline(text, Instant.now().getEpochSecond(),
                 sentiment == null ? "" : sentiment, price));
         lastActivity = Instant.now();
     }
 
     /** Records a headline without sentiment/price metadata (older call sites, identity-merge). */
-    public synchronized void addHeadline(String text, boolean update) {
-        addHeadline(text, update, "");
+    public synchronized void addHeadline(String text) {
+        addHeadline(text, "");
     }
 
     /**
@@ -257,7 +257,7 @@ public final class SubjectUnit {
      * bump {@code lastActivity} (hydration isn't fresh activity).
      */
     public synchronized void seedHeadline(String text, String sentiment, long atEpoch) {
-        headlines.add(new UnitHeadline(text, false, atEpoch,
+        headlines.add(new UnitHeadline(text, atEpoch,
                 sentiment == null ? "" : sentiment, null));
     }
 
@@ -332,12 +332,12 @@ public final class SubjectUnit {
      * verified price when the line went out ({@code null} if none) — together they
      * are the unit's story arc, cheap enough to keep forever.
      */
-    public record UnitHeadline(String text, boolean update, long atEpoch,
+    public record UnitHeadline(String text, long atEpoch,
             String sentiment, Double priceAtTime) {
 
         /** Older call sites without story metadata. */
-        public UnitHeadline(String text, boolean update, long atEpoch) {
-            this(text, update, atEpoch, "", null);
+        public UnitHeadline(String text, long atEpoch) {
+            this(text, atEpoch, "", null);
         }
     }
 

@@ -5,10 +5,9 @@ package de.bsommerfeld.wsbg.terminal.core.config;
  *
  * <p>
  * The deployment is single-model: {@link #REASONING_POWER} (gemma4:e4b) serves
- * Chat, Vision, and the Editorial Agent in one resident model, with
- * {@link #EMBEDDING} for cluster centroids. There are deliberately no
- * swappable alternatives — the model choice is managed centrally, not exposed
- * to end users.
+ * Chat, Vision, and the Editorial Agent in one resident model. There are
+ * deliberately no swappable alternatives — the model choice is managed
+ * centrally, not exposed to end users.
  */
 public enum Model {
     /** gemma4:e4b — the one multimodal (Text+Image) model. Drives Chat, the
@@ -16,12 +15,7 @@ public enum Model {
      *  (gemma4:e4b-mlx) is deliberately NOT used: its published Ollama tag is
      *  text-only (the vision encoder is stripped), which would force a second
      *  model just for image analysis. */
-    REASONING_POWER("gemma4:e4b", "gemma4", 0.2),
-
-    /** embeddinggemma — Google's multilingual embedding model (308M, 768d).
-     *  Replaces nomic-embed-text-v2-moe as of 2026-05-28: better German +
-     *  finance-jargon recall, same dimensionality so no centroid migration. */
-    EMBEDDING("embeddinggemma:latest", "embeddinggemma", 0.0);
+    REASONING_POWER("gemma4:e4b", "gemma4", 0.2);
 
     private final String modelName;
     private final String familyPrefix;

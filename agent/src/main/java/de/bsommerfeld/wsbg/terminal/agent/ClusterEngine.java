@@ -3,7 +3,6 @@ package de.bsommerfeld.wsbg.terminal.agent;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
-import dev.langchain4j.data.embedding.Embedding;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,18 +34,12 @@ import java.util.Set;
  * here for cosine-vs-centroid routing, but since the 1:1 cutover it drove no
  * decision and was dead weight: one Ollama embedding call per new/changed thread
  * that contended with the editorial pipeline for the shared runner during every
- * scan. It was removed. {@link InvestigationCluster} still carries an (empty)
- * centroid field purely to keep the persisted snapshot shape stable; nothing
- * reads it. (The live embedding model survives — {@link TickerResolver} tier-2
- * subject→ticker matching still uses it; only this per-thread call is gone.)
+ * scan. It was removed, along with the whole embedding stack.
  */
 @Singleton
 public class ClusterEngine {
 
     private static final Logger LOG = LoggerFactory.getLogger(ClusterEngine.class);
-
-    /** Placeholder centroid kept only so the snapshot shape is unchanged (see class javadoc). */
-    private static final Embedding EMPTY_CENTROID = Embedding.from(new float[0]);
 
     private final ClusterRegistry clusterRegistry;
 
@@ -85,13 +78,13 @@ public class ClusterEngine {
             if (firstTime || deltaScore > 0 || deltaComments > 0) {
                 LOG.info("[CLUSTER] update '{}' (+{} score, +{} comments)",
                         t.title(), deltaScore, deltaComments);
-                existing.addUpdate(t, deltaScore, deltaComments, EMPTY_CENTROID);
+                existing.addUpdate(t, deltaScore, deltaComments);
                 clusterRegistry.notifyChange(existing.id);
             }
             return new AssignOutcome(Kind.UPDATE, existing.id, existing.initialTitle, threadTickers);
         }
 
-        InvestigationCluster newInv = new InvestigationCluster(t, EMPTY_CENTROID);
+        InvestigationCluster newInv = new InvestigationCluster(t);
         clusterRegistry.add(newInv);
         LOG.info("[CLUSTER] new {} '{}'{}", newInv.id, t.title(),
                 threadTickers.isEmpty() ? "" : " (tickers " + threadTickers + ")");

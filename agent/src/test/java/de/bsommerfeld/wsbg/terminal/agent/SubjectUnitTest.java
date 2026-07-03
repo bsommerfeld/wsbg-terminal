@@ -127,9 +127,9 @@ class SubjectUnitTest {
     void headlineRecordsSentimentAndPriceOfItsMoment() {
         SubjectUnit u = new SubjectUnit("NVDA", "NVIDIA");
         u.updateResolved("NVIDIA", "NVDA", snap(100.0), null);
-        u.addHeadline("NVIDIA +2% — der Käfig feiert", false, "BULLISH");
+        u.addHeadline("NVIDIA +2% — der Käfig feiert", "BULLISH");
         u.updateResolved("NVIDIA", "NVDA", snap(90.0), null);
-        u.addHeadline("NVIDIA-Update: −10% — Stimmung kippt", true, "BEARISH");
+        u.addHeadline("NVIDIA-Update: −10% — Stimmung kippt", "BEARISH");
 
         List<SubjectUnit.UnitHeadline> h = u.headlines();
         assertEquals(2, h.size());
@@ -137,6 +137,5 @@ class SubjectUnitTest {
         assertEquals(100.0, h.get(0).priceAtTime(), 1e-9);
         assertEquals("BEARISH", h.get(1).sentiment());
         assertEquals(90.0, h.get(1).priceAtTime(), 1e-9);
-        assertTrue(h.get(1).update());
     }
 }

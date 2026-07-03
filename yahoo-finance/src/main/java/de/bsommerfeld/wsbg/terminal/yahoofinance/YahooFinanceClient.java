@@ -355,8 +355,16 @@ public class YahooFinanceClient implements NewsSource {
 
             WebResponse resp = httpGet(url, "application/json");
             if (resp.status() != 200) {
-                if (isRateLimitStatus(resp.status())) tripBreaker("chart '" + sym + "'", resp.status());
-                else LOG.warn("Yahoo chart '{}' returned HTTP {}", sym, resp.status());
+                if (isRateLimitStatus(resp.status())) {
+                    tripBreaker("chart '" + sym + "'", resp.status());
+                } else {
+                    LOG.warn("Yahoo chart '{}' returned HTTP {}", sym, resp.status());
+                    // Negative cache: a 404 symbol (news relatedTickers carry raw futures
+                    // contract codes like GCQ6 that v8/chart doesn't know) stays dead for
+                    // the whole TTL — without this every prep re-fetched the same 404
+                    // several times per minute (live: GCQ6 5x in 4 min).
+                    snapshotCache.put(sym, new CachedSnapshot(null, now));
+                }
                 return Optional.empty();
             }
 

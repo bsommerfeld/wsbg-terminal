@@ -23,7 +23,7 @@
         <module>nasdaq-quote</module>
         <module>finanznachrichten</module>
         <module>source-api</module>
-        <module>embedding</module>
+        <module>instrument-corpus</module>
         <module>aggregator</module>
 
         <module>agent</module>
@@ -118,12 +118,12 @@
             </dependency>
             <dependency>
                 <groupId>de.bsommerfeld</groupId>
-                <artifactId>source-api</artifactId>
+                <artifactId>instrument-corpus</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>de.bsommerfeld</groupId>
-                <artifactId>embedding</artifactId>
+                <artifactId>source-api</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

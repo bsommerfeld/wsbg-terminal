@@ -1,12 +1,10 @@
 package de.bsommerfeld.wsbg.terminal.agent;
-import de.bsommerfeld.wsbg.terminal.embedding.EmbeddingService;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.agent.HeadlineWriter.Draft;
-import de.bsommerfeld.wsbg.terminal.agent.HeadlineWriter.DraftSubject;
 import de.bsommerfeld.wsbg.terminal.agent.TickerResolver.ResolvedSubject;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
@@ -133,8 +131,6 @@ public class EditorialAgent {
     private final TickerResolver tickerResolver;
     private final HeadlineWriter headlineWriter;
     private final SubjectAttributor attributor;
-    /** Shared embedding seam — powers the semantic near-duplicate guard here (and tier-2 resolution). */
-    private final EmbeddingService embeddings;
     /** Feed-wide subject store — the editorial atom in prod after the #2 cutover. */
     private final SubjectRegistry subjectRegistry;
     /**
@@ -168,19 +164,53 @@ public class EditorialAgent {
             AgentRepository agentRepository,
             RedditRepository redditRepository,
             ApplicationEventBus eventBus, I18nService i18n,
-            YahooFinanceClient yahooFinance, EmbeddingService embeddings,
+            YahooFinanceClient yahooFinance,
             SubjectRegistry subjectRegistry, GlobalConfig config) {
         this.brain = brain;
         this.clusterRegistry = clusterRegistry;
         this.agentRepository = agentRepository;
         this.redditRepository = redditRepository;
         this.reportBuilder = new ReportBuilder(redditRepository, brain);
-        this.tickerResolver = new TickerResolver(yahooFinance, embeddings); // Tier 2 enabled
+        this.tickerResolver = new TickerResolver(yahooFinance);
+        this.tickerResolver.setMatchJudge(this::judgeInstrumentMatch); // Tier 2 enabled
         this.headlineWriter = new HeadlineWriter(agentRepository, eventBus);
         this.attributor = new SubjectAttributor(redditRepository, brain);
-        this.embeddings = embeddings;
         this.subjectRegistry = subjectRegistry;
         this.config = config;
+    }
+
+    /**
+     * The resolver's identity judge ({@link TickerResolver.MatchJudge}): a discrete
+     * gemma4 pick — "which of these search candidates IS the subject, or none" —
+     * where the old embedding-cosine ranker matched on sounds-alike and promoted
+     * themes to bogus tickers. Serves both the tier-2 fallback AND the tier-1 veto
+     * (verdicts cached in the resolver, ~one call per unique subject). The thread
+     * title rides along as context so a generic word is separable from a same-named
+     * instrument. One small JSON-mode call, gated by the shared llm semaphore like
+     * every other model call. Fail-closed: any error or model absence returns -1
+     * (unresolved), never a guess.
+     */
+    private int judgeInstrumentMatch(String subject, String context, List<String> candidateNames) {
+        ChatModel model = brain.getAgentModel();
+        if (model == null || subject == null || candidateNames == null || candidateNames.isEmpty()) {
+            return -1;
+        }
+        try {
+            String sys = PromptLoader.loadLocalized("ticker-match", brain.getUserLanguage().code());
+            StringBuilder user = new StringBuilder("SUBJECT: ").append(subject).append('\n');
+            if (context != null && !context.isBlank()) {
+                user.append("CONTEXT: ").append(context.strip()).append('\n');
+            }
+            for (int i = 0; i < candidateNames.size(); i++) {
+                user.append(i + 1).append(". ").append(candidateNames.get(i)).append('\n');
+            }
+            JsonNode obj = parseJson(chat(model, sys, user.toString()));
+            int match = obj == null ? 0 : obj.path("match").asInt(0);
+            return match >= 1 && match <= candidateNames.size() ? match - 1 : -1;
+        } catch (Exception e) {
+            LOG.debug("resolver identity judge failed (fail-closed): {}", e.getMessage());
+            return -1;
+        }
     }
 
     /**
@@ -193,6 +223,16 @@ public class EditorialAgent {
     @com.google.inject.Inject(optional = true)
     void setPriceSource(de.bsommerfeld.wsbg.terminal.core.price.PriceSource priceSource) {
         tickerResolver.setPriceSource(priceSource);
+    }
+
+    /**
+     * Installs the tier-3 local instrument corpus onto the resolver. Optional
+     * Guice method-injection: present in production (AppModule provides it),
+     * absent in tests, where tier 3 simply stays off.
+     */
+    @com.google.inject.Inject(optional = true)
+    void setInstrumentCorpus(de.bsommerfeld.wsbg.terminal.instruments.InstrumentCorpus corpus) {
+        tickerResolver.setInstrumentCorpus(corpus);
     }
 
     /**
@@ -253,7 +293,9 @@ public class EditorialAgent {
             primaryHints.put(clusterId, WsbgJargon.canonicalize(subjects.primaryName()));
         }
         int[] relatedAlloc = distributeRelated(subjects.names().size(), RELATED_BUDGET, RELATED_PER_SUBJECT);
-        return tickerResolver.resolveAll(subjects.names(), relatedAlloc);
+        // The thread title is the identity judge's context: it tells „Kakao" (the
+        // commodity talk) apart from Kakao Corp when both spell the same.
+        return tickerResolver.resolveAll(subjects.names(), relatedAlloc, cluster.initialTitle);
     }
 
     /** Per-cluster primary-subject hint from extraction, consumed by {@link #attributeResolved}. */
@@ -276,18 +318,18 @@ public class EditorialAgent {
 
     /**
      * #2 step 3 — composes ONE headline for a single {@link SubjectUnit} from its
-     * accumulated Reddit evidence + Yahoo data + its OWN prior headlines, and
-     * classifies it NEW vs UPDATE (story-continuity). The unit is the editorial
-     * atom now, not the cluster. Returns a {@link UnitDraft}; storing the result
-     * on the unit / publishing it is the caller's job.
+     * accumulated Reddit evidence + Yahoo data + its OWN prior headlines (story
+     * continuity). The unit is the editorial atom now, not the cluster. Returns a
+     * {@link UnitDraft}; storing the result on the unit / publishing it is the
+     * caller's job.
      */
     public UnitDraft composeUnit(SubjectUnit unit) {
         if (unit == null) {
-            return new UnitDraft("", "", null, false, false, "", 0, List.of(), false, false, List.of());
+            return new UnitDraft("", "", null, false, "", 0, List.of(), false, false, List.of());
         }
         ChatModel model = brain.getComposeModel(); // tight numPredict — one short headline JSON
         if (model == null) {
-            return new UnitDraft(unit.id, unit.canonicalName(), null, false, false, "", 0, List.of(), false, false, List.of());
+            return new UnitDraft(unit.id, unit.canonicalName(), null, false, "", 0, List.of(), false, false, List.of());
         }
         // Fully localized compose scaffold (German prompt + German room-slang + German brief
         // labels). This was held to English while the compose OUTPUT was a fat 9-field JSON —
@@ -301,18 +343,12 @@ public class EditorialAgent {
         String user = unitBrief(unit, config.getHeadlines().isNewsCoverageEnabled(), BriefLabels.of(lang));
 
         boolean hasPriors = !unit.headlines().isEmpty();
-        // When the redundancy filter is OFF (user setting), the wire is a strict 1:1 mirror:
-        // every dirty signal writes a line, even a duplicate — so an empty reply is NEVER honored
-        // and we retry it exactly like a first line. When ON (default), a redundant UPDATE against
-        // the unit's own priors is the one legal empty.
-        boolean suppressRedundant = config.getHeadlines().isSuppressRedundant();
         long t0 = System.nanoTime();
         String text = null;
         Draft draft = null;
-        boolean isUpdate = false;
         boolean salvaged = false;
         boolean redundant = false;
-        List<String> citedNews = List.of();
+        List<Integer> citedNews = List.of();
         List<Integer> derivedFrom = List.of();
         // 1:1 mirror: a FIRST line is NEVER dropped. The room talking about a subject IS the
         // story (we attach price + news ourselves), so the only legitimate {"headline":""} is a
@@ -322,52 +358,37 @@ public class EditorialAgent {
         for (int attempt = 0; ; attempt++) {
             text = chat(model, sys, user);
             draft = null;
-            isUpdate = false;
             salvaged = false;
             redundant = false;
             citedNews = List.of();
             derivedFrom = List.of();
-            JsonNode obj = firstHeadlineObject(parseJson(text));
-            if (obj != null) {
+            JsonNode obj = parseJson(text);
+            if (obj != null && obj.has("headline")) {
                 draft = toDraft(obj);
-                isUpdate = "UPDATE".equalsIgnoreCase(obj.path("mode").asText(""));
-                citedNews = readStrings(obj.path("sourceNewsIds"));
+                citedNews = readInts(obj.path("newsUsed"));
                 derivedFrom = readInts(obj.path("derivedFrom"));
-                // Empty headline is redundant ONLY against the unit's own priors AND only when
-                // the redundancy filter is on — NEVER for a first line, and never at all in strict
-                // 1:1 mode. Otherwise an empty reply is a model lapse, not "nothing to say".
-                redundant = draft == null && obj.has("headline") && hasPriors && suppressRedundant;
+                // Empty headline is redundant ONLY against the unit's own priors — NEVER for
+                // a first line. Otherwise an empty reply is a model lapse, not "nothing to say".
+                redundant = draft == null && hasPriors;
             }
             if (draft == null && !redundant) {
                 for (JsonNode o : salvageObjects(text)) {
                     Draft d = toDraft(o);
                     if (d != null) {
                         draft = d;
-                        isUpdate = "UPDATE".equalsIgnoreCase(o.path("mode").asText(""));
-                        citedNews = readStrings(o.path("sourceNewsIds"));
+                        citedNews = readInts(o.path("newsUsed"));
+                        derivedFrom = readInts(o.path("derivedFrom"));
                         salvaged = true;
                         break;
                     }
                 }
             }
-            if (draft == null && !redundant) {
-                // Even balanced-object salvage failed (a stray quote like "ticker": null"
-                // breaks the object) — recover the headline + scalars by regex so the line
-                // isn't lost.
-                draft = salvageDraftByRegex(text);
-                if (draft != null) {
-                    isUpdate = "UPDATE".equalsIgnoreCase(orEmpty(regexStringField(text, "mode")));
-                    salvaged = true;
-                }
-            }
-            // Retry an empty/garbage reply when we must NOT drop it: a first line (no priors), or
-            // strict 1:1 mode (redundancy filter off → every dirty writes). A usable line, a legit
-            // redundant, or (priors AND filter on) → stop.
-            if (draft != null || redundant || (hasPriors && suppressRedundant)
+            // Retry an empty/garbage reply only when we must NOT drop it: a first line
+            // (no priors). A usable line, a legit redundant, or priors → stop.
+            if (draft != null || redundant || hasPriors
                     || attempt >= FIRST_COMPOSE_EMPTY_RETRIES) break;
-            LOG.info("[COMPOSE] empty line for {} ({}) — retry {}/{} ({})",
-                    unit.id, unit.canonicalName(), attempt + 1, FIRST_COMPOSE_EMPTY_RETRIES,
-                    hasPriors ? "1:1 mode, no redundancy filter" : "a first line is never dropped");
+            LOG.info("[COMPOSE] empty line for {} ({}) — retry {}/{} (a first line is never dropped)",
+                    unit.id, unit.canonicalName(), attempt + 1, FIRST_COMPOSE_EMPTY_RETRIES);
         }
         long elapsed = ms(t0, System.nanoTime());
         // A whiff = no usable headline AND the model did NOT deliberately say "redundant"
@@ -386,18 +407,25 @@ public class EditorialAgent {
         // for the subject — it then comes from the room's own post/screenshot, not
         // from Yahoo. The wire is a sentiment mirror; user numbers aren't facts.
         boolean unverified = mentionsPrice(draft) && !unitHasVerifiedPrice(unit);
-        return new UnitDraft(unit.id, unit.canonicalName(), draft, isUpdate, salvaged, text, elapsed,
+        return new UnitDraft(unit.id, unit.canonicalName(), draft, salvaged, text, elapsed,
                 citedNews, unverified, whiffed, derivedFrom);
     }
 
-    /** The headline object out of a parsed reply: a bare object, or the first of a {@code {"headlines":[…]}} wrapper. */
-    private static JsonNode firstHeadlineObject(JsonNode root) {
-        if (root == null) return null;
-        if (root.has("headline")) return root;
-        if (root.path("headlines").isArray() && !root.path("headlines").isEmpty()) {
-            return root.path("headlines").get(0);
+    /**
+     * The news items shown to the model in the brief, in their exact render order —
+     * the SAME list the {@code [N#]} ordinals number, so a {@code newsUsed} ordinal
+     * resolves deterministically back to its item. Kept as one helper so the brief
+     * and the citation resolution can never drift apart.
+     */
+    static List<RawNewsItem> briefNews(SubjectUnit unit, boolean newsCoverageEnabled) {
+        List<RawNewsItem> fresh = new ArrayList<>();
+        for (RawNewsItem n : unit.news()) {
+            // News coverage is OFF by default: news enriches freely and may back
+            // several headlines on a topic (it's cached, so reuse is free). Only when
+            // explicitly enabled do we hide a unit's already-cited news.
+            if (!newsCoverageEnabled || !unit.isNewsCovered(n.uuid())) fresh.add(n);
         }
-        return null;
+        return fresh;
     }
 
     /**
@@ -473,17 +501,15 @@ public class EditorialAgent {
 
         // News not yet cited by a prior headline for THIS subject (covered ones are
         // filtered so two headlines never rest on the same item). Each carries a
-        // [news:ID] the model echoes back in sourceNewsIds to mark it consumed.
+        // small [N#] ordinal the model echoes back in newsUsed — small integers on a
+        // short numbered list, the same proven mechanism as derivedFrom (the long
+        // uuids of the old sourceNewsIds field were uncitable for a 4B).
         // Old items are kept (no fresh news is also a situation worth reporting
         // from) but tagged STALE so they're never sold as a fresh catalyst.
-        List<RawNewsItem> freshNews = new ArrayList<>();
+        List<RawNewsItem> freshNews = briefNews(unit, newsCoverageEnabled);
         List<RawNewsItem> toldNews = new ArrayList<>();
         for (RawNewsItem n : unit.news()) {
-            // News coverage is OFF by default: news enriches freely and may back
-            // several headlines on a topic (it's cached, so reuse is free). Only when
-            // explicitly enabled do we hide a unit's already-cited news.
-            if (!newsCoverageEnabled || !unit.isNewsCovered(n.uuid())) freshNews.add(n);
-            else toldNews.add(n);
+            if (!freshNews.contains(n)) toldNews.add(n);
         }
         if (!freshNews.isEmpty() || !toldNews.isEmpty()) {
             sb.append(lbl.newsHeader());
@@ -493,8 +519,9 @@ public class EditorialAgent {
             for (RawNewsItem n : toldNews) {
                 sb.append("  - ").append(lbl.newsToldTag()).append(' ').append(n.title()).append('\n');
             }
+            int newsOrdinal = 0;
             for (RawNewsItem n : freshNews) {
-                sb.append("  - [news:").append(n.uuid() == null || n.uuid().isBlank() ? "?" : n.uuid()).append("] ");
+                sb.append("  - [N").append(++newsOrdinal).append("] ");
                 if (n.publishedAt() != null) {
                     sb.append(lbl.ago(age(n.publishedAt(), now))).append(' ');
                     if (Duration.between(n.publishedAt(), now).compareTo(NEWS_STALE_AFTER) > 0) {
@@ -627,29 +654,24 @@ public class EditorialAgent {
 
     /**
      * One per-unit compose result (#2 step 3). {@code draft} is null when the model
-     * wrote no usable headline. {@code citedNewsIds} = the news the line leaned on
-     * (step 3b). {@code unverified} = the line carries a price/% that did NOT come
-     * from our data sources (no resolved Yahoo data) — it's a user-posted number, to
-     * be shown with an "unverified" marker, never as fact.
+     * wrote no usable headline. {@code newsUsed} = the 1-based brief ordinals of the
+     * news items the model says the line leaned on (echoed from the numbered news
+     * list, like {@code derivedFrom} for prior headlines). {@code unverified} = the
+     * line carries a price/% that did NOT come from our data sources (no resolved
+     * Yahoo data) — it's a user-posted number, to be shown with an "unverified"
+     * marker, never as fact.
      */
-    public record UnitDraft(String unitId, String label, Draft draft, boolean isUpdate,
-            boolean salvaged, String raw, long ms, List<String> citedNewsIds, boolean unverified,
+    public record UnitDraft(String unitId, String label, Draft draft,
+            boolean salvaged, String raw, long ms, List<Integer> newsUsed, boolean unverified,
             boolean whiffed, List<Integer> derivedFrom) {}
 
     /**
      * The production editorial tick. One dirty signal (a cluster that gained fresh
-     * content) drives TWO independent headline producers, never deduped against
-     * each other:
+     * content) drives the feed-wide <b>{@link SubjectUnit}</b> producer — one
+     * headline per dirty unit (a subject tracked across the whole feed), keyed by
+     * unit id. The cluster itself is pure context for its subjects.
      *
-     * <ul>
-     *   <li>the <b>cluster/thread</b> — one THEME headline per dirty cluster (the
-     *       thread's narrative, the room's juxtaposition), keyed by cluster id;</li>
-     *   <li>the feed-wide <b>{@link SubjectUnit}</b> — one headline per dirty unit
-     *       (a subject tracked across the whole feed), keyed by unit id.</li>
-     * </ul>
-     *
-     * Steps (mirrors the proven {@code LabRunner.run} flow on the singleton
-     * {@link SubjectRegistry}):
+     * Steps (on the singleton {@link SubjectRegistry}):
      * <ol>
      *   <li><b>context relief</b> — prune evidence older than the snapshot TTL;</li>
      *   <li><b>per dirty cluster</b> — attribute its subjects into the registry
@@ -678,24 +700,12 @@ public class EditorialAgent {
             subjectRegistry.pruneContentOlderThan(Duration.ofMinutes(contextTtlMinutes));
         }
 
-        // 2 — per dirty cluster, drive BOTH producers from the one dirty signal:
-        //     (a) attribute its subjects into the feed-wide registry (marks units
-        //         dirty for step 4), and
-        //     (b) publish the cluster's own THEME headline — the thread narrative /
-        //         the room's juxtaposition. The two producers are independent and
-        //         intentionally NOT deduped (the connected thread context is a
-        //         different truth from the per-subject line).
-        int themePublished = 0;
+        // 2 — per dirty cluster, attribute its subjects into the feed-wide registry
+        //     (marks units dirty for step 4). The cluster is pure context for its
+        //     subjects — it produces no line of its own.
         for (String id : dirtyClusterIds) {
             try {
-                // attributeCluster always runs — it feeds the per-subject units.
-                // The cluster's OWN theme line is opt-in (off by default): every
-                // thread would otherwise get a line, flooding the wire with generic
-                // narratives and overlapping the per-subject headlines.
-                List<ResolvedSubject> resolved = attributeCluster(id, subjectRegistry);
-                if (config.getHeadlines().isClusterThemeEnabled()) {
-                    themePublished += publishClusterTheme(model, id, resolved);
-                }
+                attributeCluster(id, subjectRegistry);
             } catch (Exception e) {
                 LOG.warn("EditorialAgent: cluster {} failed: {}", id, e.getMessage());
             }
@@ -718,8 +728,8 @@ public class EditorialAgent {
                 LOG.warn("EditorialAgent: unit {} failed: {}", u.id, e.getMessage());
             }
         }
-        LOG.info("[AGENT] tick done: {} cluster(s) → {} theme + {} unit headline(s) ({} dirty unit(s))",
-                dirtyClusterIds.size(), themePublished, published, toCompose.size());
+        LOG.info("[AGENT] tick done: {} cluster(s) → {} unit headline(s) ({} dirty unit(s))",
+                dirtyClusterIds.size(), published, toCompose.size());
     }
 
     /**
@@ -759,33 +769,40 @@ public class EditorialAgent {
             u.markComposedAt(composedV);
             return false;
         }
-        // Semantic near-duplicate guard (2026-07-01): the 4B model sometimes re-words
-        // an already-published line as a fresh NEW instead of returning the
+        // Semantic near-duplicate guard: the 4B model sometimes re-words an
+        // already-published line as a fresh NEW instead of returning the
         // redundant-empty (live: two "Absturz trifft die überbewerteten KI-Giganten
-        // wie Nvidia" lines ~70 s apart) — token-Jaccard misses the paraphrase,
-        // embeddings don't. A line semantically ≥ SEMANTIC_DUP_SIM to a recent prior
-        // AND carrying no number the prior didn't (a fresh figure IS a development)
-        // is the same story re-worded → treated like a deliberate redundant-empty.
-        // Skipped in strict 1:1 mode, like the writer's own guard.
-        if (config.getHeadlines().isSuppressRedundant()
-                && isSemanticRepeat(d.headline(), u.headlines())) {
+        // wie Nvidia" lines ~70 s apart) — token-Jaccard misses the paraphrase, the
+        // gemma same-story verdict doesn't. Always on (the former strict-1:1 user
+        // toggle was removed 2026-07-03).
+        if (isSemanticRepeat(d.headline(), u.headlines())) {
             LOG.info("[COMPOSE] semantic near-duplicate for unit {} — dropped (same story re-worded)", u.id);
             composeRetries.remove(u.id);
             u.markComposedAt(composedV);
             return false;
         }
-        // News provenance is DETERMINISTIC and LINE-scoped — earned only by USE: an
-        // item counts when the published line actually WOVE IT IN (significant-token
-        // overlap between line and news title/summary — the "konkret eingewoben"
-        // test). The tag and its clickable source list promise "the articles this
-        // line leans on"; the old unit-scoped flag (!u.news().isEmpty()) lit the tag
-        // on EVERY line of a news-rich subject, even a pure room-sentiment line that
-        // used none of it (live: a Microsoft chart-waiting line carrying a pool of
-        // unrelated articles). The 4B's own citations stay out of it — it under-cites;
-        // the woven-in check is exact where a model citation never was.
-        List<de.bsommerfeld.wsbg.terminal.source.RawNewsItem> newsUsed = u.news().stream()
-                .filter(n -> headlineReflectsNews(d.headline(), n))
-                .toList();
+        // News provenance is LINE-scoped — earned only by USE. The tag and its
+        // clickable source list promise "the articles this line leans on"; the old
+        // unit-scoped flag (!u.news().isEmpty()) lit the tag on EVERY line of a
+        // news-rich subject, even a pure room-sentiment line that used none of it
+        // (live: a Microsoft chart-waiting line carrying a pool of unrelated articles).
+        // Union of two provenance signals: the deterministic token test (below) AND the
+        // model's own newsUsed ordinals (echoed from the brief's [N#] list — the same
+        // small-integer mechanism as derivedFrom). The token test alone is language-blind:
+        // a German line fully paraphrasing an English item shares zero tokens (live: the
+        // SAP cost-cuts line carried no tag despite being written FROM the news), so the
+        // model's citation closes that gap while the token test backstops its under-citing.
+        java.util.LinkedHashSet<de.bsommerfeld.wsbg.terminal.source.RawNewsItem> usedSet =
+                new java.util.LinkedHashSet<>();
+        List<de.bsommerfeld.wsbg.terminal.source.RawNewsItem> shown =
+                briefNews(u, config.getHeadlines().isNewsCoverageEnabled());
+        for (Integer ord : ud.newsUsed()) {
+            if (ord != null && ord >= 1 && ord <= shown.size()) usedSet.add(shown.get(ord - 1));
+        }
+        for (de.bsommerfeld.wsbg.terminal.source.RawNewsItem n : u.news()) {
+            if (headlineReflectsNews(d.headline(), n)) usedSet.add(n);
+        }
+        List<de.bsommerfeld.wsbg.terminal.source.RawNewsItem> newsUsed = List.copyOf(usedSet);
         // Provenance chaining: the model cites the numbered prior lines it built on
         // ("derivedFrom": [2]) — those lines' news sources carry over, so a fact that
         // debuted on an earlier, tagged line keeps its sources on every continuation
@@ -794,10 +811,9 @@ public class EditorialAgent {
                 inheritedRefs(u.headlines(), ud.derivedFrom(),
                         agentRepository.getHeadlinesByClusterId(u.id), d.headline());
         u.markComposedAt(composedV);
-        if (headlineWriter.publishUnit(u, d, newsUsed, inherited,
-                config.getHeadlines().isSuppressRedundant())) {
+        if (headlineWriter.publishUnit(u, d, newsUsed, inherited)) {
             composeRetries.remove(u.id); // story moved on → fresh retry budget
-            u.addHeadline(d.headline(), ud.isUpdate(), d.sentiment());
+            u.addHeadline(d.headline(), d.sentiment());
             // Coverage marking rides the same woven-in list: a sentiment-only line
             // leaves its news fresh for the next compose (the next line orients on
             // prior headlines instead of re-milking the same item); another unit
@@ -810,70 +826,41 @@ public class EditorialAgent {
         return false;
     }
 
-    /** Similarity above which a new line counts as the same story re-worded. Calibrated
-     *  2026-07-02 on live wire pairs (embeddinggemma): actual re-words scored 0.80–1.00
-     *  ("Copilot-Bots bündelt Microsoft…" vs "Microsoft bündelt Copilot-Bots…" = 0.88),
-     *  genuinely-new angles on the same subject scored ≤ 0.58 — the old 0.92 sat above
-     *  the entire re-word band and caught nothing. 0.78 keeps ~0.2 margin to both sides. */
-    static final double SEMANTIC_DUP_SIM = 0.78;
-    /** Above this, the line is the SAME SENTENCE with at most a ticked figure — the
-     *  novel-number exception does not apply (a re-stated day-move is not a development). */
-    static final double SEMANTIC_DUP_HARD_SIM = 0.92;
     /** Only priors this recent are compared — an old story may legitimately resurface.
      *  2h: live pairs 1.5h apart were still verbatim re-tells of an unmoved story. */
     private static final long SEMANTIC_DUP_WINDOW_SECS = 7200;
 
     /**
-     * True when {@code line} is a semantic re-word of one of the unit's recent
-     * headlines: embedding similarity ≥ {@link #SEMANTIC_DUP_SIM} against a prior
-     * from the last {@link #SEMANTIC_DUP_WINDOW_SECS}, UNLESS the new line carries
-     * a number the prior didn't — a fresh figure is a real development, never a
-     * re-word. That exception is itself capped: at ≥ {@link #SEMANTIC_DUP_HARD_SIM}
-     * the "new" line is the same sentence with a ticked figure (the day-move
-     * updating is not a development — the quote strip carries it live), so it is a
-     * dup regardless. Fail-open: an embedding error never blocks a publish.
+     * True when {@code line} is a re-tell of one of the unit's recent headlines
+     * (last {@link #SEMANTIC_DUP_WINDOW_SECS}): one small gemma4 verdict over the
+     * fresh line + the numbered recent priors ({@code same-story-check} prompt) —
+     * a discrete judgment that replaced the old embedding-cosine threshold, whose
+     * calibration was language-sensitive and had to be re-tuned on live pairs.
+     * The prompt carries the novel-figure semantics (a fresh figure is a
+     * development; a merely ticked live number on the same sentence is not).
+     * Fail-open: a model error or absence never blocks a publish.
      */
     private boolean isSemanticRepeat(String line, List<SubjectUnit.UnitHeadline> priors) {
-        if (embeddings == null || line == null || line.isBlank() || priors.isEmpty()) return false;
+        if (line == null || line.isBlank() || priors.isEmpty()) return false;
         long now = Instant.now().getEpochSecond();
+        List<SubjectUnit.UnitHeadline> recent = priors.stream()
+                .filter(p -> now - p.atEpoch() <= SEMANTIC_DUP_WINDOW_SECS)
+                .toList();
+        if (recent.isEmpty()) return false;
+        ChatModel model = brain.getAgentModel();
+        if (model == null) return false;
         try {
-            for (int i = priors.size() - 1; i >= 0; i--) {
-                SubjectUnit.UnitHeadline prior = priors.get(i);
-                if (now - prior.atEpoch() > SEMANTIC_DUP_WINDOW_SECS) break; // list is chronological
-                double sim = embeddings.similarity(line, prior.text());
-                if (sim >= SEMANTIC_DUP_HARD_SIM) return true; // same sentence, ticked figure at most
-                if (hasNovelNumber(line, prior.text())) continue; // a fresh figure IS a development
-                if (sim >= SEMANTIC_DUP_SIM) return true;
+            String sys = PromptLoader.loadLocalized("same-story-check", brain.getUserLanguage().code());
+            StringBuilder user = new StringBuilder("FRESH LINE: ").append(line).append('\n');
+            for (int i = 0; i < recent.size(); i++) {
+                user.append(i + 1).append(". ").append(recent.get(i).text()).append('\n');
             }
+            JsonNode obj = parseJson(chat(model, sys, user.toString()));
+            return obj != null && obj.path("repeat").asBoolean(false);
         } catch (Exception e) {
             LOG.debug("semantic dup check failed (fail-open): {}", e.getMessage());
+            return false;
         }
-        return false;
-    }
-
-    private static final Pattern NUMBER_TOKEN = Pattern.compile("\\d+(?:[.,]\\d+)?");
-
-    /** True when {@code line} contains a number token that {@code prior} does not. */
-    static boolean hasNovelNumber(String line, String prior) {
-        if (line == null) return false;
-        String p = prior == null ? "" : prior;
-        Matcher m = NUMBER_TOKEN.matcher(line);
-        while (m.find()) {
-            if (!p.contains(m.group())) return true;
-        }
-        return false;
-    }
-
-    /**
-     * Compose-worker entry point for a cluster THEME job (#3): composes + publishes the
-     * cluster's theme headline from the prep-stage resolved subjects (passed in so the
-     * worker does no I/O), delegating to the unchanged {@link #publishClusterTheme}.
-     * Returns how many lines were published (0 or 1).
-     */
-    public int runThemeJob(String clusterId, List<ResolvedSubject> resolved) {
-        ChatModel model = brain.getAgentModel();
-        if (model == null) return 0;
-        return publishClusterTheme(model, clusterId, resolved);
     }
 
     /**
@@ -898,25 +885,6 @@ public class EditorialAgent {
         }
     }
 
-    /**
-     * Composes and publishes ONE cluster-theme headline for a dirty cluster — the
-     * thread's own narrative / the room's juxtaposition, complementary to the
-     * per-subject unit lines (and never deduped against them). Keyed by cluster id,
-     * so it inherits {@link ReportBuilder}'s coverage (only fresh, uncovered
-     * material composes → a re-dirtied thread writes a follow-up over just the new
-     * comments) and the identical-text guard for free. Ticker/snapshot are validated
-     * against {@code resolved} (the resolver, never the model). Returns 1 if a line
-     * was published, else 0.
-     */
-    private int publishClusterTheme(ChatModel model, String clusterId, List<ResolvedSubject> resolved) {
-        InvestigationCluster cluster = clusterRegistry.getCluster(clusterId);
-        if (cluster == null) return 0;
-        String brief = reportBuilder.buildReportData(
-                cluster, agentRepository.getHeadlinesByClusterId(clusterId), brain.getUserLanguage().code());
-        Draft d = composeTheme(model, brief);
-        if (d == null || d.headline() == null || d.headline().isBlank()) return 0;
-        return headlineWriter.publish(cluster, d, resolved) ? 1 : 0;
-    }
 
     /**
      * Restart continuity: a {@link SubjectUnit} is rebuilt from fresh evidence
@@ -1281,46 +1249,6 @@ public class EditorialAgent {
     // ---- Stage 3: headline composition ----
 
     /**
-     * Composes the cluster's THEME headline — the thread's own narrative / the
-     * room's juxtaposition (a separate producer from the per-subject unit lines,
-     * never deduped against them). Reads the whole cluster brief (no per-subject
-     * Yahoo block — a theme is the conversation, not one instrument) and returns a
-     * {@link Draft}, or {@code null} when the thread carries nothing worth a line.
-     */
-    public Draft composeTheme(ChatModel model, String brief) {
-        // Fully localized like composeUnit — safe now that the output schema is slim.
-        String lang = brain.getUserLanguage().code();
-        String sys = PromptLoader.loadLocalized("headline-theme", lang)
-                .replace("{{LANGUAGE}}", brain.getUserLanguage().displayName())
-                .replace("{{ROOM_SLANG}}", WsbgJargon.roomSlangForPrompt(lang));
-        return parseDraft(chat(model, sys, brief));
-    }
-
-    /**
-     * Parses a single-object compose reply into a {@link Draft}, with the same
-     * recovery chain the per-subject path uses: strict object → first of a
-     * {@code headlines} array → balanced-brace salvage → regex salvage. Returns
-     * {@code null} when nothing parseable (or an empty headline) is found.
-     */
-    static Draft parseDraft(String text) {
-        JsonNode root = parseJson(text);
-        if (root != null) {
-            if (root.has("headline")) {
-                Draft d = toDraft(root);
-                if (d != null) return d;
-            } else if (root.path("headlines").isArray() && !root.path("headlines").isEmpty()) {
-                Draft d = toDraft(root.path("headlines").get(0));
-                if (d != null) return d;
-            }
-        }
-        for (JsonNode obj : salvageObjects(text)) {
-            Draft d = toDraft(obj);
-            if (d != null) return d;
-        }
-        return salvageDraftByRegex(text);
-    }
-
-    /**
      * Best-effort recovery: parses every <em>balanced</em> top-level
      * {@code {...}} in the reply independently, skipping any that fail (e.g. a
      * truncated tail). String-aware (ignores braces inside quotes) and
@@ -1367,54 +1295,11 @@ public class EditorialAgent {
     private static Draft toDraft(JsonNode h) {
         String headline = h.path("headline").asText("").trim();
         if (headline.isEmpty()) return null;
-        Double priceMove = h.path("priceMovePercent").isNumber()
-                ? h.path("priceMovePercent").asDouble() : null;
-        List<DraftSubject> subjects = new ArrayList<>();
-        if (h.path("subjects").isArray()) {
-            for (JsonNode s : h.path("subjects")) {
-                String name = s.path("name").asText("").trim();
-                String ticker = s.path("ticker").asText("").trim();
-                if (!name.isEmpty() && !ticker.isEmpty()) {
-                    subjects.add(new DraftSubject(name, ticker));
-                }
-            }
-        }
         return new Draft(
                 headline,
                 h.path("sentiment").asText(""),
                 h.path("highlight").asText(""),
-                h.path("trigger").asText(""),
-                emptyToNull(h.path("tickerSymbol").asText("")),
-                subjects,
-                priceMove,
-                readStrings(h.path("sectors")),
-                emptyToNull(h.path("assetClass").asText("")),
-                readStrings(h.path("sourceThreadIds")),
-                readStrings(h.path("sourceCommentIds")));
-    }
-
-    /**
-     * Last-resort draft recovery when the reply is JSON that even {@link #salvageObjects}
-     * can't parse — e.g. the 4B model emits {@code "ticker": null"} (a stray quote) and
-     * breaks the whole object, losing a perfectly good headline. We pull the fields out
-     * by regex instead, so the line still publishes. Array fields (subjects/ids) are
-     * skipped — the headline + its scalar fields are what matter here.
-     */
-    static Draft salvageDraftByRegex(String text) {
-        String headline = regexStringField(text, "headline");
-        if (headline == null || headline.isBlank()) return null;
-        return new Draft(
-                headline,
-                orEmpty(regexStringField(text, "sentiment")),
-                orEmpty(regexStringField(text, "highlight")),
-                orEmpty(regexStringField(text, "trigger")),
-                emptyToNull(orEmpty(regexStringField(text, "tickerSymbol"))),
-                List.of(),
-                regexNumberField(text, "priceMovePercent"),
-                List.of(),
-                emptyToNull(orEmpty(regexStringField(text, "assetClass"))),
-                List.of(),
-                List.of());
+                h.path("trigger").asText(""));
     }
 
     /** Extracts a {@code "key": "value"} string (quote/escape-aware) from possibly-broken JSON. */
@@ -1422,17 +1307,6 @@ public class EditorialAgent {
         if (text == null) return null;
         Matcher m = Pattern.compile("\"" + key + "\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"").matcher(text);
         return m.find() ? m.group(1).replace("\\\"", "\"").trim() : null;
-    }
-
-    /** Extracts a {@code "key": <number>} value from possibly-broken JSON. */
-    static Double regexNumberField(String text, String key) {
-        if (text == null) return null;
-        Matcher m = Pattern.compile("\"" + key + "\"\\s*:\\s*(-?\\d+(?:\\.\\d+)?)").matcher(text);
-        return m.find() ? Double.valueOf(m.group(1)) : null;
-    }
-
-    private static String orEmpty(String s) {
-        return s == null ? "" : s;
     }
 
     /** True if the unit carries a resolved (Yahoo) live price — a "verified" figure source. */
@@ -1446,8 +1320,7 @@ public class EditorialAgent {
             Pattern.compile("[-+]?\\d+[.,]\\d|\\d\\s*[%€$£]|[%€$£]\\s*\\d");
 
     private static boolean mentionsPrice(Draft draft) {
-        if (draft == null) return false;
-        return draft.priceMovePercent() != null || headlineHasPriceNumber(draft.headline());
+        return draft != null && headlineHasPriceNumber(draft.headline());
     }
 
     /** A price-shaped figure in the text: a decimal, or a digit next to %/€/$/£ ("S&P 500" is not). */
@@ -1511,17 +1384,6 @@ public class EditorialAgent {
             LOG.debug("JSON parse failed: {}", e.getMessage());
             return null;
         }
-    }
-
-    private static List<String> readStrings(JsonNode node) {
-        List<String> out = new ArrayList<>();
-        if (node != null && node.isArray()) {
-            for (JsonNode el : node) {
-                String s = el.asText("").trim();
-                if (!s.isEmpty()) out.add(s);
-            }
-        }
-        return out;
     }
 
     /**
@@ -1596,7 +1458,4 @@ public class EditorialAgent {
         return out;
     }
 
-    private static String emptyToNull(String s) {
-        return s == null || s.isBlank() ? null : s;
-    }
 }

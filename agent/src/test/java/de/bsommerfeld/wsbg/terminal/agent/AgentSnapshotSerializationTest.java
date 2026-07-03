@@ -5,7 +5,6 @@ import de.bsommerfeld.wsbg.terminal.agent.AgentSnapshotStore.AgentSnapshot;
 import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
 import de.bsommerfeld.wsbg.terminal.db.AgentRepository;
-import dev.langchain4j.data.embedding.Embedding;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -32,12 +31,11 @@ class AgentSnapshotSerializationTest {
                 "t3_abc", "wallstreetbetsGER", "NOW Rakete 🚀", "u/kartoffel",
                 "Body höher", 1780000000L, "/r/x/comments/abc/now/",
                 42, 0.9, 7, 1780000500L, List.of("https://i.redd.it/x.jpeg"), null);
-        Embedding embedding = Embedding.from(new float[] {0.11f, -0.22f, 0.33f, 0.44f});
 
-        InvestigationCluster cluster = new InvestigationCluster(thread, embedding);
+        InvestigationCluster cluster = new InvestigationCluster(thread);
         cluster.addUpdate(new RedditThread("t3_def", "wallstreetbetsGER", "NOW läuft", "u/b",
                 "mehr", 1780000100L, "/r/x/comments/def/now2/", 10, 0.8, 2, 1780000200L,
-                List.of(), null), 10, 2, Embedding.from(new float[] {0.1f, -0.2f, 0.3f, 0.4f}));
+                List.of(), null), 10, 2);
         cluster.shownImageUrls.add("https://i.redd.it/x.jpeg");
         cluster.headlineCount = 2;
         cluster.currentSignificance = 17.5;
@@ -55,7 +53,7 @@ class AgentSnapshotSerializationTest {
                 List.of());
         unit.addEvidence(new SubjectUnit.EvidenceRef("t3_abc", "t1_x", "NOW läuft", "reddit",
                 Instant.now().getEpochSecond()));
-        unit.addHeadline("NOW +606%", false, "FOMO");
+        unit.addHeadline("NOW +606%", "FOMO");
         unit.markNewsCovered(List.of("news-uuid-1"));
 
         AgentSnapshot original = new AgentSnapshot(
@@ -92,7 +90,6 @@ class AgentSnapshotSerializationTest {
         assertEquals(cluster.totalComments, restored.totalComments);
         assertEquals(2, restored.headlineCount);
         assertEquals(17.5, restored.currentSignificance);
-        assertArrayEquals(cluster.centroid().vector(), restored.centroid().vector(), 1e-6f);
         assertEquals(cluster.activeThreadIds, restored.activeThreadIds);
         assertTrue(restored.shownImageUrls.contains("https://i.redd.it/x.jpeg"));
         assertEquals(cluster.tickers, restored.tickers);

@@ -6,7 +6,6 @@ import de.bsommerfeld.wsbg.terminal.db.AgentRepository.HeadlineRecord;
 import de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight;
 import de.bsommerfeld.wsbg.terminal.db.HeadlineSentiment;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
-import dev.langchain4j.data.embedding.Embedding;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -111,7 +110,7 @@ class ReportBuilderTest {
         long now = System.currentTimeMillis() / 1000;
         var fresh = new RedditThread("t3_2", "wsb", "Rheinmetall Nachschlag",
                 "author", "neuer post", now - 30, "/p2", 30, 0.9, 4, now - 30, null);
-        cluster.addUpdate(fresh, 30, 4, dummyEmbedding());
+        cluster.addUpdate(fresh, 30, 4);
 
         when(repository.getThread("t3_1")).thenReturn(thread("t3_1", "Rheinmetall +12%", now - 300));
         when(repository.getThread("t3_2")).thenReturn(fresh);
@@ -240,7 +239,7 @@ class ReportBuilderTest {
         long now = System.currentTimeMillis() / 1000;
         var t = new RedditThread(threadId, "wsb", title, "author", "text",
                 now, "/p", 100, 0.8, 5, now, null);
-        return new InvestigationCluster(t, dummyEmbedding());
+        return new InvestigationCluster(t);
     }
 
     private RedditThread thread(String id, String title) {
@@ -252,7 +251,4 @@ class ReportBuilderTest {
                 createdUtc, "/r/wsb/" + id, 50, 0.9, 10, createdUtc, null);
     }
 
-    private Embedding dummyEmbedding() {
-        return Embedding.from(new float[768]);
-    }
 }

@@ -10,7 +10,6 @@ import de.bsommerfeld.wsbg.terminal.db.AgentRepository;
 import de.bsommerfeld.wsbg.terminal.db.AgentRepository.HeadlineRecord;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
 import de.bsommerfeld.wsbg.terminal.db.RedditSnapshotStore;
-import de.bsommerfeld.wsbg.terminal.embedding.OllamaEmbeddingService;
 import de.bsommerfeld.wsbg.terminal.reddit.RssRedditScraper;
 import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
 import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooFinanceClient;
@@ -81,7 +80,7 @@ class PipelineSmokeIT {
 
             // The production editorial pipeline (same wiring as PipelineStagesIT).
             EditorialAgent editorial = new EditorialAgent(brain, registry, agentRepo, redditRepo,
-                    bus, new I18nService(config), yahoo, new OllamaEmbeddingService(),
+                    bus, new I18nService(config), yahoo,
                     subjectRegistry, config);
 
             // RSS cold-start is slow: scanSubreddit fetches every thread context

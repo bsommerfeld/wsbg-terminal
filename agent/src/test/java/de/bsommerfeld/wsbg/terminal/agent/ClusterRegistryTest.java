@@ -1,7 +1,6 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
-import dev.langchain4j.data.embedding.Embedding;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -27,8 +26,7 @@ class ClusterRegistryTest {
         long now = System.currentTimeMillis() / 1000;
         RedditThread t = new RedditThread(id, "wsb", "Title " + id, "author", "body",
                 now, "/perma", 10, 0.9, 5, now, null);
-        Embedding e = Embedding.from(new float[] { 0.1f, 0.2f, 0.3f });
-        return new InvestigationCluster(t, e);
+        return new InvestigationCluster(t);
     }
 
     @Test

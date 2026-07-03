@@ -13,15 +13,6 @@ public class HeadlineConfig {
     @Comment("Enable or disable headline generation entirely (default: true)")
     private boolean enabled = true;
 
-    @Key("cluster-theme-enabled")
-    @Comment("When true, each dirty cluster (= one Reddit thread) also gets a "
-            + "'theme' headline capturing the whole thread's narrative, on top of the "
-            + "per-subject lines. Default false: every thread would otherwise produce a "
-            + "line (incl. chatty/meme threads with no instrument), which floods the wire "
-            + "with generic lines and overlaps the per-subject headlines. Opt in for the "
-            + "richer thread-narrative coverage.")
-    private boolean clusterThemeEnabled = false;
-
     @Key("analyze-images")
     @Comment("When true, the editorial pipeline runs image/vision analysis on Reddit threads and "
             + "comment images, feeding the descriptions into clustering and headlines. Default "
@@ -38,28 +29,12 @@ public class HeadlineConfig {
             + "several headlines on the same topic; reuse is free since news is cached.")
     private boolean newsCoverageEnabled = true;
 
-    @Key("suppress-redundant")
-    @Comment("When true (default), a re-composed line that just repeats a subject's own recent "
-            + "headline is suppressed — both the model's redundant-UPDATE empty AND the "
-            + "near-duplicate guard. When false, the wire is a strict 1:1 mirror: every dirty "
-            + "signal writes a line, even a duplicate, with no redundancy filtering. (A first "
-            + "line of a subject is ALWAYS written regardless of this setting.)")
-    private boolean suppressRedundant = true;
-
     public boolean isEnabled() {
         return enabled;
     }
 
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
-    }
-
-    public boolean isClusterThemeEnabled() {
-        return clusterThemeEnabled;
-    }
-
-    public void setClusterThemeEnabled(boolean clusterThemeEnabled) {
-        this.clusterThemeEnabled = clusterThemeEnabled;
     }
 
     public boolean isAnalyzeImages() {
@@ -78,11 +53,4 @@ public class HeadlineConfig {
         this.newsCoverageEnabled = newsCoverageEnabled;
     }
 
-    public boolean isSuppressRedundant() {
-        return suppressRedundant;
-    }
-
-    public void setSuppressRedundant(boolean suppressRedundant) {
-        this.suppressRedundant = suppressRedundant;
-    }
 }

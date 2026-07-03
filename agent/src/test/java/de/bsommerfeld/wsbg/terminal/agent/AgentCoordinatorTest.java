@@ -1,7 +1,6 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
-import dev.langchain4j.data.embedding.Embedding;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -36,7 +35,7 @@ class AgentCoordinatorTest {
         long now = System.currentTimeMillis() / 1000;
         RedditThread t = new RedditThread(id, "wsb", "T " + id, "u", "b",
                 now, "/p", 1, 0.9, 0, now, null);
-        return new InvestigationCluster(t, Embedding.from(new float[] { 0.1f, 0.2f }));
+        return new InvestigationCluster(t);
     }
 
     @Test

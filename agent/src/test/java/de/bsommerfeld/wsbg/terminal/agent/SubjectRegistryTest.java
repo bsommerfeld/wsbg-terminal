@@ -78,7 +78,7 @@ class SubjectRegistryTest {
         SubjectRegistry reg = new SubjectRegistry();
         SubjectUnit u = reg.findOrCreate("NVDA", "NVIDIA");
         u.addEvidence(ev("t3_x", "t1_now", "Nvidia"));
-        u.addHeadline("NVIDIA (NVDA) +2%", false);
+        u.addHeadline("NVIDIA (NVDA) +2%");
 
         // Fresh content: nothing is stale yet.
         assertEquals(0, reg.pruneContentOlderThan(Duration.ofMinutes(60)));

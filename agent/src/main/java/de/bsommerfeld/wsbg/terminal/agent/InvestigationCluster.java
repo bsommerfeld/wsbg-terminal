@@ -1,7 +1,6 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
-import dev.langchain4j.data.embedding.Embedding;
 
 import java.time.Instant;
 import java.time.LocalTime;
@@ -12,9 +11,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
- * Tracks a semantically clustered group of Reddit threads that share a common
- * topic. Accumulates score/comment deltas and continuously refines its centroid
- * via exponential moving average.
+ * A 1:1 wrapper of a single Reddit thread (cluster id == thread id) that
+ * accumulates score/comment deltas — the ingestion bucket the subject layer
+ * reads its evidence from.
  *
  * <p>
  * State is intentionally focused: editorial decisions (which headlines were
@@ -23,12 +22,6 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * tools. The cluster only holds the data the scanner produces.
  */
 public class InvestigationCluster {
-
-    /**
-     * EMA weight for centroid updates. 0.3 lets recent threads shift the
-     * centroid noticeably without losing the original topic anchor.
-     */
-    private static final float CENTROID_EMA_ALPHA = 0.3f;
 
     public final String id;
     public final String initialTitle;
@@ -72,13 +65,7 @@ public class InvestigationCluster {
     int bestThreadScore = -1;
     public long threadCreatedUTC;
 
-    /**
-     * Living centroid — updated via EMA on every new thread. Not final because
-     * merging replaces it with a weighted average.
-     */
-    private float[] centroidVector;
-
-    public InvestigationCluster(RedditThread initial, Embedding embedding) {
+    public InvestigationCluster(RedditThread initial) {
         // Deterministic ID: the initial thread's Reddit ID survives restarts,
         // so historical headlines can be matched back when the same thread
         // surfaces again.
@@ -86,7 +73,6 @@ public class InvestigationCluster {
         this.initialTitle = initial.title();
         this.firstSeen = Instant.now();
         this.lastActivity = Instant.now();
-        this.centroidVector = copy(embedding.vector());
 
         this.threadCount = 1;
         this.totalScore = initial.score();
@@ -105,16 +91,15 @@ public class InvestigationCluster {
     /**
      * Restore constructor — rebuilds a cluster verbatim from a persisted
      * {@link Snapshot} so a quick restart resumes the EXACT prior state
-     * (centroid, evidence log, shown-image markers, counters, headlineCount),
-     * not a re-seeded approximation. {@code addUpdate} and the
-     * EMA/ticker-extraction side effects are intentionally bypassed.
+     * (evidence log, shown-image markers, counters, headlineCount), not a
+     * re-seeded approximation. {@code addUpdate} and the ticker-extraction
+     * side effects are intentionally bypassed.
      */
     InvestigationCluster(Snapshot s) {
         this.id = s.id();
         this.initialTitle = s.initialTitle();
         this.firstSeen = Instant.ofEpochSecond(s.firstSeenEpoch());
         this.lastActivity = Instant.ofEpochSecond(s.lastActivityEpoch());
-        this.centroidVector = s.centroid() != null ? copy(s.centroid()) : new float[0];
         this.threadCount = s.threadCount();
         this.totalScore = s.totalScore();
         this.totalComments = s.totalComments();
@@ -130,7 +115,7 @@ public class InvestigationCluster {
         if (s.shownImageUrls() != null) this.shownImageUrls.addAll(s.shownImageUrls());
     }
 
-    public void addUpdate(RedditThread t, int deltaScore, int deltaComments, Embedding embedding) {
+    public void addUpdate(RedditThread t, int deltaScore, int deltaComments) {
         if (deltaComments > 0)
             this.lastActivity = Instant.now();
         this.totalScore += deltaScore;
@@ -143,7 +128,6 @@ public class InvestigationCluster {
             this.bestThreadId = t.id();
         }
 
-        updateCentroid(embedding.vector());
         this.tickers.addAll(TickerExtractor.extract(t.title()));
         this.tickers.addAll(TickerExtractor.extract(t.textContent()));
 
@@ -157,64 +141,11 @@ public class InvestigationCluster {
         }
     }
 
-    /** Returns the current centroid as an {@link Embedding} for similarity queries. */
-    public Embedding centroid() {
-        return Embedding.from(centroidVector);
-    }
-
-    /**
-     * Absorbs another cluster into this one. Used for cluster merging when two
-     * investigations converge on the same topic over time. The centroid becomes
-     * a thread-count-weighted average.
-     */
-    public void absorb(InvestigationCluster other) {
-        float totalWeight = this.threadCount + other.threadCount;
-        float thisWeight = this.threadCount / totalWeight;
-        float otherWeight = other.threadCount / totalWeight;
-
-        for (int i = 0; i < centroidVector.length; i++) {
-            centroidVector[i] = thisWeight * centroidVector[i] + otherWeight * other.centroidVector[i];
-        }
-
-        this.threadCount += other.threadCount;
-        this.totalScore += other.totalScore;
-        this.totalComments += other.totalComments;
-        this.activeThreadIds.addAll(other.activeThreadIds);
-        this.evidenceLog.addAll(other.evidenceLog);
-        this.tickers.addAll(other.tickers);
-
-        if (other.bestThreadScore > this.bestThreadScore) {
-            this.bestThreadScore = other.bestThreadScore;
-            this.bestThreadId = other.bestThreadId;
-        }
-        if (other.lastActivity.isAfter(this.lastActivity)) {
-            this.lastActivity = other.lastActivity;
-            this.latestThreadId = other.latestThreadId;
-        }
-    }
-
-    /**
-     * Exponential moving average: centroid = α·new + (1-α)·old.
-     * Lets the cluster track topic drift without forgetting its origin.
-     */
-    private void updateCentroid(float[] newVector) {
-        for (int i = 0; i < centroidVector.length; i++) {
-            centroidVector[i] = CENTROID_EMA_ALPHA * newVector[i]
-                    + (1.0f - CENTROID_EMA_ALPHA) * centroidVector[i];
-        }
-    }
-
-    private static float[] copy(float[] src) {
-        float[] dst = new float[src.length];
-        System.arraycopy(src, 0, dst, 0, src.length);
-        return dst;
-    }
-
     /** Captures the full cluster state for lossless persistence. */
     public Snapshot toSnapshot() {
         return new Snapshot(
                 id, initialTitle, firstSeen.getEpochSecond(), lastActivity.getEpochSecond(),
-                copy(centroidVector), threadCount, totalScore, totalComments,
+                threadCount, totalScore, totalComments,
                 currentSignificance, headlineCount, latestThreadId, bestThreadId,
                 bestThreadScore, threadCreatedUTC,
                 new ArrayList<>(activeThreadIds), new ArrayList<>(evidenceLog),
@@ -223,15 +154,15 @@ public class InvestigationCluster {
 
     /**
      * Serialisable, lossless capture of a cluster's state — everything the
-     * agent built up (centroid, evidence, shown-image markers, counters).
-     * Restored via the {@link #InvestigationCluster(Snapshot)} ctor.
+     * agent built up (evidence, shown-image markers, counters). Restored via
+     * the {@link #InvestigationCluster(Snapshot)} ctor. (An old snapshot's
+     * legacy {@code centroid} field is simply ignored on load.)
      */
     public record Snapshot(
             String id,
             String initialTitle,
             long firstSeenEpoch,
             long lastActivityEpoch,
-            float[] centroid,
             int threadCount,
             int totalScore,
             int totalComments,

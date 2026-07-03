@@ -18,7 +18,7 @@
         </dependency>
         <dependency>
             <groupId>de.bsommerfeld</groupId>
-            <artifactId>embedding</artifactId>
+            <artifactId>instrument-corpus</artifactId>
         </dependency>
         <dependency>
             <groupId>de.bsommerfeld</groupId>

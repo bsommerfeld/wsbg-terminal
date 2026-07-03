@@ -29,7 +29,7 @@ class PromptLoaderTest {
 
     @Test
     void loadWithVariables_shouldSubstitutePlaceholders() {
-        String result = PromptLoader.load("headline-theme", Map.of("LANGUAGE", "German"));
+        String result = PromptLoader.load("headline-compose-unit", Map.of("LANGUAGE", "German"));
 
         assertNotNull(result);
         assertFalse(result.contains("{{LANGUAGE}}"), "Placeholder should be replaced");
@@ -38,7 +38,7 @@ class PromptLoaderTest {
 
     @Test
     void loadWithVariables_shouldPreserveUnmatchedPlaceholders() {
-        String raw = PromptLoader.load("headline-theme");
+        String raw = PromptLoader.load("headline-compose-unit");
         assertTrue(raw.contains("{{"), "Raw template should still contain placeholders");
     }
 
@@ -62,7 +62,7 @@ class PromptLoaderTest {
 
     @Test
     void loadLocalized_germanPromptsExistForEveryLanguageSensitiveStage() {
-        for (String name : new String[] {"headline-compose-unit", "headline-theme", "subject-extraction"}) {
+        for (String name : new String[] {"headline-compose-unit", "subject-extraction"}) {
             String de = PromptLoader.loadLocalized(name, "de");
             assertNotSame(PromptLoader.load(name), de, name + " has a distinct German variant");
             assertFalse(de.isBlank());

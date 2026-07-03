@@ -1,5 +1,4 @@
 package de.bsommerfeld.wsbg.terminal.agent;
-import de.bsommerfeld.wsbg.terminal.embedding.EmbeddingService;
 
 import de.bsommerfeld.wsbg.terminal.aggregator.NewsAggregator;
 import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
@@ -130,20 +129,56 @@ public final class TickerResolver {
             "etf", "fund", "trust", "shares");
 
     /**
-     * Tier 2 acceptance bar: when token/score matching ({@link #strongMatch}) can't
-     * confidently pick a candidate, the embedding ranker may — but only if the best
-     * candidate name is at least this cosine-similar to the query. Doubles as a guard
-     * (a fuzzy query with no semantically-close candidate stays unresolved). Raised
-     * from 0.55 because the loose fallback was turning pure THEMES into bogus tickers
-     * (Biotech→an index, Semiconductor→an ETF, Drones→some foreign line). Paired with
-     * the EQUITY-only filter in {@link #embedMatch}, the fuzzy fallback now only ever
-     * promotes a real, confidently-named stock. (The subject still keeps its Yahoo
-     * NEWS regardless — that's attached independent of the ticker.)
+     * The LLM identity judge — a discrete "which of these candidates IS the
+     * subject, or none" pick (with a hard bias to none), fed the room's thread
+     * title as context so a generic word is distinguishable from a same-named
+     * instrument. It serves TWO spots:
+     * <ul>
+     *   <li><b>Tier-2 fallback</b> ({@link #judgeMatch}) when token/score matching
+     *       found nothing — replacing the old embedding-cosine ranker whose
+     *       similarity threshold kept turning pure THEMES into bogus tickers.</li>
+     *   <li><b>Veto over every tier-1 Yahoo pick</b> ({@link #vetoMatch}): the
+     *       exact-symbol/fuzzy-name fast paths match on SPELLING, not identity, and
+     *       live they bound SPD (the party) to a same-lettered US ETF, „Linke" to
+     *       LNKS, „Zinsen" to a fund and „Kakao" (the commodity talk) to Kakao
+     *       Corp. Every search-derived pick is judged ONCE per subject (verdict
+     *       cached for the process lifetime); the judge may confirm, redirect to a
+     *       different candidate, or strike the ticker (news-only). Catalogued
+     *       indices/commodities bypass the veto — they are curated identity.</li>
+     * </ul>
+     * The judge returns the 0-based index of the matching candidate, or -1.
      */
-    private static final double EMBED_MATCH_THRESHOLD = 0.70;
+    @FunctionalInterface
+    public interface MatchJudge {
+        int pick(String subject, String context, List<String> candidateNames);
+    }
 
     private final YahooFinanceClient yahoo;
-    private final EmbeddingService embeddings; // Tier 2; null disables it
+    private MatchJudge matchJudge; // identity judge; null disables veto + tier 2 + tier 3
+
+    /**
+     * Tier 3 — the auto-updating local instrument corpus (SEC US listings + the
+     * learned wallstreet-online ISIN memory): when Yahoo's own candidates yield
+     * nothing, the corpus proposes lexically-close instruments and the judge picks
+     * among GROUND-TRUTH entries (name + type + exchange facts from the feed, not
+     * from training memory). Null in tests/harnesses — tier 3 simply off.
+     */
+    private de.bsommerfeld.wsbg.terminal.instruments.InstrumentCorpus corpus;
+
+    /**
+     * Process-lifetime verdict cache: subject (lower-cased) → the symbol the judge
+     * approved, or {@code ""} when the judge struck the match. Keeps the veto at
+     * ~one small model call per unique subject name.
+     */
+    private final Map<String, String> vetoVerdicts = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final String VETO_NONE = "";
+
+    /** Tier-3 verdict cache: subject (lower-cased) → the corpus pick (empty = judged none). */
+    private final Map<String, java.util.Optional<de.bsommerfeld.wsbg.terminal.instruments.InstrumentEntry>>
+            corpusVerdicts = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** How many corpus candidates the judge sees at most — never the whole list. */
+    private static final int CORPUS_CANDIDATES = 8;
 
     /**
      * The live price chain (L&amp;S → Deutsche Börse → NASDAQ → Yahoo, EUR). Optional:
@@ -174,12 +209,21 @@ public final class TickerResolver {
     }
 
     public TickerResolver(YahooFinanceClient yahoo) {
-        this(yahoo, null);
+        this.yahoo = yahoo;
     }
 
-    public TickerResolver(YahooFinanceClient yahoo, EmbeddingService embeddings) {
-        this.yahoo = yahoo;
-        this.embeddings = embeddings;
+    /**
+     * Installs the tier-2 LLM match judge. Forwarded by {@code EditorialAgent}
+     * (like the price chain / news aggregator); null in tests and harnesses,
+     * where tier 2 simply stays off.
+     */
+    void setMatchJudge(MatchJudge matchJudge) {
+        this.matchJudge = matchJudge;
+    }
+
+    /** Installs the tier-3 instrument corpus. Forwarded by {@code EditorialAgent}; null in tests. */
+    void setInstrumentCorpus(de.bsommerfeld.wsbg.terminal.instruments.InstrumentCorpus corpus) {
+        this.corpus = corpus;
     }
 
     /** Resolves a single subject with the default related allowance ({@link #MAX_RELATED}). */
@@ -199,6 +243,11 @@ public final class TickerResolver {
                 new int[]{Math.max(0, maxRelated)}).get(0);
     }
 
+    /** Context-less variant (tests, single lookups): the judge sees only the names. */
+    public List<ResolvedSubject> resolveAll(List<String> names, int[] relatedAlloc) {
+        return resolveAll(names, relatedAlloc, "");
+    }
+
     /**
      * Resolves many subjects at once with a per-subject related allowance, and
      * — crucially — fetches every needed price snapshot (each subject's own
@@ -212,8 +261,11 @@ public final class TickerResolver {
      *
      * @param names        subject names (slang already normalised)
      * @param relatedAlloc per-subject related cap, index-aligned with {@code names}
+     * @param context      the room's handle on these subjects (the thread title) —
+     *                     fed to the identity judge so „Kakao" in a commodity thread
+     *                     is distinguishable from Kakao Corp; may be blank
      */
-    public List<ResolvedSubject> resolveAll(List<String> names, int[] relatedAlloc) {
+    public List<ResolvedSubject> resolveAll(List<String> names, int[] relatedAlloc, String context) {
         int n = names == null ? 0 : names.size();
         List<Pending> pending = new ArrayList<>(n);
         LinkedHashSet<String> symbols = new LinkedHashSet<>();
@@ -238,10 +290,6 @@ public final class TickerResolver {
                     pending.add(Pending.rateLimited(query));
                     continue;
                 }
-                YahooQuote strong = strongMatch(query, sr.quotes());
-                if (strong == null) {
-                    strong = embedMatch(query, sr.quotes()); // Tier 2: semantic fallback
-                }
                 // A known stock index (DAX, S&P 500, …) binds straight to its Yahoo
                 // ^-symbol — bypassing the exact-symbol fast-path that would otherwise
                 // grab a same-named tradeable ticker (e.g. „DAX" → a $44 US ETF) and
@@ -251,6 +299,19 @@ public final class TickerResolver {
                 // — the actual commodity price, not a same-named mining stock or a „Gold.com"
                 // pennystock. NOT a guess: „Gold" IS gold. Priced in native USD, not FX-converted.
                 CommodityCatalog.Commodity commodity = index == null ? CommodityCatalog.lookup(query) : null;
+                YahooQuote strong = null;
+                if (index == null && commodity == null) {
+                    strong = strongMatch(query, sr.quotes());
+                    if (strong == null) {
+                        strong = judgeMatch(query, context, sr.quotes()); // Tier 2: LLM judge fallback
+                        if (strong == null) {
+                            strong = corpusMatch(query, context); // Tier 3: local corpus + judge
+                        }
+                    } else {
+                        // Tier-1 veto: spelling matched — identity must too (SPD ≠ the ETF).
+                        strong = vetoMatch(query, context, strong, sr.quotes());
+                    }
+                }
                 String ownTicker = index != null ? index.symbol()
                         : commodity != null ? commodity.symbol()
                         : (strong == null ? null : strong.symbol());
@@ -370,20 +431,214 @@ public final class TickerResolver {
     }
 
     /**
-     * Tier 2: when {@link #strongMatch} found nothing (token/score didn't decide),
-     * pick the candidate whose NAME is most semantically similar to the query via
-     * the embedding ranker — but only above {@link #EMBED_MATCH_THRESHOLD}, so a
-     * fuzzy query with no close candidate stays unresolved (the guard). No-op when
-     * no embedder is wired. Source-agnostic: the candidates are just names, so the
-     * same path will rank a local symbol-corpus once that exists. Package-private
-     * for testing.
+     * Tier-1 veto: spelling matched a candidate ({@link #strongMatch}) — the judge
+     * now decides whether it is the same real-world ENTITY, may redirect to a
+     * different candidate, or strikes the ticker entirely (news-only subject).
+     * Verdicts are cached per subject for the process lifetime, so the veto costs
+     * ~one small model call per unique subject name. No-op without a judge.
+     * Package-private for testing.
      */
-    YahooQuote embedMatch(String query, List<YahooQuote> quotes) {
-        if (embeddings == null || quotes == null || quotes.isEmpty()) return null;
-        List<String> names = new ArrayList<>(quotes.size());
-        for (YahooQuote q : quotes) names.add(q.displayName());
-        int i = embeddings.bestMatch(query, names, EMBED_MATCH_THRESHOLD);
-        if (i < 0) return null;
+    YahooQuote vetoMatch(String query, String context, YahooQuote picked, List<YahooQuote> quotes) {
+        if (matchJudge == null || picked == null) return picked;
+        // Deterministic pre-confirm — the name IS the name: a multi-word subject whose
+        // significant words are exactly the candidate's name (legal forms stopped out)
+        // is identity by spelling, no judge needed. Kills the judge's false strikes on
+        // near-identical names (live: 'Lithium Americas' vs "Lithium Americas Corp."
+        // was struck twice) and saves the call. Single-word subjects (Kakao, SPD, KO)
+        // and names with ANY extra significant word (Solactive-Trade-Republic-Index,
+        // United States ANTIMONY) still face the judge.
+        if (nameEquivalent(query, picked.displayName())) return picked;
+        String key = query.toLowerCase(Locale.ROOT);
+        String verdict = vetoVerdicts.get(key);
+        if (verdict == null) {
+            int i = matchJudge.pick(query, context, candidateLines(quotes));
+            YahooQuote approved = i >= 0 && i < quotes.size() ? quotes.get(i) : null;
+            // A REDIRECT (judge prefers a different candidate than tier-1's pick) is only
+            // trusted when the target's name deterministically shares a word with the
+            // subject — that keeps the essential wrong-twin fix ('BYD' away from Boyd
+            // Gaming, onto BYD Company) while catching the 4B's least-wrong-candidate
+            // lapse (live: 'KO' → Kohl's). A redirect that fails the word check means the
+            // judge implicitly rejected tier-1's pick too → strike (precision over recall).
+            // A redirect between LISTINGS of the same company (name sets subset each
+            // other after legal-form stripping: "Infineon Technologies AG" ↔ "Infineon
+            // Technologies ADR") is pure churn — the judge keeps preferring ADRs
+            // (live: Nokia→NOK, Infineon→IFNNY) while tier-1 already holds the primary
+            // listing. Keep tier-1's pick; a genuine wrong-twin (Boyd Gaming ↔ BYD
+            // Company — disjoint name sets) still redirects.
+            if (approved != null && !approved.symbol().equalsIgnoreCase(picked.symbol())
+                    && sameCompanyName(picked.displayName(), approved.displayName())) {
+                approved = picked;
+            }
+            if (approved != null && !approved.symbol().equalsIgnoreCase(picked.symbol())
+                    && !sharesSignificantWord(query, approved.displayName(), approved.symbol())) {
+                // The judge's redirect target is word-implausible (least-wrong lapse,
+                // live: 'KO'→Kohl's, 'IBM'→IBM0.F). The judge did NOT say "none",
+                // so it affirmed an instrument exists — when tier-1's own pick is
+                // name-plausible, fall back to IT rather than striking a legit value
+                // (live: IBM lost its ticker entirely under strike-always).
+                boolean keepPicked = sharesSignificantWord(query, picked.displayName(), picked.symbol());
+                LOG.info("[RESOLVE] veto: '{}' redirect {} → {} rejected (no shared word) — {}",
+                        query, picked.symbol(), approved.symbol(),
+                        keepPicked ? "keeping tier-1 pick" : "ticker struck");
+                approved = keepPicked ? picked : null;
+            }
+            verdict = approved == null ? VETO_NONE
+                    : (approved.symbol() == null ? VETO_NONE : approved.symbol().toUpperCase(Locale.ROOT));
+            vetoVerdicts.put(key, verdict);
+            if (VETO_NONE.equals(verdict)) {
+                LOG.info("[RESOLVE] veto: '{}' is not '{}' ({}) — ticker struck, news-only",
+                        query, picked.displayName(), picked.symbol());
+            } else if (!verdict.equalsIgnoreCase(picked.symbol())) {
+                LOG.info("[RESOLVE] veto: '{}' redirected {} → {}", query, picked.symbol(), verdict);
+            }
+        }
+        if (VETO_NONE.equals(verdict)) return null;
+        if (verdict.equalsIgnoreCase(picked.symbol())) return picked;
+        for (YahooQuote q : quotes) {
+            if (verdict.equalsIgnoreCase(q.symbol())) return q;
+        }
+        return picked; // approved symbol not among this search's candidates — keep tier-1's pick
+    }
+
+    /**
+     * Tier 3: neither token/score nor the judge found the subject among Yahoo's
+     * candidates — ask the LOCAL corpus. Lexical top-K (the judge never sees the
+     * whole list) → judge pick over ground-truth candidate lines (name + type +
+     * exchange from the feed) → word-guard (same least-wrong protection as the
+     * veto redirect). Rescues known instruments Yahoo's search missed
+     * (MicroStrategy→MSTR class) and German names only the learned WSO memory
+     * carries. Verdicts cached per subject. Package-private for testing.
+     */
+    YahooQuote corpusMatch(String query, String context) {
+        if (corpus == null || matchJudge == null) return null;
+        // A 1-2 char subject that even Yahoo's search couldn't place is almost
+        // certainly room slang, not an instrument (live: 'OP' — Reddit's Original
+        // Poster — lexically hit "Empire State Realty OP, L.P."). Tier 3 sits
+        // BEHIND Yahoo, so legit short symbols (MU, KO) never reach this guard.
+        if (query.length() < 3) return null;
+        String key = query.toLowerCase(Locale.ROOT);
+        java.util.Optional<de.bsommerfeld.wsbg.terminal.instruments.InstrumentEntry> cached =
+                corpusVerdicts.get(key);
+        if (cached == null) {
+            List<de.bsommerfeld.wsbg.terminal.instruments.InstrumentEntry> cands =
+                    corpus.search(query, CORPUS_CANDIDATES);
+            de.bsommerfeld.wsbg.terminal.instruments.InstrumentEntry picked = null;
+            if (!cands.isEmpty()) {
+                List<String> lines = new ArrayList<>(cands.size());
+                for (var c : cands) lines.add(c.candidateLine());
+                int i = matchJudge.pick(query, context, lines);
+                if (i >= 0 && i < cands.size()
+                        && sharesSignificantWord(query, cands.get(i).name(), cands.get(i).symbol())) {
+                    picked = cands.get(i);
+                }
+            }
+            cached = java.util.Optional.ofNullable(picked);
+            corpusVerdicts.put(key, cached);
+            if (picked != null) {
+                LOG.info("[RESOLVE] corpus: '{}' → {} ({}) [{}]",
+                        query, picked.symbol(), picked.name(), picked.source());
+            }
+        }
+        return cached.map(e -> new YahooQuote(
+                e.symbol(), e.name(), e.name(),
+                e.type() == null ? "EQUITY" : e.type(),
+                e.exchange(), e.exchange(), null, null,
+                Double.NaN, Double.NaN, 0.0)).orElse(null);
+    }
+
+    /**
+     * The judge's candidate lines: the NAME plus the hard facts we already hold
+     * (instrument type + exchange), so the verdict rests on delivered facts rather
+     * than the model's world knowledge of the name — "Kakao Corp — EQUITY, KSC
+     * (Seoul)" is decidable without knowing the company.
+     */
+    private static List<String> candidateLines(List<YahooQuote> quotes) {
+        List<String> lines = new ArrayList<>(quotes == null ? 0 : quotes.size());
+        if (quotes == null) return lines;
+        for (YahooQuote q : quotes) {
+            StringBuilder b = new StringBuilder(q.displayName());
+            String type = q.quoteType() == null ? "" : q.quoteType().trim();
+            String exch = q.exchangeDisplay() == null || q.exchangeDisplay().isBlank()
+                    ? (q.exchange() == null ? "" : q.exchange().trim()) : q.exchangeDisplay().trim();
+            if (!type.isEmpty() || !exch.isEmpty()) {
+                b.append(" — ");
+                if (!type.isEmpty()) b.append(type.toUpperCase(Locale.ROOT));
+                if (!type.isEmpty() && !exch.isEmpty()) b.append(", ");
+                if (!exch.isEmpty()) b.append(exch);
+            }
+            lines.add(b.toString());
+        }
+        return lines;
+    }
+
+    /**
+     * "The name IS the name": a multi-word subject whose significant words (legal
+     * forms stripped) are EXACTLY the candidate name's significant words. 'Lithium
+     * Americas' ↔ "Lithium Americas Corp." holds; 'Trade Republic' ↔ "Solactive
+     * Trade Republic Semiconductors Index" (extra words) and any single-word
+     * subject do not. Package-private for testing.
+     */
+    static boolean nameEquivalent(String subject, String candidateName) {
+        Set<String> subj = significantNameWords(subject);
+        if (subj.size() < 2) return false;
+        Set<String> cand = significantNameWords(candidateName);
+        return cand.size() == subj.size() && cand.containsAll(subj);
+    }
+
+    private static Set<String> significantNameWords(String s) {
+        Set<String> out = words(s);
+        out.removeAll(STOP_TOKENS);
+        return out;
+    }
+
+    /**
+     * Two candidate names denote the same company when one's significant word set
+     * contains the other's (non-empty): "Nokia Oyj" ↔ "Nokia Corporation" holds,
+     * "Boyd Gaming" ↔ "BYD Company" does not. Package-private for testing.
+     */
+    static boolean sameCompanyName(String a, String b) {
+        Set<String> wa = significantNameWords(a);
+        Set<String> wb = significantNameWords(b);
+        if (wa.isEmpty() || wb.isEmpty()) return false;
+        return wa.containsAll(wb) || wb.containsAll(wa);
+    }
+
+    /**
+     * Deterministic guard for a judge REDIRECT: the target must carry the subject in
+     * its NAME or SYMBOL (case-insensitive word overlap, words ≥ 2 chars). 'BYD' ↔
+     * "BYD Company Limited" passes; 'KO' ↔ "Kohl's Corporation" does not.
+     */
+    static boolean sharesSignificantWord(String subject, String targetName, String targetSymbol) {
+        Set<String> subjectWords = words(subject);
+        if (subjectWords.isEmpty()) return false;
+        Set<String> targetWords = words(targetName);
+        targetWords.addAll(words(targetSymbol));
+        for (String w : subjectWords) {
+            if (targetWords.contains(w)) return true;
+        }
+        return false;
+    }
+
+    private static Set<String> words(String s) {
+        Set<String> out = new HashSet<>();
+        if (s == null) return out;
+        for (String w : s.toLowerCase(Locale.ROOT).split("[^a-z0-9]+")) {
+            if (w.length() >= 2) out.add(w);
+        }
+        return out;
+    }
+
+    /**
+     * Tier 2: when {@link #strongMatch} found nothing (token/score didn't decide),
+     * let the LLM judge pick the ONE candidate that IS the subject — or none, in
+     * which case the subject stays unresolved (the guard). No-op when no judge is
+     * wired. Source-agnostic: the candidates are just names, so the same path will
+     * rank a local symbol-corpus once that exists. Package-private for testing.
+     */
+    YahooQuote judgeMatch(String query, String context, List<YahooQuote> quotes) {
+        if (matchJudge == null || quotes == null || quotes.isEmpty()) return null;
+        int i = matchJudge.pick(query, context, candidateLines(quotes));
+        if (i < 0 || i >= quotes.size()) return null;
         YahooQuote best = quotes.get(i);
         // EQUITY-only gate for the fuzzy fallback: a theme/topic ("Biotech",
         // "Drones", "Semiconductor") that has no token/score match must NOT be

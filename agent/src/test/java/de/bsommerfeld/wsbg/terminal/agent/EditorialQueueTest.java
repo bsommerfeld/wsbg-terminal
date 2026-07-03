@@ -31,9 +31,7 @@ class EditorialQueueTest {
 
         assertTrue(q.offer(new ComposeJob.SubjectJob("NVDA")));
         assertTrue(q.offer(new ComposeJob.SubjectJob("AMD")));
-        // A theme job for the same underlying id is a DIFFERENT job id ("theme:" vs "unit:").
-        assertTrue(q.offer(new ComposeJob.ThemeJob("NVDA", List.of())));
-        assertEquals(3, q.size());
+        assertEquals(2, q.size());
     }
 
     @Test
@@ -56,17 +54,17 @@ class EditorialQueueTest {
     void take_dispatchesByStrength_strongestFirst_acrossJobKinds() throws InterruptedException {
         EditorialQueue q = new EditorialQueue();
         q.offer(new ComposeJob.SubjectJob("A"));        // strength 1
-        q.offer(new ComposeJob.ThemeJob("B", List.of())); // strength 9 (a ThemeJob ranked on the same scale)
+        q.offer(new ComposeJob.SubjectJob("B"));        // strength 9
         q.offer(new ComposeJob.SubjectJob("C"));        // strength 5
 
         Map<String, Integer> strength = new HashMap<>();
         strength.put("unit:A", 1);
-        strength.put("theme:B", 9);
+        strength.put("unit:B", 9);
         strength.put("unit:C", 5);
         ToIntFunction<ComposeJob> fn = j -> strength.getOrDefault(j.id(), 0);
 
-        // Highest strength first, regardless of insertion order or job kind.
-        assertEquals("theme:B", q.take(fn).id());
+        // Highest strength first, regardless of insertion order.
+        assertEquals("unit:B", q.take(fn).id());
         assertEquals("unit:C", q.take(fn).id());
         assertEquals("unit:A", q.take(fn).id());
     }
@@ -93,12 +91,12 @@ class EditorialQueueTest {
     void take_equalStrength_fallsBackToInsertionOrder() throws InterruptedException {
         EditorialQueue q = new EditorialQueue();
         q.offer(new ComposeJob.SubjectJob("A"));
-        q.offer(new ComposeJob.ThemeJob("B", List.of()));
+        q.offer(new ComposeJob.SubjectJob("B"));
         q.offer(new ComposeJob.SubjectJob("C"));
 
         // All equal → earliest-inserted dispatched first (FIFO tie-break, no starvation).
         assertEquals("unit:A", q.take().id());
-        assertEquals("theme:B", q.take().id());
+        assertEquals("unit:B", q.take().id());
         assertEquals("unit:C", q.take().id());
     }
 }

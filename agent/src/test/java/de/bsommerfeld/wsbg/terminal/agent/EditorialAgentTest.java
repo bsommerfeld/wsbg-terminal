@@ -110,22 +110,7 @@ class EditorialAgentTest {
         assertEquals("S&P 500", EditorialAgent.cleanSubjectName("S&P 500"));
     }
 
-    // ---- salvageDraftByRegex: recover a headline from stray-quote-broken JSON ----
 
-    @Test
-    void salvageDraftByRegexRecoversHeadlineFromStrayQuoteJson() {
-        // The exact live failure: `"ticker": null"` breaks the object, but the
-        // headline + scalars must still be recovered.
-        String broken = "{\"headline\": \"NVIDIA-Update: Die Apes sehen einen Rückgang von -4,97% bei NVIDIA\", "
-                + "\"mode\": \"UPDATE\", \"sentiment\": \"CAPITULATION\", \"highlight\": \"NORMAL\", "
-                + "\"tickerSymbol\": null, \"subjects\": [{\"name\": \"NVIDIA\", \"ticker\": null\"}], "
-                + "\"priceMovePercent\": -4.97}";
-        var d = EditorialAgent.salvageDraftByRegex(broken);
-        assertEquals("NVIDIA-Update: Die Apes sehen einen Rückgang von -4,97% bei NVIDIA", d.headline());
-        assertEquals("CAPITULATION", d.sentiment());
-        assertEquals("NORMAL", d.highlight());
-        assertEquals(-4.97, d.priceMovePercent());
-    }
 
     // ---- headlineHasPriceNumber: detect a user-posted price for the "unverified" flag ----
 
@@ -144,10 +129,9 @@ class EditorialAgentTest {
     }
 
     @Test
-    void salvageDraftByRegexFieldsAndNumber() {
+    void regexStringFieldRecoversFromBrokenJson() {
         assertEquals("Oracle (ORCL) +2%", EditorialAgent.regexStringField(
                 "{\"headline\": \"Oracle (ORCL) +2%\", \"x\": 1}", "headline"));
-        assertEquals(6.5, EditorialAgent.regexNumberField("{\"priceMovePercent\": 6.5}", "priceMovePercent"));
         assertNull(EditorialAgent.regexStringField("no json here", "headline"));
     }
 
@@ -176,9 +160,9 @@ class EditorialAgentTest {
         u.addEvidence(ev("t1_a", "NVDA yolo"));
 
         String brief = EditorialAgent.unitBrief(u, false);
-        assertTrue(brief.contains("[news:old] 3d ago [STALE] — Nvidia capex worries · WSJ"),
+        assertTrue(brief.contains("[N2] 3d ago [STALE] — Nvidia capex worries · WSJ"),
                 "old news stays visible but tagged:\n" + brief);
-        assertTrue(brief.contains("[news:fresh] 2h ago — Nvidia beats · Reuters"),
+        assertTrue(brief.contains("[N1] 2h ago — Nvidia beats · Reuters"),
                 "fresh news untagged:\n" + brief);
     }
 
@@ -222,7 +206,7 @@ class EditorialAgentTest {
         SubjectUnit u = new SubjectUnit("NVDA", "NVIDIA");
         u.addEvidence(ev("t1_a", "NVDA"));
         for (int i = 1; i <= 5; i++) {
-            u.addHeadline("Headline Nummer " + i, i > 1, i <= 2 ? "BULLISH" : "BEARISH");
+            u.addHeadline("Headline Nummer " + i, i <= 2 ? "BULLISH" : "BEARISH");
         }
         String brief = EditorialAgent.unitBrief(u, false);
         assertTrue(brief.contains("(+2 earlier headline(s)"), "older lines collapse to a digest:\n" + brief);
@@ -264,14 +248,14 @@ class EditorialAgentTest {
     @Test
     void sentimentArcNeedsTwoDistinctSteps() {
         assertEquals("", EditorialAgent.sentimentArc(List.of(
-                new SubjectUnit.UnitHeadline("a", false, 0, "BULLISH", null),
-                new SubjectUnit.UnitHeadline("b", false, 0, "bullish", null))),
+                new SubjectUnit.UnitHeadline("a", 0, "BULLISH", null),
+                new SubjectUnit.UnitHeadline("b", 0, "bullish", null))),
                 "one collapsed step carries no information");
         assertEquals("BULLISH → MIXED → BULLISH", EditorialAgent.sentimentArc(List.of(
-                new SubjectUnit.UnitHeadline("a", false, 0, "BULLISH", null),
-                new SubjectUnit.UnitHeadline("b", false, 0, "MIXED", null),
-                new SubjectUnit.UnitHeadline("c", false, 0, "", null),
-                new SubjectUnit.UnitHeadline("d", false, 0, "BULLISH", null))),
+                new SubjectUnit.UnitHeadline("a", 0, "BULLISH", null),
+                new SubjectUnit.UnitHeadline("b", 0, "MIXED", null),
+                new SubjectUnit.UnitHeadline("c", 0, "", null),
+                new SubjectUnit.UnitHeadline("d", 0, "BULLISH", null))),
                 "blank sentiments are skipped, real flips kept");
     }
 
@@ -284,46 +268,10 @@ class EditorialAgentTest {
         assertEquals("0m", EditorialAgent.age(now.plus(1, ChronoUnit.MINUTES), now), "clock skew clamps");
     }
 
-    // ---- parseDraft: the shared compose-reply parser (used by composeUnit + composeTheme) ----
 
-    @Test
-    void parseDraftReadsATickerlessThemeObject() {
-        // A typical theme reply: thread narrative, no instrument, co-occurrence framing.
-        String reply = "{\"headline\": \"Waffenstillstand-Thread: Raum jubelt, dazu Rheinmetall-Chart −8% gepostet\","
-                + " \"sentiment\": \"MIXED\", \"highlight\": \"NORMAL\", \"tickerSymbol\": null,"
-                + " \"subjects\": [], \"priceMovePercent\": null, \"sectors\": [], \"assetClass\": null,"
-                + " \"sourceThreadIds\": [\"t3_abc\"], \"sourceCommentIds\": []}";
-        HeadlineWriter.Draft d = EditorialAgent.parseDraft(reply);
-        assertNotNull(d);
-        assertTrue(d.headline().contains("Waffenstillstand-Thread"), "headline kept verbatim");
-        assertNull(d.tickerSymbol(), "a theme line carries no ticker");
-        assertTrue(d.subjects().isEmpty());
-        assertNull(d.priceMovePercent());
-        assertEquals(List.of("t3_abc"), d.sourceThreadIds(), "source ids drive coverage");
-        assertEquals("MIXED", d.sentiment());
-    }
 
-    @Test
-    void parseDraftReturnsNullForEmptyHeadline() {
-        // The "nothing fresh / nothing market-relevant" contract.
-        assertNull(EditorialAgent.parseDraft("{\"headline\": \"\"}"));
-    }
 
-    @Test
-    void parseDraftSalvagesAHeadlineFromCodeFencedReply() {
-        // 4B models sometimes wrap the object in a ```json fence — the balanced-brace
-        // salvage still recovers the line.
-        String fenced = "```json\n{\"headline\": \"NVIDIA-Daily: Raum FOMO-t den Bounce\","
-                + " \"sentiment\": \"FOMO\"}\n```";
-        HeadlineWriter.Draft d = EditorialAgent.parseDraft(fenced);
-        assertNotNull(d, "the object inside the fence is recovered");
-        assertTrue(d.headline().contains("NVIDIA-Daily"));
-    }
 
-    @Test
-    void parseDraftReturnsNullForGarbage() {
-        assertNull(EditorialAgent.parseDraft("ich kann das leider nicht beantworten"));
-    }
 
     // ---- news coverage is earned by USE: token overlap = "konkret eingewoben" ----
 
@@ -344,11 +292,11 @@ class EditorialAgentTest {
     void inheritedRefsMapOrdinalsInsideTheShownWindowAndDedupeByUrl() {
         // 5 priors, shown window = last 3 (PRIOR_HEADLINES_SHOWN): #1=c, #2=d, #3=e.
         var priors = java.util.List.of(
-                new SubjectUnit.UnitHeadline("a", false, 0, "", null),
-                new SubjectUnit.UnitHeadline("b", false, 0, "", null),
-                new SubjectUnit.UnitHeadline("c", false, 0, "", null),
-                new SubjectUnit.UnitHeadline("d", false, 0, "", null),
-                new SubjectUnit.UnitHeadline("e", false, 0, "", null));
+                new SubjectUnit.UnitHeadline("a", 0, "", null),
+                new SubjectUnit.UnitHeadline("b", 0, "", null),
+                new SubjectUnit.UnitHeadline("c", 0, "", null),
+                new SubjectUnit.UnitHeadline("d", 0, "", null),
+                new SubjectUnit.UnitHeadline("e", 0, "", null));
         var r1 = new de.bsommerfeld.wsbg.terminal.db.HeadlineNewsRef("T1", "p", "https://1", null);
         var r2 = new de.bsommerfeld.wsbg.terminal.db.HeadlineNewsRef("T2", "p", "https://2", null);
         var r3 = new de.bsommerfeld.wsbg.terminal.db.HeadlineNewsRef("T3", "p", "https://3", null);
@@ -374,7 +322,7 @@ class EditorialAgentTest {
         // SpaceX/gold-exploration pool refs onto itself).
         var priors = java.util.List.of(new SubjectUnit.UnitHeadline(
                 "Rheinmetall erhält Rahmenvertrag über Artilleriemunition im Milliardenvolumen",
-                false, 0, "", null));
+                0, "", null));
         var r1 = new de.bsommerfeld.wsbg.terminal.db.HeadlineNewsRef("T", "p", "https://1", null);
         var records = java.util.List.of(record(
                 "Rheinmetall erhält Rahmenvertrag über Artilleriemunition im Milliardenvolumen",

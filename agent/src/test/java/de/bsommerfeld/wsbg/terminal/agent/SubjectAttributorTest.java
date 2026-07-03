@@ -4,7 +4,6 @@ import de.bsommerfeld.wsbg.terminal.agent.TickerResolver.ResolvedSubject;
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditComment;
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
-import dev.langchain4j.data.embedding.Embedding;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -144,7 +143,7 @@ class SubjectAttributorTest {
         var brain = mock(AgentBrain.class);
         when(brain.describeImageIfCached(org.mockito.ArgumentMatchers.anyString())).thenReturn("");
 
-        var cluster = new InvestigationCluster(thread, Embedding.from(new float[768]));
+        var cluster = new InvestigationCluster(thread);
         var registry = new SubjectRegistry();
         var subject = new ResolvedSubject("Constellation Energy", "Constellation Energy",
                 null, null, List.of(), List.of(), false);
@@ -196,7 +195,7 @@ class SubjectAttributorTest {
         var brain = mock(AgentBrain.class);
         when(brain.describeImageIfCached("img1")).thenReturn(transcript);
 
-        var cluster = new InvestigationCluster(thread, Embedding.from(new float[768]));
+        var cluster = new InvestigationCluster(thread);
         var registry = new SubjectRegistry();
         new SubjectAttributor(repository, brain)
                 .attribute(registry, cluster, List.of(instrument("Nvidia", "NVIDIA Corporation", "NVDA")));
@@ -220,7 +219,7 @@ class SubjectAttributorTest {
         var brain = mock(AgentBrain.class);
         when(brain.describeImageIfCached("img1")).thenReturn(transcript);
 
-        var cluster = new InvestigationCluster(thread, Embedding.from(new float[768]));
+        var cluster = new InvestigationCluster(thread);
         var registry = new SubjectRegistry();
         new SubjectAttributor(repository, brain).attribute(registry, cluster, List.of(
                 instrument("Nvidia", "NVIDIA Corporation", "NVDA"),
@@ -257,7 +256,7 @@ class SubjectAttributorTest {
         when(brain.describeImageIfCached("a")).thenReturn("Unlabelled chart one, +2%");
         when(brain.describeImageIfCached("b")).thenReturn("Unlabelled chart two, -1%");
 
-        var cluster = new InvestigationCluster(thread, Embedding.from(new float[768]));
+        var cluster = new InvestigationCluster(thread);
         var registry = new SubjectRegistry();
         new SubjectAttributor(repository, brain)
                 .attribute(registry, cluster, List.of(instrument("Nvidia", "NVIDIA Corporation", "NVDA")));
@@ -283,7 +282,7 @@ class SubjectAttributorTest {
         // The comment's image is an unlabelled meme that never names NVIDIA.
         when(brain.describeImageIfCached("c1")).thenReturn("Meme: rocket pointing up");
 
-        var cluster = new InvestigationCluster(thread, Embedding.from(new float[768]));
+        var cluster = new InvestigationCluster(thread);
         var registry = new SubjectRegistry();
         new SubjectAttributor(repository, brain)
                 .attribute(registry, cluster, List.of(instrument("Nvidia", "NVIDIA Corporation", "NVDA")));
@@ -315,7 +314,7 @@ class SubjectAttributorTest {
         var brain = mock(AgentBrain.class);
         when(brain.describeImageIfCached(org.mockito.ArgumentMatchers.anyString())).thenReturn("");
 
-        var cluster = new InvestigationCluster(thread, Embedding.from(new float[768]));
+        var cluster = new InvestigationCluster(thread);
         var registry = new SubjectRegistry();
         new SubjectAttributor(repository, brain).attribute(registry, cluster, List.of(
                 instrument("D-Wave", "D-Wave Quantum Inc.", "QBTS"),
@@ -352,7 +351,7 @@ class SubjectAttributorTest {
         var brain = mock(AgentBrain.class);
         when(brain.describeImageIfCached(org.mockito.ArgumentMatchers.anyString())).thenReturn("");
 
-        var cluster = new InvestigationCluster(thread, Embedding.from(new float[768]));
+        var cluster = new InvestigationCluster(thread);
         var registry = new SubjectRegistry();
         new SubjectAttributor(repository, brain).attribute(registry, cluster, List.of(
                 instrument("Nvidia", "NVIDIA Corporation", "NVDA"),
@@ -382,7 +381,7 @@ class SubjectAttributorTest {
         var brain = mock(AgentBrain.class);
         when(brain.describeImageIfCached(org.mockito.ArgumentMatchers.anyString())).thenReturn("");
 
-        var cluster = new InvestigationCluster(thread, Embedding.from(new float[768]));
+        var cluster = new InvestigationCluster(thread);
         var registry = new SubjectRegistry();
         new SubjectAttributor(repository, brain).attribute(registry, cluster, List.of(
                 instrument("Shell", "Shell plc", "SHEL"),
@@ -405,7 +404,7 @@ class SubjectAttributorTest {
         var brain = mock(AgentBrain.class);
         when(brain.describeImageIfCached(org.mockito.ArgumentMatchers.anyString())).thenReturn("");
 
-        var cluster = new InvestigationCluster(thread, Embedding.from(new float[768]));
+        var cluster = new InvestigationCluster(thread);
         var registry = new SubjectRegistry();
         // The model claims a primary nothing in the thread evidences → heuristic decides.
         new SubjectAttributor(repository, brain).attribute(registry, cluster,
@@ -430,7 +429,7 @@ class SubjectAttributorTest {
         var brain = mock(AgentBrain.class);
         when(brain.describeImageIfCached(org.mockito.ArgumentMatchers.anyString())).thenReturn("");
 
-        var cluster = new InvestigationCluster(thread, Embedding.from(new float[768]));
+        var cluster = new InvestigationCluster(thread);
         var registry = new SubjectRegistry();
         new SubjectAttributor(repository, brain).attribute(registry, cluster, List.of(
                 instrument("Apple", "Apple Inc.", "AAPL"),
@@ -452,7 +451,7 @@ class SubjectAttributorTest {
         var brain = mock(AgentBrain.class);
         when(brain.describeImageIfCached("m1")).thenReturn("Off-topic meme.");
 
-        var cluster = new InvestigationCluster(thread, Embedding.from(new float[768]));
+        var cluster = new InvestigationCluster(thread);
         var registry = new SubjectRegistry();
         new SubjectAttributor(repository, brain)
                 .attribute(registry, cluster, List.of(instrument("Nvidia", "NVIDIA Corporation", "NVDA")));

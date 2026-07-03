@@ -1,5 +1,4 @@
 package de.bsommerfeld.wsbg.terminal.agent;
-import de.bsommerfeld.wsbg.terminal.embedding.EmbeddingService;
 
 import de.bsommerfeld.wsbg.terminal.agent.ClusterEngine.AssignOutcome;
 import de.bsommerfeld.wsbg.terminal.agent.ClusterEngine.Kind;
@@ -12,8 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * Cluster assignment after the "one cluster == one thread" cutover: there is no
  * cross-thread merging anymore (the feed-wide SubjectRegistry is the cross-thread
  * layer). A new thread creates its own cluster; re-seeing a thread updates that
- * same cluster. Driven through the {@link EmbeddingService} seam with a fake — NO
- * Ollama (the embedding is now only kept for snapshot shape, not routing).
+ * same cluster. Pure in-memory bookkeeping — NO Ollama, no model call.
  */
 class ClusterEngineTest {
 

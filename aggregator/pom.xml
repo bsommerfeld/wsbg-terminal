@@ -17,10 +17,6 @@
             <artifactId>source-api</artifactId>
         </dependency>
         <dependency>
-            <groupId>de.bsommerfeld</groupId>
-            <artifactId>embedding</artifactId>
-        </dependency>
-        <dependency>
             <groupId>com.google.inject</groupId>
             <artifactId>guice</artifactId>
         </dependency>

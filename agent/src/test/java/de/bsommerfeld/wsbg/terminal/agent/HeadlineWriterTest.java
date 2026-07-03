@@ -1,13 +1,9 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
 import de.bsommerfeld.wsbg.terminal.agent.HeadlineWriter.Draft;
-import de.bsommerfeld.wsbg.terminal.agent.HeadlineWriter.DraftSubject;
-import de.bsommerfeld.wsbg.terminal.agent.TickerResolver.ResolvedSubject;
-import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
 import de.bsommerfeld.wsbg.terminal.db.AgentRepository;
 import de.bsommerfeld.wsbg.terminal.db.AgentRepository.HeadlineRecord;
-import dev.langchain4j.data.embedding.Embedding;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -20,97 +16,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /** QA behaviour of {@link HeadlineWriter} — no LLM, no network. */
 class HeadlineWriterTest {
 
-    private InvestigationCluster cluster() {
-        RedditThread t = new RedditThread("t3_x", "wallstreetbetsGER", "ServiceNow", "u/a",
-                "now läuft", 1780000000L, "/r/x/comments/x/", 0, 0.0, 0, 1780000100L,
-                List.of(), null);
-        return new InvestigationCluster(t, Embedding.from(new float[] {0.1f, 0.2f}));
-    }
 
-    private List<ResolvedSubject> resolvedNow() {
-        return List.of(new ResolvedSubject("ServiceNow", "ServiceNow, Inc.", "NOW", null, List.of(), List.of(), false));
-    }
 
-    @Test
-    void strips_html_validates_subject_and_attaches_resolver_ticker() {
-        AgentRepository repo = new AgentRepository();
-        HeadlineWriter w = new HeadlineWriter(repo, new ApplicationEventBus());
 
-        Draft d = new Draft(
-                "ServiceNow <strong>(NOW)</strong> +6,5% — der Käfig FOMO-t rein",
-                "FOMO", "IMPORTANT", "NOW",
-                List.of(new DraftSubject("ServiceNow", "NOW")),
-                6.5, List.of("Software"), "stock",
-                List.of("t3_x"), List.of("t1_c1", "garbage"));
 
-        assertTrue(w.publish(cluster(), d, resolvedNow()));
-        HeadlineRecord h = repo.getAllHeadlines().get(0);
-        assertFalse(h.headline().contains("<"), "HTML must be stripped");
-        assertEquals("NOW", h.tickerSymbol());
-        assertEquals(1, h.subjects().size());
-        assertEquals(6.5, h.priceMovePercent(), 1e-9);
-        assertEquals(List.of("t3_x"), h.sourceThreadIds());
-        assertEquals(List.of("t1_c1"), h.sourceCommentIds(), "non-t1_ id dropped");
-    }
 
-    @Test
-    void drops_ticker_the_resolver_did_not_validate() {
-        AgentRepository repo = new AgentRepository();
-        HeadlineWriter w = new HeadlineWriter(repo, new ApplicationEventBus());
-        // Model claims ticker FAKE, but resolver only validated NOW.
-        Draft d = new Draft("Irgendein Hype um FAKE", "BULLISH", "NORMAL", "FAKE",
-                List.of(new DraftSubject("FAKE", "FAKE")), null, List.of(), null,
-                List.of(), List.of());
-        assertTrue(w.publish(cluster(), d, resolvedNow()));
-        HeadlineRecord h = repo.getAllHeadlines().get(0);
-        assertNull(h.tickerSymbol(), "unvalidated ticker dropped");
-        assertTrue(h.subjects().isEmpty(), "unvalidated subject dropped");
-    }
 
-    @Test
-    void publishes_tickerless_theme_headline() {
-        AgentRepository repo = new AgentRepository();
-        HeadlineWriter w = new HeadlineWriter(repo, new ApplicationEventBus());
-        // A macro/theme line — no instrument at all. Must still publish.
-        Draft d = new Draft("Deutsche Inflation sinkt auf 2,7% — Risk-on im Käfig",
-                "BULLISH", "NORMAL", null, List.of(), null, List.of(), null,
-                List.of(), List.of());
-        assertTrue(w.publish(cluster(), d, List.of()));
-        assertEquals(1, repo.getAllHeadlines().size());
-        assertNull(repo.getAllHeadlines().get(0).tickerSymbol());
-    }
-
-    @Test
-    void nulls_pnl_misread_pricemove() {
-        AgentRepository repo = new AgentRepository();
-        HeadlineWriter w = new HeadlineWriter(repo, new ApplicationEventBus());
-        Draft d = new Draft("Turbo-Schein +1166% auf 29.210 € gerannt", "BULLISH", "IMPORTANT",
-                null, List.of(), 1166.0, List.of(), null, List.of(), List.of());
-        assertTrue(w.publish(cluster(), d, List.of()));
-        assertNull(repo.getAllHeadlines().get(0).priceMovePercent(),
-                "huge % + money amount ⇒ P&L misread, nulled");
-    }
-
-    @Test
-    void sentiment_follows_the_move_sign_not_the_model() {
-        AgentRepository repo = new AgentRepository();
-        HeadlineWriter w = new HeadlineWriter(repo, new ApplicationEventBus());
-        // Model says BULLISH but the move is −3,2 % — the reader must not see BULLISH.
-        Draft down = new Draft("Irgendwas −3,2%", "BULLISH", "NORMAL", null, List.of(),
-                -3.2, List.of(), null, List.of(), List.of());
-        assertTrue(w.publish(cluster(), down, List.of()));
-        assertEquals(de.bsommerfeld.wsbg.terminal.db.HeadlineSentiment.BEARISH,
-                repo.getAllHeadlines().get(0).sentiment(), "−% can't read BULLISH");
-
-        // A non-directional read with a move is left as the model set it.
-        AgentRepository repo2 = new AgentRepository();
-        HeadlineWriter w2 = new HeadlineWriter(repo2, new ApplicationEventBus());
-        Draft mixed = new Draft("Seitwärts −0,5%", "MIXED", "NORMAL", null, List.of(),
-                -0.5, List.of(), null, List.of(), List.of());
-        assertTrue(w2.publish(cluster(), mixed, List.of()));
-        assertEquals(de.bsommerfeld.wsbg.terminal.db.HeadlineSentiment.MIXED,
-                repo2.getAllHeadlines().get(0).sentiment(), "non-directional read untouched");
-    }
 
     @Test
     void reconcileSentiment_uses_the_lines_own_number_user_or_yahoo() {
@@ -154,9 +65,7 @@ class HeadlineWriterTest {
         HeadlineWriter w = new HeadlineWriter(repo, new ApplicationEventBus());
         // The model's draft ticker is deliberately bogus — publishUnit must ignore
         // it and use the unit's resolver-validated ticker.
-        Draft d = new Draft("ServiceNow läuft heiß", "FOMO", "NORMAL", "BOGUS",
-                List.of(new DraftSubject("BOGUS", "BOGUS")), null, List.of("Software"),
-                "stock", List.of("t3_x"), List.of("t1_c1", "junk"));
+        Draft d = new Draft("ServiceNow läuft heiß", "FOMO", "NORMAL", "");
 
         assertTrue(w.publishUnit(instrumentUnit(), d));
         List<HeadlineRecord> byUnit = repo.getHeadlinesByClusterId("NOW");
@@ -174,9 +83,7 @@ class HeadlineWriterTest {
         AgentRepository repo = new AgentRepository();
         HeadlineWriter w = new HeadlineWriter(repo, new ApplicationEventBus());
         SubjectUnit theme = new SubjectUnit("name:inflation", "Inflation"); // no ticker
-        Draft d = new Draft("Deutsche Inflation sinkt auf 2,7%", "BULLISH", "NORMAL",
-                "FAKE", List.of(new DraftSubject("FAKE", "FAKE")), null, List.of(), null,
-                List.of(), List.of());
+        Draft d = new Draft("Deutsche Inflation sinkt auf 2,7%", "BULLISH", "NORMAL", "");
         assertTrue(w.publishUnit(theme, d));
         assertNull(repo.getHeadlinesByClusterId("name:inflation").get(0).tickerSymbol());
     }
@@ -186,25 +93,12 @@ class HeadlineWriterTest {
         AgentRepository repo = new AgentRepository();
         HeadlineWriter w = new HeadlineWriter(repo, new ApplicationEventBus());
         SubjectUnit u = instrumentUnit();
-        Draft d = new Draft("ServiceNow läuft heiß", "FOMO", "NORMAL", null,
-                List.of(), null, List.of(), null, List.of(), List.of());
+        Draft d = new Draft("ServiceNow läuft heiß", "FOMO", "NORMAL", "");
         assertTrue(w.publishUnit(u, d));
         assertFalse(w.publishUnit(u, d), "identical text within guard window skipped");
         assertEquals(1, repo.getHeadlinesByClusterId("NOW").size());
     }
 
-    @Test
-    void guards_against_identical_double_publish() {
-        AgentRepository repo = new AgentRepository();
-        HeadlineWriter w = new HeadlineWriter(repo, new ApplicationEventBus());
-        InvestigationCluster c = cluster();
-        Draft d = new Draft("ServiceNow NOW läuft heiß", "FOMO", "NORMAL", "NOW",
-                List.of(new DraftSubject("NOW", "NOW")), null, List.of(), null,
-                List.of(), List.of());
-        assertTrue(w.publish(c, d, resolvedNow()));
-        assertFalse(w.publish(c, d, resolvedNow()), "identical text within guard window skipped");
-        assertEquals(1, repo.getAllHeadlines().size());
-    }
 
     @Test
     void nearDuplicate_catchesUpdateSuffixAndLightRewords() {
@@ -226,10 +120,8 @@ class HeadlineWriterTest {
         AgentRepository repo = new AgentRepository();
         HeadlineWriter w = new HeadlineWriter(repo, new ApplicationEventBus());
         SubjectUnit u = instrumentUnit();
-        Draft first = new Draft("ServiceNow verlagert Kapital in Software", "MIXED", "NORMAL", null,
-                List.of(), null, List.of(), null, List.of(), List.of());
-        Draft asUpdate = new Draft("ServiceNow verlagert Kapital in Software -Update:", "MIXED",
-                "NORMAL", null, List.of(), null, List.of(), null, List.of(), List.of());
+        Draft first = new Draft("ServiceNow verlagert Kapital in Software", "MIXED", "NORMAL", "");
+        Draft asUpdate = new Draft("ServiceNow verlagert Kapital in Software -Update:", "MIXED", "NORMAL", "");
         assertTrue(w.publishUnit(u, first));
         assertFalse(w.publishUnit(u, asUpdate), "same line as an -Update: must be skipped");
         assertEquals(1, repo.getHeadlinesByClusterId("NOW").size());
@@ -304,8 +196,7 @@ class HeadlineWriterTest {
         AgentRepository repo = new AgentRepository();
         HeadlineWriter w = new HeadlineWriter(repo, new ApplicationEventBus());
         // Model flags IMPORTANT but names no trigger — the classic "feels important".
-        Draft d = new Draft("ServiceNow läuft heiß", "FOMO", "IMPORTANT", "NONE", null,
-                List.of(), null, List.of(), null, List.of(), List.of());
+        Draft d = new Draft("ServiceNow läuft heiß", "FOMO", "IMPORTANT", "NONE");
         assertTrue(w.publishUnit(instrumentUnit(), d));
         assertEquals(de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.NORMAL,
                 repo.getHeadlinesByClusterId("NOW").get(0).highlight(),
@@ -453,8 +344,7 @@ class HeadlineWriterTest {
         SubjectUnit merz = new SubjectUnit("name:merz", "Merz");
         SubjectUnit friedrich = new SubjectUnit("name:friedrich merz", "Friedrich Merz");
         Draft line = new Draft("Merz präsentiert umfassendes Reformpaket mit Steuerkürzungen "
-                + "und Rentenüberarbeitung", "NEUTRAL", "NORMAL", null,
-                List.of(), null, List.of(), null, List.of(), List.of());
+                + "und Rentenüberarbeitung", "NEUTRAL", "NORMAL", "");
         assertTrue(w.publishUnit(merz, line));
         assertFalse(w.publishUnit(friedrich, line),
                 "the same sentence from a twin unit within the window must be skipped");
@@ -469,8 +359,7 @@ class HeadlineWriterTest {
         HeadlineWriter w = new HeadlineWriter(repo, new ApplicationEventBus());
         SubjectUnit u = instrumentUnit(); // NOW / ServiceNow
         Draft d = new Draft("Analysten von Daiwa Securities initiieren die Position mit "
-                + "einem Kursziel von 175 Euro", "BULLISH", "NORMAL", null,
-                List.of(), null, List.of(), null, List.of(), List.of());
+                + "einem Kursziel von 175 Euro", "BULLISH", "NORMAL", "");
         assertTrue(w.publishUnit(u, d), "the line itself still publishes — the mirror stays 1:1");
         HeadlineRecord h = repo.getHeadlinesByClusterId("NOW").get(0);
         assertNull(h.tickerSymbol(), "a line that never names the unit carries no ticker");
@@ -493,15 +382,15 @@ class HeadlineWriterTest {
                         "https://example.com/now", null, List.of("NOW"));
 
         Draft sentimentLine = new Draft("ServiceNow bleibt die Lieblingswette des Raums",
-                "BULLISH", "NORMAL", null, List.of(), null, List.of(), null, List.of(), List.of());
-        assertTrue(w.publishUnit(u, sentimentLine, List.of(), true));
+                "BULLISH", "NORMAL", "");
+        assertTrue(w.publishUnit(u, sentimentLine, List.of()));
         HeadlineRecord plain = repo.getHeadlinesByClusterId("NOW").get(0);
         assertFalse(plain.newsEnriched(), "no woven-in item → no News tag");
         assertTrue(plain.newsRefs().isEmpty(), "…and no source list");
 
         Draft newsLine = new Draft("ServiceNow hebt nach Großauftrag die Prognose an",
-                "BULLISH", "NORMAL", null, List.of(), null, List.of(), null, List.of(), List.of());
-        assertTrue(w.publishUnit(u, newsLine, List.of(article), true));
+                "BULLISH", "NORMAL", "");
+        assertTrue(w.publishUnit(u, newsLine, List.of(article)));
         HeadlineRecord enriched = repo.getHeadlinesByClusterId("NOW").get(1);
         assertTrue(enriched.newsEnriched());
         assertEquals(1, enriched.newsRefs().size(), "refs are exactly the woven-in items");

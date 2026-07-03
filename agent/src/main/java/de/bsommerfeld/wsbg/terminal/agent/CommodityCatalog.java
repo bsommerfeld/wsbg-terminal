@@ -49,6 +49,15 @@ public final class CommodityCatalog {
         put(new Commodity("NG=F", "Erdgas"), "Erdgas", "Natural Gas", "Gas", "Henry Hub");
         // --- industrial / agric ---
         put(new Commodity("HG=F", "Kupfer"), "Kupfer", "Copper");
+        // Softs the room actually discussed (live 2026-07-03: a Kakao/Kaffee/Mais
+        // thread had „Kakao" fuzzy-matched to Kakao Corp (Korea) and the judge
+        // striking the correct CC=F/KC=F futures over their dated contract names).
+        put(new Commodity("CC=F", "Kakao"), "Kakao", "Cocoa", "Kakaopreis");
+        put(new Commodity("KC=F", "Kaffee"), "Kaffee", "Coffee", "Kaffeepreis");
+        put(new Commodity("ZW=F", "Weizen"), "Weizen", "Wheat");
+        put(new Commodity("ZC=F", "Mais"), "Mais", "Corn");
+        put(new Commodity("ZR=F", "Reis"), "Reis", "Rice");
+        put(new Commodity("SB=F", "Zucker"), "Zucker", "Sugar");
     }
 
     /**

@@ -27,11 +27,10 @@ OLLAMA_VERSION="0.24.0"
 
 # Models reconciled into our ISOLATED store (<appData>/ollama/models): section 3
 # installs/updates these to the latest registry build and removes anything else.
-# One multimodal gemma4:e4b serves agent + vision; embeddinggemma does vectors.
+# One multimodal gemma4:e4b serves agent + vision -- the single deployed model.
 # (The gemma4:e4b-mlx build is text-only -- no vision encoder -- so we avoid it.)
 REASONING_MODEL="gemma4:e4b"          # editorial agent + vision (multimodal)
 VISION_MODEL="gemma4:e4b"             # same model serves vision
-EMBED_MODEL="embeddinggemma:latest"   # 768d cluster embeddings
 
 # Private endpoint -- our instance binds here, NEVER the user's default 11434.
 OLLAMA_PORT="11500"
@@ -187,7 +186,7 @@ fi
 # in the store that is NOT desired is removed, so a model switch leaves no
 # Altlasten. To switch models, edit DESIRED_MODELS (and OLLAMA_VERSION above if
 # the new model needs a newer runtime); the check URL, pull, and GC all follow.
-DESIRED_MODELS=("$REASONING_MODEL" "$EMBED_MODEL")
+DESIRED_MODELS=("$REASONING_MODEL")
 # Agent and vision share the one gemma4:e4b -- only add a distinct vision model
 # if a future config ever diverges them.
 [ "$VISION_MODEL" != "$REASONING_MODEL" ] && DESIRED_MODELS+=("$VISION_MODEL")

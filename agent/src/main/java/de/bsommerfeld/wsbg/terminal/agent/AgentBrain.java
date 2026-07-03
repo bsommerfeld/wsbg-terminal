@@ -218,7 +218,16 @@ public class AgentBrain {
                                         dev.langchain4j.model.chat.request.json.JsonArraySchema.builder()
                                                 .items(dev.langchain4j.model.chat.request.json.JsonIntegerSchema.builder().build())
                                                 .build())
-                                .required("headline", "trigger", "highlight", "sentiment", "derivedFrom")
+                                // News provenance, same mechanism: the [N#] ordinals of the
+                                // brief's numbered news list the line actually leaned on
+                                // (empty when none). Small integers are citable where the
+                                // old long uuids were not; the deterministic token-overlap
+                                // test remains the backstop for under-citing.
+                                .addProperty("newsUsed",
+                                        dev.langchain4j.model.chat.request.json.JsonArraySchema.builder()
+                                                .items(dev.langchain4j.model.chat.request.json.JsonIntegerSchema.builder().build())
+                                                .build())
+                                .required("headline", "trigger", "highlight", "sentiment", "derivedFrom", "newsUsed")
                                 .build())
                         .build())
                 .build();

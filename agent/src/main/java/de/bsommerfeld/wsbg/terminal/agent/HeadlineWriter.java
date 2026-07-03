@@ -2,7 +2,6 @@ package de.bsommerfeld.wsbg.terminal.agent;
 
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
-import de.bsommerfeld.wsbg.terminal.agent.TickerResolver.ResolvedSubject;
 import de.bsommerfeld.wsbg.terminal.agent.event.AgentStreamEndEvent;
 import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
@@ -16,14 +15,12 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
-import java.util.stream.Collector;
 
 /**
  * Persists one finished headline draft and broadcasts it to the UI. The
@@ -48,8 +45,6 @@ public final class HeadlineWriter {
 
     private static final Logger LOG = LoggerFactory.getLogger(HeadlineWriter.class);
     private static final Pattern HTML_TAG = Pattern.compile("<[^>]+>");
-    /** Skip an identical headline text for the same cluster within this window. */
-    private static final long DUP_TEXT_GUARD_SECS = 120;
     /** Skip a NEAR-duplicate of a unit's OWN recent headline within this window. Much longer
      *  than the rapid-double guard: with the compose settle/cooldown, a unit's re-composes are
      *  spaced minutes apart, and a hot thread re-dirties its unit all session — the ^GDAXI wire
@@ -75,148 +70,32 @@ public final class HeadlineWriter {
     }
 
     /**
-     * One headline as drafted by the editorial model. {@code subjects} carry
-     * the ticker the model copied from the resolved data we showed it; the
-     * writer re-checks it against {@code resolved} so a hallucinated symbol is
-     * dropped rather than rendered.
+     * One headline as drafted by the editorial model — exactly the four fields the
+     * schema-constrained compose output carries. Ticker, price and subjects are the
+     * unit's resolver-validated facts and never the model's.
      */
     public record Draft(
             String headline,
             String sentiment,
             String highlight,
-            String trigger,
-            String tickerSymbol,
-            List<DraftSubject> subjects,
-            Double priceMovePercent,
-            List<String> sectors,
-            String assetClass,
-            List<String> sourceThreadIds,
-            List<String> sourceCommentIds) {
-
-        /** Trigger-less variant for the legacy cluster/theme path and tests ({@code trigger = ""}). */
-        public Draft(String headline, String sentiment, String highlight, String tickerSymbol,
-                List<DraftSubject> subjects, Double priceMovePercent, List<String> sectors,
-                String assetClass, List<String> sourceThreadIds, List<String> sourceCommentIds) {
-            this(headline, sentiment, highlight, "", tickerSymbol, subjects, priceMovePercent,
-                    sectors, assetClass, sourceThreadIds, sourceCommentIds);
-        }
-    }
-
-    public record DraftSubject(String name, String ticker) {
-    }
-
-    /**
-     * Publishes the draft for the given cluster. Returns {@code true} when a
-     * headline was saved + broadcast, {@code false} when it was skipped (blank
-     * text or identical-text guard). Never throws on bad model output —
-     * malformed fields are sanitised away, not rejected.
-     */
-    public boolean publish(InvestigationCluster cluster, Draft draft,
-            List<ResolvedSubject> resolved) {
-        if (cluster == null || draft == null) return false;
-        String headline = trimInterpretiveTail(stripHtml(draft.headline()).trim());
-        if (headline.isEmpty()) return false;
-
-        // Identical-text guard: don't double-publish the exact same line for
-        // the same cluster within a short window (accidental re-fire).
-        long now = System.currentTimeMillis() / 1000;
-        boolean dup = agentRepository.getHeadlinesByClusterId(cluster.id).stream()
-                .anyMatch(h -> headline.equalsIgnoreCase(h.headline())
-                        && (now - h.createdAt()) < DUP_TEXT_GUARD_SECS);
-        if (dup) {
-            LOG.debug("[WRITE] skip duplicate headline text for {}", cluster.id);
-            return false;
-        }
-
-        // Validated tickers + their market snapshots come from the resolver,
-        // not the model — Yahoo is the single source of truth.
-        Set<String> validTickers = new HashSet<>();
-        Map<String, MarketSnapshot> snapshotByTicker = new HashMap<>();
-        if (resolved != null) {
-            for (ResolvedSubject rs : resolved) {
-                if (rs.isInstrument()) {
-                    validTickers.add(rs.ticker().toUpperCase(Locale.ROOT));
-                    if (rs.snapshot() != null) {
-                        snapshotByTicker.put(rs.ticker().toUpperCase(Locale.ROOT), rs.snapshot());
-                    }
-                }
-            }
-        }
-
-        // Source-id hygiene: thread ids must be cluster members; comment ids
-        // must look like Reddit comment fullnames.
-        List<String> threadIds = clean(draft.sourceThreadIds());
-        threadIds.removeIf(id -> !cluster.activeThreadIds.contains(id));
-        List<String> commentIds = clean(draft.sourceCommentIds());
-        commentIds.removeIf(id -> !id.startsWith("t1_"));
-
-        // Subjects: name must appear verbatim in the headline (UI glow) and the
-        // ticker must be one the resolver validated. Dropped otherwise.
-        List<HeadlineSubject> subjects = new ArrayList<>();
-        if (draft.subjects() != null) {
-            for (DraftSubject ds : draft.subjects()) {
-                String name = ds.name() == null ? "" : ds.name().trim();
-                String ticker = sanitizeTicker(ds.ticker());
-                if (name.isEmpty() || ticker == null) continue;
-                if (!validTickers.contains(ticker.toUpperCase(Locale.ROOT))) continue;
-                if (!headline.contains(name)) continue;
-                boolean exists = subjects.stream()
-                        .anyMatch(s -> s.name().equals(name) && s.ticker().equals(ticker));
-                if (!exists) subjects.add(new HeadlineSubject(name, ticker));
-            }
-        }
-
-        String tickerSymbol = sanitizeTicker(draft.tickerSymbol());
-        if (tickerSymbol != null && !validTickers.contains(tickerSymbol.toUpperCase(Locale.ROOT))) {
-            tickerSymbol = null;
-        }
-        if (tickerSymbol == null && !subjects.isEmpty()) {
-            tickerSymbol = subjects.get(0).ticker();
-        }
-
-        HeadlineHighlight highlight = HeadlineHighlight.fromString(draft.highlight());
-
-        Double priceMove = sanePriceMove(draft.priceMovePercent(), headline);
-
-        List<String> sectors = clean(draft.sectors()).stream()
-                .collect(distinctByLower()).stream().limit(2).toList();
-        String assetClass = normalizeAssetClass(draft.assetClass());
-
-        MarketSnapshot snapshot = tickerSymbol == null ? null
-                : snapshotByTicker.get(tickerSymbol.toUpperCase(Locale.ROOT));
-        HeadlineSentiment sentiment = reconcileSentiment(
-                HeadlineSentiment.fromString(draft.sentiment()), priceMove);
-
-        agentRepository.saveHeadline(cluster.id, headline, "",
-                threadIds, commentIds, highlight, tickerSymbol, subjects, priceMove,
-                sectors, assetClass, sentiment, snapshot, false);
-
-        LOG.info("[WRITE] {} [{}{} {}{}]: {}", cluster.id, highlight,
-                tickerSymbol == null ? "" : " " + tickerSymbol, sentiment,
-                priceMove == null ? "" : String.format(Locale.ROOT, " %+.1f%%", priceMove),
-                headline);
-
-        eventBus.post(new AgentStreamEndEvent(
-                "||PASSIVE||" + headline + "||REF||ID:" + cluster.id));
-        return true;
+            String trigger) {
     }
 
     /**
      * Publishes a headline for a feed-wide {@link SubjectUnit} (the editorial atom
-     * after the #2 cutover). Same QA + broadcast as {@link #publish}, but the
-     * grouping key is the <b>unit id</b> (so story continuity / dedup is per
-     * subject, not per cluster) and the ticker + market snapshot come from the
-     * <b>unit</b> (resolver-validated), never from the model. Returns {@code true}
-     * when saved + broadcast, {@code false} on blank text or the identical-text
-     * guard. Never throws on bad model output.
+     * after the #2 cutover). The grouping key is the <b>unit id</b> (so story
+     * continuity / dedup is per subject) and the ticker + market snapshot come from
+     * the <b>unit</b> (resolver-validated), never from the model. Returns
+     * {@code true} when saved + broadcast, {@code false} on blank text or the
+     * near-duplicate guard. Never throws on bad model output.
      */
     public boolean publishUnit(SubjectUnit unit, Draft draft) {
-        return publishUnit(unit, draft, List.of(), List.of(), true);
+        return publishUnit(unit, draft, List.of(), List.of());
     }
 
     public boolean publishUnit(SubjectUnit unit, Draft draft,
-            List<de.bsommerfeld.wsbg.terminal.source.RawNewsItem> newsUsed, boolean suppressRedundant) {
-        return publishUnit(unit, draft, newsUsed, List.of(), suppressRedundant);
+            List<de.bsommerfeld.wsbg.terminal.source.RawNewsItem> newsUsed) {
+        return publishUnit(unit, draft, newsUsed, List.of());
     }
 
     /**
@@ -226,12 +105,11 @@ public final class HeadlineWriter {
      * over from prior lines this one cites via {@code derivedFrom} (provenance
      * chaining). The "News" tag and its clickable source list promise "the articles
      * this line leans on", so a room-sentiment line on a news-rich subject carries
-     * none. {@code suppressRedundant} false skips the near-duplicate guard so a strict
-     * 1:1 mirror publishes every dirty line, even a duplicate.
+     * none.
      */
     public boolean publishUnit(SubjectUnit unit, Draft draft,
             List<de.bsommerfeld.wsbg.terminal.source.RawNewsItem> newsUsed,
-            List<HeadlineNewsRef> inheritedRefs, boolean suppressRedundant) {
+            List<HeadlineNewsRef> inheritedRefs) {
         boolean newsEnriched = (newsUsed != null && !newsUsed.isEmpty())
                 || (inheritedRefs != null && !inheritedRefs.isEmpty());
         if (unit == null || draft == null) return false;
@@ -244,9 +122,10 @@ public final class HeadlineWriter {
         // the NORMALISED core (strip the "-Update:" marker, punctuation AND numbers) with
         // token-similarity, not the raw string. The unit's own lines get the long window;
         // every other unit's lines get the shorter cross-unit window (one story told twice
-        // by twin units the identity-merge didn't fold). Skipped entirely in strict 1:1 mode.
+        // by twin units the identity-merge didn't fold). Always on — the former strict-1:1
+        // user toggle was removed 2026-07-03 with the judge-based dup check.
         long now = System.currentTimeMillis() / 1000;
-        if (suppressRedundant) {
+        {
             String normNew = normalizeForDup(headline);
             var dupOf = agentRepository.getRecentHeadlines().stream()
                     .filter(h -> normNew.equals(normalizeForDup(h.headline())) // exact: whole 24h wire
@@ -624,44 +503,4 @@ public final class HeadlineWriter {
         return sentiment;
     }
 
-    private static String sanitizeTicker(String raw) {
-        if (raw == null || raw.isBlank()) return null;
-        String clean = raw.trim();
-        clean = clean.startsWith("$") ? clean.substring(1) : clean;
-        return clean.matches("[A-Z]{1,5}([.-][A-Z0-9]{1,3})?") ? clean : null;
-    }
-
-    private static String normalizeAssetClass(String raw) {
-        if (raw == null || raw.isBlank()) return null;
-        String s = raw.toLowerCase(Locale.ROOT).trim();
-        if (s.matches("stock|stocks|equity|equities|aktie|aktien|share|shares")) return "stock";
-        if (s.matches("etf|etfs|fund|funds")) return "etf";
-        if (s.matches("crypto|cryptocurrency|coin|coins|token|tokens|krypto")) return "crypto";
-        if (s.matches("commodity|commodities|metal|metals|oil|gold|silver")) return "commodity";
-        if (s.matches("forex|fx|currency|currencies|pair|pairs")) return "forex";
-        if (s.matches("bond|bonds|treasury|treasuries|note|notes|yield")) return "bond";
-        if (s.matches("option|options|call|put|warrant|warrants")) return "option";
-        if (s.matches("other|misc")) return "other";
-        return null;
-    }
-
-    private static List<String> clean(List<String> in) {
-        List<String> out = new ArrayList<>();
-        if (in == null) return out;
-        for (String s : in) {
-            if (s != null && !s.isBlank()) out.add(s.trim());
-        }
-        return out;
-    }
-
-    private static Collector<String, ?, List<String>> distinctByLower() {
-        return Collector.of(ArrayList::new,
-                (acc, s) -> {
-                    String key = s.toLowerCase(Locale.ROOT);
-                    if (acc.stream().noneMatch(x -> x.toLowerCase(Locale.ROOT).equals(key))) {
-                        acc.add(s);
-                    }
-                },
-                (a, b) -> { a.addAll(b); return a; });
-    }
 }

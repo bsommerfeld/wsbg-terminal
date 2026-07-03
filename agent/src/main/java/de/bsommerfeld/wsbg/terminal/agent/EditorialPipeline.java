@@ -29,8 +29,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  * (one LLM call), resolve ticker/news/price (mostly cached I/O), and attribute the
  * evidence into the feed-wide {@link SubjectRegistry} — i.e. the unchanged
  * {@link EditorialAgent#attributeCluster}. Resolution thus runs for many clusters
- * at once instead of behind one serial loop. If cluster-theme is enabled, prep also
- * enqueues a {@link ComposeJob.ThemeJob} carrying the prep-resolved subjects.
+ * at once instead of behind one serial loop.
  * Coalescing: a cluster already being prepped is not re-submitted; a re-request that
  * lands during its run is replayed once the run finishes, so fresh evidence is never
  * dropped.
@@ -48,9 +47,9 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  *
  * <h3>Tier 2 — compose worker(s)</h3>
  * Worker threads drain the {@link EditorialQueue} FIFO by arrival order and run ONE
- * model call each ({@link EditorialAgent#composeAndPublishUnit} /
- * {@link EditorialAgent#runThemeJob}), then publish. There is intentionally NO forced
- * cluster→subject adjacency: a slower-resolving subject simply lands later.
+ * model call each ({@link EditorialAgent#composeAndPublishUnit}), then publish. There
+ * is intentionally NO forced cluster→subject adjacency: a slower-resolving subject
+ * simply lands later.
  *
  * <h3>LLM concurrency cap</h3>
  * Both tiers funnel every model call through the single {@link EditorialAgent} instance,
@@ -85,6 +84,15 @@ public final class EditorialPipeline {
      * catches up. The first prep of a cluster is immediate; only re-preps are batched.
      */
     private static final long PREP_COOLDOWN_MS = 60_000;
+    /**
+     * Extended prep cooldown for a cluster whose LAST extraction named zero subjects
+     * (a meme/off-topic thread). Such a thread keeps gaining chatter and would
+     * otherwise re-run a full LLM extraction every {@link #PREP_COOLDOWN_MS} only to
+     * come back empty again (live: 15 empty extractions in 10 min). New activity on
+     * it still re-preps — just five times less often; a market-relevant turn is
+     * caught on the next window.
+     */
+    private static final long EMPTY_PREP_COOLDOWN_MS = 300_000;
     /** Compose workers — the shared {@code Semaphore(2)} in {@link EditorialAgent} is the real LLM limiter. */
     private static final int WORKER_THREADS = 2;
     /** How often duplicate identities are folded + freshly-dirty units enqueued. */
@@ -137,6 +145,8 @@ public final class EditorialPipeline {
     private final Set<String> rerunRequested = ConcurrentHashMap.newKeySet();
     /** Wall-clock ms a cluster was last prepped — drives the per-cluster prep cooldown (batching). */
     private final Map<String, Long> lastPreppedMs = new ConcurrentHashMap<>();
+    /** Clusters whose last extraction was empty — they wait {@link #EMPTY_PREP_COOLDOWN_MS} instead. */
+    private final Set<String> emptyExtraction = ConcurrentHashMap.newKeySet();
     /** Clusters whose re-prep is deferred to the end of the cooldown — coalesces the wait. */
     private final Set<String> deferredClusters = ConcurrentHashMap.newKeySet();
     /** Prep tasks actively RUNNING (not just queued) — logged so parallel prep is visible. */
@@ -191,14 +201,15 @@ public final class EditorialPipeline {
         // hot thread's evidence batches into ONE re-extraction instead of flooding the model.
         long last = lastPreppedMs.getOrDefault(clusterId, 0L);
         long since = System.currentTimeMillis() - last;
-        if (last > 0 && since < PREP_COOLDOWN_MS) {
+        long cooldown = emptyExtraction.contains(clusterId) ? EMPTY_PREP_COOLDOWN_MS : PREP_COOLDOWN_MS;
+        if (last > 0 && since < cooldown) {
             if (deferredClusters.add(clusterId)) {
                 mergeScheduler.schedule(() -> {
                     deferredClusters.remove(clusterId);
                     submitCluster(clusterId);
-                }, PREP_COOLDOWN_MS - since, TimeUnit.MILLISECONDS);
+                }, cooldown - since, TimeUnit.MILLISECONDS);
                 LOG.info("[PIPE] cluster {} re-prep deferred {}s (batching)", clusterId,
-                        (PREP_COOLDOWN_MS - since) / 1000);
+                        (cooldown - since) / 1000);
             }
             return;
         }
@@ -215,7 +226,6 @@ public final class EditorialPipeline {
     private void prep(String clusterId) {
         int active = activePreps.incrementAndGet();
         LOG.info("[PIPE] prep START cluster {} (prep-active={})", clusterId, active);
-        int themeEnqueued = 0;
         try {
             // extract (LLM) + resolve (Yahoo) hold NO registry lock — they touch no shared
             // registry state, so they run fully parallel across prep threads AND, crucially,
@@ -223,6 +233,10 @@ public final class EditorialPipeline {
             // read lock spanned this 10–120 s of work and (fair mode) let the periodic merge
             // writer stall every other prep behind it → the whole pipeline went serial.
             List<ResolvedSubject> resolved = agent.resolveClusterSubjects(clusterId);
+            // A subject-less (meme/off-topic) cluster earns the long re-prep cooldown;
+            // any subject-bearing extraction clears it again.
+            if (resolved.isEmpty()) emptyExtraction.add(clusterId);
+            else emptyExtraction.remove(clusterId);
             // Only the registry FOLD takes the read lock: shared with other preps' folds,
             // exclusive with the merge write lock. Millisecond critical section.
             registryLock.readLock().lock();
@@ -231,22 +245,14 @@ public final class EditorialPipeline {
             } finally {
                 registryLock.readLock().unlock();
             }
-            // The per-subject SubjectJobs are enqueued by the merge cadence (after
-            // identity-merge), NOT here — so this log reports only the theme. The cluster's
-            // own THEME line is opt-in and enqueued here, carrying the prep-resolved
-            // subjects so the worker does no I/O.
-            if (config.getHeadlines().isClusterThemeEnabled()
-                    && queue.offer(new ComposeJob.ThemeJob(clusterId, resolved))) {
-                themeEnqueued = 1;
-            }
         } catch (Exception e) {
             LOG.warn("EditorialPipeline: prep for cluster {} failed: {}", clusterId, e.getMessage());
         } finally {
             activePreps.decrementAndGet();
-            // K subject job(s) are NOT counted here: subjects are enqueued by the merge
-            // cadence (its own [PIPE] line), so this reports the theme + the live queue depth.
-            LOG.info("[PIPE] prep DONE cluster {} → theme={} enqueued, subjects via merge cadence (queue={})",
-                    clusterId, themeEnqueued, queue.size());
+            // The per-subject SubjectJobs are enqueued by the merge cadence (after
+            // identity-merge), NOT here — this reports only the live queue depth.
+            LOG.info("[PIPE] prep DONE cluster {} → subjects via merge cadence (queue={})",
+                    clusterId, queue.size());
             lastPreppedMs.put(clusterId, System.currentTimeMillis()); // start the prep cooldown
             inProgress.remove(clusterId);
             // Replay a request that landed mid-run — but submitCluster now applies the prep
@@ -325,13 +331,17 @@ public final class EditorialPipeline {
                 }
             }
             noteQueueDepth(queue.size());
-            // M>0 is the interesting case (subjects flowing) → INFO; an idle tick → DEBUG.
-            if (!dirty.isEmpty()) {
+            // Only a tick that DID something is interesting → INFO. A cooling-only tick
+            // repeats every 1.5s while one unit waits out its settle/cooldown window and
+            // was pure log spam (live: 274 identical "→ 0 enqueued" lines in 10 min) → DEBUG.
+            if (enqueued > 0 || merged > 0 || stale > 0) {
                 LOG.info("[PIPE] merge cadence: {} unit(s) dirty → {} enqueued{}{}{} (queue={})",
                         dirty.size(), enqueued,
                         cooling > 0 ? ", " + cooling + " cooling" : "",
                         stale > 0 ? ", " + stale + " stale-dropped" : "",
                         merged > 0 ? " (" + merged + " identity-merged)" : "", queue.size());
+            } else if (!dirty.isEmpty()) {
+                LOG.debug("[PIPE] merge cadence: {} unit(s) cooling (queue={})", cooling, queue.size());
             }
         } catch (Exception e) {
             LOG.warn("EditorialPipeline: merge/enqueue failed: {}", e.getMessage());
@@ -400,23 +410,17 @@ public final class EditorialPipeline {
                 if (u == null) return; // merged/removed since it was enqueued — nothing to do
                 agent.composeAndPublishUnit(u);
             }
-            case ComposeJob.ThemeJob t -> agent.runThemeJob(t.clusterId(), t.resolved());
         }
     }
 
     /**
-     * Live evidence strength of a queued job, read fresh from the SSOT registries at
+     * Live evidence strength of a queued job, read fresh from the SSOT registry at
      * dispatch time so a job that accumulated evidence while waiting ranks higher.
-     * Pure evidence COUNT (no ticker/IMPORTANT bias, by directive) on one comparable
-     * scale across both job kinds:
-     * <ul>
-     *   <li>{@link ComposeJob.SubjectJob} → the unit's live evidence count
-     *       ({@link SubjectUnit#evidenceCount()});</li>
-     *   <li>{@link ComposeJob.ThemeJob} → the cluster's backing material
-     *       ({@code threadCount + totalComments}).</li>
-     * </ul>
-     * A unit/cluster removed or merged away since enqueue scores {@code -1} so it sorts
-     * last (the worker's {@code process} then no-ops it and {@code done()} clears its id).
+     * Pure evidence COUNT (no ticker/IMPORTANT bias, by directive):
+     * {@link ComposeJob.SubjectJob} → the unit's live evidence count
+     * ({@link SubjectUnit#evidenceCount()}). A unit removed or merged away since
+     * enqueue scores {@code -1} so it sorts last (the worker's {@code process} then
+     * no-ops it and {@code done()} clears its id).
      */
     /**
      * First-compose priority: a subject with NO published headline yet is boosted above any
@@ -432,10 +436,6 @@ public final class EditorialPipeline {
                 SubjectUnit u = subjectRegistry.get(s.unitId());
                 if (u == null) yield -1;
                 yield u.evidenceCount() + (u.hasPublishedHeadline() ? 0 : FIRST_COMPOSE_BONUS);
-            }
-            case ComposeJob.ThemeJob t -> {
-                InvestigationCluster c = clusterRegistry.getCluster(t.clusterId());
-                yield c == null ? -1 : c.threadCount + c.totalComments;
             }
         };
     }

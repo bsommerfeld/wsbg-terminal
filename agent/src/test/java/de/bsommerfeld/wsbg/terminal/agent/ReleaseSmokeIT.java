@@ -15,7 +15,6 @@ import de.bsommerfeld.wsbg.terminal.reddit.RssRedditScraper;
 import de.bsommerfeld.wsbg.terminal.reddit.ThreadAnalysisContext;
 import de.bsommerfeld.wsbg.terminal.reddit.TokenBucketRateLimiter;
 import de.bsommerfeld.wsbg.terminal.source.net.DirectWebFetcher;
-import dev.langchain4j.data.embedding.Embedding;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -140,8 +139,7 @@ class ReleaseSmokeIT {
             RedditThread thread = new RedditThread("t3_c", SUB, "NOW 🚀", "u/k", "body",
                     1780000000L, "/r/x/comments/c/", 42, 0.9, 7, 1780000500L,
                     List.of("https://i.redd.it/x.jpeg"), null);
-            InvestigationCluster cluster = new InvestigationCluster(
-                    thread, Embedding.from(new float[] {0.1f, 0.2f, 0.3f}));
+            InvestigationCluster cluster = new InvestigationCluster(thread);
             cluster.shownImageUrls.add("https://i.redd.it/x.jpeg");
 
             AgentRepository repo = new AgentRepository();

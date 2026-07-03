@@ -1,5 +1,4 @@
 package de.bsommerfeld.wsbg.terminal.agent;
-import de.bsommerfeld.wsbg.terminal.embedding.EmbeddingService;
 
 import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooQuote;
 import org.junit.jupiter.api.Test;
@@ -147,41 +146,229 @@ class TickerResolverTest {
         assertNull(TickerResolver.strongMatch("IT", List.of(q("IT", "Gartner, Inc.", "NYQ", "EQUITY"))));
     }
 
-    // ---- Tier 2: embedding fallback when token/score matching can't decide ----
+    // ---- Tier 2: LLM judge fallback when token/score matching can't decide ----
 
     @Test
-    void tier2PicksTheSemanticCandidateWhenTokensDontMatch() {
+    void tier2PicksTheJudgedCandidateWhenTokensDontMatch() {
         // "Google" shares NO token with "Alphabet Inc." — strongMatch can't link them,
-        // but the embedder knows they're the same (pinned). Tier 2 rescues it.
-        FakeEmbeddingService fake = new FakeEmbeddingService().pin("Google", "Alphabet Inc.", 0.8);
-        TickerResolver r = new TickerResolver(null, fake);
+        // but the judge knows they're the same entity. Tier 2 rescues it.
+        TickerResolver r = new TickerResolver(null);
+        r.setMatchJudge((subject, context, names) -> {
+            // candidate lines are fact-enriched ("Name — TYPE, Exchange") — match by prefix
+            for (int i = 0; i < names.size(); i++) {
+                if (names.get(i).startsWith("Alphabet Inc.")) return i;
+            }
+            return -1;
+        });
         List<YahooQuote> quotes = List.of(
                 q("AAPL", "Apple Inc.", "NMS", "EQUITY"),
                 q("GOOGL", "Alphabet Inc.", "NMS", "EQUITY"));
-        assertEquals("GOOGL", r.embedMatch("Google", quotes).symbol());
+        assertEquals("GOOGL", r.judgeMatch("Google", "", quotes).symbol());
     }
 
     @Test
-    void tier2RejectsNonEquityEvenWhenSemanticallyClose() {
-        // A pure theme ("Biotech") has no token match; the embedder finds an ETF
-        // semantically close, but the EQUITY-only Tier-2 gate rejects it — themes
-        // must not be promoted to an ETF/index ticker with a bogus live price.
-        FakeEmbeddingService fake = new FakeEmbeddingService().pin("Biotech", "iShares Biotechnology ETF", 0.85);
-        TickerResolver r = new TickerResolver(null, fake);
-        assertNull(r.embedMatch("Biotech", List.of(q("IBB", "iShares Biotechnology ETF", "NMS", "ETF"))));
+    void tier2RejectsNonEquityEvenWhenJudgedAMatch() {
+        // A pure theme ("Biotech") has no token match; even if the judge picks an
+        // ETF, the EQUITY-only Tier-2 gate rejects it — themes must not be promoted
+        // to an ETF/index ticker with a bogus live price.
+        TickerResolver r = new TickerResolver(null);
+        r.setMatchJudge((subject, context, names) -> 0);
+        assertNull(r.judgeMatch("Biotech", "", List.of(q("IBB", "iShares Biotechnology ETF", "NMS", "ETF"))));
     }
 
     @Test
-    void tier2RejectsWhenNoCandidateIsCloseEnough() {
-        // The guard: no semantically-close candidate → stays unresolved, never a guess.
-        TickerResolver r = new TickerResolver(null, new FakeEmbeddingService());
-        assertNull(r.embedMatch("Rheinmetall", List.of(q("AAPL", "Apple Inc.", "NMS", "EQUITY"))));
+    void tier2RejectsWhenTheJudgeSaysNone() {
+        // The guard: the judge picking none → stays unresolved, never a guess.
+        TickerResolver r = new TickerResolver(null);
+        r.setMatchJudge((subject, context, names) -> -1);
+        assertNull(r.judgeMatch("Rheinmetall", "", List.of(q("AAPL", "Apple Inc.", "NMS", "EQUITY"))));
     }
 
     @Test
-    void tier2IsNoOpWithoutAnEmbedder() {
-        TickerResolver r = new TickerResolver(null); // no embedder → Tier 2 disabled
-        assertNull(r.embedMatch("Google", List.of(q("GOOGL", "Alphabet Inc.", "NMS", "EQUITY"))));
+    void vetoStrikesASpellingMatchThatIsNotTheEntity() {
+        // Tier-1 matched on spelling (SPD the party vs the same-lettered US ETF) —
+        // the judge says none of these IS the subject → ticker struck, news-only.
+        TickerResolver r = new TickerResolver(null);
+        r.setMatchJudge((subject, context, names) -> -1);
+        YahooQuote picked = q("SPD", "Simplify US Equity PLUS Downside Convexity ETF", "PCX", "ETF");
+        assertNull(r.vetoMatch("SPD", "Koalition beschließt Reformpaket", picked, List.of(picked)));
+    }
+
+    @Test
+    void vetoConfirmsAndCachesPerSubject() {
+        int[] calls = {0};
+        TickerResolver r = new TickerResolver(null);
+        r.setMatchJudge((subject, context, names) -> { calls[0]++; return 0; });
+        YahooQuote picked = q("NVDA", "NVIDIA Corporation", "NMS", "EQUITY");
+        assertEquals("NVDA", r.vetoMatch("NVIDIA", "", picked, List.of(picked)).symbol());
+        assertEquals("NVDA", r.vetoMatch("NVIDIA", "", picked, List.of(picked)).symbol());
+        assertEquals(1, calls[0], "verdict cached — one judge call per unique subject");
+    }
+
+    @Test
+    void vetoRedirectsToTheCandidateTheJudgePicked() {
+        TickerResolver r = new TickerResolver(null);
+        r.setMatchJudge((subject, context, names) -> 1);
+        YahooQuote wrong = q("MULN", "Mullen Automotive", "NMS", "EQUITY");
+        YahooQuote right = q("MTL.TO", "Mullen Group Ltd.", "TOR", "EQUITY");
+        assertEquals("MTL.TO", r.vetoMatch("Mullen Group", "", wrong, List.of(wrong, right)).symbol());
+    }
+
+    @Test
+    void vetoRedirectWithoutSharedWordFallsBackOrStrikes() {
+        // The 4B sometimes redirects to the least-wrong candidate ('KO' → Kohl's) —
+        // an implausible redirect is never trusted. With a name-plausible tier-1
+        // pick the pick survives (KO keeps Coca-Cola)…
+        TickerResolver r = new TickerResolver(null);
+        r.setMatchJudge((subject, context, names) -> 1);
+        YahooQuote picked = q("KO", "The Coca-Cola Company", "NYQ", "EQUITY");
+        YahooQuote wrong = q("KSS", "Kohl's Corporation", "NYQ", "EQUITY");
+        assertEquals("KO", r.vetoMatch("KO", "", picked, List.of(picked, wrong)).symbol());
+
+        // …but when even tier-1's pick shares no word with the subject, it strikes.
+        TickerResolver r2 = new TickerResolver(null);
+        r2.setMatchJudge((subject, context, names) -> 1);
+        YahooQuote junkPick = q("XYZ", "Some Random Corp", "NYQ", "EQUITY");
+        assertNull(r2.vetoMatch("Foo", "", junkPick, List.of(junkPick, wrong)));
+    }
+
+    @Test
+    void sharesSignificantWordMatchesNameOrSymbol() {
+        org.junit.jupiter.api.Assertions.assertTrue(
+                TickerResolver.sharesSignificantWord("BYD", "BYD Company Limited", "1211.HK"));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                TickerResolver.sharesSignificantWord("Brent crude oil", "Brent Crude Oil Last Day", "BRNTN.MX"));
+        org.junit.jupiter.api.Assertions.assertFalse(
+                TickerResolver.sharesSignificantWord("KO", "Kohl's Corporation", "KSS"));
+    }
+
+    @Test
+    void tier3AsksTheCorpusWhenYahooYieldsNothing() {
+        // Yahoo missed a known instrument (the MicroStrategy→name-unit class) — the
+        // local corpus proposes, the judge picks, the resolver gets a real symbol.
+        TickerResolver r = new TickerResolver(null);
+        r.setMatchJudge((subject, context, names) -> 0);
+        var real = new de.bsommerfeld.wsbg.terminal.instruments.InstrumentCorpus(
+                tmpFile(), List.of(new de.bsommerfeld.wsbg.terminal.instruments.CorpusSource() {
+                    @Override
+                    public String name() { return "fixture"; }
+
+                    @Override
+                    public List<de.bsommerfeld.wsbg.terminal.instruments.InstrumentEntry> fetch() {
+                        return List.of(new de.bsommerfeld.wsbg.terminal.instruments.InstrumentEntry(
+                                "MSTR", "MicroStrategy Incorporated", null, "US", "EQUITY", "sec"));
+                    }
+                }));
+        real.refresh();
+        r.setInstrumentCorpus(real);
+        YahooQuote got = r.corpusMatch("MicroStrategy", "Bitcoin-Hebel über MicroStrategy");
+        assertEquals("MSTR", got.symbol());
+        assertEquals("MicroStrategy Incorporated", got.displayName());
+    }
+
+    @Test
+    void tier3WordGuardBlocksLeastWrongCorpusPicks() {
+        TickerResolver r = new TickerResolver(null);
+        r.setMatchJudge((subject, context, names) -> 0); // judge picks the only candidate
+        var real = new de.bsommerfeld.wsbg.terminal.instruments.InstrumentCorpus(
+                tmpFile(), List.of(new de.bsommerfeld.wsbg.terminal.instruments.CorpusSource() {
+                    @Override
+                    public String name() { return "fixture"; }
+
+                    @Override
+                    public List<de.bsommerfeld.wsbg.terminal.instruments.InstrumentEntry> fetch() {
+                        return List.of(new de.bsommerfeld.wsbg.terminal.instruments.InstrumentEntry(
+                                "KSS", "Kohl's Corporation", null, "US", "EQUITY", "sec"));
+                    }
+                }));
+        real.refresh();
+        r.setInstrumentCorpus(real);
+        assertNull(r.corpusMatch("Kohls", ""),
+                "prefix retrieval finds the candidate, but the exact-word guard blocks the pick");
+    }
+
+    private static java.nio.file.Path tmpFile() {
+        try {
+            java.nio.file.Path dir = java.nio.file.Files.createTempDirectory("corpus-test");
+            dir.toFile().deleteOnExit();
+            return dir.resolve("instruments.jsonl");
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Test
+    void vetoPreConfirmsNameEquivalentPicksWithoutTheJudge() {
+        // "The name IS the name": a near-identical multi-word name never reaches the
+        // judge (whose false strike on 'Lithium Americas' cost a legit quote, live 2x).
+        TickerResolver r = new TickerResolver(null);
+        r.setMatchJudge((subject, context, names) -> -1); // judge would strike — must not be asked
+        YahooQuote lac = q("LAC", "Lithium Americas Corp.", "NYQ", "EQUITY");
+        assertEquals("LAC", r.vetoMatch("Lithium Americas", "", lac, List.of(lac)).symbol());
+        // …but an extra significant word still faces the judge (and here: gets struck).
+        YahooQuote uamy = q("UAMY", "United States Antimony Corporation", "ASE", "EQUITY");
+        assertNull(r.vetoMatch("United States", "", uamy, List.of(uamy)));
+        // …and single-word subjects always face the judge (Kakao/SPD/KO class).
+        YahooQuote kakao = q("035720.KS", "Kakao Corp", "KSC", "EQUITY");
+        assertNull(r.vetoMatch("Kakao", "Kakao und Kaffee als Rohstoffe", kakao, List.of(kakao)));
+    }
+
+    @Test
+    void tier3IgnoresShortSlangSubjects() {
+        // 'OP' (Reddit slang) lexically hits "Empire State Realty OP, L.P." — a 1-2
+        // char subject Yahoo couldn't place never reaches the corpus.
+        TickerResolver r = new TickerResolver(null);
+        r.setMatchJudge((subject, context, names) -> 0);
+        var real = new de.bsommerfeld.wsbg.terminal.instruments.InstrumentCorpus(
+                tmpFile(), List.of(new de.bsommerfeld.wsbg.terminal.instruments.CorpusSource() {
+                    @Override
+                    public String name() { return "fixture"; }
+
+                    @Override
+                    public List<de.bsommerfeld.wsbg.terminal.instruments.InstrumentEntry> fetch() {
+                        return List.of(new de.bsommerfeld.wsbg.terminal.instruments.InstrumentEntry(
+                                "FISK", "Empire State Realty OP, L.P.", null, "US", "EQUITY", "sec"));
+                    }
+                }));
+        real.refresh();
+        r.setInstrumentCorpus(real);
+        assertNull(r.corpusMatch("OP", ""));
+    }
+
+    @Test
+    void vetoRejectedRedirectKeepsANamePlausibleTier1Pick() {
+        // The judge redirects to a word-implausible target ('IBM' → some IBM0.F line)
+        // — with a name-plausible tier-1 pick, the pick survives instead of striking.
+        TickerResolver r = new TickerResolver(null);
+        r.setMatchJudge((subject, context, names) -> 1);
+        YahooQuote ibm = q("IBM", "International Business Machines Corporation", "NYQ", "EQUITY");
+        YahooQuote junk = q("IBM0.F", "Faktor-Zertifikat auf Big Blue", "FRA", "EQUITY");
+        assertEquals("IBM", r.vetoMatch("IBM", "", ibm, List.of(ibm, junk)).symbol());
+    }
+
+    @Test
+    void sameCompanyNameCollapsesListingChurnButNotWrongTwins() {
+        org.junit.jupiter.api.Assertions.assertTrue(
+                TickerResolver.sameCompanyName("Infineon Technologies AG", "Infineon Technologies ADR"));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                TickerResolver.sameCompanyName("Nokia Oyj", "Nokia"));
+        org.junit.jupiter.api.Assertions.assertFalse(
+                TickerResolver.sameCompanyName("Boyd Gaming Corporation", "BYD Company Limited"));
+    }
+
+    @Test
+    void vetoKeepsTier1WhenTheJudgeRedirectsToAnotherListingOfTheSameCompany() {
+        TickerResolver r = new TickerResolver(null);
+        r.setMatchJudge((subject, context, names) -> 1); // judge prefers the ADR
+        YahooQuote primary = q("IFX.DE", "Infineon Technologies AG", "GER", "EQUITY");
+        YahooQuote adr = q("IFNNY", "Infineon Technologies ADR", "PNK", "EQUITY");
+        assertEquals("IFX.DE", r.vetoMatch("Infineon", "", primary, List.of(primary, adr)).symbol());
+    }
+
+    @Test
+    void tier2IsNoOpWithoutAJudge() {
+        TickerResolver r = new TickerResolver(null); // no judge → Tier 2 disabled
+        assertNull(r.judgeMatch("Google", "", List.of(q("GOOGL", "Alphabet Inc.", "NMS", "EQUITY"))));
     }
 
     @Test
