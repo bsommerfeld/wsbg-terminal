@@ -224,19 +224,23 @@ public class AppModule extends AbstractModule {
 
     /**
      * The tier-3 local instrument corpus: SEC US listings (official daily JSON) +
-     * the learned wallstreet-online ISIN memory, persisted under
-     * {@code <app-data>/instruments/} and refreshed asynchronously when stale.
-     * Grounds the resolver's identity judge in live feed facts instead of
-     * training-time memory; consumed by {@code EditorialAgent} via its optional
-     * setter. The direct fetcher suffices — sec.gov has no bot wall.
+     * XETRA's All-Tradable-Instruments CSV (every German-listed stock/ETF, via the
+     * stable instruments page → current blob link) + the learned wallstreet-online
+     * ISIN memory. Persisted under {@code <app-data>/instruments/} and refreshed
+     * asynchronously when stale. Grounds the resolver's identity judge in live
+     * feed facts instead of training-time memory; consumed by
+     * {@code EditorialAgent} via its optional setter. The direct fetcher suffices —
+     * neither sec.gov nor xetra.com has a bot wall.
      */
     @Provides
     @Singleton
     de.bsommerfeld.wsbg.terminal.instruments.InstrumentCorpus provideInstrumentCorpus() {
         java.nio.file.Path appData = StorageUtils.getAppDataDir();
+        DirectWebFetcher direct = new DirectWebFetcher();
         var corpus = new de.bsommerfeld.wsbg.terminal.instruments.InstrumentCorpus(
                 appData.resolve("instruments").resolve("instruments.jsonl"),
-                List.of(new de.bsommerfeld.wsbg.terminal.instruments.SecTickerSource(new DirectWebFetcher()),
+                List.of(new de.bsommerfeld.wsbg.terminal.instruments.SecTickerSource(direct),
+                        new de.bsommerfeld.wsbg.terminal.instruments.XetraSource(direct),
                         new de.bsommerfeld.wsbg.terminal.instruments.WsoIsinSource(appData.resolve("wso-isin.jsonl"))));
         corpus.start();
         return corpus;
