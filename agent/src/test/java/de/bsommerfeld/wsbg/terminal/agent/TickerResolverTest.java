@@ -366,6 +366,35 @@ class TickerResolverTest {
     }
 
     @Test
+    void isPrefixTrapCatchesSpellingBleedButNotIdentity() {
+        org.junit.jupiter.api.Assertions.assertTrue(
+                TickerResolver.isPrefixTrap("Polen", "Polenergia S.A"), "Polen ⊂ Polenergia");
+        org.junit.jupiter.api.Assertions.assertTrue(
+                TickerResolver.isPrefixTrap("Meta", "Metaplanet Inc."), "Meta ⊂ Metaplanet");
+        org.junit.jupiter.api.Assertions.assertFalse(
+                TickerResolver.isPrefixTrap("Google", "Alphabet Inc."), "disjoint names = real cross-name identity");
+        org.junit.jupiter.api.Assertions.assertFalse(
+                TickerResolver.isPrefixTrap("Meta", "Meta Platforms, Inc."), "shares the full word 'meta'");
+        org.junit.jupiter.api.Assertions.assertFalse(
+                TickerResolver.isPrefixTrap("Nvidia", "NVIDIA Corporation"), "shares 'nvidia'");
+    }
+
+    @Test
+    void tier2RejectsThePrefixTrap() {
+        // 'Polen' (the country, in a war thread) must not become Polenergia just
+        // because it spells the start of it — the judge picks it, the guard strikes.
+        TickerResolver r = new TickerResolver(null);
+        r.setMatchJudge((subject, context, names) -> 0);
+        assertNull(r.judgeMatch("Polen", "Polen vs Russland: False-Flag-Angst",
+                List.of(q("06Y.F", "Polenergia S.A", "FRA", "EQUITY"))));
+        // …but a genuine disjoint cross-name pick still resolves.
+        TickerResolver r2 = new TickerResolver(null);
+        r2.setMatchJudge((subject, context, names) -> 0);
+        assertEquals("GOOGL", r2.judgeMatch("Google", "",
+                List.of(q("GOOGL", "Alphabet Inc.", "NMS", "EQUITY"))).symbol());
+    }
+
+    @Test
     void tier2IsNoOpWithoutAJudge() {
         TickerResolver r = new TickerResolver(null); // no judge → Tier 2 disabled
         assertNull(r.judgeMatch("Google", "", List.of(q("GOOGL", "Alphabet Inc.", "NMS", "EQUITY"))));

@@ -203,6 +203,22 @@ class HeadlineWriterTest {
                 "IMPORTANT without a real trigger publishes as NORMAL");
     }
 
+    @Test
+    void trimsNoNewsFillerButKeepsTheHead() {
+        // The forbidden "absence of news as news" clause — deterministic backstop.
+        assertEquals("Die Affen halten an der Long-Position für Silber fest.",
+                HeadlineWriter.trimInterpretiveTail(
+                        "Die Affen halten an der Long-Position für Silber fest, "
+                        + "während die Nachrichtenlage keine neuen Katalysatoren liefert."));
+        assertEquals("Die Affen spekulieren, Polen könnte von Russland durch einen False Flag Angriff angegriffen werden.",
+                HeadlineWriter.trimInterpretiveTail(
+                        "Die Affen spekulieren, Polen könnte von Russland durch einen False Flag Angriff "
+                        + "angegriffen werden, während die Nachrichtenlage keine neuen Katalysatoren für Polenergia S.A. liefert."));
+        // A "während"-clause with real content is NOT filler — never cut.
+        String real = "Die Affen kaufen Nvidia, während der Gesamtmarkt die Chip-Aktien fallen lässt";
+        assertEquals(real, HeadlineWriter.trimInterpretiveTail(real));
+    }
+
     // ---- displayFormIn: the gilded name is the form the LINE wrote, not Yahoo's legal one ----
 
     @Test

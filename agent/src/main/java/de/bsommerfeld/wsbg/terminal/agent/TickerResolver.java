@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -629,6 +630,28 @@ public final class TickerResolver {
     }
 
     /**
+     * Surface-similarity trap: a subject word is a strict PREFIX of a longer
+     * candidate word while sharing no FULL word — the judge mistakes the
+     * spelling-bleed for a shorthand. "Polen" ⊂ "Polenergia", "Meta" ⊂
+     * "Metaplanet" (both live/documented mis-picks). A genuine cross-name identity
+     * ("Google" ↔ "Alphabet" — disjoint strings) is NOT a trap and passes; a real
+     * shorthand ("Meta" ↔ "Meta Platforms" — shares the full word "meta") is not a
+     * trap either. Package-private for testing.
+     */
+    static boolean isPrefixTrap(String subject, String candidateName) {
+        Set<String> subj = words(subject);
+        Set<String> cand = words(candidateName);
+        if (subj.isEmpty() || cand.isEmpty()) return false;
+        if (!Collections.disjoint(subj, cand)) return false; // shares a full word → not a trap
+        for (String s : subj) {
+            for (String c : cand) {
+                if (c.length() > s.length() && c.startsWith(s)) return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * Tier 2: when {@link #strongMatch} found nothing (token/score didn't decide),
      * let the LLM judge pick the ONE candidate that IS the subject — or none, in
      * which case the subject stays unresolved (the guard). No-op when no judge is
@@ -648,6 +671,16 @@ public final class TickerResolver {
         // attached independent of the ticker in resolveAll).
         String type = best.quoteType() == null ? "" : best.quoteType().trim().toUpperCase(Locale.ROOT);
         if (!type.equals("EQUITY")) return null;
+        // Prefix-trap guard: tier 2 has no token overlap by definition, so the judge
+        // may confirm a mere spelling-bleed ('Polen' ⊂ 'Polenergia' — live: a Poland/
+        // Russia war thread got a Polish energy-stock ticker + a filler line). The
+        // catch is that legit tier-2 cross-name picks (Google→Alphabet) are disjoint
+        // strings, NOT prefixes — so this rejects the trap without touching them.
+        if (isPrefixTrap(query, best.displayName())) {
+            LOG.info("[RESOLVE] tier-2: '{}' → {} rejected (prefix-trap, not identity)",
+                    query, best.symbol());
+            return null;
+        }
         return best;
     }
 
