@@ -78,7 +78,10 @@
              The old BULLISH/BEARISH room-mood badge was removed — F&G covers market
              sentiment and the aggregate badge read misleadingly. -->
         <div class="sentiment-cluster">
-          <span class="fear-greed" id="fear-greed-badge" hidden aria-live="polite"></span>
+          <a class="fear-greed" id="fear-greed-badge" hidden aria-live="polite"
+             href="https://edition.cnn.com/markets/fear-and-greed"
+             target="_blank" rel="noopener"
+             data-i18n-aria-label="fg.open" aria-label="CNN Fear & Greed Index öffnen"></a>
         </div>
         <!-- Scraper health lives directly on the LIVE indicator: main.js sets
              data-state + swaps the label to "Defekt" when the pull is degraded
@@ -166,23 +169,6 @@
             </div>
             <label class="checkbox">
               <input type="checkbox" class="js-analyze-images">
-              <span class="checkbox-box"></span>
-            </label>
-          </div>
-          <div class="setting-row">
-            <div class="setting-label">
-              <div class="setting-name-row">
-                <span class="setting-name" data-i18n="settings.headlines.redund.name">Wiederholungen filtern</span>
-                <button class="setting-info js-info" type="button" aria-expanded="false" title="Mehr Infos"
-                        aria-label="Mehr Infos" data-i18n-title="settings.more.aria" data-i18n-aria-label="settings.more.aria">
-                  <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-                </button>
-              </div>
-              <span class="setting-hint" data-i18n="settings.headlines.redund.hint">Unterdrückt wiederholte Stories ohne echte Neuigkeit.</span>
-              <p class="setting-more" hidden data-i18n="settings.headlines.redund.more">Aus = strikte 1:1-Spiegelung: jedes Signal schreibt eine Zeile, auch doppelt. Die erste Zeile eines Subjekts kommt immer.</p>
-            </div>
-            <label class="checkbox">
-              <input type="checkbox" class="js-suppress-redundant">
               <span class="checkbox-box"></span>
             </label>
           </div>

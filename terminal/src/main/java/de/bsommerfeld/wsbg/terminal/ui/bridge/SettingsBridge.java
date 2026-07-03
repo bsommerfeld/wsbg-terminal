@@ -31,8 +31,6 @@ import java.util.Map;
  * <ul>
  *   <li>{@code analyzeImages} — boolean (default true) → {@code headlines.analyze-images}
  *       (off = skip all vision for fast text-only headlines);</li>
- *   <li>{@code suppressRedundant} — boolean (default true) → {@code headlines.suppress-redundant}
- *       (off = strict 1:1 mirror, every dirty signal writes even a duplicate);</li>
  *   <li>{@code language} — {@code "de"}/{@code "en"} → {@code user.language};</li>
  *   <li>{@code autoUpdate} — boolean → {@code user.auto-update}.</li>
  * </ul>
@@ -146,10 +144,6 @@ public final class SettingsBridge {
                 config.getHeadlines().setAnalyzeImages(asBool(value));
                 return true;
             }
-            case "suppressRedundant" -> {
-                config.getHeadlines().setSuppressRedundant(asBool(value));
-                return true;
-            }
             default -> {
                 LOG.debug("settings: ignoring unknown key '{}'", key);
                 return false;
@@ -170,7 +164,6 @@ public final class SettingsBridge {
     static Map<String, Object> snapshot(GlobalConfig config) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("analyzeImages", config.getHeadlines().isAnalyzeImages());
-        out.put("suppressRedundant", config.getHeadlines().isSuppressRedundant());
         out.put("language", config.getUser().getLanguage());
         out.put("autoUpdate", config.getUser().isAutoUpdate());
         return out;

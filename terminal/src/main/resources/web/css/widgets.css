@@ -112,6 +112,7 @@ a.glyph:hover { opacity: .7; }
    arc, a needle at the score, the figure tinted by band (red fear / green greed). */
 .widget-head .fear-greed {
   display: inline-flex; align-items: center; gap: 5px;
+  color: inherit; text-decoration: none; cursor: pointer; /* anchor to CNN, not link-styled */
 }
 .widget-head .fear-greed[hidden] { display: none; }
 .widget-head .fear-greed .fg-gauge { display: block; overflow: visible; }

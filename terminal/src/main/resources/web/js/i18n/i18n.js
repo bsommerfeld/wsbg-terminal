@@ -45,9 +45,6 @@ const DICT = {
     'settings.headlines.images.name': 'Bilder mitanalysieren',
     'settings.headlines.images.hint': 'Wertet Bilder aus Threads und Kommentaren aus und lässt sie in Schlagzeilen einfließen.',
     'settings.headlines.images.more': 'Aus = schnellere, reine Text-Schlagzeilen ohne Bildanalyse.',
-    'settings.headlines.redund.name': 'Wiederholungen filtern',
-    'settings.headlines.redund.hint': 'Unterdrückt wiederholte Stories ohne echte Neuigkeit.',
-    'settings.headlines.redund.more': 'Aus = strikte 1:1-Spiegelung: jedes Signal schreibt eine Zeile, auch doppelt. Die erste Zeile eines Subjekts kommt immer.',
     // --- changelog overlay ---
     'changelog.title': 'Was hat sich geändert?',
     'changelog.close': 'Schließen',
@@ -100,6 +97,7 @@ const DICT = {
     'fg.NEUTRAL': 'Neutral',
     'fg.GREED': 'Gier',
     'fg.EXTREME_GREED': 'Extreme Gier',
+    'fg.open': 'CNN Fear & Greed Index öffnen',
 
     // --- footer / market chips ---
     'footer.closed': 'FREI',
@@ -145,9 +143,6 @@ const DICT = {
     'settings.headlines.images.name': 'Analyze images too',
     'settings.headlines.images.hint': 'Analyzes images from threads and comments and feeds them into headlines.',
     'settings.headlines.images.more': 'Off = faster, text-only headlines without image analysis.',
-    'settings.headlines.redund.name': 'Filter repeats',
-    'settings.headlines.redund.hint': 'Suppresses repeated stories that carry no real news.',
-    'settings.headlines.redund.more': "Off = strict 1:1 mirror: every signal writes a line, even a duplicate. A subject's first line always comes through.",
     // --- changelog overlay ---
     'changelog.title': "What's changed?",
     'changelog.close': 'Close',
@@ -200,6 +195,7 @@ const DICT = {
     'fg.NEUTRAL': 'Neutral',
     'fg.GREED': 'Greed',
     'fg.EXTREME_GREED': 'Extreme Greed',
+    'fg.open': 'Open CNN Fear & Greed Index',
 
     // --- footer / market chips ---
     'footer.closed': 'OFF',

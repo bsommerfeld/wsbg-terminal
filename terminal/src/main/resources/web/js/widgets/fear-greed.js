@@ -50,7 +50,7 @@ export function renderFearGreed(host, d) {
 
   const label = BANDS.includes(band) ? t('fg.' + band) : (d.rating || '');
   host.dataset.band = band;
-  host.title = `Fear & Greed Index: ${Math.round(score)} — ${label}`;
+  host.title = `Fear & Greed Index: ${Math.round(score)} — ${label}\n${t('fg.open')}`;
   host.innerHTML = gaugeSvg(score, false);
   host.hidden = false;
 }

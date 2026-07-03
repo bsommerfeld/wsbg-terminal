@@ -19,21 +19,10 @@ class SettingsBridgeTest {
         GlobalConfig c = new GlobalConfig();
         var snap = SettingsBridge.snapshot(c);
         assertEquals(false, snap.get("analyzeImages"), "image analysis OFF by default (throughput)");
-        assertEquals(true, snap.get("suppressRedundant"), "redundancy filter on by default");
         assertEquals("de", snap.get("language"));
         assertEquals(true, snap.get("autoUpdate"));
     }
 
-    @Test
-    void suppressRedundantMapsToFlag() {
-        GlobalConfig c = new GlobalConfig();
-        assertTrue(SettingsBridge.apply(c, "suppressRedundant", false));
-        assertFalse(c.getHeadlines().isSuppressRedundant());
-        assertEquals(false, SettingsBridge.snapshot(c).get("suppressRedundant"));
-
-        assertTrue(SettingsBridge.apply(c, "suppressRedundant", "true"));
-        assertTrue(c.getHeadlines().isSuppressRedundant());
-    }
 
     @Test
     void booleanKeysAcceptBoolAndString() {
