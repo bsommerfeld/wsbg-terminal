@@ -392,6 +392,10 @@ public final class HeadlineWriter {
                 ? prefixFormIn(headline, Arrays.copyOfRange(words, 1, words.length)) : null;
     }
 
+    /** Minimum candidate length for a compound-head match ("Gold" in "Goldpreis") —
+     *  short names as prefixes of unrelated words ("Bay" in "Bayern") must not bind. */
+    private static final int COMPOUND_MIN_CAND = 4;
+
     /** Longest word-prefix of {@code words} that appears in the headline, or null. */
     private static String prefixFormIn(String headline, String[] words) {
         String headlineLower = headline.toLowerCase(Locale.ROOT);
@@ -400,15 +404,40 @@ public final class HeadlineWriter {
                     .replaceAll("[,.]+$", "").trim();
             if (cand.length() < 3) continue;
             if (k == 1 && GILD_STOP.contains(cand.toLowerCase(Locale.ROOT))) continue;
-            int idx = headlineLower.indexOf(cand.toLowerCase(Locale.ROOT));
-            // Word-boundary guard: "Aris" must not gild inside "Paris". A single
-            // trailing "s" is the German genitive ("Rheinmetalls Auftrag") and
-            // still counts as a boundary — the name IS in the line.
-            if (idx >= 0
-                    && (idx == 0 || !Character.isLetterOrDigit(headline.charAt(idx - 1)))
-                    && isWordEndAt(headline, idx + cand.length())) {
-                return headline.substring(idx, idx + cand.length());
+            String candLower = cand.toLowerCase(Locale.ROOT);
+            // Scan ALL occurrences: an exact word-boundary hit anywhere beats a
+            // compound hit ("Goldman warnt, Goldpreis steigt" must bind "Goldpreis"
+            // over "Goldman" — first-occurrence-wins would pick the wrong one).
+            String compound = null;
+            for (int idx = headlineLower.indexOf(candLower); idx >= 0;
+                    idx = headlineLower.indexOf(candLower, idx + 1)) {
+                if (idx > 0 && Character.isLetterOrDigit(headline.charAt(idx - 1))) {
+                    continue; // start-boundary guard: "Aris" must not bind inside "Paris"
+                }
+                int end = idx + cand.length();
+                // Word end, or the German genitive "s" ("Rheinmetalls Auftrag").
+                if (isWordEndAt(headline, end)) {
+                    return headline.substring(idx, end);
+                }
+                // German COMPOUND head: the subject as first constituent of a longer
+                // word ("Goldpreis", "Goldposition") names the subject — the room
+                // writes compounds, not phrases. Guarded: candidate ≥ COMPOUND_MIN_CAND
+                // (never "Bay"→"Bayern"), continuation lowercase (a capital would be a
+                // different name). Whole compound returned, so the gild wraps
+                // "Goldpreis", not "Gold|preis". Kept only as the FALLBACK to an
+                // exact hit elsewhere in the line.
+                if (compound == null && cand.length() >= COMPOUND_MIN_CAND
+                        && end < headline.length()
+                        && Character.isLetter(headline.charAt(end))
+                        && Character.isLowerCase(headline.charAt(end))) {
+                    int wordEnd = end;
+                    while (wordEnd < headline.length() && Character.isLetter(headline.charAt(wordEnd))) {
+                        wordEnd++;
+                    }
+                    compound = headline.substring(idx, wordEnd);
+                }
             }
+            if (compound != null) return compound;
         }
         return null;
     }

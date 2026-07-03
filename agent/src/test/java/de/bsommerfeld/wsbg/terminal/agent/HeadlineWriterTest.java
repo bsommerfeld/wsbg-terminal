@@ -375,14 +375,38 @@ class HeadlineWriterTest {
     }
 
     @Test
+    void displayFormInBindsGermanCompoundHeads() {
+        // "Goldpreis" NAMES gold — the room writes compounds, not phrases (live: a
+        // priced GC=F unit lost its quote because the line said "Goldpreis").
+        // The gild wraps the whole compound.
+        assertEquals("Goldpreis", HeadlineWriter.displayFormIn(
+                "Goldpreis klettert über 4.200 Dollar, Asien kauft weiter", "Gold"));
+        // A hyphenated compound hits the exact word boundary first — the gild stays
+        // on the name itself.
+        assertEquals("Rheinmetall", HeadlineWriter.displayFormIn(
+                "Die Rheinmetall-Aktie zieht nach dem Großauftrag an", "Rheinmetall AG"));
+        // Short candidates never bind as compound heads ("Bay" must not match "Bayern").
+        org.junit.jupiter.api.Assertions.assertNull(HeadlineWriter.displayFormIn(
+                "Bayern feiert die Börsenwoche", "Bay"));
+        // A capitalized continuation is a DIFFERENT name, not a compound of ours.
+        org.junit.jupiter.api.Assertions.assertNull(HeadlineWriter.displayFormIn(
+                "MicroStrategy kauft weiter Bitcoin nach", "Micron Technology, Inc."));
+        // An exact word-boundary hit anywhere in the line beats an earlier compound
+        // hit — "Goldman" must not shadow the actual "Gold".
+        assertEquals("Gold", HeadlineWriter.displayFormIn(
+                "Goldman warnt, doch Gold klettert weiter", "Gold"));
+    }
+
+    @Test
     void displayFormInAcceptsTheGermanGenitive() {
         // "Rheinmetalls Auftrag" — the name IS in the line, inflected. A lone
         // trailing "s" is a boundary, a longer suffix is not.
         assertEquals("Rheinmetall", HeadlineWriter.displayFormIn(
                 "Rheinmetalls Großauftrag treibt den Kurs", "Rheinmetall AG"));
-        org.junit.jupiter.api.Assertions.assertNull(HeadlineWriter.displayFormIn(
-                "Rheinmetallitis grassiert im Käfig", "Rheinmetall AG"),
-                "a longer suffix is a different word, not a genitive");
+        // The room's wordplay compound ("Rheinmetallitis") NAMES the subject — since
+        // the compound-head rule it binds (whole word, so the gild wraps the joke).
+        assertEquals("Rheinmetallitis", HeadlineWriter.displayFormIn(
+                "Rheinmetallitis grassiert im Käfig", "Rheinmetall AG"));
     }
 
     // ---- near-dup patterns lifted verbatim from the live archive (2026-07-02) ----
