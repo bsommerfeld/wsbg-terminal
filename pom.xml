@@ -34,7 +34,7 @@
     </modules>
 
     <properties>
-        <revision>1.1.0</revision>
+        <revision>1.1.1</revision>
 
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.source>25</maven.compiler.source>
