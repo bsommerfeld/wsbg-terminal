@@ -60,9 +60,6 @@ class ConfigDefaultsTest {
         // endpoint inside its ~100 req / 10 min soft limit (see RedditScraper).
         assertEquals(180, config.getUpdateIntervalSeconds());
         assertEquals(6, config.getDataRetentionHours());
-        assertEquals(10.0, config.getSignificanceThreshold(), 0.001);
-        assertEquals(60, config.getInvestigationTtlMinutes());
-        assertEquals(0.55, config.getSimilarityThreshold(), 0.001);
         assertEquals(0.15, config.getRateLimitRequestsPerSecond(), 0.001);
         assertEquals(5.0, config.getRateLimitBurst(), 0.001);
     }

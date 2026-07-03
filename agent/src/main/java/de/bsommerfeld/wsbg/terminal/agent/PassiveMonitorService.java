@@ -7,7 +7,6 @@ import de.bsommerfeld.wsbg.terminal.core.config.RedditConfig;
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditComment;
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
-import de.bsommerfeld.wsbg.terminal.core.event.ControlEvents.LogEvent;
 import de.bsommerfeld.wsbg.terminal.core.util.JitteredScheduler;
 import de.bsommerfeld.wsbg.terminal.db.AgentRepository;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
@@ -354,7 +353,7 @@ public class PassiveMonitorService {
             if (Duration.between(lastCleanup, Instant.now()).compareTo(cleanupInterval) > 0) {
                 lastCleanup = Instant.now();
                 repository.cleanupOldThreads(dataRetentionSeconds)
-                        .thenAccept(count -> eventBus.post(new LogEvent(String.valueOf(count), "CLEANUP")));
+                        .thenAccept(count -> LOG.debug("[CLEANUP] pruned {} old thread(s)", count));
                 agentRepository.cleanup();
             }
 

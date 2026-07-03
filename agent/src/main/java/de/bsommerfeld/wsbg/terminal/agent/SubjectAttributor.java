@@ -1,5 +1,4 @@
 package de.bsommerfeld.wsbg.terminal.agent;
-import de.bsommerfeld.wsbg.terminal.embedding.EmbeddingService;
 
 import de.bsommerfeld.wsbg.terminal.agent.SubjectUnit.EvidenceRef;
 import de.bsommerfeld.wsbg.terminal.agent.TickerResolver.ResolvedSubject;
@@ -438,12 +437,9 @@ public final class SubjectAttributor {
         return visionText;
     }
 
-    // OPTION A (this): deterministic, cluster-relative distinctiveness — cheap, no
-    // embedding, fixes literal collisions (MSCI World vs MSCI EM). It cannot resolve
-    // ABBREVIATIONS ("Emerging Markets" ↔ a "MSCI EM IMI" row).
-    // TODO(B): semantic line-matching via the shared embedding service (cosine of the
-    // subject name vs each candidate line) — most reliable, handles abbreviations.
-    // Wire it here once the generic EmbeddingService abstraction exists.
+    // Deterministic, cluster-relative distinctiveness — cheap, fixes literal
+    // collisions (MSCI World vs MSCI EM). It cannot resolve ABBREVIATIONS
+    // ("Emerging Markets" ↔ a "MSCI EM IMI" row).
 
     /** Words shared by ≥2 of the cluster's subject names — ambiguous, can't carry a match alone. */
     static Set<String> ambiguousWords(List<ResolvedSubject> resolved) {

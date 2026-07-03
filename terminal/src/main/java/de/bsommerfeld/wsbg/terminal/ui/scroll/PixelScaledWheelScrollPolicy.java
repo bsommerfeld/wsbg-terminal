@@ -7,9 +7,8 @@ import java.awt.event.MouseWheelEvent;
  * The real fix: turn the OS-scaled wheel delta into a sensible pixel delta for
  * the windowless browser, while inheriting the OS scroll speed and direction.
  *
- * <p><b>Not wired active yet</b> — it goes live once {@link LoggingWheelScrollPolicy}
- * has confirmed the per-notch field values on macOS and Windows, so
- * {@link #pixelsPerLine} can be set from data rather than guessed.
+ * <p>The live bound policy (see {@code AppModule}); {@link #pixelsPerLine} was
+ * calibrated from real per-notch field values on macOS and Windows.
  *
  * <p><b>How it inherits the OS settings.</b> In {@code WHEEL_UNIT_SCROLL} mode
  * AWT delivers {@link MouseWheelEvent#getScrollAmount()} = the OS "lines per

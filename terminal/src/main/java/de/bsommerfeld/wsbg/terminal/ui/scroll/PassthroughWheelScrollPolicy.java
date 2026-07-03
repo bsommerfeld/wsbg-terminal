@@ -6,9 +6,8 @@ import java.awt.event.MouseWheelEvent;
 /**
  * Reproduces the existing native behaviour exactly: forward the same delta JCEF
  * would have read, routed to the same axis. This is the zero-risk baseline — it
- * changes nothing about how scrolling feels and exists so the diagnostic layer
- * ({@link LoggingWheelScrollPolicy}) can observe real events without altering
- * them, and as the fallback if the scaled policy is ever disabled.
+ * changes nothing about how scrolling feels and exists as the fallback if the
+ * scaled policy is ever disabled.
  *
  * <p>It mirrors JCEF's {@code N_SendMouseWheelEvent}: in {@code WHEEL_UNIT_SCROLL}
  * mode the delta is {@link MouseWheelEvent#getUnitsToScroll()} (OS scroll-lines),

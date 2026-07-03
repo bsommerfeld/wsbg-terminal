@@ -6,22 +6,6 @@ package de.bsommerfeld.wsbg.terminal.core.event;
  */
 public class ControlEvents {
 
-    public record TriggerAgentAnalysisEvent(String prompt) {
-    }
-
-    public record LogEvent(String message, String type) {
-        public LogEvent(String message) {
-            this(message, "INFO");
-        }
-    }
-
-    /**
-     * Fired when the UI language is changed. Components update their localized
-     * strings.
-     */
-    public record LanguageChangedEvent() {
-    }
-
     /**
      * Reddit scraper health state. Fired only on transitions between
      * {@code OK} and {@code DEGRADED} so the UI animates a status label

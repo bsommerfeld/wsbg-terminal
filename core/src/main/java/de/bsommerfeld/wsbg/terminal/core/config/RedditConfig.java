@@ -27,21 +27,6 @@ public class RedditConfig {
     @Comment("Hours to keep Reddit data in database (default: 6)")
     private long dataRetentionHours = 6;
 
-    @Key("significance-threshold")
-    @Comment("Score threshold for AI reporting (default: 10.0)")
-    private double significanceThreshold = 10.0;
-
-    @Key("investigation-ttl-minutes")
-    @Comment("Time to live for an investigation in minutes (default: 60)")
-    private long investigationTtlMinutes = 60;
-
-    @Key("similarity-threshold")
-    @Comment("Vector similarity threshold for cluster assignment (default: 0.55). "
-            + "Lower = more aggressive grouping (risks an over-merged hype blob); "
-            + "higher = stricter, more single-thread clusters. Ticker overlap forces "
-            + "a match regardless. Threads that match nothing become their own cluster.")
-    private double similarityThreshold = 0.55;
-
     @Key("oauth-client-id")
     @Comment("Reddit OAuth client ID of an \"installed app\" registered at "
             + "https://www.reddit.com/prefs/apps (no secret needed). The app "
@@ -110,18 +95,6 @@ public class RedditConfig {
 
     public long getDataRetentionHours() {
         return dataRetentionHours;
-    }
-
-    public double getSignificanceThreshold() {
-        return significanceThreshold;
-    }
-
-    public long getInvestigationTtlMinutes() {
-        return investigationTtlMinutes;
-    }
-
-    public double getSimilarityThreshold() {
-        return similarityThreshold;
     }
 
     public String getOauthClientId() {

@@ -21,14 +21,3 @@ export function colorizeSignedNumbers(html) {
     return `${lead}<span class="pct ${cls}">${sign}${value}</span>`;
   });
 }
-
-export function formatSignedPercent(value) {
-  if (value == null || Number.isNaN(value)) return '';
-  const sign = value >= 0 ? '+' : '−';
-  return `${sign}${Math.abs(value).toFixed(1).replace('.', ',')}%`;
-}
-
-export function signedClass(value) {
-  if (value == null) return '';
-  return value >= 0 ? 'up' : 'down';
-}
