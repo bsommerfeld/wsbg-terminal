@@ -211,21 +211,21 @@ public final class HeadlineWriter {
      * guard. Never throws on bad model output.
      */
     public boolean publishUnit(SubjectUnit unit, Draft draft) {
-        return publishUnit(unit, draft, false, true);
-    }
-
-    public boolean publishUnit(SubjectUnit unit, Draft draft, boolean newsEnriched) {
-        return publishUnit(unit, draft, newsEnriched, true);
+        return publishUnit(unit, draft, List.of(), true);
     }
 
     /**
-     * Same as {@link #publishUnit(SubjectUnit, Draft)} but records whether the
-     * compose stage leaned on at least one external news item ({@code newsEnriched}
-     * = the draft cited a {@code [news:ID]}), and honours the {@code suppressRedundant}
+     * Same as {@link #publishUnit(SubjectUnit, Draft)} but records the news items the
+     * line ACTUALLY leaned on ({@code newsUsed} — the woven-in subset, computed by the
+     * caller against the published text; the "News" tag and its clickable source list
+     * promise "the articles this line leans on", so a room-sentiment line on a
+     * news-rich subject carries none), and honours the {@code suppressRedundant}
      * setting: when false the near-duplicate guard is skipped so a strict 1:1 mirror
      * publishes every dirty line, even a duplicate.
      */
-    public boolean publishUnit(SubjectUnit unit, Draft draft, boolean newsEnriched, boolean suppressRedundant) {
+    public boolean publishUnit(SubjectUnit unit, Draft draft,
+            List<de.bsommerfeld.wsbg.terminal.source.RawNewsItem> newsUsed, boolean suppressRedundant) {
+        boolean newsEnriched = newsUsed != null && !newsUsed.isEmpty();
         if (unit == null || draft == null) return false;
         String headline = trimInterpretiveTail(stripHtml(draft.headline()).trim());
         if (headline.isEmpty()) return false;
@@ -308,11 +308,12 @@ public final class HeadlineWriter {
         HeadlineSentiment sentiment = reconcileSentiment(
                 HeadlineSentiment.fromString(draft.sentiment()), priceMove);
 
-        // The concrete articles behind the "News" provenance tag: the unit's
-        // attached news pool at publish time (title + publisher + permalink),
-        // so the UI can list the original sources on click. Items without a
-        // link are useless as a source reference and are dropped.
-        List<HeadlineNewsRef> newsRefs = !newsEnriched ? List.of() : unit.news().stream()
+        // The concrete articles behind the "News" provenance tag: ONLY the items the
+        // line actually wove in (title + publisher + permalink), so the click-open
+        // list keeps the tag's promise — "the articles this line leans on" — instead
+        // of dumping the subject's whole news pool beside a room-sentiment line.
+        // Items without a link are useless as a source reference and are dropped.
+        List<HeadlineNewsRef> newsRefs = !newsEnriched ? List.of() : newsUsed.stream()
                 .filter(n -> n.link() != null && !n.link().isBlank())
                 .map(n -> new HeadlineNewsRef(n.title(), n.publisher(), n.link(),
                         n.publishedAt() == null ? null : n.publishedAt().getEpochSecond()))

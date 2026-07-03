@@ -764,28 +764,28 @@ public class EditorialAgent {
             u.markComposedAt(composedV);
             return false;
         }
-        // News-enriched is DETERMINISTIC: a headline counts as news-enriched when its
-        // SubjectUnit actually carried ≥1 attached news item at compose time — NOT when
-        // the 4B model happened to cite one in sourceNewsIds (which it rarely does, so
-        // the old `!ud.citedNewsIds().isEmpty()` left the "News" tag almost always off).
-        // A real headline was produced — composed against this evidence either way,
-        // whether the writer saved it or dropped it on its own dup guard.
+        // News provenance is DETERMINISTIC and LINE-scoped — earned only by USE: an
+        // item counts when the published line actually WOVE IT IN (significant-token
+        // overlap between line and news title/summary — the "konkret eingewoben"
+        // test). The tag and its clickable source list promise "the articles this
+        // line leans on"; the old unit-scoped flag (!u.news().isEmpty()) lit the tag
+        // on EVERY line of a news-rich subject, even a pure room-sentiment line that
+        // used none of it (live: a Microsoft chart-waiting line carrying a pool of
+        // unrelated articles). The 4B's own citations stay out of it — it under-cites;
+        // the woven-in check is exact where a model citation never was.
+        List<de.bsommerfeld.wsbg.terminal.source.RawNewsItem> newsUsed = u.news().stream()
+                .filter(n -> headlineReflectsNews(d.headline(), n))
+                .toList();
         u.markComposedAt(composedV);
-        if (headlineWriter.publishUnit(u, d, !u.news().isEmpty(),
+        if (headlineWriter.publishUnit(u, d, newsUsed,
                 config.getHeadlines().isSuppressRedundant())) {
             composeRetries.remove(u.id); // story moved on → fresh retry budget
             u.addHeadline(d.headline(), ud.isUpdate(), d.sentiment());
-            // News coverage is DETERMINISTIC and PER UNIT — and only earned by USE:
-            // an item counts as covered when the published line actually WOVE IT IN
-            // (significant-token overlap between line and news title/summary — the
-            // "konkret eingewoben" test). A sentiment-only line leaves its news fresh
-            // for the next compose; a unit's next line then orients on its prior
-            // headlines instead of re-milking the same item. Another unit pulling the
-            // same news item is untouched (covered ids live on the unit). The old
-            // model-cited sourceNewsIds died with the slim output; the woven-in check
-            // is exact where a 4B citation never was.
-            u.markNewsCovered(u.news().stream()
-                    .filter(n -> headlineReflectsNews(d.headline(), n))
+            // Coverage marking rides the same woven-in list: a sentiment-only line
+            // leaves its news fresh for the next compose (the next line orients on
+            // prior headlines instead of re-milking the same item); another unit
+            // pulling the same item is untouched (covered ids live on the unit).
+            u.markNewsCovered(newsUsed.stream()
                     .map(de.bsommerfeld.wsbg.terminal.source.RawNewsItem::uuid)
                     .filter(Objects::nonNull).toList());
             return true;

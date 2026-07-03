@@ -454,6 +454,36 @@ class HeadlineWriterTest {
         assertTrue(h.subjects().isEmpty(), "…and no glow subject");
     }
 
+    @Test
+    void newsTagAndRefsAreLineScopedNotUnitScoped() {
+        // The tag promises "the articles this line leans on": a room-sentiment line
+        // on a news-rich subject carries NO tag and NO refs (live: a Microsoft
+        // chart-waiting line once shipped the subject's whole article pool); a line
+        // that wove an item in carries exactly that item.
+        AgentRepository repo = new AgentRepository();
+        HeadlineWriter w = new HeadlineWriter(repo, new ApplicationEventBus());
+        SubjectUnit u = instrumentUnit();
+        de.bsommerfeld.wsbg.terminal.source.RawNewsItem article =
+                new de.bsommerfeld.wsbg.terminal.source.RawNewsItem("uuid-1",
+                        "ServiceNow hebt Prognose nach Großauftrag an", "Reuters",
+                        "https://example.com/now", null, List.of("NOW"));
+
+        Draft sentimentLine = new Draft("ServiceNow bleibt die Lieblingswette des Raums",
+                "BULLISH", "NORMAL", null, List.of(), null, List.of(), null, List.of(), List.of());
+        assertTrue(w.publishUnit(u, sentimentLine, List.of(), true));
+        HeadlineRecord plain = repo.getHeadlinesByClusterId("NOW").get(0);
+        assertFalse(plain.newsEnriched(), "no woven-in item → no News tag");
+        assertTrue(plain.newsRefs().isEmpty(), "…and no source list");
+
+        Draft newsLine = new Draft("ServiceNow hebt nach Großauftrag die Prognose an",
+                "BULLISH", "NORMAL", null, List.of(), null, List.of(), null, List.of(), List.of());
+        assertTrue(w.publishUnit(u, newsLine, List.of(article), true));
+        HeadlineRecord enriched = repo.getHeadlinesByClusterId("NOW").get(1);
+        assertTrue(enriched.newsEnriched());
+        assertEquals(1, enriched.newsRefs().size(), "refs are exactly the woven-in items");
+        assertEquals("https://example.com/now", enriched.newsRefs().get(0).url());
+    }
+
     // ---- trimInterpretiveTail: the mechanical gate for the ~20% interpretation-clause class ----
 
     @Test
