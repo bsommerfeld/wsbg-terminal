@@ -39,6 +39,7 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -282,11 +283,11 @@ public class EditorialAgent {
      */
     public UnitDraft composeUnit(SubjectUnit unit) {
         if (unit == null) {
-            return new UnitDraft("", "", null, false, false, "", 0, List.of(), false, false);
+            return new UnitDraft("", "", null, false, false, "", 0, List.of(), false, false, List.of());
         }
         ChatModel model = brain.getComposeModel(); // tight numPredict — one short headline JSON
         if (model == null) {
-            return new UnitDraft(unit.id, unit.canonicalName(), null, false, false, "", 0, List.of(), false, false);
+            return new UnitDraft(unit.id, unit.canonicalName(), null, false, false, "", 0, List.of(), false, false, List.of());
         }
         // Fully localized compose scaffold (German prompt + German room-slang + German brief
         // labels). This was held to English while the compose OUTPUT was a fat 9-field JSON —
@@ -312,6 +313,7 @@ public class EditorialAgent {
         boolean salvaged = false;
         boolean redundant = false;
         List<String> citedNews = List.of();
+        List<Integer> derivedFrom = List.of();
         // 1:1 mirror: a FIRST line is NEVER dropped. The room talking about a subject IS the
         // story (we attach price + news ourselves), so the only legitimate {"headline":""} is a
         // redundant UPDATE against the unit's OWN priors. The 4B model sometimes lazily returns
@@ -324,11 +326,13 @@ public class EditorialAgent {
             salvaged = false;
             redundant = false;
             citedNews = List.of();
+            derivedFrom = List.of();
             JsonNode obj = firstHeadlineObject(parseJson(text));
             if (obj != null) {
                 draft = toDraft(obj);
                 isUpdate = "UPDATE".equalsIgnoreCase(obj.path("mode").asText(""));
                 citedNews = readStrings(obj.path("sourceNewsIds"));
+                derivedFrom = readInts(obj.path("derivedFrom"));
                 // Empty headline is redundant ONLY against the unit's own priors AND only when
                 // the redundancy filter is on — NEVER for a first line, and never at all in strict
                 // 1:1 mode. Otherwise an empty reply is a model lapse, not "nothing to say".
@@ -383,7 +387,7 @@ public class EditorialAgent {
         // from Yahoo. The wire is a sentiment mirror; user numbers aren't facts.
         boolean unverified = mentionsPrice(draft) && !unitHasVerifiedPrice(unit);
         return new UnitDraft(unit.id, unit.canonicalName(), draft, isUpdate, salvaged, text, elapsed,
-                citedNews, unverified, whiffed);
+                citedNews, unverified, whiffed, derivedFrom);
     }
 
     /** The headline object out of a parsed reply: a bare object, or the first of a {@code {"headlines":[…]}} wrapper. */
@@ -584,8 +588,14 @@ public class EditorialAgent {
             SubjectUnit.UnitHeadline first = prior.get(0);
             sb.append(lbl.earlierHeadlines(shownFrom, age(Instant.ofEpochSecond(first.atEpoch()), now)));
         }
+        // Numbered so the compose reply can CITE the prior lines this one builds on
+        // ("derivedFrom": [2]) — provenance chaining: the cited lines' news sources
+        // are inherited onto the new line. Ordinals are 1-based within the SHOWN
+        // window and re-derived identically in inheritedRefs().
+        int ordinal = 1;
         for (SubjectUnit.UnitHeadline h : prior.subList(shownFrom, prior.size())) {
-            sb.append("  - [").append(lbl.ago(age(Instant.ofEpochSecond(h.atEpoch()), now)));
+            sb.append("  - #").append(ordinal++)
+                    .append(" [").append(lbl.ago(age(Instant.ofEpochSecond(h.atEpoch()), now)));
             if (h.sentiment() != null && !h.sentiment().isBlank()) sb.append(", ").append(h.sentiment());
             sb.append("] ").append(h.text()).append('\n');
         }
@@ -624,7 +634,7 @@ public class EditorialAgent {
      */
     public record UnitDraft(String unitId, String label, Draft draft, boolean isUpdate,
             boolean salvaged, String raw, long ms, List<String> citedNewsIds, boolean unverified,
-            boolean whiffed) {}
+            boolean whiffed, List<Integer> derivedFrom) {}
 
     /**
      * The production editorial tick. One dirty signal (a cluster that gained fresh
@@ -776,8 +786,15 @@ public class EditorialAgent {
         List<de.bsommerfeld.wsbg.terminal.source.RawNewsItem> newsUsed = u.news().stream()
                 .filter(n -> headlineReflectsNews(d.headline(), n))
                 .toList();
+        // Provenance chaining: the model cites the numbered prior lines it built on
+        // ("derivedFrom": [2]) — those lines' news sources carry over, so a fact that
+        // debuted on an earlier, tagged line keeps its sources on every continuation
+        // (without this, paraphrase through the story memory laundered provenance away).
+        List<de.bsommerfeld.wsbg.terminal.db.HeadlineNewsRef> inherited =
+                inheritedRefs(u.headlines(), ud.derivedFrom(),
+                        agentRepository.getHeadlinesByClusterId(u.id));
         u.markComposedAt(composedV);
-        if (headlineWriter.publishUnit(u, d, newsUsed,
+        if (headlineWriter.publishUnit(u, d, newsUsed, inherited,
                 config.getHeadlines().isSuppressRedundant())) {
             composeRetries.remove(u.id); // story moved on → fresh retry budget
             u.addHeadline(d.headline(), ud.isUpdate(), d.sentiment());
@@ -1502,6 +1519,50 @@ public class EditorialAgent {
             for (JsonNode el : node) {
                 String s = el.asText("").trim();
                 if (!s.isEmpty()) out.add(s);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * The news sources INHERITED by a line that cites prior lines ("derivedFrom"
+     * ordinals, 1-based within the story-memory window rendered by
+     * {@link #appendStoryMemory}): each cited prior line's archived {@code newsRefs}
+     * carry over. Out-of-range ordinals are the model mis-counting — skipped, never
+     * fatal. Prior records are matched by exact headline text (the unit's story
+     * memory and the repository both hold the published text verbatim).
+     * Package-private for tests.
+     */
+    static List<de.bsommerfeld.wsbg.terminal.db.HeadlineNewsRef> inheritedRefs(
+            List<SubjectUnit.UnitHeadline> priors, List<Integer> derivedFrom,
+            List<HeadlineRecord> records) {
+        if (priors == null || priors.isEmpty() || derivedFrom == null || derivedFrom.isEmpty()
+                || records == null || records.isEmpty()) {
+            return List.of();
+        }
+        int shownFrom = Math.max(0, priors.size() - PRIOR_HEADLINES_SHOWN);
+        List<SubjectUnit.UnitHeadline> shown = priors.subList(shownFrom, priors.size());
+        List<de.bsommerfeld.wsbg.terminal.db.HeadlineNewsRef> out = new ArrayList<>();
+        Set<String> seenUrls = new HashSet<>();
+        for (Integer ord : derivedFrom) {
+            if (ord == null || ord < 1 || ord > shown.size()) continue;
+            String citedText = shown.get(ord - 1).text();
+            for (HeadlineRecord r : records) {
+                if (!citedText.equals(r.headline())) continue;
+                for (de.bsommerfeld.wsbg.terminal.db.HeadlineNewsRef ref : r.newsRefs()) {
+                    if (ref.url() != null && seenUrls.add(ref.url())) out.add(ref);
+                }
+            }
+        }
+        return out;
+    }
+
+    /** Integers out of a JSON array node; non-numbers and anything else → skipped. */
+    private static List<Integer> readInts(JsonNode node) {
+        List<Integer> out = new ArrayList<>();
+        if (node != null && node.isArray()) {
+            for (JsonNode el : node) {
+                if (el.canConvertToInt()) out.add(el.asInt());
             }
         }
         return out;

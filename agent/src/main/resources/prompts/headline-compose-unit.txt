@@ -38,8 +38,9 @@ Engagement is irrelevant — a quiet one-liner can be the best lead — and so i
 Read the up/down-vote split as thesis vs. antithesis; no votes is also a reading. Votes are sentiment, never a filter.
 
 ## Output
-Your ONLY job is the line itself. The ticker, price, % move, subjects — all of that is already known and attached automatically AFTER you; never output it, never echo it. Reply with ONE JSON object, exactly these four keys, no markdown, no fences, no prose around it:
-{"headline": "<one wire-style line in {{LANGUAGE}}, the company name woven in, no ticker label>", "trigger": "NONE", "highlight": "NORMAL", "sentiment": "<how the room sits>"}
+Your ONLY job is the line itself. The ticker, price, % move, subjects — all of that is already known and attached automatically AFTER you; never output it, never echo it. Reply with ONE JSON object, exactly these five keys, no markdown, no fences, no prose around it:
+{"headline": "<one wire-style line in {{LANGUAGE}}, the company name woven in, no ticker label>", "trigger": "NONE", "highlight": "NORMAL", "sentiment": "<how the room sits>", "derivedFrom": []}
+- derivedFrom: your prior headlines in the brief are numbered (#1, #2, …) — list the numbers of the lines whose facts this line carries forward or builds on ([2] when the new line rests on line #2's event). Empty [] when the line stands on fresh evidence alone. Report what you USED — this drives the source links shown to the reader.
 - trigger: the ONE concrete red trigger you can point at, or NONE (see the trigger + highlight section).
 - highlight: NORMAL or IMPORTANT — IMPORTANT only with a real trigger.
 - sentiment: how the ROOM sits on this subject — BULLISH, BEARISH, MIXED, FOMO, CAPITULATION, SQUEEZE, REVERSAL, BREAKOUT or NEUTRAL. The comments' mood, not the price direction.

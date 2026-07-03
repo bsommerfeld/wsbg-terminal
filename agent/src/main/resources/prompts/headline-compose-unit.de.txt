@@ -38,8 +38,9 @@ Engagement ist irrelevant — eine leise Einzeiler-Zeile kann der beste Lead sei
 Lies das Up-/Downvote-Verhältnis als These vs. Antithese; keine Votes ist auch eine Lesart. Votes sind Stimmung, niemals ein Filter.
 
 ## Ausgabe
-Deine EINZIGE Aufgabe ist die Zeile selbst. Der Ticker, der Kurs, die %-Bewegung, die Subjekte — all das ist bereits bekannt und wird NACH dir automatisch angehängt; gib es niemals aus, wiederhole es niemals. Antworte mit EINEM JSON-Objekt, genau diese vier Schlüssel, kein Markdown, keine Code-Fences, keine Prosa drumherum:
-{"headline": "<eine Wire-Zeile auf Deutsch, der Firmenname eingewoben, kein Ticker-Label>", "trigger": "NONE", "highlight": "NORMAL", "sentiment": "<wie der Raum steht>"}
+Deine EINZIGE Aufgabe ist die Zeile selbst. Der Ticker, der Kurs, die %-Bewegung, die Subjekte — all das ist bereits bekannt und wird NACH dir automatisch angehängt; gib es niemals aus, wiederhole es niemals. Antworte mit EINEM JSON-Objekt, genau diese fünf Schlüssel, kein Markdown, keine Code-Fences, keine Prosa drumherum:
+{"headline": "<eine Wire-Zeile auf Deutsch, der Firmenname eingewoben, kein Ticker-Label>", "trigger": "NONE", "highlight": "NORMAL", "sentiment": "<wie der Raum steht>", "derivedFrom": []}
+- derivedFrom: Deine früheren Schlagzeilen im Brief sind nummeriert (#1, #2, …) — liste die Nummern der Zeilen, deren Fakten diese Zeile weiterträgt oder auf denen sie aufbaut ([2], wenn die neue Zeile auf dem Ereignis von Zeile #2 ruht). Leer [], wenn die Zeile allein auf frischer Evidenz steht. Berichte, was du GENUTZT hast — daraus entstehen die Quellen-Links für den Leser.
 - trigger: der EINE konkrete Rot-Auslöser, auf den du zeigen kannst, oder NONE (siehe trigger + highlight).
 - highlight: NORMAL oder IMPORTANT — IMPORTANT nur mit echtem Trigger.
 - sentiment: wie der RAUM zu diesem Thema steht — BULLISH, BEARISH, MIXED, FOMO, CAPITULATION, SQUEEZE, REVERSAL, BREAKOUT oder NEUTRAL. Die Stimmung der Kommentare, nicht die Kursrichtung.

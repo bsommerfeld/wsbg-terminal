@@ -209,7 +209,16 @@ public class AgentBrain {
                                 .addEnumProperty("sentiment", java.util.List.of(
                                         "BULLISH", "BEARISH", "MIXED", "FOMO", "CAPITULATION",
                                         "SQUEEZE", "REVERSAL", "BREAKOUT", "NEUTRAL"))
-                                .required("headline", "trigger", "highlight", "sentiment")
+                                // Provenance chaining: the ordinals of the numbered prior
+                                // headlines this line builds on (empty when none) — small
+                                // integers on a short numbered list, which a 4B cites far
+                                // more reliably than the long news uuids that killed the
+                                // old sourceNewsIds field.
+                                .addProperty("derivedFrom",
+                                        dev.langchain4j.model.chat.request.json.JsonArraySchema.builder()
+                                                .items(dev.langchain4j.model.chat.request.json.JsonIntegerSchema.builder().build())
+                                                .build())
+                                .required("headline", "trigger", "highlight", "sentiment", "derivedFrom")
                                 .build())
                         .build())
                 .build();

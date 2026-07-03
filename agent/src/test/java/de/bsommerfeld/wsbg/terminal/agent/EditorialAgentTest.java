@@ -339,4 +339,40 @@ class EditorialAgentTest {
                 "Affen feiern den kleinen Keramik-Laden, alle wollen rein", n),
                 "a sentiment-only line leaves the item fresh for the next compose");
     }
+
+    @org.junit.jupiter.api.Test
+    void inheritedRefsMapOrdinalsInsideTheShownWindowAndDedupeByUrl() {
+        // 5 priors, shown window = last 3 (PRIOR_HEADLINES_SHOWN): #1=c, #2=d, #3=e.
+        var priors = java.util.List.of(
+                new SubjectUnit.UnitHeadline("a", false, 0, "", null),
+                new SubjectUnit.UnitHeadline("b", false, 0, "", null),
+                new SubjectUnit.UnitHeadline("c", false, 0, "", null),
+                new SubjectUnit.UnitHeadline("d", false, 0, "", null),
+                new SubjectUnit.UnitHeadline("e", false, 0, "", null));
+        var r1 = new de.bsommerfeld.wsbg.terminal.db.HeadlineNewsRef("T1", "p", "https://1", null);
+        var r2 = new de.bsommerfeld.wsbg.terminal.db.HeadlineNewsRef("T2", "p", "https://2", null);
+        var r3 = new de.bsommerfeld.wsbg.terminal.db.HeadlineNewsRef("T3", "p", "https://3", null);
+        var records = java.util.List.of(
+                record("b", java.util.List.of(r3)),                    // outside the window
+                record("c", java.util.List.of(r1)),
+                record("d", java.util.List.of(r1, r2)));               // r1 duplicated across lines
+
+        var out = EditorialAgent.inheritedRefs(priors,
+                java.util.List.of(1, 2, 7), records);                  // 7 = model mis-count → skipped
+        org.junit.jupiter.api.Assertions.assertEquals(java.util.List.of("https://1", "https://2"),
+                out.stream().map(de.bsommerfeld.wsbg.terminal.db.HeadlineNewsRef::url).toList(),
+                "cited lines' refs carry over, deduped by url; out-of-range ordinals never throw");
+        org.junit.jupiter.api.Assertions.assertTrue(
+                EditorialAgent.inheritedRefs(priors, java.util.List.of(), records).isEmpty(),
+                "no citation → no inheritance");
+    }
+
+    private static de.bsommerfeld.wsbg.terminal.db.AgentRepository.HeadlineRecord record(
+            String headline, java.util.List<de.bsommerfeld.wsbg.terminal.db.HeadlineNewsRef> refs) {
+        return new de.bsommerfeld.wsbg.terminal.db.AgentRepository.HeadlineRecord(
+                "U", headline, "", 0, java.util.List.of(), java.util.List.of(),
+                de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.NORMAL, null,
+                java.util.List.of(), null, java.util.List.of(), null,
+                de.bsommerfeld.wsbg.terminal.db.HeadlineSentiment.NEUTRAL, null, true, refs);
+    }
 }
