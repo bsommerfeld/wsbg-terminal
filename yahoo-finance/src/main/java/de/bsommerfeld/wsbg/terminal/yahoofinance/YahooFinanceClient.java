@@ -7,8 +7,6 @@ import de.bsommerfeld.wsbg.terminal.source.net.WebFetchChain;
 import de.bsommerfeld.wsbg.terminal.source.net.WebFetcher;
 import de.bsommerfeld.wsbg.terminal.source.net.WebResponse;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
@@ -24,15 +22,11 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * Thin client for Yahoo Finance's unauthenticated JSON endpoints:
@@ -62,6 +56,12 @@ import java.util.regex.Pattern;
  * On any failure (network, non-200, parse error) the methods return an
  * empty result and log a warning — callers should treat "no result" as
  * "Yahoo couldn't tell us", not as an exceptional state.
+ *
+ * <p>
+ * Parsing lives in {@link YahooResponseParser}, the rate-limit circuit
+ * breaker in {@link RateLimitBreaker}, and the dormant article-scrape
+ * capability in {@link YahooArticleReader}; this class is transport +
+ * caching + orchestration.
  */
 @Singleton
 public class YahooFinanceClient implements NewsSource {
@@ -88,27 +88,10 @@ public class YahooFinanceClient implements NewsSource {
     /**
      * Intraday chart granularity. 5-minute candles over one day give a
      * smooth ~78-point sparkline for a full US session without bloating
-     * the response. {@link #SPARK_MAX_POINTS} caps it further for the UI.
+     * the response.
      */
     private static final String CHART_INTERVAL = "5m";
     private static final String CHART_RANGE = "1d";
-
-    /**
-     * Upper bound on sparkline points handed to the UI. The intraday
-     * series is downsampled to at most this many evenly-spaced points —
-     * enough for a legible micro-chart, small enough to keep the headline
-     * payload tidy when many rows each carry a snapshot.
-     */
-    private static final int SPARK_MAX_POINTS = 48;
-
-    /** Upper bound on extracted article body length — keeps a prompt block sane. */
-    private static final int ARTICLE_MAX_CHARS = 6000;
-    private static final Pattern SCRIPT_STYLE =
-            Pattern.compile("(?is)<(script|style|noscript|template|svg)[^>]*>.*?</\\1>");
-    private static final Pattern PARAGRAPH = Pattern.compile("(?is)<p[^>]*>(.*?)</p>");
-    private static final Pattern HTML_TAG = Pattern.compile("(?is)<[^>]+>");
-
-    private static final ObjectMapper JSON = new ObjectMapper();
 
     /**
      * Host probed by the offline gate. Both {@code query1} (chart) and
@@ -146,9 +129,8 @@ public class YahooFinanceClient implements NewsSource {
     private final HostReachability online =
             new HostReachability(REACHABILITY_HOST, 443, REACHABILITY_PROBE_TIMEOUT, REACHABILITY_CACHE_TTL);
 
-    private final Map<String, CachedSearch> searchCache = new ConcurrentHashMap<>();
-    private final Map<String, CachedSnapshot> snapshotCache = new ConcurrentHashMap<>();
-    private final Map<String, CachedArticle> articleCache = new ConcurrentHashMap<>();
+    private final TtlCache<String, SearchResult> searchCache;
+    private final TtlCache<String, MarketSnapshot> snapshotCache;
 
     /**
      * Rate-limit circuit breaker. A comment-heavy cluster fans out into dozens of
@@ -157,24 +139,26 @@ public class YahooFinanceClient implements NewsSource {
      * short-circuits (no HTTP) until the cooldown passes. The caller is told via
      * {@link SearchResult#rateLimited()} so it can SKIP the subject (retry on next
      * evidence) rather than cement a wrong tickerless unit — and we never cascade
-     * 48 more 429s. {@code 0} = closed.
+     * 48 more 429s.
      */
-    private static final long RATE_LIMIT_COOLDOWN_SECONDS = 90;
-    private volatile long rateLimitedUntil = 0L;
+    private final RateLimitBreaker breaker = new RateLimitBreaker();
+
+    /** Dormant standalone article-text scraper (not wired into the pipeline). */
+    private final YahooArticleReader articleReader;
+
+    // --- breaker delegators (package-private for tests) -------------------
 
     boolean breakerOpen() {
-        return Instant.now().getEpochSecond() < rateLimitedUntil;
+        return breaker.isOpen();
     }
 
     /** Yahoo status codes that mean "back off", not "not found". Package-private for testing. */
     static boolean isRateLimitStatus(int code) {
-        return code == 429 || code == 503 || code == 999;
+        return RateLimitBreaker.isRateLimitStatus(code);
     }
 
     void tripBreaker(String what, int code) {
-        rateLimitedUntil = Instant.now().getEpochSecond() + RATE_LIMIT_COOLDOWN_SECONDS;
-        LOG.warn("Yahoo {} → HTTP {}; opening rate-limit breaker for {}s (skipping further Yahoo calls)",
-                what, code, RATE_LIMIT_COOLDOWN_SECONDS);
+        breaker.trip(what, code);
     }
 
     public YahooFinanceClient() {
@@ -211,6 +195,11 @@ public class YahooFinanceClient implements NewsSource {
         this.webFetcher = webFetcher;
         this.requestTimeout = Duration.ofSeconds(Math.max(2, requestTimeoutSeconds));
         this.cacheTtlSeconds = Math.max(0, cacheTtlSeconds);
+        this.searchCache = new TtlCache<>(this.cacheTtlSeconds);
+        this.snapshotCache = new TtlCache<>(this.cacheTtlSeconds);
+        this.articleReader =
+                new YahooArticleReader(this.webFetcher, this.userAgent, this.requestTimeout, this.online,
+                        this.cacheTtlSeconds);
     }
 
     /**
@@ -239,10 +228,10 @@ public class YahooFinanceClient implements NewsSource {
         }
         String trimmed = query.trim();
         String cacheKey = trimmed + "|" + quotesCount + "|" + newsCount;
-        CachedSearch cached = searchCache.get(cacheKey);
         long now = Instant.now().getEpochSecond();
-        if (cached != null && now - cached.storedAt < cacheTtlSeconds) {
-            return cached.result;
+        TtlCache.Entry<SearchResult> cached = searchCache.getFresh(cacheKey, now);
+        if (cached != null) {
+            return cached.value();
         }
 
         // Breaker open from a recent 429 → don't even try; tell the caller so it
@@ -276,7 +265,7 @@ public class YahooFinanceClient implements NewsSource {
             }
 
             SearchResult parsed = parseSearch(resp.body());
-            searchCache.put(cacheKey, new CachedSearch(parsed, now));
+            searchCache.put(cacheKey, parsed, now);
             return parsed;
 
         } catch (InterruptedException e) {
@@ -338,9 +327,9 @@ public class YahooFinanceClient implements NewsSource {
         if (symbol == null || symbol.isBlank()) return Optional.empty();
         String sym = symbol.trim().toUpperCase();
         long now = Instant.now().getEpochSecond();
-        CachedSnapshot cached = snapshotCache.get(sym);
-        if (cached != null && now - cached.storedAt < cacheTtlSeconds) {
-            return Optional.ofNullable(cached.snapshot);
+        TtlCache.Entry<MarketSnapshot> cached = snapshotCache.getFresh(sym, now);
+        if (cached != null) {
+            return Optional.ofNullable(cached.value());
         }
 
         if (breakerOpen()) return Optional.empty();
@@ -363,13 +352,13 @@ public class YahooFinanceClient implements NewsSource {
                     // contract codes like GCQ6 that v8/chart doesn't know) stays dead for
                     // the whole TTL — without this every prep re-fetched the same 404
                     // several times per minute (live: GCQ6 5x in 4 min).
-                    snapshotCache.put(sym, new CachedSnapshot(null, now));
+                    snapshotCache.put(sym, null, now);
                 }
                 return Optional.empty();
             }
 
             MarketSnapshot snap = parseChart(resp.body());
-            snapshotCache.put(sym, new CachedSnapshot(snap, now));
+            snapshotCache.put(sym, snap, now);
             return Optional.ofNullable(snap);
 
         } catch (InterruptedException e) {
@@ -404,9 +393,9 @@ public class YahooFinanceClient implements NewsSource {
             if (raw == null || raw.isBlank()) continue;
             String sym = raw.trim().toUpperCase();
             if (out.containsKey(sym) || misses.contains(sym)) continue;
-            CachedSnapshot c = snapshotCache.get(sym);
-            if (c != null && now - c.storedAt() < cacheTtlSeconds) {
-                if (c.snapshot() != null) out.put(sym, c.snapshot());
+            TtlCache.Entry<MarketSnapshot> c = snapshotCache.getFresh(sym, now);
+            if (c != null) {
+                if (c.value() != null) out.put(sym, c.value());
             } else {
                 misses.add(sym);
             }
@@ -451,8 +440,9 @@ public class YahooFinanceClient implements NewsSource {
                 return out;
             }
             for (MarketSnapshot s : parseSpark(resp.body())) {
-                snapshotCache.put(s.symbol().toUpperCase(), new CachedSnapshot(s, now));
-                out.put(s.symbol().toUpperCase(), s);
+                String key = s.symbol().toUpperCase();
+                snapshotCache.put(key, s, now);
+                out.put(key, s);
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -462,323 +452,43 @@ public class YahooFinanceClient implements NewsSource {
         return out;
     }
 
-    /**
-     * Parses a {@code v7/spark} response into per-symbol snapshots. Tolerant: any
-     * symbol it can't read is simply omitted (the caller falls back to v8/chart).
-     * The {@code close[]} series is carried through as the sparkline — same data
-     * the UI already draws — so the chart keeps working.
-     */
-    private static List<MarketSnapshot> parseSpark(String body) throws Exception {
-        List<MarketSnapshot> out = new ArrayList<>();
-        com.fasterxml.jackson.databind.JsonNode result = JSON.readTree(body).path("spark").path("result");
-        if (!result.isArray()) return out;
-        for (com.fasterxml.jackson.databind.JsonNode r : result) {
-            com.fasterxml.jackson.databind.JsonNode resp = r.path("response");
-            com.fasterxml.jackson.databind.JsonNode r0 = resp.isArray() && !resp.isEmpty() ? resp.get(0) : resp;
-            com.fasterxml.jackson.databind.JsonNode meta = r0.path("meta");
-            String symbol = r.path("symbol").asText(meta.path("symbol").asText(""));
-            if (symbol.isEmpty()) continue;
-
-            List<Double> spark = new ArrayList<>();
-            com.fasterxml.jackson.databind.JsonNode quote = r0.path("indicators").path("quote");
-            if (quote.isArray() && !quote.isEmpty()) {
-                for (com.fasterxml.jackson.databind.JsonNode c : quote.get(0).path("close")) {
-                    if (c.isNumber()) spark.add(c.asDouble());
-                }
-            }
-            double prevClose = meta.path("previousClose").isNumber()
-                    ? meta.path("previousClose").asDouble()
-                    : meta.path("chartPreviousClose").asDouble(Double.NaN);
-            double price = meta.path("regularMarketPrice").isNumber()
-                    ? meta.path("regularMarketPrice").asDouble()
-                    : (spark.isEmpty() ? Double.NaN : spark.get(spark.size() - 1));
-            double pct = Double.isFinite(price) && Double.isFinite(prevClose) && prevClose != 0.0
-                    ? (price - prevClose) / prevClose * 100.0 : Double.NaN;
-
-            out.add(new MarketSnapshot(
-                    symbol, price, prevClose, pct,
-                    Double.NaN, Double.NaN, -1L, Double.NaN, Double.NaN,
-                    emptyToNull(meta.path("currency").asText("")),
-                    emptyToNull(meta.path("exchangeName").asText("")),
-                    meta.path("regularMarketTime").asLong(0L),
-                    spark));
-        }
-        return out;
-    }
-
-    private static String emptyToNull(String s) {
-        return s == null || s.isBlank() ? null : s;
-    }
+    // --- article scrape (dormant capability, delegated) -------------------
 
     /**
-     * Best-effort full-text fetch for a news article URL (the {@code link} on a
-     * {@link RawNewsItem}). Follows the {@code finance.yahoo.com/m/…} redirect
-     * to the publisher, strips boilerplate, and returns readable body text
-     * capped at {@link #ARTICLE_MAX_CHARS}.
+     * Best-effort full-text fetch for a news article URL — delegates to the
+     * standalone {@link YahooArticleReader}. <b>NOT wired into the editorial
+     * pipeline</b>; kept so deeper article context can be switched on later.
      *
-     * <p><b>Standalone capability — NOT wired into the editorial pipeline.</b>
-     * The resolver still hands the model only headline titles; this exists so
-     * deeper article context can be switched on later without new plumbing.
-     * Publisher HTML is heterogeneous, so extraction is heuristic (prefer
-     * {@code <p>} text); treat a result as "best effort", never authoritative.
-     *
-     * @return the article text, or {@link Optional#empty()} on any failure
-     *         (network, non-200, nothing readable extracted).
+     * @return the article text, or {@link Optional#empty()} on any failure.
      */
     public Optional<String> fetchArticleText(String url) {
-        if (url == null || url.isBlank()) return Optional.empty();
-        String key = url.trim();
-        long now = Instant.now().getEpochSecond();
-        CachedArticle cached = articleCache.get(key);
-        if (cached != null && now - cached.storedAt < cacheTtlSeconds) {
-            return Optional.ofNullable(cached.text);
-        }
-        if (!online.isReachable()) {
-            LOG.debug("Offline — skipping Yahoo article fetch '{}'", key);
-            return Optional.empty();
-        }
-        try {
-            WebResponse resp = httpGet(key, "text/html,application/xhtml+xml");
-            if (resp.status() != 200) {
-                LOG.warn("Yahoo article fetch '{}' returned HTTP {}", key, resp.status());
-                return Optional.empty();
-            }
-            String text = extractReadableText(resp.body());
-            articleCache.put(key, new CachedArticle(text.isEmpty() ? null : text, now));
-            return text.isEmpty() ? Optional.empty() : Optional.of(text);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return Optional.empty();
-        } catch (Exception e) {
-            LOG.warn("Yahoo article fetch '{}' failed: {}", key, e.getMessage());
-            return Optional.empty();
-        }
+        return articleReader.fetchArticleText(url);
     }
 
-    /**
-     * Heuristic readable-text extraction from an HTML page. Drops
-     * script/style/svg blocks, prefers paragraph (<{@code p}>) text to skip
-     * nav/menu boilerplate, unescapes the common entities, collapses
-     * whitespace, and caps length. Pure function — unit-tested.
-     */
+    /** Heuristic readable-text extraction from HTML. Pure function — unit-tested. */
     static String extractReadableText(String html) {
-        if (html == null || html.isBlank()) return "";
-        String cleaned = SCRIPT_STYLE.matcher(html).replaceAll(" ");
-
-        // Paragraph text first: it skips headers, nav, captions and most chrome.
-        StringBuilder paras = new StringBuilder();
-        Matcher pm = PARAGRAPH.matcher(cleaned);
-        while (pm.find()) {
-            String t = stripTags(pm.group(1)).trim();
-            if (t.length() >= 40) paras.append(t).append(' ');
-        }
-
-        String text = paras.length() >= 200 ? paras.toString() : stripTags(cleaned);
-        text = unescapeEntities(text).replaceAll("\\s+", " ").trim();
-        if (text.length() > ARTICLE_MAX_CHARS) {
-            text = text.substring(0, ARTICLE_MAX_CHARS).trim() + "…";
-        }
-        return text;
+        return YahooArticleReader.extractReadableText(html);
     }
 
-    private static String stripTags(String s) {
-        return s == null ? "" : HTML_TAG.matcher(s).replaceAll(" ");
-    }
-
-    private static String unescapeEntities(String s) {
-        return s.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
-                .replace("&quot;", "\"").replace("&#39;", "'").replace("&#x27;", "'")
-                .replace("&apos;", "'").replace("&nbsp;", " ").replace("&hellip;", "…")
-                .replace("&mdash;", "—").replace("&ndash;", "–")
-                .replace("&rsquo;", "'").replace("&lsquo;", "'")
-                .replace("&ldquo;", "\"").replace("&rdquo;", "\"");
-    }
-
-    // --- parsing -------------------------------------------------------
+    // --- parsing delegators (package-private for tests) -------------------
 
     SearchResult parseSearch(String body) {
-        try {
-            JsonNode root = JSON.readTree(body);
-            List<YahooQuote> quotes = new ArrayList<>();
-            JsonNode quotesNode = root.path("quotes");
-            if (quotesNode.isArray()) {
-                for (JsonNode q : quotesNode) {
-                    String symbol = q.path("symbol").asText("");
-                    if (symbol.isEmpty()) continue;
-                    quotes.add(new YahooQuote(
-                            symbol,
-                            text(q, "shortname"),
-                            text(q, "longname"),
-                            text(q, "quoteType"),
-                            text(q, "exchange"),
-                            text(q, "exchDisp"),
-                            text(q, "sector"),
-                            text(q, "industry"),
-                            q.path("regularMarketPrice").isNumber()
-                                    ? q.path("regularMarketPrice").asDouble() : Double.NaN,
-                            q.path("regularMarketPercentChange").isNumber()
-                                    ? q.path("regularMarketPercentChange").asDouble() : Double.NaN,
-                            q.path("score").asDouble(0.0)));
-                }
-            }
-
-            List<RawNewsItem> news = new ArrayList<>();
-            JsonNode newsNode = root.path("news");
-            if (newsNode.isArray()) {
-                for (JsonNode n : newsNode) {
-                    String title = text(n, "title");
-                    if (title.isEmpty()) continue;
-                    long ts = n.path("providerPublishTime").asLong(0L);
-                    List<String> related = new ArrayList<>();
-                    JsonNode rt = n.path("relatedTickers");
-                    if (rt.isArray()) {
-                        for (JsonNode r : rt) {
-                            String s = r.asText("");
-                            if (!s.isEmpty()) related.add(s);
-                        }
-                    }
-                    news.add(new RawNewsItem(
-                            text(n, "uuid"),
-                            title,
-                            text(n, "publisher"),
-                            text(n, "link"),
-                            ts > 0 ? Instant.ofEpochSecond(ts) : null,
-                            Collections.unmodifiableList(related)));
-                }
-            }
-            return new SearchResult(
-                    Collections.unmodifiableList(quotes),
-                    Collections.unmodifiableList(news), false);
-        } catch (Exception e) {
-            LOG.warn("Failed to parse Yahoo search response: {}", e.getMessage());
-            return SearchResult.empty();
-        }
+        return YahooResponseParser.parseSearch(body);
     }
 
-    /**
-     * Parses a {@code v8/chart} response into a {@link MarketSnapshot}.
-     * Returns {@code null} when the response has no usable result block
-     * (Yahoo wraps an {@code error} object instead of a result for
-     * unknown symbols).
-     *
-     * <p>
-     * Chart response shape (trimmed):
-     * <pre>{@code
-     * { "chart": { "result": [{
-     *     "meta": { "regularMarketPrice": 214.25, "previousClose": 212.6,
-     *               "regularMarketDayHigh": 215.5, "regularMarketDayLow": 211.2,
-     *               "regularMarketVolume": 141557394,
-     *               "fiftyTwoWeekHigh": 236.5, "fiftyTwoWeekLow": 132.9,
-     *               "currency": "USD", "exchangeName": "NMS",
-     *               "regularMarketTime": 1779998400, "symbol": "NVDA" },
-     *     "timestamp": [ ... ],
-     *     "indicators": { "quote": [{ "close": [213.2, 214.0, ... ] }] }
-     * }], "error": null } }
-     * }</pre>
-     */
     MarketSnapshot parseChart(String body) {
-        try {
-            JsonNode root = JSON.readTree(body);
-            JsonNode result = root.path("chart").path("result");
-            if (!result.isArray() || result.isEmpty()) {
-                LOG.warn("Yahoo chart: empty result array");
-                return null;
-            }
-            JsonNode r0 = result.get(0);
-            JsonNode meta = r0.path("meta");
-
-            double price = num(meta, "regularMarketPrice");
-            double prevClose = num(meta, "previousClose", "chartPreviousClose");
-            double change = (Double.isFinite(price) && Double.isFinite(prevClose) && prevClose != 0.0)
-                    ? (price - prevClose) / prevClose * 100.0
-                    : Double.NaN;
-
-            long volume = meta.path("regularMarketVolume").isNumber()
-                    ? meta.path("regularMarketVolume").asLong() : -1L;
-            long marketTime = meta.path("regularMarketTime").isNumber()
-                    ? meta.path("regularMarketTime").asLong() : 0L;
-
-            List<Double> spark = extractSpark(r0);
-
-            return new MarketSnapshot(
-                    text(meta, "symbol"),
-                    price,
-                    prevClose,
-                    change,
-                    num(meta, "regularMarketDayHigh"),
-                    num(meta, "regularMarketDayLow"),
-                    volume,
-                    num(meta, "fiftyTwoWeekHigh"),
-                    num(meta, "fiftyTwoWeekLow"),
-                    text(meta, "currency"),
-                    text(meta, "exchangeName"),
-                    marketTime,
-                    spark);
-        } catch (Exception e) {
-            LOG.warn("Failed to parse Yahoo chart response: {}", e.getMessage());
-            return null;
-        }
+        return YahooResponseParser.parseChart(body);
     }
 
-    /**
-     * Pulls the intraday close series and downsamples it to at most
-     * {@link #SPARK_MAX_POINTS} evenly-spaced finite points. Yahoo
-     * peppers the series with {@code null} gaps (halts, illiquid minutes);
-     * those are dropped before downsampling so the line stays continuous.
-     */
-    private static List<Double> extractSpark(JsonNode result) {
-        JsonNode closes = result.path("indicators").path("quote");
-        if (!closes.isArray() || closes.isEmpty()) return List.of();
-        JsonNode closeArr = closes.get(0).path("close");
-        if (!closeArr.isArray()) return List.of();
-
-        List<Double> clean = new ArrayList<>(closeArr.size());
-        for (JsonNode c : closeArr) {
-            if (c.isNumber()) {
-                double v = c.asDouble();
-                if (Double.isFinite(v)) clean.add(v);
-            }
-        }
-        if (clean.size() <= SPARK_MAX_POINTS) return clean;
-
-        // Even-stride downsample, always keeping the last point so the
-        // sparkline ends on the latest price.
-        List<Double> out = new ArrayList<>(SPARK_MAX_POINTS);
-        double stride = (clean.size() - 1) / (double) (SPARK_MAX_POINTS - 1);
-        for (int i = 0; i < SPARK_MAX_POINTS - 1; i++) {
-            out.add(clean.get((int) Math.round(i * stride)));
-        }
-        out.add(clean.get(clean.size() - 1));
-        return out;
-    }
-
-    private static String text(JsonNode node, String field) {
-        JsonNode v = node.path(field);
-        if (v.isMissingNode() || v.isNull()) return "";
-        return v.asText("");
-    }
-
-    /**
-     * First finite numeric field among {@code fields}, or {@link Double#NaN}.
-     * Lets a primary key fall back to an alternate ({@code previousClose}
-     * → {@code chartPreviousClose}).
-     */
-    private static double num(JsonNode node, String... fields) {
-        for (String f : fields) {
-            JsonNode v = node.path(f);
-            if (v.isNumber()) {
-                double d = v.asDouble();
-                if (Double.isFinite(d)) return d;
-            }
-        }
-        return Double.NaN;
+    private static List<MarketSnapshot> parseSpark(String body) throws Exception {
+        return YahooResponseParser.parseSpark(body);
     }
 
     /** Clears the in-memory caches — visible for tests. */
     void clearCache() {
         searchCache.clear();
         snapshotCache.clear();
-        articleCache.clear();
+        articleReader.clearCache();
     }
 
     /**
@@ -795,16 +505,5 @@ public class YahooFinanceClient implements NewsSource {
         public static SearchResult throttled() {
             return new SearchResult(List.of(), List.of(), true);
         }
-    }
-
-    private record CachedSearch(SearchResult result, long storedAt) {
-    }
-
-    /** Cached chart snapshot; {@code snapshot} may be null (parse miss). */
-    private record CachedSnapshot(MarketSnapshot snapshot, long storedAt) {
-    }
-
-    /** Cached article body; {@code text} may be null (nothing extracted). */
-    private record CachedArticle(String text, long storedAt) {
     }
 }
