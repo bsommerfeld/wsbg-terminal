@@ -66,7 +66,8 @@ class PipelineSmokeIT {
             RedditRepository redditRepo = new RedditRepository();
             AgentRepository agentRepo = new AgentRepository();
             OllamaServerManager osm = new OllamaServerManager();
-            AgentBrain brain = new AgentBrain(config, bus, osm);
+            LlmGate gate = new LlmGate();
+            AgentBrain brain = new AgentBrain(config, bus, osm, gate);
             ClusterRegistry registry = new ClusterRegistry();
             SubjectRegistry subjectRegistry = new SubjectRegistry();
             YahooFinanceClient yahoo = new YahooFinanceClient(config);
@@ -79,7 +80,7 @@ class PipelineSmokeIT {
                     subjectRegistry, clusterEngine, config);
 
             // The production editorial pipeline (same wiring as PipelineStagesIT).
-            EditorialAgent editorial = new EditorialAgent(brain, registry, agentRepo, redditRepo,
+            EditorialAgent editorial = new EditorialAgent(brain, gate, registry, agentRepo, redditRepo,
                     bus, new I18nService(config), yahoo,
                     subjectRegistry, config);
 
@@ -110,7 +111,7 @@ class PipelineSmokeIT {
                 List<HeadlineRecord> prior = agentRepo.getHeadlinesByClusterId(cluster.id);
                 String brief = reportBuilder.buildReportData(cluster, prior);
                 printClusterHeader(idx, clusters.size(), cluster, brief);
-                List<ResolvedSubject> resolved = editorial.attributeCluster(cluster.id, subjectRegistry);
+                List<ResolvedSubject> resolved = editorial.attributeCluster(cluster.id);
                 printResolved(resolved, newsBackedSubjects);
                 System.out.println();
             }

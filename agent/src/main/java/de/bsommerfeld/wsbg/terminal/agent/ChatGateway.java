@@ -18,20 +18,22 @@ import java.util.List;
  * {@code NUM_PARALLEL=2}, and the {@code [LLM]} profiling line. Every model call in
  * the editorial pipeline funnels through here.
  *
- * <p><b>Do not weaken the semaphore bracket.</b> {@code acquireLlm()}/{@code releaseLlm()}
- * around {@code model.chat} is the documented "biggest throughput fix" — prep extraction
- * + worker composition + vision together must never exceed the shared {@code Semaphore(2)}.
- * This class was extracted by MOVING the gate, not reconstructing it: the semaphore itself
- * still lives in {@link AgentBrain} (shared with the vision prefetch).
+ * <p><b>Do not weaken the semaphore bracket.</b> {@link LlmGate#acquire()}/{@link
+ * LlmGate#release()} around {@code model.chat} is the documented "biggest throughput fix"
+ * — prep extraction + worker composition + vision together must never exceed the shared
+ * {@code Semaphore(2)}. The gate is the single {@link LlmGate} {@code @Singleton}, the same
+ * instance the vision prefetch acquires.
  */
 final class ChatGateway {
 
     private static final Logger LOG = LoggerFactory.getLogger(ChatGateway.class);
 
     private final AgentBrain brain;
+    private final LlmGate llmGate;
 
-    ChatGateway(AgentBrain brain) {
+    ChatGateway(AgentBrain brain, LlmGate llmGate) {
         this.brain = brain;
+        this.llmGate = llmGate;
     }
 
     String chat(ChatModel model, String systemPrompt, String userMessage) {
@@ -53,7 +55,7 @@ final class ChatGateway {
         // NUM_PARALLEL=2. Uninterruptible: a daemon worker shut down mid-acquire would
         // otherwise abandon a permit it never took.
         long t0 = System.nanoTime();
-        brain.acquireLlm();
+        llmGate.acquire();
         long tAcq = System.nanoTime();
         try {
             ChatResponse response = model.chat(ChatRequest.builder().messages(messages).build());
@@ -69,7 +71,7 @@ final class ChatGateway {
                     tu == null ? -1 : tu.inputTokenCount(), tu == null ? -1 : tu.outputTokenCount());
             return ai == null || ai.text() == null ? "" : ai.text();
         } finally {
-            brain.releaseLlm();
+            llmGate.release();
         }
     }
 }

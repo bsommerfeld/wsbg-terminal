@@ -33,7 +33,7 @@ class VisionIT {
     @BeforeAll
     static void up() throws Exception {
         OllamaAvailability.ensureOllama();
-        brain = new AgentBrain(new GlobalConfig(), new ApplicationEventBus(), new OllamaServerManager());
+        brain = new AgentBrain(new GlobalConfig(), new ApplicationEventBus(), new OllamaServerManager(), new LlmGate());
         images = new LocalImageServer();
     }
 

@@ -108,6 +108,8 @@ public final class EditorialPipeline {
     // The per-unit settle/cooldown/stale enqueue timing lives in {@link EnqueueGate}.
 
     private final EditorialAgent agent;
+    /** The shared gemma4 gate — read for contention logging at worker pickup time. */
+    private final LlmGate llmGate;
     private final ClusterRegistry clusterRegistry;
     private final SubjectRegistry subjectRegistry;
     private final EditorialQueue queue;
@@ -145,9 +147,10 @@ public final class EditorialPipeline {
     private volatile boolean running = true;
 
     @Inject
-    public EditorialPipeline(EditorialAgent agent, ClusterRegistry clusterRegistry,
+    public EditorialPipeline(EditorialAgent agent, LlmGate llmGate, ClusterRegistry clusterRegistry,
             SubjectRegistry subjectRegistry, EditorialQueue queue, GlobalConfig config) {
         this.agent = agent;
+        this.llmGate = llmGate;
         this.clusterRegistry = clusterRegistry;
         this.subjectRegistry = subjectRegistry;
         this.queue = queue;
@@ -222,7 +225,7 @@ public final class EditorialPipeline {
             // exclusive with the merge write lock. Millisecond critical section.
             registryLock.readLock().lock();
             try {
-                agent.attributeResolved(clusterId, subjectRegistry, resolved);
+                agent.attributeResolved(clusterId, resolved);
             } finally {
                 registryLock.readLock().unlock();
             }
@@ -357,7 +360,7 @@ public final class EditorialPipeline {
             }
             // queue depth + free LLM permits at pickup time → shows strength drain + LLM contention.
             LOG.info("[PIPE] worker TAKE {} (queue={}, llm-permits-free={})",
-                    job.id(), queue.size(), agent.availableLlmPermits());
+                    job.id(), queue.size(), llmGate.availablePermits());
             try {
                 process(job);
             } catch (Exception e) {

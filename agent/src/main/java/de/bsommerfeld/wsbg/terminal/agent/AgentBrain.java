@@ -44,13 +44,16 @@ public class AgentBrain {
 
     private final GlobalConfig config;
     private final OllamaServerManager serverManager;
+    /** The ONE shared gemma4 concurrency gate — vision acquires the same permit the composes do. */
+    private final LlmGate llmGate;
     private UserLanguage userLanguage;
 
     @Inject
     public AgentBrain(GlobalConfig config, ApplicationEventBus eventBus,
-            OllamaServerManager serverManager) {
+            OllamaServerManager serverManager, LlmGate llmGate) {
         this.config = config;
         this.serverManager = serverManager;
+        this.llmGate = llmGate;
         eventBus.register(this);
 
         serverManager.ensureRunning(OLLAMA_BASE_URL);
@@ -124,20 +127,6 @@ public class AgentBrain {
         visionCache.importAll(cache);
     }
 
-    /**
-     * The ONE gemma4 concurrency gate, shared by the editorial composes/extraction AND the
-     * vision prefetch (both hit the single model). Sized to match Ollama's {@code NUM_PARALLEL}
-     * ({@link OllamaServerManager#llmParallelism()}) so the two never over-subscribe each other
-     * — vision used to run un-gated and starve the compose workers. {@code EditorialAgent}
-     * delegates its compose gating here.
-     */
-    private final java.util.concurrent.Semaphore llmGate =
-            new java.util.concurrent.Semaphore(OllamaServerManager.llmParallelism());
-
-    public int availableLlmPermits() { return llmGate.availablePermits(); }
-    public void acquireLlm() { llmGate.acquireUninterruptibly(); }
-    public void releaseLlm() { llmGate.release(); }
-
     /** Performs blocking vision analysis on the given image URL. */
     public String see(String imageUrl) {
         if (visionModel == null)
@@ -153,12 +142,12 @@ public class AgentBrain {
             // Vision shares the one gemma4 model with the editorial composes, so it acquires
             // the SAME LLM gate — vision can no longer over-subscribe Ollama and starve the
             // wire (it now waits its turn behind a compose instead of blocking the slot).
-            acquireLlm();
+            llmGate.acquire();
             String result;
             try {
                 result = visionModel.chat(msg).aiMessage().text();
             } finally {
-                releaseLlm();
+                llmGate.release();
             }
             // Some model builds (notably the MLX gemma4 variant) silently
             // drop the multimodal payload and respond with a templated

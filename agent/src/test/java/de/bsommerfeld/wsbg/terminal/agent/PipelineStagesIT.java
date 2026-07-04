@@ -52,10 +52,11 @@ class PipelineStagesIT {
         ApplicationEventBus bus = new ApplicationEventBus();
         redditRepo = new RedditRepository();
         agentRepo = new AgentRepository();
-        brain = new AgentBrain(config, bus, new OllamaServerManager());
+        LlmGate gate = new LlmGate();
+        brain = new AgentBrain(config, bus, new OllamaServerManager(), gate);
         registry = new ClusterRegistry();
         engine = new ClusterEngine(registry);
-        editorial = new EditorialAgent(brain, registry, agentRepo, redditRepo, bus,
+        editorial = new EditorialAgent(brain, gate, registry, agentRepo, redditRepo, bus,
                 new I18nService(config), new YahooFinanceClient(config),
                 new SubjectRegistry(), config);
     }
@@ -67,7 +68,7 @@ class PipelineStagesIT {
         for (RedditComment c : syn.comments()) redditRepo.saveComment(c).join();
 
         AssignOutcome out = engine.assign(syn.thread(), 0, 0, "");
-        List<ResolvedSubject> resolved = editorial.attributeCluster(out.clusterId(), new SubjectRegistry());
+        List<ResolvedSubject> resolved = editorial.attributeCluster(out.clusterId());
 
         Set<String> names = resolved.stream()
                 .map(r -> r.query().toLowerCase(Locale.ROOT))

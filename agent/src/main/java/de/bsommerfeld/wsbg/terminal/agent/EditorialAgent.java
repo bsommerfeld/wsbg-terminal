@@ -84,6 +84,8 @@ public class EditorialAgent {
     private static final int MAX_COMPOSE_RETRIES = 1;
 
     private final AgentBrain brain;
+    /** The ONE shared gemma4 concurrency gate (NUM_PARALLEL=2) — passed to {@link ChatGateway}. */
+    private final LlmGate llmGate;
     private final ClusterRegistry clusterRegistry;
     private final AgentRepository agentRepository;
     private final RedditRepository redditRepository;
@@ -109,12 +111,13 @@ public class EditorialAgent {
     private final Map<String, Integer> composeRetries = new ConcurrentHashMap<>();
 
     /**
-     * Free gemma4 permits right now — for the pipeline's contention logging. The gate itself
-     * now lives in {@link AgentBrain} (shared with the vision prefetch, since both hit the one
-     * model); prep extraction + compose + vision together never exceed Ollama's NUM_PARALLEL=2.
+     * Free gemma4 permits right now — for the pipeline's contention logging. The gate is the
+     * shared {@link LlmGate} {@code @Singleton} (the same instance the vision prefetch acquires,
+     * since both hit the one model); prep extraction + compose + vision together never exceed
+     * Ollama's NUM_PARALLEL=2.
      */
     public int availableLlmPermits() {
-        return brain.availableLlmPermits();
+        return llmGate.availablePermits();
     }
 
     /**
@@ -126,19 +129,20 @@ public class EditorialAgent {
     private final GlobalConfig config;
 
     @Inject
-    public EditorialAgent(AgentBrain brain, ClusterRegistry clusterRegistry,
+    public EditorialAgent(AgentBrain brain, LlmGate llmGate, ClusterRegistry clusterRegistry,
             AgentRepository agentRepository,
             RedditRepository redditRepository,
             ApplicationEventBus eventBus, I18nService i18n,
             YahooFinanceClient yahooFinance,
             SubjectRegistry subjectRegistry, GlobalConfig config) {
         this.brain = brain;
+        this.llmGate = llmGate;
         this.clusterRegistry = clusterRegistry;
         this.agentRepository = agentRepository;
         this.redditRepository = redditRepository;
         this.reportBuilder = new ReportBuilder(redditRepository, brain);
         this.tickerResolver = new TickerResolver(yahooFinance);
-        this.chatGateway = new ChatGateway(brain);
+        this.chatGateway = new ChatGateway(brain, llmGate);
         this.gemma4Judge = new Gemma4Judge(brain, chatGateway);
         this.tickerResolver.setMatchJudge(gemma4Judge::matchInstrument); // Tier 2 enabled
         this.headlineWriter = new HeadlineWriter(agentRepository, eventBus);
@@ -184,13 +188,12 @@ public class EditorialAgent {
     /**
      * #2 step 1 — extracts + resolves the cluster's subjects (as the editorial
      * tick does) but, instead of composing, attributes each subject's evidence
-     * into the feed-wide {@link SubjectRegistry}. Lets the {@code .lab} harness
-     * show how subject units accumulate before per-unit composition exists.
+     * into the feed-wide {@link SubjectRegistry} (the injected singleton).
      * Returns the resolved subjects for the trace.
      */
-    public List<ResolvedSubject> attributeCluster(String clusterId, SubjectRegistry registry) {
+    public List<ResolvedSubject> attributeCluster(String clusterId) {
         List<ResolvedSubject> resolved = resolveClusterSubjects(clusterId);
-        attributeResolved(clusterId, registry, resolved);
+        attributeResolved(clusterId, resolved);
         return resolved;
     }
 
@@ -245,11 +248,11 @@ public class EditorialAgent {
      * this call — shared across concurrent prep folds, exclusive with the merge
      * cadence's write lock. A no-op if the cluster vanished since it was resolved.
      */
-    public void attributeResolved(String clusterId, SubjectRegistry registry, List<ResolvedSubject> resolved) {
+    public void attributeResolved(String clusterId, List<ResolvedSubject> resolved) {
         if (resolved == null) return;
         InvestigationCluster cluster = clusterRegistry.getCluster(clusterId);
         if (cluster == null) return;
-        attributor.attribute(registry, cluster, resolved, primaryHints.remove(clusterId));
+        attributor.attribute(subjectRegistry, cluster, resolved, primaryHints.remove(clusterId));
     }
 
     /**
@@ -381,7 +384,7 @@ public class EditorialAgent {
         //     subjects — it produces no line of its own.
         for (String id : dirtyClusterIds) {
             try {
-                attributeCluster(id, subjectRegistry);
+                attributeCluster(id);
             } catch (Exception e) {
                 LOG.warn("EditorialAgent: cluster {} failed: {}", id, e.getMessage());
             }
