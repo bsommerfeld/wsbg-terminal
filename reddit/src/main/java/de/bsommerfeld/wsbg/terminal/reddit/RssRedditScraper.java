@@ -13,6 +13,7 @@ import de.bsommerfeld.wsbg.terminal.reddit.support.RedditConstants;
 import de.bsommerfeld.wsbg.terminal.reddit.support.RedditText;
 import de.bsommerfeld.wsbg.terminal.reddit.support.SourceHealthReporter;
 import de.bsommerfeld.wsbg.terminal.source.net.DirectWebFetcher;
+import de.bsommerfeld.wsbg.terminal.source.net.TokenBucketRateLimiter;
 import de.bsommerfeld.wsbg.terminal.source.net.WebFetcher;
 import de.bsommerfeld.wsbg.terminal.source.net.WebResponse;
 import jakarta.inject.Inject;

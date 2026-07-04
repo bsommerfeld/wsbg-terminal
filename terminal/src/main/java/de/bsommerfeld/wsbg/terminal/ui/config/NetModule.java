@@ -13,7 +13,7 @@ import de.bsommerfeld.wsbg.terminal.reddit.OAuthRedditFetcher;
 import de.bsommerfeld.wsbg.terminal.reddit.RedditScraper;
 import de.bsommerfeld.wsbg.terminal.reddit.RedditSource;
 import de.bsommerfeld.wsbg.terminal.reddit.RssRedditScraper;
-import de.bsommerfeld.wsbg.terminal.reddit.TokenBucketRateLimiter;
+import de.bsommerfeld.wsbg.terminal.source.net.TokenBucketRateLimiter;
 import de.bsommerfeld.wsbg.terminal.source.net.CachingWebFetcher;
 import de.bsommerfeld.wsbg.terminal.source.net.DirectWebFetcher;
 import de.bsommerfeld.wsbg.terminal.source.net.WebFetchChain;

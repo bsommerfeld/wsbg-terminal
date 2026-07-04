@@ -1,4 +1,4 @@
-package de.bsommerfeld.wsbg.terminal.reddit;
+package de.bsommerfeld.wsbg.terminal.source.net;
 
 import org.junit.jupiter.api.Test;
 

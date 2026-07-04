@@ -1,6 +1,6 @@
 package de.bsommerfeld.wsbg.terminal.reddit.support;
 
-import de.bsommerfeld.wsbg.terminal.reddit.TokenBucketRateLimiter;
+import de.bsommerfeld.wsbg.terminal.source.net.TokenBucketRateLimiter;
 import de.bsommerfeld.wsbg.terminal.source.net.WebFetcher;
 import de.bsommerfeld.wsbg.terminal.source.net.WebResponse;
 import org.slf4j.Logger;
