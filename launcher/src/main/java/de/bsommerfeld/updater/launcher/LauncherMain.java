@@ -4,20 +4,10 @@ import de.bsommerfeld.updater.api.ConnectivityProbe;
 import de.bsommerfeld.updater.api.GitHubRepository;
 import de.bsommerfeld.updater.api.TinyUpdateClient;
 
-import javax.swing.*;
+import javax.swing.SwingUtilities;
 import java.io.IOException;
-import java.io.PrintWriter;
-import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.stream.Stream;
 
 /**
  * Native launcher entry point. Orchestrates the full startup sequence:
@@ -31,8 +21,7 @@ import java.util.stream.Stream;
  * <h3>Error handling philosophy</h3>
  * The launcher must <strong>never crash silently</strong>. Every failure path
  * either recovers gracefully (launching a cached version) or presents a
- * visible error dialog before exiting. This is the first thing users see;
- * a blank screen with no feedback is unacceptable.
+ * visible error dialog before exiting — see {@link LauncherDialogs}.
  *
  * <h3>Thread model</h3>
  * The update/setup/launch pipeline runs on a virtual thread to keep the
@@ -41,20 +30,6 @@ import java.util.stream.Stream;
 public final class LauncherMain {
 
     private static final GitHubRepository REPO = GitHubRepository.of("bsommerfeld/wsbg-terminal");
-    private static final int MAX_LOG_FILES = 10;
-
-    /**
-     * How long the download-byte figure may sit unchanged before the speed
-     * readout hides as genuinely stalled. Generous, because the figure's
-     * coarse units (100 MB steps in the GB range) make long flat stretches
-     * normal during a healthy download.
-     */
-    private static final long SPEED_STALL_HIDE_MS = 30_000;
-    private static final DateTimeFormatter LOG_TIMESTAMP = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-    private static final DateTimeFormatter LOG_FILENAME = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss");
-
-    /** Set once per session in {@link #initLogging}; all log calls write here. */
-    private static Path sessionLogFile;
 
     private LauncherMain() {
     }
@@ -69,8 +44,8 @@ public final class LauncherMain {
         if (!ensureDirectories(appDir))
             return;
 
-        initLogging(appDir);
-        log(appDir, "Launcher started");
+        SessionLog log = new SessionLog(appDir);
+        log.log("Launcher started");
 
         // If a terminal is already running, hand control off and exit
         // immediately — second double-click on the dock icon should
@@ -81,27 +56,22 @@ public final class LauncherMain {
         // path. The launcher can't be auto-updated, so the fallback
         // matters whenever we change the contract.
         if (TerminalRaiser.raise()) {
-            log(appDir, "Existing terminal detected — raised it, launcher exiting.");
+            log.log("Existing terminal detected — raised it, launcher exiting.");
             System.exit(0);
         }
 
         LauncherI18n i18n = new LauncherI18n(appDir);
-        log(appDir, "Language: " + i18n.language());
+        log.log("Language: " + i18n.language());
 
         // Auto-update is opt-out (config.toml: user.auto-update, default true).
         // The terminal's in-app "update now" button relaunches us with
         // --force-update so a one-off update still happens while auto-update is
         // off. The flag is stripped before forwarding the rest to the terminal.
-        boolean force = false;
-        List<String> appArgs = new ArrayList<>();
-        for (String a : args) {
-            if ("--force-update".equals(a)) force = true;
-            else appArgs.add(a);
-        }
-        final boolean forceUpdate = force;
-        final boolean autoUpdate = configAutoUpdate(appDir);
-        final String[] forwardArgs = appArgs.toArray(new String[0]);
-        log(appDir, "auto-update=" + autoUpdate + (forceUpdate ? " (forced by in-app update)" : ""));
+        LaunchArgs launchArgs = LaunchArgs.parse(args);
+        final boolean forceUpdate = launchArgs.forceUpdate();
+        final boolean autoUpdate = LaunchArgs.configAutoUpdate(appDir);
+        final String[] forwardArgs = launchArgs.forwardArgs();
+        log.log("auto-update=" + autoUpdate + (forceUpdate ? " (forced by in-app update)" : ""));
 
         TinyUpdateClient updateClient = new TinyUpdateClient(REPO, appDir);
         // Three extra steps after the update pipeline: the Ollama platform
@@ -124,11 +94,11 @@ public final class LauncherMain {
 
         Thread.ofVirtual().name("update-thread").start(() -> {
             try {
-                runUpdatePhase(updateClient, window, appDir, firstRun, i18n, autoUpdate, forceUpdate);
-                runEnvironmentPhase(envSetup, updateClient, window, appDir, i18n);
-                runLaunchPhase(appDir, window, forwardArgs, i18n);
+                runUpdatePhase(updateClient, window, log, firstRun, i18n, autoUpdate, forceUpdate);
+                runEnvironmentPhase(envSetup, updateClient, window, log, i18n);
+                runLaunchPhase(appDir, window, log, forwardArgs, i18n);
             } catch (Throwable e) {
-                handleFatalError(appDir, window, e);
+                LauncherDialogs.handleFatalError(appDir, window, log, e);
             }
         });
     }
@@ -152,7 +122,7 @@ public final class LauncherMain {
      * a connection that drops mid-update).
      */
     private static void runUpdatePhase(TinyUpdateClient client, LauncherWindow window,
-            Path appDir, boolean showWindow, LauncherI18n i18n,
+            SessionLog log, boolean showWindow, LauncherI18n i18n,
             boolean autoUpdate, boolean forceUpdate) {
         boolean hasCachedVersion = client.currentVersion() != null;
 
@@ -160,14 +130,14 @@ public final class LauncherMain {
         // explicit in-app "update now", skip the check entirely and launch what
         // is installed. (A first run with nothing cached must always update.)
         if (!autoUpdate && !forceUpdate && hasCachedVersion) {
-            log(appDir, "Auto-update disabled — skipping update, launching cached version "
+            log.log("Auto-update disabled — skipping update, launching cached version "
                     + client.currentVersion());
             return;
         }
 
         if (!ConnectivityProbe.isOnline()) {
             if (hasCachedVersion) {
-                log(appDir, "No internet connection — skipping update, launching cached version "
+                log.log("No internet connection — skipping update, launching cached version "
                         + client.currentVersion());
                 return;
             }
@@ -179,7 +149,7 @@ public final class LauncherMain {
         }
 
         try {
-            log(appDir, "Starting update check");
+            log.log("Starting update check");
             if (showWindow) {
                 SwingUtilities.invokeLater(() -> window.setVisible(true));
             }
@@ -202,7 +172,7 @@ public final class LauncherMain {
                 // Snap indicator to dot on phase transitions — prevents stale
                 // fill from flashing during the next phase's expand animation.
                 if (!label.equals(lastPhase[0])) {
-                    log(appDir, "[update] " + label);
+                    log.log("[update] " + label);
                     lastPhase[0] = label;
                     window.resetProgress();
                     window.setSpeed(-1);
@@ -215,7 +185,7 @@ public final class LauncherMain {
                 window.setSpeed(progress.speedBytesPerSec());
             });
 
-            log(appDir, updated
+            log.log(updated
                     ? "Updated to " + client.currentVersion()
                     : "Already up to date: " + client.currentVersion());
 
@@ -224,8 +194,8 @@ public final class LauncherMain {
             // found, no published release, malformed release JSON, or a
             // connection that dropped mid-update. In all of these the right
             // move is to run whatever is already installed.
-            log(appDir, "Update check failed: " + e.getMessage());
-            logStackTrace(appDir, e);
+            log.log("Update check failed: " + e.getMessage());
+            log.logStackTrace(e);
             if (client.currentVersion() != null) {
                 window.setStatus(i18n.get("Update check failed"));
                 sleep(2000);
@@ -238,12 +208,13 @@ public final class LauncherMain {
     }
 
     /**
-     * Runs the environment setup script (installs/updates ollama, pulls models).
-     * Model downloads are bundled under a single "Installing AI models" phase
-     * with its own step counter entry. Logs periodically to avoid console spam.
+     * Runs the environment setup script (installs/updates ollama, pulls models,
+     * fetches the browser runtime). The stateful translation of the script's
+     * {@code (phase, detail)} events into window updates lives in
+     * {@link SetupProgressAdapter}; a non-zero exit is a warning, not a stop.
      */
     private static void runEnvironmentPhase(EnvironmentSetup setup, TinyUpdateClient client,
-            LauncherWindow window, Path appDir, LauncherI18n i18n)
+            LauncherWindow window, SessionLog log, LauncherI18n i18n)
             throws IOException, InterruptedException {
 
         // Snap to dot before environment setup — clean transition from update phase
@@ -253,214 +224,18 @@ public final class LauncherMain {
         // After the update download steps, the Ollama install, the model pulls,
         // and the browser (JCEF) runtime slot in as the final three numbered
         // steps. Fonts run after as a quick, unnumbered tail.
-        int platformStep = client.lastDownloadStepCount() + 1;
-        int modelStep = platformStep + 1;
-        int browserStep = modelStep + 1;
-        int totalSteps = browserStep;
+        SetupProgressAdapter adapter =
+                new SetupProgressAdapter(window, i18n, log, client.lastDownloadStepCount());
 
-        // Periodic logging — ollama emits many lines per second
-        long[] logTracker = {0}; // [0]=lastLogTime
-        // Speed tracking from ollama's size output
-        long[] speedTracker = {0, 0}; // [0]=lastBytes, [1]=lastTime
-        // Track last logged message to log transitions immediately
-        String[] lastLoggedPhase = {""};
-        // Last step-group seen, so a transition between the platform/model/
-        // browser steps snaps the bar back to the dot and drops any stale speed.
-        String[] lastGroup = {""};
-
-        boolean success = setup.run((phase, detail) -> {
-            long now = System.currentTimeMillis();
-
-            // "ModelCount" is a control message, not a user-visible phase: detail
-            // is "total/started" and drives the model pips (one dot per model,
-            // lit from the moment its pull begins), so the user sees how many
-            // models install, not just the current one. Handled first and never
-            // surfaced as a status line.
-            if (phase.equals("ModelCount")) {
-                int[] tc = parseModelCount(detail);
-                if (tc != null) window.setModelPips(tc[0], tc[1]);
-                return;
-            }
-
-            // Log transitions immediately, everything else periodically
-            String logKey = phase + (detail != null && detail.contains("%") ? "" : detail);
-            boolean isTransition = !logKey.equals(lastLoggedPhase[0]);
-            if (isTransition || now - logTracker[0] >= 2000) {
-                log(appDir, "[setup] " + phase + (detail != null ? " — " + detail : ""));
-                logTracker[0] = now;
-                lastLoggedPhase[0] = logKey;
-            }
-
-            boolean isWork = phase.startsWith("Pulling")
-                    || phase.equals("Installing AI platform")
-                    || phase.equals("Installing browser runtime");
-            if (!window.isVisible() && isWork) {
-                SwingUtilities.invokeLater(() -> window.setVisible(true));
-            }
-
-            // Snap to the dot and drop the stale speed whenever the work group
-            // changes (platform → models → browser), so the next step's bar and
-            // readouts start clean instead of inheriting the previous fill.
-            String group = phase.startsWith("Pulling") ? "models" : phase;
-            if (!group.equals(lastGroup[0])) {
-                // Leaving the model pulls (→ browser/fonts): drop the pips so
-                // they don't linger under a later phase's bar.
-                if (lastGroup[0].equals("models")) {
-                    window.clearModelPips();
-                }
-                lastGroup[0] = group;
-                window.resetProgress();
-                speedTracker[0] = 0;
-                speedTracker[1] = 0;
-            }
-
-            // Numbered work steps get a "(n/total)" label; everything else
-            // (fonts, config) shows its plain translated phase.
-            if (phase.equals("Installing AI platform")) {
-                window.setStatus(i18n.get("Installing AI platform")
-                        + " (" + platformStep + "/" + totalSteps + ")");
-            } else if (phase.startsWith("Pulling")) {
-                window.setStatus(i18n.get("Installing AI models")
-                        + " (" + modelStep + "/" + totalSteps + ")");
-            } else if (phase.equals("Installing browser runtime")) {
-                window.setStatus(i18n.get("Installing browser runtime")
-                        + " (" + browserStep + "/" + totalSteps + ")");
-            } else {
-                window.setStatus(i18n.get(phase));
-            }
-
-            // Drive the progress bar + speed from the detail. A detail with no
-            // percentage (a status word like "verifying", or a phase transition)
-            // means there is nothing downloading right now, so the speed readout
-            // is cleared rather than left showing a stale "0 B/s".
-            int pct = parsePercent(detail);
-            if (pct < 0) {
-                // The browser-runtime step has long stretches with no
-                // percentage at all (unzip + tar extraction emit nothing), so
-                // drive the bar into its indeterminate shimmer instead of
-                // freezing on the idle dot. Other phases just idle.
-                if (phase.equals("Installing browser runtime")) {
-                    window.setProgress(-1);
-                }
-                window.setSpeed(-1);
-                speedTracker[0] = 0;
-                speedTracker[1] = 0;
-                return;
-            }
-            window.setProgress(pct / 100.0);
-
-            long currentBytes = parseProgressBytes(detail);
-            if (currentBytes < 0) {
-                // Bar-only progress (curl --progress-bar) carries no byte
-                // figures — keep the bar moving but show no speed.
-                window.setSpeed(-1);
-                speedTracker[0] = 0;
-                speedTracker[1] = 0;
-                return;
-            }
-            // The byte figure is coarse (whole MB below 1 GB, 100 MB steps
-            // above), so mid-download samples routinely repeat the same value.
-            // The anchor therefore only moves when the figure actually
-            // advances — the speed is then the true average across the whole
-            // flat stretch — and a repeated value keeps the last reading on
-            // screen instead of flapping the label off and on.
-            if (speedTracker[1] == 0) {
-                speedTracker[0] = currentBytes;
-                speedTracker[1] = now;
-            } else if (currentBytes < speedTracker[0]) {
-                // Backwards jump (the next model restarting at 0%) — hide and
-                // re-anchor so the new download measures fresh.
-                window.setSpeed(-1);
-                speedTracker[0] = currentBytes;
-                speedTracker[1] = now;
-            } else if (currentBytes > speedTracker[0]) {
-                if (now - speedTracker[1] >= 500) {
-                    window.setSpeed((currentBytes - speedTracker[0]) * 1000
-                            / (now - speedTracker[1]));
-                    speedTracker[0] = currentBytes;
-                    speedTracker[1] = now;
-                }
-            } else if (now - speedTracker[1] >= SPEED_STALL_HIDE_MS) {
-                // Genuinely stalled (no advance for a long while) — better no
-                // readout than a stale one.
-                window.setSpeed(-1);
-                speedTracker[1] = now;
-            }
-        });
+        boolean success = setup.run(adapter);
 
         window.setSpeed(-1);
 
         if (!success) {
-            log(appDir, "Environment setup returned non-zero — proceeding anyway");
+            log.log("Environment setup returned non-zero — proceeding anyway");
             window.setStatus(i18n.get("Setup completed with warnings"));
             sleep(2000);
         }
-    }
-
-    /**
-     * Parses the leading "NN%" out of a setup detail string ("45% — 739 MB /
-     * 3.3 GB" or a bare "45%"), or {@code -1} when the detail carries no
-     * percentage (a status word, or {@code null} on a phase transition).
-     */
-    private static int parsePercent(String detail) {
-        if (detail == null || detail.isEmpty() || !Character.isDigit(detail.charAt(0))) {
-            return -1;
-        }
-        int pctIdx = detail.indexOf('%');
-        if (pctIdx <= 0) return -1;
-        try {
-            return Integer.parseInt(detail.substring(0, pctIdx).strip());
-        } catch (NumberFormatException e) {
-            return -1;
-        }
-    }
-
-    /**
-     * Parses a {@code "total/started"} model-count control detail into
-     * {@code [total, started]}, or {@code null} if it is malformed. Feeds the
-     * model pips (one dot per model, filled once its install has begun).
-     */
-    private static int[] parseModelCount(String detail) {
-        if (detail == null) return null;
-        String[] parts = detail.split("/");
-        if (parts.length != 2) return null;
-        try {
-            return new int[]{
-                    Integer.parseInt(parts[0].strip()),
-                    Integer.parseInt(parts[1].strip())
-            };
-        } catch (NumberFormatException e) {
-            return null;
-        }
-    }
-
-    /**
-     * Parses the downloaded-bytes figure from a rich "NN% — downloaded / total"
-     * detail, or {@code -1} when the detail has no byte figures (e.g. curl's
-     * {@code --progress-bar} output, which is a bar + percent only).
-     */
-    private static long parseProgressBytes(String detail) {
-        if (detail == null) return -1;
-        int dashIdx = detail.indexOf('—');
-        if (dashIdx <= 0) return -1;
-        try {
-            return parseByteSize(detail.substring(dashIdx + 1).strip().split("/")[0].strip());
-        } catch (NumberFormatException | ArrayIndexOutOfBoundsException e) {
-            return -1;
-        }
-    }
-
-    /**
-     * Parses a human-readable byte size like "739 MB" or "3.3 GB"
-     * into raw bytes for speed calculation.
-     */
-    private static long parseByteSize(String sizeStr) {
-        String normalized = sizeStr.toUpperCase().replaceAll("\\s+", "");
-        double val = Double.parseDouble(normalized.replaceAll("[^0-9.]", ""));
-        if (normalized.endsWith("GB")) return (long) (val * 1_000_000_000L);
-        if (normalized.endsWith("MB")) return (long) (val * 1_000_000L);
-        if (normalized.endsWith("KB")) return (long) (val * 1_000L);
-        return (long) val;
     }
 
     /**
@@ -469,9 +244,9 @@ public final class LauncherMain {
      * — no delay, no visible feedback. When visible, a brief delay ensures
      * the user sees "Launching..." before the window disappears.
      */
-    private static void runLaunchPhase(Path appDir, LauncherWindow window, String[] args,
-            LauncherI18n i18n) throws IOException {
-        log(appDir, "Launching application");
+    private static void runLaunchPhase(Path appDir, LauncherWindow window, SessionLog log,
+            String[] args, LauncherI18n i18n) throws IOException {
+        log.log("Launching application");
 
         // Only show launch status when the user already sees the window.
         // Flashing it for a cached no-op start is disruptive.
@@ -492,90 +267,13 @@ public final class LauncherMain {
             });
         }
 
-        log(appDir, "Launcher exiting");
+        log.log("Launcher exiting");
         System.exit(0);
-    }
-
-    // =====================================================================
-    // Error Handling
-    // =====================================================================
-
-    /**
-     * Shows the launcher window with the error and presents a modal dialog.
-     * Ensures the user is never left staring at a blank screen.
-     */
-    private static void handleFatalError(Path appDir, LauncherWindow window, Throwable e) {
-        // Log to file and stderr — the file may not exist yet, so stderr is the fallback
-        String msg = "Fatal: " + e.getMessage();
-        log(appDir, msg);
-        logStackTrace(appDir, e);
-        e.printStackTrace(System.err);
-
-        LauncherI18n i18n = new LauncherI18n(appDir);
-        SwingUtilities.invokeLater(() -> {
-            window.setVisible(true);
-            window.setStatus(i18n.get("Error") + ": " + e.getMessage());
-            window.setProgress(0);
-        });
-        showErrorDialog(i18n.get("Launcher failed"), "WSBG Terminal - " + i18n.get("Error"), e);
-        System.exit(1);
-    }
-
-    /** Writes the full stack trace to the session log file. */
-    private static void logStackTrace(Path appDir, Throwable e) {
-        StringBuilder sb = new StringBuilder();
-        for (Throwable t = e; t != null; t = t.getCause()) {
-            sb.append(t.getClass().getName()).append(": ").append(t.getMessage()).append('\n');
-            for (StackTraceElement frame : t.getStackTrace()) {
-                sb.append("  at ").append(frame).append('\n');
-            }
-        }
-        log(appDir, sb.toString());
-    }
-
-    /**
-     * Presents a Swing error dialog with the exception's stack trace, truncated
-     * to 500 characters to avoid overflowing the dialog bounds.
-     */
-    private static void showErrorDialog(String message, String title, Throwable e) {
-        StringWriter sw = new StringWriter();
-        e.printStackTrace(new PrintWriter(sw));
-        String trace = sw.toString();
-        JOptionPane.showMessageDialog(null,
-                message + "\n\n" + trace.substring(0, Math.min(trace.length(), 500)),
-                title,
-                JOptionPane.ERROR_MESSAGE);
     }
 
     // =====================================================================
     // Infrastructure
     // =====================================================================
-
-    /**
-     * Reads {@code user.auto-update} from {@code config.toml} — opt-out, so a
-     * missing key/file means {@code true}. Deliberately a tiny line scan (like
-     * {@link LauncherI18n}) rather than pulling in the config library: the
-     * launcher must stay lean and start even if the config is half-written.
-     */
-    private static boolean configAutoUpdate(Path appDir) {
-        Path configFile = appDir.resolve("config.toml");
-        if (!Files.exists(configFile)) return true;
-        try {
-            for (String line : Files.readAllLines(configFile)) {
-                String trimmed = line.strip();
-                if (trimmed.startsWith("auto-update")) {
-                    int eq = trimmed.indexOf('=');
-                    if (eq > 0) {
-                        String value = trimmed.substring(eq + 1).strip()
-                                .replace("\"", "").replace("'", "");
-                        return !"false".equalsIgnoreCase(value);
-                    }
-                }
-            }
-        } catch (IOException ignored) {
-        }
-        return true;
-    }
 
     /**
      * Creates required directories. Returns {@code false} and shows an error
@@ -589,82 +287,9 @@ public final class LauncherMain {
             return true;
         } catch (IOException e) {
             LauncherI18n i18n = new LauncherI18n(appDir);
-            showErrorDialog(i18n.get("Cannot create app directory") + ": " + appDir,
+            LauncherDialogs.showErrorDialog(i18n.get("Cannot create app directory") + ": " + appDir,
                     "WSBG Terminal - " + i18n.get("Error"), e);
             return false;
-        }
-    }
-
-    /**
-     * Archives any previous {@code latest.log}, then sets the session log file
-     * to a fresh {@code latest.log}. Old archived sessions beyond
-     * {@link #MAX_LOG_FILES} are purged.
-     */
-    private static void initLogging(Path appDir) {
-        Path logsDir = appDir.resolve("logs/launcher");
-        archiveLatestLog(logsDir);
-        sessionLogFile = logsDir.resolve("latest.log");
-        purgeOldLogs(logsDir);
-        log(appDir, "--- Launcher session ---");
-    }
-
-    /**
-     * Archives the previous session's {@code latest.log} by renaming it to a
-     * timestamp derived from its last-modified time. Called before each session
-     * so that {@code latest.log} always represents the current session alone.
-     */
-    private static void archiveLatestLog(Path logsDir) {
-        Path latest = logsDir.resolve("latest.log");
-        if (!Files.exists(latest)) return;
-        try {
-            String timestamp = Files.getLastModifiedTime(latest).toInstant()
-                    .atZone(ZoneId.systemDefault())
-                    .format(LOG_FILENAME);
-            Files.move(latest, logsDir.resolve(timestamp + ".log"));
-        } catch (IOException ignored) {
-        }
-    }
-
-    /**
-     * Deletes the oldest archived {@code .log} files when the count exceeds
-     * {@link #MAX_LOG_FILES}. {@code latest.log} is excluded — it is the
-     * active session, not an archive.
-     */
-    private static void purgeOldLogs(Path logsDir) {
-        try (Stream<Path> files = Files.list(logsDir)) {
-            var logs = files
-                    .filter(p -> p.toString().endsWith(".log"))
-                    .filter(p -> !p.getFileName().toString().equals("latest.log"))
-                    .sorted(Comparator.comparing(Path::getFileName))
-                    .toList();
-
-            if (logs.size() >= MAX_LOG_FILES) {
-                for (int i = 0; i < logs.size() - MAX_LOG_FILES + 1; i++) {
-                    Files.deleteIfExists(logs.get(i));
-                }
-            }
-        } catch (IOException ignored) {
-            // Cleanup failure must never prevent the launcher from starting
-        }
-    }
-
-    /**
-     * Appends a timestamped line to the current session's log file. Logging
-     * failures are silently ignored — the launcher must never crash because
-     * of a log write.
-     */
-    private static void log(Path appDir, String message) {
-        if (sessionLogFile == null)
-            return;
-        try {
-            String timestamp = LocalDateTime.now().format(LOG_TIMESTAMP);
-            String line = "[" + timestamp + "] " + message + "\n";
-            System.err.print(line);
-            Files.writeString(sessionLogFile, line,
-                    StandardOpenOption.CREATE,
-                    StandardOpenOption.APPEND);
-        } catch (IOException ignored) {
-            // Logging failure must never crash the launcher
         }
     }
 

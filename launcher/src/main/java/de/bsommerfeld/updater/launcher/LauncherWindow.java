@@ -6,10 +6,7 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseMotionAdapter;
 import java.awt.geom.RoundRectangle2D;
-import java.awt.image.BufferedImage;
 import java.net.URL;
-import java.util.ArrayDeque;
-import java.util.Deque;
 import java.util.List;
 
 /**
@@ -28,6 +25,10 @@ import java.util.List;
  *     └─────────────────┘
  * </pre>
  *
+ * <p>Two concerns are delegated: {@link LogoRenderer} builds the pre-scaled
+ * logo panel, and {@link EtaEstimator} owns the remaining-time regression +
+ * smoothing math. This class is the view + EDT-coalescing facade.
+ *
  * <h3>Thread safety</h3>
  * Volatile fields with coalesced EDT flush, same as before.
  */
@@ -38,46 +39,19 @@ final class LauncherWindow extends JFrame {
     private static final int HEIGHT = 330;
     private static final int CORNER_ARC = 20;
 
-    private static final Color BG = new Color(0x1A, 0x1A, 0x1A);
+    private static final Color BG = LauncherTheme.BG;
     private static final Color STATUS_COLOR = new Color(100, 100, 100);
 
-    // Freed hands+diamond glyph (no card background), rendered at full
-    // opacity and sized to fill the upper area. The box preserves the
-    // glyph's 781:670 source aspect ratio.
-    private static final int LOGO_W = 210;
-    private static final int LOGO_H = 180;
-
     private static final long UPDATE_INTERVAL_MS = 33;
-
-    // Short warm-up before the ETA is trusted — just enough samples for a
-    // stable velocity fit, not a "hide until late" gate. Whether a phase is
-    // "taking long" is conveyed by the ETA turning orange, not by appearing.
-    private static final long ETA_SHOW_AFTER_MS = 4_000;
-    // Sliding window the velocity is regressed over. Wide enough to smooth the
-    // 1%-granularity of ollama's model-pull output, short enough to track real
-    // rate changes (a download throttling) within a few seconds.
-    private static final long ETA_WINDOW_MS = 10_000;
-    // Time constant of the exponential smoothing on the ETA estimate: a fresh
-    // regression estimate takes about this long to fully pull the displayed
-    // value over, so the readout counts down steadily instead of jumping with
-    // every re-extrapolation.
-    private static final long ETA_SMOOTH_TAU_MS = 4_000;
 
     private final JLabel statusLabel;
     private final IslandIndicator islandIndicator;
     private final ModelPips modelPips;
     private final ProgressInfoLine infoLine;
 
-    // Progress-ratio samples for the ETA velocity fit. EDT-only — touched solely
-    // from flush()/resetProgress(), both of which run on the Swing thread.
-    private final Deque<long[]> etaSamples = new ArrayDeque<>(); // [time, ratioBits]
-    private long etaPhaseStart;
-    private double etaLastRatio = -1;
-    // Smoothed remaining-time estimate (ms), -1 while none. Decays with wall
-    // time between updates and is only nudged toward each fresh regression
-    // estimate, so the displayed ETA never jumps.
-    private double etaSmoothedRemainingMs = -1;
-    private long etaSmoothedAt;
+    // Remaining-time estimator. EDT-only — touched solely from
+    // flush()/resetProgress(), both of which run on the Swing thread.
+    private final EtaEstimator etaEstimator = new EtaEstimator();
 
     private volatile String pendingStatus;
 
@@ -108,8 +82,6 @@ final class LauncherWindow extends JFrame {
         scheduleFlush();
     }
 
-
-
     /**
      * Sets progress: 0.0–1.0 for determinate, negative for indeterminate,
      * or 1.0 to signal completion (bar collapses back to dot).
@@ -129,9 +101,7 @@ final class LauncherWindow extends JFrame {
             islandIndicator.reset();
             // New phase — discard the old velocity fit so the next phase's ETA
             // starts fresh instead of inheriting the previous slope.
-            etaSamples.clear();
-            etaLastRatio = -1;
-            etaSmoothedRemainingMs = -1;
+            etaEstimator.reset();
             infoLine.clear();
         });
     }
@@ -213,7 +183,7 @@ final class LauncherWindow extends JFrame {
         gbc.gridy = 1;
         gbc.weighty = 0;
         gbc.insets = new Insets(28, 0, 22, 0);
-        root.add(createLogoPanel(), gbc);
+        root.add(LogoRenderer.createPanel(), gbc);
 
         // Dynamic Island indicator
         gbc.gridy = 2;
@@ -244,74 +214,6 @@ final class LauncherWindow extends JFrame {
         root.add(Box.createGlue(), gbc);
 
         return root;
-    }
-
-    private JPanel createLogoPanel() {
-        Image logoSource = loadLogoImage();
-        if (logoSource == null) return new JPanel();
-
-        // Pre-render the glyph at full opacity, scaled to fit the LOGO_W×LOGO_H
-        // box while preserving its source aspect ratio. The glyph asset is
-        // shipped at 2x-retina resolution, so a single bilinear pass would
-        // undersample (2x2 taps across a ~7x reduction) and shred the thin
-        // diamond strokes — halve progressively until within 2x of the target,
-        // then do the final fractional step.
-        int sw = logoSource.getWidth(null);
-        int sh = logoSource.getHeight(null);
-        double scale = Math.min((double) LOGO_W / sw, (double) LOGO_H / sh);
-        int w = Math.max(1, (int) Math.round(sw * scale));
-        int h = Math.max(1, (int) Math.round(sh * scale));
-
-        // Pre-render at 2x the logical size and draw scaled down in paint:
-        // on a HiDPI (Retina) display the device transform then maps the
-        // bitmap ~1:1 instead of upscaling a tiny pre-scaled image.
-        BufferedImage stage = toArgb(logoSource, sw, sh);
-        while (stage.getWidth() / 2 >= w * 2 && stage.getHeight() / 2 >= h * 2) {
-            stage = resizeBilinear(stage, stage.getWidth() / 2, stage.getHeight() / 2);
-        }
-        BufferedImage scaledLogo = resizeBilinear(stage, w * 2, h * 2);
-
-        JPanel panel = new JPanel() {
-            @Override
-            protected void paintComponent(Graphics g) {
-                Graphics2D g2d = (Graphics2D) g;
-                g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-                int x = (getWidth() - w) / 2;
-                int y = (getHeight() - h) / 2;
-                g2d.drawImage(scaledLogo, x, y, w, h, null);
-            }
-        };
-        panel.setOpaque(false);
-        panel.setPreferredSize(new Dimension(LOGO_W, LOGO_H));
-        return panel;
-    }
-
-    private static BufferedImage toArgb(Image src, int w, int h) {
-        BufferedImage out = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
-        Graphics2D g2 = out.createGraphics();
-        g2.drawImage(src, 0, 0, null);
-        g2.dispose();
-        return out;
-    }
-
-    private static BufferedImage resizeBilinear(BufferedImage src, int w, int h) {
-        BufferedImage out = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
-        Graphics2D g2 = out.createGraphics();
-        g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        g2.drawImage(src, 0, 0, w, h, null);
-        g2.dispose();
-        return out;
-    }
-
-    private Image loadLogoImage() {
-        // Freed hands+diamond glyph (transparent background). Falls back to
-        // the full app icon if the glyph asset is missing.
-        URL url = getClass().getResource("/images/logo-glyph.png");
-        if (url == null) url = getClass().getResource("/images/app-icon.png");
-        if (url == null) return null;
-        return new ImageIcon(url).getImage();
     }
 
     private JLabel createStatusLabel() {
@@ -377,7 +279,10 @@ final class LauncherWindow extends JFrame {
 
         if (!Double.isNaN(progress)) {
             islandIndicator.update(progress);
-            updateEta(progress);
+            long etaSecs = etaEstimator.sample(progress);
+            if (etaSecs != EtaEstimator.NO_CHANGE) {
+                infoLine.setEta(etaSecs);
+            }
             pendingProgress = Double.NaN;
         }
 
@@ -392,109 +297,5 @@ final class LauncherWindow extends JFrame {
         }
         lastFlushTime = System.currentTimeMillis();
         flushScheduled = false;
-    }
-
-    // =====================================================================
-    // ETA estimation (EDT-only)
-    // =====================================================================
-
-    /**
-     * Feeds a progress ratio into the remaining-time estimator and updates the
-     * {@link ProgressInfoLine}'s ETA group. The estimate is the linear-regression
-     * slope of the most recent {@link #ETA_WINDOW_MS} of (time, ratio) samples —
-     * i.e. the observed velocity — extrapolated to ratio 1.0. It is surfaced once
-     * the phase has past the brief {@link #ETA_SHOW_AFTER_MS} warm-up and the
-     * velocity is positive, so a not-yet-moving phase shows no guess. The raw
-     * extrapolation is smoothed over {@link #ETA_SMOOTH_TAU_MS} before display,
-     * and the {@link ProgressInfoLine} counts the handed-over value down on its
-     * own between updates.
-     */
-    private void updateEta(double ratio) {
-        long now = System.currentTimeMillis();
-
-        // Indeterminate or finished — nothing meaningful to extrapolate. Hide
-        // only the ETA group; the speed group lives on its own.
-        if (ratio < 0 || ratio >= 1.0) {
-            etaSamples.clear();
-            etaLastRatio = -1;
-            etaSmoothedRemainingMs = -1;
-            infoLine.setEta(-1);
-            return;
-        }
-
-        // Start of a phase, or a backwards jump (a new sub-step reusing the bar)
-        // restarts the fit, the smoothing, and the warm-up clock.
-        if (etaSamples.isEmpty() || ratio + 0.0005 < etaLastRatio) {
-            etaSamples.clear();
-            etaPhaseStart = now;
-            etaSmoothedRemainingMs = -1;
-        }
-        etaLastRatio = ratio;
-        etaSamples.addLast(new long[]{now, Double.doubleToRawLongBits(ratio)});
-
-        // Drop samples outside the sliding window, always keeping a minimum
-        // spread to regress over.
-        while (etaSamples.size() > 2 && now - etaSamples.peekFirst()[0] > ETA_WINDOW_MS) {
-            etaSamples.removeFirst();
-        }
-
-        if (now - etaPhaseStart < ETA_SHOW_AFTER_MS) {
-            infoLine.setEta(-1);
-            return;
-        }
-
-        double slope = ratioSlopePerMs(); // ratio units per millisecond
-        if (slope <= 1e-9) {
-            // Stalled or not yet moving. With a running estimate the info
-            // line just keeps counting down on its own (the 1%-granularity of
-            // ollama's output makes flat stretches normal); without one there
-            // is nothing worth guessing yet.
-            if (etaSmoothedRemainingMs < 0) infoLine.setEta(-1);
-            return;
-        }
-
-        double estimateMs = (1.0 - ratio) / slope;
-        if (etaSmoothedRemainingMs < 0) {
-            etaSmoothedRemainingMs = estimateMs;
-        } else {
-            // Let the previous value tick down with the elapsed wall time,
-            // then pull it a time-proportional step toward the fresh estimate
-            // — the readout counts down steadily and only drifts toward the
-            // regression instead of jumping with every re-extrapolation.
-            // Capped at half the gap per update: coarse 1%-steps can space
-            // fresh estimates far apart, and even then the readout must never
-            // snap fully onto a new extrapolation in one go.
-            double elapsed = now - etaSmoothedAt;
-            double predicted = Math.max(0, etaSmoothedRemainingMs - elapsed);
-            double alpha = Math.min(0.5, elapsed / ETA_SMOOTH_TAU_MS);
-            etaSmoothedRemainingMs = predicted + alpha * (estimateMs - predicted);
-        }
-        etaSmoothedAt = now;
-        infoLine.setEta(Math.round(etaSmoothedRemainingMs / 1000.0));
-    }
-
-    /**
-     * Least-squares slope of ratio over time across the current sample window.
-     * Time is taken relative to the first sample to keep the sums well-scaled.
-     *
-     * @return ratio increase per millisecond, or 0 if it can't be determined
-     */
-    private double ratioSlopePerMs() {
-        int n = etaSamples.size();
-        if (n < 2) return 0;
-
-        long t0 = etaSamples.peekFirst()[0];
-        double sx = 0, sy = 0, sxx = 0, sxy = 0;
-        for (long[] s : etaSamples) {
-            double x = s[0] - t0;
-            double y = Double.longBitsToDouble(s[1]);
-            sx += x;
-            sy += y;
-            sxx += x * x;
-            sxy += x * y;
-        }
-        double denom = n * sxx - sx * sx;
-        if (denom == 0) return 0;
-        return (n * sxy - sx * sy) / denom;
     }
 }
