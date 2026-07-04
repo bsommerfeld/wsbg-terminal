@@ -46,29 +46,12 @@ public final class TinyUpdateClient implements UpdateClient {
     private final ZipExtractor zipExtractor;
     private final ArchiveDownloader archiveDownloader;
 
-    // Extra steps beyond downloads (e.g. AI model install) —
-    // included in the total so the step counter is consistent
-    // across both update and environment phases.
-    private int extraSteps = 0;
-
-    private int lastDownloadSteps = 0;
-
     public TinyUpdateClient(GitHubRepository repository, Path appDirectory) {
         this.repository = repository;
         this.updateManager = new UpdateManager(appDirectory);
         this.versionFile = new VersionFile(appDirectory);
         this.zipExtractor = new ZipExtractor(appDirectory, TinyUpdateClient::trace);
         this.archiveDownloader = new ArchiveDownloader(TinyUpdateClient::trace);
-    }
-
-    /** Adds extra steps to the pipeline total (e.g. +1 for AI model install). */
-    public void setExtraSteps(int extraSteps) {
-        this.extraSteps = extraSteps;
-    }
-
-    /** Returns the number of download steps the last update had. */
-    public int lastDownloadStepCount() {
-        return lastDownloadSteps;
     }
 
     /**
@@ -79,11 +62,14 @@ public final class TinyUpdateClient implements UpdateClient {
      * release tag, or if all file hashes match despite a version
      * mismatch (e.g. re-release with same content).
      *
-     * @return {@code true} if files were updated, {@code false} if already current
+     * @param extraSteps additional pipeline steps beyond the downloads to fold
+     *                   into the displayed step total (see {@link UpdateClient})
+     * @return an {@link UpdateResult}: whether files were updated, the installed
+     *         version, and how many download steps were shown
      */
     @Override
-    public boolean update(Consumer<UpdateProgress> progress) throws Exception {
-        progress.accept(UpdateProgress.indeterminate("Checking for updates"));
+    public UpdateResult update(Consumer<UpdateProgress> progress, int extraSteps) throws Exception {
+        progress.accept(UpdateProgress.indeterminate(UpdatePhase.CHECKING.token()));
 
         trace("Fetching release info from " + repository.latestReleaseUrl());
         String releaseJson = Downloader.toString(repository.latestReleaseUrl());
@@ -110,8 +96,8 @@ public final class TinyUpdateClient implements UpdateClient {
         if (!hasAsset(releaseJson, "update.json")) {
             trace("Release " + tagName + " has no update.json yet (still building?) — "
                     + "keeping current version");
-            progress.accept(UpdateProgress.of("Up to date", 1.0));
-            return false;
+            progress.accept(UpdateProgress.of(UpdatePhase.UP_TO_DATE.token(), 1.0));
+            return new UpdateResult(false, currentVersion(), 0);
         }
 
         UpdateCheckResult diff = resolveChanges(releaseJson, progress);
@@ -120,16 +106,16 @@ public final class TinyUpdateClient implements UpdateClient {
         if (diff.isUpToDate()) {
             trace("All files present and matching — nothing to do");
             recordVersion(tagName);
-            progress.accept(UpdateProgress.of("Up to date", 1.0));
-            return false;
+            progress.accept(UpdateProgress.of(UpdatePhase.UP_TO_DATE.token(), 1.0));
+            return new UpdateResult(false, currentVersion(), 0);
         }
 
-        applyUpdate(releaseJson, diff, progress);
+        int downloadSteps = applyUpdate(releaseJson, diff, progress, extraSteps);
 
         recordVersion(tagName);
         trace("Update complete — recorded version " + tagName);
-        progress.accept(UpdateProgress.of("Update complete", 1.0));
-        return true;
+        progress.accept(UpdateProgress.of(UpdatePhase.UPDATE_COMPLETE.token(), 1.0));
+        return new UpdateResult(true, currentVersion(), downloadSteps);
     }
 
     @Override
@@ -143,7 +129,7 @@ public final class TinyUpdateClient implements UpdateClient {
 
     private UpdateCheckResult resolveChanges(String releaseJson,
             Consumer<UpdateProgress> progress) throws Exception {
-        progress.accept(UpdateProgress.indeterminate("Checking for updates"));
+        progress.accept(UpdateProgress.indeterminate(UpdatePhase.CHECKING.token()));
         String manifestUrl = findAssetUrl(releaseJson, "update.json");
         String manifestJson = Downloader.toString(manifestUrl);
         UpdateManifest manifest = JsonParser.parseManifest(manifestJson);
@@ -156,8 +142,8 @@ public final class TinyUpdateClient implements UpdateClient {
      * as a status label with indeterminate dot but no step counter.
      * Verify and cleanup run silently.
      */
-    private void applyUpdate(String releaseJson, UpdateCheckResult diff,
-            Consumer<UpdateProgress> progress) throws Exception {
+    private int applyUpdate(String releaseJson, UpdateCheckResult diff,
+            Consumer<UpdateProgress> progress, int extraSteps) throws Exception {
 
         String manifestUrl = findAssetUrl(releaseJson, "update.json");
         UpdateManifest manifest = JsonParser.parseManifest(Downloader.toString(manifestUrl));
@@ -167,41 +153,42 @@ public final class TinyUpdateClient implements UpdateClient {
         // Only downloads count as steps
         int downloadSteps = hasSplitZips ? 2 : 1;
         int totalSteps = downloadSteps + extraSteps;
-        lastDownloadSteps = downloadSteps;
         int step = 0;
 
         if (hasSplitZips) {
             step++;
             byte[] appZipData = archiveDownloader.download(releaseJson, "app.zip",
-                    "Downloading update", step, totalSteps, progress);
+                    UpdatePhase.DOWNLOADING_UPDATE.token(), step, totalSteps, progress);
 
-            progress.accept(UpdateProgress.indeterminate("Extracting files"));
+            progress.accept(UpdateProgress.indeterminate(UpdatePhase.EXTRACTING_FILES.token()));
             zipExtractor.extractOutdated(appZipData, diff);
 
             UpdateCheckResult remainingDiff = updateManager.check(manifest);
             if (!remainingDiff.outdated().isEmpty()) {
                 step++;
                 byte[] depsZipData = archiveDownloader.download(releaseJson, "deps.zip",
-                        "Downloading dependencies", step, totalSteps, progress);
+                        UpdatePhase.DOWNLOADING_DEPENDENCIES.token(), step, totalSteps, progress);
 
-                progress.accept(UpdateProgress.indeterminate("Extracting dependencies"));
+                progress.accept(UpdateProgress.indeterminate(UpdatePhase.EXTRACTING_DEPENDENCIES.token()));
                 zipExtractor.extractOutdated(depsZipData, remainingDiff);
             }
         } else {
             step++;
             byte[] zipData = archiveDownloader.download(releaseJson, "files.zip",
-                    "Downloading update", step, totalSteps, progress);
+                    UpdatePhase.DOWNLOADING_UPDATE.token(), step, totalSteps, progress);
 
-            progress.accept(UpdateProgress.indeterminate("Extracting files"));
+            progress.accept(UpdateProgress.indeterminate(UpdatePhase.EXTRACTING_FILES.token()));
             zipExtractor.extractOutdated(zipData, diff);
         }
 
-        progress.accept(UpdateProgress.indeterminate("Verifying integrity"));
+        progress.accept(UpdateProgress.indeterminate(UpdatePhase.VERIFYING_INTEGRITY.token()));
         updateManager.verify(manifest);
 
         if (!diff.orphaned().isEmpty()) {
             updateManager.deleteOrphans(diff.orphaned());
         }
+
+        return downloadSteps;
     }
 
     // =====================================================================
