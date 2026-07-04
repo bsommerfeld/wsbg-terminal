@@ -76,14 +76,26 @@ public class RedditRepository {
                 return updated;
             });
 
-            threadCache.computeIfPresent(threadId, (k, t) -> new RedditThread(
-                    t.id(), t.subreddit(), t.title(), t.author(), t.textContent(),
-                    t.createdUtc(), t.permalink(), t.score(), t.upvoteRatio(),
-                    t.numComments(),
-                    Math.max(t.lastActivityUtc(), comment.createdUtc()),
-                    t.imageUrls(), t.pollData()));
+            threadCache.computeIfPresent(threadId,
+                    (k, t) -> touchLastActivity(t, comment.createdUtc()));
         }
         return CompletableFuture.completedFuture(null);
+    }
+
+    /**
+     * Returns a copy of {@code thread} whose {@code lastActivityUtc} is advanced to
+     * {@code activityUtc} if that is newer — every other field is carried over
+     * verbatim. Records are immutable, so a bumped activity timestamp means a full
+     * rebuild; isolating it here keeps {@link #saveComment} free of the positional
+     * copy.
+     */
+    private static RedditThread touchLastActivity(RedditThread t, long activityUtc) {
+        return new RedditThread(
+                t.id(), t.subreddit(), t.title(), t.author(), t.textContent(),
+                t.createdUtc(), t.permalink(), t.score(), t.upvoteRatio(),
+                t.numComments(),
+                Math.max(t.lastActivityUtc(), activityUtc),
+                t.imageUrls(), t.pollData());
     }
 
     // -- Reads --

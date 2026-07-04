@@ -35,12 +35,12 @@ public class AgentRepository {
     private final List<HeadlineRecord> headlineCache = new CopyOnWriteArrayList<>();
 
     /**
-     * Identities of headlines that belong to the CURRENT session — published live
-     * this run, or restored from the short-TTL snapshot. NOT the ones merely
-     * re-seeded from the permanent archive at startup. Lets "Archiv löschen" drop
-     * the archived history from the wire while keeping the live session intact.
+     * Which headlines belong to the CURRENT session — published live this run, or
+     * restored from the short-TTL snapshot. NOT the ones merely re-seeded from the
+     * permanent archive at startup. Lets "Archiv löschen" drop the archived history
+     * from the wire while keeping the live session intact.
      */
-    private final java.util.Set<String> sessionIdentities = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private final SessionLedger session = new SessionLedger();
 
     /** Permanent archive behind the wire; {@code null} in archive-less tests. */
     private final HeadlineArchive archive;
@@ -140,13 +140,8 @@ public class AgentRepository {
                 newsEnriched,
                 newsRefs == null ? List.of() : List.copyOf(newsRefs));
         headlineCache.add(record);
-        sessionIdentities.add(identity(record)); // live-published this session
+        session.markLive(record); // live-published this session
         if (archive != null) archive.append(record); // permanent — survives everything
-    }
-
-    /** Identity of a headline — must match {@link HeadlineArchive}'s formula. */
-    private static String identity(HeadlineRecord r) {
-        return r.createdAt() + "|" + r.clusterId() + "|" + r.headline();
     }
 
     /** Returns every cached headline (for persistence snapshots). */
@@ -164,11 +159,10 @@ public class AgentRepository {
             // Snapshot-restored headlines ARE the current session — mark them so
             // "Archiv löschen" keeps them, even when the archive re-seed already
             // put an identical copy in the wire.
-            sessionIdentities.add(identity(r));
-            boolean dup = headlineCache.stream().anyMatch(h ->
-                    h.createdAt() == r.createdAt()
-                            && java.util.Objects.equals(h.clusterId(), r.clusterId())
-                            && java.util.Objects.equals(h.headline(), r.headline()));
+            session.markLive(r);
+            String id = HeadlineIdentity.of(r);
+            boolean dup = headlineCache.stream()
+                    .anyMatch(h -> HeadlineIdentity.of(h).equals(id));
             if (!dup) headlineCache.add(r);
         }
     }
@@ -217,7 +211,7 @@ public class AgentRepository {
      */
     public void clearArchiveKeepSession() {
         if (archive != null) archive.clear();
-        headlineCache.removeIf(h -> !sessionIdentities.contains(identity(h)));
+        headlineCache.removeIf(h -> !session.contains(h));
     }
 
     /**
@@ -227,7 +221,7 @@ public class AgentRepository {
      */
     public void clearAll() {
         headlineCache.clear();
-        sessionIdentities.clear();
+        session.clear();
         if (archive != null) archive.clear();
     }
 
