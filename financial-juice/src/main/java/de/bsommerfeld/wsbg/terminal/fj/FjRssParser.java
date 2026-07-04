@@ -1,5 +1,6 @@
 package de.bsommerfeld.wsbg.terminal.fj;
 
+import de.bsommerfeld.wsbg.terminal.core.util.HtmlText;
 import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -148,12 +149,7 @@ final class FjRssParser {
             return "";
         }
         String withBreaks = LINE_BREAK_TAG_PATTERN.matcher(html).replaceAll("\n");
-        String decoded = HTML_TAG_PATTERN.matcher(withBreaks).replaceAll(" ")
-                .replace("&amp;", "&")
-                .replace("&lt;", "<")
-                .replace("&gt;", ">")
-                .replace("&quot;", "\"")
-                .replace("&apos;", "'");
+        String decoded = HtmlText.unescapeBasic(HTML_TAG_PATTERN.matcher(withBreaks).replaceAll(" "));
         return decoded.lines()
                 .map(line -> line.replaceAll("[ \\t\\x0B\\f\\r]+", " ").trim())
                 .filter(line -> !line.isEmpty())

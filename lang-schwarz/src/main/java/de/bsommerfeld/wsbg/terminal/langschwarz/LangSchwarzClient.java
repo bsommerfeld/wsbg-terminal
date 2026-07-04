@@ -6,6 +6,7 @@ import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
 import de.bsommerfeld.wsbg.terminal.core.util.BrowserUserAgent;
+import de.bsommerfeld.wsbg.terminal.core.util.Sparklines;
 import de.bsommerfeld.wsbg.terminal.source.net.DirectWebFetcher;
 import de.bsommerfeld.wsbg.terminal.source.net.WebFetcher;
 import de.bsommerfeld.wsbg.terminal.source.net.WebResponse;
@@ -283,7 +284,7 @@ public class LangSchwarzClient {
                     isin == null ? "" : isin, last,
                     Double.isFinite(prevClose) ? prevClose : Double.NaN, dayChange,
                     high, low, -1, week52High, week52Low,
-                    "EUR", "L&S", lastTsMs / 1000, downsample(prices), dailyCloses));
+                    "EUR", "L&S", lastTsMs / 1000, Sparklines.downsample(prices, SPARK_POINTS), dailyCloses));
         } catch (Exception e) {
             LOG.warn("L&S chart parse failure: {}", e.getMessage());
             return Optional.empty();
@@ -334,12 +335,4 @@ public class LangSchwarzClient {
         return node.isNumber() ? node.asDouble() : Double.NaN;
     }
 
-    /** Evenly thins the intraday series to at most {@link #SPARK_POINTS} points. */
-    private static List<Double> downsample(List<Double> prices) {
-        if (prices.size() <= SPARK_POINTS) return prices;
-        List<Double> out = new ArrayList<>(SPARK_POINTS);
-        double step = (prices.size() - 1) / (double) (SPARK_POINTS - 1);
-        for (int i = 0; i < SPARK_POINTS; i++) out.add(prices.get((int) Math.round(i * step)));
-        return out;
-    }
 }
