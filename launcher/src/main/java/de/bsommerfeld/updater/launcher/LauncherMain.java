@@ -3,6 +3,7 @@ package de.bsommerfeld.updater.launcher;
 import de.bsommerfeld.updater.api.ConnectivityProbe;
 import de.bsommerfeld.updater.api.GitHubRepository;
 import de.bsommerfeld.updater.api.TinyUpdateClient;
+import de.bsommerfeld.updater.api.UpdateResult;
 
 import javax.swing.SwingUtilities;
 import java.io.IOException;
@@ -30,6 +31,16 @@ import java.nio.file.Path;
 public final class LauncherMain {
 
     private static final GitHubRepository REPO = GitHubRepository.of("bsommerfeld/wsbg-terminal");
+
+    /**
+     * Three extra steps after the update pipeline: the Ollama platform install,
+     * the model downloads, and the browser (JCEF) runtime — the last is a
+     * ~150 MB download that deserves its own step instead of hiding under
+     * "Setting up environment". Fonts are a fast tail with no numbered step.
+     * All are driven by the setup script (setup.sh/.ps1). Folded into the
+     * update pipeline's step total so the "(n/total)" label stays consistent.
+     */
+    private static final int ENVIRONMENT_STEPS = 3;
 
     private LauncherMain() {
     }
@@ -74,12 +85,6 @@ public final class LauncherMain {
         log.log("auto-update=" + autoUpdate + (forceUpdate ? " (forced by in-app update)" : ""));
 
         TinyUpdateClient updateClient = new TinyUpdateClient(REPO, appDir);
-        // Three extra steps after the update pipeline: the Ollama platform
-        // install, the model downloads, and the browser (JCEF) runtime — the
-        // last is a ~150 MB download that deserves its own step instead of
-        // hiding under "Setting up environment". Fonts are a fast tail with no
-        // numbered step. All are driven by the setup script (setup.sh/.ps1).
-        updateClient.setExtraSteps(3);
 
         boolean firstRun = updateClient.currentVersion() == null;
         LauncherWindow window = new LauncherWindow();
@@ -94,8 +99,9 @@ public final class LauncherMain {
 
         Thread.ofVirtual().name("update-thread").start(() -> {
             try {
-                runUpdatePhase(updateClient, window, log, firstRun, i18n, autoUpdate, forceUpdate);
-                runEnvironmentPhase(envSetup, updateClient, window, log, i18n);
+                int downloadSteps = runUpdatePhase(updateClient, window, log, firstRun, i18n,
+                        autoUpdate, forceUpdate, ENVIRONMENT_STEPS);
+                runEnvironmentPhase(envSetup, window, log, i18n, downloadSteps);
                 runLaunchPhase(appDir, window, log, forwardArgs, i18n);
             } catch (Throwable e) {
                 LauncherDialogs.handleFatalError(appDir, window, log, e);
@@ -121,9 +127,9 @@ public final class LauncherMain {
      * for everything the probe can't foresee (repo 404, no published release,
      * a connection that drops mid-update).
      */
-    private static void runUpdatePhase(TinyUpdateClient client, LauncherWindow window,
+    private static int runUpdatePhase(TinyUpdateClient client, LauncherWindow window,
             SessionLog log, boolean showWindow, LauncherI18n i18n,
-            boolean autoUpdate, boolean forceUpdate) {
+            boolean autoUpdate, boolean forceUpdate, int extraSteps) {
         boolean hasCachedVersion = client.currentVersion() != null;
 
         // Auto-update opt-out: with a cached version to fall back on and no
@@ -132,14 +138,14 @@ public final class LauncherMain {
         if (!autoUpdate && !forceUpdate && hasCachedVersion) {
             log.log("Auto-update disabled — skipping update, launching cached version "
                     + client.currentVersion());
-            return;
+            return 0;
         }
 
         if (!ConnectivityProbe.isOnline()) {
             if (hasCachedVersion) {
                 log.log("No internet connection — skipping update, launching cached version "
                         + client.currentVersion());
-                return;
+                return 0;
             }
             // First run with no network: nothing is installed yet, so there is
             // genuinely nothing to launch. Fail loudly with a clear message.
@@ -156,7 +162,7 @@ public final class LauncherMain {
 
             String[] lastPhase = {""};
 
-            boolean updated = client.update(progress -> {
+            UpdateResult result = client.update(progress -> {
                 if (!window.isVisible() && progress.progressRatio() >= 0 && progress.progressRatio() < 1.0) {
                     SwingUtilities.invokeLater(() -> window.setVisible(true));
                 }
@@ -183,11 +189,13 @@ public final class LauncherMain {
                     window.setProgress(progress.progressRatio());
                 }
                 window.setSpeed(progress.speedBytesPerSec());
-            });
+            }, extraSteps);
 
-            log.log(updated
-                    ? "Updated to " + client.currentVersion()
-                    : "Already up to date: " + client.currentVersion());
+            log.log(result.updated()
+                    ? "Updated to " + result.version()
+                    : "Already up to date: " + result.version());
+
+            return result.downloadSteps();
 
         } catch (Exception e) {
             // Covers everything past the connectivity probe: repository not
@@ -199,6 +207,9 @@ public final class LauncherMain {
             if (client.currentVersion() != null) {
                 window.setStatus(i18n.get("Update check failed"));
                 sleep(2000);
+                // Nothing downloaded — the environment phase numbers its steps
+                // from zero, exactly as before.
+                return 0;
             } else {
                 throw new IllegalStateException(
                         "Update check failed and no installed version is available to launch "
@@ -213,8 +224,8 @@ public final class LauncherMain {
      * {@code (phase, detail)} events into window updates lives in
      * {@link SetupProgressAdapter}; a non-zero exit is a warning, not a stop.
      */
-    private static void runEnvironmentPhase(EnvironmentSetup setup, TinyUpdateClient client,
-            LauncherWindow window, SessionLog log, LauncherI18n i18n)
+    private static void runEnvironmentPhase(EnvironmentSetup setup,
+            LauncherWindow window, SessionLog log, LauncherI18n i18n, int downloadStepCount)
             throws IOException, InterruptedException {
 
         // Snap to dot before environment setup — clean transition from update phase
@@ -225,7 +236,7 @@ public final class LauncherMain {
         // and the browser (JCEF) runtime slot in as the final three numbered
         // steps. Fonts run after as a quick, unnumbered tail.
         SetupProgressAdapter adapter =
-                new SetupProgressAdapter(window, i18n, log, client.lastDownloadStepCount());
+                new SetupProgressAdapter(window, i18n, log, downloadStepCount);
 
         boolean success = setup.run(adapter);
 
