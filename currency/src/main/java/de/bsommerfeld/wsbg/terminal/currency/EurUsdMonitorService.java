@@ -5,19 +5,12 @@ import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.core.config.CurrencyConfig;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.core.config.NetConfig;
-import de.bsommerfeld.wsbg.terminal.core.util.JitteredScheduler;
+import de.bsommerfeld.wsbg.terminal.core.util.PollingMonitor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
-import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 /**
@@ -35,72 +28,29 @@ import java.util.function.Consumer;
  * which endpoint answered, so the UI can surface a "degraded source" badge
  * when running on the fallback.
  *
- * <p>
- * <b>UI integration TODO.</b> This service is intentionally stand-alone — it
- * does not yet emit on the {@code ApplicationEventBus} and is not wired into
- * {@code AppModule}. To complete the UI integration:
- *
- * <ol>
- *   <li>Register {@code EurUsdMonitorService} as an eager singleton in
- *       {@code terminal/AppModule} so the poll loop starts at boot.</li>
- *   <li>In the JCEF bridge (the layer that already pushes headlines and
- *       FinancialJuice news to the frontend over the websocket), call
- *       {@link #addListener(Consumer)} during construction and forward each
- *       {@link EurUsdQuote} as a JSON message, e.g.
- *       {@code {"type":"eurusd","rate":1.0876,"direction":"UP","source":"YAHOO","fetchedAt":...}}.</li>
- *   <li>On the frontend, render the rate in a small badge styled like the
- *       FinancialJuice ticker. On every push, briefly apply
- *       {@code .flash-up} (green background, ~600&nbsp;ms ease-out) when
- *       {@code direction === "UP"}, {@code .flash-down} (red) on
- *       {@code "DOWN"}, and leave the white/neutral default on
- *       {@code "NEUTRAL"}. Match the timing FinancialJuice and TradingView
- *       use — a single quick flash, no sustained colour change. Suggested
- *       CSS:
- *       <pre>{@code
- *       .eurusd { background: white; transition: background 600ms ease-out; }
- *       .eurusd.flash-up   { background: #1fbf75; }
- *       .eurusd.flash-down { background: #e84d4d; }
- *       }</pre>
- *       (add the class on push, remove it after ~600&nbsp;ms via
- *       {@code setTimeout} so the transition decays back to white).</li>
- *   <li>If {@link EurUsdQuote#source()} is {@link EurUsdQuote.Source#FRANKFURTER},
- *       show a small badge ("ECB ref / delayed") so the user knows the
- *       intraday feed is unavailable.</li>
- * </ol>
- *
- * Until those steps are done the service still works — it just polls and
- * holds the latest quote in {@link #getCurrent()}, ready to be wired up.
+ * <p>The polling scaffolding (scheduler, latest value, listener fan-out,
+ * shutdown) lives in {@link PollingMonitor}; this class keeps only the
+ * per-source poll strategy and interval.
  */
 @Singleton
-public class EurUsdMonitorService {
+public class EurUsdMonitorService extends PollingMonitor<EurUsdQuote> {
 
     private static final Logger LOG = LoggerFactory.getLogger(EurUsdMonitorService.class);
 
     /**
      * Initial delay before the first poll: zero, so the very first fetch fires
-     * immediately on the scheduler's daemon thread the moment the service is
-     * constructed. This never blocks the DI graph (the tick runs off-thread) and
+     * immediately on the scheduler's daemon thread the moment {@code start()}
+     * is called. This never blocks the DI graph (the tick runs off-thread) and
      * the fan-out is harmless even if the publisher hasn't registered its
-     * listener yet — the quote is cached in {@link #current} and the publisher
-     * re-sends it on the next {@code onClientOpen}. The result is data on screen
-     * as fast as the network allows instead of a fixed dead wait after boot.
+     * listener yet — the quote is cached and the publisher re-sends it on the
+     * next {@code onClientOpen}. The result is data on screen as fast as the
+     * network allows instead of a fixed dead wait after boot.
      */
     private static final long INITIAL_DELAY_SECONDS = 0;
 
     private final EurUsdClient client;
     private final long pollIntervalSeconds;
     private final double pollJitterPercent;
-
-    private final ScheduledExecutorService scheduler =
-            Executors.newSingleThreadScheduledExecutor(r -> {
-                Thread t = new Thread(r, "eurusd-monitor");
-                t.setDaemon(true);
-                return t;
-            });
-
-    private final AtomicReference<EurUsdQuote> current = new AtomicReference<>(null);
-    private final List<Consumer<EurUsdQuote>> listeners = new CopyOnWriteArrayList<>();
-    private final AtomicBoolean started = new AtomicBoolean(false);
 
     public EurUsdMonitorService() {
         this(new EurUsdClient(), new CurrencyConfig());
@@ -134,6 +84,7 @@ public class EurUsdMonitorService {
      */
     EurUsdMonitorService(EurUsdClient client, CurrencyConfig config, boolean autoStart,
             double pollJitterPercent) {
+        super("eurusd-monitor");
         this.client = client;
         // 30 s floor — the Yahoo v8/chart spot quote only refreshes ~once
         // per minute, so polling faster than this just re-fetches an
@@ -150,13 +101,12 @@ public class EurUsdMonitorService {
 
     /** Starts the poll loop. Idempotent — safe whether called by the ctor (tests) or AppMain. */
     public void start() {
-        if (!started.compareAndSet(false, true)) return;
+        if (!beginStart()) return;
         LOG.info("Starting EUR/USD monitor (interval: {} seconds, jitter {}%)",
                 pollIntervalSeconds, pollJitterPercent);
         // Jittered cadence (traffic blending): the first tick still fires
         // immediately, only the repeat interval varies around the base.
-        JitteredScheduler.schedule(scheduler, this::tick,
-                INITIAL_DELAY_SECONDS, pollIntervalSeconds, TimeUnit.SECONDS, pollJitterPercent);
+        scheduleTick(this::tick, INITIAL_DELAY_SECONDS, pollIntervalSeconds, pollJitterPercent);
     }
 
     /**
@@ -183,49 +133,25 @@ public class EurUsdMonitorService {
                 rate = fallback.get();
             }
 
-            EurUsdQuote prev = current.get();
+            EurUsdQuote prev = getCurrent().orElse(null);
             Double previousRate = prev == null ? null : prev.rate();
             EurUsdQuote next = EurUsdQuote.of(rate, previousRate, source, Instant.now());
-            current.set(next);
+            setCurrent(next);
             LOG.debug("EUR/USD = {} ({}, {})", next.rate(), next.source(), next.direction());
 
-            for (Consumer<EurUsdQuote> l : listeners) {
-                try {
-                    l.accept(next);
-                } catch (Exception e) {
-                    LOG.warn("EUR/USD listener {} threw: {}", l, e.getMessage());
-                }
-            }
+            fanOut(next);
         } catch (Exception e) {
             LOG.error("EUR/USD tick failed", e);
         }
     }
 
-    /** Most recent successful quote, or empty if no poll has succeeded yet. */
-    public Optional<EurUsdQuote> getCurrent() {
-        return Optional.ofNullable(current.get());
-    }
-
-    /**
-     * Registers a listener that fires on every successful poll. Listeners
-     * are invoked on the monitor's scheduler thread — keep them cheap or
-     * dispatch to your own executor.
-     */
-    public void addListener(Consumer<EurUsdQuote> listener) {
-        listeners.add(listener);
-    }
-
-    public void removeListener(Consumer<EurUsdQuote> listener) {
-        listeners.remove(listener);
+    @Override
+    protected void onListenerError(Consumer<EurUsdQuote> listener, Exception e) {
+        LOG.warn("EUR/USD listener {} threw: {}", listener, e.getMessage());
     }
 
     /** Effective interval the scheduler is using, in seconds. */
     public long pollIntervalSeconds() {
         return pollIntervalSeconds;
-    }
-
-    /** Stops the scheduler. Intended for test teardown / shutdown hooks. */
-    public void shutdown() {
-        scheduler.shutdownNow();
     }
 }

@@ -4,18 +4,11 @@ import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.core.config.NetConfig;
-import de.bsommerfeld.wsbg.terminal.core.util.JitteredScheduler;
+import de.bsommerfeld.wsbg.terminal.core.util.PollingMonitor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 /**
@@ -24,17 +17,21 @@ import java.util.function.Consumer;
  * The index only moves a few points across a day, so the cadence is slow
  * ({@value #POLL_INTERVAL_SECONDS}s) — polling faster just re-fetches an
  * unchanged value. Mirrors {@code EurUsdMonitorService}.
+ *
+ * <p>The polling scaffolding (scheduler, latest value, listener fan-out,
+ * shutdown) lives in {@link PollingMonitor}; this class keeps only the
+ * per-source poll strategy and interval.
  */
 @Singleton
-public class FearGreedMonitorService {
+public class FearGreedMonitorService extends PollingMonitor<FearGreedIndex> {
 
     private static final Logger LOG = LoggerFactory.getLogger(FearGreedMonitorService.class);
 
     /**
      * Zero initial delay: the first fetch fires immediately on the scheduler's
-     * daemon thread at construction. It runs off-thread (never blocks the DI
-     * graph) and the fan-out is harmless if the publisher's listener isn't wired
-     * yet — the reading is cached in {@link #current} and re-sent on the next
+     * daemon thread when {@code start()} is called. It runs off-thread (never
+     * blocks the DI graph) and the fan-out is harmless if the publisher's
+     * listener isn't wired yet — the reading is cached and re-sent on the next
      * {@code onClientOpen}. So the gauge fills as soon as CNN answers instead of
      * waiting out a fixed delay after boot.
      */
@@ -44,17 +41,6 @@ public class FearGreedMonitorService {
 
     private final FearGreedClient client;
     private final double pollJitterPercent;
-
-    private final ScheduledExecutorService scheduler =
-            Executors.newSingleThreadScheduledExecutor(r -> {
-                Thread t = new Thread(r, "fear-greed-monitor");
-                t.setDaemon(true);
-                return t;
-            });
-
-    private final AtomicReference<FearGreedIndex> current = new AtomicReference<>(null);
-    private final List<Consumer<FearGreedIndex>> listeners = new CopyOnWriteArrayList<>();
-    private final AtomicBoolean started = new AtomicBoolean(false);
 
     public FearGreedMonitorService() {
         this(new FearGreedClient(), true, new NetConfig().getPollJitterPercent());
@@ -77,6 +63,7 @@ public class FearGreedMonitorService {
     }
 
     FearGreedMonitorService(FearGreedClient client, boolean autoStart, double pollJitterPercent) {
+        super("fear-greed-monitor");
         this.client = client;
         this.pollJitterPercent = pollJitterPercent;
         if (autoStart) start();
@@ -84,13 +71,12 @@ public class FearGreedMonitorService {
 
     /** Starts the poll loop. Idempotent — safe whether called by the ctor or AppMain. */
     public void start() {
-        if (!started.compareAndSet(false, true)) return;
+        if (!beginStart()) return;
         LOG.info("Starting Fear&Greed monitor (interval: {} seconds, jitter {}%)",
                 POLL_INTERVAL_SECONDS, pollJitterPercent);
         // Jittered cadence (traffic blending): first tick still at t=0 for a
         // fast first paint, only the repeat interval varies around the base.
-        JitteredScheduler.schedule(scheduler, this::tick,
-                INITIAL_DELAY_SECONDS, POLL_INTERVAL_SECONDS, TimeUnit.SECONDS, pollJitterPercent);
+        scheduleTick(this::tick, INITIAL_DELAY_SECONDS, POLL_INTERVAL_SECONDS, pollJitterPercent);
     }
 
     /** Single poll cycle: fetch, update the cache, fan out. Never lets the executor see an exception. */
@@ -102,36 +88,16 @@ public class FearGreedMonitorService {
                 return;
             }
             FearGreedIndex idx = next.get();
-            current.set(idx);
+            setCurrent(idx);
             LOG.debug("Fear&Greed = {} ({})", Math.round(idx.score()), idx.band());
-            for (Consumer<FearGreedIndex> l : listeners) {
-                try {
-                    l.accept(idx);
-                } catch (Exception e) {
-                    LOG.warn("Fear&Greed listener {} threw: {}", l, e.getMessage());
-                }
-            }
+            fanOut(idx);
         } catch (Exception e) {
             LOG.error("Fear&Greed tick failed", e);
         }
     }
 
-    /** Most recent reading, or empty if no poll has succeeded yet. */
-    public Optional<FearGreedIndex> getCurrent() {
-        return Optional.ofNullable(current.get());
-    }
-
-    /** Registers a listener fired on every successful poll (on the monitor thread — keep it cheap). */
-    public void addListener(Consumer<FearGreedIndex> listener) {
-        listeners.add(listener);
-    }
-
-    public void removeListener(Consumer<FearGreedIndex> listener) {
-        listeners.remove(listener);
-    }
-
-    /** Stops the scheduler. For test teardown / shutdown. */
-    public void shutdown() {
-        scheduler.shutdownNow();
+    @Override
+    protected void onListenerError(Consumer<FearGreedIndex> listener, Exception e) {
+        LOG.warn("Fear&Greed listener {} threw: {}", listener, e.getMessage());
     }
 }
