@@ -1,141 +1,151 @@
 package de.bsommerfeld.wsbg.terminal.reddit;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
+import de.bsommerfeld.wsbg.terminal.reddit.support.RedditText;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.Method;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 /**
- * Tests for RedditScraper's utility methods and inner types.
- * HTTP-dependent methods (scanSubreddit, fetchThreadContext) are not tested
- * here since they require live Reddit endpoints.
+ * Tests for the JSON path's utility methods, media/thread mapping, and inner
+ * types. After the SRP decomposition these behaviours live in dedicated
+ * collaborators ({@link RedditText}, {@link RedditMediaExtractor},
+ * {@link RedditThreadMapper}); the orchestrator {@link RedditScraper} is exercised
+ * only for its public edge cases (HTTP-dependent scans need live endpoints).
  */
 class RedditScraperTest {
 
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
     private RedditRepository repository;
     private RedditScraper scraper;
+    private RedditMediaExtractor media;
+    private RedditThreadMapper threadMapper;
 
     @BeforeEach
     void setUp() {
         repository = mock(RedditRepository.class);
         scraper = new RedditScraper(repository, new GlobalConfig());
+        media = new RedditMediaExtractor();
+        threadMapper = new RedditThreadMapper(repository, media);
     }
 
     // -- normalizePermalink --
 
     @Test
-    void normalizePermalink_shouldStripTrailingSlash() throws Exception {
-        assertEquals("/r/wsb/comments/abc", invokeNormalize("/r/wsb/comments/abc/"));
+    void normalizePermalink_shouldStripTrailingSlash() {
+        assertEquals("/r/wsb/comments/abc", RedditText.normalizePermalink("/r/wsb/comments/abc/"));
     }
 
     @Test
-    void normalizePermalink_shouldAddLeadingSlash() throws Exception {
-        assertEquals("/r/wsb/comments/abc", invokeNormalize("r/wsb/comments/abc"));
+    void normalizePermalink_shouldAddLeadingSlash() {
+        assertEquals("/r/wsb/comments/abc", RedditText.normalizePermalink("r/wsb/comments/abc"));
     }
 
     @Test
-    void normalizePermalink_shouldHandleAlreadyNormalized() throws Exception {
-        assertEquals("/r/wsb/comments/abc", invokeNormalize("/r/wsb/comments/abc"));
+    void normalizePermalink_shouldHandleAlreadyNormalized() {
+        assertEquals("/r/wsb/comments/abc", RedditText.normalizePermalink("/r/wsb/comments/abc"));
     }
 
     // -- isImageUrl --
 
     @Test
-    void isImageUrl_shouldRecognizeJpg() throws Exception {
-        assertTrue(invokeIsImageUrl("https://i.redd.it/photo.jpg"));
+    void isImageUrl_shouldRecognizeJpg() {
+        assertTrue(RedditText.isImageUrl("https://i.redd.it/photo.jpg"));
     }
 
     @Test
-    void isImageUrl_shouldRecognizePng() throws Exception {
-        assertTrue(invokeIsImageUrl("https://i.redd.it/chart.png"));
+    void isImageUrl_shouldRecognizePng() {
+        assertTrue(RedditText.isImageUrl("https://i.redd.it/chart.png"));
     }
 
     @Test
-    void isImageUrl_shouldRecognizeWebp() throws Exception {
-        assertTrue(invokeIsImageUrl("https://i.imgur.com/img.webp"));
+    void isImageUrl_shouldRecognizeWebp() {
+        assertTrue(RedditText.isImageUrl("https://i.imgur.com/img.webp"));
     }
 
     @Test
-    void isImageUrl_shouldRecognizeGif() throws Exception {
-        assertTrue(invokeIsImageUrl("https://i.imgur.com/meme.gif"));
+    void isImageUrl_shouldRecognizeGif() {
+        assertTrue(RedditText.isImageUrl("https://i.imgur.com/meme.gif"));
     }
 
     @Test
-    void isImageUrl_shouldRecognizeUrlsWithQueryParams() throws Exception {
-        assertTrue(invokeIsImageUrl("https://cdn.example.com/image.jpg?width=640"));
+    void isImageUrl_shouldRecognizeUrlsWithQueryParams() {
+        assertTrue(RedditText.isImageUrl("https://cdn.example.com/image.jpg?width=640"));
     }
 
     @Test
-    void isImageUrl_shouldRejectNonImageUrl() throws Exception {
-        assertFalse(invokeIsImageUrl("https://www.reddit.com/r/wsb"));
+    void isImageUrl_shouldRejectNonImageUrl() {
+        assertFalse(RedditText.isImageUrl("https://www.reddit.com/r/wsb"));
     }
 
     @Test
-    void isImageUrl_shouldReturnFalseForNull() throws Exception {
-        assertFalse(invokeIsImageUrl(null));
+    void isImageUrl_shouldReturnFalseForNull() {
+        assertFalse(RedditText.isImageUrl(null));
     }
 
     // -- isRealAuthor --
 
     @Test
-    void isRealAuthor_shouldAcceptRealUsername() throws Exception {
-        assertTrue(invokeIsRealAuthor("DeepFuckingValue"));
+    void isRealAuthor_shouldAcceptRealUsername() {
+        assertTrue(RedditText.isRealAuthor("DeepFuckingValue"));
     }
 
     @Test
-    void isRealAuthor_shouldRejectAnon() throws Exception {
-        assertFalse(invokeIsRealAuthor("anon"));
+    void isRealAuthor_shouldRejectAnon() {
+        assertFalse(RedditText.isRealAuthor("anon"));
     }
 
     @Test
-    void isRealAuthor_shouldRejectDeleted() throws Exception {
-        assertFalse(invokeIsRealAuthor("[deleted]"));
+    void isRealAuthor_shouldRejectDeleted() {
+        assertFalse(RedditText.isRealAuthor("[deleted]"));
     }
 
     @Test
-    void isRealAuthor_shouldRejectUnknown() throws Exception {
-        assertFalse(invokeIsRealAuthor("unknown"));
+    void isRealAuthor_shouldRejectUnknown() {
+        assertFalse(RedditText.isRealAuthor("unknown"));
     }
 
     // -- unescapeHtml --
 
     @Test
-    void unescapeHtml_shouldDecodeAmpersand() throws Exception {
-        assertEquals("a&b", invokeUnescapeHtml("a&amp;b"));
+    void unescapeHtml_shouldDecodeAmpersand() {
+        assertEquals("a&b", RedditText.unescapeHtml("a&amp;b"));
     }
 
     @Test
-    void unescapeHtml_shouldDecodeMultipleEntities() throws Exception {
-        assertEquals("<tag attr=\"val\">", invokeUnescapeHtml("&lt;tag attr=&quot;val&quot;&gt;"));
+    void unescapeHtml_shouldDecodeMultipleEntities() {
+        assertEquals("<tag attr=\"val\">", RedditText.unescapeHtml("&lt;tag attr=&quot;val&quot;&gt;"));
     }
 
     @Test
-    void unescapeHtml_shouldReturnNullForNull() throws Exception {
-        assertNull(invokeUnescapeHtml(null));
+    void unescapeHtml_shouldReturnNullForNull() {
+        assertNull(RedditText.unescapeHtml(null));
     }
 
     // -- stripTrailingPunctuation --
 
     @Test
-    void stripTrailingPunctuation_shouldRemoveParenthesis() throws Exception {
-        assertEquals("https://example.com", invokeStripPunctuation("https://example.com)"));
+    void stripTrailingPunctuation_shouldRemoveParenthesis() {
+        assertEquals("https://example.com", RedditText.stripTrailingPunctuation("https://example.com)"));
     }
 
     @Test
-    void stripTrailingPunctuation_shouldRemoveMultiplePunctuation() throws Exception {
-        assertEquals("https://example.com", invokeStripPunctuation("https://example.com)."));
+    void stripTrailingPunctuation_shouldRemoveMultiplePunctuation() {
+        assertEquals("https://example.com", RedditText.stripTrailingPunctuation("https://example.com)."));
     }
 
     @Test
-    void stripTrailingPunctuation_shouldLeaveCleanUrlAlone() throws Exception {
-        assertEquals("https://example.com/path", invokeStripPunctuation("https://example.com/path"));
+    void stripTrailingPunctuation_shouldLeaveCleanUrlAlone() {
+        assertEquals("https://example.com/path", RedditText.stripTrailingPunctuation("https://example.com/path"));
     }
 
     // -- ScrapeStats --
@@ -261,7 +271,7 @@ class RedditScraperTest {
             """;
         assertEquals(
                 List.of("https://preview.redd.it/abc1.png?width=640&auto=webp"),
-                invokeResolveImageUrls(json));
+                media.resolveImageUrls(MAPPER.readTree(json)));
     }
 
     @Test
@@ -277,7 +287,7 @@ class RedditScraperTest {
             """;
         assertEquals(
                 List.of("https://preview.redd.it/a.jpg", "https://preview.redd.it/b.gif"),
-                invokeResolveImageUrls(json));
+                media.resolveImageUrls(MAPPER.readTree(json)));
     }
 
     @Test
@@ -301,7 +311,7 @@ class RedditScraperTest {
             """;
         assertEquals(
                 List.of("https://preview.redd.it/g1.png", "https://preview.redd.it/g2.png"),
-                invokeResolveImageUrls(json));
+                media.resolveImageUrls(MAPPER.readTree(json)));
     }
 
     @Test
@@ -319,7 +329,7 @@ class RedditScraperTest {
             """;
         assertEquals(
                 List.of("https://preview.redd.it/p1.png"),
-                invokeResolveImageUrls(json));
+                media.resolveImageUrls(MAPPER.readTree(json)));
     }
 
     @Test
@@ -335,7 +345,7 @@ class RedditScraperTest {
             """;
         assertEquals(
                 List.of("https://preview.redd.it/img.png"),
-                invokeResolveImageUrls(json));
+                media.resolveImageUrls(MAPPER.readTree(json)));
     }
 
     @Test
@@ -349,7 +359,7 @@ class RedditScraperTest {
               }
             }
             """;
-        assertEquals(List.of("https://preview.redd.it/m1.png"), invokeResolveImageUrls(json));
+        assertEquals(List.of("https://preview.redd.it/m1.png"), media.resolveImageUrls(MAPPER.readTree(json)));
     }
 
     @Test
@@ -357,7 +367,7 @@ class RedditScraperTest {
         String json = """
             { "is_gallery": false, "selftext": "just words, no images", "url": "https://www.reddit.com/r/x/comments/y/" }
             """;
-        assertTrue(invokeResolveImageUrls(json).isEmpty());
+        assertTrue(media.resolveImageUrls(MAPPER.readTree(json)).isEmpty());
     }
 
     // -- crosspost body-text fallback --
@@ -373,7 +383,7 @@ class RedditScraperTest {
               "crosspost_parent_list": [{ "selftext": "Original DD body about MU financials" }]
             }
             """;
-        RedditThread thread = invokeParseThread(json, "t3_abc", "wallstreetbetsGER");
+        RedditThread thread = threadMapper.parseThread(MAPPER.readTree(json), "t3_abc", "wallstreetbetsGER");
         assertEquals("Original DD body about MU financials", thread.textContent());
     }
 
@@ -389,7 +399,7 @@ class RedditScraperTest {
               "crosspost_parent_list": [{ "selftext": "" }]
             }
             """;
-        RedditThread thread = invokeParseThread(json, "t3_abc", "x");
+        RedditThread thread = threadMapper.parseThread(MAPPER.readTree(json), "t3_abc", "x");
         assertEquals("[Link: https://i.redd.it/pic.png]", thread.textContent());
     }
 
@@ -403,11 +413,12 @@ class RedditScraperTest {
               "crosspost_parent_list": [{ "selftext": "Original DD body" }]
             } } ] } }
             """;
-        ThreadAnalysisContext ctx = invokeParseThreadData(json);
+        var ctx = new ThreadAnalysisContext();
+        threadMapper.parseThreadData(MAPPER.readTree(json), ctx);
         assertEquals("Original DD body", ctx.selftext);
     }
 
-    // -- extractImages (comment inline media) --
+    // -- extractCommentImages (comment inline media) --
 
     @Test
     void extractImages_shouldResolveCommentInlineMedia() throws Exception {
@@ -417,7 +428,7 @@ class RedditScraperTest {
                 "c1": {"status":"valid","e":"Image","s":{"u":"https://preview.redd.it/c1.png"}}
             }}
             """;
-        var result = invokeExtractImages(body, json);
+        var result = extractCommentImages(body, json);
         assertEquals(List.of("https://preview.redd.it/c1.png"), result.images());
         assertEquals("this is fire [Image] buy now", result.text());
     }
@@ -430,7 +441,7 @@ class RedditScraperTest {
                 "c2": {"status":"valid","e":"AnimatedImage","s":{"u":"https://preview.redd.it/c2.gif"}}
             }}
             """;
-        var result = invokeExtractImages(body, json);
+        var result = extractCommentImages(body, json);
         assertEquals(
                 List.of("https://i.redd.it/raw.png", "https://preview.redd.it/c2.gif"),
                 result.images());
@@ -441,7 +452,7 @@ class RedditScraperTest {
     void extractImages_shouldLeaveUnresolvableInlineRefUntouched() throws Exception {
         String body = "see ![img](missing) here";
         String json = "{ \"media_metadata\": { \"other\": {\"status\":\"valid\",\"e\":\"Image\",\"s\":{\"u\":\"https://x/o.png\"}} } }";
-        var result = invokeExtractImages(body, json);
+        var result = extractCommentImages(body, json);
         assertTrue(result.images().isEmpty());
         assertEquals("see ![img](missing) here", result.text());
     }
@@ -449,79 +460,14 @@ class RedditScraperTest {
     @Test
     void extractImages_shouldNoOpWithoutMediaMetadata() throws Exception {
         String body = "plain comment, no media";
-        var result = invokeExtractImages(body, "{}");
+        var result = extractCommentImages(body, "{}");
         assertTrue(result.images().isEmpty());
         assertEquals("plain comment, no media", result.text());
     }
 
-    // -- Reflection helpers --
-
-    private RedditThread invokeParseThread(String json, String id, String subredditDefault)
+    private RedditMediaExtractor.ImageExtractionResult extractCommentImages(String body, String json)
             throws Exception {
-        var data = new com.fasterxml.jackson.databind.ObjectMapper().readTree(json);
-        Method m = RedditScraper.class.getDeclaredMethod("parseThread",
-                com.fasterxml.jackson.databind.JsonNode.class, String.class, String.class);
-        m.setAccessible(true);
-        return (RedditThread) m.invoke(scraper, data, id, subredditDefault);
-    }
-
-    private ThreadAnalysisContext invokeParseThreadData(String json) throws Exception {
-        var listing = new com.fasterxml.jackson.databind.ObjectMapper().readTree(json);
-        var ctx = new ThreadAnalysisContext();
-        Method m = RedditScraper.class.getDeclaredMethod("parseThreadData",
-                com.fasterxml.jackson.databind.JsonNode.class, ThreadAnalysisContext.class);
-        m.setAccessible(true);
-        m.invoke(scraper, listing, ctx);
-        return ctx;
-    }
-
-    private RedditScraper.ImageExtractionResult invokeExtractImages(String body, String json)
-            throws Exception {
-        var data = new com.fasterxml.jackson.databind.ObjectMapper().readTree(json);
-        var ctx = new ThreadAnalysisContext();
-        Method m = RedditScraper.class.getDeclaredMethod("extractImages",
-                String.class, com.fasterxml.jackson.databind.JsonNode.class,
-                ThreadAnalysisContext.class);
-        m.setAccessible(true);
-        return (RedditScraper.ImageExtractionResult) m.invoke(scraper, body, data, ctx);
-    }
-
-    @SuppressWarnings("unchecked")
-    private List<String> invokeResolveImageUrls(String json) throws Exception {
-        var node = new com.fasterxml.jackson.databind.ObjectMapper().readTree(json);
-        Method m = RedditScraper.class.getDeclaredMethod("resolveImageUrls",
-                com.fasterxml.jackson.databind.JsonNode.class);
-        m.setAccessible(true);
-        return (List<String>) m.invoke(scraper, node);
-    }
-
-    private String invokeNormalize(String permalink) throws Exception {
-        Method m = RedditScraper.class.getDeclaredMethod("normalizePermalink", String.class);
-        m.setAccessible(true);
-        return (String) m.invoke(scraper, permalink);
-    }
-
-    private boolean invokeIsImageUrl(String url) throws Exception {
-        Method m = RedditScraper.class.getDeclaredMethod("isImageUrl", String.class);
-        m.setAccessible(true);
-        return (boolean) m.invoke(scraper, url);
-    }
-
-    private boolean invokeIsRealAuthor(String author) throws Exception {
-        Method m = RedditScraper.class.getDeclaredMethod("isRealAuthor", String.class);
-        m.setAccessible(true);
-        return (boolean) m.invoke(scraper, author);
-    }
-
-    private String invokeUnescapeHtml(String url) throws Exception {
-        Method m = RedditScraper.class.getDeclaredMethod("unescapeHtml", String.class);
-        m.setAccessible(true);
-        return (String) m.invoke(scraper, url);
-    }
-
-    private String invokeStripPunctuation(String url) throws Exception {
-        Method m = RedditScraper.class.getDeclaredMethod("stripTrailingPunctuation", String.class);
-        m.setAccessible(true);
-        return (String) m.invoke(scraper, url);
+        JsonNode data = MAPPER.readTree(json);
+        return media.extractCommentImages(body, data, new ThreadAnalysisContext());
     }
 }
