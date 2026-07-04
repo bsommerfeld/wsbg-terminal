@@ -49,12 +49,6 @@ public class AgentConfig {
      * to the single-model default.
      */
     public Model resolveEditorialModel() {
-        try {
-            if (Model.valueOf(editorialModel) == Model.REASONING_POWER) {
-                return Model.REASONING_POWER;
-            }
-        } catch (IllegalArgumentException ignored) {
-        }
         return Model.REASONING_POWER;
     }
 }

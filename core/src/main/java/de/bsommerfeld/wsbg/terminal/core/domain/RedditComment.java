@@ -35,7 +35,7 @@ public record RedditComment(
      * Canonical constructor — ensures imageUrls is never null.
      */
     public RedditComment {
-        imageUrls = imageUrls != null ? imageUrls : Collections.emptyList();
+        imageUrls = imageUrls != null ? List.copyOf(imageUrls) : Collections.emptyList();
     }
 
     /**

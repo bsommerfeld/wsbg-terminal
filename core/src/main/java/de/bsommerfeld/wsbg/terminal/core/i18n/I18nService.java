@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 
 import java.text.MessageFormat;
 import java.util.Locale;
+import java.util.MissingResourceException;
 import java.util.ResourceBundle;
 
 /**
@@ -22,9 +23,10 @@ import java.util.ResourceBundle;
  * which reloads the bundle immediately.
  *
  * <p>
- * Keys that are missing from the active bundle cause a hard failure rather
- * than returning a fallback string — this surfaces translation gaps during
- * development instead of hiding them in production.
+ * Keys that are missing from the active bundle fall back gracefully to the
+ * key itself (logged as a warning) rather than crashing — matching the
+ * application-wide localization contract that a missing translation must
+ * never bring down a user-facing path.
  */
 @Singleton
 public class I18nService {
@@ -62,15 +64,14 @@ public class I18nService {
      * Returns the localized string for the given key.
      *
      * @param key the message key as defined in the properties bundle
-     * @return the translated string
-     * @throws RuntimeException if the key is missing — intentionally hard-fail
+     * @return the translated string, or the key itself when no translation exists
      */
     public String get(String key) {
         try {
             return resourceBundle.getString(key);
-        } catch (Exception e) {
-            LOG.error("Missing translation for key: {}", key);
-            throw new RuntimeException("Translation missing for key: " + key);
+        } catch (MissingResourceException e) {
+            LOG.warn("Missing translation for key: {}", key);
+            return key;
         }
     }
 
@@ -87,16 +88,16 @@ public class I18nService {
         try {
             MessageFormat formatter = new MessageFormat(pattern, currentLocale);
             return formatter.format(args);
-        } catch (Exception e) {
-            LOG.error("Error formatting string for key: {}", key, e);
-            throw new RuntimeException("I18n Formatting Error for key: " + key, e);
+        } catch (IllegalArgumentException e) {
+            LOG.warn("Error formatting string for key: {}", key, e);
+            return pattern;
         }
     }
 
     private void loadBundle() {
         try {
             this.resourceBundle = ResourceBundle.getBundle(BUNDLE_NAME, currentLocale);
-        } catch (Exception e) {
+        } catch (MissingResourceException e) {
             LOG.error("CRITICAL: Failed to load resource bundle '{}' for locale '{}'",
                     BUNDLE_NAME, currentLocale, e);
             throw new RuntimeException("Failed to load I18n Bundle: " + BUNDLE_NAME, e);
