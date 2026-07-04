@@ -31,14 +31,14 @@ class TickerResolverTest {
     void rejectsAFuzzyMemecoinNamesakeButKeepsAMajorAndACashtag() {
         // "Starlink" (the SpaceX product) collides with an obscure same-named coin sitting at
         // Yahoo's base relevance — must NOT resolve to it (→ tickerless, line stays news-only).
-        assertNull(TickerResolver.strongMatch("Starlink",
+        assertNull(StrongTokenMatcher.strongMatch("Starlink",
                 List.of(q("STARL-USD", "Starlink USD", "CCC", "CRYPTOCURRENCY", 20002))),
                 "obscure memecoin namesake is dropped");
         // Bitcoin: the coin the room genuinely means, far higher relevance → kept.
-        assertEquals("BTC-USD", TickerResolver.strongMatch("Bitcoin",
+        assertEquals("BTC-USD", StrongTokenMatcher.strongMatch("Bitcoin",
                 List.of(q("BTC-USD", "Bitcoin USD", "CCC", "CRYPTOCURRENCY", 37112))).symbol());
         // A cashtag the user wrote (exact symbol) is faithful — passes even at a low score.
-        assertEquals("STARL-USD", TickerResolver.strongMatch("STARL-USD",
+        assertEquals("STARL-USD", StrongTokenMatcher.strongMatch("STARL-USD",
                 List.of(q("STARL-USD", "Starlink USD", "CCC", "CRYPTOCURRENCY", 20002))).symbol());
     }
 
@@ -48,13 +48,13 @@ class TickerResolverTest {
         List<YahooQuote> quotes = List.of(
                 q("1MUV2.MI", "MUNICH RE", "MIL", "EQUITY"),
                 q("MUV2.DE", "MUNICH RE", "GER", "EQUITY"));
-        assertEquals("MUV2.DE", TickerResolver.strongMatch("Munich", quotes).symbol());
+        assertEquals("MUV2.DE", StrongTokenMatcher.strongMatch("Munich", quotes).symbol());
 
         // Order must not matter — the numeric-prefixed line loses either way.
         List<YahooQuote> reversed = List.of(
                 q("MUV2.DE", "MUNICH RE", "GER", "EQUITY"),
                 q("1MUV2.MI", "MUNICH RE", "MIL", "EQUITY"));
-        assertEquals("MUV2.DE", TickerResolver.strongMatch("Munich", reversed).symbol());
+        assertEquals("MUV2.DE", StrongTokenMatcher.strongMatch("Munich", reversed).symbol());
     }
 
     @Test
@@ -62,7 +62,7 @@ class TickerResolverTest {
         List<YahooQuote> quotes = List.of(
                 q("1MUV2.MI", "MUNICH RE", "MIL", "EQUITY"),
                 q("MUV2.DE", "MUNICH RE", "GER", "EQUITY"));
-        assertEquals("MUV2.DE", TickerResolver.strongMatch("MUV2.DE", quotes).symbol());
+        assertEquals("MUV2.DE", StrongTokenMatcher.strongMatch("MUV2.DE", quotes).symbol());
     }
 
     @Test
@@ -70,7 +70,7 @@ class TickerResolverTest {
         List<YahooQuote> quotes = List.of(
                 q("ALIZY", "ALLIANZ", "PNK", "EQUITY"),   // US pink-sheet ADR
                 q("ALV.DE", "ALLIANZ", "GER", "EQUITY"));
-        assertEquals("ALV.DE", TickerResolver.strongMatch("Allianz", quotes).symbol());
+        assertEquals("ALV.DE", StrongTokenMatcher.strongMatch("Allianz", quotes).symbol());
     }
 
     @Test
@@ -78,7 +78,7 @@ class TickerResolverTest {
         List<YahooQuote> quotes = List.of(
                 q("XALV", "ALLIANZ", "GER", "ETF"),
                 q("ALV.DE", "ALLIANZ", "GER", "EQUITY"));
-        assertEquals("ALV.DE", TickerResolver.strongMatch("Allianz", quotes).symbol());
+        assertEquals("ALV.DE", StrongTokenMatcher.strongMatch("Allianz", quotes).symbol());
     }
 
     @Test
@@ -88,7 +88,7 @@ class TickerResolverTest {
         List<YahooQuote> quotes = List.of(
                 q("TTWO.WA", "TAKE-TWO INTERACTIVE", "WSE", "EQUITY"),
                 q("TTWO", "TAKE-TWO INTERACTIVE", "NMS", "EQUITY"));
-        assertEquals("TTWO", TickerResolver.strongMatch("Take-Two", quotes).symbol());
+        assertEquals("TTWO", StrongTokenMatcher.strongMatch("Take-Two", quotes).symbol());
     }
 
     @Test
@@ -97,7 +97,7 @@ class TickerResolverTest {
         List<YahooQuote> quotes = List.of(
                 q("RHM.F", "RHEINMETALL", "FRA", "EQUITY"),
                 q("RHM.DE", "RHEINMETALL", "GER", "EQUITY"));
-        assertEquals("RHM.DE", TickerResolver.strongMatch("Rheinmetall", quotes).symbol());
+        assertEquals("RHM.DE", StrongTokenMatcher.strongMatch("Rheinmetall", quotes).symbol());
     }
 
     @Test
@@ -106,19 +106,19 @@ class TickerResolverTest {
         List<YahooQuote> quotes = List.of(
                 q("BYA.WA", "QUANTUM BLOCKCHAIN", "WSE", "EQUITY"),
                 q("BYA.F", "QUANTUM BLOCKCHAIN", "FRA", "EQUITY"));
-        assertEquals("BYA.F", TickerResolver.strongMatch("Quantum Blockchain", quotes).symbol());
+        assertEquals("BYA.F", StrongTokenMatcher.strongMatch("Quantum Blockchain", quotes).symbol());
     }
 
     @Test
     void soleMatchIsReturnedEvenIfPenalised() {
         List<YahooQuote> quotes = List.of(q("1MUV2.MI", "MUNICH RE", "MIL", "EQUITY"));
-        assertEquals("1MUV2.MI", TickerResolver.strongMatch("Munich", quotes).symbol());
+        assertEquals("1MUV2.MI", StrongTokenMatcher.strongMatch("Munich", quotes).symbol());
     }
 
     @Test
     void noNameMatchReturnsNull() {
         List<YahooQuote> quotes = List.of(q("ALV.DE", "ALLIANZ", "GER", "EQUITY"));
-        assertNull(TickerResolver.strongMatch("Tesla", quotes));
+        assertNull(StrongTokenMatcher.strongMatch("Tesla", quotes));
     }
 
     @Test
@@ -127,7 +127,7 @@ class TickerResolverTest {
         // single-token match — "com" is a generic suffix like inc/corp. Regression:
         // Amazon used to fall through to a name-only unit with no ticker.
         List<YahooQuote> quotes = List.of(q("AMZN", "Amazon.com, Inc.", "NMS", "EQUITY"));
-        assertEquals("AMZN", TickerResolver.strongMatch("Amazon", quotes).symbol());
+        assertEquals("AMZN", StrongTokenMatcher.strongMatch("Amazon", quotes).symbol());
     }
 
     @Test
@@ -136,14 +136,14 @@ class TickerResolverTest {
         List<YahooQuote> quotes = List.of(
                 q("NQ=F", "Nasdaq 100 Futures", "CME", "FUTURE"),
                 q("^NDX", "NASDAQ 100", "NIM", "INDEX"));
-        assertEquals("^NDX", TickerResolver.strongMatch("NASDAQ 100", quotes).symbol());
+        assertEquals("^NDX", StrongTokenMatcher.strongMatch("NASDAQ 100", quotes).symbol());
     }
 
     @Test
     void genericThemeAcronymDoesNotExactMatchItsTicker() {
         // "AI" is the theme, not C3.ai — the exact-symbol fast-path is gated for theme words.
-        assertNull(TickerResolver.strongMatch("AI", List.of(q("AI", "C3.ai, Inc.", "NYQ", "EQUITY"))));
-        assertNull(TickerResolver.strongMatch("IT", List.of(q("IT", "Gartner, Inc.", "NYQ", "EQUITY"))));
+        assertNull(StrongTokenMatcher.strongMatch("AI", List.of(q("AI", "C3.ai, Inc.", "NYQ", "EQUITY"))));
+        assertNull(StrongTokenMatcher.strongMatch("IT", List.of(q("IT", "Gartner, Inc.", "NYQ", "EQUITY"))));
     }
 
     // ---- Tier 2: LLM judge fallback when token/score matching can't decide ----
@@ -235,11 +235,11 @@ class TickerResolverTest {
     @Test
     void sharesSignificantWordMatchesNameOrSymbol() {
         org.junit.jupiter.api.Assertions.assertTrue(
-                TickerResolver.sharesSignificantWord("BYD", "BYD Company Limited", "1211.HK"));
+                NameMatching.sharesSignificantWord("BYD", "BYD Company Limited", "1211.HK"));
         org.junit.jupiter.api.Assertions.assertTrue(
-                TickerResolver.sharesSignificantWord("Brent crude oil", "Brent Crude Oil Last Day", "BRNTN.MX"));
+                NameMatching.sharesSignificantWord("Brent crude oil", "Brent Crude Oil Last Day", "BRNTN.MX"));
         org.junit.jupiter.api.Assertions.assertFalse(
-                TickerResolver.sharesSignificantWord("KO", "Kohl's Corporation", "KSS"));
+                NameMatching.sharesSignificantWord("KO", "Kohl's Corporation", "KSS"));
     }
 
     @Test
@@ -349,11 +349,11 @@ class TickerResolverTest {
     @Test
     void sameCompanyNameCollapsesListingChurnButNotWrongTwins() {
         org.junit.jupiter.api.Assertions.assertTrue(
-                TickerResolver.sameCompanyName("Infineon Technologies AG", "Infineon Technologies ADR"));
+                NameMatching.sameCompanyName("Infineon Technologies AG", "Infineon Technologies ADR"));
         org.junit.jupiter.api.Assertions.assertTrue(
-                TickerResolver.sameCompanyName("Nokia Oyj", "Nokia"));
+                NameMatching.sameCompanyName("Nokia Oyj", "Nokia"));
         org.junit.jupiter.api.Assertions.assertFalse(
-                TickerResolver.sameCompanyName("Boyd Gaming Corporation", "BYD Company Limited"));
+                NameMatching.sameCompanyName("Boyd Gaming Corporation", "BYD Company Limited"));
     }
 
     @Test
@@ -368,15 +368,15 @@ class TickerResolverTest {
     @Test
     void isPrefixTrapCatchesSpellingBleedButNotIdentity() {
         org.junit.jupiter.api.Assertions.assertTrue(
-                TickerResolver.isPrefixTrap("Polen", "Polenergia S.A"), "Polen ⊂ Polenergia");
+                NameMatching.isPrefixTrap("Polen", "Polenergia S.A"), "Polen ⊂ Polenergia");
         org.junit.jupiter.api.Assertions.assertTrue(
-                TickerResolver.isPrefixTrap("Meta", "Metaplanet Inc."), "Meta ⊂ Metaplanet");
+                NameMatching.isPrefixTrap("Meta", "Metaplanet Inc."), "Meta ⊂ Metaplanet");
         org.junit.jupiter.api.Assertions.assertFalse(
-                TickerResolver.isPrefixTrap("Google", "Alphabet Inc."), "disjoint names = real cross-name identity");
+                NameMatching.isPrefixTrap("Google", "Alphabet Inc."), "disjoint names = real cross-name identity");
         org.junit.jupiter.api.Assertions.assertFalse(
-                TickerResolver.isPrefixTrap("Meta", "Meta Platforms, Inc."), "shares the full word 'meta'");
+                NameMatching.isPrefixTrap("Meta", "Meta Platforms, Inc."), "shares the full word 'meta'");
         org.junit.jupiter.api.Assertions.assertFalse(
-                TickerResolver.isPrefixTrap("Nvidia", "NVIDIA Corporation"), "shares 'nvidia'");
+                NameMatching.isPrefixTrap("Nvidia", "NVIDIA Corporation"), "shares 'nvidia'");
     }
 
     @Test
@@ -406,7 +406,7 @@ class TickerResolverTest {
         // a single-token query must NOT match a firm whose name merely contains the
         // token among real, distinguishing words (no score signal → stays rejected).
         List<YahooQuote> quotes = List.of(q("RMO", "Rheiner Management AG", "GER", "EQUITY"));
-        assertNull(TickerResolver.strongMatch("Rheiner", quotes));
+        assertNull(StrongTokenMatcher.strongMatch("Rheiner", quotes));
     }
 
     @Test
@@ -415,7 +415,7 @@ class TickerResolverTest {
         // to be) a stop-word. A high Yahoo relevance score confirms the megacap, so
         // no stop-list growth is needed.
         List<YahooQuote> quotes = List.of(q("META", "Meta Platforms, Inc.", "NMS", "EQUITY", 800_000.0));
-        assertEquals("META", TickerResolver.strongMatch("Meta", quotes).symbol());
+        assertEquals("META", StrongTokenMatcher.strongMatch("Meta", quotes).symbol());
     }
 
     @Test
@@ -423,6 +423,19 @@ class TickerResolverTest {
         // Same structural shape, but an obscure low-score hit must stay rejected —
         // the score, not a token list, is what separates Amazon-legit from Rheiner-fuzzy.
         List<YahooQuote> quotes = List.of(q("RMO", "Rheiner Management AG", "GER", "EQUITY", 1_200.0));
-        assertNull(TickerResolver.strongMatch("Rheiner", quotes));
+        assertNull(StrongTokenMatcher.strongMatch("Rheiner", quotes));
+    }
+
+    @Test
+    void guardTowerStagesAreWiredInTheLoadBearingOrder() {
+        // The cascade order encodes real fixes (DAX-ETF trap, „Gold" mining-stock trap,
+        // SPD/Kakao veto, „OP"/Polen prefix-trap, tier-3 rescue) and must not drift:
+        // Index → Commodity → Strong⊕Veto → Judge → Corpus.
+        java.util.List<SubjectMatcher> stages = new TickerResolver(null).matchTower().stages();
+        java.util.List<Class<?>> order = stages.stream().map(Object::getClass).toList();
+        assertEquals(
+                List.of(IndexMatcher.class, CommodityMatcher.class, IdentityVeto.class,
+                        JudgeMatcher.class, CorpusMatcher.class),
+                order);
     }
 }

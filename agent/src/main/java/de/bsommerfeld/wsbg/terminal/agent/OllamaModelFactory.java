@@ -1,0 +1,221 @@
+package de.bsommerfeld.wsbg.terminal.agent;
+
+import de.bsommerfeld.wsbg.terminal.core.config.AgentConfig;
+import de.bsommerfeld.wsbg.terminal.core.config.Model;
+import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.model.chat.request.ResponseFormat;
+import dev.langchain4j.model.chat.request.ResponseFormatType;
+import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
+import dev.langchain4j.model.chat.request.json.JsonSchema;
+import dev.langchain4j.model.ollama.OllamaChatModel;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+/**
+ * Builds the three Ollama {@link ChatModel} instances the {@link AgentBrain} runs
+ * on (extracted from {@code AgentBrain.initialize}). All three are the same resident
+ * gemma4:e4b (same model name + num_ctx, so ONE loaded runner): the agent model
+ * (subject extraction + judge calls), the schema-constrained compose model, and the
+ * multimodal vision model. Also resolves the model name against the live Ollama tag
+ * list, falling back to any installed model of the same family.
+ */
+final class OllamaModelFactory {
+
+    private static final Logger LOG = LoggerFactory.getLogger(OllamaModelFactory.class);
+
+    private final String baseUrl;
+    private final HttpClient httpClient = HttpClient.newBuilder()
+            .followRedirects(HttpClient.Redirect.NORMAL)
+            .connectTimeout(java.time.Duration.ofSeconds(10))
+            .build();
+
+    OllamaModelFactory(String baseUrl) {
+        this.baseUrl = baseUrl;
+    }
+
+    /** The three built models plus the resolved model names (for the init log line). */
+    record Models(ChatModel agentModel, ChatModel composeModel, ChatModel visionModel,
+            String activeAgentModel, String visionModelName) {
+    }
+
+    /**
+     * Stands up all three model instances, all gemma4:e4b. One multimodal model
+     * serves both the editorial agent and vision; we do NOT use the gemma4:e4b-mlx
+     * build — its published Ollama tag is text-only (the vision encoder is stripped),
+     * so it would return "Please provide the image" placeholders that poison the
+     * report context. Sharing the same model name AND the same num_ctx means Ollama
+     * keeps a single runner resident instead of two.
+     */
+    Models build(AgentConfig config) {
+        Model agentModelEnum = config.resolveEditorialModel();
+        String agentName = resolveModel(agentModelEnum);
+
+        Model visionModelEnum = Model.REASONING_POWER;
+        String visionName = resolveModel(visionModelEnum);
+
+        // All non-streaming — the full response is returned as String.
+        // Generous timeouts: the agent + tool-use can take a minute per round
+        // on a busy machine, and vision calls on gemma4 routinely push past
+        // the LangChain4j default of 60s. Set to 5 min across the board.
+        java.time.Duration timeout = java.time.Duration.ofMinutes(5);
+
+        // Context window (num_ctx): Ollama silently caps at 4096 unless told
+        // otherwise. Vision uses the SAME num_ctx on purpose: num_ctx is a
+        // load-time parameter, so matching it (with the same model name) lets
+        // agent + vision share one Ollama runner instead of spawning a second
+        // weight copy. The per-request sampling params (temperature, numPredict)
+        // can still differ freely — those don't fork the runner.
+        int ctxTokens = config.getContextTokens();
+        int visionCtxTokens = ctxTokens;
+
+        // gemma4 is a HYBRID THINKING model and Ollama defaults thinking ON — without an
+        // explicit think=false every call silently generated ~2k chars of hidden English
+        // "Thinking Process" (~500 tokens, 6–10 s GPU time) that nothing ever read. That,
+        // not prefill and not parallelism, was the throughput ceiling (~5 calls/min): with
+        // thinking off the same compose measures ~1 s instead of ~10 s at IDENTICAL headline
+        // quality (A/B'd 2026-07-01 on real briefs). It also explains the historical
+        // "JSON-mode whitespace-loop" / empty-reply lore: with a tight numPredict the
+        // thinking consumed the whole token budget and the visible content came back
+        // truncated or empty — the loop was the model reasoning, invisibly.
+        final boolean think = false;
+
+        // Editorial agent — every call in the deterministic pipeline expects a
+        // JSON reply, so Ollama's JSON mode (constrained decoding) is on. Plain JSON
+        // (no schema) because this one model instance serves TWO output shapes
+        // (extraction + judge). Low temperature + tightened nucleus keep the
+        // headlines faithful (no creative drift away from the cluster evidence).
+        ChatModel agentModel = OllamaChatModel.builder()
+                .baseUrl(baseUrl).modelName(agentName)
+                .temperature(agentModelEnum.getTemperature()).topP(0.9).topK(40)
+                // 768 backstop for the batched subjects array (~300 tokens). (No `\n\n`
+                // stop — it truncated extraction to empty when the model led with a
+                // blank line; see composeModel.)
+                .numCtx(ctxTokens).numPredict(768)
+                .responseFormat(ResponseFormat.JSON)
+                .think(think)
+                .timeout(timeout)
+                .build();
+
+        // Compose model — the SAME gemma4 (no extra load), with the compose output
+        // SCHEMA-constrained (not just JSON mode): the grammar forces exactly the
+        // {headline, trigger, highlight, sentiment, derivedFrom, newsUsed} shape with
+        // the enums closed, so a malformed or truncated compose object is mechanically
+        // impossible. trigger is the IMPORTANT anchor: the model must NAME the concrete
+        // red trigger BEFORE it sets highlight (property order matters — the grammar
+        // emits trigger first), and HeadlineWriter.reconcileHighlight demotes an
+        // IMPORTANT whose trigger doesn't hold up.
+        ChatModel composeModel = OllamaChatModel.builder()
+                .baseUrl(baseUrl).modelName(agentName)
+                .temperature(agentModelEnum.getTemperature()).topP(0.9).topK(40)
+                .numCtx(ctxTokens).numPredict(1024)
+                .responseFormat(buildComposeSchema())
+                .think(think)
+                .timeout(timeout)
+                .build();
+
+        // Vision — image description. Low temperature is critical: the agent trusts
+        // these numbers (percent moves, € amounts, price levels), so a hallucinated
+        // figure poisons the headline. numPredict 512: vision was the throughput
+        // killer — a full multi-chart transcription ran 30–60s and, since vision
+        // shares the model with the editorial composes, starved them. 512 holds a
+        // typical broker view but caps the runaway multi-asset paragraphs, so each
+        // image is ~5–10s. think=false matters doubly here: with the 512 numPredict
+        // cap, hidden thinking could consume the entire budget and return an EMPTY
+        // transcript.
+        ChatModel visionModel = OllamaChatModel.builder()
+                .baseUrl(baseUrl).modelName(visionName)
+                .temperature(0.2).topP(0.9).topK(40)
+                .numCtx(visionCtxTokens).numPredict(512)
+                .think(think)
+                .timeout(timeout)
+                .maxRetries(1).build();
+
+        return new Models(agentModel, composeModel, visionModel, agentName, visionName);
+    }
+
+    /**
+     * The schema-constrained compose response format: exactly
+     * {@code {headline, trigger, highlight, sentiment, derivedFrom, newsUsed}} with
+     * the enums closed and the provenance ordinal arrays.
+     */
+    private static ResponseFormat buildComposeSchema() {
+        return ResponseFormat.builder()
+                .type(ResponseFormatType.JSON)
+                .jsonSchema(JsonSchema.builder()
+                        .name("headline")
+                        .rootElement(JsonObjectSchema.builder()
+                                .addStringProperty("headline")
+                                .addEnumProperty("trigger", java.util.List.of(
+                                        "NONE", "RUNNER", "SQUEEZE", "BREAKOUT",
+                                        "HARD_CATALYST", "POOLED_CALL", "EXTREME_DIRECTION"))
+                                .addEnumProperty("highlight", java.util.List.of("NORMAL", "IMPORTANT"))
+                                .addEnumProperty("sentiment", java.util.List.of(
+                                        "BULLISH", "BEARISH", "MIXED", "FOMO", "CAPITULATION",
+                                        "SQUEEZE", "REVERSAL", "BREAKOUT", "NEUTRAL"))
+                                // Provenance chaining: the ordinals of the numbered prior
+                                // headlines this line builds on (empty when none) — small
+                                // integers on a short numbered list, which a 4B cites far
+                                // more reliably than the long news uuids that killed the
+                                // old sourceNewsIds field.
+                                .addProperty("derivedFrom",
+                                        dev.langchain4j.model.chat.request.json.JsonArraySchema.builder()
+                                                .items(dev.langchain4j.model.chat.request.json.JsonIntegerSchema.builder().build())
+                                                .build())
+                                // News provenance, same mechanism: the [N#] ordinals of the
+                                // brief's numbered news list the line actually leaned on
+                                // (empty when none). Small integers are citable where the
+                                // old long uuids were not; the deterministic token-overlap
+                                // test remains the backstop for under-citing.
+                                .addProperty("newsUsed",
+                                        dev.langchain4j.model.chat.request.json.JsonArraySchema.builder()
+                                                .items(dev.langchain4j.model.chat.request.json.JsonIntegerSchema.builder().build())
+                                                .build())
+                                .required("headline", "trigger", "highlight", "sentiment", "derivedFrom", "newsUsed")
+                                .build())
+                        .build())
+                .build();
+    }
+
+    /**
+     * Verifies the target model exists in Ollama, falling back to any installed
+     * model from the same family to prevent crashes.
+     */
+    private String resolveModel(Model model) {
+        String target = model.getModelName();
+        String familyPrefix = model.getFamilyPrefix();
+        try {
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(baseUrl + "/api/tags")).GET().build();
+            String json = new String(
+                    httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray()).body());
+
+            if (json.contains("\"" + target + "\"")) {
+                return target;
+            }
+
+            LOG.warn("Model '{}' not found. Resolving fallback for family '{}'...", target, familyPrefix);
+
+            Pattern p = Pattern.compile("\"name\":\"(" + Pattern.quote(familyPrefix) + "[^\"]*)\"");
+            Matcher m = p.matcher(json);
+            if (m.find()) {
+                String fallback = m.group(1);
+                LOG.warn("Auto-resolved '{}' → '{}'", target, fallback);
+                return fallback;
+            }
+
+            throw new IllegalStateException("No installed model found for family: " + familyPrefix);
+
+        } catch (IllegalStateException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IllegalStateException("Ollama connection failed: " + e.getMessage(), e);
+        }
+    }
+}

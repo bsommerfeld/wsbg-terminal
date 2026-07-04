@@ -27,10 +27,10 @@ class SubjectAttributorTest {
     @Test
     void matchesShortFormAgainstNormalisedName() {
         // Subject stored as "Meta Platforms, Inc."; the room just says "Meta".
-        Set<String> words = SubjectAttributor.nameWords("Meta", "Meta Platforms, Inc.");
+        Set<String> words = NameMatcher.nameWords("Meta", "Meta Platforms, Inc.");
         assertTrue(words.contains("meta"));
-        assertTrue(SubjectAttributor.matches("ich würde Meta nehmen", words, "META"));
-        assertFalse(SubjectAttributor.matches("ich kaufe Tesla", words, "META"));
+        assertTrue(NameMatcher.matches("ich würde Meta nehmen", words, "META"));
+        assertFalse(NameMatcher.matches("ich kaufe Tesla", words, "META"));
     }
 
     @Test
@@ -38,35 +38,35 @@ class SubjectAttributorTest {
         // Query normalised to English "Munich Re"; the room writes "Münchener rück".
         // The German canonical carries the word "münchener", umlaut-transliterated to
         // "muenchener" → matches the room whether it writes "Münchener" or "Muenchener".
-        Set<String> words = SubjectAttributor.nameWords(
+        Set<String> words = NameMatcher.nameWords(
                 "Munich Re", "Münchener Rückversicherungs-Gesellschaft Aktiengesellschaft in München");
         assertTrue(words.contains("muenchener"));
-        assertTrue(SubjectAttributor.matches("Asml oder allianz oder Münchener rück", words, "1MUV2.MI"));
-        assertTrue(SubjectAttributor.matches("Asml oder allianz oder Muenchener rueck", words, "1MUV2.MI"),
+        assertTrue(NameMatcher.matches("Asml oder allianz oder Münchener rück", words, "1MUV2.MI"));
+        assertTrue(NameMatcher.matches("Asml oder allianz oder Muenchener rueck", words, "1MUV2.MI"),
                 "the ue-spelling matches the umlaut canonical too");
     }
 
     @Test
     void matchesTickerSymbol() {
-        Set<String> words = SubjectAttributor.nameWords("Nvidia", "NVIDIA Corporation");
-        assertTrue(SubjectAttributor.matches("ich bin $NVDA all in", words, "NVDA"));
-        assertTrue(SubjectAttributor.matches("nvidia diesmal wirklich", words, "NVDA")); // via name word
+        Set<String> words = NameMatcher.nameWords("Nvidia", "NVIDIA Corporation");
+        assertTrue(NameMatcher.matches("ich bin $NVDA all in", words, "NVDA"));
+        assertTrue(NameMatcher.matches("nvidia diesmal wirklich", words, "NVDA")); // via name word
     }
 
     @Test
     void genericCompanyWordsDoNotMatchAlone() {
         // "Inc"/"Group"/"Holdings" must never carry a match by themselves.
-        Set<String> words = SubjectAttributor.nameWords("Berkshire Hathaway", "Berkshire Hathaway Inc.");
+        Set<String> words = NameMatcher.nameWords("Berkshire Hathaway", "Berkshire Hathaway Inc.");
         assertFalse(words.contains("inc"));
-        assertFalse(SubjectAttributor.matches("die holding group inc ist toll", words, "BRK-B"));
-        assertTrue(SubjectAttributor.matches("ich nehme Berkshire", words, "BRK-B"));
+        assertFalse(NameMatcher.matches("die holding group inc ist toll", words, "BRK-B"));
+        assertTrue(NameMatcher.matches("ich nehme Berkshire", words, "BRK-B"));
     }
 
     @Test
     void unmatchedSubjectHasNoNameWordHit() {
         // A subject the room never named: no shared word, no ticker → no match.
-        Set<String> words = SubjectAttributor.nameWords("JPMorgan", "JPMorgan Chase & Co.");
-        assertFalse(SubjectAttributor.matches("Alphabet und dann kommt Apple", words, "JPM"));
+        Set<String> words = NameMatcher.nameWords("JPMorgan", "JPMorgan Chase & Co.");
+        assertFalse(NameMatcher.matches("Alphabet und dann kommt Apple", words, "JPM"));
     }
 
     @Test
@@ -75,40 +75,40 @@ class SubjectAttributorTest {
         // row (with its price/move), not the top of the screenshot.
         String watchlist = "Oracle 185,00 € ▼ 8,48 %\n"
                 + "Micron Technology 772,30 € ▼ 9,23 %\nNokia 12,34 € ▼ 11,95 %";
-        Set<String> words = SubjectAttributor.nameWords("Micron", "Micron Technology, Inc.");
+        Set<String> words = NameMatcher.nameWords("Micron", "Micron Technology, Inc.");
         assertEquals("Micron Technology 772,30 € ▼ 9,23 %",
-                SubjectAttributor.matchingLine(watchlist, words, "MU"));
+                NameMatcher.matchingLine(watchlist, words, "MU"));
     }
 
     @Test
     void visionMatchingLineFallsBackToWholeTextWhenNoRowMatches() {
         String text = "some unrelated transcript with no subject row";
-        Set<String> words = SubjectAttributor.nameWords("Micron", "Micron Technology, Inc.");
-        assertEquals(text, SubjectAttributor.matchingLine(text, words, "MU"));
+        Set<String> words = NameMatcher.nameWords("Micron", "Micron Technology, Inc.");
+        assertEquals(text, NameMatcher.matchingLine(text, words, "MU"));
     }
 
     // ---- Option A: cluster-relative distinctiveness (similar names) ----
 
     @Test
     void ambiguousWordAloneDoesNotMatchButDistinctiveDoes() {
-        Set<String> world = SubjectAttributor.nameWords("MSCI World Index", "MSCI World Index");
-        Set<String> em = SubjectAttributor.nameWords("MSCI Emerging Markets Index", "MSCI Emerging Markets Index");
+        Set<String> world = NameMatcher.nameWords("MSCI World Index", "MSCI World Index");
+        Set<String> em = NameMatcher.nameWords("MSCI Emerging Markets Index", "MSCI Emerging Markets Index");
         Set<String> ambiguous = java.util.Set.of("msci"); // shared by both subjects
 
         String worldRow = "Core MSCI World (iShares) -1,84%";
         // World shares msci(ambiguous) + world(distinctive) → matches.
-        assertTrue(SubjectAttributor.matches(worldRow, world, null, ambiguous));
+        assertTrue(NameMatcher.matches(worldRow, world, null, ambiguous));
         // EM shares only msci(ambiguous) → must NOT match the World row.
-        assertFalse(SubjectAttributor.matches(worldRow, em, null, ambiguous));
+        assertFalse(NameMatcher.matches(worldRow, em, null, ambiguous));
     }
 
     @Test
     void shortFormStillMatchesViaDistinctiveWord() {
         // "berkshire"/"meta" are distinctive, so the room's short form still matches
         // (the gate only bites ambiguous words shared across cluster subjects).
-        Set<String> berk = SubjectAttributor.nameWords("Berkshire Hathaway", "Berkshire Hathaway Inc.");
-        assertTrue(SubjectAttributor.matches("ich nehme Berkshire", berk, null, java.util.Set.of()));
-        assertTrue(SubjectAttributor.matches("ich nehme Berkshire", berk, null, java.util.Set.of("hathaway")));
+        Set<String> berk = NameMatcher.nameWords("Berkshire Hathaway", "Berkshire Hathaway Inc.");
+        assertTrue(NameMatcher.matches("ich nehme Berkshire", berk, null, java.util.Set.of()));
+        assertTrue(NameMatcher.matches("ich nehme Berkshire", berk, null, java.util.Set.of("hathaway")));
     }
 
     @Test
@@ -118,8 +118,8 @@ class SubjectAttributorTest {
                         java.util.List.of(), java.util.List.of(), false),
                 new TickerResolver.ResolvedSubject("MSCI EM", "MSCI Emerging Markets Index", null, null,
                         java.util.List.of(), java.util.List.of(), false));
-        assertTrue(SubjectAttributor.ambiguousWords(resolved).contains("msci"));
-        assertFalse(SubjectAttributor.ambiguousWords(resolved).contains("world"));
+        assertTrue(NameMatcher.ambiguousWords(resolved).contains("msci"));
+        assertFalse(NameMatcher.ambiguousWords(resolved).contains("world"));
     }
 
     // ---- Conversation context: a pick named deep in a reply chain carries the thesis ----
@@ -184,8 +184,8 @@ class SubjectAttributorTest {
         // names NVIDIA. It must still attach to NVIDIA — the poster put it on a NVIDIA
         // post, so the placement IS the link.
         String transcript = "Live chart, daily: price 145, +3%, RSI cooling from overbought";
-        Set<String> nvidiaWords = SubjectAttributor.nameWords("Nvidia", "NVIDIA Corporation");
-        assertFalse(SubjectAttributor.matches(transcript, nvidiaWords, "NVDA"),
+        Set<String> nvidiaWords = NameMatcher.nameWords("Nvidia", "NVIDIA Corporation");
+        assertFalse(NameMatcher.matches(transcript, nvidiaWords, "NVDA"),
                 "precondition: the transcript itself does NOT name NVIDIA");
 
         var thread = threadWithImages("t3_1", "NVIDIA läuft heiß", "", List.of("img1"));

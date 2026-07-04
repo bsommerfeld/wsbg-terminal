@@ -82,7 +82,7 @@ class TickerMatchComparisonIT {
                 }
                 List<YahooQuote> quotes = sr.quotes();
                 YahooQuote legacy = legacyMatch(subject, quotes);
-                YahooQuote now = TickerResolver.strongMatch(subject, quotes);
+                YahooQuote now = StrongTokenMatcher.strongMatch(subject, quotes);
 
                 String verdict = verdict(legacy, now);
                 if (verdict.equals("RESCUED")) rescued++;
@@ -115,7 +115,7 @@ class TickerMatchComparisonIT {
             }
             YahooQuote legacy = legacyMatch(subject, quotes);
             if (legacy != null) {
-                assertNotNull(TickerResolver.strongMatch(subject, quotes),
+                assertNotNull(StrongTokenMatcher.strongMatch(subject, quotes),
                         subject + " resolved under the old gate but not the new one (regression)");
             }
         }
@@ -132,7 +132,7 @@ class TickerMatchComparisonIT {
             } catch (Exception e) {
                 continue;
             }
-            assertNotNull(TickerResolver.strongMatch(subject, quotes),
+            assertNotNull(StrongTokenMatcher.strongMatch(subject, quotes),
                     subject + " should resolve to an instrument via the score gate");
         }
     }
@@ -149,7 +149,7 @@ class TickerMatchComparisonIT {
         }
         // If Yahoo even returns a "Rheiner …"-named micro-cap, its score must be far
         // below the bar; we assert the matcher does not glom onto it.
-        YahooQuote now = TickerResolver.strongMatch("Rheiner", quotes);
+        YahooQuote now = StrongTokenMatcher.strongMatch("Rheiner", quotes);
         if (now != null) {
             // Allowed only if Yahoo itself returns an exact-symbol or a genuinely
             // dominant hit; print it so a real regression is visible in the log.

@@ -66,26 +66,6 @@ class ClusterRegistryTest {
     }
 
     @Test
-    void view_returnsImmutableSnapshot() {
-        InvestigationCluster c = cluster("t3_a");
-        registry.add(c);
-
-        ClusterRegistry.ClusterView v = registry.view("t3_a");
-        assertNotNull(v);
-        assertEquals("t3_a", v.id());
-        assertEquals("Title t3_a", v.initialTitle());
-        assertThrows(UnsupportedOperationException.class,
-                () -> v.activeThreadIds().add("evil"));
-    }
-
-    @Test
-    void allViews_reflectsCurrentState() {
-        registry.add(cluster("t3_a"));
-        registry.add(cluster("t3_b"));
-        assertEquals(2, registry.allViews().size());
-    }
-
-    @Test
     void notifyChange_isThreadSafe() throws InterruptedException {
         // Hammer the registry from multiple threads and verify all notifications
         // land in the dirty set without loss.

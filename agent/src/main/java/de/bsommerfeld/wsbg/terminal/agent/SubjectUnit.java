@@ -27,13 +27,8 @@ import java.util.Set;
  */
 public final class SubjectUnit {
 
-    /**
-     * News items carried per unit. Merged (not replaced) on every re-resolve so an
-     * item a headline already leaned on can't vanish just because Yahoo's next
-     * search returned a different set; capped so a long-lived unit doesn't hoard
-     * a session's worth of headlines-context. Oldest items fall off first.
-     */
-    static final int MAX_NEWS = 12;
+    /** Per-unit news cap — re-exported from {@link NewsBox#MAX_NEWS} for callers/tests. */
+    static final int MAX_NEWS = NewsBox.MAX_NEWS;
 
     /** Stable identity key — ticker (UPPER) for instruments, normalised name otherwise. */
     public final String id;
@@ -43,7 +38,9 @@ public final class SubjectUnit {
     private volatile String canonicalName;
     private volatile String ticker;            // null for theme/person
     private volatile MarketSnapshot snapshot;  // latest resolved
-    private volatile List<RawNewsItem> news = List.of();
+
+    /** News + covered-news-ids for this unit. Accessed only under this unit's monitor. */
+    private final NewsBox newsBox = new NewsBox();
 
     /**
      * Price anchor: the first verified (Yahoo) price ever resolved for this unit,
@@ -57,33 +54,15 @@ public final class SubjectUnit {
     private final Map<String, EvidenceRef> evidence = new LinkedHashMap<>();
 
     /**
-     * Monotonic counter bumped every time genuinely-new evidence is added (the same
-     * trigger that marks the unit dirty). Paired with {@link #composedEvidenceVersion}
-     * it answers "has anything actually changed since the last compose?" — the guard
-     * that stops a unit from being re-composed when an in-flight copy already covered
-     * its current evidence (the merge cadence would otherwise keep a unit dirty across
-     * a long compose and fire a redundant, near-identical follow-up). NOT snapshotted:
-     * a restored unit starts at 0/0 so its re-seeded story isn't re-published — only
-     * fresh post-restart evidence (which bumps this) re-wakes it.
+     * Evidence-version + compose-timing gate: "has anything changed since the last
+     * compose / is it settled / cooling down?". NOT snapshotted — a restored unit
+     * starts a fresh gate at 0/0 so its re-seeded story isn't re-published; only
+     * fresh post-restart evidence re-wakes it. Mutated only under this unit's monitor.
      */
-    private long evidenceVersion;
-    /** The {@link #evidenceVersion} the last completed compose ran against (see above). */
-    private long composedEvidenceVersion;
-    /** Wall-clock ms of the last completed compose — drives the per-unit compose cooldown (evidence batching). */
-    private long lastComposedAtMs;
-    /** Wall-clock ms the unit first became dirty since its last compose (0 = clean) — drives the settle delay. */
-    private long dirtySinceMs;
+    private final ComposeGate composeGate = new ComposeGate();
 
     /** Headlines already published for this unit — context for the NEW/UPDATE call. */
     private final List<UnitHeadline> headlines = new ArrayList<>();
-
-    /**
-     * IDs of news items a published headline has already cited (#2 step 3b).
-     * Source-agnostic — any news source (Yahoo now, finanznachrichten later) hands
-     * a stable id here. A covered item is filtered out of the next compose so two
-     * headlines never rest on the same piece of news.
-     */
-    private final Set<String> coveredNewsIds = new HashSet<>();
 
     public SubjectUnit(String id, String canonicalName) {
         this.id = id;
@@ -115,7 +94,7 @@ public final class SubjectUnit {
             for (EvidenceRef e : s.evidence()) evidence.put(e.key(), e);
         }
         if (s.headlines() != null) headlines.addAll(s.headlines());
-        if (s.coveredNewsIds() != null) coveredNewsIds.addAll(s.coveredNewsIds());
+        newsBox.restore(s.coveredNewsIds());
     }
 
     /**
@@ -139,37 +118,7 @@ public final class SubjectUnit {
             firstPrice = snapshot.price();
             firstPriceAt = Instant.now();
         }
-        this.news = mergeNews(this.news, news);
-        Set<String> kept = new HashSet<>();
-        for (RawNewsItem n : this.news) {
-            if (n.uuid() != null) kept.add(n.uuid());
-        }
-        coveredNewsIds.retainAll(kept);
-    }
-
-    /** Existing ∪ fresh, deduped by uuid (existing wins), newest first, capped at {@link #MAX_NEWS}. */
-    private static List<RawNewsItem> mergeNews(List<RawNewsItem> existing, List<RawNewsItem> fresh) {
-        Map<String, RawNewsItem> byUuid = new LinkedHashMap<>();
-        for (RawNewsItem n : existing) {
-            if (n != null && n.uuid() != null && !n.uuid().isBlank()) byUuid.putIfAbsent(n.uuid(), n);
-        }
-        if (fresh != null) {
-            for (RawNewsItem n : fresh) {
-                if (n != null && n.uuid() != null && !n.uuid().isBlank()) byUuid.putIfAbsent(n.uuid(), n);
-            }
-        }
-        List<RawNewsItem> merged = new ArrayList<>(byUuid.values());
-        // Newest first; items without a timestamp sort last (oldest), so they're
-        // the first to fall off the cap.
-        merged.sort((a, b) -> {
-            Instant pa = a.publishedAt();
-            Instant pb = b.publishedAt();
-            if (pa == null && pb == null) return 0;
-            if (pa == null) return 1;
-            if (pb == null) return -1;
-            return pb.compareTo(pa);
-        });
-        return merged.size() <= MAX_NEWS ? merged : new ArrayList<>(merged.subList(0, MAX_NEWS));
+        newsBox.merge(news);
     }
 
     /** Adds one piece of evidence; returns {@code true} if it was new (not a duplicate source). */
@@ -177,8 +126,7 @@ public final class SubjectUnit {
         boolean added = evidence.putIfAbsent(ref.key(), ref) == null;
         if (added) {
             lastActivity = Instant.now();
-            if (evidenceVersion == composedEvidenceVersion) dirtySinceMs = System.currentTimeMillis();
-            evidenceVersion++;
+            composeGate.onEvidenceAdded();
         }
         return added;
     }
@@ -187,7 +135,7 @@ public final class SubjectUnit {
     public String ticker() { return ticker; }
     public boolean isInstrument() { return ticker != null && !ticker.isBlank(); }
     public MarketSnapshot snapshot() { return snapshot; }
-    public List<RawNewsItem> news() { return news; }
+    public List<RawNewsItem> news() { return newsBox.news(); }
     public Instant lastActivity() { return lastActivity; }
     public Double firstPrice() { return firstPrice; }
     public Instant firstPriceAt() { return firstPriceAt; }
@@ -199,31 +147,29 @@ public final class SubjectUnit {
     public synchronized boolean hasPublishedHeadline() { return !headlines.isEmpty(); }
 
     /** Current evidence version — snapshot it before composing, hand it back via {@link #markComposedAt}. */
-    public synchronized long evidenceVersion() { return evidenceVersion; }
+    public synchronized long evidenceVersion() { return composeGate.evidenceVersion(); }
 
     /**
      * Records that a compose ran against version {@code version} (captured before the
      * compose started). Monotonic: a stale stamp from a slower path can't move it
      * backwards. After this, {@link #hasUncomposedEvidence()} is false until fresh
-     * evidence bumps {@link #evidenceVersion} again — so a redundant recompose of the
+     * evidence bumps the evidence version again — so a redundant recompose of the
      * same evidence is suppressed while a genuine update (new evidence, even mid-compose)
      * still re-fires.
      */
     public synchronized void markComposedAt(long version) {
-        if (version > composedEvidenceVersion) composedEvidenceVersion = version;
-        lastComposedAtMs = System.currentTimeMillis();
-        dirtySinceMs = 0; // composed → clean; the next fresh evidence restarts the settle clock
+        composeGate.markComposedAt(version);
     }
 
     /** Wall-clock ms of the last completed compose (0 = never) — for the compose cooldown. */
-    public synchronized long lastComposedAtMs() { return lastComposedAtMs; }
+    public synchronized long lastComposedAtMs() { return composeGate.lastComposedAtMs(); }
 
     /** Wall-clock ms the unit first became dirty since its last compose (0 = clean) — for the settle delay. */
-    public synchronized long dirtySinceMs() { return dirtySinceMs; }
+    public synchronized long dirtySinceMs() { return composeGate.dirtySinceMs(); }
 
     /** True when evidence has been added since the last completed compose — i.e. there's something new to say. */
     public synchronized boolean hasUncomposedEvidence() {
-        return evidenceVersion > composedEvidenceVersion;
+        return composeGate.hasUncomposedEvidence();
     }
 
     /** Source keys of this unit's evidence — used to detect a shared mention with another unit. */
@@ -288,17 +234,14 @@ public final class SubjectUnit {
 
     /** Marks news ids as cited by a published headline — they won't be offered to the next compose. */
     public synchronized void markNewsCovered(Collection<String> ids) {
-        if (ids == null) return;
-        for (String id : ids) {
-            if (id != null && !id.isBlank()) coveredNewsIds.add(id);
-        }
+        newsBox.markCovered(ids);
     }
 
     public synchronized boolean isNewsCovered(String id) {
-        return id != null && coveredNewsIds.contains(id);
+        return newsBox.isCovered(id);
     }
 
-    public synchronized Set<String> coveredNewsIds() { return new HashSet<>(coveredNewsIds); }
+    public synchronized Set<String> coveredNewsIds() { return newsBox.coveredIdsCopy(); }
 
     /** Captures the unit's full state for short-TTL session persistence (see the restore ctor). */
     public synchronized Snapshot toSnapshot() {
@@ -308,7 +251,7 @@ public final class SubjectUnit {
                 snapshot,
                 new ArrayList<>(evidence.values()),
                 new ArrayList<>(headlines),
-                new ArrayList<>(coveredNewsIds));
+                new ArrayList<>(newsBox.coveredIdsCopy()));
     }
 
     /**

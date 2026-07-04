@@ -1,9 +1,5 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
-import java.util.LinkedHashMap;
-import java.util.Locale;
-import java.util.Map;
-
 /**
  * A tiny curated map of <b>commodity names → Yahoo futures symbol</b> (the
  * {@code GC=F}-style symbols), the sibling of {@link IndexCatalog} for raw materials.
@@ -29,35 +25,33 @@ public final class CommodityCatalog {
     /** One commodity: its Yahoo {@code =F} future symbol and a clean display name. */
     public record Commodity(String symbol, String displayName) {}
 
-    /** Normalised alias (lower-case, alphanumerics only) → commodity. */
-    private static final Map<String, Commodity> BY_ALIAS = new LinkedHashMap<>();
+    /** The curated alias → commodity store (shared {@link AliasMap} machinery). */
+    private static final class Store extends AliasMap<Commodity> {}
 
-    private static void put(Commodity c, String... aliases) {
-        for (String a : aliases) BY_ALIAS.put(normalize(a), c);
-    }
+    private static final Store STORE = new Store();
 
     static {
         // --- precious metals ---
-        put(new Commodity("GC=F", "Gold"), "Gold", "Goldpreis", "XAU", "XAUUSD");
-        put(new Commodity("SI=F", "Silber"), "Silber", "Silver", "Silberpreis", "XAG", "XAGUSD");
-        put(new Commodity("PL=F", "Platin"), "Platin", "Platinum");
-        put(new Commodity("PA=F", "Palladium"), "Palladium");
+        STORE.put(new Commodity("GC=F", "Gold"), "Gold", "Goldpreis", "XAU", "XAUUSD");
+        STORE.put(new Commodity("SI=F", "Silber"), "Silber", "Silver", "Silberpreis", "XAG", "XAGUSD");
+        STORE.put(new Commodity("PL=F", "Platin"), "Platin", "Platinum");
+        STORE.put(new Commodity("PA=F", "Palladium"), "Palladium");
         // --- energy ---
-        put(new Commodity("CL=F", "Rohöl (WTI)"), "Öl", "Oel", "Oil", "Rohöl", "Rohoel", "Crude",
+        STORE.put(new Commodity("CL=F", "Rohöl (WTI)"), "Öl", "Oel", "Oil", "Rohöl", "Rohoel", "Crude",
                 "Crude Oil", "WTI", "Erdöl", "Erdoel");
-        put(new Commodity("BZ=F", "Brent"), "Brent", "Brent Oil", "Brent Crude");
-        put(new Commodity("NG=F", "Erdgas"), "Erdgas", "Natural Gas", "Gas", "Henry Hub");
+        STORE.put(new Commodity("BZ=F", "Brent"), "Brent", "Brent Oil", "Brent Crude");
+        STORE.put(new Commodity("NG=F", "Erdgas"), "Erdgas", "Natural Gas", "Gas", "Henry Hub");
         // --- industrial / agric ---
-        put(new Commodity("HG=F", "Kupfer"), "Kupfer", "Copper");
+        STORE.put(new Commodity("HG=F", "Kupfer"), "Kupfer", "Copper");
         // Softs the room actually discussed (live 2026-07-03: a Kakao/Kaffee/Mais
         // thread had „Kakao" fuzzy-matched to Kakao Corp (Korea) and the judge
         // striking the correct CC=F/KC=F futures over their dated contract names).
-        put(new Commodity("CC=F", "Kakao"), "Kakao", "Cocoa", "Kakaopreis");
-        put(new Commodity("KC=F", "Kaffee"), "Kaffee", "Coffee", "Kaffeepreis");
-        put(new Commodity("ZW=F", "Weizen"), "Weizen", "Wheat");
-        put(new Commodity("ZC=F", "Mais"), "Mais", "Corn");
-        put(new Commodity("ZR=F", "Reis"), "Reis", "Rice");
-        put(new Commodity("SB=F", "Zucker"), "Zucker", "Sugar");
+        STORE.put(new Commodity("CC=F", "Kakao"), "Kakao", "Cocoa", "Kakaopreis");
+        STORE.put(new Commodity("KC=F", "Kaffee"), "Kaffee", "Coffee", "Kaffeepreis");
+        STORE.put(new Commodity("ZW=F", "Weizen"), "Weizen", "Wheat");
+        STORE.put(new Commodity("ZC=F", "Mais"), "Mais", "Corn");
+        STORE.put(new Commodity("ZR=F", "Reis"), "Reis", "Rice");
+        STORE.put(new Commodity("SB=F", "Zucker"), "Zucker", "Sugar");
     }
 
     /**
@@ -66,17 +60,11 @@ public final class CommodityCatalog {
      * hits but „Barrick Gold" (a mining stock) does not.
      */
     public static Commodity lookup(String name) {
-        if (name == null) return null;
-        return BY_ALIAS.get(normalize(name));
+        return STORE.lookup(name);
     }
 
     /** True when {@code symbol} is a Yahoo commodity-future symbol (native unit, never FX-converted). */
     public static boolean isCommoditySymbol(String symbol) {
         return symbol != null && symbol.endsWith("=F");
-    }
-
-    /** lower-case, keep only {@code [a-z0-9]} — collapses spaces, punctuation, case. */
-    private static String normalize(String s) {
-        return s.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
     }
 }

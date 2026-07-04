@@ -1,9 +1,5 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
-import java.util.LinkedHashMap;
-import java.util.Locale;
-import java.util.Map;
-
 /**
  * A tiny curated map of <b>stock-index names → Yahoo index symbol</b> (the
  * {@code ^GDAXI}-style caret symbols), used by {@link TickerResolver} to bind a
@@ -30,48 +26,46 @@ public final class IndexCatalog {
     /** One index: its Yahoo {@code ^}-symbol and a clean display name. */
     public record Index(String symbol, String displayName) {}
 
-    /** Normalised alias (lower-case, alphanumerics only) → index. */
-    private static final Map<String, Index> BY_ALIAS = new LinkedHashMap<>();
+    /** The curated alias → index store (shared {@link AliasMap} machinery). */
+    private static final class Store extends AliasMap<Index> {}
 
-    private static void put(Index idx, String... aliases) {
-        for (String a : aliases) BY_ALIAS.put(normalize(a), idx);
-    }
+    private static final Store STORE = new Store();
 
     static {
         // --- German indices ---
         Index dax = new Index("^GDAXI", "DAX");
-        put(dax, "DAX", "DAX 40", "DAX40", "Deutscher Aktienindex", "Germany 40", "Germany40", "GER40", "DE40",
+        STORE.put(dax, "DAX", "DAX 40", "DAX40", "Deutscher Aktienindex", "Germany 40", "Germany40", "GER40", "DE40",
                 // WSBG-GER nicknames for the DAX (the room rarely writes the bare „DAX").
                 "Rentnerindex", "DAX Rentnerindex", "Deutscher Rentnerindex");
-        put(new Index("^MDAXI", "MDAX"), "MDAX");
-        put(new Index("^TECDAX", "TecDAX"), "TecDAX");
-        put(new Index("^SDAXI", "SDAX"), "SDAX");
+        STORE.put(new Index("^MDAXI", "MDAX"), "MDAX");
+        STORE.put(new Index("^TECDAX", "TecDAX"), "TecDAX");
+        STORE.put(new Index("^SDAXI", "SDAX"), "SDAX");
 
         // --- US indices ---
         Index sp500 = new Index("^GSPC", "S&P 500");
-        put(sp500, "S&P 500", "S&P500", "SP 500", "SPX", "Standard & Poors 500", "S und P 500",
+        STORE.put(sp500, "S&P 500", "S&P500", "SP 500", "SPX", "Standard & Poors 500", "S und P 500",
                 "US 500", "US500");
         Index nasdaqComp = new Index("^IXIC", "Nasdaq Composite");
-        put(nasdaqComp, "Nasdaq", "Nasdaq Composite");
+        STORE.put(nasdaqComp, "Nasdaq", "Nasdaq Composite");
         // The Nasdaq 100 also goes by its CFD-broker nicknames in the room ("US Tech 100",
         // "Tech 100", "US 100") — all the same index, so map them straight to ^NDX.
-        put(new Index("^NDX", "Nasdaq 100"), "Nasdaq 100", "NDX", "Nasdaq100",
+        STORE.put(new Index("^NDX", "Nasdaq 100"), "Nasdaq 100", "NDX", "Nasdaq100",
                 "US Tech 100", "Tech 100", "US Tech100", "US 100", "US100", "USTech 100");
-        put(new Index("^DJI", "Dow Jones"), "Dow Jones", "Dow", "Dow Jones Industrial", "DJIA",
+        STORE.put(new Index("^DJI", "Dow Jones"), "Dow Jones", "Dow", "Dow Jones Industrial", "DJIA",
                 "US 30", "US30");
-        put(new Index("^RUT", "Russell 2000"), "Russell 2000", "Russell");
-        put(new Index("^VIX", "VIX"), "VIX", "Volatilitätsindex", "Angstindex");
+        STORE.put(new Index("^RUT", "Russell 2000"), "Russell 2000", "Russell");
+        STORE.put(new Index("^VIX", "VIX"), "VIX", "Volatilitätsindex", "Angstindex");
 
         // --- Europe / other ---
-        put(new Index("^STOXX50E", "Euro Stoxx 50"), "Euro Stoxx 50", "EuroStoxx 50", "EuroStoxx", "SX5E");
-        put(new Index("^STOXX", "Stoxx Europe 600"), "Stoxx 600", "Stoxx Europe 600", "SXXP");
-        put(new Index("^FTSE", "FTSE 100"), "FTSE 100", "FTSE", "Footsie");
-        put(new Index("^FCHI", "CAC 40"), "CAC 40", "CAC40");
-        put(new Index("^SSMI", "SMI"), "SMI", "Swiss Market Index");
-        put(new Index("^ATX", "ATX"), "ATX");
-        put(new Index("^IBEX", "IBEX 35"), "IBEX 35", "IBEX");
-        put(new Index("^N225", "Nikkei 225"), "Nikkei 225", "Nikkei", "Nikkei225");
-        put(new Index("^HSI", "Hang Seng"), "Hang Seng", "HSI");
+        STORE.put(new Index("^STOXX50E", "Euro Stoxx 50"), "Euro Stoxx 50", "EuroStoxx 50", "EuroStoxx", "SX5E");
+        STORE.put(new Index("^STOXX", "Stoxx Europe 600"), "Stoxx 600", "Stoxx Europe 600", "SXXP");
+        STORE.put(new Index("^FTSE", "FTSE 100"), "FTSE 100", "FTSE", "Footsie");
+        STORE.put(new Index("^FCHI", "CAC 40"), "CAC 40", "CAC40");
+        STORE.put(new Index("^SSMI", "SMI"), "SMI", "Swiss Market Index");
+        STORE.put(new Index("^ATX", "ATX"), "ATX");
+        STORE.put(new Index("^IBEX", "IBEX 35"), "IBEX 35", "IBEX");
+        STORE.put(new Index("^N225", "Nikkei 225"), "Nikkei 225", "Nikkei", "Nikkei225");
+        STORE.put(new Index("^HSI", "Hang Seng"), "Hang Seng", "HSI");
     }
 
     /**
@@ -80,17 +74,11 @@ public final class IndexCatalog {
      * „DAX" hits but „DAX-ETF" (genuinely an ETF) does not.
      */
     public static Index lookup(String name) {
-        if (name == null) return null;
-        return BY_ALIAS.get(normalize(name));
+        return STORE.lookup(name);
     }
 
     /** True when {@code symbol} is a Yahoo index symbol (priced in points, never FX-converted). */
     public static boolean isIndexSymbol(String symbol) {
         return symbol != null && symbol.startsWith("^");
-    }
-
-    /** lower-case, keep only {@code [a-z0-9]} — collapses spaces, punctuation, case. */
-    private static String normalize(String s) {
-        return s.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
     }
 }

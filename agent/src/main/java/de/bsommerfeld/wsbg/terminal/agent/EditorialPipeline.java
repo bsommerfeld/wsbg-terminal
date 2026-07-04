@@ -105,26 +105,7 @@ public final class EditorialPipeline {
      * the whole process lifetime (and is serialized whole into the snapshot).
      */
     private static final long PRUNE_INTERVAL_MS = 60_000;
-    /**
-     * Per-unit compose cooldown: after a unit composes, hold off re-composing it for this
-     * long even as fresh evidence arrives — the evidence keeps accumulating on the unit and
-     * the next compose runs ONCE against the whole batch. Without it, every single new
-     * comment re-wakes the unit (one compose per evidence increment), which both floods the
-     * compose queue and produces a stream of near-identical "-Update:" lines on a story that
-     * hasn't actually moved. A genuine fresh story still surfaces — just batched, not per-tick.
-     * 3 min, up from the original 60 s: at 60 s a hot thread (the DAX daily) re-composed its
-     * unit up to once a minute, and a 4B model rewords rather than returns the redundant-empty,
-     * so the wire filled with same-ticker variants faster than the near-dup guard's window.
-     * The first compose is untouched (only the settle gates it) — this spaces REPEATS.
-     */
-    private static final long COMPOSE_COOLDOWN_MS = 180_000;
-    /**
-     * Settle delay before a freshly-dirty unit is FIRST composed: give its evidence time to
-     * accumulate AND its price/chart time to resolve, so the line is fuller and carries a
-     * quote/sparkline instead of firing on a bare first mention. The audience prefers a
-     * slightly later but richer headline over an instant thin one.
-     */
-    private static final long COMPOSE_SETTLE_MS = 30_000;
+    // The per-unit settle/cooldown/stale enqueue timing lives in {@link EnqueueGate}.
 
     private final EditorialAgent agent;
     private final ClusterRegistry clusterRegistry;
@@ -294,40 +275,25 @@ public final class EditorialPipeline {
             for (String unitId : dirty) {
                 SubjectUnit unit = subjectRegistry.get(unitId);
                 if (unit == null) continue; // merged/removed since it was marked dirty
-                // Drop a dirty mark whose evidence an in-flight copy already composed
-                // against. Without this, a long in-flight compose lets the 1.5s cadence
-                // keep re-marking the unit dirty, and once that copy finishes the lingering
-                // mark fires a second, near-identical "-Update:" line over the same facts.
-                if (!unit.hasUncomposedEvidence()) {
-                    stale++;
-                    continue;
-                }
-                // Settle: hold a freshly-dirty unit until its evidence + price/chart have had
-                // COMPOSE_SETTLE_MS to land, so the first line is fuller and carries a quote,
-                // not a bare first mention.
-                long sinceDirty = nowMs - unit.dirtySinceMs();
-                if (unit.dirtySinceMs() > 0 && sinceDirty < COMPOSE_SETTLE_MS) {
-                    subjectRegistry.markDirty(unitId);
-                    cooling++;
-                    continue;
-                }
-                // Per-unit compose cooldown: a unit composed within COMPOSE_COOLDOWN_MS keeps
-                // its dirty mark but is NOT re-enqueued yet — fresh evidence accumulates on it
-                // and composes once when the window passes (batching, not one compose per
-                // comment). The first compose is gated only by the settle above.
-                long since = nowMs - unit.lastComposedAtMs();
-                if (unit.lastComposedAtMs() > 0 && since < COMPOSE_COOLDOWN_MS) {
-                    subjectRegistry.markDirty(unitId);
-                    cooling++;
-                    continue;
-                }
-                if (queue.offer(new ComposeJob.SubjectJob(unitId))) {
-                    enqueued++;
-                } else {
-                    // A copy is still queued/in-flight → put the dirty mark back so this
-                    // unit's fresh evidence re-enqueues on the next cadence once it clears.
-                    subjectRegistry.markDirty(unitId);
-                    LOG.info("[PIPE] re-mark dirty {} (compose in-flight)", unitId);
+                // The settle/cooldown/stale timing policy (a pure function on the unit's
+                // compose-timing state) decides whether this unit is enqueued now, held, or
+                // its dirty mark dropped as already-composed.
+                switch (EnqueueGate.evaluate(unit, nowMs)) {
+                    case STALE -> stale++;
+                    case COOLING -> {
+                        subjectRegistry.markDirty(unitId);
+                        cooling++;
+                    }
+                    case ENQUEUE -> {
+                        if (queue.offer(new ComposeJob.SubjectJob(unitId))) {
+                            enqueued++;
+                        } else {
+                            // A copy is still queued/in-flight → put the dirty mark back so this
+                            // unit's fresh evidence re-enqueues on the next cadence once it clears.
+                            subjectRegistry.markDirty(unitId);
+                            LOG.info("[PIPE] re-mark dirty {} (compose in-flight)", unitId);
+                        }
+                    }
                 }
             }
             noteQueueDepth(queue.size());

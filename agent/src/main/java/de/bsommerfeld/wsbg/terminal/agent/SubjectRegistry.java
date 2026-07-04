@@ -75,6 +75,11 @@ public final class SubjectRegistry {
      * ticker pass's any-shared-word on purpose: "Deutsche Bank" and "Deutsche
      * Telekom" share a word but are no subset of each other.
      *
+     * <p><b>Not atomic:</b> it iterates a snapshot of {@code byId.values()} while
+     * removing entries, so the caller must hold the {@code EditorialPipeline} merge
+     * write lock (the {@code MERGE_INTERVAL_MS} cadence). Tests call it directly on
+     * a quiescent registry.
+     *
      * @return how many units were absorbed
      */
     public int mergeIdentities() {
@@ -86,22 +91,15 @@ public final class SubjectRegistry {
         int merged = 0;
         for (SubjectUnit n : nameUnits) {
             if (byId.get(n.id) != n) continue; // defensive
-            Set<String> nWords = SubjectAttributor.significantWords(n.canonicalName());
+            Set<String> nWords = NameMatcher.significantWords(n.canonicalName());
             Set<String> nKeys = n.evidenceKeys();
             if (nWords.isEmpty() || nKeys.isEmpty()) continue;
             for (SubjectUnit t : tickerUnits) {
                 boolean sharesWord = !Collections.disjoint(nWords,
-                        SubjectAttributor.significantWords(t.canonicalName()));
+                        NameMatcher.significantWords(t.canonicalName()));
                 boolean sharesEvidence = !Collections.disjoint(nKeys, t.evidenceKeys());
                 if (sharesWord && sharesEvidence) {
-                    t.absorb(n);
-                    byId.remove(n.id);
-                    // The merge itself is not new evidence: the ticker unit only
-                    // inherits a PENDING headline claim (dirty) if the absorbed name
-                    // unit carried one. Unconditionally dirtying here let a demoted
-                    // co-subject (consolidation) sneak back into a compose via a
-                    // later identity-merge.
-                    if (dirty.remove(n.id)) dirty.add(t.id);
+                    fold(t, n);
                     merged++;
                     break;
                 }
@@ -111,23 +109,36 @@ public final class SubjectRegistry {
         // surviving unit carries the more specific canonical form.
         for (SubjectUnit n : nameUnits) {
             if (byId.get(n.id) != n) continue; // absorbed above or by an earlier pair
-            Set<String> nWords = SubjectAttributor.significantWords(n.canonicalName());
+            Set<String> nWords = NameMatcher.significantWords(n.canonicalName());
             Set<String> nKeys = n.evidenceKeys();
             if (nWords.isEmpty() || nKeys.isEmpty()) continue;
             for (SubjectUnit m : nameUnits) {
                 if (m == n || byId.get(m.id) != m) continue;
-                Set<String> mWords = SubjectAttributor.significantWords(m.canonicalName());
+                Set<String> mWords = NameMatcher.significantWords(m.canonicalName());
                 boolean subset = mWords.size() > nWords.size() && mWords.containsAll(nWords);
                 if (subset && !Collections.disjoint(nKeys, m.evidenceKeys())) {
-                    m.absorb(n);
-                    byId.remove(n.id);
-                    if (dirty.remove(n.id)) dirty.add(m.id);
+                    fold(m, n);
                     merged++;
                     break;
                 }
             }
         }
         return merged;
+    }
+
+    /**
+     * Absorbs {@code victim} into {@code absorber} and drops it from the store —
+     * the single place the subtle dirty-transfer invariant lives. The merge itself
+     * is not new evidence: the absorber only inherits a PENDING headline claim
+     * (dirty) if the absorbed unit carried one. Unconditionally dirtying here let a
+     * demoted co-subject (consolidation) sneak back into a compose via a later
+     * identity-merge. Must run under the caller's merge write lock (see
+     * {@link #mergeIdentities()}).
+     */
+    private void fold(SubjectUnit absorber, SubjectUnit victim) {
+        absorber.absorb(victim);
+        byId.remove(victim.id);
+        if (dirty.remove(victim.id)) dirty.add(absorber.id);
     }
 
     /**
