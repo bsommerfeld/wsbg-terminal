@@ -1,0 +1,181 @@
+/* Reddit headline widget — everything specific to a headline row: the gilded
+   subject name, the live quote strip + its meta-group, the "News" provenance
+   tag, the open-thread button, the Fear&Greed header gauge, the IMPORTANT
+   highlight wash, and the cook empty state. Shared row grammar is in rows.css. */
+
+/* Fear & Greed speedometer: a compact CNN-style gauge — fixed red→amber→green
+   arc, a needle at the score, the figure tinted by band (red fear / green greed). */
+.widget-head .fear-greed {
+  display: inline-flex; align-items: center; gap: 5px;
+  color: inherit; text-decoration: none; cursor: pointer; /* anchor to CNN, not link-styled */
+}
+.widget-head .fear-greed[hidden] { display: none; }
+.widget-head .fear-greed .fg-gauge { display: block; overflow: visible; }
+.widget-head .fear-greed .fg-track { opacity: .9; }
+.widget-head .fear-greed .fg-needle {
+  stroke: var(--txt); stroke-width: 2; stroke-linecap: round;
+  transition: x2 .6s ease, y2 .6s ease;       /* needle glides on a new reading */
+}
+.widget-head .fear-greed .fg-hub { fill: var(--txt); }
+.widget-head .fear-greed .fg-val {
+  font-size: var(--font-chrome); font-weight: 700;
+  font-variant-numeric: tabular-nums; color: var(--txt-2);
+  transition: color .6s ease;
+}
+.widget-head .fear-greed[data-band="EXTREME_FEAR"] .fg-val,
+.widget-head .fear-greed[data-band="FEAR"]         .fg-val { color: var(--red); }
+.widget-head .fear-greed[data-band="GREED"]         .fg-val,
+.widget-head .fear-greed[data-band="EXTREME_GREED"] .fg-val { color: var(--green); }
+/* Loading skeleton (before the first reading arrives): the arc + needle dim to
+   a resting state and the figure renders as a soft blurred glow with a
+   left→right shimmer sweep — same trick as the EUR/USD badge. Tabular-nums keeps
+   the width identical so nothing shifts when the live score lands. */
+.widget-head .fear-greed:has(.fg-val.loading) .fg-track { opacity: .35; }
+.widget-head .fear-greed:has(.fg-val.loading) .fg-needle,
+.widget-head .fear-greed:has(.fg-val.loading) .fg-hub { opacity: .25; }
+.widget-head .fear-greed .fg-val.loading {
+  position: relative;
+  display: inline-block;
+  overflow: hidden;
+  color: transparent;
+  text-shadow: 0 0 5px var(--mute);
+  border-radius: 3px;
+}
+.widget-head .fear-greed .fg-val.loading::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,
+      transparent 15%, var(--txt-2) 50%, transparent 85%);
+  opacity: 0.22;
+  transform: translateX(-120%);
+  animation: eurusd-skeleton 1.5s ease-in-out infinite;
+}
+
+/* "Open the source thread" button, pinned bottom-right of a headline card.
+   Subtle until the row is hovered; opens the Reddit thread in the OS browser. */
+.row .thread-open {
+  position: absolute;
+  right: 12px; bottom: 8px;
+  font-size: .9em; line-height: 1; text-decoration: none;
+  color: var(--mute-2); opacity: 0;
+  transition: opacity .12s ease, color .12s ease;
+}
+.row:hover .thread-open { opacity: .6; }
+.row .thread-open:hover { opacity: 1; color: var(--txt); }
+
+/* The subject(s) the line is about — the company name woven into the headline,
+   highlighted gold so the reader instantly sees the asset (the prompt forbids a
+   ticker label, so the NAME is the cue). Same gold as the ticker tag + new-row flash. */
+.row .body .head .subject { color: var(--amber); font-weight: 600; }
+
+/* Meta-row "Leiste": the chart+numbers group sits in its own bordered, rounded
+   container (macOS segmented-control look) so it reads as a tidy group. */
+.row .body .meta .meta-group {
+  height: var(--meta-leiste-h); box-sizing: border-box;
+  display: inline-flex; align-items: stretch;
+  border: 1px solid var(--line-soft); border-radius: 5px;
+  overflow: hidden; background: var(--bg-1);
+}
+/* Chart + numbers padded inside their Leiste; the 56×18 sparkline keeps its size. */
+.row .body .meta .meta-group.quote-group { padding: 0 8px; align-items: center; flex: 0 0 auto; }
+
+/* Live quote strip — the primary ticker's market snapshot rendered
+   inline at the head of the meta row: a micro-sparkline + last price +
+   signed day %. One accent colour (--qc) flows through the sparkline
+   line/area/dot and the % text, set by the day-move direction so a
+   glance reads green-up / red-down. The price stays neutral so it
+   doesn't compete with the directional cue. Deeper numbers (day & 52w
+   range, volume) live in the element's hover title. */
+.row .body .meta .quote {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  letter-spacing: 0;
+  --qc: var(--mute);
+}
+.row .body .meta .quote.up   { --qc: var(--green); }
+.row .body .meta .quote.down { --qc: var(--red); }
+.row .body .meta .quote .spark {
+  width: 56px; height: 18px;
+  display: block;
+  overflow: visible;
+}
+.row .body .meta .quote .spark .line {
+  fill: none;
+  stroke: var(--qc);
+  stroke-width: 1.4;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.row .body .meta .quote .spark .area { fill: var(--qc); opacity: .13; stroke: none; }
+.row .body .meta .quote .spark .dot  { fill: var(--qc); }
+.row .body .meta .quote .q-price {
+  color: var(--txt-2);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.row .body .meta .quote .q-chg {
+  color: var(--qc);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+/* Stale quote: every venue is closed, so the figure is a last close, not live.
+   Just dim the whole strip — no label (the hover title explains it). */
+.row .body .meta .quote.stale { opacity: .55; }
+
+/* "News" provenance tag — a quiet hint that the compose stage leaned on external
+   news, pinned to the bottom-right of the meta row (roughly the price strip's
+   weight). Deliberately low-contrast: muted colour, no coloured pill, no border —
+   it must never compete with the IMPORTANT red wash or the price figure. The
+   right margin clears the bottom-right ".thread-open" (↗) corner on hover. */
+.row .body .meta .news-tag {
+  margin-left: auto;                 /* push to the right end of the meta row */
+  margin-right: 16px;                /* clear the hover-revealed ↗ open button */
+  flex: 0 0 auto;
+  color: var(--txt-2);
+  opacity: .6;
+  font-weight: 500;
+  font-size: var(--font-meta);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  cursor: help;
+}
+/* Clickable variant (a <button>): the record carries the concrete source
+   articles, clicking opens the news-sources overlay. Same quiet look at rest
+   (button chrome reset), only the hover betrays the affordance. */
+.row .body .meta .news-tag.has-sources {
+  background: none; border: 0; padding: 0;
+  font-family: inherit; line-height: inherit;
+  cursor: pointer;
+  transition: opacity .15s, color .15s;
+}
+.row .body .meta .news-tag.has-sources:hover {
+  opacity: 1;
+  color: var(--amber);
+}
+
+/* Editorial highlight: a single IMPORTANT tier on top of NORMAL.
+   Renders the same way as a market mover so the user has one
+   visual language for "look at this". */
+.row.highlight-important {
+  background: var(--red-soft);
+}
+.row.highlight-important:hover {
+  background: oklch(from var(--red) l c h / .14);
+}
+
+/* Cook empty-state for the headlines widget. Rectangular, still
+   image — the gif speaks for itself. Sized at 96 px so it doesn't
+   claim the whole pane on small windows. */
+.empty-cook {
+  display: flex; align-items: center; justify-content: center;
+  height: 100%; min-height: 200px;
+  padding: 24px;
+  opacity: .75;
+  user-select: none;
+}
+.empty-cook img {
+  width: 96px; height: 96px;
+  object-fit: cover;
+}

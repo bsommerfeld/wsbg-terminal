@@ -1,154 +1,63 @@
 // Renders the AI-generated headline list.
 //
-// Driven entirely by the `headlines` payload pushed from
-// HeadlinePublisher. New entries (headlines not seen in the previous
-// render) get the .new-row class so the gold flash animation plays
-// once — the "frisch aufgetaucht" cue. Keyed per-headline
-// (clusterId + createdAt), NOT per-cluster: a cluster publishes many
-// headlines over its life, so keying on clusterId alone would flash
-// only the first one and silently skip every follow-up.
+// This module owns only the headline ROW CONTENT (toRow / buildMeta) and the
+// public entry points. The list mechanics (keyed incremental sync + archive
+// scroll-back paging) live in headline-list.js; the market snapshot chip lives
+// in quote-strip.js.
+//
+// New entries (headlines not seen in the previous render) get the .new-row class
+// so the gold flash animation plays once — the "frisch aufgetaucht" cue. Keyed
+// per-headline (clusterId + createdAt), NOT per-cluster: a cluster publishes many
+// headlines over its life, so keying on clusterId alone would flash only the
+// first one and silently skip every follow-up.
 
 import { highlightTickers, highlightSubjects } from '../format/ticker.js';
+import { colorizeSignedNumbers } from '../format/numbers.js';
+import { fmtClock } from '../format/time.js';
+import { escapeHtml } from '../format/escape.js';
+import { t } from '../i18n/i18n.js';
+import { openNewsSources } from '../chrome/news-sources.js';
+import { quoteStripHtml } from './quote-strip.js';
+import { createHeadlineList } from './headline-list.js';
 
 // Gold subject highlight — LIVE since subject CONSOLIDATION (2026-07-01): one event now
 // composes exactly ONE headline under its primary subject, and the backend gilds the
 // longest form of the subject's name the line actually wrote (HeadlineWriter.displayFormIn,
 // so "Salesforce, Inc." gilds "Salesforce"), which is what makes the glow consistent.
 const GOLD_SUBJECTS = true;
-import { colorizeSignedNumbers } from '../format/numbers.js';
-import { fmtClock } from '../format/time.js';
-import { t, currentLang } from '../i18n/i18n.js';
-import { openNewsSources } from '../chrome/news-sources.js';
 
 const HIGHLIGHT_CLASS = {
   IMPORTANT: 'highlight-important',
 };
 
-// Per-widget seen-keys cache — populated on first render, diffed on
-// subsequent renders to detect which rows are new.
-const seenKeys = new WeakMap();
-// Per-widget key → row element. Rows are immutable per key (the row key IS the
-// record's identity), so a re-render only creates/removes/moves elements — it
-// never rebuilds existing ones. A wholesale innerHTML rebuild on every live
-// push was the left column's scroll-jank source: it re-laid-out hundreds of
-// rows (each with an inline SVG sparkline) and threw away the
-// content-visibility height cache mid-scroll.
-const rowEls = new WeakMap();
+// Per-headline identity for new-row diffing. clusterId alone is not
+// unique — a cluster yields many headlines — so we pair it with the
+// createdAt timestamp, the same fingerprint HeadlinePublisher uses.
+function rowKey(h) {
+  return h.clusterId + '@' + h.createdAt;
+}
 
-// The list is two stacked layers, newest at the top:
-//   liveItems    — the live 24h wire (HeadlinePublisher pushes, replaces wholesale)
-//   archiveItems — older headlines pulled from the permanent archive as the user
-//                  scrolls DOWN past the wire (prepended below, never flash).
-// Both are kept here so a live push re-renders without dropping the scroll-back rows.
-let liveItems = [];
-let archiveItems = [];
-let hostRef = null;
-let socketRef = null;
-let loadingMore = false;
-let exhausted = false;     // archive returned a short/empty page → nothing older left
-const PAGE = 50;
-// Scroll-back rows kept in memory/DOM. Trimmed (oldest first) on a live push
-// while the user is reading the top of the wire — never under their viewport.
-const ARCHIVE_CAP = 300;
+const list = createHeadlineList({ identity: rowKey, renderRow: buildRow, renderEmpty });
 
 export function renderHeadlines(host, items) {
-  if (!host) return;
-  hostRef = host;
-  liveItems = items || [];
-  if (liveItems.length === 0 && archiveItems.length === 0) {
-    host.innerHTML = `
-      <div class="empty-cook" aria-label="${escapeText(t('reddit.empty'))}">
-        <img src="/icons/cook.webp" alt="">
-      </div>`;
-    seenKeys.set(host, new Set());
-    rowEls.set(host, new Map());
-    return;
-  }
-  if (archiveItems.length > ARCHIVE_CAP && host.scrollTop < host.clientHeight) {
-    archiveItems = archiveItems.slice(0, ARCHIVE_CAP);
-    exhausted = false; // scrolling back down re-pages the trimmed rows
-  }
-  renderCombined();
+  list.render(host, items);
 }
 
 /** Wires the scroll-to-bottom → load-older-archive behaviour (call once). */
 export function initHeadlineScroll(host, socket) {
-  if (!host) return;
-  hostRef = host;
-  socketRef = socket;
-  host.addEventListener('scroll', () => {
-    if (loadingMore || exhausted) return;
-    // within ~1.5 rows of the bottom → fetch the next older page
-    if (host.scrollTop + host.clientHeight >= host.scrollHeight - 120) loadMore();
-  }, { passive: true });
+  list.initScroll(host, socket);
 }
 
 /** Appends an older archive page (from the `archive-results` page command). */
 export function appendArchivePage(items) {
-  loadingMore = false;
-  if (!items || items.length === 0) { exhausted = true; return; }
-  const known = new Set([...liveItems, ...archiveItems].map(rowKey));
-  const fresh = items.filter(h => !known.has(rowKey(h)));
-  if (fresh.length === 0) { exhausted = true; return; }
-  if (items.length < PAGE) exhausted = true; // last page
-  archiveItems = archiveItems.concat(fresh);
-  renderCombined();
+  list.appendArchivePage(items);
 }
 
-function loadMore() {
-  if (!socketRef) return;
-  const all = [...liveItems, ...archiveItems];
-  if (all.length === 0) return;
-  const oldest = all.reduce((m, h) => Math.min(m, h.createdAt), Infinity);
-  loadingMore = true;
-  socketRef.send('archive', { command: 'page', before: oldest, limit: PAGE, requestId: 'scrollback' });
-}
-
-// Renders live (top) + archive (below) as one list, de-duped by row key.
-// Only genuinely-new LIVE rows flash; archive rows never do.
-//
-// Incremental keyed sync, NOT an innerHTML rebuild: existing row elements are
-// kept (a row is immutable per key), new ones are created where they belong,
-// vanished ones removed. A live push therefore costs a handful of node
-// insertions instead of re-laying-out the whole list, the browser's remembered
-// content-visibility row heights survive, and an in-flight scroll isn't
-// interrupted by a layout storm.
-function renderCombined() {
-  const host = hostRef;
-  if (!host) return;
-  const byKey = new Map();
-  for (const h of [...liveItems, ...archiveItems]) byKey.set(rowKey(h), h);
-
-  const prev = seenKeys.get(host) || new Set();
-  const isFirstRender = prev.size === 0;
-  const liveKeys = new Set(liveItems.map(rowKey));
-
-  let els = rowEls.get(host);
-  if (!els) { els = new Map(); rowEls.set(host, els); }
-  if (els.size === 0) host.innerHTML = ''; // clear the empty-state placeholder
-
-  for (const [key, el] of els) {
-    if (!byKey.has(key)) { el.remove(); els.delete(key); }
-  }
-
-  // One ordered walk: reuse the element under the cursor when it matches,
-  // otherwise insert (a new node, or an existing one moved) before it.
-  let cursor = host.firstElementChild;
-  for (const [key, h] of byKey) {
-    const existing = els.get(key);
-    if (existing) {
-      if (existing === cursor) {
-        cursor = cursor.nextElementSibling;
-      } else {
-        host.insertBefore(existing, cursor);
-      }
-    } else {
-      const el = buildRow(h, !isFirstRender && liveKeys.has(key) && !prev.has(key));
-      els.set(key, el);
-      host.insertBefore(el, cursor);
-    }
-  }
-  seenKeys.set(host, liveKeys);
+function renderEmpty(host) {
+  host.innerHTML = `
+    <div class="empty-cook" aria-label="${escapeHtml(t('reddit.empty'))}">
+      <img src="/icons/cook.webp" alt="">
+    </div>`;
 }
 
 function buildRow(h, isNew) {
@@ -166,13 +75,6 @@ function buildRow(h, isNew) {
     el.addEventListener('animationend', () => el.classList.remove('new-row'), { once: true });
   }
   return el;
-}
-
-// Per-headline identity for new-row diffing. clusterId alone is not
-// unique — a cluster yields many headlines — so we pair it with the
-// createdAt timestamp, the same fingerprint HeadlinePublisher uses.
-function rowKey(h) {
-  return h.clusterId + '@' + h.createdAt;
 }
 
 function toRow(h, isNew) {
@@ -194,8 +96,8 @@ function toRow(h, isNew) {
   // Bottom-right "open the source thread in the browser" button. A plain external
   // anchor — external-links.js intercepts the click and routes it to the OS browser.
   const threadBtn = h.threadUrl
-    ? `<a class="thread-open" href="${escapeText(h.threadUrl)}" title="${escapeText(t('reddit.thread.open.title'))}"
-          aria-label="${escapeText(t('reddit.thread.open.aria'))}">↗</a>`
+    ? `<a class="thread-open" href="${escapeHtml(h.threadUrl)}" title="${escapeHtml(t('reddit.thread.open.title'))}"
+          aria-label="${escapeHtml(t('reddit.thread.open.aria'))}">↗</a>`
     : '';
 
   return `<div class="${classes.join(' ')}">
@@ -215,126 +117,19 @@ function buildMeta(h) {
   // Sentiment/sector tags and the Yahoo+ticker provenance were removed — the
   // price is now sourced from several venues, so a "Yahoo" mark misleads, and
   // market sentiment is covered by the Fear&Greed gauge.
-  const quote = buildQuote(h.snapshot);
+  const quote = quoteStripHtml(h.snapshot);
   // Subtle provenance hint — not a highlight. CSS pushes it to the right.
   // With concrete source refs on the record the tag becomes a button that
   // opens the news-sources overlay; old archive lines only carry the boolean
   // and keep the plain hover-hint span.
   const hasRefs = Array.isArray(h.newsRefs) && h.newsRefs.length > 0;
   const news = hasRefs
-    ? `<button type="button" class="news-tag has-sources" title="${escapeText(t('reddit.news.sources.open'))}"
-              aria-label="${escapeText(t('reddit.news.sources.open'))}">${escapeText(t('reddit.news.tag'))}</button>`
+    ? `<button type="button" class="news-tag has-sources" title="${escapeHtml(t('reddit.news.sources.open'))}"
+              aria-label="${escapeHtml(t('reddit.news.sources.open'))}">${escapeHtml(t('reddit.news.tag'))}</button>`
     : h.newsEnriched
-      ? `<span class="news-tag" title="${escapeText(t('reddit.news.title'))}">${escapeText(t('reddit.news.tag'))}</span>`
+      ? `<span class="news-tag" title="${escapeHtml(t('reddit.news.title'))}">${escapeHtml(t('reddit.news.tag'))}</span>`
       : '';
   if (!quote && !news) return '';
   const quoteHtml = quote ? `<span class="meta-group quote-group">${quote}</span>` : '';
   return quoteHtml + news;
-}
-
-// Live quote strip for the headline's primary ticker. Renders only when
-// PublishHeadlineTool attached a Yahoo snapshot with a usable price:
-//   [ micro-sparkline ]  214.25  +0.78%
-// The sparkline, price-change and the whole strip's accent colour key
-// off the day-move direction (green up / red down / muted flat). Deeper
-// numbers (day range, 52-week range, volume) ride along in the native
-// hover title so the row stays uncluttered but the data is one hover away.
-function buildQuote(s) {
-  if (!s || typeof s.price !== 'number' || !isFinite(s.price)) return '';
-  const chg = typeof s.changePercent === 'number' ? s.changePercent : null;
-  const dir = chg == null ? sparkDir(s.spark)
-            : chg > 0.005 ? 'up' : chg < -0.005 ? 'down' : 'flat';
-
-  const stale = isStaleQuote(s);
-  const spark = buildSparkline(s.spark, dir);
-  const price = `<span class="q-price">${escapeText(fmtPrice(s.price, s.currency))}</span>`;
-  const chgTxt = chg == null ? ''
-    : `<span class="q-chg ${dir}">${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%</span>`;
-
-  // Off-hours (every venue closed) just dims the strip — no label; the hover title
-  // explains it. With the live chain (L&S evening, NASDAQ after-hours) this is rare.
-  return `<span class="quote ${dir}${stale ? ' stale' : ''}" title="${escapeText(buildQuoteTitle(s))}">`
-       + `${spark}${price}${chgTxt}</span>`;
-}
-
-// Dim a quote ONLY when the server says so. priceStale is GAP-aware (computed against the
-// CET clock): a US/index quote on its last close is NOT dimmed while the German market is
-// open — only the dead-of-night gap dims. We must NOT re-derive this from marketTime here,
-// or every overseas/index price would read "closed" all day. (Older payloads without the
-// flag fall back to the 30-min timestamp check.)
-function isStaleQuote(s) {
-  if (!s) return false;
-  if (typeof s.priceStale === 'boolean') return s.priceStale;
-  if (typeof s.marketTime !== 'number' || s.marketTime <= 0) return false;
-  return (Date.now() / 1000 - s.marketTime) > 1800;
-}
-
-// Builds an inline SVG micro-sparkline from the intraday close series.
-// viewBox matches the CSS pixel box 1:1 so the end-point dot stays round.
-// Three layers: a faint area fill, the line, and a dot on the last point.
-function buildSparkline(spark, dir) {
-  if (!Array.isArray(spark) || spark.length < 2) return '';
-  const W = 56, H = 18, pad = 2;
-  let min = Infinity, max = -Infinity;
-  for (const v of spark) { if (v < min) min = v; if (v > max) max = v; }
-  const range = (max - min) || 1;
-  const n = spark.length;
-
-  const pts = spark.map((v, i) => {
-    const x = (i / (n - 1)) * W;
-    const y = H - pad - ((v - min) / range) * (H - 2 * pad);
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  });
-  const line = pts.join(' ');
-  const area = `0,${H} ${line} ${W},${H}`;
-  const lastX = (W).toFixed(1);
-  const lastY = pts[n - 1].split(',')[1];
-
-  return `<svg class="spark ${dir}" viewBox="0 0 ${W} ${H}" aria-hidden="true">`
-       + `<polygon class="area" points="${area}"/>`
-       + `<polyline class="line" points="${line}"/>`
-       + `<circle class="dot" cx="${lastX}" cy="${lastY}" r="1.7"/>`
-       + `</svg>`;
-}
-
-function sparkDir(spark) {
-  if (!Array.isArray(spark) || spark.length < 2) return 'flat';
-  const d = spark[spark.length - 1] - spark[0];
-  return d > 0 ? 'up' : d < 0 ? 'down' : 'flat';
-}
-
-// Price with a currency glyph for the majors; pennystocks (< 1) get more
-// decimals so a 0.0042 → 0.0061 move is still legible. A stock index carries
-// the "PTS" marker (priced in points, not a currency) → "24.013 Pkt".
-function fmtPrice(p, ccy) {
-  if (ccy === 'PTS') return Math.round(p).toLocaleString(currentLang() === 'de' ? 'de-DE' : 'en-US') + ' ' + t('quote.points');
-  const sym = ccy === 'USD' ? '$' : ccy === 'EUR' ? '€' : ccy === 'GBP' ? '£' : '';
-  const v = Math.abs(p) < 1 ? p.toFixed(4) : p.toFixed(2);
-  return sym + v;
-}
-
-function buildQuoteTitle(s) {
-  const L = [];
-  if (s.symbol) L.push(s.symbol);
-  if (isNum(s.dayLow) && isNum(s.dayHigh)) L.push(`${t('quote.day')} ${fmtNum(s.dayLow)}–${fmtNum(s.dayHigh)}`);
-  if (isNum(s.fiftyTwoWeekLow) && isNum(s.fiftyTwoWeekHigh)) L.push(`52W ${fmtNum(s.fiftyTwoWeekLow)}–${fmtNum(s.fiftyTwoWeekHigh)}`);
-  if (isNum(s.volume)) L.push(`Vol ${fmtVol(s.volume)}`);
-  if (s.source) L.push(`${t('quote.source')} ${s.source}`);   // which venue priced it
-  if (isStaleQuote(s)) L.push(t('quote.stale'));
-  return L.join('  ·  ');
-}
-
-function isNum(v) { return typeof v === 'number' && isFinite(v); }
-function fmtNum(v) { return Math.abs(v) < 1 ? v.toFixed(4) : v.toFixed(2); }
-function fmtVol(v) {
-  if (v >= 1e9) return (v / 1e9).toFixed(1) + 'B';
-  if (v >= 1e6) return (v / 1e6).toFixed(1) + 'M';
-  if (v >= 1e3) return (v / 1e3).toFixed(1) + 'K';
-  return String(v);
-}
-
-function escapeText(s) {
-  return s.replace(/[&<>"']/g, c => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-  }[c]));
 }

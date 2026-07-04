@@ -3,8 +3,10 @@
 // Minimal: [EU flag] rate [US flag]. The rate text tints green/red
 // briefly on direction changes; NEUTRAL ticks are silent.
 
+import { restartAnimation } from '../chrome/anim.js';
+
 // Dwell ~2s in green/red on a direction change, then the base color
-// transition (see .eurusd .rate in widgets.css) fades back to white.
+// transition (see .eurusd .rate in fj.css) fades back to white.
 const FLASH_MS = 2000;
 
 // Twelve yellow 5-point stars arranged in a ring on a blue field —
@@ -52,17 +54,8 @@ export function renderEurUsd(host, q) {
 
   const dir = q.direction;
   if (dir === 'UP' || dir === 'DOWN') {
-    retriggerClass(host, dir === 'UP' ? 'flash-up' : 'flash-down', FLASH_MS);
+    restartAnimation(host, dir === 'UP' ? 'flash-up' : 'flash-down', FLASH_MS);
   }
-}
-
-function retriggerClass(el, cls, ms) {
-  el.classList.remove(cls);
-  // Force reflow so the class re-add restarts the animation/transition
-  // even when the same class fires back-to-back.
-  void el.offsetWidth;
-  el.classList.add(cls);
-  setTimeout(() => el.classList.remove(cls), ms);
 }
 
 // Paint an always-visible placeholder — flags framing a blurred, shimmering

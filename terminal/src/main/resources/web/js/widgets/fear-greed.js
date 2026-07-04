@@ -10,7 +10,7 @@ const BANDS = ['EXTREME_FEAR', 'FEAR', 'NEUTRAL', 'GREED', 'EXTREME_GREED'];
 
 // Build the gauge markup for a given score (0–100). The arc + hub are static;
 // only the needle angle and the figure change. `loading` renders the value as a
-// shimmering placeholder (see .fg-val.loading in widgets.css) for the skeleton.
+// shimmering placeholder (see .fg-val.loading in reddit.css) for the skeleton.
 function gaugeSvg(score, loading) {
   // Needle: score 0 → points left (180°), 100 → points right (0°). SVG y is down,
   // so the semicircle sits on top; subtract the sin component.

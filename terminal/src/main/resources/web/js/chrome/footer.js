@@ -8,6 +8,7 @@
 import { regionStatus, onCalendarUpdate, regions } from '../markets/state.js';
 import { fmtDuration } from '../format/time.js';
 import { initSlideCycle } from './slider.js';
+import { restartAnimation } from './anim.js';
 import { t } from '../i18n/i18n.js';
 
 const DEFAULT_SYMBOLS = ['DE', 'US', 'ASIEN', 'AUSTRALIEN'];
@@ -77,9 +78,7 @@ function updateChips(host) {
     // Skip on first paint (prev undefined) so the page doesn't
     // open with every chip flashing.
     if (prev && prev !== state) {
-      el.classList.remove('phase-shift');
-      void el.offsetWidth;
-      el.classList.add('phase-shift');
+      restartAnimation(el, 'phase-shift');
     }
     el.dataset.state = state;
     el.classList.remove('pre', 'main', 'post', 'closed');

@@ -2,6 +2,7 @@
 // the chrome (titlebar / footer / settings), kicks the slide cycle.
 
 import { Socket } from './bridge/socket.js';
+import { applyPlatform } from './chrome/platform.js';
 import { initTitlebar } from './chrome/titlebar.js';
 import { initTheme, setSystemAppearance } from './chrome/theme.js';
 import { initSettings } from './chrome/settings.js';
@@ -19,57 +20,13 @@ import { renderFearGreed } from './widgets/fear-greed.js';
 import { setMarketCalendar } from './markets/state.js';
 import { t } from './i18n/i18n.js';
 
-// [data-platform] drives the title-bar split in CSS:
-//   "mac"   — HTML titlebar over the native NSWindow traffic lights (title +
-//             theme toggle); the OS draws the real lights top-left.
-//   "win"   — custom flush titlebar; the native caption is stripped
-//             (WindowsCustomChrome) so our HTML controls sit top-RIGHT and the
-//             HTML traffic lights ARE the window buttons (wired to the window
-//             command channel).
-//   "other" — Linux: native OS title bar; the HTML titlebar is hidden and the
-//             theme toggle moves to the footer.
-const sig = (navigator.platform || '') + ' ' + (navigator.userAgent || '');
-const isMac = /mac|darwin/i.test(sig);
-const isWin = /win/i.test(sig);
-document.documentElement.dataset.platform = isMac ? 'mac' : (isWin ? 'win' : 'other');
+applyPlatform();
 
 const wsPort = new URLSearchParams(location.search).get('ws');
 const socket = new Socket(`ws://127.0.0.1:${wsPort}`);
 
-// Last payload per widget, so a live language switch can re-paint the dynamic
-// content (translated strings live inside these renderers) without waiting for
-// the next server push. Static markup is handled by applyStatic() in setLang().
-const last = { headlines: [], fjNews: [], fearGreed: null, redditStatus: null };
-
 const redditBody = document.querySelector('#widget-reddit [data-rows]');
-socket.on('headlines', payload => {
-  last.headlines = payload || [];
-  renderHeadlines(redditBody, payload);
-});
-// Scroll-back: load older archived headlines as the user scrolls past the live wire.
-initHeadlineScroll(redditBody, socket);
-socket.on('archive-results', payload => {
-  if (payload && payload.command === 'page') appendArchivePage(payload.items);
-});
-
-socket.on('fj-news', payload => {
-  last.fjNews = payload || [];
-  renderFjNews(document.querySelector('#widget-fj [data-rows]'), payload);
-});
-
-socket.on('eurusd', payload => {
-  renderEurUsd(document.getElementById('eurusd-badge'), payload);
-});
-
-socket.on('market-hours', payload => {
-  setMarketCalendar(payload);
-});
-
-// Fear & Greed gauge (Reddit header): whole-market sentiment.
-socket.on('fear-greed', payload => {
-  last.fearGreed = payload;
-  renderFearGreed(document.getElementById('fear-greed-badge'), payload);
-});
+const fjBody = document.querySelector('#widget-fj [data-rows]');
 
 // Reddit scraper health — lives directly on the Reddit LIVE indicator
 // (the standalone "RATE LIMITED" chip was dropped; "Defekt" does the
@@ -85,33 +42,48 @@ function applyRedditStatus(payload) {
   live.dataset.state = state;
   live.textContent = state === 'DEGRADED' ? t('common.degraded') : t('common.live');
 }
-socket.on('reddit-status', payload => {
-  last.redditStatus = payload;
-  applyRedditStatus(payload);
+
+// Declarative topic → widget manifest. One loop registers every `socket.on`,
+// one loop re-paints the language-sensitive widgets from their cached payload on
+// `wsbg:languagechange`. Adding a widget = one row here, no drift between the two
+// concerns. `relang` marks widgets whose rendered strings are translated (so a
+// live language switch must re-paint them). The topic literals are the socket
+// contract shared with the Java publishers — do not rename.
+const WIDGETS = [
+  { topic: 'headlines',      relang: true, render: p => renderHeadlines(redditBody, p ?? []) },
+  { topic: 'fj-news',        relang: true, render: p => renderFjNews(fjBody, p ?? []) },
+  { topic: 'eurusd',                       render: p => renderEurUsd(document.getElementById('eurusd-badge'), p) },
+  { topic: 'market-hours',                 render: p => setMarketCalendar(p) },
+  { topic: 'fear-greed',     relang: true, render: p => renderFearGreed(document.getElementById('fear-greed-badge'), p) },
+  { topic: 'reddit-status',  relang: true, render: p => applyRedditStatus(p) },
+  { topic: 'donation-stats',               render: p => setDonationStats(p) },
+  { topic: 'os-appearance',                render: p => { if (p) setSystemAppearance(p.mode); } },
+];
+
+// Last payload per topic, so a live language switch can re-paint the dynamic
+// content (translated strings live inside these renderers) without waiting for
+// the next server push. headlines/fj seed to [] so they always paint (matching
+// the empty-state render); the rest stay unset until their first push.
+const last = { 'headlines': [], 'fj-news': [] };
+
+for (const w of WIDGETS) {
+  socket.on(w.topic, payload => { last[w.topic] = payload; w.render(payload); });
+}
+
+// Scroll-back: load older archived headlines as the user scrolls past the live wire.
+initHeadlineScroll(redditBody, socket);
+socket.on('archive-results', payload => {
+  if (payload && payload.command === 'page') appendArchivePage(payload.items);
 });
 
 // Live language switch: setLang() has already rewritten the static markup;
-// re-render the dynamic widgets from their last payload so their translated
-// strings update too, and re-apply the Reddit health label (JS-owned, no
-// data-i18n, so it needs an explicit re-apply here).
+// re-render the language-sensitive widgets from their last payload so their
+// translated strings update too. `last[topic] != null` guards the widgets whose
+// re-paint is conditional on having received a (non-null) payload.
 window.addEventListener('wsbg:languagechange', () => {
-  renderHeadlines(redditBody, last.headlines);
-  renderFjNews(document.querySelector('#widget-fj [data-rows]'), last.fjNews);
-  if (last.fearGreed) renderFearGreed(document.getElementById('fear-greed-badge'), last.fearGreed);
-  if (last.redditStatus) applyRedditStatus(last.redditStatus);
-});
-
-// Donation stats: the footer banner runs unconditionally now; this payload only
-// carries the reciprocity figures the copy personalises with. Payload:
-// { activeHours, openCount } → the {hours}/{opens} placeholders.
-socket.on('donation-stats', payload => {
-  setDonationStats(payload);
-});
-
-// Host OS dark/light appearance, detected on the Java side. Authoritative for
-// "follow system" because the OSR browser can't read the real macOS theme itself.
-socket.on('os-appearance', payload => {
-  if (payload) setSystemAppearance(payload.mode);
+  for (const w of WIDGETS) {
+    if (w.relang && last[w.topic] != null) w.render(last[w.topic]);
+  }
 });
 
 initTheme();

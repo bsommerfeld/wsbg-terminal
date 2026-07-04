@@ -93,61 +93,60 @@ export function initSettings(socket) {
       () => socket.send('settings', { command: 'open-logs' }));
 
   // ---- Destructive: full data wipe (two-click arm, no OSR-unfriendly confirm()) ----
-  const clearBtn = view.querySelector('.js-clear-data');
-  if (clearBtn) {
-    let armed = false;
-    let armTimer = null;
-    const disarm = () => {
-      armed = false;
-      clearBtn.classList.remove('armed');
-      clearBtn.textContent = t('settings.data.clear.btn');
-    };
-    clearBtn.addEventListener('click', () => {
-      if (clearBtn.disabled) return;
-      if (!armed) {
-        armed = true;
-        clearBtn.classList.add('armed');
-        clearBtn.textContent = t('settings.data.clear.confirm');
-        clearTimeout(armTimer);
-        armTimer = setTimeout(disarm, 4000); // un-arm if not confirmed
-        return;
-      }
-      clearTimeout(armTimer);
-      disarm();
-      socket.send('settings', { command: 'clear-data' });
-      // Visual 10-min cooldown that mirrors the server-side gate.
-      clearBtn.disabled = true;
-      clearBtn.textContent = t('settings.data.clear.done');
-      setTimeout(() => { clearBtn.disabled = false; clearBtn.textContent = t('settings.data.clear.btn'); }, 600000);
-    });
-  }
+  // Confirmed → a visual 10-min cooldown that mirrors the server-side gate, then re-arm.
+  armedButton(view.querySelector('.js-clear-data'), {
+    armLabel: () => t('settings.data.clear.btn'),
+    confirmLabel: () => t('settings.data.clear.confirm'),
+    doneLabel: () => t('settings.data.clear.done'),
+    cooldownMs: 600000,
+    onConfirm: () => socket.send('settings', { command: 'clear-data' }),
+  });
 
   // ---- Destructive: full uninstall (same two-click arm; the app exits) ----
-  const uninstallBtn = view.querySelector('.js-uninstall');
-  if (uninstallBtn) {
-    let armed = false;
-    let armTimer = null;
-    const disarm = () => {
-      armed = false;
-      uninstallBtn.classList.remove('armed');
-      uninstallBtn.textContent = t('settings.data.uninstall.btn');
-    };
-    uninstallBtn.addEventListener('click', () => {
-      if (uninstallBtn.disabled) return;
-      if (!armed) {
-        armed = true;
-        uninstallBtn.classList.add('armed');
-        uninstallBtn.textContent = t('settings.data.uninstall.confirm');
-        clearTimeout(armTimer);
-        armTimer = setTimeout(disarm, 4000); // un-arm if not confirmed
-        return;
-      }
+  // No re-enable: the backend shuts the app down and the OS takes over.
+  armedButton(view.querySelector('.js-uninstall'), {
+    armLabel: () => t('settings.data.uninstall.btn'),
+    confirmLabel: () => t('settings.data.uninstall.confirm'),
+    busyLabel: () => t('settings.data.uninstall.working'),
+    onConfirm: () => socket.send('uninstall', { command: 'apply' }),
+  });
+}
+
+// Two-click "arm → confirm → disarm" destructive button. First click arms it
+// (swaps to confirmLabel + .armed, auto-disarms after armMs). Second click fires
+// onConfirm and disables the button: with cooldownMs it shows doneLabel then
+// re-arms after the cooldown; without it shows busyLabel and stays disabled.
+// Labels are thunks so they follow live language changes. No-op if btn is absent.
+function armedButton(btn, opts) {
+  if (!btn) return;
+  const { armLabel, confirmLabel, doneLabel, busyLabel, armMs = 4000, cooldownMs, onConfirm } = opts;
+  let armed = false;
+  let armTimer = null;
+  const disarm = () => {
+    armed = false;
+    btn.classList.remove('armed');
+    btn.textContent = armLabel();
+  };
+  btn.addEventListener('click', () => {
+    if (btn.disabled) return;
+    if (!armed) {
+      armed = true;
+      btn.classList.add('armed');
+      btn.textContent = confirmLabel();
       clearTimeout(armTimer);
-      socket.send('uninstall', { command: 'apply' });
-      // No re-enable: the backend shuts the app down and the OS takes over.
-      uninstallBtn.disabled = true;
-      uninstallBtn.classList.remove('armed');
-      uninstallBtn.textContent = t('settings.data.uninstall.working');
-    });
-  }
+      armTimer = setTimeout(disarm, armMs); // un-arm if not confirmed
+      return;
+    }
+    clearTimeout(armTimer);
+    armed = false;
+    onConfirm();
+    btn.disabled = true;
+    btn.classList.remove('armed');
+    if (cooldownMs) {
+      btn.textContent = doneLabel();
+      setTimeout(() => { btn.disabled = false; btn.textContent = armLabel(); }, cooldownMs);
+    } else {
+      btn.textContent = busyLabel();
+    }
+  });
 }
