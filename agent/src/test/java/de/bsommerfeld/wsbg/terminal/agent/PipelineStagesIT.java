@@ -8,6 +8,7 @@ import de.bsommerfeld.wsbg.terminal.core.domain.RedditComment;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
 import de.bsommerfeld.wsbg.terminal.core.i18n.I18nService;
 import de.bsommerfeld.wsbg.terminal.db.AgentRepository;
+import de.bsommerfeld.wsbg.terminal.db.HeadlineRecord;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
 import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooFinanceClient;
 import org.junit.jupiter.api.BeforeAll;
@@ -115,18 +116,18 @@ class PipelineStagesIT {
 
         editorial.runUnitTick(Set.of(out.clusterId()));
 
-        List<AgentRepository.HeadlineRecord> after = agentRepo.getRecentHeadlines();
+        List<HeadlineRecord> after = agentRepo.getRecentHeadlines();
         System.out.println("[UNITTICK-IT] published " + (after.size() - before) + " headline(s): "
-                + after.stream().map(AgentRepository.HeadlineRecord::headline).toList());
+                + after.stream().map(HeadlineRecord::headline).toList());
         assertTrue(after.size() > before,
                 "runUnitTick should publish at least one headline for a live cluster");
 
         // The cluster is now ALSO a producer: a THEME headline (the thread
         // narrative) is archived under the cluster id, independent of the
         // per-subject unit lines (which key by unit id, never the cluster id).
-        List<AgentRepository.HeadlineRecord> theme = agentRepo.getHeadlinesByClusterId(out.clusterId());
+        List<HeadlineRecord> theme = agentRepo.getHeadlinesByClusterId(out.clusterId());
         System.out.println("[UNITTICK-IT] theme line(s) under cluster " + out.clusterId() + ": "
-                + theme.stream().map(AgentRepository.HeadlineRecord::headline).toList());
+                + theme.stream().map(HeadlineRecord::headline).toList());
         assertFalse(theme.isEmpty(),
                 "runUnitTick should also publish a cluster-theme headline keyed by the cluster id");
     }

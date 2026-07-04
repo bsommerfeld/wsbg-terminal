@@ -1,6 +1,6 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
-import de.bsommerfeld.wsbg.terminal.db.AgentRepository.HeadlineRecord;
+import de.bsommerfeld.wsbg.terminal.db.HeadlineRecord;
 
 import java.util.Arrays;
 import java.util.HashSet;

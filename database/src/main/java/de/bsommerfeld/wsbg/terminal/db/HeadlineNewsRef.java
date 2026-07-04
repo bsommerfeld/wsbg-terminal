@@ -7,7 +7,7 @@ package de.bsommerfeld.wsbg.terminal.db;
  *
  * <p>Transport-neutral and archive-friendly: plain strings + an epoch, no
  * vendor types, so it round-trips through the JSONL archive and the session
- * snapshot like every other {@link AgentRepository.HeadlineRecord} field.
+ * snapshot like every other {@link HeadlineRecord} field.
  *
  * @param title       the article's headline text
  * @param publisher   originating outlet (may be blank)

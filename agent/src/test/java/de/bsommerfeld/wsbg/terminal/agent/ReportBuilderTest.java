@@ -2,7 +2,7 @@ package de.bsommerfeld.wsbg.terminal.agent;
 
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditComment;
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
-import de.bsommerfeld.wsbg.terminal.db.AgentRepository.HeadlineRecord;
+import de.bsommerfeld.wsbg.terminal.db.HeadlineRecord;
 import de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight;
 import de.bsommerfeld.wsbg.terminal.db.HeadlineSentiment;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;

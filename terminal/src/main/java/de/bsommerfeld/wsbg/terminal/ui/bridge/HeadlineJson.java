@@ -1,7 +1,7 @@
 package de.bsommerfeld.wsbg.terminal.ui.bridge;
 
 import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
-import de.bsommerfeld.wsbg.terminal.db.AgentRepository.HeadlineRecord;
+import de.bsommerfeld.wsbg.terminal.db.HeadlineRecord;
 
 import java.util.LinkedHashMap;
 import java.util.List;

@@ -3,7 +3,7 @@ package de.bsommerfeld.wsbg.terminal.agent;
 import de.bsommerfeld.wsbg.terminal.agent.HeadlineWriter.Draft;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
 import de.bsommerfeld.wsbg.terminal.db.AgentRepository;
-import de.bsommerfeld.wsbg.terminal.db.AgentRepository.HeadlineRecord;
+import de.bsommerfeld.wsbg.terminal.db.HeadlineRecord;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;

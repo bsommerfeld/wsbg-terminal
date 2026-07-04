@@ -1,7 +1,7 @@
 package de.bsommerfeld.wsbg.terminal.db;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import de.bsommerfeld.wsbg.terminal.db.AgentRepository.HeadlineRecord;
+import de.bsommerfeld.wsbg.terminal.db.HeadlineRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

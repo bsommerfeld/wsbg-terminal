@@ -2,7 +2,7 @@ package de.bsommerfeld.wsbg.terminal.ui.bridge;
 
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
-import de.bsommerfeld.wsbg.terminal.db.AgentRepository.HeadlineRecord;
+import de.bsommerfeld.wsbg.terminal.db.HeadlineRecord;
 import de.bsommerfeld.wsbg.terminal.db.HeadlineArchive;
 import de.bsommerfeld.wsbg.terminal.db.WatchlistStore;
 import de.bsommerfeld.wsbg.terminal.ui.web.PushHub;

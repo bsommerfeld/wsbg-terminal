@@ -338,9 +338,9 @@ class EditorialAgentTest {
                 "a genuinely continued story inherits its sources");
     }
 
-    private static de.bsommerfeld.wsbg.terminal.db.AgentRepository.HeadlineRecord record(
+    private static de.bsommerfeld.wsbg.terminal.db.HeadlineRecord record(
             String headline, java.util.List<de.bsommerfeld.wsbg.terminal.db.HeadlineNewsRef> refs) {
-        return new de.bsommerfeld.wsbg.terminal.db.AgentRepository.HeadlineRecord(
+        return new de.bsommerfeld.wsbg.terminal.db.HeadlineRecord(
                 "U", headline, "", 0, java.util.List.of(), java.util.List.of(),
                 de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.NORMAL, null,
                 java.util.List.of(), null, java.util.List.of(), null,

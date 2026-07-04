@@ -6,7 +6,7 @@ import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.agent.event.AgentStreamEndEvent;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
 import de.bsommerfeld.wsbg.terminal.db.AgentRepository;
-import de.bsommerfeld.wsbg.terminal.db.AgentRepository.HeadlineRecord;
+import de.bsommerfeld.wsbg.terminal.db.HeadlineRecord;
 import de.bsommerfeld.wsbg.terminal.ui.web.PushHub;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

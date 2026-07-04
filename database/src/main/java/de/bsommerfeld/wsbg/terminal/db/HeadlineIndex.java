@@ -1,6 +1,6 @@
 package de.bsommerfeld.wsbg.terminal.db;
 
-import de.bsommerfeld.wsbg.terminal.db.AgentRepository.HeadlineRecord;
+import de.bsommerfeld.wsbg.terminal.db.HeadlineRecord;
 
 import java.time.Duration;
 import java.time.Instant;

@@ -2,7 +2,7 @@ package de.bsommerfeld.wsbg.terminal.agent;
 
 import de.bsommerfeld.wsbg.terminal.core.domain.PollData;
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
-import de.bsommerfeld.wsbg.terminal.db.AgentRepository.HeadlineRecord;
+import de.bsommerfeld.wsbg.terminal.db.HeadlineRecord;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

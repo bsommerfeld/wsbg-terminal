@@ -1,6 +1,6 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
-import de.bsommerfeld.wsbg.terminal.db.AgentRepository.HeadlineRecord;
+import de.bsommerfeld.wsbg.terminal.db.HeadlineRecord;
 import de.bsommerfeld.wsbg.terminal.db.HeadlineNewsRef;
 import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
 

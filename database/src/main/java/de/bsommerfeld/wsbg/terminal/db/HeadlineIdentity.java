@@ -1,6 +1,6 @@
 package de.bsommerfeld.wsbg.terminal.db;
 
-import de.bsommerfeld.wsbg.terminal.db.AgentRepository.HeadlineRecord;
+import de.bsommerfeld.wsbg.terminal.db.HeadlineRecord;
 
 /**
  * The single source of truth for a headline's append-idempotency identity.
