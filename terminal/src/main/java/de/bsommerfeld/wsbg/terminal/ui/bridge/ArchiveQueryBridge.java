@@ -5,8 +5,6 @@ import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.db.AgentRepository.HeadlineRecord;
 import de.bsommerfeld.wsbg.terminal.db.HeadlineArchive;
 import de.bsommerfeld.wsbg.terminal.ui.web.PushHub;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.util.Comparator;
@@ -36,8 +34,6 @@ import java.util.Map;
 @Singleton
 public final class ArchiveQueryBridge {
 
-    private static final Logger LOG = LoggerFactory.getLogger(ArchiveQueryBridge.class);
-
     /** Default/maximum rows shipped per response — the socket is not a bulk-export channel. */
     static final int DEFAULT_LIMIT = 100;
     static final int MAX_LIMIT = 500;
@@ -54,25 +50,21 @@ public final class ArchiveQueryBridge {
     }
 
     private void onQuery(Map<String, Object> payload) {
-        try {
-            hub.broadcast("archive-results", respond(archive, payload));
-        } catch (Exception e) {
-            LOG.warn("archive query failed: {}", e.getMessage());
-        }
+        hub.broadcastSafe("archive-results", () -> respond(archive, payload));
     }
 
     /** Builds the full response for one query payload. Package-private for testing (no socket needed). */
     static Map<String, Object> respond(HeadlineArchive archive, Map<String, Object> payload) {
-        String command = str(payload.get("command"));
+        String command = Payloads.str(payload.get("command"));
         int limit = clampLimit(payload.get("limit"));
 
         List<HeadlineRecord> hits = switch (command == null ? "" : command) {
-            case "search" -> archive.search(str(payload.get("query")));
-            case "ticker" -> archive.byTicker(str(payload.get("symbol")));
+            case "search" -> archive.search(Payloads.str(payload.get("query")));
+            case "ticker" -> archive.byTicker(Payloads.str(payload.get("symbol")));
             case "recent" -> newestFirst(archive.recent(
-                    Duration.ofHours(intOr(payload.get("hours"), DEFAULT_RECENT_HOURS))));
+                    Duration.ofHours(Payloads.intOr(payload.get("hours"), DEFAULT_RECENT_HOURS))));
             // scroll-back: older headlines before a cursor (the lowest createdAt shown so far).
-            case "page" -> archive.page(longOr(payload.get("before"), 0L), limit);
+            case "page" -> archive.page(Payloads.longOr(payload.get("before"), 0L), limit);
             default -> List.of();
         };
 
@@ -80,8 +72,8 @@ public final class ArchiveQueryBridge {
         out.put("command", command);
         Object requestId = payload.get("requestId");
         if (requestId != null) out.put("requestId", requestId);
-        out.put("query", str(payload.get("query")) != null ? str(payload.get("query"))
-                : str(payload.get("symbol")));
+        out.put("query", Payloads.str(payload.get("query")) != null ? Payloads.str(payload.get("query"))
+                : Payloads.str(payload.get("symbol")));
         out.put("total", hits.size());
         out.put("items", HeadlineJson.toJson(hits.size() <= limit ? hits : hits.subList(0, limit)));
         return out;
@@ -95,19 +87,7 @@ public final class ArchiveQueryBridge {
     }
 
     private static int clampLimit(Object raw) {
-        int limit = intOr(raw, DEFAULT_LIMIT);
+        int limit = Payloads.intOr(raw, DEFAULT_LIMIT);
         return Math.max(1, Math.min(limit, MAX_LIMIT));
-    }
-
-    private static String str(Object o) {
-        return o instanceof String s && !s.isBlank() ? s : null;
-    }
-
-    private static int intOr(Object o, int fallback) {
-        return o instanceof Number n ? n.intValue() : fallback;
-    }
-
-    private static long longOr(Object o, long fallback) {
-        return o instanceof Number n ? n.longValue() : fallback;
     }
 }

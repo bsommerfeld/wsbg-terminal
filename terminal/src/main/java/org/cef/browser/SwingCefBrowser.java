@@ -18,11 +18,16 @@
 // component. Swing double-buffers, so there is no flicker; there is no GL, so
 // no arm64 native, no AppKit-thread GL exceptions, and clean teardown. Live
 // resize tracks because Swing repaints the image at the new size each step.
+//
+// This class is now only the CefBrowser_N / CefRenderHandler PROTOCOL shell;
+// the raster/GPU pipeline (OsrRenderPanel), the live-resize state machine
+// (OsrResizeGate), the AWT input wiring + wheel translation (OsrInputRouter),
+// and the CEF-initiated drag source (OsrDragSource) live in cooperating
+// package-private classes in this package.
 
 package org.cef.browser;
 
 import de.bsommerfeld.wsbg.terminal.ui.scroll.PassthroughWheelScrollPolicy;
-import de.bsommerfeld.wsbg.terminal.ui.scroll.WheelScroll;
 import de.bsommerfeld.wsbg.terminal.ui.scroll.WheelScrollPolicy;
 import org.cef.CefBrowserSettings;
 import org.cef.CefClient;
@@ -30,88 +35,34 @@ import org.cef.callback.CefDragData;
 import org.cef.handler.CefRenderHandler;
 import org.cef.handler.CefScreenInfo;
 
-import java.awt.AlphaComposite;
-import java.awt.Color;
 import java.awt.Component;
 import java.awt.Cursor;
-import java.awt.Graphics;
-import java.awt.Graphics2D;
 import java.awt.GraphicsConfiguration;
 import java.awt.Point;
 import java.awt.Rectangle;
-import java.awt.datatransfer.StringSelection;
-import java.awt.dnd.DnDConstants;
-import java.awt.dnd.DragGestureEvent;
-import java.awt.dnd.DragGestureRecognizer;
-import java.awt.dnd.DragSource;
-import java.awt.dnd.DragSourceAdapter;
-import java.awt.dnd.DragSourceDropEvent;
-import java.awt.dnd.DropTarget;
-import java.awt.event.ComponentAdapter;
-import java.awt.event.ComponentEvent;
-import java.awt.event.FocusEvent;
-import java.awt.event.FocusListener;
-import java.awt.event.KeyEvent;
-import java.awt.event.KeyListener;
-import java.awt.event.InputEvent;
-import java.awt.event.MouseEvent;
-import java.awt.event.MouseListener;
-import java.awt.event.MouseMotionListener;
-import java.awt.event.MouseWheelEvent;
-import java.awt.event.MouseWheelListener;
 import java.awt.image.BufferedImage;
-import java.awt.image.DataBufferInt;
-import java.awt.image.VolatileImage;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.nio.IntBuffer;
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 
-import javax.swing.JComponent;
-import javax.swing.MenuSelectionManager;
 import javax.swing.SwingUtilities;
 
-public class SwingCefBrowser extends CefBrowser_N implements CefRenderHandler {
-    // Paint-path diagnostics (WSBG_PAINT_PROFILE=true): logs slow EDT paints and
-    // the CEF dirty-rect sizes, to tell "CEF reports full-frame damage" apart
-    // from "the Swing blit is slow" when hunting size-dependent jank.
-    private static final boolean PAINT_PROFILE =
-            Boolean.parseBoolean(System.getenv("WSBG_PAINT_PROFILE"));
+public class SwingCefBrowser extends CefBrowser_N implements CefRenderHandler, RenderContext {
 
-    private final RenderPanel panel_;
+    private final OsrRenderPanel panel_;
     private boolean justCreated_ = false;
-    private final Rectangle browser_rect_ = new Rectangle(0, 0, 1, 1); // CEF issue #1437.
 
-    // Live-resize gate. componentResized fires per AWT event (well above
-    // 60/s during a macOS live resize) and CEF re-lays-out + re-rasters the
-    // FULL page for every size it observes. Crucially, CEF polls getViewRect
-    // on its own schedule, so merely throttling wasResized does NOT help —
-    // measured: an excessive drag on a heavy view queued dozens of stale-size
-    // re-layouts in the renderer and the frames drained up to ~50s late (the
-    // "crippled frame sits there after release" zombie; further resizing only
-    // lengthened the queue). Therefore the LIVE size is tracked in
-    // desiredW_/H_ only, and browser_rect_ — the only thing CEF ever sees —
-    // is committed exclusively inside signalResize(): one new size per gate
-    // cycle, renderer queue depth capped at ~1. The ack is the arrival of a
-    // size-changed frame; the timeout frees the gate when CEF never delivers
-    // one (size unchanged, frame coalesced away) so it can't wedge shut.
-    // All gate fields are EDT-confined; browser_rect_ is read from CEF
-    // threads but was always mutated on the EDT (unchanged).
-    private static final int RESIZE_ACK_TIMEOUT_MS = 250;
-    private int desiredW_ = 1, desiredH_ = 1; // live panel size (EDT)
-    private boolean resizeSignalInFlight_;
-    private boolean resizePendingSignal_;
-    private final javax.swing.Timer resizeAckTimeout_ =
-            new javax.swing.Timer(RESIZE_ACK_TIMEOUT_MS, e -> resizeUnblocked());
+    // Live-resize gate: the ONLY thing CEF ever sees is its view rect, committed
+    // exclusively inside the gate's signalResize so CEF observes exactly one new
+    // size per gate cycle (see OsrResizeGate). Its commit callback runs the
+    // inherited wasResized + invalidate; isClosed guards a commit after teardown.
+    private final OsrResizeGate resizeGate_ =
+            new OsrResizeGate(this::isClosed, (w, h) -> { wasResized(w, h); invalidate(); });
+
     private Point screenPoint_ = new Point(0, 0);
     private double scaleFactor_ = 1.0;
     private final boolean isTransparent_;
-    // The wheel-scroll seam. OSR has no native window, so AWT wheel events are
-    // re-scaled here before being handed to CEF — see WheelScrollPolicy.
     private final WheelScrollPolicy wheelScrollPolicy_;
 
     private final CopyOnWriteArrayList<Consumer<CefPaintEvent>> onPaintListeners =
@@ -130,9 +81,8 @@ public class SwingCefBrowser extends CefBrowser_N implements CefRenderHandler {
         isTransparent_ = transparent;
         wheelScrollPolicy_ = wheelScrollPolicy != null
                 ? wheelScrollPolicy : new PassthroughWheelScrollPolicy();
-        panel_ = new RenderPanel();
-        resizeAckTimeout_.setRepeats(false);
-        wireInput();
+        panel_ = new OsrRenderPanel(this);
+        new OsrInputRouter(panel_, this, wheelScrollPolicy_).install();
     }
 
     @Override
@@ -163,7 +113,7 @@ public class SwingCefBrowser extends CefBrowser_N implements CefRenderHandler {
 
     @Override
     public Rectangle getViewRect(CefBrowser browser) {
-        return browser_rect_;
+        return resizeGate_.viewRect();
     }
 
     @Override
@@ -176,8 +126,8 @@ public class SwingCefBrowser extends CefBrowser_N implements CefRenderHandler {
     @Override
     public boolean getScreenInfo(CefBrowser browser, CefScreenInfo screenInfo) {
         scaleFactor_ = currentScale();
-        screenInfo.Set(scaleFactor_, 32, 8, false, browser_rect_.getBounds(),
-                browser_rect_.getBounds());
+        Rectangle rect = resizeGate_.viewRect();
+        screenInfo.Set(scaleFactor_, 32, 8, false, rect.getBounds(), rect.getBounds());
         return true;
     }
 
@@ -199,7 +149,7 @@ public class SwingCefBrowser extends CefBrowser_N implements CefRenderHandler {
             ByteBuffer buffer, int width, int height) {
         boolean resizedFrame = panel_.onPaint(popup, dirtyRects, buffer, width, height);
         if (resizedFrame) {
-            SwingUtilities.invokeLater(this::resizeUnblocked);
+            SwingUtilities.invokeLater(resizeGate_::unblock);
         }
         if (!onPaintListeners.isEmpty()) {
             CefPaintEvent paintEvent =
@@ -218,21 +168,7 @@ public class SwingCefBrowser extends CefBrowser_N implements CefRenderHandler {
 
     @Override
     public boolean startDragging(CefBrowser browser, CefDragData dragData, int mask, int x, int y) {
-        int action = getDndAction(mask);
-        MouseEvent triggerEvent =
-                new MouseEvent(panel_, MouseEvent.MOUSE_DRAGGED, 0, 0, x, y, 0, false);
-        DragGestureEvent ev = new DragGestureEvent(
-                new SyntheticDragGestureRecognizer(panel_, action, triggerEvent), action,
-                new Point(x, y), new ArrayList<>(Arrays.asList(triggerEvent)));
-        DragSource.getDefaultDragSource().startDrag(ev, /*dragCursor=*/null,
-                new StringSelection(dragData.getFragmentText()), new DragSourceAdapter() {
-                    @Override
-                    public void dragDropEnd(DragSourceDropEvent dsde) {
-                        dragSourceEndedAt(dsde.getLocation(), action);
-                        dragSourceSystemDragEnded();
-                    }
-                });
-        return true;
+        return OsrDragSource.startDragging(panel_, this, dragData, mask, x, y);
     }
 
     @Override
@@ -259,6 +195,35 @@ public class SwingCefBrowser extends CefBrowser_N implements CefRenderHandler {
     @Override
     public CompletableFuture<BufferedImage> createScreenshot(boolean nativeResolution) {
         return CompletableFuture.completedFuture(panel_.snapshot(nativeResolution, scaleFactor_));
+    }
+
+    // ---- RenderContext (for OsrRenderPanel) -------------------------------
+
+    @Override
+    public double renderScale() {
+        return scaleFactor_;
+    }
+
+    @Override
+    public boolean isRenderClosed() {
+        return isClosed();
+    }
+
+    @Override
+    public void notifyParentChanged() {
+        notifyAfterParentChanged();
+    }
+
+    // ---- input callbacks (for OsrInputRouter) -----------------------------
+
+    /** Live-resize: refresh geometry, then hand the new panel size to the gate. */
+    void handleComponentResized() {
+        refreshGeometry();
+        resizeGate_.onLiveResize(Math.max(1, panel_.getWidth()), Math.max(1, panel_.getHeight()));
+    }
+
+    void handleComponentMoved() {
+        if (panel_.isShowing()) screenPoint_ = panel_.getLocationOnScreen();
     }
 
     // ---- internals --------------------------------------------------------
@@ -292,522 +257,9 @@ public class SwingCefBrowser extends CefBrowser_N implements CefRenderHandler {
     }
 
     private void refreshGeometry() {
-        desiredW_ = Math.max(1, panel_.getWidth());
-        desiredH_ = Math.max(1, panel_.getHeight());
         if (panel_.isShowing()) {
             screenPoint_ = panel_.getLocationOnScreen();
         }
         scaleFactor_ = currentScale();
-    }
-
-    // Commits the newest live size to browser_rect_ (CEF's view of the world)
-    // and signals it — the ONLY place either happens, so CEF sees exactly one
-    // new size per gate cycle no matter how often it polls getViewRect.
-    private void signalResize() {
-        if (isClosed()) return;
-        browser_rect_.setBounds(0, 0, desiredW_, desiredH_);
-        resizeSignalInFlight_ = true;
-        resizePendingSignal_ = false;
-        resizeAckTimeout_.restart();
-        wasResized(desiredW_, desiredH_);
-        // Software OSR only composites on DAMAGE — on a static view the
-        // resized frame otherwise waits for the next organic repaint (the 1Hz
-        // footer clock was the only pacer on the settings view: measured, the
-        // final size arrived a full second per gate cycle). Invalidate marks
-        // the whole view dirty so the post-resize composite happens NOW.
-        invalidate();
-    }
-
-    private void onLiveResize() {
-        refreshGeometry();
-        if (browser_rect_.width == desiredW_ && browser_rect_.height == desiredH_) {
-            return; // already committed at this size
-        }
-        if (resizeSignalInFlight_) {
-            resizePendingSignal_ = true;
-        } else {
-            signalResize();
-        }
-    }
-
-    // The in-flight resize render arrived (a size-changed frame, posted from
-    // the CEF paint thread) or timed out — open the gate and commit the
-    // newest size if it moved on.
-    private void resizeUnblocked() {
-        resizeAckTimeout_.stop();
-        resizeSignalInFlight_ = false;
-        if (resizePendingSignal_
-                || browser_rect_.width != desiredW_ || browser_rect_.height != desiredH_) {
-            signalResize();
-        }
-    }
-
-    private void wireInput() {
-        MouseListener ml = new MouseListener() {
-            public void mousePressed(MouseEvent e) { panel_.requestFocusInWindow(); sendMouseEvent(e); }
-            public void mouseReleased(MouseEvent e) { sendMouseEvent(e); }
-            public void mouseEntered(MouseEvent e) { sendMouseEvent(e); }
-            public void mouseExited(MouseEvent e) { sendMouseEvent(e); }
-            public void mouseClicked(MouseEvent e) { sendMouseEvent(e); }
-        };
-        panel_.addMouseListener(ml);
-        panel_.addMouseMotionListener(new MouseMotionListener() {
-            public void mouseMoved(MouseEvent e) { sendMouseEvent(e); }
-            public void mouseDragged(MouseEvent e) { sendMouseEvent(e); }
-        });
-        // OSR has no native window, so AWT delivers the wheel event and JCEF's
-        // native bridge forwards getUnitsToScroll() (OS scroll-lines) straight
-        // into CEF, which reads it as pixels → ~3px/notch, "sticky" scroll. The
-        // WheelScrollPolicy decides direction + magnitude; forwardScroll does the
-        // delivery. (Replaces the old as-is forwarding; see ui/scroll/.)
-        panel_.addMouseWheelListener(new MouseWheelListener() {
-            public void mouseWheelMoved(MouseWheelEvent e) {
-                forwardScroll(wheelScrollPolicy_.translate(e), e);
-            }
-        });
-        panel_.addKeyListener(new KeyListener() {
-            public void keyTyped(KeyEvent e) { sendKeyEvent(e); }
-            public void keyPressed(KeyEvent e) { sendKeyEvent(e); }
-            public void keyReleased(KeyEvent e) { sendKeyEvent(e); }
-        });
-        panel_.setFocusable(true);
-        panel_.addFocusListener(new FocusListener() {
-            public void focusLost(FocusEvent e) { setFocus(false); }
-            public void focusGained(FocusEvent e) {
-                MenuSelectionManager.defaultManager().clearSelectedPath();
-                setFocus(true);
-            }
-        });
-        panel_.addComponentListener(new ComponentAdapter() {
-            @Override public void componentResized(ComponentEvent e) { onLiveResize(); }
-            @Override public void componentMoved(ComponentEvent e) {
-                if (panel_.isShowing()) screenPoint_ = panel_.getLocationOnScreen();
-            }
-        });
-        new DropTarget(panel_, new CefDropTargetListener(this));
-    }
-
-    /**
-     * Delivers a policy-decided {@link WheelScroll} to CEF. JCEF's native
-     * sendMouseWheelEvent reads getUnitsToScroll() (= scrollAmount × rotation)
-     * and routes to the horizontal axis only when SHIFT is held, so we encode
-     * the desired pixel delta as a WHEEL_UNIT_SCROLL event with scrollAmount =
-     * |delta|, rotation = sign, and set/clear SHIFT per axis. X and Y are sent
-     * as separate events because the native handles one axis at a time.
-     */
-    private void forwardScroll(WheelScroll scroll, MouseWheelEvent src) {
-        if (scroll == null || scroll.isEmpty()) return;
-        if (scroll.unitsY() != 0) {
-            sendMouseWheelEvent(buildUnitScroll(src, scroll.unitsY(), false));
-        }
-        if (scroll.unitsX() != 0) {
-            sendMouseWheelEvent(buildUnitScroll(src, scroll.unitsX(), true));
-        }
-    }
-
-    private MouseWheelEvent buildUnitScroll(MouseWheelEvent src, int units, boolean horizontal) {
-        int mods = horizontal
-                ? src.getModifiersEx() | InputEvent.SHIFT_DOWN_MASK
-                : src.getModifiersEx() & ~InputEvent.SHIFT_DOWN_MASK;
-        int rotation = units >= 0 ? 1 : -1;
-        int amount = Math.abs(units); // getUnitsToScroll() = amount × rotation = units
-        return new MouseWheelEvent(panel_, src.getID(), src.getWhen(), mods,
-                src.getX(), src.getY(), 0, false,
-                MouseWheelEvent.WHEEL_UNIT_SCROLL, amount, rotation);
-    }
-
-    private static int getDndAction(int mask) {
-        if ((mask & CefDragData.DragOperations.DRAG_OPERATION_COPY)
-                == CefDragData.DragOperations.DRAG_OPERATION_COPY) {
-            return DnDConstants.ACTION_COPY;
-        } else if ((mask & CefDragData.DragOperations.DRAG_OPERATION_MOVE)
-                == CefDragData.DragOperations.DRAG_OPERATION_MOVE) {
-            return DnDConstants.ACTION_MOVE;
-        } else if ((mask & CefDragData.DragOperations.DRAG_OPERATION_LINK)
-                == CefDragData.DragOperations.DRAG_OPERATION_LINK) {
-            return DnDConstants.ACTION_LINK;
-        }
-        return DnDConstants.ACTION_NONE;
-    }
-
-    private static final class SyntheticDragGestureRecognizer extends DragGestureRecognizer {
-        SyntheticDragGestureRecognizer(Component c, int action, MouseEvent triggerEvent) {
-            super(new DragSource(), c, action);
-            appendEvent(triggerEvent);
-        }
-        protected void registerListeners() {}
-        protected void unregisterListeners() {}
-    }
-
-    /**
-     * The on-screen surface. Holds the latest CEF frame as a BufferedImage and
-     * blits it (scaled to the component size) each Swing paint. Popups (e.g.
-     * {@code <select>} dropdowns) arrive as a separate buffer composited on top.
-     */
-    private final class RenderPanel extends JComponent {
-        private final Object lock = new Object();
-        // Grow-only, step-padded allocation: a live resize delivers a new
-        // frame size on nearly every frame, and reallocating a ~100MB ARGB
-        // raster plus a same-sized Metal texture per frame is GC/driver churn
-        // that stutters the whole app. The live frame occupies the top-left
-        // frameW_ x frameH_ of the (possibly larger) buffer; every blit is
-        // stride-aware.
-        private BufferedImage image_;
-        private int frameW_, frameH_; // live CEF frame size (device px)
-        private BufferedImage popupImage_;
-        private final Rectangle popupRect_ = new Rectangle();
-        private boolean popupVisible_ = false;
-
-        // GPU-resident mirror of image_. image_'s raster is written directly,
-        // which makes it permanently "unmanaged" for Java2D — drawing it to the
-        // screen re-uploads the ENTIRE buffer as a texture on EVERY paint
-        // (measured: a fixed ~6ms at 2.5K, ~24ms at 6.7K device px, regardless
-        // of clip size — the big-window jank). Instead, paintComponent uploads
-        // only the accumulated dirty region into this VolatileImage and blits
-        // that to the screen: VRAM→VRAM, effectively free at any window size.
-        private VolatileImage vram_;
-        private final Rectangle vramDirty_ = new Rectangle(); // device px pending upload
-        private boolean vramFull_ = true;                     // full re-upload needed
-
-        RenderPanel() {
-            setOpaque(true);
-            setBackground(Color.BLACK);
-        }
-
-        @Override
-        public void addNotify() {
-            super.addNotify();
-            notifyAfterParentChanged();
-        }
-
-        @Override
-        public void removeNotify() {
-            synchronized (lock) {
-                if (vram_ != null) {
-                    vram_.flush();   // surface is tied to the peer being removed
-                    vram_ = null;
-                    vramFull_ = true;
-                }
-            }
-            if (!isClosed()) notifyAfterParentChanged();
-            super.removeNotify();
-        }
-
-        void setPopupRect(Rectangle r) {
-            synchronized (lock) {
-                popupRect_.setBounds(r);
-                popupVisible_ = true;
-            }
-        }
-
-        void clearPopup() {
-            synchronized (lock) {
-                popupVisible_ = false;
-            }
-            repaint();
-        }
-
-        // Copies only the dirty region out of CEF's buffer and schedules an
-        // equally narrow Swing repaint. A full-frame copy at 60fps is a
-        // multi-GB/s memcpy on a Retina display and was the app-wide scroll
-        // bottleneck; the dirty path also shrinks the lock's critical section
-        // to the changed rows, so CEF's paint thread and the EDT no longer
-        // stall each other on busy frames.
-        /** Returns true when this frame changed the buffer size (a resize render arrived). */
-        boolean onPaint(boolean popup, Rectangle[] dirtyRects, ByteBuffer buffer,
-                int width, int height) {
-            if (width <= 0 || height <= 0) return false;
-            IntBuffer src = buffer.duplicate().order(ByteOrder.LITTLE_ENDIAN).asIntBuffer();
-            Rectangle repaintArea = null; // null = repaint the whole component
-            boolean resizedFrame = false;
-            long t0 = PAINT_PROFILE ? System.nanoTime() : 0;
-            long tLocked = 0;
-            synchronized (lock) {
-                if (PAINT_PROFILE) tLocked = System.nanoTime();
-                if (popup) {
-                    popupImage_ = blit(popupImage_, src, width, height);
-                    if (popupVisible_) {
-                        // popupRect_ is already in component (logical) space.
-                        repaintArea = grow(new Rectangle(popupRect_), 2);
-                    }
-                } else if (image_ != null && frameW_ == width && frameH_ == height
-                        && dirtyRects != null && dirtyRects.length > 0
-                        && src.remaining() >= width * height) {
-                    Rectangle devicePx = blitDirty(src, width, dirtyRects, height);
-                    if (PAINT_PROFILE) {
-                        long now = System.nanoTime();
-                        System.out.println("[PAINT] cef dirty=" + devicePx.width + "x"
-                                + devicePx.height + " of " + width + "x" + height
-                                + " rects=" + dirtyRects.length
-                                + " lockWait=" + (tLocked - t0) / 1_000_000 + "ms"
-                                + " copy=" + (now - tLocked) / 1_000_000 + "ms");
-                    }
-                    if (devicePx.isEmpty()) return false; // nothing visible changed
-                    if (vramDirty_.isEmpty()) {
-                        vramDirty_.setBounds(devicePx);
-                    } else {
-                        vramDirty_.add(devicePx);
-                    }
-                    // The image is a device-pixel buffer drawn at bufferPx/scale;
-                    // map the dirty union into component space, padded for the
-                    // scale rounding.
-                    double s = scaleFactor_ <= 0 ? 1.0 : scaleFactor_;
-                    repaintArea = grow(new Rectangle(
-                            (int) Math.floor(devicePx.x / s),
-                            (int) Math.floor(devicePx.y / s),
-                            (int) Math.ceil(devicePx.width / s),
-                            (int) Math.ceil(devicePx.height / s)), 2);
-                } else {
-                    // First frame, resize, or an unusable dirty list → full copy.
-                    resizedFrame = frameW_ != width || frameH_ != height;
-                    blitFrame(src, width, height);
-                    vramFull_ = true;
-                    if (PAINT_PROFILE) {
-                        System.out.println("[PAINT] cef full=" + width + "x" + height
-                                + " resized=" + resizedFrame
-                                + " copy=" + (System.nanoTime() - tLocked) / 1_000_000 + "ms");
-                    }
-                }
-            }
-            if (repaintArea == null) {
-                repaint();
-            } else {
-                repaint(repaintArea);
-            }
-            return resizedFrame;
-        }
-
-        // Allocation rounding for image_/vram_: an outward drag re-allocates
-        // once per 256 device px instead of once per frame.
-        private static final int ALLOC_STEP = 256;
-
-        // BGRA little-endian bytes read as a little-endian int yield 0xAARRGGBB
-        // = ARGB, so the buffer copies straight into a TYPE_INT_ARGB raster.
-        // (Popup buffers only — the main frame goes through blitFrame.)
-        private BufferedImage blit(BufferedImage img, IntBuffer src, int w, int h) {
-            if (img == null || img.getWidth() != w || img.getHeight() != h) {
-                img = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
-            }
-            int[] dst = ((DataBufferInt) img.getRaster().getDataBuffer()).getData();
-            src.get(dst, 0, Math.min(dst.length, src.remaining()));
-            return img;
-        }
-
-        /**
-         * Copies a full CEF frame into the grow-only main buffer, growing it
-         * (step-padded) only when the frame outgrows the allocation.
-         */
-        private void blitFrame(IntBuffer src, int w, int h) {
-            if (image_ == null || image_.getWidth() < w || image_.getHeight() < h) {
-                int aw = Math.max(pad(w), image_ == null ? 0 : image_.getWidth());
-                int ah = Math.max(pad(h), image_ == null ? 0 : image_.getHeight());
-                image_ = new BufferedImage(aw, ah, BufferedImage.TYPE_INT_ARGB);
-            }
-            int stride = image_.getWidth();
-            int[] dst = ((DataBufferInt) image_.getRaster().getDataBuffer()).getData();
-            int rows = Math.min(h, src.remaining() / w);
-            if (stride == w) {
-                src.get(dst, 0, rows * w);
-            } else {
-                for (int row = 0; row < rows; row++) {
-                    src.position(row * w);
-                    src.get(dst, row * stride, w);
-                }
-            }
-            frameW_ = w;
-            frameH_ = h;
-        }
-
-        private static int pad(int px) {
-            return ((px + ALLOC_STEP - 1) / ALLOC_STEP) * ALLOC_STEP;
-        }
-
-        /**
-         * Copies only {@code dirtyRects} (device px; src rows are w wide, dst
-         * rows are the allocation stride) into the existing image and returns
-         * their union, empty when no rect intersected the buffer. Only called
-         * when the frame size matches frameW_ x frameH_, so every dst offset
-         * is within the allocation.
-         */
-        private Rectangle blitDirty(IntBuffer src, int w, Rectangle[] dirtyRects, int h) {
-            int stride = image_.getWidth();
-            int[] dst = ((DataBufferInt) image_.getRaster().getDataBuffer()).getData();
-            Rectangle bounds = new Rectangle(0, 0, w, h);
-            Rectangle union = null;
-            for (Rectangle r : dirtyRects) {
-                Rectangle c = r.intersection(bounds);
-                if (c.isEmpty()) continue;
-                for (int row = 0; row < c.height; row++) {
-                    src.position((c.y + row) * w + c.x);
-                    src.get(dst, (c.y + row) * stride + c.x, c.width);
-                }
-                union = union == null ? c : union.union(c);
-            }
-            return union == null ? new Rectangle() : union;
-        }
-
-        private Rectangle grow(Rectangle r, int pad) {
-            r.grow(pad, pad);
-            return r;
-        }
-
-        /**
-         * Brings {@link #vram_} up to date with {@link #image_} (dirty-region
-         * sub-rect upload) and returns the surface to draw — {@code vram_}
-         * normally, {@code image_} itself when no volatile surface is available
-         * (component not displayable, incompatible surface). Runs on the EDT
-         * under {@code lock}.
-         */
-        private java.awt.Image syncVram() {
-            // vram_ mirrors the ALLOCATION (grow-only, step-padded), so a live
-            // resize within the padding never re-creates the Metal surface;
-            // only outgrowing the allocation does (once per 256px of drag).
-            int aw = image_.getWidth(), ah = image_.getHeight();
-            GraphicsConfiguration gc = getGraphicsConfiguration();
-            if (gc == null) return image_;
-            if (vram_ == null || vram_.getWidth() != aw || vram_.getHeight() != ah) {
-                if (vram_ != null) vram_.flush();
-                vram_ = createVolatileImage(aw, ah);
-                vramFull_ = true;
-            }
-            if (vram_ == null) return image_;
-            int state = vram_.validate(gc);
-            if (state == VolatileImage.IMAGE_INCOMPATIBLE) {
-                vram_.flush();
-                vram_ = createVolatileImage(aw, ah);
-                vramFull_ = true;
-                if (vram_ == null) return image_;
-                if (vram_.validate(gc) == VolatileImage.IMAGE_INCOMPATIBLE) return image_;
-            } else if (state == VolatileImage.IMAGE_RESTORED) {
-                vramFull_ = true;
-            }
-            Rectangle frame = new Rectangle(0, 0, frameW_, frameH_);
-            Rectangle up = vramFull_ ? frame : vramDirty_.intersection(frame);
-            if (!up.isEmpty()) {
-                long m0 = PAINT_PROFILE ? System.nanoTime() : 0;
-                Graphics2D vg = vram_.createGraphics();
-                long m1 = PAINT_PROFILE ? System.nanoTime() : 0;
-                try {
-                    vg.setComposite(AlphaComposite.Src);
-                    // Metal's sw→VRAM blit re-uploads the ENTIRE source image
-                    // for an unmanaged source — a clip does NOT bound it
-                    // (measured: a 113x36 clipped draw cost the same ~9ms as
-                    // full-frame at 6.7K device px). A subimage VIEW (shared
-                    // raster, no pixel copy) bounds the source itself, so the
-                    // upload is dirty- (or frame-)sized, never allocation-sized.
-                    vg.drawImage(image_.getSubimage(up.x, up.y, up.width, up.height),
-                            up.x, up.y, null);
-                } finally {
-                    vg.dispose();
-                }
-                if (PAINT_PROFILE) {
-                    long m2 = System.nanoTime();
-                    if ((m2 - m0) / 1_000_000 >= 3) {
-                        System.out.println("[PAINT] vram-up rect=" + up.width + "x" + up.height
-                                + " mkG=" + (m1 - m0) / 1_000_000 + "ms"
-                                + " draw+disp=" + (m2 - m1) / 1_000_000 + "ms"
-                                + " full=" + vramFull_);
-                    }
-                }
-            }
-            vramDirty_.setBounds(0, 0, 0, 0);
-            vramFull_ = false;
-            return vram_;
-        }
-
-        @Override
-        protected void paintComponent(Graphics g) {
-            long t0 = PAINT_PROFILE ? System.nanoTime() : 0;
-            long tLocked = 0;
-            super.paintComponent(g); // fills the (black) background
-            Rectangle clip = g.getClipBounds();
-            synchronized (lock) {
-                if (PAINT_PROFILE) tLocked = System.nanoTime();
-                if (image_ != null) {
-                    // Sync the GPU mirror: upload only the dirty device-px
-                    // region of image_ into vram_ (a sub-rect sw→VRAM upload),
-                    // then blit vram_ to the screen — VRAM→VRAM, cheap at any
-                    // window size. Drawing image_ directly would re-upload the
-                    // whole (unmanaged) buffer every paint. Falls back to the
-                    // direct draw when a volatile surface isn't available.
-                    java.awt.Image toDraw = syncVram();
-
-                    // image_ is a device-pixel buffer; its intended on-screen
-                    // size is bufferPx / deviceScale. Never draw it LARGER than
-                    // that — on a big jump (maximize) stretching the stale buffer
-                    // to the new bounds balloons the text for a frame until CEF
-                    // repaints. Cap to the native logical size (the freshly-sized
-                    // frame arrives in a tick and fills the rest of the bg).
-                    // Only the clip region is drawn, mapped to its source rect
-                    // with per-coordinate rounding so adjacent clips share
-                    // identical source edges (no seams).
-                    long tSync = PAINT_PROFILE ? System.nanoTime() : 0;
-                    double s = scaleFactor_ <= 0 ? 1.0 : scaleFactor_;
-                    int logW = (int) Math.round(frameW_ / s);
-                    int logH = (int) Math.round(frameH_ / s);
-                    int maxW = Math.min(getWidth(), logW);
-                    int maxH = Math.min(getHeight(), logH);
-                    int dx1 = 0, dy1 = 0, dx2 = maxW, dy2 = maxH;
-                    if (clip != null) {
-                        dx1 = Math.max(0, clip.x);
-                        dy1 = Math.max(0, clip.y);
-                        dx2 = Math.min(maxW, clip.x + clip.width);
-                        dy2 = Math.min(maxH, clip.y + clip.height);
-                    }
-                    if (dx1 < dx2 && dy1 < dy2) {
-                        g.drawImage(toDraw, dx1, dy1, dx2, dy2,
-                                (int) Math.round(dx1 * s), (int) Math.round(dy1 * s),
-                                (int) Math.round(dx2 * s), (int) Math.round(dy2 * s), null);
-                    }
-                    if (toDraw == vram_ && vram_.contentsLost()) {
-                        vramFull_ = true; // surface evicted mid-paint → redo fully
-                        repaint();
-                    }
-                    if (PAINT_PROFILE) {
-                        long now = System.nanoTime();
-                        long total = (now - t0) / 1_000_000;
-                        if (total >= 4) {
-                            System.out.println("[PAINT] edt-split sync="
-                                    + (tSync - tLocked) / 1_000_000 + "ms blit="
-                                    + (now - tSync) / 1_000_000 + "ms vram=" + (toDraw == vram_));
-                        }
-                    }
-                }
-                if (popupVisible_ && popupImage_ != null) {
-                    g.drawImage(popupImage_, popupRect_.x, popupRect_.y,
-                            popupRect_.width, popupRect_.height, null);
-                }
-            }
-            if (PAINT_PROFILE && clip != null) {
-                long now = System.nanoTime();
-                long ms = (now - t0) / 1_000_000;
-                if (ms >= 4) {
-                    System.out.println("[PAINT] edt clip=" + clip.width + "x" + clip.height
-                            + " took=" + ms + "ms"
-                            + " lockWait=" + (tLocked - t0) / 1_000_000 + "ms"
-                            + " draw=" + (now - tLocked) / 1_000_000 + "ms");
-                }
-            }
-        }
-
-        BufferedImage snapshot(boolean nativeResolution, double scale) {
-            synchronized (lock) {
-                if (image_ == null || frameW_ <= 0 || frameH_ <= 0) return null;
-                // The live frame is the top-left frameW_ x frameH_ of the
-                // (possibly larger, step-padded) allocation.
-                BufferedImage frame = image_.getSubimage(0, 0, frameW_, frameH_);
-                if (nativeResolution || scale == 1.0) {
-                    BufferedImage copy = new BufferedImage(
-                            frameW_, frameH_, BufferedImage.TYPE_INT_ARGB);
-                    copy.getGraphics().drawImage(frame, 0, 0, null);
-                    return copy;
-                }
-                int w = (int) (frameW_ / scale);
-                int h = (int) (frameH_ / scale);
-                BufferedImage scaled = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
-                scaled.getGraphics().drawImage(frame, 0, 0, w, h, null);
-                return scaled;
-            }
-        }
     }
 }

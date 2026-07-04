@@ -11,7 +11,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.swing.SwingUtilities;
-import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
@@ -59,12 +58,6 @@ public final class CefFetchClient {
 
     private static final Logger LOG = LoggerFactory.getLogger(CefFetchClient.class);
 
-    /** Field delimiter inside a router message: a control char that can't occur in a URL or header. */
-    private static final char DELIM = '\u0001';
-
-    /** Body chunk size (UTF-16 code units) per router message. */
-    private static final int CHUNK = 262144;
-
     private static final ObjectMapper JSON = new ObjectMapper();
 
     private final CefHost cefHost;
@@ -74,7 +67,7 @@ public final class CefFetchClient {
     /** fetch() credentials mode: "include" (send cookies — needed for cookie-gated APIs)
      *  or "omit" (no cookies — required for a cross-origin host that answers ACAO:*). */
     private final String credentials;
-    private final String clientTag = randomTag();
+    private final String clientTag = FetchWireProtocol.randomTag();
 
     /** Re-anchor at most this often, so a run of blocked responses can't loop-reload. */
     private static final long RELOAD_COOLDOWN_MS = 60_000;
@@ -160,7 +153,8 @@ public final class CefFetchClient {
         Pending p = new Pending();
         pending.put(id, p);
         try {
-            browser.executeJavaScript(buildScript(id, url), anchorUrl, 0);
+            browser.executeJavaScript(
+                    FetchWireProtocol.buildScript(clientTag, credentials, id, url), anchorUrl, 0);
             return p.future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
         } finally {
             pending.remove(id);
@@ -309,9 +303,15 @@ public final class CefFetchClient {
             }
         });
 
-        // Create the (never-displayed) browser on the EDT, matching the UI path.
-        // Assigning `browser` before the async load fires keeps the load-end
-        // listener's identity check (b == browser) valid.
+        createBrowserOnEdt();
+    }
+
+    /**
+     * Creates the (never-displayed) browser on the EDT, matching the UI path.
+     * Assigning {@code browser} before the async load fires keeps the load-end
+     * listener's identity check ({@code b == browser}) valid.
+     */
+    private void createBrowserOnEdt() {
         try {
             Runnable create = () -> browser = cefHost.createFetchBrowser(anchorUrl);
             if (SwingUtilities.isEventDispatchThread()) {
@@ -332,7 +332,7 @@ public final class CefFetchClient {
     private void handleMessage(String request) throws Exception {
         // Layout: <tag>M<total><json>      (meta, once)
         //         <tag>C<id><seq><data>  (one per chunk)
-        String[] parts = request.split(String.valueOf(DELIM), 5);
+        String[] parts = request.split(String.valueOf(FetchWireProtocol.DELIM), 5);
         String type = parts[1];
         if ("M".equals(type)) {
             int total = Integer.parseInt(parts[2]);
@@ -351,36 +351,6 @@ public final class CefFetchClient {
             Pending p = pending.get(id);
             if (p != null) p.onChunk(seq, data);
         }
-    }
-
-    /**
-     * Builds the injected fetch script. The URL and tag are emitted as JSON
-     * string literals (valid JS literals) so no value can break out of the
-     * script. The browser slices the body so a multi-MB response survives the
-     * router's per-message ceiling.
-     */
-    private String buildScript(long id, String url) throws Exception {
-        String jsTag = JSON.writeValueAsString(clientTag);
-        String jsUrl = JSON.writeValueAsString(url);
-        return "(function(){var TAG=" + jsTag + ",ID=" + id + ",URL=" + jsUrl + ",D='\\u0001';"
-                + "function q(s){window.wsbgFetchQuery({request:s,onSuccess:function(){},onFailure:function(){}});}"
-                + "fetch(URL,{credentials:'" + credentials + "',headers:{'Accept':'application/json'}}).then(function(r){"
-                + "var h={};r.headers.forEach(function(v,k){h[k]=v;});"
-                + "return r.text().then(function(t){"
-                + "var CH=" + CHUNK + ",total=Math.max(1,Math.ceil(t.length/CH));"
-                + "q(TAG+D+'M'+D+total+D+JSON.stringify({id:ID,status:r.status,len:t.length,headers:h}));"
-                + "for(var i=0;i<total;i++){q(TAG+D+'C'+D+ID+D+i+D+t.substr(i*CH,CH));}"
-                + "});}).catch(function(e){"
-                + "q(TAG+D+'M'+D+'0'+D+JSON.stringify({id:ID,status:0,len:0,error:String(e),headers:{}}));"
-                + "});})();";
-    }
-
-    private static String randomTag() {
-        SecureRandom r = new SecureRandom();
-        StringBuilder sb = new StringBuilder(8);
-        String alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
-        for (int i = 0; i < 8; i++) sb.append(alphabet.charAt(r.nextInt(alphabet.length())));
-        return "wsbg" + sb;
     }
 
     /** Accumulates the meta + chunks of one in-flight fetch until complete. */

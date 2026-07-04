@@ -5,8 +5,6 @@ import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.feargreed.FearGreedIndex;
 import de.bsommerfeld.wsbg.terminal.feargreed.FearGreedMonitorService;
 import de.bsommerfeld.wsbg.terminal.ui.web.PushHub;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -20,8 +18,6 @@ import java.util.Map;
 @Singleton
 public final class FearGreedPublisher {
 
-    private static final Logger LOG = LoggerFactory.getLogger(FearGreedPublisher.class);
-
     private final PushHub hub;
 
     @Inject
@@ -32,11 +28,7 @@ public final class FearGreedPublisher {
     }
 
     private void push(FearGreedIndex idx) {
-        try {
-            hub.broadcast("fear-greed", toJson(idx));
-        } catch (Exception e) {
-            LOG.warn("Fear&Greed broadcast failed: {}", e.getMessage());
-        }
+        hub.broadcastSafe("fear-greed", () -> toJson(idx));
     }
 
     private static Map<String, Object> toJson(FearGreedIndex idx) {

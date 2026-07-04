@@ -51,8 +51,7 @@ public final class WatchlistBridge {
     private void onCommand(Map<String, Object> payload) {
         try {
             Object cmd = payload.get("command");
-            Object symbol = payload.get("symbol");
-            String sym = symbol instanceof String s && !s.isBlank() ? s : null;
+            String sym = Payloads.str(payload.get("symbol"));
             if ("add".equals(cmd) && sym != null) {
                 store.add(sym);
             } else if ("remove".equals(cmd) && sym != null) {

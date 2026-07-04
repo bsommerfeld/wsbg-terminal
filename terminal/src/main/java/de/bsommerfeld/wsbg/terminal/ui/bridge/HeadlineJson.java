@@ -31,12 +31,7 @@ final class HeadlineJson {
         m.put("createdAt", r.createdAt());
         m.put("highlight", r.highlight() == null ? "NORMAL" : r.highlight().name());
         m.put("tickerSymbol", r.tickerSymbol());
-        m.put("subjects", r.subjects().stream().map(s -> {
-            Map<String, Object> sm = new LinkedHashMap<>();
-            sm.put("name", s.name());
-            sm.put("ticker", s.ticker());
-            return sm;
-        }).toList());
+        m.put("subjects", subjectsJson(r));
         m.put("priceMovePercent", r.priceMovePercent());
         m.put("sectors", r.sectors());
         m.put("assetClass", r.assetClass());
@@ -51,25 +46,47 @@ final class HeadlineJson {
         // Provenance: the compose stage leaned on ≥1 external news item. A quiet
         // bottom-right "News" tag in the UI; defaults false for old archive lines.
         m.put("newsEnriched", r.newsEnriched());
-        // The concrete articles behind that tag — title/publisher/permalink per
-        // item, so the tag can open a source list. Omitted (not an empty array)
+        // The concrete articles behind that tag — omitted (not an empty array)
         // for lines without refs, incl. all pre-newsRefs archive lines.
-        if (r.newsRefs() != null && !r.newsRefs().isEmpty()) {
-            m.put("newsRefs", r.newsRefs().stream().map(n -> {
-                Map<String, Object> nm = new LinkedHashMap<>();
-                nm.put("title", n.title());
-                nm.put("publisher", n.publisher());
-                nm.put("url", n.url());
-                nm.put("publishedAt", n.publishedAt());
-                return nm;
-            }).toList());
-        }
+        List<Map<String, Object>> newsRefs = newsRefsJson(r);
+        if (newsRefs != null) m.put("newsRefs", newsRefs);
         // Source thread → a permalink the UI offers as an "open in browser" button.
-        String threadId = primaryThreadId(r);
-        if (threadId != null) {
-            m.put("threadUrl", "https://www.reddit.com/comments/" + threadId.substring(3));
-        }
+        String threadUrl = threadUrl(r);
+        if (threadUrl != null) m.put("threadUrl", threadUrl);
         return m;
+    }
+
+    /** The subject list — name + ticker per subject. */
+    private static List<Map<String, Object>> subjectsJson(HeadlineRecord r) {
+        return r.subjects().stream().map(s -> {
+            Map<String, Object> sm = new LinkedHashMap<>();
+            sm.put("name", s.name());
+            sm.put("ticker", s.ticker());
+            return sm;
+        }).toList();
+    }
+
+    /**
+     * The external articles behind the "News" tag — title/publisher/permalink per
+     * item, so the tag can open a source list. Returns {@code null} (not an empty
+     * list) when there are none, so the caller omits the key entirely.
+     */
+    private static List<Map<String, Object>> newsRefsJson(HeadlineRecord r) {
+        if (r.newsRefs() == null || r.newsRefs().isEmpty()) return null;
+        return r.newsRefs().stream().map(n -> {
+            Map<String, Object> nm = new LinkedHashMap<>();
+            nm.put("title", n.title());
+            nm.put("publisher", n.publisher());
+            nm.put("url", n.url());
+            nm.put("publishedAt", n.publishedAt());
+            return nm;
+        }).toList();
+    }
+
+    /** The reddit permalink for the line's source thread, or {@code null} when there is none. */
+    private static String threadUrl(HeadlineRecord r) {
+        String threadId = primaryThreadId(r);
+        return threadId != null ? "https://www.reddit.com/comments/" + threadId.substring(3) : null;
     }
 
     /** The Reddit thread id the line rests on: a cited source thread, else the cluster id when it is one. */

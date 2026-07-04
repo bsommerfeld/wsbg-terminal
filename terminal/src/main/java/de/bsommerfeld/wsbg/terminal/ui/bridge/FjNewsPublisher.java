@@ -12,8 +12,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Locale;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
@@ -24,7 +22,7 @@ import java.util.concurrent.TimeUnit;
  *
  * <p>
  * Poll cadence matches the legacy JavaFX widget (60 s) — FJ rate-limits
- * below ~30 s.
+ * below ~30 s. Tag/impact classification lives in {@link FjHeadlineTagger}.
  */
 @Singleton
 public final class FjNewsPublisher {
@@ -35,12 +33,7 @@ public final class FjNewsPublisher {
 
     private final FjScraper scraper;
     private final PushHub hub;
-    private final ScheduledExecutorService scheduler =
-            Executors.newSingleThreadScheduledExecutor(r -> {
-                Thread t = new Thread(r, "fj-publisher");
-                t.setDaemon(true);
-                return t;
-            });
+    private final ScheduledExecutorService scheduler = DaemonSchedulers.scheduled("fj-publisher");
 
     private final List<RawNewsItem> buffer = new ArrayList<>();
 
@@ -77,7 +70,7 @@ public final class FjNewsPublisher {
     }
 
     private static Map<String, Object> toJson(RawNewsItem it) {
-        List<String> tags = extractTags(it.title());
+        List<String> tags = FjHeadlineTagger.extractTags(it.title());
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("guid", it.uuid());
         m.put("title", it.title());
@@ -85,58 +78,7 @@ public final class FjNewsPublisher {
         m.put("publishedUtc", it.publishedAt() == null ? 0L : it.publishedAt().getEpochSecond());
         m.put("imageUrl", it.imageUrl());
         m.put("tags", tags);
-        m.put("isRed", isRed(it.title(), tags));
+        m.put("isRed", FjHeadlineTagger.isRed(it.title(), tags));
         return m;
-    }
-
-    /**
-     * Derives display tags from a FinancialJuice headline. Pure presentation —
-     * lives here (not in the source) because tags are a UI concern, recomputed at
-     * render time rather than carried on the transport-neutral {@code RawNewsItem}.
-     */
-    private static List<String> extractTags(String title) {
-        List<String> tags = new ArrayList<>();
-        String lower = title.toLowerCase(Locale.ROOT);
-
-        if (lower.contains("oil") || lower.contains("energy") || lower.contains("opec") || lower.contains("wti") || lower.contains("brent")) {
-            tags.add("Energy");
-        }
-        if (lower.matches(".*\\b(iran|israel|war|lebanon|strait|hormuz|gaza|idf|geopolitics)\\b.*")) {
-            tags.add("Geopolitics");
-        }
-        if (lower.matches(".*\\b(ecb|eur|europe|germany|france)\\b.*")) {
-            tags.add("EUR");
-            tags.add("Europe");
-        }
-        if (lower.matches(".*\\b(fed|powell|usd|us)\\b.*")) {
-            tags.add("USD");
-        }
-        if (lower.matches(".*\\b(s&p|nasdaq|dow|spy|qqq|indexes|mag 7|moo imbalance)\\b.*")) {
-            tags.add("US Indexes");
-        }
-        if (lower.matches(".*\\b(bonds|treasury|yield)\\b.*")) {
-            tags.add("US Bonds");
-        }
-        if (lower.matches(".*\\b(boj|ueda|japan|jpy)\\b.*")) {
-            tags.add("Asia");
-            tags.add("JPY");
-        }
-        if (lower.matches(".*\\b(china|pboc|cny)\\b.*")) {
-            tags.add("China");
-        }
-        if (lower.matches(".*\\b(boe|uk|gbp|starmer)\\b.*")) {
-            tags.add("UK");
-            tags.add("GBP");
-        }
-
-        return tags.stream().distinct().toList();
-    }
-
-    /** High-impact flag for UI styling — geopolitics or market-moving language. */
-    private static boolean isRed(String title, List<String> tags) {
-        String lower = title.toLowerCase(Locale.ROOT);
-        if (tags.contains("Geopolitics")) return true;
-        return lower.contains("blockade") || lower.contains("attack") || lower.contains("missile")
-                || lower.contains("urgent") || lower.contains("market moving");
     }
 }
