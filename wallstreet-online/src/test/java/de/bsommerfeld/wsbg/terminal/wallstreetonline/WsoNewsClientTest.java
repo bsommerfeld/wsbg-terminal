@@ -50,8 +50,8 @@ class WsoNewsClientTest {
 
     @Test
     void publishedAtToleratesUnparseableLabels() {
-        assertNull(WsoNewsClient.publishedAt("<span class=\"wknBox\">gestern</span>"));
-        assertNull(WsoNewsClient.publishedAt(""));
+        assertNull(WsoLabelDate.publishedAt("<span class=\"wknBox\">gestern</span>"));
+        assertNull(WsoLabelDate.publishedAt(""));
     }
 
     @Test

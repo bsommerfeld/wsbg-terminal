@@ -16,17 +16,11 @@ import org.slf4j.LoggerFactory;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.time.Instant;
-import java.time.LocalDate;
-import java.time.LocalTime;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -59,15 +53,6 @@ public class WsoNewsClient implements NewsSource {
     private static final String BASE = "https://www.wallstreet-online.de";
 
     private static final ObjectMapper JSON = new ObjectMapper();
-    private static final ZoneId BERLIN = ZoneId.of("Europe/Berlin");
-    private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("dd.MM.uu");
-
-    /** {@code dd.MM.yy} inside the label's previous-day span. */
-    private static final Pattern LABEL_DAY =
-            Pattern.compile("previous-day\">(\\d{2}\\.\\d{2}\\.\\d{2})<");
-    /** A bare {@code HH:mm:ss} in the wknBox — the item is from today. */
-    private static final Pattern LABEL_TIME =
-            Pattern.compile("wknBox\">(\\d{2}:\\d{2}:\\d{2})<");
 
     /** Generic words that must never carry the title-relevance match alone. */
     private static final Set<String> NAME_STOP = Set.of(
@@ -158,28 +143,10 @@ public class WsoNewsClient implements NewsSource {
                     title,
                     "wallstreet-online",
                     link.startsWith("http") ? link : BASE + link,
-                    publishedAt(r.path("label").asText("")),
+                    WsoLabelDate.publishedAt(r.path("label").asText("")),
                     List.of()));
         }
         return out;
-    }
-
-    /** The label's date: {@code dd.MM.yy} → that day, bare {@code HH:mm:ss} → today (Berlin). */
-    static Instant publishedAt(String label) {
-        try {
-            Matcher day = LABEL_DAY.matcher(label);
-            if (day.find()) {
-                return LocalDate.parse(day.group(1), DAY).atStartOfDay(BERLIN).toInstant();
-            }
-            Matcher time = LABEL_TIME.matcher(label);
-            if (time.find()) {
-                return LocalDate.now(BERLIN).atTime(LocalTime.parse(time.group(1)))
-                        .atZone(BERLIN).toInstant();
-            }
-        } catch (Exception ignored) {
-            // fall through — an unparseable date must never drop the item
-        }
-        return null;
     }
 
     /** True when the title carries at least one significant word of the queried name. */
