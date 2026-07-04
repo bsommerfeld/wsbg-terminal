@@ -208,6 +208,18 @@
                 <artifactId>langchain4j-ollama</artifactId>
                 <version>${langchain4j.version}</version>
             </dependency>
+            <!-- Bring-your-own-API-key backends: OpenAI-compatible (OpenAI, Vercel AI
+                 Gateway, OpenRouter, Groq, local servers) and Anthropic (Claude). -->
+            <dependency>
+                <groupId>dev.langchain4j</groupId>
+                <artifactId>langchain4j-open-ai</artifactId>
+                <version>${langchain4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.langchain4j</groupId>
+                <artifactId>langchain4j-anthropic</artifactId>
+                <version>${langchain4j.version}</version>
+            </dependency>
 
 
 

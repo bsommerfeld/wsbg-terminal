@@ -11,6 +11,10 @@ public class GlobalConfig extends ConfigurablePojo<GlobalConfig> {
     @Comment("AI Agent Settings")
     private AgentConfig agent = new AgentConfig();
 
+    @Section("llm")
+    @Comment("LLM Backend (local Ollama, or bring-your-own OpenAI-compatible / Anthropic API key)")
+    private LlmConfig llm = new LlmConfig();
+
     @Section("reddit")
     @Comment("Reddit Monitor Settings")
     private RedditConfig reddit = new RedditConfig();
@@ -37,6 +41,10 @@ public class GlobalConfig extends ConfigurablePojo<GlobalConfig> {
 
     public AgentConfig getAgent() {
         return agent;
+    }
+
+    public LlmConfig getLlm() {
+        return llm;
     }
 
     public RedditConfig getReddit() {

@@ -150,6 +150,38 @@ public final class SettingsBridge {
                 config.getHeadlines().setSuppressRedundant(asBool(value));
                 return true;
             }
+            case "llmBackend" -> {
+                if (value instanceof String s
+                        && (s.equals("ollama") || s.equals("openai") || s.equals("anthropic"))) {
+                    config.getLlm().setBackend(s);
+                    return true;
+                }
+                return false;
+            }
+            case "llmApiKey" -> {
+                config.getLlm().setApiKey(asString(value));
+                return true;
+            }
+            case "llmBaseUrl" -> {
+                config.getLlm().setBaseUrl(asString(value));
+                return true;
+            }
+            case "llmChatModel" -> {
+                config.getLlm().setChatModel(asString(value));
+                return true;
+            }
+            case "llmEmbedModel" -> {
+                config.getLlm().setEmbedModel(asString(value));
+                return true;
+            }
+            case "llmEmbedBaseUrl" -> {
+                config.getLlm().setEmbedBaseUrl(asString(value));
+                return true;
+            }
+            case "llmEmbedApiKey" -> {
+                config.getLlm().setEmbedApiKey(asString(value));
+                return true;
+            }
             default -> {
                 LOG.debug("settings: ignoring unknown key '{}'", key);
                 return false;
@@ -160,6 +192,10 @@ public final class SettingsBridge {
     private static boolean asBool(Object value) {
         if (value instanceof Boolean b) return b;
         return value instanceof String s && Boolean.parseBoolean(s.toLowerCase(Locale.ROOT));
+    }
+
+    private static String asString(Object value) {
+        return value instanceof String s ? s.trim() : "";
     }
 
     private void push() {
@@ -173,6 +209,15 @@ public final class SettingsBridge {
         out.put("suppressRedundant", config.getHeadlines().isSuppressRedundant());
         out.put("language", config.getUser().getLanguage());
         out.put("autoUpdate", config.getUser().isAutoUpdate());
+        // LLM backend ("bring your own API key"). Localhost-only OSR browser, so
+        // echoing the key back to prefill the field is acceptable here.
+        out.put("llmBackend", config.getLlm().getBackend());
+        out.put("llmApiKey", config.getLlm().getApiKey());
+        out.put("llmBaseUrl", config.getLlm().getBaseUrl());
+        out.put("llmChatModel", config.getLlm().getChatModel());
+        out.put("llmEmbedModel", config.getLlm().getEmbedModel());
+        out.put("llmEmbedBaseUrl", config.getLlm().getEmbedBaseUrl());
+        out.put("llmEmbedApiKey", config.getLlm().getEmbedApiKey());
         return out;
     }
 }

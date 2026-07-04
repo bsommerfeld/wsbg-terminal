@@ -85,6 +85,26 @@ export OLLAMA_MODELS="$AI_MODELS"
 mkdir -p "$AI_MODELS"
 
 # ------------------------------------------------------------------------------
+# Bring-your-own-API-key: when config.toml selects a remote LLM backend (openai
+# or anthropic), the isolated Ollama binary + the ~15 GB model pulls are pointless
+# -- the app never talks to a local model. Skip sections 1-3 entirely (JCEF, fonts
+# and the config scaffold below still run; the app is CEF-based regardless).
+# Overridable with WSBG_SKIP_OLLAMA=1. On a brand-new install config.toml does not
+# exist yet, so first run still provisions Ollama unless the config is pre-seeded.
+# ------------------------------------------------------------------------------
+REMOTE_LLM=0
+if [ "${WSBG_SKIP_OLLAMA:-0}" = "1" ]; then
+    REMOTE_LLM=1
+elif [ -f "$CONFIG_FILE" ] && grep -Eq '^[[:space:]]*backend[[:space:]]*=[[:space:]]*"?(openai|anthropic)"?' "$CONFIG_FILE"; then
+    REMOTE_LLM=1
+fi
+if [ "$REMOTE_LLM" = "1" ]; then
+    echo "[*] Remote LLM backend configured -- skipping isolated Ollama install + model downloads."
+fi
+
+if [ "$REMOTE_LLM" != "1" ]; then
+
+# ------------------------------------------------------------------------------
 # 1. Install / update OUR isolated Ollama binary (pinned; never the system one)
 # ------------------------------------------------------------------------------
 install_ollama() {
@@ -282,6 +302,8 @@ if [ -x "$OLLAMA" ]; then
 else
     warn "Isolated Ollama binary missing -- skipping model install."
 fi
+
+fi  # end: skip sections 1-3 for a remote LLM backend
 
 # ------------------------------------------------------------------------------
 # 4. Pre-install JCEF (embedded Chromium) native bundle

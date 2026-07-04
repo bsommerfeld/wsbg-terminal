@@ -3,6 +3,7 @@ package de.bsommerfeld.wsbg.terminal.agent;
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.core.config.AgentConfig;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
+import de.bsommerfeld.wsbg.terminal.core.config.LlmConfig;
 import de.bsommerfeld.wsbg.terminal.core.config.Model;
 import de.bsommerfeld.wsbg.terminal.core.config.UserLanguage;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
@@ -93,8 +94,29 @@ public class AgentBrain {
         this.serverManager = serverManager;
         eventBus.register(this);
 
-        serverManager.ensureRunning(OLLAMA_BASE_URL);
-        initialize(config.getAgent());
+        // A remote (own API key) backend talks straight to an HTTP API — no local
+        // server needed. The local Ollama backend needs its isolated server spun up;
+        // if that can't happen (nothing installed / can't start), we DON'T take the
+        // whole app down — the UI boots with placeholder models so the user can just
+        // enter an API key in Settings → KI-Backend. That is what makes "skip the
+        // local model install, only enter your key" work at startup.
+        if (config.getLlm().isRemote()) {
+            initialize(config.getAgent());
+            return;
+        }
+        try {
+            serverManager.ensureRunning(OLLAMA_BASE_URL);
+            initialize(config.getAgent());
+        } catch (RuntimeException e) {
+            LOG.error("Local model unavailable ({}). Starting without a model — open "
+                    + "Settings -> KI-Backend and enter an API key.", e.getMessage());
+            this.userLanguage = config.getUser().getUserLanguage();
+            this.activeAgentModel = "unconfigured";
+            String reason = "local model not installed";
+            this.agentModel = new UnconfiguredChatModel(reason);
+            this.composeModel = new UnconfiguredChatModel(reason);
+            this.visionModel = new UnconfiguredChatModel(reason);
+        }
     }
 
     /**
@@ -109,6 +131,18 @@ public class AgentBrain {
      * </ul>
      */
     public void initialize(AgentConfig config) {
+        this.userLanguage = this.config.getUser().getUserLanguage();
+
+        // Bring-your-own-API-key: a remote HTTP backend replaces all three
+        // Ollama model instances. The Ollama-only knobs (num_ctx, think, top_k,
+        // the constrained-grammar compose schema, and the /api/tags model probe)
+        // have no portable equivalent, so this path skips them entirely and
+        // leans on the EditorialAgent salvage cascade for JSON robustness.
+        if (this.config.getLlm().isRemote()) {
+            initializeRemote(this.config.getLlm());
+            return;
+        }
+
         // One multimodal model serves both roles: the editorial agent
         // (REASONING_POWER = gemma4:e4b) and vision (also gemma4:e4b).
         // We do NOT use the gemma4:e4b-mlx build — its published Ollama tag
@@ -252,6 +286,29 @@ public class AgentBrain {
                 .think(think)
                 .timeout(timeout)
                 .maxRetries(1).build();
+    }
+
+    /**
+     * Builds the three model instances against a remote ("bring your own API
+     * key") backend. maxTokens mirrors the local numPredict budgets (agent 768,
+     * compose 1024, vision 512); the deterministic pipeline calls request JSON
+     * output where the provider supports it (OpenAI), otherwise the salvage
+     * cascade covers it (Anthropic). No Ollama server, no model download.
+     */
+    private void initializeRemote(LlmConfig llm) {
+        java.time.Duration timeout = java.time.Duration.ofMinutes(5);
+        this.activeAgentModel = llm.getChatModel();
+
+        LOG.info("Initializing AgentBrain -- remote backend: {}, model: {}, language: {}",
+                llm.getBackend(), llm.getChatModel(), userLanguage.displayName());
+
+        double temp = Model.REASONING_POWER.getTemperature();
+        // Editorial agent — JSON expected (subjects array, theme object).
+        this.agentModel = RemoteChatModels.chat(llm, temp, 768, timeout, 2, true);
+        // Compose — one short headline JSON object.
+        this.composeModel = RemoteChatModels.chat(llm, temp, 1024, timeout, 2, true);
+        // Vision — faithful image read-out; free-text, so no forced JSON.
+        this.visionModel = RemoteChatModels.chat(llm, 0.2, 512, timeout, 1, false);
     }
 
     /**

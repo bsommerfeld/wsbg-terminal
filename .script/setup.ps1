@@ -77,6 +77,25 @@ $env:OLLAMA_MODELS = $aiModels
 New-Item -ItemType Directory -Force -Path $aiModels | Out-Null
 
 # ------------------------------------------------------------------------------
+# Bring-your-own-API-key: when config.toml selects a remote LLM backend (openai
+# or anthropic), skip the isolated Ollama binary + the ~15 GB model pulls entirely
+# (sections 1-3). JCEF, fonts and the config scaffold below still run. Overridable
+# with WSBG_SKIP_OLLAMA=1. First run has no config.toml yet, so it still provisions
+# Ollama unless the config is pre-seeded.
+# ------------------------------------------------------------------------------
+$RemoteLlm = $false
+if ($env:WSBG_SKIP_OLLAMA -eq "1") {
+    $RemoteLlm = $true
+} elseif ((Test-Path $configFile) -and (Select-String -Path $configFile -Pattern '^\s*backend\s*=\s*"?(openai|anthropic)"?' -Quiet)) {
+    $RemoteLlm = $true
+}
+if ($RemoteLlm) {
+    Write-Host "[*] Remote LLM backend configured -- skipping isolated Ollama install + model downloads." -ForegroundColor Cyan
+}
+
+if (-not $RemoteLlm) {
+
+# ------------------------------------------------------------------------------
 # 1. Install / update OUR isolated Ollama binary (pinned; never the system one)
 # ------------------------------------------------------------------------------
 $haveVer = $null
@@ -279,6 +298,8 @@ if (Test-Path $ollamaExe) {
 } else {
     Write-Warn "Isolated Ollama binary missing -- skipping model install."
 }
+
+}  # end: skip sections 1-3 for a remote LLM backend
 
 # ------------------------------------------------------------------------------
 # 4. Pre-install JCEF (embedded Chromium) native bundle

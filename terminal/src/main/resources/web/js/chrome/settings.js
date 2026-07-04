@@ -71,6 +71,43 @@ export function initSettings(socket) {
   if (auto) auto.addEventListener('change',
       () => socket.send('settings', { command: 'set', key: 'autoUpdate', value: auto.checked }));
 
+  // ---- LLM backend ("bring your own API key") ----
+  const llmBackend = view.querySelector('.js-llm-backend');
+  const llmApiKey = view.querySelector('.js-llm-apikey');
+  const llmBaseUrl = view.querySelector('.js-llm-baseurl');
+  const llmChatModel = view.querySelector('.js-llm-chatmodel');
+  const llmEmbedModel = view.querySelector('.js-llm-embedmodel');
+  const llmEmbedBaseUrl = view.querySelector('.js-llm-embedbaseurl');
+  const llmEmbedApiKey = view.querySelector('.js-llm-embedapikey');
+
+  // Show only the fields that matter for the chosen backend. The base-URL row is
+  // OpenAI-only (Anthropic uses its own fixed endpoint); the separate embed
+  // base-URL/key rows are Anthropic-only (Claude has no embeddings API).
+  function syncLlmVisibility() {
+    const backend = llmBackend ? llmBackend.value : 'ollama';
+    const remote = backend !== 'ollama';
+    view.querySelectorAll('.js-llm-remote').forEach(el => {
+      let show = remote;
+      if (el.classList.contains('js-llm-openai')) show = backend === 'openai';
+      if (el.classList.contains('js-llm-anthropic')) show = backend === 'anthropic';
+      el.hidden = !show;
+    });
+  }
+
+  const sendLlm = (key, value) => socket.send('settings', { command: 'set', key, value });
+
+  if (llmBackend) llmBackend.addEventListener('change', () => {
+    sendLlm('llmBackend', llmBackend.value);
+    syncLlmVisibility();
+  });
+  // Text/secret fields persist on blur (change), not per keystroke.
+  if (llmApiKey) llmApiKey.addEventListener('change', () => sendLlm('llmApiKey', llmApiKey.value));
+  if (llmBaseUrl) llmBaseUrl.addEventListener('change', () => sendLlm('llmBaseUrl', llmBaseUrl.value));
+  if (llmChatModel) llmChatModel.addEventListener('change', () => sendLlm('llmChatModel', llmChatModel.value));
+  if (llmEmbedModel) llmEmbedModel.addEventListener('change', () => sendLlm('llmEmbedModel', llmEmbedModel.value));
+  if (llmEmbedBaseUrl) llmEmbedBaseUrl.addEventListener('change', () => sendLlm('llmEmbedBaseUrl', llmEmbedBaseUrl.value));
+  if (llmEmbedApiKey) llmEmbedApiKey.addEventListener('change', () => sendLlm('llmEmbedApiKey', llmEmbedApiKey.value));
+
   // Backend echoes the persisted snapshot on connect + after every change.
   socket.on('settings', payload => {
     if (!payload) return;
@@ -78,6 +115,17 @@ export function initSettings(socket) {
     if (redund && typeof payload.suppressRedundant === 'boolean') redund.checked = payload.suppressRedundant;
     if (lang && payload.language) lang.value = payload.language;
     if (auto && typeof payload.autoUpdate === 'boolean') auto.checked = payload.autoUpdate;
+    // LLM backend fields — don't clobber a field the user is mid-edit in.
+    const fill = (el, val) => {
+      if (el && typeof val === 'string' && document.activeElement !== el) el.value = val;
+    };
+    if (llmBackend && payload.llmBackend) { llmBackend.value = payload.llmBackend; syncLlmVisibility(); }
+    fill(llmApiKey, payload.llmApiKey);
+    fill(llmBaseUrl, payload.llmBaseUrl);
+    fill(llmChatModel, payload.llmChatModel);
+    fill(llmEmbedModel, payload.llmEmbedModel);
+    fill(llmEmbedBaseUrl, payload.llmEmbedBaseUrl);
+    fill(llmEmbedApiKey, payload.llmEmbedApiKey);
     // Drive the whole UI language off the persisted setting: applies on connect
     // (the backend echoes the snapshot) and live after every change — no restart.
     if (payload.language) setLang(payload.language);

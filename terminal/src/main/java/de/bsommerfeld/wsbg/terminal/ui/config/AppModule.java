@@ -9,6 +9,9 @@ import de.bsommerfeld.wsbg.terminal.agent.AgentCoordinator;
 import de.bsommerfeld.wsbg.terminal.agent.EditorialPipeline;
 import de.bsommerfeld.wsbg.terminal.embedding.EmbeddingService;
 import de.bsommerfeld.wsbg.terminal.embedding.OllamaEmbeddingService;
+import de.bsommerfeld.wsbg.terminal.embedding.RemoteEmbeddingService;
+import de.bsommerfeld.wsbg.terminal.core.config.LlmBackend;
+import de.bsommerfeld.wsbg.terminal.core.config.LlmConfig;
 import de.bsommerfeld.wsbg.terminal.agent.PassiveMonitorService;
 import de.bsommerfeld.wsbg.terminal.core.config.AgentConfig;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
@@ -85,8 +88,9 @@ public class AppModule extends AbstractModule {
 
             bind(GlobalConfig.class).toInstance(config);
             bind(AgentConfig.class).toInstance(config.getAgent());
-            // Shared embedding seam (clustering, collation, …) → Ollama-backed impl.
-            bind(EmbeddingService.class).to(OllamaEmbeddingService.class);
+            // Shared embedding seam (clustering, collation, …). The concrete impl —
+            // local Ollama vs. a remote OpenAI-compatible endpoint — is selected by
+            // provideEmbeddingService() from the persisted LLM backend.
 
             // News sources are collected into a Set<NewsSource> (Guice
             // multibindings) so NewsAggregator can fan a query across all of
@@ -206,6 +210,48 @@ public class AppModule extends AbstractModule {
      * its own headers and drops the conditional ones; that path just keeps
      * returning full 200s — a clean fallback, not a bug.
      */
+    /**
+     * Selects the embedding backend from the persisted LLM choice:
+     * <ul>
+     *   <li>{@code ollama} → the bundled local {@link OllamaEmbeddingService};</li>
+     *   <li>{@code openai} → a {@link RemoteEmbeddingService} (OpenAI-compatible,
+     *       covers the Vercel AI Gateway / OpenRouter / … via the configured base URL);</li>
+     *   <li>{@code anthropic} → remote embeddings if an OpenAI-compatible embed
+     *       endpoint is configured (Claude has none of its own), else it falls back
+     *       to the local Ollama model.</li>
+     * </ul>
+     * The Ollama impl is taken through a {@link com.google.inject.Provider} so it is
+     * only instantiated when actually used — a pure "bring your own API key" install
+     * never touches the local model plumbing.
+     */
+    @Provides
+    @Singleton
+    EmbeddingService provideEmbeddingService(GlobalConfig config,
+            com.google.inject.Provider<OllamaEmbeddingService> ollamaEmbeddings) {
+        LlmConfig llm = config.getLlm();
+        LlmBackend backend = llm.resolveBackend();
+        switch (backend) {
+            case OPENAI -> {
+                LOG.info("Embeddings: remote OpenAI-compatible ({} @ {})",
+                        llm.getEmbedModel(), llm.effectiveEmbedBaseUrl());
+                return new RemoteEmbeddingService(llm);
+            }
+            case ANTHROPIC -> {
+                if (llm.hasRemoteEmbeddings()) {
+                    LOG.info("Embeddings: remote OpenAI-compatible ({} @ {}) — Anthropic has no embeddings API",
+                            llm.getEmbedModel(), llm.effectiveEmbedBaseUrl());
+                    return new RemoteEmbeddingService(llm);
+                }
+                LOG.warn("Anthropic backend without a remote embed endpoint configured — "
+                        + "falling back to the local Ollama embedding model.");
+                return ollamaEmbeddings.get();
+            }
+            default -> {
+                return ollamaEmbeddings.get();
+            }
+        }
+    }
+
     @Provides
     @Singleton
     WebFetcher provideWebFetcher(GlobalConfig config, CefHost cefHost) {

@@ -122,6 +122,85 @@
       </header>
 
       <div class="settings-scroll">
+        <!-- KI-Backend: lokales Modell (Standard) oder eigener API-Key -->
+        <section class="settings-cat">
+          <h2 class="cat-title" data-i18n="settings.llm.title">KI-Backend</h2>
+          <div class="setting-row">
+            <div class="setting-label">
+              <div class="setting-name-row">
+                <span class="setting-name" data-i18n="settings.llm.backend.name">Modell-Quelle</span>
+                <button class="setting-info js-info" type="button" aria-expanded="false" title="Mehr Infos"
+                        aria-label="Mehr Infos" data-i18n-title="settings.more.aria" data-i18n-aria-label="settings.more.aria">
+                  <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                </button>
+              </div>
+              <span class="setting-hint" data-i18n="settings.llm.backend.hint">Lokales Modell oder eigener API-Key (kein Download nötig).</span>
+              <p class="setting-more" hidden data-i18n="settings.llm.backend.more">Lokal lädt einmalig ~15 GB Modelle herunter. Mit eigenem API-Key läuft alles über deinen Anbieter — nichts wird installiert. Änderungen greifen nach einem Neustart.</p>
+            </div>
+            <select class="select js-llm-backend">
+              <option value="ollama" data-i18n="settings.llm.backend.ollama">Lokal (Ollama)</option>
+              <option value="openai" data-i18n="settings.llm.backend.openai">Eigener API-Key (OpenAI-kompatibel)</option>
+              <option value="anthropic" data-i18n="settings.llm.backend.anthropic">Eigener API-Key (Anthropic / Claude)</option>
+            </select>
+          </div>
+
+          <!-- Remote-Felder: nur sichtbar, wenn ein API-Key-Backend gewählt ist -->
+          <div class="setting-row js-llm-remote" hidden>
+            <div class="setting-label">
+              <span class="setting-name" data-i18n="settings.llm.apikey.name">API-Key</span>
+              <span class="setting-hint" data-i18n="settings.llm.apikey.hint">Wird nur lokal in der Konfiguration gespeichert.</span>
+            </div>
+            <input type="password" class="input js-llm-apikey" autocomplete="off" spellcheck="false" placeholder="sk-…">
+          </div>
+
+          <div class="setting-row js-llm-remote js-llm-openai" hidden>
+            <div class="setting-label">
+              <span class="setting-name" data-i18n="settings.llm.baseurl.name">Base-URL</span>
+              <span class="setting-hint" data-i18n="settings.llm.baseurl.hint">OpenAI · Vercel AI Gateway · OpenRouter · lokaler Server.</span>
+            </div>
+            <input type="text" class="input js-llm-baseurl" autocomplete="off" spellcheck="false" placeholder="https://ai-gateway.vercel.sh/v1">
+          </div>
+
+          <div class="setting-row js-llm-remote" hidden>
+            <div class="setting-label">
+              <span class="setting-name" data-i18n="settings.llm.chatmodel.name">Modell (Text + Vision)</span>
+              <span class="setting-hint" data-i18n="settings.llm.chatmodel.hint">z. B. gpt-4o-mini oder claude-sonnet-4-5.</span>
+            </div>
+            <input type="text" class="input js-llm-chatmodel" autocomplete="off" spellcheck="false" placeholder="gpt-4o-mini">
+          </div>
+
+          <div class="setting-row js-llm-remote" hidden>
+            <div class="setting-label">
+              <div class="setting-name-row">
+                <span class="setting-name" data-i18n="settings.llm.embedmodel.name">Embedding-Modell</span>
+                <button class="setting-info js-info" type="button" aria-expanded="false" title="Mehr Infos"
+                        aria-label="Mehr Infos" data-i18n-title="settings.more.aria" data-i18n-aria-label="settings.more.aria">
+                  <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                </button>
+              </div>
+              <span class="setting-hint" data-i18n="settings.llm.embedmodel.hint">Fürs Clustering. OpenAI-kompatibel.</span>
+              <p class="setting-more" hidden data-i18n="settings.llm.embedmodel.more">Claude hat keine Embedding-API. Bei Anthropic optional unten einen OpenAI-kompatiblen Embed-Endpunkt setzen — sonst wird lokal (Ollama) eingebettet.</p>
+            </div>
+            <input type="text" class="input js-llm-embedmodel" autocomplete="off" spellcheck="false" placeholder="text-embedding-3-small">
+          </div>
+
+          <div class="setting-row js-llm-remote js-llm-anthropic" hidden>
+            <div class="setting-label">
+              <span class="setting-name" data-i18n="settings.llm.embedbaseurl.name">Embedding Base-URL</span>
+              <span class="setting-hint" data-i18n="settings.llm.embedbaseurl.hint">Optional. Leer = Embeddings lokal (Ollama).</span>
+            </div>
+            <input type="text" class="input js-llm-embedbaseurl" autocomplete="off" spellcheck="false" placeholder="https://ai-gateway.vercel.sh/v1">
+          </div>
+
+          <div class="setting-row js-llm-remote js-llm-anthropic" hidden>
+            <div class="setting-label">
+              <span class="setting-name" data-i18n="settings.llm.embedapikey.name">Embedding API-Key</span>
+              <span class="setting-hint" data-i18n="settings.llm.embedapikey.hint">Optional. Leer = derselbe wie oben.</span>
+            </div>
+            <input type="password" class="input js-llm-embedapikey" autocomplete="off" spellcheck="false" placeholder="sk-…">
+          </div>
+        </section>
+
         <section class="settings-cat">
           <h2 class="cat-title" data-i18n="settings.appearance.title">Aussehen</h2>
           <div class="setting-row">
