@@ -11,7 +11,6 @@ import org.slf4j.LoggerFactory;
 
 import java.net.InetSocketAddress;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
@@ -89,16 +88,35 @@ public final class PushHub {
         }
         try {
             String json = mapper.writeValueAsString(Map.of("type", type, "payload", payload));
-            int items = (payload instanceof java.util.Collection<?> c) ? c.size() : -1;
-            LOG.info("broadcast {} → {} client(s){}",
-                    type, clients.size(),
-                    items >= 0 ? " (" + items + " items, " + json.length() + " B)" : "");
+            logBroadcast(type, json, payload);
             for (WebSocket ws : clients) {
                 if (ws.isOpen()) ws.send(json);
             }
         } catch (Exception e) {
             LOG.warn("Failed to broadcast {}: {}", type, e.getMessage());
         }
+    }
+
+    /**
+     * Builds the {@code payload} via {@code supplier} and broadcasts it, swallowing
+     * and logging any failure. Publishers that only need "send this, don't let a
+     * serialisation/build error escape the poll loop" use this instead of hand-rolling
+     * their own try/catch. The supplier is evaluated inside the guard, so a throwing
+     * payload builder is caught too.
+     */
+    public void broadcastSafe(String type, java.util.function.Supplier<Object> supplier) {
+        try {
+            broadcast(type, supplier.get());
+        } catch (Exception e) {
+            LOG.warn("{} broadcast failed: {}", type, e.getMessage());
+        }
+    }
+
+    private void logBroadcast(String type, String json, Object payload) {
+        int items = (payload instanceof java.util.Collection<?> c) ? c.size() : -1;
+        LOG.info("broadcast {} → {} client(s){}",
+                type, clients.size(),
+                items >= 0 ? " (" + items + " items, " + json.length() + " B)" : "");
     }
 
     private final class InternalServer extends WebSocketServer {
@@ -138,7 +156,5 @@ public final class PushHub {
         @Override public void onStart() {
             setConnectionLostTimeout(0);
         }
-
-        Set<WebSocket> clientsView() { return Set.copyOf(clients); }
     }
 }

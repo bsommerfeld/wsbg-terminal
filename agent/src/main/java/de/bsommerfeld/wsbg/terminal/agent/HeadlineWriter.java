@@ -6,6 +6,7 @@ import de.bsommerfeld.wsbg.terminal.agent.event.AgentStreamEndEvent;
 import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
 import de.bsommerfeld.wsbg.terminal.db.AgentRepository;
+import de.bsommerfeld.wsbg.terminal.db.HeadlineRecord;
 import de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight;
 import de.bsommerfeld.wsbg.terminal.db.HeadlineNewsRef;
 import de.bsommerfeld.wsbg.terminal.db.HeadlineSentiment;
@@ -14,12 +15,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
+import java.util.Optional;
 import java.util.regex.Pattern;
 
 /**
@@ -28,6 +27,11 @@ import java.util.regex.Pattern;
  * the editorial model produces a {@link Draft}, the {@link TickerResolver} has
  * already resolved the instruments, and this writer applies the
  * <em>quality</em> checks and saves.
+ *
+ * <p>The self-contained QA algorithms live in dedicated collaborators so the
+ * publish flow reads as a linear recipe: trim ({@link HeadlineTailTrimmer}) →
+ * dup-guard ({@link NearDuplicateGuard}) → gild ({@link HeadlineGilder}) →
+ * highlight ({@link HighlightReconciler}) → sentiment ({@link SentimentReconciler}).
  *
  * <h3>What it keeps vs. drops (vs. the old tool)</h3>
  * Kept — pure QA that sanitises or enriches without dropping a headline: HTML
@@ -45,20 +49,6 @@ public final class HeadlineWriter {
 
     private static final Logger LOG = LoggerFactory.getLogger(HeadlineWriter.class);
     private static final Pattern HTML_TAG = Pattern.compile("<[^>]+>");
-    /** Skip a NEAR-duplicate of a unit's OWN recent headline within this window. Much longer
-     *  than the rapid-double guard: with the compose settle/cooldown, a unit's re-composes are
-     *  spaced minutes apart, and a hot thread re-dirties its unit all session — the ^GDAXI wire
-     *  once carried 7 near-identical "wartet auf Katalysator" lines in 35 min, and re-tells of
-     *  an unmoved story still surfaced 1.5h apart (SIVE.ST, live 2026-07-02). An EXACT match
-     *  (normalised-equal) is checked against the whole 24h wire regardless of this window —
-     *  zero new tokens is zero development, however much time passed. */
-    private static final long NEAR_DUP_GUARD_SECS = 7200;
-    /** Skip a NEAR-duplicate of ANY other unit's recent headline within this (shorter) window.
-     *  Two units can legitimately tell one story from two angles hours apart, but the same
-     *  sentence twice within half an hour is one story published twice — the merz/friedrich-merz
-     *  twin units once wrote the same Reformpaket line 5 min apart, invisible to the per-unit
-     *  guard. */
-    private static final long CROSS_UNIT_DUP_GUARD_SECS = 1800;
 
     private final AgentRepository agentRepository;
     private final ApplicationEventBus eventBus;
@@ -113,7 +103,7 @@ public final class HeadlineWriter {
         boolean newsEnriched = (newsUsed != null && !newsUsed.isEmpty())
                 || (inheritedRefs != null && !inheritedRefs.isEmpty());
         if (unit == null || draft == null) return false;
-        String headline = trimInterpretiveTail(stripHtml(draft.headline()).trim());
+        String headline = HeadlineTailTrimmer.trimInterpretiveTail(stripHtml(draft.headline()).trim());
         if (headline.isEmpty()) return false;
 
         // Near-duplicate guard over the recent WIRE, not just this unit. The 4B model often
@@ -125,19 +115,12 @@ public final class HeadlineWriter {
         // by twin units the identity-merge didn't fold). Always on — the former strict-1:1
         // user toggle was removed 2026-07-03 with the judge-based dup check.
         long now = System.currentTimeMillis() / 1000;
-        {
-            String normNew = normalizeForDup(headline);
-            var dupOf = agentRepository.getRecentHeadlines().stream()
-                    .filter(h -> normNew.equals(normalizeForDup(h.headline())) // exact: whole 24h wire
-                            || ((now - h.createdAt())
-                                    < (unit.id.equals(h.clusterId()) ? NEAR_DUP_GUARD_SECS : CROSS_UNIT_DUP_GUARD_SECS)
-                                && isNearDuplicate(headline, h.headline())))
-                    .findFirst();
-            if (dupOf.isPresent()) {
-                LOG.info("[WRITE] skip near-duplicate for unit {} (matches {} from {}s ago): {}",
-                        unit.id, dupOf.get().clusterId(), now - dupOf.get().createdAt(), headline);
-                return false;
-            }
+        Optional<HeadlineRecord> dupOf = NearDuplicateGuard.findDuplicate(
+                headline, unit.id, agentRepository.getRecentHeadlines(), now);
+        if (dupOf.isPresent()) {
+            LOG.info("[WRITE] skip near-duplicate for unit {} (matches {} from {}s ago): {}",
+                    unit.id, dupOf.get().clusterId(), now - dupOf.get().createdAt(), headline);
+            return false;
         }
 
         // Ticker + snapshot are the unit's resolver-validated facts, not the model's —
@@ -150,7 +133,8 @@ public final class HeadlineWriter {
         // to the instrument it didn't name.
         String tickerSymbol = unit.isInstrument()
                 ? unit.ticker().toUpperCase(Locale.ROOT) : null;
-        String displayName = tickerSymbol == null ? null : displayFormIn(headline, unit.canonicalName());
+        String displayName = tickerSymbol == null ? null
+                : HeadlineGilder.displayFormIn(headline, unit.canonicalName());
         if (tickerSymbol != null && displayName == null) {
             LOG.info("[WRITE] line never names unit {} ({}) — publishing without ticker/snapshot: {}",
                     unit.id, unit.canonicalName(), headline);
@@ -173,11 +157,12 @@ public final class HeadlineWriter {
         }
 
         HeadlineHighlight modelHighlight = HeadlineHighlight.fromString(draft.highlight());
-        HeadlineHighlight highlight = reconcileHighlight(modelHighlight, draft.trigger(), unit.snapshot());
+        HeadlineHighlight highlight =
+                HighlightReconciler.reconcileHighlight(modelHighlight, draft.trigger(), unit.snapshot());
         if (highlight != modelHighlight) {
             LOG.info("[WRITE] demote IMPORTANT→NORMAL for unit {} — trigger '{}' {}",
                     unit.id, draft.trigger(),
-                    PRICE_TRIGGERS.contains(normalizeTrigger(draft.trigger()))
+                    HighlightReconciler.isPriceShaped(draft.trigger())
                             ? "is price-shaped but the unit has no verified price"
                             : "does not justify red");
         }
@@ -188,11 +173,11 @@ public final class HeadlineWriter {
         // and the unit's sentiment arc — the room's read is editorial data the
         // price can't supply. reconcileSentiment still flips a camp that
         // contradicts a hard day-move.
-        Double priceMove = sanePriceMove(
+        Double priceMove = SentimentReconciler.sanePriceMove(
                 snapshot != null && snapshot.hasPrice() ? snapshot.dayChangePercent() : null, headline);
         List<String> sectors = List.of();
         String assetClass = null;
-        HeadlineSentiment sentiment = reconcileSentiment(
+        HeadlineSentiment sentiment = SentimentReconciler.reconcileSentiment(
                 HeadlineSentiment.fromString(draft.sentiment()), priceMove);
 
         // The concrete articles behind the "News" provenance tag: ONLY the items the
@@ -201,24 +186,7 @@ public final class HeadlineWriter {
         // "the articles this line leans on", instead of dumping the subject's whole
         // news pool beside a room-sentiment line. De-duplicated by URL; items
         // without a link are useless as a source reference and are dropped.
-        List<HeadlineNewsRef> newsRefs = List.of();
-        if (newsEnriched) {
-            Map<String, HeadlineNewsRef> byUrl = new java.util.LinkedHashMap<>();
-            if (newsUsed != null) {
-                for (var n : newsUsed) {
-                    if (n.link() != null && !n.link().isBlank()) {
-                        byUrl.putIfAbsent(n.link(), new HeadlineNewsRef(n.title(), n.publisher(),
-                                n.link(), n.publishedAt() == null ? null : n.publishedAt().getEpochSecond()));
-                    }
-                }
-            }
-            if (inheritedRefs != null) {
-                for (HeadlineNewsRef ref : inheritedRefs) {
-                    if (ref.url() != null && !ref.url().isBlank()) byUrl.putIfAbsent(ref.url(), ref);
-                }
-            }
-            newsRefs = List.copyOf(byUrl.values());
-        }
+        List<HeadlineNewsRef> newsRefs = buildNewsRefs(newsEnriched, newsUsed, inheritedRefs);
 
         agentRepository.saveHeadline(unit.id, headline, "",
                 threadIds, commentIds, highlight, tickerSymbol, subjects, priceMove,
@@ -226,7 +194,7 @@ public final class HeadlineWriter {
 
         LOG.info("[WRITE] unit {} [{}{} {}{}]: {}", unit.id,
                 highlight == HeadlineHighlight.IMPORTANT
-                        ? "IMPORTANT/" + normalizeTrigger(draft.trigger()) : highlight,
+                        ? "IMPORTANT/" + HighlightReconciler.normalizeTrigger(draft.trigger()) : highlight,
                 tickerSymbol == null ? "" : " " + tickerSymbol, sentiment,
                 priceMove == null ? "" : String.format(Locale.ROOT, " %+.1f%%", priceMove),
                 headline);
@@ -236,300 +204,33 @@ public final class HeadlineWriter {
         return true;
     }
 
-    /** Words that must never be gilded on their own (a one-word "match" like "The"). */
-    private static final Set<String> GILD_STOP = Set.of(
-            "the", "and", "der", "die", "das", "inc", "corp", "corporation", "company",
-            "incorporated", "limited", "ltd", "plc", "group", "gruppe", "holding", "holdings",
-            "aktiengesellschaft", "ucits", "etf");
-
     /**
-     * The longest word-prefix of {@code canonicalName} that appears in the headline
-     * — the display form the UI gilds. Matching is CASE-INSENSITIVE (the line writes
-     * "Nvidia", Yahoo's legal name is "NVIDIA Corporation") and the returned form is
-     * the LINE's own spelling, so the front-end regex finds it verbatim.
-     * "Salesforce, Inc." gilds "Salesforce"; "D-Wave Quantum Inc." gilds "D-Wave
-     * Quantum" or "D-Wave", whichever the line wrote. Trailing commas/periods are
-     * stripped per candidate; a lone generic word never gilds. {@code null} when no
-     * form is in the line. Package-private for testing.
+     * The URL-deduped source list behind the "News" tag: the woven-in items first,
+     * then the inherited refs from cited prior lines. Empty when the line leaned on
+     * nothing. Extracted from {@code publishUnit}.
      */
-    static String displayFormIn(String headline, String canonicalName) {
-        if (headline == null || canonicalName == null || canonicalName.isBlank()) return null;
-        // A leading article makes every prefix start with it, so "The Wendy's
-        // Company" could never gild the line's "Wendy's" — strip it up front.
-        // A domain suffix on the first word never appears in a written line
-        // ("Amazon.com, Inc." — the line writes "Amazon"), so it goes too.
-        String name = canonicalName.trim()
-                .replaceFirst("(?i)^(the|der|die|das)\\s+", "")
-                .replaceFirst("(?i)^([a-z0-9-]+)\\.(com|de|net|org)\\b", "$1");
-        String form = prefixFormIn(headline, name.split("\\s+"));
-        if (form != null) return form;
-        // A line often drops a brand/wrapper first word entirely ("iShares Core MSCI
-        // EM IMI …" is written as "Core MSCI EM IMI"): one retry without it. Only for
-        // names long enough that the remainder still identifies the entity.
-        String[] words = name.split("\\s+");
-        return words.length >= 3
-                ? prefixFormIn(headline, Arrays.copyOfRange(words, 1, words.length)) : null;
-    }
-
-    /** Minimum candidate length for a compound-head match ("Gold" in "Goldpreis") —
-     *  short names as prefixes of unrelated words ("Bay" in "Bayern") must not bind. */
-    private static final int COMPOUND_MIN_CAND = 4;
-
-    /** Longest word-prefix of {@code words} that appears in the headline, or null. */
-    private static String prefixFormIn(String headline, String[] words) {
-        String headlineLower = headline.toLowerCase(Locale.ROOT);
-        for (int k = words.length; k >= 1; k--) {
-            String cand = String.join(" ", Arrays.copyOfRange(words, 0, k))
-                    .replaceAll("[,.]+$", "").trim();
-            if (cand.length() < 3) continue;
-            if (k == 1 && GILD_STOP.contains(cand.toLowerCase(Locale.ROOT))) continue;
-            String candLower = cand.toLowerCase(Locale.ROOT);
-            // Scan ALL occurrences: an exact word-boundary hit anywhere beats a
-            // compound hit ("Goldman warnt, Goldpreis steigt" must bind "Goldpreis"
-            // over "Goldman" — first-occurrence-wins would pick the wrong one).
-            String compound = null;
-            for (int idx = headlineLower.indexOf(candLower); idx >= 0;
-                    idx = headlineLower.indexOf(candLower, idx + 1)) {
-                if (idx > 0 && Character.isLetterOrDigit(headline.charAt(idx - 1))) {
-                    continue; // start-boundary guard: "Aris" must not bind inside "Paris"
-                }
-                int end = idx + cand.length();
-                // Word end, or the German genitive "s" ("Rheinmetalls Auftrag").
-                if (isWordEndAt(headline, end)) {
-                    return headline.substring(idx, end);
-                }
-                // German COMPOUND head: the subject as first constituent of a longer
-                // word ("Goldpreis", "Goldposition") names the subject — the room
-                // writes compounds, not phrases. Guarded: candidate ≥ COMPOUND_MIN_CAND
-                // (never "Bay"→"Bayern"), continuation lowercase (a capital would be a
-                // different name). Whole compound returned, so the gild wraps
-                // "Goldpreis", not "Gold|preis". Kept only as the FALLBACK to an
-                // exact hit elsewhere in the line.
-                if (compound == null && cand.length() >= COMPOUND_MIN_CAND
-                        && end < headline.length()
-                        && Character.isLetter(headline.charAt(end))
-                        && Character.isLowerCase(headline.charAt(end))) {
-                    int wordEnd = end;
-                    while (wordEnd < headline.length() && Character.isLetter(headline.charAt(wordEnd))) {
-                        wordEnd++;
-                    }
-                    compound = headline.substring(idx, wordEnd);
+    private static List<HeadlineNewsRef> buildNewsRefs(boolean newsEnriched,
+            List<de.bsommerfeld.wsbg.terminal.source.RawNewsItem> newsUsed,
+            List<HeadlineNewsRef> inheritedRefs) {
+        if (!newsEnriched) return List.of();
+        Map<String, HeadlineNewsRef> byUrl = new java.util.LinkedHashMap<>();
+        if (newsUsed != null) {
+            for (var n : newsUsed) {
+                if (n.link() != null && !n.link().isBlank()) {
+                    byUrl.putIfAbsent(n.link(), new HeadlineNewsRef(n.title(), n.publisher(),
+                            n.link(), n.publishedAt() == null ? null : n.publishedAt().getEpochSecond()));
                 }
             }
-            if (compound != null) return compound;
         }
-        return null;
-    }
-
-    /** True when position {@code end} closes a word: end of string, a non-letter, or a
-     *  lone genitive "s" followed by one of those ("Rheinmetalls", "Teslas"). */
-    private static boolean isWordEndAt(String headline, int end) {
-        if (end >= headline.length()) return true;
-        char c = headline.charAt(end);
-        if (!Character.isLetterOrDigit(c)) return true;
-        return (c == 's' || c == 'S')
-                && (end + 1 >= headline.length()
-                    || !Character.isLetterOrDigit(headline.charAt(end + 1)));
-    }
-
-    // ---- IMPORTANT gate: the trigger is the mechanical anchor for red ----
-
-    /** Triggers that justify IMPORTANT on their own — catalyst-shaped, no price needed
-     *  (the quiet pennystock pooled call must stay red-capable without an L&S listing). */
-    private static final Set<String> CATALYST_TRIGGERS = Set.of("HARD_CATALYST", "POOLED_CALL");
-    /** Triggers whose whole case IS price action — without a resolver-verified price the
-     *  "move" is the room's own screenshot claim, which never earns red on its own. */
-    private static final Set<String> PRICE_TRIGGERS =
-            Set.of("RUNNER", "SQUEEZE", "BREAKOUT", "EXTREME_DIRECTION");
-
-    static String normalizeTrigger(String trigger) {
-        return trigger == null ? "" : trigger.trim().toUpperCase(Locale.ROOT);
-    }
-
-    /**
-     * Deterministic backstop for the IMPORTANT rubric: red must name the concrete
-     * trigger that fired (schema-forced {@code trigger} field), so a "feels
-     * important" classification with no nameable play demotes to NORMAL. Rules,
-     * mirroring the prompt rubric verbatim:
-     * <ul>
-     *   <li>NORMAL passes through untouched — this gate only ever demotes, never
-     *       promotes (red must stay scarce; a missed red is cheaper than a false one).</li>
-     *   <li>IMPORTANT with a catalyst-shaped trigger (HARD_CATALYST, POOLED_CALL)
-     *       stands — these are evidence-borne and legal without any price.</li>
-     *   <li>IMPORTANT with a price-shaped trigger (RUNNER, SQUEEZE, BREAKOUT,
-     *       EXTREME_DIRECTION) needs a resolver-verified price on the unit —
-     *       the rubric's "an unverified screenshot % never earns red on its own".</li>
-     *   <li>IMPORTANT with trigger NONE / blank / unknown (a salvage-path reply,
-     *       a legacy draft) is the doubt case, and doubt reads NORMAL.</li>
-     * </ul>
-     * Package-private for testing.
-     */
-    static HeadlineHighlight reconcileHighlight(HeadlineHighlight highlight, String trigger,
-            MarketSnapshot snapshot) {
-        if (highlight != HeadlineHighlight.IMPORTANT) return highlight;
-        String t = normalizeTrigger(trigger);
-        if (CATALYST_TRIGGERS.contains(t)) return HeadlineHighlight.IMPORTANT;
-        if (PRICE_TRIGGERS.contains(t) && snapshot != null && snapshot.hasPrice()) {
-            return HeadlineHighlight.IMPORTANT;
+        if (inheritedRefs != null) {
+            for (HeadlineNewsRef ref : inheritedRefs) {
+                if (ref.url() != null && !ref.url().isBlank()) byUrl.putIfAbsent(ref.url(), ref);
+            }
         }
-        return HeadlineHighlight.NORMAL;
+        return List.copyOf(byUrl.values());
     }
-
-    // ---- sanitisers ported verbatim from the old PublishHeadlineTool ----
 
     private static String stripHtml(String s) {
         return s == null ? "" : HTML_TAG.matcher(s).replaceAll("");
     }
-
-    /** A trailing ", was/wodurch/womit …" clause up to the end of the line. */
-    private static final Pattern INTERPRETIVE_TAIL =
-            Pattern.compile(",\\s*(was|wodurch|womit)\\s[^,]*$", Pattern.CASE_INSENSITIVE);
-    /**
-     * A trailing "no-news" filler clause: ", während/da/weil/obwohl … keine(n)
-     * (neuen) Katalysator(en) / (die) Nachrichtenlage keine|unklar / keine
-     * aktuelle Nachricht …". The empty-line-in-disguise the prompt forbids — the
-     * absence of news dressed as news. The 4B still emits it ~5 % of the time
-     * (prose rules bend, a mechanical gate holds), so we cut it deterministically.
-     */
-    private static final Pattern NO_NEWS_TAIL = Pattern.compile(
-            ",\\s*(während|wobei|da|weil|obwohl)\\s+[^,]*?"
-            + "(kein(e[nr]?)?\\s+(neue[nr]?\\s+)?katalysator"
-            + "|nachrichtenlage\\s+(keine|unklar|unverändert|unveraendert|dünn|duenn)"
-            + "|keine\\s+(aktuelle|neue[nr]?)\\s+nachricht)"
-            + "[^,]*$",
-            Pattern.CASE_INSENSITIVE);
-    /** A clause carrying any of these is DETAIL, not interpretation — never cut. */
-    private static final Pattern TAIL_CONCRETE = Pattern.compile("[0-9%€$£]");
-    /** The head must still be a full wire line after the cut. */
-    private static final int TAIL_MIN_HEAD_WORDS = 6;
-
-    /**
-     * Deterministic backstop for the abstraction-ladder rule: the 4B model keeps
-     * appending an interpretation clause to an otherwise concrete line ("…, was die
-     * Aufmerksamkeit auf den Halbleitersektor lenkt") — measured live at a stable
-     * ~20 % of lines (21 % before a prompt rule against it, 19 % after: prose rules
-     * bend, a mechanical gate holds — the trigger-gate lesson). The clause construes
-     * in the abstract what the concrete head already showed. Cuts it ONLY when it
-     * carries no concrete token (no digit, no %, no currency — a figure-bearing
-     * clause is detail, not interpretation) and the remaining head is still a full
-     * line. Package-private for testing.
-     */
-    static String trimInterpretiveTail(String headline) {
-        if (headline == null || headline.isEmpty()) return headline;
-        // No-news filler first: cut ONLY when the head is still a full line. Unlike the
-        // interpretive tail this needs no concrete-token exemption — a "no fresh catalyst"
-        // clause carries no real figure by nature. (After the cut a mis-resolved unit's
-        // line often no longer names its instrument, so the name-guard then drops the
-        // bogus ticker too — the Polen→Polenergia case collapses to the clean geo line.)
-        var f = NO_NEWS_TAIL.matcher(headline);
-        if (f.find()) {
-            String head = headline.substring(0, f.start()).stripTrailing();
-            if (head.split("\\s+").length >= TAIL_MIN_HEAD_WORDS) {
-                String trimmed = head.endsWith(".") || head.endsWith("!") ? head : head + ".";
-                LOG.info("[WRITE] trimmed no-news filler: \"{}\" → \"{}\"",
-                        headline.substring(f.start()).strip(), trimmed);
-                headline = trimmed;
-            }
-        }
-        var m = INTERPRETIVE_TAIL.matcher(headline);
-        if (!m.find()) return headline;
-        String clause = headline.substring(m.start());
-        if (TAIL_CONCRETE.matcher(clause).find()) return headline;
-        String head = headline.substring(0, m.start()).stripTrailing();
-        if (head.split("\\s+").length < TAIL_MIN_HEAD_WORDS) return headline;
-        // Re-close the sentence the way the line would have ended.
-        String trimmed = head.endsWith(".") || head.endsWith("!") ? head : head + ".";
-        LOG.info("[WRITE] trimmed interpretive tail: \"{}\" → \"{}\"", clause.strip(), trimmed);
-        return trimmed;
-    }
-
-    /** Token-overlap above which two normalised headlines count as the same line. */
-    private static final double DUP_SIM_THRESHOLD = 0.8;
-
-    /**
-     * True when {@code a} is essentially the same line as {@code b} — identical once the
-     * "-Update:" continuation marker, punctuation and numbers are stripped (the model
-     * re-emitting a line as an update or with a ticked day-move), a light reword above
-     * {@link #DUP_SIM_THRESHOLD} token overlap ("hat"→"hält"), or one line CONTAINING the
-     * other (the model re-emitting a prior line with an appended clause — Jaccard alone
-     * goes blind there because the union grows: the MU wire once carried the same
-     * GM-Chip line three times, twice with a tacked-on subclause). Package-private for
-     * testing.
-     */
-    static boolean isNearDuplicate(String a, String b) {
-        String na = normalizeForDup(a), nb = normalizeForDup(b);
-        if (na.isEmpty() || nb.isEmpty()) return false;
-        if (na.equals(nb)) return true;
-        Set<String> ta = new HashSet<>(Arrays.asList(na.split(" ")));
-        Set<String> tb = new HashSet<>(Arrays.asList(nb.split(" ")));
-        Set<String> inter = new HashSet<>(ta);
-        inter.retainAll(tb);
-        Set<String> union = new HashSet<>(ta);
-        union.addAll(tb);
-        double jaccard = (double) inter.size() / union.size();
-        double containment = (double) inter.size() / Math.min(ta.size(), tb.size());
-        return Math.max(jaccard, containment) >= DUP_SIM_THRESHOLD;
-    }
-
-    /**
-     * Lower-cased core of a headline: HTML, the "-Update:" marker, punctuation and
-     * NUMBERS removed. Numbers go because the day-move ticking is not a story
-     * development — the ^GDAXI unit once published the same "wartet auf Katalysator"
-     * line at +1,66 %, +1,78 % and +2,01 %; the quote strip carries the live figure
-     * anyway. A genuinely new number (a price target, a contract volume) arrives with
-     * new WORDS around it, which the token comparison still sees.
-     */
-    static String normalizeForDup(String s) {
-        String t = stripHtml(s).toLowerCase(Locale.ROOT);
-        t = t.replaceAll("(?i)-?\\s*update\\s*:", " ");          // drop the "-Update:" continuation label
-        t = t.replaceAll("[^a-z0-9äöüß ]", " ");
-        t = t.replaceAll("\\b\\d+\\b", " ");                     // numbers are not developments
-        return t.replaceAll("\\s+", " ").trim();
-    }
-
-    private static Double sanePriceMove(Double priceMove, String headline) {
-        if (priceMove == null) return null;
-        if (Math.abs(priceMove) > 500.0
-                && headline.matches(".*\\d[\\d.,]*\\s*(€|\\$|EUR|USD).*")) {
-            return null; // money amount + huge % ⇒ almost always a P&L misread
-        }
-        return priceMove;
-    }
-
-    private static final java.util.Set<HeadlineSentiment> BULLISH_CAMP = java.util.EnumSet.of(
-            HeadlineSentiment.BULLISH, HeadlineSentiment.FOMO,
-            HeadlineSentiment.BREAKOUT, HeadlineSentiment.SQUEEZE);
-    private static final java.util.Set<HeadlineSentiment> BEARISH_CAMP = java.util.EnumSet.of(
-            HeadlineSentiment.BEARISH, HeadlineSentiment.CAPITULATION);
-
-    /** Only a move at least this large (in %) overrides the model's directional label. */
-    private static final double SENTIMENT_FLIP_MIN_MOVE = 1.5;
-
-    /**
-     * Makes the directional read agree with the sign of the number the headline
-     * itself carries — a line with a −% can't read BULLISH, and vice versa (a
-     * reader feels lied to otherwise). The number is the line's own
-     * {@code priceMovePercent}, which is the figure the line is ABOUT — Yahoo- OR
-     * user-sourced, it doesn't matter (sentiment is sentiment: a posted −13% is
-     * bearish regardless of whether Yahoo confirms it).
-     *
-     * <p>Deliberately does NOT fall back to the instrument's market day-move: a
-     * loss-porn post is BEARISH even when the stock is green today, so the model's
-     * own classification must stand when the line carries no move of its own. Only
-     * flips a directional label that <em>contradicts</em> a <b>prominent</b> move
-     * ({@link #SENTIMENT_FLIP_MIN_MOVE}); a tiny ±0.x% day-move must NOT drag a
-     * bullish narrative ("+20% seit dem Tief") to BEARISH. Non-directional reads
-     * (NEUTRAL/MIXED/REVERSAL) and number-less lines stay as the model set them.
-     * <b>Never a publish gate</b> — it only corrects the label.
-     */
-    static HeadlineSentiment reconcileSentiment(HeadlineSentiment sentiment, Double priceMove) {
-        if (priceMove == null || !Double.isFinite(priceMove)
-                || Math.abs(priceMove) < SENTIMENT_FLIP_MIN_MOVE) {
-            return sentiment;
-        }
-        if (priceMove < 0 && BULLISH_CAMP.contains(sentiment)) return HeadlineSentiment.BEARISH;
-        if (priceMove > 0 && BEARISH_CAMP.contains(sentiment)) return HeadlineSentiment.BULLISH;
-        return sentiment;
-    }
-
 }

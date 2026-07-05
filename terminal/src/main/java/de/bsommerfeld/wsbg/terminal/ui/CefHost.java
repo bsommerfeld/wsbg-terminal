@@ -23,9 +23,7 @@ import org.cef.network.CefRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.awt.Desktop;
 import java.io.File;
-import java.net.URI;
 import java.nio.file.Path;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -105,105 +103,122 @@ public final class CefHost {
                         + "it now (~120 MB). Run the launcher to install it ahead of time.");
             }
             builder.setProgressHandler(new ConsoleProgressHandler());
-
-            CefSettings settings = builder.getCefSettings();
-            // Software OSR: our SwingCefBrowser (created in createBrowser) paints
-            // CEF's onPaint buffer into a lightweight Swing component — no JOGL,
-            // no GL-clear flicker, and a single native window (no heavyweight
-            // child). windowless rendering must be enabled for the browser to run
-            // off-screen. The single window is what lets the native custom title
-            // bar (WindowsCustomChrome) hit-test the whole frame directly.
-            settings.windowless_rendering_enabled = true;
-            settings.cache_path = resolveCacheDir().toAbsolutePath().toString();
-            settings.persist_session_cookies = false;
-            settings.log_severity = CefSettings.LogSeverity.LOGSEVERITY_WARNING;
-
-            builder.setAppHandler(new MavenCefAppHandlerAdapter() {
-                @Override
-                public void stateHasChanged(CefAppState state) {
-                    // Fallback owner of the clean-close JVM exit. In practice
-                    // the close gesture (BrowserWindow.gracefulShutdown) drives
-                    // the exit itself: cefApp.dispose() is async, so the window
-                    // path force-exits after reaping the Chromium helpers rather
-                    // than waiting for TERMINATED to arrive. This handler still
-                    // covers a dispose() that is NOT followed by an explicit
-                    // System.exit — it fires once every Chromium subprocess is
-                    // gone. Idempotent with the window path (whoever exits first
-                    // wins).
-                    if (state == CefAppState.TERMINATED) {
-                        LOG.info("CefApp terminated; exiting JVM.");
-                        System.exit(0);
-                    }
-                }
-            });
-
-            // Chromium command-line flags.
-            //
-            // NOTE: --disable-gpu-vsync and --enable-begin-frame-control are
-            // deliberately NOT set. They were harmless in windowed mode, but
-            // under OSR they cause heavy flicker: begin-frame-control makes
-            // Chromium produce frames only on an external BeginFrame we don't
-            // drive (→ black/half frames), and vsync-off tears the GLCanvas
-            // present. Letting Chromium pace its own frames renders cleanly.
-            builder.addJcefArgs(
-                    "--enable-features=UseOzonePlatform",
-                    // Blink animates wheel scrolling, decoupling the visual motion
-                    // from our discrete wheel-event cadence and the 60fps OSR cap.
-                    // Verified to noticeably smooth trackpad scrolling under OSR.
-                    "--enable-smooth-scrolling",
-                    "--disable-background-timer-throttling",     // keep our intervals firing
-                    "--disable-renderer-backgrounding",
-                    "--disable-features=CalculateNativeWinOcclusion",
-                    // Expose DevTools over HTTP on the loopback so we can
-                    // inspect the page from any browser at:
-                    //     http://localhost:9222
-                    // Cheaper than wiring a right-click context menu and
-                    // doesn't require the user to remember a shortcut.
-                    "--remote-debugging-port=9222",
-                    // Loopback-only port; allow tooling (CDP scripts) to attach.
-                    "--remote-allow-origins=*");
+            configureSettings(builder);
 
             cefApp = builder.build();
             cefClient = cefApp.createClient();
-            cefClient.addRequestHandler(new ExternalLinkRouter());
-            // target="_blank" anchors (every external link in the page: donate
-            // heart, banner links, Reddit/FJ header glyphs) arrive as POPUPS,
-            // not as onBeforeBrowse navigations — without this handler the
-            // click silently dies (no popup window exists in OSR mode).
-            cefClient.addLifeSpanHandler(new CefLifeSpanHandlerAdapter() {
-                @Override
-                public boolean onBeforePopup(CefBrowser browser, CefFrame frame,
-                                             String targetUrl, String targetFrameName) {
-                    if (targetUrl != null && targetUrl.startsWith("http")) {
-                        openExternal(targetUrl);
-                    }
-                    return true; // never create an in-app popup window
-                }
-            });
-
-            // Headless-fetch plumbing. BOTH must be registered here, before any
-            // browser exists: JCEF wires routers/handlers into a browser when the
-            // browser is created, so a late registration would never reach it.
-            fetchRouter = CefMessageRouter.create(
-                    new CefMessageRouter.CefMessageRouterConfig("wsbgFetchQuery", "wsbgFetchQueryCancel"));
-            cefClient.addMessageRouter(fetchRouter);
-            cefClient.addLoadHandler(new CefLoadHandlerAdapter() {
-                @Override
-                public void onLoadEnd(CefBrowser browser, CefFrame frame, int httpStatusCode) {
-                    if (frame == null || !frame.isMain()) return;
-                    for (BiConsumer<CefBrowser, Integer> l : loadEndListeners) {
-                        try {
-                            l.accept(browser, httpStatusCode);
-                        } catch (Exception e) {
-                            LOG.debug("load-end listener threw: {}", e.getMessage());
-                        }
-                    }
-                }
-            });
+            installExternalLinkHandlers(cefClient);
+            installFetchPlumbing(cefClient);
             LOG.info("JCEF initialized.");
         } catch (Exception e) {
             throw new RuntimeException("JCEF initialization failed", e);
         }
+    }
+
+    /** CefSettings, the app-state handler, and the Chromium command-line flags. */
+    private void configureSettings(CefAppBuilder builder) {
+        CefSettings settings = builder.getCefSettings();
+        // Software OSR: our SwingCefBrowser (created in createBrowser) paints
+        // CEF's onPaint buffer into a lightweight Swing component — no JOGL,
+        // no GL-clear flicker, and a single native window (no heavyweight
+        // child). windowless rendering must be enabled for the browser to run
+        // off-screen. The single window is what lets the native custom title
+        // bar (WindowsCustomChrome) hit-test the whole frame directly.
+        settings.windowless_rendering_enabled = true;
+        settings.cache_path = resolveCacheDir().toAbsolutePath().toString();
+        settings.persist_session_cookies = false;
+        settings.log_severity = CefSettings.LogSeverity.LOGSEVERITY_WARNING;
+
+        builder.setAppHandler(new MavenCefAppHandlerAdapter() {
+            @Override
+            public void stateHasChanged(CefAppState state) {
+                // Fallback owner of the clean-close JVM exit. In practice
+                // the close gesture (BrowserWindow.gracefulShutdown) drives
+                // the exit itself: cefApp.dispose() is async, so the window
+                // path force-exits after reaping the Chromium helpers rather
+                // than waiting for TERMINATED to arrive. This handler still
+                // covers a dispose() that is NOT followed by an explicit
+                // System.exit — it fires once every Chromium subprocess is
+                // gone. Idempotent with the window path (whoever exits first
+                // wins).
+                if (state == CefAppState.TERMINATED) {
+                    LOG.info("CefApp terminated; exiting JVM.");
+                    System.exit(0);
+                }
+            }
+        });
+
+        // Chromium command-line flags.
+        //
+        // NOTE: --disable-gpu-vsync and --enable-begin-frame-control are
+        // deliberately NOT set. They were harmless in windowed mode, but
+        // under OSR they cause heavy flicker: begin-frame-control makes
+        // Chromium produce frames only on an external BeginFrame we don't
+        // drive (→ black/half frames), and vsync-off tears the GLCanvas
+        // present. Letting Chromium pace its own frames renders cleanly.
+        builder.addJcefArgs(
+                "--enable-features=UseOzonePlatform",
+                // Blink animates wheel scrolling, decoupling the visual motion
+                // from our discrete wheel-event cadence and the 60fps OSR cap.
+                // Verified to noticeably smooth trackpad scrolling under OSR.
+                "--enable-smooth-scrolling",
+                "--disable-background-timer-throttling",     // keep our intervals firing
+                "--disable-renderer-backgrounding",
+                "--disable-features=CalculateNativeWinOcclusion",
+                // Expose DevTools over HTTP on the loopback so we can
+                // inspect the page from any browser at:
+                //     http://localhost:9222
+                // Cheaper than wiring a right-click context menu and
+                // doesn't require the user to remember a shortcut.
+                "--remote-debugging-port=9222",
+                // Loopback-only port; allow tooling (CDP scripts) to attach.
+                "--remote-allow-origins=*");
+    }
+
+    /** External-link interception: user navigations + target="_blank" popups. */
+    private void installExternalLinkHandlers(CefClient client) {
+        client.addRequestHandler(new ExternalLinkRouter());
+        // target="_blank" anchors (every external link in the page: donate
+        // heart, banner links, Reddit/FJ header glyphs) arrive as POPUPS,
+        // not as onBeforeBrowse navigations — without this handler the
+        // click silently dies (no popup window exists in OSR mode).
+        client.addLifeSpanHandler(new CefLifeSpanHandlerAdapter() {
+            @Override
+            public boolean onBeforePopup(CefBrowser browser, CefFrame frame,
+                                         String targetUrl, String targetFrameName) {
+                if (targetUrl != null && targetUrl.startsWith("http")) {
+                    openExternal(targetUrl);
+                }
+                return true; // never create an in-app popup window
+            }
+        });
+    }
+
+    /**
+     * Headless-fetch plumbing (the {@code wsbgFetchQuery} router + the load-end
+     * multiplexer). BOTH must be registered HERE, before any browser exists:
+     * JCEF wires routers/handlers into a browser when the browser is created, so
+     * a late registration would never reach it. This ordering — call it from
+     * {@link #initialize()} ahead of every {@code createBrowser} — is
+     * load-bearing.
+     */
+    private void installFetchPlumbing(CefClient client) {
+        fetchRouter = CefMessageRouter.create(
+                new CefMessageRouter.CefMessageRouterConfig("wsbgFetchQuery", "wsbgFetchQueryCancel"));
+        client.addMessageRouter(fetchRouter);
+        client.addLoadHandler(new CefLoadHandlerAdapter() {
+            @Override
+            public void onLoadEnd(CefBrowser browser, CefFrame frame, int httpStatusCode) {
+                if (frame == null || !frame.isMain()) return;
+                for (BiConsumer<CefBrowser, Integer> l : loadEndListeners) {
+                    try {
+                        l.accept(browser, httpStatusCode);
+                    } catch (Exception e) {
+                        LOG.debug("load-end listener threw: {}", e.getMessage());
+                    }
+                }
+            }
+        });
     }
 
     /**
@@ -240,16 +255,7 @@ public final class CefHost {
      * bypass the page's click handler.
      */
     public static void openExternal(String url) {
-        try {
-            if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
-                LOG.info("Opening external URL in OS browser: {}", url);
-                Desktop.getDesktop().browse(URI.create(url));
-            } else {
-                LOG.warn("Desktop BROWSE action unsupported — cannot open {}", url);
-            }
-        } catch (Exception e) {
-            LOG.warn("Failed to open external URL {}: {}", url, e.getMessage());
-        }
+        DesktopLauncher.openExternal(url);
     }
 
     /**
@@ -259,17 +265,7 @@ public final class CefHost {
      * Settings "Zu den Logs" button to open the app-data folder.
      */
     public static void openFolder(Path dir) {
-        try {
-            java.nio.file.Files.createDirectories(dir);
-            if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.OPEN)) {
-                LOG.info("Opening folder in OS file manager: {}", dir);
-                Desktop.getDesktop().open(dir.toFile());
-            } else {
-                LOG.warn("Desktop OPEN action unsupported — cannot open {}", dir);
-            }
-        } catch (Exception e) {
-            LOG.warn("Failed to open folder {}: {}", dir, e.getMessage());
-        }
+        DesktopLauncher.openFolder(dir);
     }
 
     public CefBrowser createBrowser(String url) {
@@ -362,45 +358,7 @@ public final class CefHost {
      * {@code AppMain.relaunchForUpdate()} just before it tears CEF down.
      */
     public static void reapHelperProcesses() {
-        try {
-            // Prefer CEF's own async teardown: wait briefly for the helpers to
-            // exit on their own (the loop breaks the instant none remain), then
-            // force-kill any stragglers. The visible window is already gone by
-            // the time this runs, so the short wait is invisible.
-            long deadline = System.nanoTime() + 1_500_000_000L; // 1.5s
-            while (System.nanoTime() < deadline && anyJcefHelper()) {
-                Thread.sleep(50);
-            }
-            ProcessHandle.current().descendants()
-                    .filter(CefHost::isJcefHelper)
-                    .forEach(ph -> {
-                        LOG.info("Reaping lingering CEF helper (pid {}).", ph.pid());
-                        try {
-                            ph.destroyForcibly();
-                        } catch (Throwable ignored) {}
-                    });
-        } catch (InterruptedException ie) {
-            Thread.currentThread().interrupt();
-        } catch (Throwable t) {
-            LOG.debug("Helper reap skipped: {}", t.toString());
-        }
-    }
-
-    private static boolean anyJcefHelper() {
-        return ProcessHandle.current().descendants().anyMatch(CefHost::isJcefHelper);
-    }
-
-    /**
-     * A descendant is a Chromium helper if its executable name carries the
-     * "jcef" token — {@code jcef_helper(.exe)} on Windows/Linux, {@code jcef
-     * Helper (GPU/Renderer/…)} on macOS. Processes whose command can't be read
-     * are treated as non-helpers (left alone) rather than risk killing a
-     * sibling.
-     */
-    private static boolean isJcefHelper(ProcessHandle ph) {
-        return ph.info().command()
-                .map(cmd -> cmd.toLowerCase().contains("jcef"))
-                .orElse(false);
+        CefHelperReaper.reap();
     }
 
     private static File resolveInstallDir() {

@@ -1,6 +1,6 @@
 package de.bsommerfeld.wsbg.terminal.db;
 
-import de.bsommerfeld.wsbg.terminal.db.AgentRepository.HeadlineRecord;
+import de.bsommerfeld.wsbg.terminal.db.HeadlineRecord;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

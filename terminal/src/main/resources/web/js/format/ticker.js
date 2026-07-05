@@ -9,6 +9,8 @@
 // No hard-coded symbol list. The regex spans 1-5 uppercase letters
 // optionally followed by `.X` (BRK.A style).
 
+import { escapeHtml } from './escape.js';
+
 const TICKER_RE = /\$[A-Z]{1,5}(?:\.[A-Z])?\b/g;
 
 export function highlightTickers(text, explicitSymbol) {
@@ -61,10 +63,4 @@ function escapeRegExp(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 // True when `idx` falls inside a `<...>` tag (an unclosed '<' precedes it).
 function insideTag(html, idx) {
   return html.lastIndexOf('<', idx) > html.lastIndexOf('>', idx);
-}
-
-function escapeHtml(s) {
-  return s.replace(/[&<>"']/g, c => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-  }[c]));
 }

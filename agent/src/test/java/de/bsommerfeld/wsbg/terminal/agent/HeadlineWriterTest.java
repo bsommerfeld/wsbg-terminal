@@ -3,7 +3,7 @@ package de.bsommerfeld.wsbg.terminal.agent;
 import de.bsommerfeld.wsbg.terminal.agent.HeadlineWriter.Draft;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
 import de.bsommerfeld.wsbg.terminal.db.AgentRepository;
-import de.bsommerfeld.wsbg.terminal.db.AgentRepository.HeadlineRecord;
+import de.bsommerfeld.wsbg.terminal.db.HeadlineRecord;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -27,26 +27,26 @@ class HeadlineWriterTest {
     void reconcileSentiment_uses_the_lines_own_number_user_or_yahoo() {
         // The number is the line's own priceMovePercent — source-agnostic.
         assertEquals(de.bsommerfeld.wsbg.terminal.db.HeadlineSentiment.BEARISH,
-                HeadlineWriter.reconcileSentiment(
+                SentimentReconciler.reconcileSentiment(
                         de.bsommerfeld.wsbg.terminal.db.HeadlineSentiment.BULLISH, -3.2),
                 "a −% line can't read BULLISH, whoever posted the number");
         assertEquals(de.bsommerfeld.wsbg.terminal.db.HeadlineSentiment.BULLISH,
-                HeadlineWriter.reconcileSentiment(
+                SentimentReconciler.reconcileSentiment(
                         de.bsommerfeld.wsbg.terminal.db.HeadlineSentiment.CAPITULATION, 4.0));
         // Loss porn: BEARISH/CAPITULATION with NO move of its own stays bearish —
         // we never override it with the instrument's (possibly green) day move.
         assertEquals(de.bsommerfeld.wsbg.terminal.db.HeadlineSentiment.CAPITULATION,
-                HeadlineWriter.reconcileSentiment(
+                SentimentReconciler.reconcileSentiment(
                         de.bsommerfeld.wsbg.terminal.db.HeadlineSentiment.CAPITULATION, null),
                 "sharing losses is bearish even when the stock is up today");
         // Non-directional reads are left alone.
         assertEquals(de.bsommerfeld.wsbg.terminal.db.HeadlineSentiment.MIXED,
-                HeadlineWriter.reconcileSentiment(
+                SentimentReconciler.reconcileSentiment(
                         de.bsommerfeld.wsbg.terminal.db.HeadlineSentiment.MIXED, -2.0));
         // A tiny day-move (−0,3%) is NOT prominent enough to flip a bullish narrative
         // (the Smoke-5 "Micron steigt … feiern +20% seit Tief, BEARISH −0,3%" case).
         assertEquals(de.bsommerfeld.wsbg.terminal.db.HeadlineSentiment.BULLISH,
-                HeadlineWriter.reconcileSentiment(
+                SentimentReconciler.reconcileSentiment(
                         de.bsommerfeld.wsbg.terminal.db.HeadlineSentiment.BULLISH, -0.3),
                 "sub-1.5% move must not flip the label");
     }
@@ -104,13 +104,13 @@ class HeadlineWriterTest {
     void nearDuplicate_catchesUpdateSuffixAndLightRewords() {
         String base = "Microsoft Corporation: Die Affen verlagern Spielgeld von Rüstung in Software";
         // Same line re-emitted as an "-Update:" — the live duplicate pattern.
-        assertTrue(HeadlineWriter.isNearDuplicate(base, base + " -Update:"));
+        assertTrue(NearDuplicateGuard.isNearDuplicate(base, base + " -Update:"));
         // One-word reword ("hat"→"hält").
-        assertTrue(HeadlineWriter.isNearDuplicate(
+        assertTrue(NearDuplicateGuard.isNearDuplicate(
                 "Alphabet hat trotz Tech-Rout weiterhin Potenzial für die kommenden Jahre",
                 "Alphabet hält trotz Tech-Rout weiterhin Potenzial für die kommenden Jahre"));
         // Genuinely different angles on the same subject must NOT be flagged.
-        assertFalse(HeadlineWriter.isNearDuplicate(
+        assertFalse(NearDuplicateGuard.isNearDuplicate(
                 "Microsoft: Die Affen spekulieren mit Short-Positionen wegen Software-Unsicherheit",
                 "Microsoft: Die Affen verlagern Spielgeld von Rüstung in Pharma und SAP"));
     }
@@ -138,15 +138,15 @@ class HeadlineWriterTest {
     @Test
     void reconcileHighlight_importantWithoutATriggerDemotes() {
         assertEquals(de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.NORMAL,
-                HeadlineWriter.reconcileHighlight(
+                HighlightReconciler.reconcileHighlight(
                         de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.IMPORTANT, "NONE", pricedSnapshot()),
                 "IMPORTANT with trigger NONE is the contradiction case → NORMAL");
         assertEquals(de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.NORMAL,
-                HeadlineWriter.reconcileHighlight(
+                HighlightReconciler.reconcileHighlight(
                         de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.IMPORTANT, "", pricedSnapshot()),
                 "a salvage-path/legacy draft (blank trigger) is doubt → NORMAL");
         assertEquals(de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.NORMAL,
-                HeadlineWriter.reconcileHighlight(
+                HighlightReconciler.reconcileHighlight(
                         de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.IMPORTANT, "VIBES", pricedSnapshot()),
                 "an unknown trigger value never justifies red");
     }
@@ -156,10 +156,10 @@ class HeadlineWriterTest {
         // The quiet pennystock pooled call / hard news catalyst must stay red-capable
         // even when L&S has no listing (SpaceX-style price-less subjects).
         assertEquals(de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.IMPORTANT,
-                HeadlineWriter.reconcileHighlight(
+                HighlightReconciler.reconcileHighlight(
                         de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.IMPORTANT, "HARD_CATALYST", null));
         assertEquals(de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.IMPORTANT,
-                HeadlineWriter.reconcileHighlight(
+                HighlightReconciler.reconcileHighlight(
                         de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.IMPORTANT, "POOLED_CALL", null));
     }
 
@@ -168,16 +168,16 @@ class HeadlineWriterTest {
         // A "runner" whose move exists only in the room's screenshot is the rubric's
         // "an unverified price never earns red on its own".
         assertEquals(de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.NORMAL,
-                HeadlineWriter.reconcileHighlight(
+                HighlightReconciler.reconcileHighlight(
                         de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.IMPORTANT, "RUNNER", null));
         assertEquals(de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.NORMAL,
-                HeadlineWriter.reconcileHighlight(
+                HighlightReconciler.reconcileHighlight(
                         de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.IMPORTANT, "EXTREME_DIRECTION", null));
         assertEquals(de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.IMPORTANT,
-                HeadlineWriter.reconcileHighlight(
+                HighlightReconciler.reconcileHighlight(
                         de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.IMPORTANT, "RUNNER", pricedSnapshot()));
         assertEquals(de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.IMPORTANT,
-                HeadlineWriter.reconcileHighlight(
+                HighlightReconciler.reconcileHighlight(
                         de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.IMPORTANT, "extreme_direction",
                         pricedSnapshot()),
                 "trigger match is case-insensitive");
@@ -186,7 +186,7 @@ class HeadlineWriterTest {
     @Test
     void reconcileHighlight_neverPromotesNormal() {
         assertEquals(de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.NORMAL,
-                HeadlineWriter.reconcileHighlight(
+                HighlightReconciler.reconcileHighlight(
                         de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight.NORMAL, "HARD_CATALYST", pricedSnapshot()),
                 "the gate only demotes — a NORMAL with a trigger stays NORMAL");
     }
@@ -207,16 +207,16 @@ class HeadlineWriterTest {
     void trimsNoNewsFillerButKeepsTheHead() {
         // The forbidden "absence of news as news" clause — deterministic backstop.
         assertEquals("Die Affen halten an der Long-Position für Silber fest.",
-                HeadlineWriter.trimInterpretiveTail(
+                HeadlineTailTrimmer.trimInterpretiveTail(
                         "Die Affen halten an der Long-Position für Silber fest, "
                         + "während die Nachrichtenlage keine neuen Katalysatoren liefert."));
         assertEquals("Die Affen spekulieren, Polen könnte von Russland durch einen False Flag Angriff angegriffen werden.",
-                HeadlineWriter.trimInterpretiveTail(
+                HeadlineTailTrimmer.trimInterpretiveTail(
                         "Die Affen spekulieren, Polen könnte von Russland durch einen False Flag Angriff "
                         + "angegriffen werden, während die Nachrichtenlage keine neuen Katalysatoren für Polenergia S.A. liefert."));
         // A "während"-clause with real content is NOT filler — never cut.
         String real = "Die Affen kaufen Nvidia, während der Gesamtmarkt die Chip-Aktien fallen lässt";
-        assertEquals(real, HeadlineWriter.trimInterpretiveTail(real));
+        assertEquals(real, HeadlineTailTrimmer.trimInterpretiveTail(real));
     }
 
     // ---- displayFormIn: the gilded name is the form the LINE wrote, not Yahoo's legal one ----
@@ -225,10 +225,10 @@ class HeadlineWriterTest {
     void displayFormInIsCaseInsensitiveAndReturnsTheLinesSpelling() {
         // The line writes "Nvidia", Yahoo's legal name shouts "NVIDIA Corporation" —
         // the gild must find it and return the LINE's spelling so the UI regex matches.
-        assertEquals("Nvidia", HeadlineWriter.displayFormIn(
+        assertEquals("Nvidia", HeadlineGilder.displayFormIn(
                 "Nvidia dominiert das KI-Rennen weiter", "NVIDIA Corporation"));
         // Word-boundary guard: "Aris" must not gild inside "Paris".
-        org.junit.jupiter.api.Assertions.assertNull(HeadlineWriter.displayFormIn(
+        org.junit.jupiter.api.Assertions.assertNull(HeadlineGilder.displayFormIn(
                 "Paris feiert den Deal", "Aris Water Solutions"));
     }
 
@@ -236,26 +236,26 @@ class HeadlineWriterTest {
     void displayFormInStripsALeadingArticle() {
         // "The Wendy's Company" could never gild via pure prefixes — every prefix
         // starts with "The". The article is stripped before the prefix descent.
-        assertEquals("Wendy's", HeadlineWriter.displayFormIn(
+        assertEquals("Wendy's", HeadlineGilder.displayFormIn(
                 "Institutionelle Käufe bei Wendy's gelten als Kaufgelegenheit", "The Wendy's Company"));
     }
 
     @Test
     void displayFormInFindsTheShortFormOfALegalName() {
-        assertEquals("Salesforce", HeadlineWriter.displayFormIn(
+        assertEquals("Salesforce", HeadlineGilder.displayFormIn(
                 "Salesforce zieht nach starken Zahlen an", "Salesforce, Inc."));
-        assertEquals("D-Wave Quantum", HeadlineWriter.displayFormIn(
+        assertEquals("D-Wave Quantum", HeadlineGilder.displayFormIn(
                 "D-Wave Quantum sichert sich die NSF-Förderung", "D-Wave Quantum Inc."));
-        assertEquals("D-Wave", HeadlineWriter.displayFormIn(
+        assertEquals("D-Wave", HeadlineGilder.displayFormIn(
                 "D-Wave sichert sich die NSF-Förderung", "D-Wave Quantum Inc."));
     }
 
     @Test
     void displayFormInNeverGildsALoneGenericWordAndNullsWhenAbsent() {
-        org.junit.jupiter.api.Assertions.assertNull(HeadlineWriter.displayFormIn(
+        org.junit.jupiter.api.Assertions.assertNull(HeadlineGilder.displayFormIn(
                 "The Raum feiert den Deal", "The Metals Company"), // only "The" would match
                 "a lone generic word never gilds");
-        org.junit.jupiter.api.Assertions.assertNull(HeadlineWriter.displayFormIn(
+        org.junit.jupiter.api.Assertions.assertNull(HeadlineGilder.displayFormIn(
                 "Der Raum diskutiert Quantencomputer", "D-Wave Quantum Inc."),
                 "no form in the line → no gild");
     }
@@ -264,20 +264,20 @@ class HeadlineWriterTest {
     void displayFormInHandlesDomainFirstWordsAndDroppedBrandWords() {
         // "Amazon.com, Inc." — the line writes "Amazon"; the domain suffix never
         // appears in prose (live false drop 2026-07-02).
-        assertEquals("Amazon", HeadlineWriter.displayFormIn(
+        assertEquals("Amazon", HeadlineGilder.displayFormIn(
                 "Amazon könnte durch eigene KI-Chips einen Schub bekommen", "Amazon.com, Inc."));
         // "iShares Core MSCI EM IMI …" — the line drops the brand word entirely
         // (live false drop 2026-07-02); one retry without the first word.
-        assertEquals("Core MSCI EM IMI", HeadlineWriter.displayFormIn(
+        assertEquals("Core MSCI EM IMI", HeadlineGilder.displayFormIn(
                 "Ein Rückgang beim Core MSCI EM IMI lässt den Raum reagieren",
                 "iShares Core MSCI EM IMI UCITS ETF USD (Acc)"));
         // The retry must not create false KEEPS: a line about other companies still
         // yields null for an unrelated unit (live: SK hynix unit, Lam-Research line).
-        org.junit.jupiter.api.Assertions.assertNull(HeadlineWriter.displayFormIn(
+        org.junit.jupiter.api.Assertions.assertNull(HeadlineGilder.displayFormIn(
                 "Europoors spekulieren auf eine Rakete für Lam Research und Applied Materials",
                 "SK hynix Inc."));
         // …and a lone legal word after the drop never gilds ("Corporation").
-        org.junit.jupiter.api.Assertions.assertNull(HeadlineWriter.displayFormIn(
+        org.junit.jupiter.api.Assertions.assertNull(HeadlineGilder.displayFormIn(
                 "Microsoft Corporation bündelt Copilot-Bots", "Bio-Techne Corporation"));
     }
 
@@ -286,21 +286,21 @@ class HeadlineWriterTest {
         // "Goldpreis" NAMES gold — the room writes compounds, not phrases (live: a
         // priced GC=F unit lost its quote because the line said "Goldpreis").
         // The gild wraps the whole compound.
-        assertEquals("Goldpreis", HeadlineWriter.displayFormIn(
+        assertEquals("Goldpreis", HeadlineGilder.displayFormIn(
                 "Goldpreis klettert über 4.200 Dollar, Asien kauft weiter", "Gold"));
         // A hyphenated compound hits the exact word boundary first — the gild stays
         // on the name itself.
-        assertEquals("Rheinmetall", HeadlineWriter.displayFormIn(
+        assertEquals("Rheinmetall", HeadlineGilder.displayFormIn(
                 "Die Rheinmetall-Aktie zieht nach dem Großauftrag an", "Rheinmetall AG"));
         // Short candidates never bind as compound heads ("Bay" must not match "Bayern").
-        org.junit.jupiter.api.Assertions.assertNull(HeadlineWriter.displayFormIn(
+        org.junit.jupiter.api.Assertions.assertNull(HeadlineGilder.displayFormIn(
                 "Bayern feiert die Börsenwoche", "Bay"));
         // A capitalized continuation is a DIFFERENT name, not a compound of ours.
-        org.junit.jupiter.api.Assertions.assertNull(HeadlineWriter.displayFormIn(
+        org.junit.jupiter.api.Assertions.assertNull(HeadlineGilder.displayFormIn(
                 "MicroStrategy kauft weiter Bitcoin nach", "Micron Technology, Inc."));
         // An exact word-boundary hit anywhere in the line beats an earlier compound
         // hit — "Goldman" must not shadow the actual "Gold".
-        assertEquals("Gold", HeadlineWriter.displayFormIn(
+        assertEquals("Gold", HeadlineGilder.displayFormIn(
                 "Goldman warnt, doch Gold klettert weiter", "Gold"));
     }
 
@@ -308,11 +308,11 @@ class HeadlineWriterTest {
     void displayFormInAcceptsTheGermanGenitive() {
         // "Rheinmetalls Auftrag" — the name IS in the line, inflected. A lone
         // trailing "s" is a boundary, a longer suffix is not.
-        assertEquals("Rheinmetall", HeadlineWriter.displayFormIn(
+        assertEquals("Rheinmetall", HeadlineGilder.displayFormIn(
                 "Rheinmetalls Großauftrag treibt den Kurs", "Rheinmetall AG"));
         // The room's wordplay compound ("Rheinmetallitis") NAMES the subject — since
         // the compound-head rule it binds (whole word, so the gild wraps the joke).
-        assertEquals("Rheinmetallitis", HeadlineWriter.displayFormIn(
+        assertEquals("Rheinmetallitis", HeadlineGilder.displayFormIn(
                 "Rheinmetallitis grassiert im Käfig", "Rheinmetall AG"));
     }
 
@@ -327,14 +327,14 @@ class HeadlineWriterTest {
                 + "was die allgemeine Chip-Nachfrage stützt.";
         String extended = "General Motors sichert sich Chip-Lieferung bei Micron, "
                 + "was die allgemeine Chip-Nachfrage stützt, während der Raum die Aktie hält.";
-        assertTrue(HeadlineWriter.isNearDuplicate(base, extended));
+        assertTrue(NearDuplicateGuard.isNearDuplicate(base, extended));
     }
 
     @Test
     void nearDuplicate_catchesANumberOnlyTick() {
         // The ^GDAXI wire published the same "wartet auf Katalysator" line at +1,66 %,
         // +1,78 % and +2,01 % — the ticking day-move is on the quote strip, not a development.
-        assertTrue(HeadlineWriter.isNearDuplicate(
+        assertTrue(NearDuplicateGuard.isNearDuplicate(
                 "Marktverlauf zeigt, dass der DAX trotz der jüngsten Kursgewinne von +1,66% "
                         + "weiterhin auf einen klaren, neuen Katalysator wartet",
                 "Marktverlauf zeigt, dass der DAX trotz des heutigen Anstiegs von +2,01% "
@@ -346,7 +346,7 @@ class HeadlineWriterTest {
         // Numbers are stripped for the comparison, so a NEW story must differ in its
         // words, not merely its figures — and it does: a price-target line and a
         // short-squeeze line share the subject but nothing else.
-        assertFalse(HeadlineWriter.isNearDuplicate(
+        assertFalse(NearDuplicateGuard.isNearDuplicate(
                 "Analysten heben das Kursziel für Rheinmetall auf 2.100 Euro an",
                 "Shortseller kapitulieren bei Rheinmetall, der Käfig feiert den Squeeze"));
     }
@@ -419,11 +419,11 @@ class HeadlineWriterTest {
     void trimsAnAbstractTrailingWasClause() {
         // The stable live pattern: concrete head, interpretive tail.
         assertEquals("Direxion lanciert einen 2X-ETF auf SK hynix.",
-                HeadlineWriter.trimInterpretiveTail(
+                HeadlineTailTrimmer.trimInterpretiveTail(
                         "Direxion lanciert einen 2X-ETF auf SK hynix, "
                                 + "was die Diskussion um den Halbleitersektor weiter anheizt"));
         assertEquals("Trump-Aktivitäten treiben den Dow Jones nach unten.",
-                HeadlineWriter.trimInterpretiveTail(
+                HeadlineTailTrimmer.trimInterpretiveTail(
                         "Trump-Aktivitäten treiben den Dow Jones nach unten, "
                                 + "wodurch die anhaltende Einflussnahme sichtbar wird"));
     }
@@ -433,15 +433,15 @@ class HeadlineWriterTest {
         // A clause with a number/currency is detail, not interpretation — never cut.
         String line = "EU-Gericht bestätigt Anti-Trust-Strafen gegen Alphabet, "
                 + "was die Anleger mit -1,7% quittieren";
-        assertEquals(line, HeadlineWriter.trimInterpretiveTail(line));
+        assertEquals(line, HeadlineTailTrimmer.trimInterpretiveTail(line));
     }
 
     @Test
     void keepsLinesWithoutATailAndTooShortHeads() {
         String plain = "Rheinmetall erhält Großauftrag über Artilleriemunition";
-        assertEquals(plain, HeadlineWriter.trimInterpretiveTail(plain));
+        assertEquals(plain, HeadlineTailTrimmer.trimInterpretiveTail(plain));
         // Head below the minimum stays untouched — cutting would leave a stump.
         String shortHead = "Kurs fällt, was den Raum beunruhigt";
-        assertEquals(shortHead, HeadlineWriter.trimInterpretiveTail(shortHead));
+        assertEquals(shortHead, HeadlineTailTrimmer.trimInterpretiveTail(shortHead));
     }
 }

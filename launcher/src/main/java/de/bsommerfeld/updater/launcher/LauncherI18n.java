@@ -1,5 +1,7 @@
 package de.bsommerfeld.updater.launcher;
 
+import de.bsommerfeld.updater.api.UpdatePhase;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -14,15 +16,19 @@ import java.util.Map;
  */
 final class LauncherI18n {
 
+    // The update-phase keys are sourced from the shared UpdatePhase enum, the
+    // single source of truth for the phase-token contract with the updater
+    // module (UpdateProgress.phase()). The remaining keys are launcher-local
+    // status strings and setup-script phase tokens.
     private static final Map<String, String> DE = Map.ofEntries(
-            Map.entry("Checking for updates", "Suche nach Updates"),
-            Map.entry("Up to date", "Aktuell"),
-            Map.entry("Update complete", "Update abgeschlossen"),
-            Map.entry("Downloading update", "Update herunterladen"),
-            Map.entry("Downloading dependencies", "Abhängigkeiten herunterladen"),
-            Map.entry("Extracting files", "Dateien entpacken"),
-            Map.entry("Extracting dependencies", "Abhängigkeiten entpacken"),
-            Map.entry("Verifying integrity", "Integrität prüfen"),
+            Map.entry(UpdatePhase.CHECKING.token(), "Suche nach Updates"),
+            Map.entry(UpdatePhase.UP_TO_DATE.token(), "Aktuell"),
+            Map.entry(UpdatePhase.UPDATE_COMPLETE.token(), "Update abgeschlossen"),
+            Map.entry(UpdatePhase.DOWNLOADING_UPDATE.token(), "Update herunterladen"),
+            Map.entry(UpdatePhase.DOWNLOADING_DEPENDENCIES.token(), "Abhängigkeiten herunterladen"),
+            Map.entry(UpdatePhase.EXTRACTING_FILES.token(), "Dateien entpacken"),
+            Map.entry(UpdatePhase.EXTRACTING_DEPENDENCIES.token(), "Abhängigkeiten entpacken"),
+            Map.entry(UpdatePhase.VERIFYING_INTEGRITY.token(), "Integrität prüfen"),
             Map.entry("Cleaning up", "Aufräumen"),
             Map.entry("Update check failed", "Update-Prüfung fehlgeschlagen"),
             Map.entry("Launching application", "Anwendung starten"),

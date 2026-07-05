@@ -41,9 +41,8 @@ public final class OllamaServerManager {
 
     /**
      * Endpoint coordinates — re-exported from {@link OllamaEndpoint} (core) so the
-     * isolated instance has a single source of truth shared with the embedding
-     * module. Deliberately not Ollama's default 11434, so we never collide with or
-     * hijack a server the user is running.
+     * isolated instance has a single source of truth. Deliberately not Ollama's
+     * default 11434, so we never collide with or hijack a server the user is running.
      */
     public static final int PORT = OllamaEndpoint.PORT;
     public static final String HOST = OllamaEndpoint.HOST;
@@ -225,10 +224,9 @@ public final class OllamaServerManager {
                 pb.directory(neutralDir);
             }
 
-            // Concurrent gemma4 slots — RAM-adaptive (see llmParallelism()). The KV cache
-            // scales with num_ctx × this, so 2 stays the floor on a 16 GB box, but a roomier
-            // machine runs 3, which directly cuts the editorial gate-wait (compose-vs-
-            // extraction contention) that profiling showed dominates compose latency.
+            // Concurrent gemma4 slots — fixed at 2 (see llmParallelism(): gemma4 is
+            // GPU-bound, so a 3rd concurrent request just time-slices the GPU and net
+            // throughput FALLS). The KV cache scales with num_ctx × this.
             pb.environment().putIfAbsent("OLLAMA_NUM_PARALLEL", String.valueOf(llmParallelism()));
 
             // Flash attention + quantised KV cache roughly halve the KV-cache
@@ -239,13 +237,11 @@ public final class OllamaServerManager {
             pb.environment().putIfAbsent("OLLAMA_FLASH_ATTENTION", "1");
             pb.environment().putIfAbsent("OLLAMA_KV_CACHE_TYPE", "q8_0");
 
-            // Pin both resident models in memory. Without this Ollama unloads the
-            // tiny embeddinggemma after its 5-min default keep-alive; the next embed
-            // (TickerResolver tier-2) then forces a reload that has to wait for the
-            // GPU-saturating gemma4 generation to free a slot — which is exactly what
-            // blows past the embedding HTTP timeout and triggers the retry WARN. Both
-            // models (~4 GB + ~0.6 GB) coexist comfortably, so keep them loaded and let
-            // the two slots hold them.
+            // Keep the resident gemma4 pinned in memory. Without this Ollama unloads it
+            // after its 5-min default keep-alive; the next call then forces a reload that
+            // has to wait for the GPU. The deployment is single-model now (the embedding
+            // model was removed 2026-07-03), but MAX_LOADED_MODELS stays at 2 as harmless
+            // headroom.
             pb.environment().putIfAbsent("OLLAMA_KEEP_ALIVE", "-1");
             pb.environment().putIfAbsent("OLLAMA_MAX_LOADED_MODELS", "2");
 

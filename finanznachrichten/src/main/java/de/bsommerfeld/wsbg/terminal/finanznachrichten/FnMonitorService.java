@@ -1,6 +1,7 @@
 package de.bsommerfeld.wsbg.terminal.finanznachrichten;
 
 import de.bsommerfeld.wsbg.terminal.core.util.JitteredScheduler;
+import de.bsommerfeld.wsbg.terminal.core.util.PollingMonitor;
 import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
 
 import com.google.inject.Inject;
@@ -14,10 +15,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 /**
@@ -46,7 +43,8 @@ import java.util.function.Consumer;
  * The feeds refresh roughly every 10 minutes (per the site's terms), so the
  * effective interval is {@link FinanznachrichtenConfig#getPollIntervalSeconds()}
  * floored at {@value #MIN_POLL_INTERVAL_SECONDS}s — faster polling fetches
- * nothing new and is needlessly aggressive toward a free service.
+ * nothing new and is needlessly aggressive toward a free service. That floor is
+ * a terms-of-use constraint and stays in this concrete monitor, not the base.
  *
  * <h3>Isolation</h3>
  * Like the {@code currency} module's monitor this is intentionally stand-alone:
@@ -54,9 +52,14 @@ import java.util.function.Consumer;
  * UI. Wiring it into the terminal is a matter of registering it as an eager
  * singleton and forwarding {@link #addListener(Consumer)} items over the
  * websocket — see {@code EurUsdMonitorService} for the pattern.
+ *
+ * <p>The scheduler / listener fan-out / shutdown scaffolding lives in
+ * {@link PollingMonitor}; this monitor is a <b>multi-emit</b> variant (one sweep
+ * emits many items, there is no single "current" value) and manages its own
+ * restartable loop via a cancellable {@link JitteredScheduler.Handle}.
  */
 @Singleton
-public class FnMonitorService {
+public class FnMonitorService extends PollingMonitor<RawNewsItem> {
 
     private static final Logger LOG = LoggerFactory.getLogger(FnMonitorService.class);
 
@@ -74,16 +77,8 @@ public class FnMonitorService {
     private final long interRequestDelayMillis;
     private final double pollJitterPercent;
 
-    private final ScheduledExecutorService scheduler =
-            Executors.newSingleThreadScheduledExecutor(r -> {
-                Thread t = new Thread(r, "finanznachrichten-monitor");
-                t.setDaemon(true);
-                return t;
-            });
-
     /** Article links already emitted, across all ticks (no {@code guid} in the feeds). */
     private final Set<String> seenLinks = ConcurrentHashMap.newKeySet();
-    private final List<Consumer<RawNewsItem>> listeners = new CopyOnWriteArrayList<>();
 
     private volatile List<FnFeed> feeds = List.of();
     private volatile JitteredScheduler.Handle task;
@@ -100,6 +95,7 @@ public class FnMonitorService {
 
     /** Primary constructor — any {@link FeedFetcher} (real or test double). */
     public FnMonitorService(FeedFetcher fetcher, FinanznachrichtenConfig config) {
+        super("finanznachrichten-monitor");
         this.fetcher = fetcher;
         this.pollIntervalSeconds = Math.max(MIN_POLL_INTERVAL_SECONDS, config.getPollIntervalSeconds());
         this.interRequestDelayMillis = Math.max(0, config.getInterRequestDelayMillis());
@@ -129,8 +125,8 @@ public class FnMonitorService {
 
         // Jittered cadence (traffic blending): sweeps vary around the base
         // interval instead of firing machine-exactly.
-        this.task = JitteredScheduler.schedule(scheduler, this::tick,
-                INITIAL_DELAY_SECONDS, pollIntervalSeconds, TimeUnit.SECONDS, pollJitterPercent);
+        this.task = scheduleTick(this::tick,
+                INITIAL_DELAY_SECONDS, pollIntervalSeconds, pollJitterPercent);
         return feeds;
     }
 
@@ -163,7 +159,7 @@ public class FnMonitorService {
                 for (RawNewsItem item : items) {
                     if (item.link() != null && !item.link().isEmpty() && seenLinks.add(item.link())) {
                         newCount++;
-                        emit(item);
+                        fanOut(item);
                     }
                 }
                 if (interRequestDelayMillis > 0 && i < snapshot.size() - 1) {
@@ -180,26 +176,9 @@ public class FnMonitorService {
         }
     }
 
-    private void emit(RawNewsItem item) {
-        for (Consumer<RawNewsItem> l : listeners) {
-            try {
-                l.accept(item);
-            } catch (Exception e) {
-                LOG.warn("finanznachrichten listener {} threw: {}", l, e.getMessage());
-            }
-        }
-    }
-
-    /**
-     * Registers a listener fired once per genuinely new item, on the monitor's
-     * scheduler thread — keep it cheap or hand off to your own executor.
-     */
-    public void addListener(Consumer<RawNewsItem> listener) {
-        listeners.add(listener);
-    }
-
-    public void removeListener(Consumer<RawNewsItem> listener) {
-        listeners.remove(listener);
+    @Override
+    protected void onListenerError(Consumer<RawNewsItem> listener, Exception e) {
+        LOG.warn("finanznachrichten listener {} threw: {}", listener, e.getMessage());
     }
 
     /** The feeds currently being polled (empty until {@link #start} is called). */
@@ -224,10 +203,5 @@ public class FnMonitorService {
             t.cancel();
             this.task = null;
         }
-    }
-
-    /** Stops the scheduler for good. Intended for test teardown / shutdown hooks. */
-    public void shutdown() {
-        scheduler.shutdownNow();
     }
 }

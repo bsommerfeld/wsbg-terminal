@@ -48,9 +48,9 @@ class I18nServiceTest {
     }
 
     @Test
-    void get_shouldThrowForMissingKey() {
-        assertThrows(RuntimeException.class,
-                () -> service.get("nonexistent.key.that.does.not.exist"));
+    void get_shouldFallBackToKeyForMissingKey() {
+        String missing = "nonexistent.key.that.does.not.exist";
+        assertEquals(missing, service.get(missing));
     }
 
     @Test

@@ -1,0 +1,194 @@
+/* Shared widget grammar for BOTH side-by-side widgets: header (glyph / LIVE /
+   sentiment cluster), scrollable body, the base .row layout (time / body / head /
+   meta / tag), ticker + pct colouring, and the new-row flash. Widget-specific
+   rules live in reddit.css / fj.css. */
+
+.widget { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+
+.widget-head {
+  display: flex; align-items: center; gap: 10px;
+  /* Fixed height so the Reddit and FinancialJuice headers line up to the
+     pixel. Both carry a 22px brand glyph, but their other header content
+     (FJ's EUR/USD flags + rate, Reddit's status chip + LIVE) has slightly
+     different line-boxes, which let the auto-height drift a couple of px
+     between the two. 46px = 22px glyph + 12px top/bottom padding; the
+     content stays vertically centred via align-items. 47px = 22px glyph
+     + 24px (12px top/bottom) + 1px bottom border, the prior auto height. */
+  box-sizing: border-box;
+  height: 47px;
+  padding: 0 var(--pad-x);
+  border-bottom: 1px solid var(--line);
+  position: relative;       /* anchor for the centered rate-limit badge */
+}
+.widget-head .ident {
+  display: flex; align-items: center; gap: 12px; color: var(--amber);
+  font-weight: 600; font-size: var(--font-chrome);
+  letter-spacing: .18em; text-transform: uppercase;
+}
+
+/* Widget glyph: image-based brand icon. The PNG/WebP files live in
+   /icons/. The Reddit alien is rendered in its native orange so it
+   carries the brand cue; FinancialJuice keeps its full-colour mark. */
+.widget-head .ident .glyph {
+  width: 22px; height: 22px;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+  flex-shrink: 0;
+}
+.widget-head .ident .glyph-reddit { background-image: url("/icons/reddit.png"); }
+.widget-head .ident .glyph-fj     { background-image: url("/icons/financialjuice.png"); }
+
+/* Brand glyphs double as links to the source (subreddit / FinancialJuice),
+   opened in the OS browser via CefHost.onBeforeBrowse. */
+a.glyph { display: block; cursor: pointer; transition: opacity .12s ease; }
+a.glyph:hover { opacity: .7; }
+
+.widget-head .live {
+  margin-left: auto;
+  display: inline-flex; align-items: center; gap: 6px;
+  color: var(--mute); font-size: 0.66em;
+  letter-spacing: .16em; text-transform: uppercase;
+}
+.widget-head .live::before {
+  content: ""; width: 5px; height: 5px; border-radius: 50%;
+  background: var(--green); box-shadow: 0 0 6px var(--green);
+  /* No infinite pulse: under software OSR every animation frame forces a
+     paint whose damage UNIONS with everything else animating on screen —
+     a top-of-window pulse + a footer pulse = full-window blits at 60fps,
+     which is what made big windows janky. The static glow carries the
+     "live" read; animate only on real state changes. */
+}
+
+/* Scraper health on the LIVE indicator itself (the old standalone
+   "RATE LIMITED" chip was removed — "Defekt" does the job). When the
+   pull is degraded (403/429/timeouts) main.js sets data-state="DEGRADED"
+   and swaps the label to "Defekt": the dot goes static red — no pulse —
+   and the label tints red. */
+.widget-head .live[data-state="DEGRADED"] {
+  color: var(--red);
+}
+.widget-head .live[data-state="DEGRADED"]::before {
+  background: var(--red);
+  box-shadow: 0 0 6px var(--red);
+  animation: none;
+}
+
+/* Sentiment cluster: groups the Fear&Greed gauge (+ any future badge) in one
+   container, pinned right before LIVE. The cluster owns the auto-margin (always
+   present, so LIVE stays pinned right even when the badge hides). */
+.widget-head .sentiment-cluster {
+  margin-left: auto;
+  display: inline-flex; align-items: center; gap: 10px;
+}
+.widget-head .sentiment-cluster ~ .live { margin-left: 14px; }
+
+/* Loading-skeleton shimmer sweep, shared by the EUR/USD rate and the Fear&Greed
+   figure before their first reading lands. */
+@keyframes eurusd-skeleton {
+  to { transform: translateX(120%); }
+}
+
+.widget-body {
+  overflow-y: auto; overflow-x: hidden; flex: 1;
+  scrollbar-width: thin; scrollbar-color: var(--line) transparent;
+}
+.widget-body::-webkit-scrollbar { width: 6px; }
+.widget-body::-webkit-scrollbar-thumb { background: var(--line-soft); border-radius: 8px; }
+.widget-body::-webkit-scrollbar-thumb:hover { background: var(--line); }
+
+.row {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  column-gap: 16px;
+  padding: var(--row-pad-y) var(--pad-x);
+  border-bottom: 1px solid var(--line-soft);
+  position: relative;
+  transition: background .12s ease;
+
+  /* Virtual rendering: the browser skips layout/paint for rows that aren't on
+     screen (only what's visible is rendered). `contain-intrinsic-size: auto …`
+     reserves a placeholder height and then REMEMBERS each row's real measured
+     height, so variable-height rows and the scrollbar stay correct. Big win for
+     the long Financial Juice list. (Chromium 132 — fine in JCEF.)
+
+     SCROLL BEHAVIOUR — REVISIT: wheel scrolling under OSR feels slow and does
+     not follow a third-party "reverse scroll" tool. That's jcef's native OSR
+     wheel forwarding, not this CSS — see the NOTE(scroll) in SwingCefBrowser.
+     The realistic fix is a manual config toggle for reverse + a speed factor;
+     deferred by request. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 64px;
+}
+.row:hover { background: var(--bg-hover); }
+
+.row .time {
+  color: var(--mute); font-size: var(--font-time);
+  font-variant-numeric: tabular-nums; padding-top: 3px;
+}
+/* The body sits in the grid's `1fr` track, whose default min-width is `auto`
+   (= its content's min-content). A long unbreakable string in the expanded
+   .detail block (an earnings breakdown / data dump rendered as one long line)
+   would otherwise push that track — and the whole widget — wider than the pane.
+   min-width:0 lets the track shrink to the container; .detail wraps instead. */
+.row .body { min-width: 0; }
+.row .body .head { color: var(--txt); font-weight: 500; }
+.row .body .head .ticker { color: var(--amber); font-weight: 600; }
+.row .body .head .pct { font-variant-numeric: tabular-nums; }
+.row .body .head .pct.up   { color: var(--green); }
+.row .body .head .pct.down { color: var(--red); }
+
+.row .body .meta {
+  margin-top: 6px; color: var(--mute);
+  font-size: var(--font-meta); letter-spacing: .06em;
+  /* One line, never wrapping: when the window is narrow the tags Leiste shrinks
+     (clips) instead of the row breaking onto a second line. */
+  display: flex; align-items: center; gap: 10px; flex-wrap: nowrap; min-width: 0;
+}
+.row .body .meta .dot { color: var(--mute-2); }
+.row .body .meta .ticker { color: var(--amber); font-weight: 600; }
+.row .body .meta .pct { font-variant-numeric: tabular-nums; }
+.row .body .meta .pct.up   { color: var(--green); }
+.row .body .meta .pct.down { color: var(--red); }
+
+.row .body .meta .tag {
+  color: var(--txt-2);
+  background: var(--bg-1);
+  border: 1px solid var(--line-soft);
+  border-radius: 3px;
+  padding: 1px 7px;
+  letter-spacing: .04em;
+  margin-right: 4px;
+}
+
+/* Editorial highlight: a single IMPORTANT tier on top of NORMAL. Renders like a
+   market mover (see fj.css) so the user has one visual language for "look here".
+   The .highlight-important rules themselves live beside their widget in
+   reddit.css; the mover rules in fj.css. */
+
+/* New-card animation. JS adds .new-row when a fresh entry appears in
+   either feed; the same gold pulse the refresh button used to trigger
+   plays here as the card materialises. The class is auto-removed after
+   the animation by JS so re-renders don't re-play it. */
+@keyframes new-row-flash {
+  0%   { background-color: oklch(0.82 0.14 75 / .14); }
+  100% { background-color: transparent; }
+}
+.row.new-row {
+  animation: new-row-flash 1.2s ease-out;
+}
+/* Mover + new-row: the gold flash must settle INTO the red wash, not
+   into transparent. The base keyframe ends transparent, so reusing it
+   with `forwards` would freeze a red row transparent until the next
+   re-render — making a row that's red from birth look NORMAL, then
+   "suddenly" turn red when the next headline pushes it down. A dedicated
+   keyframe that ends on --red-soft keeps the red visible from the first
+   paint. */
+@keyframes new-row-flash-important {
+  0%   { background-color: oklch(0.82 0.14 75 / .14); }
+  100% { background-color: var(--red-soft); }
+}
+.row.mover.new-row,
+.row.highlight-important.new-row {
+  animation: new-row-flash-important 1.2s ease-out;
+}

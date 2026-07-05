@@ -38,7 +38,7 @@ class ColdStartTimingIT {
             ApplicationEventBus bus = new ApplicationEventBus();
             RedditRepository redditRepo = new RedditRepository();
             AgentRepository agentRepo = new AgentRepository();
-            AgentBrain brain = new AgentBrain(config, bus, new OllamaServerManager());
+            AgentBrain brain = new AgentBrain(config, bus, new OllamaServerManager(), new LlmGate());
             ClusterRegistry registry = new ClusterRegistry();
             RssRedditScraper rss = new RssRedditScraper(redditRepo, config, bus);
 

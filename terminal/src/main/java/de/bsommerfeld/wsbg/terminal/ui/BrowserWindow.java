@@ -6,43 +6,35 @@ import org.cef.browser.CefBrowser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.imageio.ImageIO;
 import javax.swing.JFrame;
 import javax.swing.SwingUtilities;
 import javax.swing.WindowConstants;
 import java.awt.BorderLayout;
 import java.awt.Component;
-import java.awt.Dimension;
 import java.awt.Frame;
-import java.awt.Graphics2D;
-import java.awt.Image;
-import java.awt.RenderingHints;
 import java.awt.Toolkit;
-import java.awt.image.BufferedImage;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
-import java.io.IOException;
-import java.io.InputStream;
 import java.util.Objects;
 
 /**
  * Top-level Swing window hosting the JCEF browser.
  *
  * <p>
- * Window chrome is platform-split:
+ * Window chrome is platform-split behind {@link WindowChrome}:
  * <ul>
- *   <li><b>macOS</b> — the {@code JFrame} stays decorated (JCEF
- *   reparenting requires a standard NSWindow) but the OS title bar is
- *   made transparent via {@code apple.awt.*} root-pane properties, so the
- *   HTML titlebar (app title + theme toggle) sits flush over the native
- *   traffic lights.</li>
- *   <li><b>Windows</b> — the frame keeps the native resize border,
- *   Aero Snap and drop shadow, but {@link WindowsCustomChrome} strips the
- *   OS caption so the HTML titlebar draws flush at the top (same look as
- *   macOS, window controls on the right). The remaining frame is themed
- *   dark via {@link WindowsChrome}.</li>
- *   <li><b>Linux</b> — keeps the full native OS title bar; the page hides
- *   its HTML titlebar there to avoid duplicate chrome.</li>
+ *   <li><b>macOS</b> ({@link MacWindowChrome}) — the {@code JFrame} stays
+ *   decorated (JCEF reparenting requires a standard NSWindow) but the OS title
+ *   bar is made transparent via {@code apple.awt.*} root-pane properties, so the
+ *   HTML titlebar (app title + theme toggle) sits flush over the native traffic
+ *   lights.</li>
+ *   <li><b>Windows</b> ({@link WinLinuxWindowChrome}) — the frame keeps the
+ *   native resize border, Aero Snap and drop shadow, but {@link
+ *   WindowsCustomChrome} strips the OS caption so the HTML titlebar draws flush
+ *   at the top (same look as macOS, window controls on the right). The remaining
+ *   frame is themed dark via {@link WindowsChrome}.</li>
+ *   <li><b>Linux</b> — keeps the full native OS title bar; the page hides its
+ *   HTML titlebar there to avoid duplicate chrome.</li>
  * </ul>
  *
  * <p>
@@ -56,6 +48,7 @@ public final class BrowserWindow {
 
     private final CefHost cefHost;
     private final WindowDragHandler dragHandler;
+    private final WindowChrome chrome = WindowChrome.forCurrentOs();
 
     private JFrame frame;
     private CefBrowser browser;
@@ -96,30 +89,17 @@ public final class BrowserWindow {
         // in CefHost owns the single System.exit(0) once CEF is truly gone.
         frame.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         frame.setMinimumSize(new java.awt.Dimension(800, 600));
-        loadIcon().ifPresent(icon -> frame.setIconImages(scaledIconSet(icon)));
+        AppIconLoader.load().ifPresent(icon -> frame.setIconImages(AppIconLoader.scaledSet(icon)));
 
-        // On macOS, JCEF reparents its Chromium NSWindow into the JFrame's
-        // NSWindow via sun.lwawt.macosx internals. That reparenting fails
-        // on undecorated JFrames because they create a borderless NSWindow
-        // variant the JCEF helper doesn't recognise, producing two stray
-        // windows (a blank JFrame + a free-floating Chromium window).
-        //
-        // Workaround: keep the JFrame decorated and hide the OS title
-        // bar via macOS-only root pane client properties. The HTML's
-        // custom titlebar then sits flush at the top of the content.
-        //
         // Windows/Linux keep the *native* OS decoration — real min/max/
         // close buttons, native drag, native edge-resize and Aero snap,
         // which is what users expect there (and what IntelliJ-style apps
         // provide). The page hides its own HTML titlebar on those
         // platforms (data-platform="other"), so there's no duplicate
-        // chrome. The only thing the OS won't do by itself is theme the
-        // title bar dark; that is applied post-show via WindowsChrome.
-        if (isMac()) {
-            frame.getRootPane().putClientProperty("apple.awt.fullWindowContent", true);
-            frame.getRootPane().putClientProperty("apple.awt.transparentTitleBar", true);
-            frame.getRootPane().putClientProperty("apple.awt.windowTitleVisible", false);
-        }
+        // chrome. macOS hides the OS title bar via root-pane properties.
+        // The chrome strategy applies the platform-specific pre-show setup
+        // (and, on macOS, the Cmd+Q → graceful-shutdown quit handler).
+        chrome.applyBeforeShow(frame, this::gracefulShutdown);
 
         // NOTE: do NOT call setIgnoreRepaint(true) on the frame / rootPane /
         // contentPane here. JCEF's windowed browser (CefBrowserWr) only creates
@@ -162,59 +142,13 @@ public final class BrowserWindow {
             }
         });
 
-        // macOS: Cmd+Q (and the app-menu Quit) goes through the application
-        // quit path, NOT windowClosing — so route it to the same teardown, else
-        // it would skip the CEF dispose + Ollama kill and leak processes. Best-
-        // effort; the OS / Java version may not support a quit handler.
-        if (isMac()) {
-            try {
-                java.awt.Desktop.getDesktop().setQuitHandler((evt, response) -> gracefulShutdown());
-            } catch (Throwable t) {
-                LOG.debug("Could not install macOS quit handler: {}", t.toString());
-            }
-        }
-
         frame.setVisible(true);
 
-        // First-paint kick — deferred 250 ms so the reparenting that
-        // fires inside addNotify is fully done before we perturb the
-        // layout. JCEF on macOS lazily initialises the Chromium NSView
-        // and doesn't render until something invalidates its bounds;
-        // the page stays white until the user resizes manually.
-        // A Swing Timer (rather than invokeLater) lets the EDT run
-        // other queued work first.
-        if (isMac()) {
-            javax.swing.Timer kick = new javax.swing.Timer(250, e -> {
-                Dimension size = frame.getSize();
-                frame.setSize(size.width + 1, size.height);
-                frame.setSize(size.width, size.height);
-            });
-            kick.setRepeats(false);
-            kick.start();
-        } else {
-            // Windows: remove the native caption (keeping native resize/snap)
-            // so the HTML title bar draws flush like macOS, then theme the
-            // remaining frame dark. Deferred a tick so the native peer is fully
-            // realised; the 1px resize nudge forces the non-client area to
-            // recompute/repaint (and kicks JCEF's first paint, like the macOS
-            // branch). Both calls are no-ops on Linux — they guard on the OS,
-            // and the page keeps its native title bar there (data-platform).
-            javax.swing.Timer kick = new javax.swing.Timer(100, e -> {
-                WindowsCustomChrome.install(frame);
-                WindowsChrome.applyDarkTitleBar(frame);
-                Dimension size = frame.getSize();
-                frame.setSize(size.width + 1, size.height);
-                frame.setSize(size.width, size.height);
-            });
-            kick.setRepeats(false);
-            kick.start();
-
-            // The OSR GLCanvas child is realised lazily; re-run install once it
-            // exists so its window proc gets bridged (idempotent for the frame).
-            javax.swing.Timer bridge = new javax.swing.Timer(1500, e -> WindowsCustomChrome.install(frame));
-            bridge.setRepeats(false);
-            bridge.start();
-        }
+        // Deferred, post-realise platform kicks (title-bar theming + first-paint
+        // nudge). macOS lazily initialises the Chromium NSView and doesn't render
+        // until something invalidates its bounds; Windows strips the caption and
+        // themes the frame dark. See the WindowChrome impls.
+        chrome.applyAfterShow(frame);
 
         LOG.info("Browser window opened.");
     }
@@ -249,10 +183,6 @@ public final class BrowserWindow {
         System.exit(0);
     }
 
-    private static boolean isMac() {
-        return System.getProperty("os.name", "").toLowerCase().contains("mac");
-    }
-
     public JFrame frame() {
         return Objects.requireNonNull(frame, "open() not called yet");
     }
@@ -284,70 +214,5 @@ public final class BrowserWindow {
 
     public CefBrowser browser() {
         return Objects.requireNonNull(browser, "open() not called yet");
-    }
-
-    private static java.util.Optional<Image> loadIcon() {
-        try (InputStream in = BrowserWindow.class.getResourceAsStream("/images/app-icon.png")) {
-            if (in == null) return java.util.Optional.empty();
-            BufferedImage raw = ImageIO.read(in);
-            return java.util.Optional.ofNullable(raw == null ? null : trimToContent(raw));
-        } catch (IOException e) {
-            return java.util.Optional.empty();
-        }
-    }
-
-    /**
-     * Crops the source icon's transparent border and re-centres it on a square
-     * canvas with a small (~6%) margin. The shared art carries ~20% macOS-style
-     * padding, which renders the Windows/Linux taskbar icon visibly smaller than
-     * its neighbours (those fill the square). Trimming makes our icon fill its
-     * slot the same way. macOS is unaffected — its dock icon comes from the
-     * {@code -Xdock:icon} flag, not this {@code setIconImages} call.
-     */
-    private static BufferedImage trimToContent(BufferedImage img) {
-        int w = img.getWidth(), h = img.getHeight();
-        int minX = w, minY = h, maxX = -1, maxY = -1;
-        for (int y = 0; y < h; y++) {
-            for (int x = 0; x < w; x++) {
-                if ((img.getRGB(x, y) >>> 24) > 8) { // alpha above a tiny threshold
-                    if (x < minX) minX = x;
-                    if (x > maxX) maxX = x;
-                    if (y < minY) minY = y;
-                    if (y > maxY) maxY = y;
-                }
-            }
-        }
-        if (maxX < minX) return img; // fully transparent — nothing to trim
-
-        int cw = maxX - minX + 1, ch = maxY - minY + 1;
-        BufferedImage content = img.getSubimage(minX, minY, cw, ch);
-
-        int side = (int) (Math.max(cw, ch) / 0.88); // ~6% margin per side
-        BufferedImage square = new BufferedImage(side, side, BufferedImage.TYPE_INT_ARGB);
-        Graphics2D g = square.createGraphics();
-        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
-                RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-        g.drawImage(content, (side - cw) / 2, (side - ch) / 2, null);
-        g.dispose();
-        return square;
-    }
-
-    /**
-     * Builds a multi-resolution icon set from the 1024px source. Handing AWT a
-     * single oversized image makes Windows pick a poor downscale for the small
-     * taskbar/title-bar slots; supplying explicit small sizes lets it choose a
-     * crisp match per slot. The full-size source stays in the list for the
-     * large Alt+Tab / window-switcher rendering.
-     */
-    private static java.util.List<Image> scaledIconSet(Image source) {
-        return java.util.List.of(
-                source.getScaledInstance(16, 16, Image.SCALE_SMOOTH),
-                source.getScaledInstance(24, 24, Image.SCALE_SMOOTH),
-                source.getScaledInstance(32, 32, Image.SCALE_SMOOTH),
-                source.getScaledInstance(48, 48, Image.SCALE_SMOOTH),
-                source.getScaledInstance(64, 64, Image.SCALE_SMOOTH),
-                source.getScaledInstance(128, 128, Image.SCALE_SMOOTH),
-                source.getScaledInstance(256, 256, Image.SCALE_SMOOTH),
-                source);
     }
 }

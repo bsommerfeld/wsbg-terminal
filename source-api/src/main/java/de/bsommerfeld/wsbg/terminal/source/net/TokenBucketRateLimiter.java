@@ -1,4 +1,4 @@
-package de.bsommerfeld.wsbg.terminal.reddit;
+package de.bsommerfeld.wsbg.terminal.source.net;
 
 /**
  * Simple token-bucket rate limiter.
@@ -13,6 +13,10 @@ package de.bsommerfeld.wsbg.terminal.reddit;
  * <p>
  * Callers from multiple threads serialize on the instance monitor, so the
  * sustained rate applies globally across all consumers of a single limiter.
+ *
+ * <p>
+ * Lives next to the shared {@link WebFetcher} transport seam so any client can
+ * throttle without depending on a specific source module.
  */
 public final class TokenBucketRateLimiter {
 

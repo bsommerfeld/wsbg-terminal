@@ -20,16 +20,18 @@ final class IslandIndicator extends JComponent {
     private static final int BAR_HEIGHT = 6;
     private static final int COMPONENT_HEIGHT = DOT_DIAMETER + 4;
 
-    // Must match LauncherWindow.BG — painted as opaque background to
-    // prevent Swing's dirty-region clear from exposing the transparent
-    // window, which causes the desktop to bleed through for one frame.
-    private static final Color BG_COLOR = new Color(0x1A, 0x1A, 0x1A);
+    // Painted as opaque background to prevent Swing's dirty-region clear from
+    // exposing the transparent window, which causes the desktop to bleed
+    // through for one frame.
+    private static final Color BG_COLOR = LauncherTheme.BG;
 
     private static final Color TRACK_COLOR = new Color(45, 45, 50);
     // Terminal accent (--amber oklch(0.82 0.14 75) ≈ #F9B64F).
-    private static final Color FILL_COLOR = new Color(0xF9, 0xB6, 0x4F);
+    private static final Color FILL_COLOR = LauncherTheme.ACCENT;
     // Same accent, fully transparent — the fade-out stops of the shimmer sweep.
-    private static final Color FILL_TRANSPARENT = new Color(0xF9, 0xB6, 0x4F, 0);
+    private static final Color FILL_TRANSPARENT =
+            new Color(LauncherTheme.ACCENT.getRed(), LauncherTheme.ACCENT.getGreen(),
+                    LauncherTheme.ACCENT.getBlue(), 0);
     private static final Color DOT_COLOR = new Color(90, 90, 90);
 
     // Shimmer sweep advance per frame; fraction of a full pass at ~60fps.

@@ -4,8 +4,6 @@ import com.google.inject.Singleton;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
@@ -20,16 +18,12 @@ import java.util.function.Consumer;
  *
  * <p>
  * Pulled out of {@link PassiveMonitorService} so the agent layer can read the
- * cluster state without depending on the scanner. Two flavours of read API:
- * <ul>
- * <li>{@link #getCluster(String)} / {@link #getAllClusters()} — return the
- * live {@link InvestigationCluster} objects, used by code inside the agent
- * module that needs to mutate state (cluster-merge, centroid drift). Treat
- * these references as private to the agent package.</li>
- * <li>{@link #view(String)} / {@link #allViews()} — return immutable
- * {@link ClusterView} snapshots safe to hand out to tools or external code.
- * </li>
- * </ul>
+ * cluster state without depending on the scanner. {@link #getCluster(String)} /
+ * {@link #getAllClusters()} return the live {@link InvestigationCluster} objects,
+ * used by code inside the agent module. Treat these references as private to the
+ * agent package. Since the cutover to feed-wide {@link SubjectUnit}s a cluster is
+ * an assign-only 1:1 wrapper of a thread — there is no cross-thread merge/centroid
+ * step anymore.
  *
  * <p>
  * Change tracking: every {@link #notifyChange(String)} call marks the cluster
@@ -141,56 +135,5 @@ public class ClusterRegistry {
      */
     public void subscribeToChanges(Consumer<Set<String>> listener) {
         subscribers.add(listener);
-    }
-
-    // -- snapshot API (for tools and external readers) --
-
-    public ClusterView view(String id) {
-        InvestigationCluster c = byId.get(id);
-        return c == null ? null : snapshot(c);
-    }
-
-    public List<ClusterView> allViews() {
-        List<ClusterView> out = new ArrayList<>(byId.size());
-        for (InvestigationCluster c : byId.values()) {
-            out.add(snapshot(c));
-        }
-        return out;
-    }
-
-    private ClusterView snapshot(InvestigationCluster c) {
-        return new ClusterView(
-                c.id,
-                c.initialTitle,
-                c.threadCount,
-                c.totalComments,
-                c.totalScore,
-                c.currentSignificance,
-                c.firstSeen,
-                c.lastActivity,
-                c.bestThreadId,
-                c.latestThreadId,
-                List.copyOf(c.activeThreadIds),
-                c.headlineCount);
-    }
-
-    /**
-     * Immutable snapshot of a cluster's externally-relevant state. Safe to
-     * hand out to agent tools and the UI — no references to the live
-     * {@link InvestigationCluster}.
-     */
-    public record ClusterView(
-            String id,
-            String initialTitle,
-            int threadCount,
-            int totalComments,
-            int totalScore,
-            double currentSignificance,
-            Instant firstSeen,
-            Instant lastActivity,
-            String bestThreadId,
-            String latestThreadId,
-            List<String> activeThreadIds,
-            int headlineCount) {
     }
 }

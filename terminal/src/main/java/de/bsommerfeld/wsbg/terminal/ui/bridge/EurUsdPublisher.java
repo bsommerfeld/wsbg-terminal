@@ -5,8 +5,6 @@ import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.currency.EurUsdMonitorService;
 import de.bsommerfeld.wsbg.terminal.currency.EurUsdQuote;
 import de.bsommerfeld.wsbg.terminal.ui.web.PushHub;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -21,8 +19,6 @@ import java.util.Map;
 @Singleton
 public final class EurUsdPublisher {
 
-    private static final Logger LOG = LoggerFactory.getLogger(EurUsdPublisher.class);
-
     private final PushHub hub;
 
     @Inject
@@ -33,11 +29,7 @@ public final class EurUsdPublisher {
     }
 
     private void push(EurUsdQuote q) {
-        try {
-            hub.broadcast("eurusd", toJson(q));
-        } catch (Exception e) {
-            LOG.warn("EUR/USD broadcast failed: {}", e.getMessage());
-        }
+        hub.broadcastSafe("eurusd", () -> toJson(q));
     }
 
     private static Map<String, Object> toJson(EurUsdQuote q) {

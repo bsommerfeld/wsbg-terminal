@@ -13,7 +13,7 @@ import de.bsommerfeld.wsbg.terminal.reddit.RedditScraper;
 import de.bsommerfeld.wsbg.terminal.reddit.RedditSource;
 import de.bsommerfeld.wsbg.terminal.reddit.RssRedditScraper;
 import de.bsommerfeld.wsbg.terminal.reddit.ThreadAnalysisContext;
-import de.bsommerfeld.wsbg.terminal.reddit.TokenBucketRateLimiter;
+import de.bsommerfeld.wsbg.terminal.source.net.TokenBucketRateLimiter;
 import de.bsommerfeld.wsbg.terminal.source.net.DirectWebFetcher;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;

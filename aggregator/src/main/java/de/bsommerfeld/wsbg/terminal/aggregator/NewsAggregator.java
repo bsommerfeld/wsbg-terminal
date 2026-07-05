@@ -7,12 +7,8 @@ import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.time.Duration;
-import java.time.Instant;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -31,11 +27,6 @@ import java.util.Set;
 public class NewsAggregator {
 
     private static final Logger LOG = LoggerFactory.getLogger(NewsAggregator.class);
-
-    /** Newest first; items without a timestamp sort to the end. */
-    private static final Comparator<RawNewsItem> BY_RECENCY =
-            Comparator.comparing(RawNewsItem::publishedAt,
-                    Comparator.nullsLast(Comparator.reverseOrder()));
 
     private final Set<NewsSource> sources;
 
@@ -74,9 +65,21 @@ public class NewsAggregator {
         if ((!haveSymbol && !haveName) || limit <= 0) {
             return List.of();
         }
-        // putIfAbsent keeps the first occurrence of a given id; iteration order of
-        // the source set is the tie-break, then the ranked comparator orders the
-        // survivors.
+        Map<String, RawNewsItem> byId = gather(haveSymbol, haveName, symbol, name, limit);
+        return byId.values().stream()
+                .sorted(NewsRelevanceRanker.forName(name))
+                .limit(limit)
+                .toList();
+    }
+
+    /**
+     * Fans the symbol and/or name query across every source with per-source
+     * error isolation, merging into an id-keyed map. {@code putIfAbsent} keeps
+     * the first occurrence of a given id; iteration order of the source set is
+     * the tie-break (load-bearing dedup semantics — first-seen id wins).
+     */
+    private Map<String, RawNewsItem> gather(boolean haveSymbol, boolean haveName,
+                                            String symbol, String name, int limit) {
         Map<String, RawNewsItem> byId = new LinkedHashMap<>();
         for (NewsSource src : sources) {
             try {
@@ -87,10 +90,7 @@ public class NewsAggregator {
                         safeName(src), symbol, name, e.getMessage());
             }
         }
-        return byId.values().stream()
-                .sorted(rankedFor(name))
-                .limit(limit)
-                .toList();
+        return byId;
     }
 
     private static void collect(Map<String, RawNewsItem> byId, List<RawNewsItem> items) {
@@ -100,28 +100,6 @@ public class NewsAggregator {
                 byId.putIfAbsent(dedupKey(it), it);
             }
         }
-    }
-
-    /** Items younger than this count as "fresh" for the relevance tiering. */
-    private static final Duration FRESH_WINDOW = Duration.ofHours(36);
-
-    /**
-     * Tiered relevance: fresh + company named in the title → fresh → stale,
-     * newest first within each tier. Falls back to pure recency when no name is
-     * known. Deliberately deterministic — no scoring model, just the two signals
-     * that matter for "is this the catalyst": is it current, does it name us.
-     */
-    private static Comparator<RawNewsItem> rankedFor(String name) {
-        if (name == null || name.isBlank()) return BY_RECENCY;
-        String needle = name.toLowerCase(Locale.ROOT);
-        Instant freshEdge = Instant.now().minus(FRESH_WINDOW);
-        Comparator<RawNewsItem> byTier = Comparator.comparingInt(it -> {
-            boolean fresh = it.publishedAt() != null && it.publishedAt().isAfter(freshEdge);
-            boolean named = it.title() != null
-                    && it.title().toLowerCase(Locale.ROOT).contains(needle);
-            return fresh && named ? 0 : fresh ? 1 : 2;
-        });
-        return byTier.thenComparing(BY_RECENCY);
     }
 
     /** Item id is the dedup key; falls back to the link when a source left it blank. */

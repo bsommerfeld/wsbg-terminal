@@ -4,6 +4,7 @@ import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
 
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.core.util.BrowserUserAgent;
+import de.bsommerfeld.wsbg.terminal.core.util.HtmlText;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.w3c.dom.Document;
@@ -173,12 +174,7 @@ public class FnRssClient implements FeedFetcher {
         if (html == null || html.isEmpty()) {
             return "";
         }
-        return HTML_TAG_PATTERN.matcher(html).replaceAll(" ")
-                .replace("&amp;", "&")
-                .replace("&lt;", "<")
-                .replace("&gt;", ">")
-                .replace("&quot;", "\"")
-                .replace("&apos;", "'")
+        return HtmlText.unescapeBasic(HTML_TAG_PATTERN.matcher(html).replaceAll(" "))
                 .replaceAll("\\s+", " ")
                 .trim();
     }

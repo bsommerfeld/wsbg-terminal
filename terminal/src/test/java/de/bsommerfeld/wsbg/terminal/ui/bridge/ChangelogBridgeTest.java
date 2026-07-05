@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * "Was hat sich geändert" backend: the GitHub releases → wire-shape mapping
- * ({@link ChangelogBridge#parseReleases}). The fetch / fresh-update wiring is
+ * ({@link GitHubReleases#parseReleases}). The fetch / fresh-update wiring is
  * exercised live; here we pin the pure mapping (draft/prerelease/empty-body
  * filtering, field pick).
  */
@@ -28,7 +28,7 @@ class ChangelogBridgeTest {
                   {"tag_name":"1.0.0","name":"Das WSBG-Terminal","published_at":"2026-06-30T14:02:10Z",
                    "draft":false,"prerelease":false,"body":"**Alles. Das hier ist Tag 1.**"}
                 ]""");
-        List<Map<String, Object>> out = ChangelogBridge.parseReleases(root);
+        List<Map<String, Object>> out = GitHubReleases.parseReleases(root);
         assertEquals(2, out.size());
         assertEquals("1.1.0", out.get(0).get("tag"));
         assertEquals("I Am Speed", out.get(0).get("name"));
@@ -45,14 +45,14 @@ class ChangelogBridgeTest {
                   {"tag_name":"1.1.5","draft":false,"prerelease":false,"body":""},
                   {"tag_name":"1.1.0","draft":false,"prerelease":false,"body":"Echt."}
                 ]""");
-        List<Map<String, Object>> out = ChangelogBridge.parseReleases(root);
+        List<Map<String, Object>> out = GitHubReleases.parseReleases(root);
         assertEquals(1, out.size());
         assertEquals("1.1.0", out.get(0).get("tag"));
     }
 
     @Test
     void toleratesNonArrayAndNull() {
-        assertTrue(ChangelogBridge.parseReleases(null).isEmpty());
-        assertTrue(ChangelogBridge.parseReleases(MAPPER.createObjectNode()).isEmpty());
+        assertTrue(GitHubReleases.parseReleases(null).isEmpty());
+        assertTrue(GitHubReleases.parseReleases(MAPPER.createObjectNode()).isEmpty());
     }
 }

@@ -6,6 +6,7 @@ import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
 import de.bsommerfeld.wsbg.terminal.core.util.BrowserUserAgent;
+import de.bsommerfeld.wsbg.terminal.core.util.Sparklines;
 import de.bsommerfeld.wsbg.terminal.source.net.DirectWebFetcher;
 import de.bsommerfeld.wsbg.terminal.source.net.WebFetcher;
 import de.bsommerfeld.wsbg.terminal.source.net.WebResponse;
@@ -113,19 +114,12 @@ public class NasdaqClient {
                         : parseMoney(pt.path("z").path("value").asText(""));
                 if (Double.isFinite(y)) prices.add(y);
             }
-            return downsample(prices);
+            return Sparklines.downsample(prices, SPARK_POINTS);
         } catch (Exception e) {
             return List.of();
         }
     }
 
-    private static List<Double> downsample(List<Double> prices) {
-        if (prices.size() <= SPARK_POINTS) return prices;
-        List<Double> out = new ArrayList<>(SPARK_POINTS);
-        double step = (prices.size() - 1) / (double) (SPARK_POINTS - 1);
-        for (int i = 0; i < SPARK_POINTS; i++) out.add(prices.get((int) Math.round(i * step)));
-        return out;
-    }
 
     private static MarketSnapshot withSpark(MarketSnapshot s, List<Double> spark) {
         if (spark == null || spark.isEmpty()) return s;

@@ -8,6 +8,7 @@ import de.bsommerfeld.wsbg.terminal.core.domain.RedditComment;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
 import de.bsommerfeld.wsbg.terminal.core.i18n.I18nService;
 import de.bsommerfeld.wsbg.terminal.db.AgentRepository;
+import de.bsommerfeld.wsbg.terminal.db.HeadlineRecord;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
 import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooFinanceClient;
 import org.junit.jupiter.api.BeforeAll;
@@ -52,10 +53,11 @@ class PipelineStagesIT {
         ApplicationEventBus bus = new ApplicationEventBus();
         redditRepo = new RedditRepository();
         agentRepo = new AgentRepository();
-        brain = new AgentBrain(config, bus, new OllamaServerManager());
+        LlmGate gate = new LlmGate();
+        brain = new AgentBrain(config, bus, new OllamaServerManager(), gate);
         registry = new ClusterRegistry();
         engine = new ClusterEngine(registry);
-        editorial = new EditorialAgent(brain, registry, agentRepo, redditRepo, bus,
+        editorial = new EditorialAgent(brain, gate, registry, agentRepo, redditRepo, bus,
                 new I18nService(config), new YahooFinanceClient(config),
                 new SubjectRegistry(), config);
     }
@@ -67,7 +69,7 @@ class PipelineStagesIT {
         for (RedditComment c : syn.comments()) redditRepo.saveComment(c).join();
 
         AssignOutcome out = engine.assign(syn.thread(), 0, 0, "");
-        List<ResolvedSubject> resolved = editorial.attributeCluster(out.clusterId(), new SubjectRegistry());
+        List<ResolvedSubject> resolved = editorial.attributeCluster(out.clusterId());
 
         Set<String> names = resolved.stream()
                 .map(r -> r.query().toLowerCase(Locale.ROOT))
@@ -114,18 +116,18 @@ class PipelineStagesIT {
 
         editorial.runUnitTick(Set.of(out.clusterId()));
 
-        List<AgentRepository.HeadlineRecord> after = agentRepo.getRecentHeadlines();
+        List<HeadlineRecord> after = agentRepo.getRecentHeadlines();
         System.out.println("[UNITTICK-IT] published " + (after.size() - before) + " headline(s): "
-                + after.stream().map(AgentRepository.HeadlineRecord::headline).toList());
+                + after.stream().map(HeadlineRecord::headline).toList());
         assertTrue(after.size() > before,
                 "runUnitTick should publish at least one headline for a live cluster");
 
         // The cluster is now ALSO a producer: a THEME headline (the thread
         // narrative) is archived under the cluster id, independent of the
         // per-subject unit lines (which key by unit id, never the cluster id).
-        List<AgentRepository.HeadlineRecord> theme = agentRepo.getHeadlinesByClusterId(out.clusterId());
+        List<HeadlineRecord> theme = agentRepo.getHeadlinesByClusterId(out.clusterId());
         System.out.println("[UNITTICK-IT] theme line(s) under cluster " + out.clusterId() + ": "
-                + theme.stream().map(AgentRepository.HeadlineRecord::headline).toList());
+                + theme.stream().map(HeadlineRecord::headline).toList());
         assertFalse(theme.isEmpty(),
                 "runUnitTick should also publish a cluster-theme headline keyed by the cluster id");
     }

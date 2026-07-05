@@ -3,7 +3,6 @@ package de.bsommerfeld.updater.launcher;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -12,93 +11,85 @@ import java.util.function.BiConsumer;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Tests for EnvironmentSetup's output classification and internal utilities.
- * Process execution is not tested — only the pure parsing logic.
+ * Tests for the setup pipeline's output classification and utilities. Process
+ * execution is exercised only where the exit-code/watchdog contract lives (on
+ * {@link EnvironmentSetup}); the pure parsing logic now lives on
+ * {@link ScriptOutputClassifier}, {@link SetupScriptLocator} and
+ * {@link ByteSizes} and is tested there directly.
  */
 class EnvironmentSetupTest {
 
     @TempDir
     Path appDir;
 
-    @Test
-    void stripAnsi_shouldRemoveColorCodes() throws Exception {
-        EnvironmentSetup setup = new EnvironmentSetup(appDir);
-        Method m = EnvironmentSetup.class.getDeclaredMethod("stripAnsi", String.class);
-        m.setAccessible(true);
-
-        String result = (String) m.invoke(setup, "\u001B[32mSuccess\u001B[0m");
-        assertEquals("Success", result);
-    }
-
-    @Test
-    void stripAnsi_shouldHandleCleanInput() throws Exception {
-        EnvironmentSetup setup = new EnvironmentSetup(appDir);
-        Method m = EnvironmentSetup.class.getDeclaredMethod("stripAnsi", String.class);
-        m.setAccessible(true);
-
-        assertEquals("clean text", m.invoke(setup, "clean text"));
-    }
-
-    @Test
-    void isNoise_shouldMatchProgressBars() throws Exception {
-        EnvironmentSetup setup = new EnvironmentSetup(appDir);
-        Method m = EnvironmentSetup.class.getDeclaredMethod("isNoise", String.class);
-        m.setAccessible(true);
-
-        assertTrue((boolean) m.invoke(setup, "################"));
-        assertTrue((boolean) m.invoke(setup, "================"));
-        assertTrue((boolean) m.invoke(setup, "▕███████████████▏"));
-    }
-
-    @Test
-    void isNoise_shouldMatchBarePercentages() throws Exception {
-        EnvironmentSetup setup = new EnvironmentSetup(appDir);
-        Method m = EnvironmentSetup.class.getDeclaredMethod("isNoise", String.class);
-        m.setAccessible(true);
-
-        assertTrue((boolean) m.invoke(setup, "42%"));
-        assertTrue((boolean) m.invoke(setup, "100%"));
-    }
-
-    @Test
-    void isNoise_shouldNotMatchMeaningfulText() throws Exception {
-        EnvironmentSetup setup = new EnvironmentSetup(appDir);
-        Method m = EnvironmentSetup.class.getDeclaredMethod("isNoise", String.class);
-        m.setAccessible(true);
-
-        assertFalse((boolean) m.invoke(setup, "Installing ollama..."));
-        assertFalse((boolean) m.invoke(setup, "Setup Complete"));
-    }
-
-    @Test
-    void classifyAndEmit_shouldDetectOllamaPull() throws Exception {
-        EnvironmentSetup setup = new EnvironmentSetup(appDir);
-        Method m = EnvironmentSetup.class.getDeclaredMethod("classifyAndEmit", String.class,
-                BiConsumer.class);
-        m.setAccessible(true);
-
+    private static List<String[]> collect(ScriptOutputClassifier classifier, String... lines) {
         List<String[]> emissions = new ArrayList<>();
-        m.invoke(setup, "> Pulling dummy-model:1b...", (BiConsumer<String, String>) (phase, detail) -> {
-            emissions.add(new String[] { phase, detail });
-        });
+        BiConsumer<String, String> collector = (phase, detail) -> emissions.add(new String[]{phase, detail});
+        for (String line : lines) classifier.classify(line, collector);
+        return emissions;
+    }
 
+    // =====================================================================
+    // ScriptOutputClassifier — stripAnsi / isNoise
+    // =====================================================================
+
+    @Test
+    void stripAnsi_shouldRemoveColorCodes() {
+        assertEquals("Success", new ScriptOutputClassifier().stripAnsi("[32mSuccess[0m"));
+    }
+
+    @Test
+    void stripAnsi_shouldHandleCleanInput() {
+        assertEquals("clean text", new ScriptOutputClassifier().stripAnsi("clean text"));
+    }
+
+    @Test
+    void isNoise_shouldMatchProgressBars() {
+        ScriptOutputClassifier c = new ScriptOutputClassifier();
+        assertTrue(c.isNoise("################"));
+        assertTrue(c.isNoise("================"));
+        assertTrue(c.isNoise("▕███████████████▏"));
+    }
+
+    @Test
+    void isNoise_shouldMatchBarePercentages() {
+        ScriptOutputClassifier c = new ScriptOutputClassifier();
+        assertTrue(c.isNoise("42%"));
+        assertTrue(c.isNoise("100%"));
+    }
+
+    @Test
+    void isNoise_shouldNotMatchMeaningfulText() {
+        ScriptOutputClassifier c = new ScriptOutputClassifier();
+        assertFalse(c.isNoise("Installing ollama..."));
+        assertFalse(c.isNoise("Setup Complete"));
+    }
+
+    @Test
+    void isNoise_shouldMatchSpinnerCharacters() {
+        ScriptOutputClassifier c = new ScriptOutputClassifier();
+        assertTrue(c.isNoise("/"));
+        assertTrue(c.isNoise("\\"));
+        assertTrue(c.isNoise("|"));
+        assertTrue(c.isNoise("-"));
+    }
+
+    // =====================================================================
+    // ScriptOutputClassifier — classify
+    // =====================================================================
+
+    @Test
+    void classify_shouldDetectOllamaPull() {
+        List<String[]> emissions = collect(new ScriptOutputClassifier(), "> Pulling dummy-model:1b...");
         assertFalse(emissions.isEmpty());
         assertEquals("Pulling dummy-model:1b", emissions.get(0)[0]);
         assertNull(emissions.get(0)[1]);
     }
 
     @Test
-    void classifyAndEmit_shouldEmitModelCountBeforePull() throws Exception {
-        EnvironmentSetup setup = new EnvironmentSetup(appDir);
-        Method m = EnvironmentSetup.class.getDeclaredMethod("classifyAndEmit", String.class,
-                BiConsumer.class);
-        m.setAccessible(true);
-
-        List<String[]> emissions = new ArrayList<>();
-        m.invoke(setup, "> Pulling embeddinggemma:latest (2/2)...",
-                (BiConsumer<String, String>) (phase, detail) -> {
-                    emissions.add(new String[] { phase, detail });
-                });
+    void classify_shouldEmitModelCountBeforePull() {
+        List<String[]> emissions = collect(new ScriptOutputClassifier(),
+                "> Pulling embeddinggemma:latest (2/2)...");
 
         // First a ModelCount control message "total/started" (idx 2 → both
         // pips lit: the second model's pull just began), then the visible pull
@@ -111,18 +102,9 @@ class EnvironmentSetupTest {
     }
 
     @Test
-    void classifyAndEmit_shouldDetectOllamaProgress() throws Exception {
-        EnvironmentSetup setup = new EnvironmentSetup(appDir);
-        Method m = EnvironmentSetup.class.getDeclaredMethod("classifyAndEmit", String.class,
-                BiConsumer.class);
-        m.setAccessible(true);
-
-        List<String[]> emissions = new ArrayList<>();
-        m.invoke(setup, "42% ▕██████████░░░░░░░░░░▏ 1.2 GB / 3.3 GB",
-                (BiConsumer<String, String>) (phase, detail) -> {
-                    emissions.add(new String[] { phase, detail });
-                });
-
+    void classify_shouldDetectOllamaProgress() {
+        List<String[]> emissions = collect(new ScriptOutputClassifier(),
+                "42% ▕██████████░░░░░░░░░░▏ 1.2 GB / 3.3 GB");
         assertFalse(emissions.isEmpty());
         assertEquals("Pulling model", emissions.get(0)[0]);
         assertTrue(emissions.get(0)[1].contains("42%"));
@@ -130,425 +112,275 @@ class EnvironmentSetupTest {
     }
 
     @Test
-    void classifyAndEmit_shouldDetectOllamaStatusLines() throws Exception {
-        EnvironmentSetup setup = new EnvironmentSetup(appDir);
-        Method m = EnvironmentSetup.class.getDeclaredMethod("classifyAndEmit", String.class,
-                BiConsumer.class);
-        m.setAccessible(true);
-
+    void classify_shouldDetectOllamaStatusLines() {
         for (String line : List.of("verifying sha256 digest", "writing manifest", "success")) {
-            List<String[]> emissions = new ArrayList<>();
-            m.invoke(setup, line, (BiConsumer<String, String>) (phase, detail) -> {
-                emissions.add(new String[] { phase, detail });
-            });
+            List<String[]> emissions = collect(new ScriptOutputClassifier(), line);
             assertFalse(emissions.isEmpty(), "Should emit for: " + line);
             assertEquals("Pulling model", emissions.get(0)[0]);
         }
     }
 
     @Test
-    void classifyAndEmit_shouldDetectSetupComplete() throws Exception {
-        EnvironmentSetup setup = new EnvironmentSetup(appDir);
-        Method m = EnvironmentSetup.class.getDeclaredMethod("classifyAndEmit", String.class,
-                BiConsumer.class);
-        m.setAccessible(true);
-
-        List<String[]> emissions = new ArrayList<>();
-        m.invoke(setup, "Setup Complete!", (BiConsumer<String, String>) (phase, detail) -> {
-            emissions.add(new String[] { phase, detail });
-        });
-
+    void classify_shouldDetectSetupComplete() {
+        List<String[]> emissions = collect(new ScriptOutputClassifier(), "Setup Complete!");
         assertFalse(emissions.isEmpty());
         assertEquals("Setup complete", emissions.get(0)[0]);
     }
 
     @Test
-    void resolveScript_shouldResolveSetupSh() throws Exception {
-        EnvironmentSetup setup = new EnvironmentSetup(appDir);
-        Method m = EnvironmentSetup.class.getDeclaredMethod("resolveScript");
-        m.setAccessible(true);
-
-        Path script = (Path) m.invoke(setup);
-        assertNotNull(script);
-        // On macOS/Linux, should resolve to bin/setup.sh
-        assertTrue(script.toString().endsWith("setup.sh") || script.toString().endsWith("setup.ps1"));
-    }
-
-    @Test
-    void run_shouldReturnTrueWhenNoScriptExists() throws Exception {
-        EnvironmentSetup setup = new EnvironmentSetup(appDir);
-        List<String[]> emissions = new ArrayList<>();
-        boolean result = setup.run((phase, detail) -> emissions.add(new String[] { phase, detail }));
-
-        assertTrue(result, "Should succeed when no script exists");
-        assertFalse(emissions.isEmpty());
-    }
-
-    @Test
-    void classifyAndEmit_shouldDetectOllamaInstall() throws Exception {
-        EnvironmentSetup setup = new EnvironmentSetup(appDir);
-        Method m = EnvironmentSetup.class.getDeclaredMethod("classifyAndEmit", String.class,
-                BiConsumer.class);
-        m.setAccessible(true);
-
-        List<String[]> emissions = new ArrayList<>();
-        m.invoke(setup, "[*] Installing Ollama", (BiConsumer<String, String>) (phase, detail) -> {
-            emissions.add(new String[] { phase, detail });
-        });
-
+    void classify_shouldDetectOllamaInstall() {
+        List<String[]> emissions = collect(new ScriptOutputClassifier(), "[*] Installing Ollama");
         assertFalse(emissions.isEmpty());
         assertEquals("Installing AI platform", emissions.get(0)[0]);
         assertNull(emissions.get(0)[1]);
     }
 
     @Test
-    void parseDownloadPercent_readsCurlDefaultMeterLeadingColumn() {
-        // Real curl no-TTY meter rows (leading "% Total" column = download %).
-        assertEquals(2, EnvironmentSetup.parseDownloadPercent(
-                "2  1.92G    2 52.78M    0     0  50.27M      0  0:00:39  0:00:01  0:00:38 52.83M"));
-        assertEquals(100, EnvironmentSetup.parseDownloadPercent(
-                "100  1.92G  100  1.92G    0     0  94.27M      0  0:00:20  0:00:20 --:--:-- 98.72M"));
-    }
-
-    @Test
-    void parseDownloadPercent_ignoresHeaderAndNonProgressLines() {
-        assertEquals(-1, EnvironmentSetup.parseDownloadPercent(
-                "% Total    % Received % Xferd  Average Speed   Time    Time     Time  Current"));
-        assertEquals(-1, EnvironmentSetup.parseDownloadPercent("Dload  Upload   Total   Spent    Left  Speed"));
-        assertEquals(-1, EnvironmentSetup.parseDownloadPercent("Extracting..."));
-    }
-
-    @Test
-    void parseDownloadPercent_alsoReadsProgressBarTrailingPercent() {
-        assertEquals(45, EnvironmentSetup.parseDownloadPercent("######            45.0%"));
-    }
-
-    @Test
-    void classifyAndEmit_shouldDetectIsolatedOllamaInstall() throws Exception {
+    void classify_shouldDetectIsolatedOllamaInstall() {
         // The isolated-install line carries an extra word ("isolated") and a
         // version/path tail; the phase detector must still recognise it so the
         // UI shows "Installing AI platform", not the raw line.
-        EnvironmentSetup setup = new EnvironmentSetup(appDir);
-        Method m = EnvironmentSetup.class.getDeclaredMethod("classifyAndEmit", String.class,
-                BiConsumer.class);
-        m.setAccessible(true);
-
-        List<String[]> emissions = new ArrayList<>();
-        m.invoke(setup, "[*] Installing isolated Ollama 0.24.0 into C:\\Users\\x\\AppData\\Local\\wsbg-terminal\\ai ...",
-                (BiConsumer<String, String>) (phase, detail) -> emissions.add(new String[] { phase, detail }));
-
+        List<String[]> emissions = collect(new ScriptOutputClassifier(),
+                "[*] Installing isolated Ollama 0.24.0 into C:\\Users\\x\\AppData\\Local\\wsbg-terminal\\ai ...");
         assertFalse(emissions.isEmpty());
         assertEquals("Installing AI platform", emissions.get(0)[0]);
     }
 
     @Test
-    void classifyAndEmit_shouldDetectOllamaInstallLegacyFormat() throws Exception {
-        EnvironmentSetup setup = new EnvironmentSetup(appDir);
-        Method m = EnvironmentSetup.class.getDeclaredMethod("classifyAndEmit", String.class,
-                BiConsumer.class);
-        m.setAccessible(true);
-
-        List<String[]> emissions = new ArrayList<>();
-        m.invoke(setup, "[*] Installing/updating Ollama", (BiConsumer<String, String>) (phase, detail) -> {
-            emissions.add(new String[] { phase, detail });
-        });
-
+    void classify_shouldDetectOllamaInstallLegacyFormat() {
+        List<String[]> emissions = collect(new ScriptOutputClassifier(), "[*] Installing/updating Ollama");
         assertFalse(emissions.isEmpty());
         assertEquals("Installing AI platform", emissions.get(0)[0]);
     }
 
     @Test
-    void classifyAndEmit_shouldEmitCurlProgressDuringInstallPhase() throws Exception {
-        EnvironmentSetup setup = new EnvironmentSetup(appDir);
-        Method classify = EnvironmentSetup.class.getDeclaredMethod("classifyAndEmit", String.class,
-                BiConsumer.class);
-        classify.setAccessible(true);
-
-        List<String[]> emissions = new ArrayList<>();
-        BiConsumer<String, String> collector = (phase, detail) -> emissions.add(new String[] { phase, detail });
-
-        // Activate install phase
-        classify.invoke(setup, "[*] Installing Ollama", collector);
-        emissions.clear();
-
-        // Curl progress during install
-        classify.invoke(setup, "####   8.8%", collector);
-
+    void classify_shouldEmitCurlProgressDuringInstallPhase() {
+        ScriptOutputClassifier c = new ScriptOutputClassifier();
+        collect(c, "[*] Installing Ollama");
+        List<String[]> emissions = collect(c, "####   8.8%");
         assertFalse(emissions.isEmpty());
         assertEquals("Installing AI platform", emissions.get(0)[0]);
         assertEquals("8%", emissions.get(0)[1]);
     }
 
     @Test
-    void classifyAndEmit_shouldExitInstallPhaseOnConfigLine() throws Exception {
-        EnvironmentSetup setup = new EnvironmentSetup(appDir);
-        Method classify = EnvironmentSetup.class.getDeclaredMethod("classifyAndEmit", String.class,
-                BiConsumer.class);
-        classify.setAccessible(true);
-
-        List<String[]> emissions = new ArrayList<>();
-        BiConsumer<String, String> collector = (phase, detail) -> emissions.add(new String[] { phase, detail });
-
-        // Enter install phase, then exit via Configuration line
-        classify.invoke(setup, "[*] Installing Ollama", collector);
-        classify.invoke(setup, "Configuration loaded", collector);
-        emissions.clear();
-
-        // Next line should be generic, not "Installing AI platform"
-        classify.invoke(setup, "some generic line", collector);
-
+    void classify_shouldExitInstallPhaseOnConfigLine() {
+        ScriptOutputClassifier c = new ScriptOutputClassifier();
+        collect(c, "[*] Installing Ollama", "Configuration loaded");
+        List<String[]> emissions = collect(c, "some generic line");
         assertFalse(emissions.isEmpty());
         assertEquals("Setting up environment", emissions.get(0)[0]);
     }
 
     @Test
-    void classifyAndEmit_shouldFallbackToSettingUpEnvironment() throws Exception {
-        EnvironmentSetup setup = new EnvironmentSetup(appDir);
-        Method m = EnvironmentSetup.class.getDeclaredMethod("classifyAndEmit", String.class,
-                BiConsumer.class);
-        m.setAccessible(true);
-
-        List<String[]> emissions = new ArrayList<>();
-        m.invoke(setup, "Checking system requirements", (BiConsumer<String, String>) (phase, detail) -> {
-            emissions.add(new String[] { phase, detail });
-        });
-
+    void classify_shouldFallbackToSettingUpEnvironment() {
+        List<String[]> emissions = collect(new ScriptOutputClassifier(), "Checking system requirements");
         assertFalse(emissions.isEmpty());
         assertEquals("Setting up environment", emissions.get(0)[0]);
         assertEquals("Checking system requirements", emissions.get(0)[1]);
     }
 
     @Test
-    void classifyAndEmit_shouldSuppressPullingPrefixLines() throws Exception {
-        EnvironmentSetup setup = new EnvironmentSetup(appDir);
-        Method m = EnvironmentSetup.class.getDeclaredMethod("classifyAndEmit", String.class,
-                BiConsumer.class);
-        m.setAccessible(true);
-
-        List<String[]> emissions = new ArrayList<>();
-        m.invoke(setup, "pulling a1b2c3d4e5f6", (BiConsumer<String, String>) (phase, detail) -> {
-            emissions.add(new String[] { phase, detail });
-        });
-
+    void classify_shouldSuppressPullingPrefixLines() {
+        List<String[]> emissions = collect(new ScriptOutputClassifier(), "pulling a1b2c3d4e5f6");
         // Internal "pulling <hash>" lines are silently consumed
         assertTrue(emissions.isEmpty());
     }
 
     @Test
-    void classifyAndEmit_shouldFilterSmallerLayerProgress() throws Exception {
-        EnvironmentSetup setup = new EnvironmentSetup(appDir);
-        Method classify = EnvironmentSetup.class.getDeclaredMethod("classifyAndEmit", String.class,
-                BiConsumer.class);
-        classify.setAccessible(true);
-
-        List<String[]> emissions = new ArrayList<>();
-        BiConsumer<String, String> collector = (phase, detail) -> emissions.add(new String[] { phase, detail });
-
-        // Large layer first — sets maxTotalBytes to ~3 GB
-        classify.invoke(setup, "50% ▕██████████░░░░░░░░░░▏ 1.5 GB / 3.0 GB", collector);
-        // Smaller layer (50 MB < 3 GB) — consumed by the pattern but not emitted
-        classify.invoke(setup, "80% ▕████████████████░░░░▏ 40 MB / 50 MB", collector);
-
+    void classify_shouldFilterSmallerLayerProgress() {
+        List<String[]> emissions = collect(new ScriptOutputClassifier(),
+                // Large layer first — sets maxTotalBytes to ~3 GB
+                "50% ▕██████████░░░░░░░░░░▏ 1.5 GB / 3.0 GB",
+                // Smaller layer (50 MB < 3 GB) — consumed by the pattern but not emitted
+                "80% ▕████████████████░░░░▏ 40 MB / 50 MB");
         assertEquals(1, emissions.size(), "Smaller layer progress should be suppressed");
         assertTrue(emissions.get(0)[1].contains("3.0 GB"));
     }
 
     @Test
-    void classifyAndEmit_shouldResetMaxTotalBytesOnNewPull() throws Exception {
-        EnvironmentSetup setup = new EnvironmentSetup(appDir);
-        Method classify = EnvironmentSetup.class.getDeclaredMethod("classifyAndEmit", String.class,
-                BiConsumer.class);
-        classify.setAccessible(true);
-
-        List<String[]> emissions = new ArrayList<>();
-        BiConsumer<String, String> collector = (phase, detail) -> emissions.add(new String[] { phase, detail });
-
-        // Large layer sets maxTotalBytes high
-        classify.invoke(setup, "90% ▕██████████░░░░░░░░░░▏ 2.7 GB / 3.0 GB", collector);
-        // New model pull resets maxTotalBytes
-        classify.invoke(setup, "> Pulling small-model:latest...", collector);
-        emissions.clear();
-
-        // Small layer of new model should now be emitted
-        classify.invoke(setup, "50% ▕██████████░░░░░░░░░░▏ 25 MB / 50 MB", collector);
-
+    void classify_shouldResetMaxTotalBytesOnNewPull() {
+        ScriptOutputClassifier c = new ScriptOutputClassifier();
+        collect(c,
+                // Large layer sets maxTotalBytes high
+                "90% ▕██████████░░░░░░░░░░▏ 2.7 GB / 3.0 GB",
+                // New model pull resets maxTotalBytes
+                "> Pulling small-model:latest...");
+        List<String[]> emissions = collect(c, "50% ▕██████████░░░░░░░░░░▏ 25 MB / 50 MB");
         assertEquals(1, emissions.size());
         assertTrue(emissions.get(0)[1].contains("50 MB"));
     }
 
     @Test
-    void classifyAndEmit_shouldDetectBrowserRuntimeInstall() throws Exception {
-        EnvironmentSetup setup = new EnvironmentSetup(appDir);
-        Method m = EnvironmentSetup.class.getDeclaredMethod("classifyAndEmit", String.class,
-                BiConsumer.class);
-        m.setAccessible(true);
-
-        List<String[]> emissions = new ArrayList<>();
-        m.invoke(setup, "[*] Installing browser runtime (macosx-arm64)...",
-                (BiConsumer<String, String>) (phase, detail) -> emissions.add(new String[] { phase, detail }));
-
+    void classify_shouldDetectBrowserRuntimeInstall() {
+        List<String[]> emissions = collect(new ScriptOutputClassifier(),
+                "[*] Installing browser runtime (macosx-arm64)...");
         assertFalse(emissions.isEmpty());
         assertEquals("Installing browser runtime", emissions.get(0)[0]);
         assertNull(emissions.get(0)[1]);
     }
 
     @Test
-    void classifyAndEmit_shouldEmitCurlProgressDuringBrowserInstall() throws Exception {
-        EnvironmentSetup setup = new EnvironmentSetup(appDir);
-        Method classify = EnvironmentSetup.class.getDeclaredMethod("classifyAndEmit", String.class,
-                BiConsumer.class);
-        classify.setAccessible(true);
-
-        List<String[]> emissions = new ArrayList<>();
-        BiConsumer<String, String> collector = (phase, detail) -> emissions.add(new String[] { phase, detail });
-
-        classify.invoke(setup, "[*] Installing browser runtime (linux-amd64)...", collector);
-        emissions.clear();
-
+    void classify_shouldEmitCurlProgressDuringBrowserInstall() {
+        ScriptOutputClassifier c = new ScriptOutputClassifier();
+        collect(c, "[*] Installing browser runtime (linux-amd64)...");
         // curl --progress-bar output (trailing percent, no byte figures)
-        classify.invoke(setup, "######            45.0%", collector);
-
+        List<String[]> emissions = collect(c, "######            45.0%");
         assertFalse(emissions.isEmpty());
         assertEquals("Installing browser runtime", emissions.get(0)[0]);
         assertEquals("45%", emissions.get(0)[1]);
     }
 
     @Test
-    void classifyAndEmit_shouldEndBrowserInstallOnReadyLine() throws Exception {
-        EnvironmentSetup setup = new EnvironmentSetup(appDir);
-        Method classify = EnvironmentSetup.class.getDeclaredMethod("classifyAndEmit", String.class,
-                BiConsumer.class);
-        classify.setAccessible(true);
-
-        List<String[]> emissions = new ArrayList<>();
-        BiConsumer<String, String> collector = (phase, detail) -> emissions.add(new String[] { phase, detail });
-
-        classify.invoke(setup, "[*] Installing browser runtime (macosx-arm64)...", collector);
-        classify.invoke(setup, "    Browser runtime ready.", collector);
-        emissions.clear();
-
-        // After the ready line the phase must be back to generic, not browser.
-        classify.invoke(setup, "some generic line", collector);
-
+    void classify_shouldEndBrowserInstallOnReadyLine() {
+        ScriptOutputClassifier c = new ScriptOutputClassifier();
+        collect(c, "[*] Installing browser runtime (macosx-arm64)...", "    Browser runtime ready.");
+        List<String[]> emissions = collect(c, "some generic line");
         assertFalse(emissions.isEmpty());
         assertEquals("Setting up environment", emissions.get(0)[0]);
     }
 
     @Test
-    void classifyAndEmit_shouldDetectFontInstall() throws Exception {
-        EnvironmentSetup setup = new EnvironmentSetup(appDir);
-        Method m = EnvironmentSetup.class.getDeclaredMethod("classifyAndEmit", String.class,
-                BiConsumer.class);
-        m.setAccessible(true);
-
-        List<String[]> emissions = new ArrayList<>();
-        m.invoke(setup, "[*] Installing terminal fonts...",
-                (BiConsumer<String, String>) (phase, detail) -> emissions.add(new String[] { phase, detail }));
-
+    void classify_shouldDetectFontInstall() {
+        List<String[]> emissions = collect(new ScriptOutputClassifier(), "[*] Installing terminal fonts...");
         assertFalse(emissions.isEmpty());
         assertEquals("Installing fonts", emissions.get(0)[0]);
         assertNull(emissions.get(0)[1]);
     }
 
     @Test
-    void parseBytes_shouldConvertAllUnits() throws Exception {
-        EnvironmentSetup setup = new EnvironmentSetup(appDir);
-        Method m = EnvironmentSetup.class.getDeclaredMethod("parseBytes", String.class);
-        m.setAccessible(true);
-
-        assertEquals(3_000_000_000L, (long) m.invoke(setup, "3 GB"));
-        assertEquals(1_500_000_000L, (long) m.invoke(setup, "1.5 GB"));
-        assertEquals(739_000_000L, (long) m.invoke(setup, "739 MB"));
-        assertEquals(512_000L, (long) m.invoke(setup, "512 KB"));
-        assertEquals(1024L, (long) m.invoke(setup, "1024 B"));
-    }
-
-    @Test
-    void parseBytes_shouldReturnZeroForInvalidInput() throws Exception {
-        EnvironmentSetup setup = new EnvironmentSetup(appDir);
-        Method m = EnvironmentSetup.class.getDeclaredMethod("parseBytes", String.class);
-        m.setAccessible(true);
-
-        assertEquals(0L, (long) m.invoke(setup, "not a number"));
-    }
-
-    @Test
-    void isNoise_shouldMatchSpinnerCharacters() throws Exception {
-        EnvironmentSetup setup = new EnvironmentSetup(appDir);
-        Method m = EnvironmentSetup.class.getDeclaredMethod("isNoise", String.class);
-        m.setAccessible(true);
-
-        assertTrue((boolean) m.invoke(setup, "/"));
-        assertTrue((boolean) m.invoke(setup, "\\"));
-        assertTrue((boolean) m.invoke(setup, "|"));
-        assertTrue((boolean) m.invoke(setup, "-"));
-    }
-
-    @Test
-    void classifyAndEmit_shouldDetectPullingManifest() throws Exception {
-        EnvironmentSetup setup = new EnvironmentSetup(appDir);
-        Method m = EnvironmentSetup.class.getDeclaredMethod("classifyAndEmit", String.class,
-                BiConsumer.class);
-        m.setAccessible(true);
-
-        List<String[]> emissions = new ArrayList<>();
-        m.invoke(setup, "pulling manifest", (BiConsumer<String, String>) (phase, detail) -> {
-            emissions.add(new String[] { phase, detail });
-        });
-
+    void classify_shouldDetectPullingManifest() {
+        List<String[]> emissions = collect(new ScriptOutputClassifier(), "pulling manifest");
         assertFalse(emissions.isEmpty());
         assertEquals("Pulling model", emissions.get(0)[0]);
         assertEquals("pulling manifest", emissions.get(0)[1]);
     }
 
     @Test
-    void parseDownloadDetail_buildsRichDetailFromCurlMeter() {
-        // Original curl no-TTY meter rows captured from the Ollama binary download.
-        assertEquals("2% — 52.78 MB / 1.92 GB", EnvironmentSetup.parseDownloadDetail(
-                "2  1.92G    2 52.78M    0     0  50.27M      0  0:00:39  0:00:01  0:00:38 52.83M"));
-        assertEquals("100% — 1.92 GB / 1.92 GB", EnvironmentSetup.parseDownloadDetail(
-                "100  1.92G  100  1.92G    0     0  94.27M      0  0:00:20  0:00:20 --:--:-- 98.72M"));
-    }
-
-    @Test
-    void parseDownloadDetail_fallsBackToBarePercentForProgressBar() {
-        assertEquals("45%", EnvironmentSetup.parseDownloadDetail("######            45.0%"));
-    }
-
-    @Test
-    void parseDownloadDetail_returnsNullForHeaderAndNonProgress() {
-        assertNull(EnvironmentSetup.parseDownloadDetail(
-                "% Total    % Received % Xferd  Average Speed   Time    Time     Time  Current"));
-        assertNull(EnvironmentSetup.parseDownloadDetail("Extracting..."));
-    }
-
-    @Test
-    void classifyAndEmit_emitsRichDetailDuringInstallPhase() throws Exception {
-        EnvironmentSetup setup = new EnvironmentSetup(appDir);
-        Method classify = EnvironmentSetup.class.getDeclaredMethod("classifyAndEmit", String.class,
-                BiConsumer.class);
-        classify.setAccessible(true);
-
-        List<String[]> emissions = new ArrayList<>();
-        BiConsumer<String, String> collector = (phase, detail) -> emissions.add(new String[] { phase, detail });
-
-        classify.invoke(setup, "[*] Installing Ollama", collector);
-        emissions.clear();
-
-        classify.invoke(setup,
-                "2  1.92G    2 52.78M    0     0  50.27M      0  0:00:39  0:00:01  0:00:38 52.83M", collector);
-
+    void classify_emitsRichDetailDuringInstallPhase() {
+        ScriptOutputClassifier c = new ScriptOutputClassifier();
+        collect(c, "[*] Installing Ollama");
+        List<String[]> emissions = collect(c,
+                "2  1.92G    2 52.78M    0     0  50.27M      0  0:00:39  0:00:01  0:00:38 52.83M");
         assertFalse(emissions.isEmpty());
         assertEquals("Installing AI platform", emissions.get(0)[0]);
         assertEquals("2% — 52.78 MB / 1.92 GB", emissions.get(0)[1]);
     }
 
+    // =====================================================================
+    // ScriptOutputClassifier — curl size/percent parsers
+    // =====================================================================
+
+    @Test
+    void parseDownloadPercent_readsCurlDefaultMeterLeadingColumn() {
+        // Real curl no-TTY meter rows (leading "% Total" column = download %).
+        assertEquals(2, ScriptOutputClassifier.parseDownloadPercent(
+                "2  1.92G    2 52.78M    0     0  50.27M      0  0:00:39  0:00:01  0:00:38 52.83M"));
+        assertEquals(100, ScriptOutputClassifier.parseDownloadPercent(
+                "100  1.92G  100  1.92G    0     0  94.27M      0  0:00:20  0:00:20 --:--:-- 98.72M"));
+    }
+
+    @Test
+    void parseDownloadPercent_ignoresHeaderAndNonProgressLines() {
+        assertEquals(-1, ScriptOutputClassifier.parseDownloadPercent(
+                "% Total    % Received % Xferd  Average Speed   Time    Time     Time  Current"));
+        assertEquals(-1, ScriptOutputClassifier.parseDownloadPercent("Dload  Upload   Total   Spent    Left  Speed"));
+        assertEquals(-1, ScriptOutputClassifier.parseDownloadPercent("Extracting..."));
+    }
+
+    @Test
+    void parseDownloadPercent_alsoReadsProgressBarTrailingPercent() {
+        assertEquals(45, ScriptOutputClassifier.parseDownloadPercent("######            45.0%"));
+    }
+
+    @Test
+    void parseDownloadDetail_buildsRichDetailFromCurlMeter() {
+        // Original curl no-TTY meter rows captured from the Ollama binary download.
+        assertEquals("2% — 52.78 MB / 1.92 GB", ScriptOutputClassifier.parseDownloadDetail(
+                "2  1.92G    2 52.78M    0     0  50.27M      0  0:00:39  0:00:01  0:00:38 52.83M"));
+        assertEquals("100% — 1.92 GB / 1.92 GB", ScriptOutputClassifier.parseDownloadDetail(
+                "100  1.92G  100  1.92G    0     0  94.27M      0  0:00:20  0:00:20 --:--:-- 98.72M"));
+    }
+
+    @Test
+    void parseDownloadDetail_fallsBackToBarePercentForProgressBar() {
+        assertEquals("45%", ScriptOutputClassifier.parseDownloadDetail("######            45.0%"));
+    }
+
+    @Test
+    void parseDownloadDetail_returnsNullForHeaderAndNonProgress() {
+        assertNull(ScriptOutputClassifier.parseDownloadDetail(
+                "% Total    % Received % Xferd  Average Speed   Time    Time     Time  Current"));
+        assertNull(ScriptOutputClassifier.parseDownloadDetail("Extracting..."));
+    }
+
     @Test
     void normalizeCurlSize_handlesUnits() {
-        assertEquals("1.92 GB", EnvironmentSetup.normalizeCurlSize("1.92G"));
-        assertEquals("52.78 MB", EnvironmentSetup.normalizeCurlSize("52.78M"));
-        assertEquals("739 KB", EnvironmentSetup.normalizeCurlSize("739K"));
-        assertEquals("1.92 GB", EnvironmentSetup.normalizeCurlSize("1.92GB"));
+        assertEquals("1.92 GB", ScriptOutputClassifier.normalizeCurlSize("1.92G"));
+        assertEquals("52.78 MB", ScriptOutputClassifier.normalizeCurlSize("52.78M"));
+        assertEquals("739 KB", ScriptOutputClassifier.normalizeCurlSize("739K"));
+        assertEquals("1.92 GB", ScriptOutputClassifier.normalizeCurlSize("1.92GB"));
+    }
+
+    // =====================================================================
+    // ByteSizes
+    // =====================================================================
+
+    @Test
+    void byteSizes_shouldConvertAllUnits() {
+        assertEquals(3_000_000_000L, ByteSizes.parseOrZero("3 GB"));
+        assertEquals(1_500_000_000L, ByteSizes.parseOrZero("1.5 GB"));
+        assertEquals(739_000_000L, ByteSizes.parseOrZero("739 MB"));
+        assertEquals(512_000L, ByteSizes.parseOrZero("512 KB"));
+        assertEquals(1024L, ByteSizes.parseOrZero("1024 B"));
+    }
+
+    @Test
+    void byteSizes_shouldReturnZeroForInvalidInput() {
+        assertEquals(0L, ByteSizes.parseOrZero("not a number"));
+    }
+
+    // =====================================================================
+    // SetupScriptLocator
+    // =====================================================================
+
+    @Test
+    void resolveScript_shouldResolveSetupSh() {
+        Path script = new SetupScriptLocator(appDir).resolveScript();
+        assertNotNull(script);
+        // On macOS/Linux, should resolve to bin/setup.sh
+        assertTrue(script.toString().endsWith("setup.sh") || script.toString().endsWith("setup.ps1"));
+    }
+
+    @Test
+    void resolveScript_shouldHonorScriptDirOverride() throws Exception {
+        Path override = appDir.resolve("repo-scripts");
+        java.nio.file.Files.createDirectories(override);
+        java.nio.file.Files.writeString(override.resolve("setup.sh"), "#!/bin/bash\n");
+        java.nio.file.Files.writeString(override.resolve("setup.ps1"), "");
+
+        System.setProperty(SetupScriptLocator.SCRIPT_DIR_PROPERTY, override.toString());
+        try {
+            Path script = new SetupScriptLocator(appDir).resolveScript();
+            assertTrue(script.startsWith(override),
+                    "Override dir must win over <appDir>/bin: " + script);
+        } finally {
+            System.clearProperty(SetupScriptLocator.SCRIPT_DIR_PROPERTY);
+        }
+    }
+
+    // =====================================================================
+    // EnvironmentSetup — lifecycle + exit-code contract
+    // =====================================================================
+
+    @Test
+    void run_shouldReturnTrueWhenNoScriptExists() throws Exception {
+        EnvironmentSetup setup = new EnvironmentSetup(appDir);
+        List<String[]> emissions = new ArrayList<>();
+        boolean result = setup.run((phase, detail) -> emissions.add(new String[]{phase, detail}));
+
+        assertTrue(result, "Should succeed when no script exists");
+        assertFalse(emissions.isEmpty());
     }
 
     @Test
@@ -566,7 +398,7 @@ class EnvironmentSetupTest {
         List<String[]> emissions = new ArrayList<>();
 
         long start = System.currentTimeMillis();
-        boolean result = setup.run((phase, detail) -> emissions.add(new String[] { phase, detail }));
+        boolean result = setup.run((phase, detail) -> emissions.add(new String[]{phase, detail}));
         long elapsed = System.currentTimeMillis() - start;
 
         assertFalse(result, "Silent script must be reported as failed");
@@ -589,7 +421,7 @@ class EnvironmentSetupTest {
 
         EnvironmentSetup setup = new EnvironmentSetup(appDir, java.time.Duration.ofMillis(500));
         List<String[]> emissions = new ArrayList<>();
-        boolean result = setup.run((phase, detail) -> emissions.add(new String[] { phase, detail }));
+        boolean result = setup.run((phase, detail) -> emissions.add(new String[]{phase, detail}));
 
         assertTrue(result, "Steadily emitting script must complete normally");
     }
@@ -606,31 +438,10 @@ class EnvironmentSetupTest {
 
         EnvironmentSetup setup = new EnvironmentSetup(appDir);
         List<String[]> emissions = new ArrayList<>();
-        boolean result = setup.run((phase, detail) -> emissions.add(new String[] { phase, detail }));
+        boolean result = setup.run((phase, detail) -> emissions.add(new String[]{phase, detail}));
 
         assertFalse(result);
         assertTrue(emissions.stream().anyMatch(e -> e[0].equals("Setup completed with warnings")),
                 "Exit code 10 should surface as 'completed with warnings'");
-    }
-
-    @Test
-    void resolveScript_shouldHonorScriptDirOverride() throws Exception {
-        Path override = appDir.resolve("repo-scripts");
-        java.nio.file.Files.createDirectories(override);
-        java.nio.file.Files.writeString(override.resolve("setup.sh"), "#!/bin/bash\n");
-        java.nio.file.Files.writeString(override.resolve("setup.ps1"), "");
-
-        System.setProperty(EnvironmentSetup.SCRIPT_DIR_PROPERTY, override.toString());
-        try {
-            EnvironmentSetup setup = new EnvironmentSetup(appDir);
-            Method m = EnvironmentSetup.class.getDeclaredMethod("resolveScript");
-            m.setAccessible(true);
-
-            Path script = (Path) m.invoke(setup);
-            assertTrue(script.startsWith(override),
-                    "Override dir must win over <appDir>/bin: " + script);
-        } finally {
-            System.clearProperty(EnvironmentSetup.SCRIPT_DIR_PROPERTY);
-        }
     }
 }

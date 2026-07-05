@@ -14,9 +14,7 @@ import org.slf4j.LoggerFactory;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -71,11 +69,8 @@ public class WallstreetOnlineClient {
 
     /** name (lowercased) → resolved instrument. Loaded from disk on startup; an ISIN is fixed. */
     private final Map<String, WsoInstrument> cache = new ConcurrentHashMap<>();
-    /** Append-only on-disk memory of name→ISIN (an ISIN never changes), or null in tests. */
-    private final Path cacheFile;
-
-    /** One persisted name→ISIN line. */
-    private record CacheLine(String q, String isin, String wkn, String name) {}
+    /** Append-only on-disk memory of name→ISIN (an ISIN never changes). */
+    private final WsoIsinStore store;
 
     /** Test/default: plain direct transport, in-memory only (no disk). */
     public WallstreetOnlineClient() {
@@ -90,46 +85,8 @@ public class WallstreetOnlineClient {
 
     WallstreetOnlineClient(WebFetcher fetcher, Path cacheFile) {
         this.fetcher = fetcher;
-        this.cacheFile = cacheFile;
-        loadCache();
-    }
-
-    /** Loads the persisted name→ISIN memory (skipping torn/old lines), if a file is configured. */
-    private void loadCache() {
-        if (cacheFile == null || !Files.exists(cacheFile)) return;
-        int n = 0;
-        try {
-            for (String line : Files.readAllLines(cacheFile, StandardCharsets.UTF_8)) {
-                if (line.isBlank()) continue;
-                try {
-                    CacheLine c = JSON.readValue(line, CacheLine.class);
-                    // Skip a poisoned entry written before the class-filter (a derivative
-                    // anchored under the company name) — it self-heals: the next resolve
-                    // re-queries (class-filtered) and appends a clean line.
-                    if (c.q() != null && c.isin() != null && !looksLikeDerivative(c.name())) {
-                        cache.put(c.q(), new WsoInstrument(c.isin(), c.wkn(), c.name()));
-                        n++;
-                    }
-                } catch (Exception ignore) { /* skip a torn line */ }
-            }
-            LOG.info("[WSO] loaded {} cached ISIN(s) from {}", n, cacheFile.getFileName());
-        } catch (Exception e) {
-            LOG.debug("WSO cache load failed: {}", e.getMessage());
-        }
-    }
-
-    /** Appends a freshly-resolved name→ISIN to the on-disk memory (idempotent per key). */
-    private void persist(String key, WsoInstrument w) {
-        if (cacheFile == null) return;
-        try {
-            Files.createDirectories(cacheFile.getParent());
-            Files.writeString(cacheFile,
-                    JSON.writeValueAsString(new CacheLine(key, w.isin(), w.wkn(), w.name()))
-                            + System.lineSeparator(),
-                    StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-        } catch (Exception e) {
-            LOG.debug("WSO cache append failed: {}", e.getMessage());
-        }
+        this.store = new WsoIsinStore(cacheFile, WallstreetOnlineClient::looksLikeDerivative);
+        cache.putAll(store.load());
     }
 
     /**
@@ -145,7 +102,7 @@ public class WallstreetOnlineClient {
         }
         Optional<WsoInstrument> r = resolve(name);
         // Alias the ticker → the same instrument so the next lookup by ticker is instant.
-        if (tk != null) r.ifPresent(w -> { if (cache.putIfAbsent(tk, w) == null) persist(tk, w); });
+        if (tk != null) r.ifPresent(w -> { if (cache.putIfAbsent(tk, w) == null) store.append(tk, w); });
         return r;
     }
 
@@ -176,7 +133,7 @@ public class WallstreetOnlineClient {
             }
             inst.ifPresent(w -> {
                 if (cache.putIfAbsent(key, w) == null) {
-                    persist(key, w); // first resolution → remember it on disk (ISIN is fixed)
+                    store.append(key, w); // first resolution → remember it on disk (ISIN is fixed)
                     LOG.info("[WSO] '{}' → isin={} wkn={} '{}'", name, w.isin(), w.wkn(), w.name());
                 }
             });
@@ -201,30 +158,7 @@ public class WallstreetOnlineClient {
         try {
             JsonNode results = JSON.readTree(body).path("result");
             if (!results.isArray() || results.isEmpty()) return Optional.empty();
-            List<String> want = nameTokens(query);
-            JsonNode covBest = null; long covBestPop = -1;   // most-popular that PASSES name coverage
-            JsonNode popBest = null; long popBestPop = -1;   // most-popular overall (any coverage)
-            for (JsonNode r : results) {
-                if (!ALLOWED_CLASS.contains(r.path("class").asText("").toLowerCase(Locale.ROOT))) continue;
-                String isin = r.path("isin").asText("").trim().toUpperCase(Locale.ROOT);
-                if (!isValidIsin(isin)) continue;
-                if (looksLikeDerivative(r.path("name").asText(""))) continue; // belt: a 'stock'-class derivative
-                long pop = r.path("popularity").asLong(0);
-                if (pop > popBestPop) { popBestPop = pop; popBest = r; }
-                if (coverage(want, nameTokens(r.path("name").asText(""))) >= MIN_NAME_COVERAGE
-                        && pop > covBestPop) { covBestPop = pop; covBest = r; }
-            }
-            // Normally take the conservative coverage pick. BUT WSO's `popularity` is the
-            // strongest disambiguator, and a company's official short name needn't share words
-            // with the room's descriptive long name — "SpaceX" (US84615Q1031, pop 992371) carries
-            // ZERO coverage of "Space Exploration Technologies" and was being discarded for an
-            // obscure same-named Canadian twin (pop 201). So when one instrument's popularity
-            // DOMINATES (≥20× the coverage pick) and is itself substantial, trust it.
-            JsonNode best = covBest;
-            if (popBest != null && popBestPop >= POP_DOMINANCE_FLOOR
-                    && (covBest == null || popBestPop >= covBestPop * POP_DOMINANCE)) {
-                best = popBest;
-            }
+            JsonNode best = pickBest(results, nameTokens(query));
             if (best == null) return Optional.empty();
             return Optional.of(new WsoInstrument(
                     best.path("isin").asText("").trim().toUpperCase(Locale.ROOT),
@@ -233,6 +167,37 @@ public class WallstreetOnlineClient {
             LOG.debug("WSO parse failure: {}", e.getMessage());
             return Optional.empty();
         }
+    }
+
+    /**
+     * The popularity-dominance ranking policy: among the eligible results (allowed class, valid
+     * ISIN, non-derivative name) normally take the conservative coverage pick — the most-popular
+     * hit whose name covers the query. BUT WSO's {@code popularity} is the strongest
+     * disambiguator, and a company's official short name needn't share words with the room's
+     * descriptive long name — "SpaceX" (US84615Q1031, pop 992371) carries ZERO coverage of
+     * "Space Exploration Technologies" and was being discarded for an obscure same-named Canadian
+     * twin (pop 201). So when one instrument's popularity DOMINATES (≥{@value #POP_DOMINANCE}× the
+     * coverage pick) and is itself substantial, trust it. Returns the winning node, or {@code null}.
+     */
+    private static JsonNode pickBest(JsonNode results, List<String> want) {
+        JsonNode covBest = null; long covBestPop = -1;   // most-popular that PASSES name coverage
+        JsonNode popBest = null; long popBestPop = -1;   // most-popular overall (any coverage)
+        for (JsonNode r : results) {
+            if (!ALLOWED_CLASS.contains(r.path("class").asText("").toLowerCase(Locale.ROOT))) continue;
+            String isin = r.path("isin").asText("").trim().toUpperCase(Locale.ROOT);
+            if (!isValidIsin(isin)) continue;
+            if (looksLikeDerivative(r.path("name").asText(""))) continue; // belt: a 'stock'-class derivative
+            long pop = r.path("popularity").asLong(0);
+            if (pop > popBestPop) { popBestPop = pop; popBest = r; }
+            if (coverage(want, nameTokens(r.path("name").asText(""))) >= MIN_NAME_COVERAGE
+                    && pop > covBestPop) { covBestPop = pop; covBest = r; }
+        }
+        JsonNode best = covBest;
+        if (popBest != null && popBestPop >= POP_DOMINANCE_FLOOR
+                && (covBest == null || popBestPop >= covBestPop * POP_DOMINANCE)) {
+            best = popBest;
+        }
+        return best;
     }
 
     private static boolean isValidIsin(String s) {
@@ -294,10 +259,6 @@ public class WallstreetOnlineClient {
             }
         }
         return (double) hit / want.size();
-    }
-
-    private static String stripHtml(String s) {
-        return s == null ? "" : s.replaceAll("<[^>]+>", " ").replaceAll("\\s+", " ").trim();
     }
 
     private static String blankToNull(String s) {

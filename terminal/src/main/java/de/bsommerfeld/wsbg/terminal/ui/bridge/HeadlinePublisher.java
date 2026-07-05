@@ -6,13 +6,12 @@ import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.agent.event.AgentStreamEndEvent;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
 import de.bsommerfeld.wsbg.terminal.db.AgentRepository;
-import de.bsommerfeld.wsbg.terminal.db.AgentRepository.HeadlineRecord;
+import de.bsommerfeld.wsbg.terminal.db.HeadlineRecord;
 import de.bsommerfeld.wsbg.terminal.ui.web.PushHub;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
@@ -33,12 +32,7 @@ public final class HeadlinePublisher {
 
     private final AgentRepository repo;
     private final PushHub hub;
-    private final ScheduledExecutorService scheduler =
-            Executors.newSingleThreadScheduledExecutor(r -> {
-                Thread t = new Thread(r, "headline-publisher");
-                t.setDaemon(true);
-                return t;
-            });
+    private final ScheduledExecutorService scheduler = DaemonSchedulers.scheduled("headline-publisher");
 
     /** Fingerprint of the last pushed snapshot — skip re-broadcasting identical state. */
     private volatile String lastSnapshotKey = "";

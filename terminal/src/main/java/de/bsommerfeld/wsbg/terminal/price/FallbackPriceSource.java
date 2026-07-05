@@ -9,25 +9,18 @@ import de.bsommerfeld.wsbg.terminal.core.price.PriceSource;
 import de.bsommerfeld.wsbg.terminal.currency.EurUsdMonitorService;
 import de.bsommerfeld.wsbg.terminal.langschwarz.LangSchwarzClient;
 import de.bsommerfeld.wsbg.terminal.langschwarz.LsInstrument;
-import de.bsommerfeld.wsbg.terminal.nasdaq.NasdaqClient;
-import de.bsommerfeld.wsbg.terminal.deutscheboerse.DeutscheBoerseClient;
+import de.bsommerfeld.wsbg.terminal.price.TradingWindowClock.PriceWindow;
 import de.bsommerfeld.wsbg.terminal.wallstreetonline.WallstreetOnlineClient;
 import de.bsommerfeld.wsbg.terminal.wallstreetonline.WsoInstrument;
 import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooFinanceClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.time.DayOfWeek;
 import java.time.Instant;
-import java.time.LocalTime;
-import java.time.ZoneId;
-import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
 /**
@@ -37,19 +30,19 @@ import java.util.function.Supplier;
  * still shows a last price (dimmed). Everything is normalised to EUR.
  *
  * <ol>
- *   <li><b>Lang &amp; Schwarz Tradecenter</b> — by name, EUR, with sparkline + after-hours.
- *       Also yields the ISIN the Deutsche Börse step needs. Leads at every hour
- *       (the audience's actual venue); off-session its quote is marked stale.</li>
- *   <li><b>Deutsche Börse</b> (Xetra/Frankfurt) — by ISIN, EUR, official day-move,
- *       honest timestamp. Replaces the old Tradegate fallback.</li>
- *   <li><b>NASDAQ.com</b> — by ticker, USD→EUR, US fallback.</li>
- *   <li><b>Yahoo</b> — by ticker, USD→EUR, last-resort (Yahoo stays the news source elsewhere).</li>
+ *   <li><b>Lang &amp; Schwarz Tradecenter</b> — by name (or by the ISIN
+ *       wallstreet-online resolves when the name search misses), EUR, with
+ *       sparkline + after-hours. Leads at every hour (the audience's actual
+ *       venue); off-session its quote is marked stale.</li>
+ *   <li><b>Yahoo</b> — by ticker, USD→EUR, the safety net for what L&amp;S can't
+ *       resolve (US-only names, crypto, indices). Yahoo stays the news source elsewhere.</li>
  * </ol>
  *
- * The first two are the EUR venues the DAX-room audience trades; Yahoo/NASDAQ are
- * the fallback for what they can't resolve (US-only names, crypto, indices). All
- * ride the shared browser-joker {@code WebFetcher}; any provider that throws or
- * returns empty is simply skipped.
+ * All ride the shared browser-joker {@code WebFetcher}; any provider that throws
+ * or returns empty is simply skipped. The trading-window clock, EUR normalisation
+ * and the TTL cache are factored into {@link TradingWindowClock},
+ * {@link EurNormalizer} and {@link SnapshotCache} respectively; this class owns the
+ * resolve-attempt orchestration.
  */
 @Singleton
 public class FallbackPriceSource implements PriceSource {
@@ -59,39 +52,21 @@ public class FallbackPriceSource implements PriceSource {
     /** A snapshot whose quote is younger than this counts as fresh/live. */
     private static final long FRESH_SECONDS = 30 * 60;
 
-    /**
-     * Resolved snapshots (EUR price + day-move + spark) are reused this long. The same
-     * ticker is priced once per subject AND re-priced across many clusters within one
-     * editorial tick, and each miss is up to TWO slow browser fetches (info + chart) per
-     * source — that serial I/O was the dominant per-tick blocker. Mirrors the NASDAQ news
-     * cache; off-hours the underlying value doesn't move, in-session 2 min is well inside
-     * the venues' own refresh cadence. Keyed by ticker (or name).
-     */
-    private static final long CACHE_TTL_SECONDS = 120;
-    private final Map<String, Cached> cache = new ConcurrentHashMap<>();
-
-    /** A cached resolved snapshot with the epoch-second it was stored. */
-    private record Cached(MarketSnapshot snapshot, long storedAt) {}
-
     private final LangSchwarzClient ls;
-    private final DeutscheBoerseClient db;
     private final WallstreetOnlineClient wso;
-    private final NasdaqClient nasdaq;
     private final YahooFinanceClient yahoo;
-    private final EurUsdMonitorService fx;
+    private final EurNormalizer eur;
+    private final SnapshotCache cache = new SnapshotCache();
     /** Read fresh each call so the Settings toggle takes effect live; null in tests/lab. */
     private final GlobalConfig config;
 
     @Inject
-    public FallbackPriceSource(LangSchwarzClient ls, DeutscheBoerseClient db,
-            WallstreetOnlineClient wso, NasdaqClient nasdaq, YahooFinanceClient yahoo,
-            EurUsdMonitorService fx, GlobalConfig config) {
+    public FallbackPriceSource(LangSchwarzClient ls, WallstreetOnlineClient wso,
+            YahooFinanceClient yahoo, EurUsdMonitorService fx, GlobalConfig config) {
         this.ls = ls;
-        this.db = db;
         this.wso = wso;
-        this.nasdaq = nasdaq;
         this.yahoo = yahoo;
-        this.fx = fx;
+        this.eur = new EurNormalizer(fx);
         this.config = config;
     }
 
@@ -108,30 +83,21 @@ public class FallbackPriceSource implements PriceSource {
         // big per-tick saving (the same ticker is otherwise re-fetched for every cluster
         // that names it, each a multi-second browser round-trip).
         String key = cacheKey(ref);
-        if (key != null) {
-            Cached hit = cache.get(key);
-            if (hit != null && Instant.now().getEpochSecond() - hit.storedAt() < CACHE_TTL_SECONDS) {
-                return Optional.of(hit.snapshot());
-            }
-        }
+        Optional<MarketSnapshot> cached = cache.get(key);
+        if (cached.isPresent()) return cached;
 
         // Source preference is decided by the CET clock window, NOT by the (unreliable)
         // per-venue timestamp: L&S reports a "fresh"-looking stamp even when it's closed.
-        PriceWindow window = windowAt(ZonedDateTime.now(BERLIN));
         // Even in the 02:00–07:30 GAP (all venues closed) we do NOT bail: the
-        // ticker sources (NASDAQ/Yahoo) still return a last close, and the
-        // freshest-stale fallback below hands it back marked stale — so a unit
-        // first seen cold during the gap still shows a (dimmed) last price instead
-        // of no number at all. German venues stay out of the gap (lsSession=false),
-        // so the gap only costs the two ticker calls, not the L&S name lookup.
-        boolean lsSession = window == PriceWindow.LS;
-        // The target audience trades EUR on L&S (Trade Republic's venue) + Deutsche Börse, so
-        // those German EQUITY venues LEAD at every hour — including overnight, where they
-        // return a last EUR close (marked stale below). This is what fixes a US-ETF (SOXX)
-        // being priced from its $590 US listing instead of the EUR product. They stay out
-        // only for non-equities — crypto (BTC-USD), index (^IXIC), FX (=X) — which would
-        // mis-match a same-named German share ("Bitcoin" → "Bitcoin Group SE"); those go
-        // to Yahoo. The L&S resolver itself now rejects wrong-twin name hits (min coverage).
+        // ticker source (Yahoo) still returns a last close, and the freshest-stale
+        // fallback below hands it back marked stale — so a unit first seen cold during
+        // the gap still shows a (dimmed) last price instead of no number at all.
+        // The target audience trades EUR on L&S (Trade Republic's venue), so that German
+        // EQUITY venue LEADS at every hour — including overnight, where it returns a last
+        // EUR close (marked stale below). This is what fixes a US-ETF (SOXX) being priced
+        // from its $590 US listing instead of the EUR product. It stays out only for
+        // non-equities — crypto (BTC-USD), index (^IXIC), FX (=X) — which would mis-match
+        // a same-named German share ("Bitcoin" → "Bitcoin Group SE"); those go to Yahoo.
         boolean germanVenueEligible = isEquityTicker(ref.ticker());
         // Yahoo is a SAFETY NET, not a competitor: the attempts run L&S FIRST, so for an
         // equity Yahoo only ever fires when L&S genuinely found nothing — the "are you SURE
@@ -153,7 +119,7 @@ public class FallbackPriceSource implements PriceSource {
         // ISIN anchor and retry L&S by that exact ISIN. So WSO is the FALLBACK, not the per-equity
         // primary (it stays cached either way). Prices are L&S-only ("weniger ist mehr"); Yahoo
         // remains the opt-in US fallback + the always-on source for index points / crypto.
-        List<Supplier<Optional<MarketSnapshot>>> attempts = new ArrayList<>(3);
+        List<Supplier<Optional<MarketSnapshot>>> attempts = new ArrayList<>(2);
         attempts.add(() -> {
             if (!germanVenueEligible) return Optional.empty();
             // 1) L&S by name — the cheap 80% common path, no WSO.
@@ -180,7 +146,7 @@ public class FallbackPriceSource implements PriceSource {
         attempts.add(() -> {
             if (!usAllowed || !ref.hasTicker()) return Optional.empty();
             MarketSnapshot s = yahooSnapshotRaw(ref.ticker());
-            return s == null ? Optional.empty() : Optional.of(convertUs ? toEur(s) : s);
+            return s == null ? Optional.empty() : Optional.of(convertUs ? eur.toEur(s) : s);
         });
 
         MarketSnapshot freshestStale = null;
@@ -205,15 +171,15 @@ public class FallbackPriceSource implements PriceSource {
      */
     public static boolean isLive(MarketSnapshot s) {
         if (s == null) return false;
-        PriceWindow window = windowAt(ZonedDateTime.now(BERLIN));
+        PriceWindow window = TradingWindowClock.now();
         boolean lsSession = window == PriceWindow.LS;
         return (isFresh(s) || window != PriceWindow.GAP) && !(isGermanVenue(s) && !lsSession);
     }
 
     /**
      * True for an L&amp;S snapshot — the one venue that reports a fresh-looking
-     * timestamp even when closed, so off-session it must be forced stale. Deutsche
-     * Börse and Yahoo/NASDAQ carry an honest last-trade timestamp and need no override.
+     * timestamp even when closed, so off-session it must be forced stale. Yahoo/NASDAQ
+     * carry an honest last-trade timestamp and need no override.
      */
     private static boolean isGermanVenue(MarketSnapshot s) {
         String x = s == null ? null : s.exchangeName();
@@ -222,44 +188,9 @@ public class FallbackPriceSource implements PriceSource {
         return t.contains("l&s") || t.contains("lang");
     }
 
-    /** Which trading window the CET clock is in — drives which price source leads. */
-    enum PriceWindow { LS, US_AFTERHOURS, GAP }
-
-    private static final ZoneId BERLIN = ZoneId.of("Europe/Berlin");
-
-    /**
-     * The active window at {@code berlin} (CET/CEST):
-     * <ul>
-     *   <li><b>LS</b> — L&amp;S Tradecenter open: Mon–Fri 07:30–23:00, plus the weekend
-     *       slots Sat 10:00–13:00 and Sun 17:00–19:00.</li>
-     *   <li><b>US_AFTERHOURS</b> — L&amp;S closed but US post-market live: weekday
-     *       23:00–24:00 and 00:00–02:00 of the morning after a weekday (Tue–Sat).</li>
-     *   <li><b>GAP</b> — 02:00–07:30 and idle weekend hours: nothing trades.</li>
-     * </ul>
-     * Package-private + parameterised for testing.
-     */
-    static PriceWindow windowAt(ZonedDateTime berlin) {
-        DayOfWeek day = berlin.getDayOfWeek();
-        LocalTime t = berlin.toLocalTime();
-        boolean weekday = day.getValue() <= 5; // Mon(1)–Fri(5)
-        if (day == DayOfWeek.SATURDAY && inRange(t, LocalTime.of(10, 0), LocalTime.of(13, 0))) return PriceWindow.LS;
-        if (day == DayOfWeek.SUNDAY && inRange(t, LocalTime.of(17, 0), LocalTime.of(19, 0))) return PriceWindow.LS;
-        if (weekday && inRange(t, LocalTime.of(7, 30), LocalTime.of(23, 0))) return PriceWindow.LS;
-        if (weekday && !t.isBefore(LocalTime.of(23, 0))) return PriceWindow.US_AFTERHOURS; // 23:00–24:00
-        if (t.isBefore(LocalTime.of(2, 0)) && berlin.minusDays(1).getDayOfWeek().getValue() <= 5) {
-            return PriceWindow.US_AFTERHOURS; // 00:00–02:00 after a weekday (incl. Fri→Sat)
-        }
-        return PriceWindow.GAP;
-    }
-
-    private static boolean inRange(LocalTime t, LocalTime from, LocalTime toExclusive) {
-        return !t.isBefore(from) && t.isBefore(toExclusive);
-    }
-
     /** Logs which source won (price + currency + venue + freshness), caches it, and returns it. */
     private Optional<MarketSnapshot> win(PriceRef ref, MarketSnapshot s, boolean live) {
-        String key = cacheKey(ref);
-        if (key != null) cache.put(key, new Cached(s, Instant.now().getEpochSecond()));
+        cache.put(cacheKey(ref), s);
         LOG.info("[PRICE] {} → {} {} via {} ({})",
                 ref.hasTicker() ? ref.ticker() : ref.name(),
                 String.format(Locale.ROOT, "%.2f", s.price()),
@@ -289,7 +220,6 @@ public class FallbackPriceSource implements PriceSource {
         }
     }
 
-    /** True when the quote is recent enough to be a live price (vs an old close). */
     /** A plain equity symbol — not a crypto pair (BTC-USD), an index (^IXIC) or FX (EURUSD=X). */
     private static boolean isEquityTicker(String ticker) {
         if (ticker == null || ticker.isBlank()) return false;
@@ -297,6 +227,7 @@ public class FallbackPriceSource implements PriceSource {
         return !t.startsWith("^") && !t.endsWith("-USD") && !t.endsWith("-EUR") && t.indexOf('=') < 0;
     }
 
+    /** True when the quote is recent enough to be a live price (vs an old close). */
     private static boolean isFresh(MarketSnapshot s) {
         if (s == null || !s.hasPrice() || s.marketTimeEpochSeconds() <= 0) return false;
         // Tolerate clock/timezone skew: a venue's last-tick timestamp can read a minute
@@ -310,61 +241,6 @@ public class FallbackPriceSource implements PriceSource {
         if (a == null) return b;
         if (b == null) return a;
         return b.marketTimeEpochSeconds() > a.marketTimeEpochSeconds() ? b : a;
-    }
-
-    /** Currency marker for a stock index: priced in points, never FX-converted. */
-    static final String POINTS = "PTS";
-
-    /** Converts a USD snapshot to EUR via the live rate; leaves non-USD (or rate-less) untouched. */
-    MarketSnapshot toEur(MarketSnapshot s) {
-        // A stock index (^GDAXI, ^IXIC, …) is quoted in points, not a currency —
-        // Yahoo labels it EUR/USD anyway, but converting 24 000 "USD" → EUR is
-        // nonsense. Keep the number, relabel it as points, skip FX entirely.
-        if (s != null && s.symbol() != null && s.symbol().startsWith("^")) {
-            return POINTS.equals(s.currency()) ? s : withCurrency(s, POINTS);
-        }
-        // A commodity future (GC=F gold, CL=F oil, …) is quoted in its native unit
-        // (USD/oz, USD/bbl — the universal benchmark). Don't FX-convert it: gold-in-EUR
-        // isn't how the market reads it, and the room says „Gold", not „Gold in Euro".
-        if (s != null && s.symbol() != null && s.symbol().endsWith("=F")) {
-            return s;
-        }
-        double r = fx == null ? 0 : fx.getCurrent().map(q -> q.rate()).orElse(0.0);
-        if (s != null && "USD".equalsIgnoreCase(s.currency())) {
-            LOG.info("[FX] {} {} USD @ rate {} → {} EUR", s.symbol(),
-                    String.format(Locale.ROOT, "%.2f", s.price()), r,
-                    r > 0 ? String.format(Locale.ROOT, "%.2f", s.price() / r) : "n/a");
-        }
-        return convertToEur(s, r);
-    }
-
-    /**
-     * Pure USD→EUR conversion at rate {@code r} (USD per EUR). Percentages stay
-     * (currency-agnostic); price/levels/spark divide by the rate. Non-USD snapshots
-     * and a non-positive rate pass through untouched. Package-private for testing.
-     */
-    static MarketSnapshot convertToEur(MarketSnapshot s, double r) {
-        if (s == null || !"USD".equalsIgnoreCase(s.currency())) return s;
-        if (!(r > 0)) return s; // no rate → keep USD rather than fail
-        List<Double> spark = new ArrayList<>(s.spark().size());
-        for (double p : s.spark()) spark.add(p / r);
-        return new MarketSnapshot(s.symbol(), s.price() / r, div(s.previousClose(), r),
-                s.dayChangePercent(), div(s.dayHigh(), r), div(s.dayLow(), r), s.volume(),
-                div(s.fiftyTwoWeekHigh(), r), div(s.fiftyTwoWeekLow(), r), "EUR",
-                s.exchangeName(), s.marketTimeEpochSeconds(), spark);
-    }
-
-    private static double div(double v, double r) {
-        return Double.isFinite(v) ? v / r : v;
-    }
-
-    /** Returns a copy of {@code s} with the currency relabelled (numbers untouched). */
-    static MarketSnapshot withCurrency(MarketSnapshot s, String currency) {
-        if (s == null) return null;
-        return new MarketSnapshot(s.symbol(), s.price(), s.previousClose(),
-                s.dayChangePercent(), s.dayHigh(), s.dayLow(), s.volume(),
-                s.fiftyTwoWeekHigh(), s.fiftyTwoWeekLow(), currency,
-                s.exchangeName(), s.marketTimeEpochSeconds(), s.spark());
     }
 
     private static String blankToNull(String s) {

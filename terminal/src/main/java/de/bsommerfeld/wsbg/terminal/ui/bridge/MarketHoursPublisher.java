@@ -10,7 +10,6 @@ import de.bsommerfeld.wsbg.terminal.ui.web.PushHub;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
@@ -28,12 +27,7 @@ public final class MarketHoursPublisher {
 
     private final MarketHoursService service;
     private final PushHub hub;
-    private final ScheduledExecutorService scheduler =
-            Executors.newSingleThreadScheduledExecutor(r -> {
-                Thread t = new Thread(r, "market-hours-publisher");
-                t.setDaemon(true);
-                return t;
-            });
+    private final ScheduledExecutorService scheduler = DaemonSchedulers.scheduled("market-hours-publisher");
 
     @Inject
     public MarketHoursPublisher(MarketHoursService service, PushHub hub) {

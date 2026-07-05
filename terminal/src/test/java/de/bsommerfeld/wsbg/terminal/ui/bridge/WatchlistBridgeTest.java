@@ -1,6 +1,6 @@
 package de.bsommerfeld.wsbg.terminal.ui.bridge;
 
-import de.bsommerfeld.wsbg.terminal.db.AgentRepository.HeadlineRecord;
+import de.bsommerfeld.wsbg.terminal.db.HeadlineRecord;
 import de.bsommerfeld.wsbg.terminal.db.HeadlineArchive;
 import de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight;
 import de.bsommerfeld.wsbg.terminal.db.HeadlineSentiment;

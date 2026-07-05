@@ -12,6 +12,7 @@
 import { highlightTickers } from '../format/ticker.js';
 import { colorizeSignedNumbers } from '../format/numbers.js';
 import { fmtClock } from '../format/time.js';
+import { escapeHtml } from '../format/escape.js';
 import { t } from '../i18n/i18n.js';
 
 const seenKeys = new WeakMap();      // host -> Set of guids seen last render
@@ -23,7 +24,7 @@ export function renderFjNews(host, items) {
   wireToggle(host);
 
   if (!items || items.length === 0) {
-    host.innerHTML = `<div class="row placeholder"><div class="time"></div><div class="body">${escapeText(t('fj.waiting'))}</div></div>`;
+    host.innerHTML = `<div class="row placeholder"><div class="time"></div><div class="body">${escapeHtml(t('fj.waiting'))}</div></div>`;
     seenKeys.set(host, new Set());
     return;
   }
@@ -73,7 +74,7 @@ function toRow(n, isNew, isExpanded) {
 
   const meta = buildMeta(n);
   const time = fmtClock(n.publishedUtc);
-  const guidAttr = detail ? ` data-guid="${escapeText(n.guid)}"` : '';
+  const guidAttr = detail ? ` data-guid="${escapeHtml(n.guid)}"` : '';
   const indicator = detail
     ? '<svg class="expand-ind" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>'
     : '';
@@ -117,11 +118,6 @@ function norm(s) {
 function buildMeta(n) {
   const tags = (n.tags || []);
   if (tags.length === 0) return '';
-  return tags.map(t => `<span class="tag">${escapeText(t)}</span>`).join(' ');
-}
-
-function escapeText(s) {
-  return s.replace(/[&<>"']/g, c => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-  }[c]));
+  // `tag` is the FJ category string here — deliberately not the i18n `t`.
+  return tags.map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join(' ');
 }

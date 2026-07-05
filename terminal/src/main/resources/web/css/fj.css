@@ -1,0 +1,125 @@
+/* Financial Juice widget — everything specific to an FJ row: the EUR/USD header
+   badge, the expandable multi-line detail, the mover wash, the waiting
+   placeholder, and the FX-options grid. Shared row grammar is in rows.css. */
+
+/* EUR/USD ticker pinned to the FJ widget header — flags flank the rate
+   with no chip background. The rate text tints briefly on direction
+   change; NEUTRAL ticks are silent. */
+.widget-head .eurusd {
+  margin-left: auto;
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: var(--font-chrome);
+  font-variant-numeric: tabular-nums;
+}
+.widget-head .eurusd:empty { display: none; }
+.widget-head .eurusd .flag {
+  width: 24px; height: 16px;
+  border-radius: 1px;
+  display: block;
+  flex-shrink: 0;
+}
+.widget-head .eurusd .rate {
+  color: var(--txt);
+  font-weight: 600;
+  transition: color 600ms ease-out;
+}
+.widget-head .eurusd.flash-up   .rate { color: var(--green); transition: none; }
+.widget-head .eurusd.flash-down .rate { color: var(--red);   transition: none; }
+/* Loading skeleton (before the first quote arrives): the placeholder digits
+   render as a soft blurred glow — text itself transparent, blurred via
+   text-shadow so the shimmer stays crisp — with a left→right shimmer sweep.
+   Only the number; the flags stay sharp. Same tabular-nums width as a real
+   value, so nothing shifts when the live rate lands. (The eurusd-skeleton
+   keyframe is shared with Fear&Greed — defined in rows.css.) */
+.widget-head .eurusd .rate.loading {
+  position: relative;
+  display: inline-block;
+  overflow: hidden;
+  color: transparent;
+  text-shadow: 0 0 5px var(--mute);
+  border-radius: 3px;
+}
+.widget-head .eurusd .rate.loading::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,
+      transparent 15%, var(--txt-2) 50%, transparent 85%);
+  opacity: 0.22;
+  transform: translateX(-120%);
+  animation: eurusd-skeleton 1.5s ease-in-out infinite;
+}
+/* When both eurusd badge and live are present, only the badge pushes
+   right; live follows at a fixed gap so the spacing is consistent. */
+.widget-head .eurusd ~ .live { margin-left: 14px; }
+/* Until the rate loads the badge is :empty (display:none), so it can't
+   supply the auto-margin that right-aligns the header row — hand the
+   auto-margin to .live in that case so it stays pinned right and doesn't
+   jump left next to the title. */
+.widget-head .eurusd:empty ~ .live { margin-left: auto; }
+
+/* FinancialJuice expandable detail.
+   Some FJ items carry a multi-line body (earnings breakdowns, data
+   splits). The row shows only its headline by default; clicking an
+   .expandable row reveals the .detail block. A small chevron in the
+   bottom-right corner signals that a row can be opened, and rotates
+   when it is. Expanded state is preserved across the 60 s snapshot
+   re-renders by the widget JS. */
+.row.expandable { cursor: pointer; }
+.row.expandable .body { padding-right: 18px; }
+.row .body .detail {
+  display: none;
+  margin-top: 6px;
+  color: var(--txt-2);
+  font-size: var(--font-meta);
+  line-height: 1.55;
+  /* Break even a long unbroken token (a wide numeric/tabular "chart" line)
+     so the detail wraps within the pane instead of forcing the row wider. */
+  overflow-wrap: anywhere;
+}
+.row.expanded .body .detail { display: block; }
+.row .body .detail .ticker { color: var(--amber); font-weight: 600; }
+.row .body .detail .pct { font-variant-numeric: tabular-nums; }
+.row .body .detail .pct.up   { color: var(--green); }
+.row .body .detail .pct.down { color: var(--red); }
+.row .expand-ind {
+  position: absolute;
+  right: var(--pad-x);
+  bottom: 8px;
+  width: 13px; height: 13px;
+  fill: none;
+  stroke: var(--mute);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: .45;
+  pointer-events: none;
+  transition: transform .15s ease, opacity .12s ease;
+}
+.row.expandable:hover .expand-ind { opacity: .85; }
+.row.expanded .expand-ind { transform: rotate(180deg); }
+
+/* Movers: FinancialJuice-style soft red wash so red ±% values still
+   read clearly. The wash uses --red-soft (low alpha) rather than a
+   saturated background — keeps the row text legible. */
+.row.mover {
+  background: var(--red-soft);
+}
+.row.mover:hover {
+  background: oklch(from var(--red) l c h / .14);
+}
+
+/* Empty-state placeholder. */
+.row.placeholder { color: var(--mute); justify-content: center; }
+.row.placeholder .body { color: var(--mute); font-style: italic; }
+
+/* FX-options expiry grid inside an FJ row. */
+.fxgrid {
+  margin-top: 10px;
+  display: grid; grid-template-columns: 72px 1fr;
+  row-gap: 4px; column-gap: 16px;
+  font-size: 0.85em; color: var(--txt-2);
+}
+.fxgrid .pair { color: var(--mute); }
+.fxgrid .vals .v { color: var(--txt); }
+.fxgrid .vals .a { color: var(--mute-2); font-size: 0.85em; }

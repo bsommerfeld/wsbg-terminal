@@ -4,8 +4,6 @@ import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.ui.TimeTracker;
 import de.bsommerfeld.wsbg.terminal.ui.web.PushHub;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.Map;
 
@@ -19,8 +17,6 @@ import java.util.Map;
 @Singleton
 public final class DonationStatsPublisher {
 
-    private static final Logger LOG = LoggerFactory.getLogger(DonationStatsPublisher.class);
-
     private final PushHub hub;
     private final TimeTracker tracker;
 
@@ -32,12 +28,8 @@ public final class DonationStatsPublisher {
     }
 
     private void push() {
-        try {
-            hub.broadcast("donation-stats", Map.of(
-                    "activeHours", tracker.getActiveMillis() / 3_600_000L,
-                    "openCount", tracker.getOpenCount()));
-        } catch (Exception e) {
-            LOG.warn("donation-stats broadcast failed: {}", e.getMessage());
-        }
+        hub.broadcastSafe("donation-stats", () -> Map.of(
+                "activeHours", tracker.getActiveMillis() / 3_600_000L,
+                "openCount", tracker.getOpenCount()));
     }
 }
