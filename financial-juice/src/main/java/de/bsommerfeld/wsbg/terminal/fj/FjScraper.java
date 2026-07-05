@@ -147,11 +147,6 @@ public class FjScraper {
         return seenGuids.size();
     }
 
-    /** Returns the configured polling interval in seconds. */
-    public long pollIntervalSeconds() {
-        return POLL_INTERVAL_SECONDS;
-    }
-
     /** Clears the deduplication cache, causing the next fetch to return all feed items. */
     public void resetSeenGuids() {
         seenGuids.clear();

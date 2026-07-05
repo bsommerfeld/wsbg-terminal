@@ -58,9 +58,8 @@ import java.util.Optional;
  * "Yahoo couldn't tell us", not as an exceptional state.
  *
  * <p>
- * Parsing lives in {@link YahooResponseParser}, the rate-limit circuit
- * breaker in {@link RateLimitBreaker}, and the dormant article-scrape
- * capability in {@link YahooArticleReader}; this class is transport +
+ * Parsing lives in {@link YahooResponseParser} and the rate-limit circuit
+ * breaker in {@link RateLimitBreaker}; this class is transport +
  * caching + orchestration.
  */
 @Singleton
@@ -143,9 +142,6 @@ public class YahooFinanceClient implements NewsSource {
      */
     private final RateLimitBreaker breaker = new RateLimitBreaker();
 
-    /** Dormant standalone article-text scraper (not wired into the pipeline). */
-    private final YahooArticleReader articleReader;
-
     // --- breaker delegators (package-private for tests) -------------------
 
     boolean breakerOpen() {
@@ -197,9 +193,6 @@ public class YahooFinanceClient implements NewsSource {
         this.cacheTtlSeconds = Math.max(0, cacheTtlSeconds);
         this.searchCache = new TtlCache<>(this.cacheTtlSeconds);
         this.snapshotCache = new TtlCache<>(this.cacheTtlSeconds);
-        this.articleReader =
-                new YahooArticleReader(this.webFetcher, this.userAgent, this.requestTimeout, this.online,
-                        this.cacheTtlSeconds);
     }
 
     /**
@@ -275,14 +268,6 @@ public class YahooFinanceClient implements NewsSource {
             LOG.warn("Yahoo search '{}' failed: {}", trimmed, e.getMessage());
             return SearchResult.empty();
         }
-    }
-
-    /**
-     * Same as {@link #search(String, int, int)} with news count 0 — the
-     * typical {@code lookupTicker} path that only needs quote matches.
-     */
-    public List<YahooQuote> searchQuotes(String query, int quotesCount) {
-        return search(query, quotesCount, 0).quotes();
     }
 
     /**
@@ -452,24 +437,6 @@ public class YahooFinanceClient implements NewsSource {
         return out;
     }
 
-    // --- article scrape (dormant capability, delegated) -------------------
-
-    /**
-     * Best-effort full-text fetch for a news article URL — delegates to the
-     * standalone {@link YahooArticleReader}. <b>NOT wired into the editorial
-     * pipeline</b>; kept so deeper article context can be switched on later.
-     *
-     * @return the article text, or {@link Optional#empty()} on any failure.
-     */
-    public Optional<String> fetchArticleText(String url) {
-        return articleReader.fetchArticleText(url);
-    }
-
-    /** Heuristic readable-text extraction from HTML. Pure function — unit-tested. */
-    static String extractReadableText(String html) {
-        return YahooArticleReader.extractReadableText(html);
-    }
-
     // --- parsing delegators (package-private for tests) -------------------
 
     SearchResult parseSearch(String body) {
@@ -482,13 +449,6 @@ public class YahooFinanceClient implements NewsSource {
 
     private static List<MarketSnapshot> parseSpark(String body) throws Exception {
         return YahooResponseParser.parseSpark(body);
-    }
-
-    /** Clears the in-memory caches — visible for tests. */
-    void clearCache() {
-        searchCache.clear();
-        snapshotCache.clear();
-        articleReader.clearCache();
     }
 
     /**

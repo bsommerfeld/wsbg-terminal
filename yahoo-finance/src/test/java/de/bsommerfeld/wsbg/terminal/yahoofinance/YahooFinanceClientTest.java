@@ -208,44 +208,4 @@ class YahooFinanceClientTest {
         assertNull(client.parseChart(body));
         assertNull(client.parseChart("not json"));
     }
-
-    @Test
-    void extractsParagraphTextAndDropsBoilerplate() {
-        String html = """
-                <html><head><title>x</title>
-                  <style>.a{color:red}</style>
-                  <script>var tracker = 1; document.write('junk');</script>
-                </head><body>
-                  <nav><a href="/">Home</a><a href="/markets">Markets</a></nav>
-                  <p>Menu</p>
-                  <article>
-                    <p>Exxon Mobil shares slipped 1.2% as oil retreated on easing Strait of Hormuz tensions, with traders unwinding the geopolitical risk premium that had built up over the prior week.</p>
-                    <p>Analysts at Barclays still see meaningful upside for the integrated majors if the Iran conflict re-escalates this summer, citing tight global inventories and constrained spare capacity.</p>
-                  </article>
-                  <footer><p>© 2026 Publisher</p></footer>
-                </body></html>
-                """;
-        String text = YahooFinanceClient.extractReadableText(html);
-        assertTrue(text.contains("Exxon Mobil shares slipped 1.2%"), text);
-        assertTrue(text.contains("Barclays"), text);
-        assertFalse(text.contains("tracker"), "script body must be stripped");
-        assertFalse(text.contains("color:red"), "style body must be stripped");
-        assertFalse(text.contains("Home"), "short nav <p>/links should be dropped");
-    }
-
-    @Test
-    void extractFallsBackAndUnescapesAndCaps() {
-        // No <p> at all → falls back to whole-body strip; entities decoded.
-        String html = "<div>AT&amp;T &mdash; Q1 rose 3% &#39;solid&#39; quarter</div>";
-        String text = YahooFinanceClient.extractReadableText(html);
-        assertEquals("AT&T — Q1 rose 3% 'solid' quarter", text);
-
-        assertEquals("", YahooFinanceClient.extractReadableText(null));
-        assertEquals("", YahooFinanceClient.extractReadableText("   "));
-
-        String big = "<div>" + "word ".repeat(4000) + "</div>";
-        String capped = YahooFinanceClient.extractReadableText(big);
-        assertTrue(capped.length() <= 6002, "must cap near ARTICLE_MAX_CHARS, was " + capped.length());
-        assertTrue(capped.endsWith("…"), "capped text marks truncation");
-    }
 }

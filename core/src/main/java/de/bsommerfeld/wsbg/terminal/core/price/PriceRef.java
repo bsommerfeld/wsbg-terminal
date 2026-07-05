@@ -18,11 +18,6 @@ public record PriceRef(String name, String ticker, String isin) {
         this(name, ticker, null);
     }
 
-    /** A copy with the ISIN filled in (L&S hands it down so Deutsche Börse can use it). */
-    public PriceRef withIsin(String resolvedIsin) {
-        return new PriceRef(name, ticker, resolvedIsin);
-    }
-
     public boolean hasName() {
         return name != null && !name.isBlank();
     }

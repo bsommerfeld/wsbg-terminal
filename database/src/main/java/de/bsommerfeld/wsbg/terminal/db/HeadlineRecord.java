@@ -53,15 +53,4 @@ public record HeadlineRecord(
                 highlight, tickerSymbol, subjects, priceMovePercent, sectors, assetClass,
                 sentiment, snapshot, false, List.of());
     }
-
-    /** Positional-compatibility constructor from before {@code newsRefs}. */
-    public HeadlineRecord(String clusterId, String headline, String context,
-            long createdAt, List<String> sourceThreadIds, List<String> sourceCommentIds,
-            HeadlineHighlight highlight, String tickerSymbol, List<HeadlineSubject> subjects,
-            Double priceMovePercent, List<String> sectors, String assetClass,
-            HeadlineSentiment sentiment, MarketSnapshot snapshot, boolean newsEnriched) {
-        this(clusterId, headline, context, createdAt, sourceThreadIds, sourceCommentIds,
-                highlight, tickerSymbol, subjects, priceMovePercent, sectors, assetClass,
-                sentiment, snapshot, newsEnriched, List.of());
-    }
 }

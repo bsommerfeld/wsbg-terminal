@@ -172,13 +172,6 @@ public class LangSchwarzClient {
         return s.isEmpty() ? (name == null ? "" : name.trim()) : s;
     }
 
-    /** Live EUR snapshot for a subject name (resolve → chart), or empty on any failure. */
-    public Optional<MarketSnapshot> fetchSnapshot(String name) {
-        Optional<LsInstrument> inst = resolveInstrument(name);
-        if (inst.isEmpty()) return Optional.empty();
-        return fetchSnapshot(inst.get());
-    }
-
     /** Live EUR snapshot for an already-resolved instrument. */
     public Optional<MarketSnapshot> fetchSnapshot(LsInstrument inst) {
         if (inst == null) return Optional.empty();
