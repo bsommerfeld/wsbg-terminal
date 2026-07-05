@@ -12,3 +12,4 @@ Die Schlagzeilen zeigen jetzt ehrlicher, worauf sie sich stützen: Wenn eine Zei
 - Der Schalter „Wiederholungen filtern" ist aus den Einstellungen verschwunden: Der Wiederholungsschutz denkt jetzt selbst mit (die KI beurteilt, ob eine Zeile dieselbe Story nur neu erzählt) und ist immer an.
 - Die Installation ist rund 600 MB leichter: Ein zweites KI-Modell wird nicht mehr gebraucht, eines erledigt jetzt alles.
 - Der Installer zappelt nicht mehr: Die MB/s-Anzeige bleibt stehen statt aufzublitzen, die Restzeit zählt ruhig runter, und die Punkte unter dem Balken leuchten schon, sobald ein KI-Modell mit der Installation beginnt.
+- Großreinemachen im Maschinenraum: Der Code hinter dem Terminal wurde von Grund auf entwirrt und in saubere, kleine Bausteine zerlegt. Am Verhalten ändert sich für dich nichts - aber neue Funktionen lassen sich künftig schneller und mit weniger Risiko nachrüsten.
