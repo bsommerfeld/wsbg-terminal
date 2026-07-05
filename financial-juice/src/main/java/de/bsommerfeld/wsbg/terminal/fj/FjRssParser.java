@@ -28,8 +28,7 @@ import java.util.stream.Collectors;
  * ({@code stripHtml}, prefix stripping, image extraction) and date parsing.
  *
  * <p>Split out of {@code FjScraper} so the scraper only owns fetch + cross-call
- * GUID dedup, mirroring the {@code FnRssClient}(parse) /
- * {@code FnMonitorService}(fetch+dedup+schedule) split in finanznachrichten.
+ * GUID dedup (a parse / fetch+dedup+schedule separation).
  * Contains no mutable state and is safe to share.
  */
 final class FjRssParser {

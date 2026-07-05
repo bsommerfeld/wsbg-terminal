@@ -47,15 +47,7 @@
         </dependency>
         <dependency>
             <groupId>de.bsommerfeld</groupId>
-            <artifactId>deutsche-boerse</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>de.bsommerfeld</groupId>
             <artifactId>wallstreet-online</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>de.bsommerfeld</groupId>
-            <artifactId>nasdaq-quote</artifactId>
         </dependency>
         <!-- News source layer: source-api (NewsSource contract), the concrete
              Yahoo source, and the aggregator that fans across them. Referenced

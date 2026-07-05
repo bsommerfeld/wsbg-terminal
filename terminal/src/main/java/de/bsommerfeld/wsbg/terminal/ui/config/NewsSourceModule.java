@@ -25,10 +25,5 @@ final class NewsSourceModule extends AbstractModule {
         // newsForName() fan, not the symbol query.
         newsSources.addBinding().to(
                 de.bsommerfeld.wsbg.terminal.wallstreetonline.WsoNewsClient.class);
-        // NASDAQ news is DISABLED (2026-06-30): its per-ticker news was thin/low-quality
-        // (missed e.g. SpaceX→Nasdaq-100 inclusion that Yahoo carried) and just diluted
-        // the pool. Yahoo carries what the wire needs. The NasdaqNewsClient/quote classes
-        // stay built — they're isolated, re-bind here if NASDAQ ever earns its slot back.
-        // newsSources.addBinding().to(NasdaqNewsClient.class);
     }
 }
