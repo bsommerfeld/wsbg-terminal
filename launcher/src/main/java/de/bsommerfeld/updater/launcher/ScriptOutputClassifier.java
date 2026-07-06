@@ -53,6 +53,19 @@ final class ScriptOutputClassifier {
     private static final Pattern FONTS_INSTALL_PATTERN = Pattern.compile(
             "(?i)\\[\\*]\\s*installing\\s+(?:terminal\\s+)?fonts");
 
+    // The script's "[*] Cleaning up old models..." header — the model-store GC
+    // step, emitted ONLY when at least one no-longer-desired model is about to
+    // be removed. Surfaced under its own "Räume Altlasten weg" label so the
+    // user sees the reconcile removing Altlasten rather than a silent gap.
+    private static final Pattern CLEANUP_PATTERN = Pattern.compile(
+            "(?i)\\[\\*]\\s*cleaning\\s+up\\s+old\\s+models");
+
+    // Each "> Removing stale model <name> (idx/total)..." line under that step.
+    // Group 1 is the model name; it inherits the cleanup phase and rides as the
+    // detail (log only — the label stays the plain translated phase).
+    private static final Pattern MODEL_REMOVE_PATTERN = Pattern.compile(
+            "(?i)>\\s*removing\\s+stale\\s+model\\s+(\\S+)");
+
     // Extracts trailing percentage from curl-style progress lines
     // (e.g. "####   8.8%" → group 1 = "8.8").
     private static final Pattern CURL_PROGRESS_PATTERN = Pattern.compile(
@@ -105,6 +118,8 @@ final class ScriptOutputClassifier {
         if (tryEmitBrowserInstall(line, consumer))
             return;
         if (tryEmitFontsInstall(line, consumer))
+            return;
+        if (tryEmitCleanup(line, consumer))
             return;
         if (tryEmitOllamaPull(line, consumer))
             return;
@@ -258,6 +273,30 @@ final class ScriptOutputClassifier {
             installingOllama = false;
             installingBrowser = false;
             consumer.accept("Installing fonts", null);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Surfaces the model-store cleanup (GC) step. The header line opens the
+     * phase; each "> Removing stale model <name>..." line rides under it with
+     * the model name as detail. Both clear the install flags so a later stray
+     * progress line is not misattributed to a download phase. The step only
+     * appears when the script actually has Altlasten to drop.
+     */
+    private boolean tryEmitCleanup(String line, BiConsumer<String, String> consumer) {
+        if (CLEANUP_PATTERN.matcher(line).find()) {
+            installingOllama = false;
+            installingBrowser = false;
+            consumer.accept("Cleaning up old models", null);
+            return true;
+        }
+        Matcher m = MODEL_REMOVE_PATTERN.matcher(line);
+        if (m.find()) {
+            installingOllama = false;
+            installingBrowser = false;
+            consumer.accept("Cleaning up old models", m.group(1).strip());
             return true;
         }
         return false;

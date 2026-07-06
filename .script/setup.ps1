@@ -183,6 +183,16 @@ if (Test-Path $ollamaExe) {
 # when missing or stale. Anything in the store that is NOT desired is removed, so
 # a model switch leaves no Altlasten. To switch models, edit $desiredModels (and
 # $OllamaVersion above if the new model needs a newer runtime).
+#
+# FUTURE (separate, larger step): today this reconcile-against-local pattern
+# ("declare the desired set, diff it against what is actually installed, GC the
+# rest") governs ONLY the Ollama models. It should grow to cover the WHOLE
+# managed footprint we install on the user's machine -- the Ollama binary/
+# version, the JCEF (Chromium) runtime, bundled fonts, and any future dependency
+# we add or swap. Then, when we e.g. move off JCEF or replace Ollama, the old
+# artifact falls out of the desired set and is uninstalled automatically on the
+# next setup run, on every OS, with no per-release one-shot cleanup code and no
+# reliance on the user having seen the intervening release. (Mirrors setup.sh.)
 $desiredModels = @($ReasoningModel)
 # Agent and vision share the one gemma4:e4b -- only add a distinct vision model
 # if a future config ever diverges them. (Mirrors setup.sh.)
@@ -264,13 +274,24 @@ if (Test-Path $ollamaExe) {
 
     # GC: remove any isolated-store model no longer desired. Skipped if a desired
     # pull failed, so the old model is never dropped before the new one lands.
+    # Collect the stale set FIRST so the launcher gets one "[*] Cleaning up old
+    # models..." phase header (emitted ONLY when there is something to remove)
+    # plus an "(idx/total)" on each removal line. (Mirrors setup.sh.)
     if ($allPresent) {
         $installed = @()
         try { $installed = (& $ollamaExe list 2>$null | Select-Object -Skip 1 | ForEach-Object { ($_ -split '\s+')[0] }) } catch {}
         $desiredLower = $desiredModels | ForEach-Object { $_.ToLower() }
-        foreach ($inst in $installed) {
-            if ($inst -and ($desiredLower -notcontains $inst.ToLower())) {
-                Write-Host "    > Removing stale model $inst ..."
+        $stale = @($installed | Where-Object { $_ -and ($desiredLower -notcontains $_.ToLower()) })
+        if ($stale.Count -gt 0) {
+            # Phase header the launcher (ScriptOutputClassifier) turns into the
+            # "Räume Altlasten weg" step -- keep this exact wording, it is a
+            # parsed token. Same for the "> Removing stale model <m> (idx/total)"
+            # line below.
+            Write-Host "[*] Cleaning up old models..."
+            $sidx = 0
+            foreach ($inst in $stale) {
+                $sidx++
+                Write-Host "    > Removing stale model $inst ($sidx/$($stale.Count))..."
                 & $ollamaExe rm $inst 2>$null | Out-Null
             }
         }

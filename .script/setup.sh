@@ -186,6 +186,18 @@ fi
 # in the store that is NOT desired is removed, so a model switch leaves no
 # Altlasten. To switch models, edit DESIRED_MODELS (and OLLAMA_VERSION above if
 # the new model needs a newer runtime); the check URL, pull, and GC all follow.
+#
+# FUTURE (separate, larger step): today this reconcile-against-local pattern
+# ("declare the desired set, diff it against what is actually installed, GC the
+# rest") governs ONLY the Ollama models. It should grow to cover the WHOLE
+# managed footprint we install on the user's machine -- the Ollama binary/
+# version, the JCEF (Chromium) runtime, bundled fonts, and any future dependency
+# we add or swap. Then, when we e.g. move off JCEF or replace Ollama, the old
+# artifact falls out of the desired set and is uninstalled automatically on the
+# next setup run, on every OS, with no per-release one-shot cleanup code and no
+# reliance on the user having seen the intervening release. One desired-set
+# checked against local state is the whole design; models are just the first
+# thing wired into it.
 DESIRED_MODELS=("$REASONING_MODEL")
 # Agent and vision share the one gemma4:e4b -- only add a distinct vision model
 # if a future config ever diverges them.
@@ -264,19 +276,35 @@ if [ -x "$OLLAMA" ]; then
 
     # GC: drop every isolated-store model that is no longer desired. Skipped when
     # a desired pull failed, so we never remove the old model before the new one
-    # is safely in place.
+    # is safely in place. Collect the stale set FIRST so the launcher gets one
+    # "[*] Cleaning up old models..." phase header (emitted ONLY when there is
+    # actually something to remove -- an empty run stays silent) plus an
+    # "(idx/total)" on each removal line.
     if [ "$ALL_PRESENT" = true ]; then
+        STALE_MODELS=()
         while read -r inst; do
             [ -z "$inst" ] && continue
             keep=false
             for model in "${DESIRED_MODELS[@]}"; do
                 [ "$(printf '%s' "$inst" | tr 'A-Z' 'a-z')" = "$(printf '%s' "$model" | tr 'A-Z' 'a-z')" ] && { keep=true; break; }
             done
-            if [ "$keep" = false ]; then
-                echo "    > Removing stale model $inst ..."
-                "$OLLAMA" rm "$inst" >/dev/null 2>&1 || warn "Could not remove $inst"
-            fi
+            [ "$keep" = false ] && STALE_MODELS+=("$inst")
         done < <("$OLLAMA" list 2>/dev/null | tail -n +2 | awk '{print $1}')
+
+        if [ "${#STALE_MODELS[@]}" -gt 0 ]; then
+            # Phase header the launcher (ScriptOutputClassifier) turns into the
+            # "Räume Altlasten weg" step -- keep this exact wording, it is a
+            # parsed token. Same for the "> Removing stale model <m> (idx/total)"
+            # line below.
+            echo "[*] Cleaning up old models..."
+            sidx=0
+            stotal=${#STALE_MODELS[@]}
+            for inst in "${STALE_MODELS[@]}"; do
+                sidx=$((sidx + 1))
+                echo "    > Removing stale model $inst ($sidx/$stotal)..."
+                "$OLLAMA" rm "$inst" >/dev/null 2>&1 || warn "Could not remove $inst"
+            done
+        fi
     fi
 else
     warn "Isolated Ollama binary missing -- skipping model install."

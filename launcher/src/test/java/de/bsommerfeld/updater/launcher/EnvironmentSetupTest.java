@@ -249,6 +249,24 @@ class EnvironmentSetupTest {
     }
 
     @Test
+    void classify_shouldDetectModelCleanupHeader() {
+        List<String[]> emissions = collect(new ScriptOutputClassifier(), "[*] Cleaning up old models...");
+        assertFalse(emissions.isEmpty());
+        assertEquals("Cleaning up old models", emissions.get(0)[0]);
+        assertNull(emissions.get(0)[1]);
+    }
+
+    @Test
+    void classify_shouldDetectStaleModelRemoval() {
+        List<String[]> emissions = collect(new ScriptOutputClassifier(),
+                "    > Removing stale model embeddinggemma:latest (1/1)...");
+        assertFalse(emissions.isEmpty());
+        assertEquals("Cleaning up old models", emissions.get(0)[0]);
+        // The model name rides as detail (log only; the label stays translated).
+        assertEquals("embeddinggemma:latest", emissions.get(0)[1]);
+    }
+
+    @Test
     void classify_shouldDetectPullingManifest() {
         List<String[]> emissions = collect(new ScriptOutputClassifier(), "pulling manifest");
         assertFalse(emissions.isEmpty());
