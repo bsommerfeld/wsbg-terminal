@@ -34,11 +34,11 @@ final class PromptLoader {
      */
     static String loadLocalized(String name, String langCode) {
         // NOTE (2026-07-01): localization is ON for EVERY stage — extraction + vision
-        // (extraction.de proven in run18) AND compose + theme (EditorialAgent.composeUnit/
-        // composeTheme both load via this method now). The compose stage used to be held to
-        // the English base because a German scaffold on top of the old fat 9-field JSON output
-        // whitespace-looped the 4B model; now that the output is slimmed to {headline, highlight,
-        // mode} the model commits cleanly on the localized scaffold too (0 whiffs in run27).
+        // (extraction.de proven in run18) AND compose (EditorialAgent.composeUnit loads
+        // via this method too). The compose stage used to be held to the English base
+        // because a German scaffold on top of the old fat 9-field JSON output
+        // whitespace-looped the 4B model; now that the output is slimmed the model
+        // commits cleanly on the localized scaffold too (0 whiffs in run27).
         // The output language is still named explicitly by {{LANGUAGE}} regardless of scaffold.
         if (langCode == null || langCode.isBlank() || "en".equalsIgnoreCase(langCode)) {
             return load(name);

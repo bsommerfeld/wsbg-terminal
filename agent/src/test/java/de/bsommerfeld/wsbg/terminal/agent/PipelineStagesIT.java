@@ -121,14 +121,5 @@ class PipelineStagesIT {
                 + after.stream().map(HeadlineRecord::headline).toList());
         assertTrue(after.size() > before,
                 "runUnitTick should publish at least one headline for a live cluster");
-
-        // The cluster is now ALSO a producer: a THEME headline (the thread
-        // narrative) is archived under the cluster id, independent of the
-        // per-subject unit lines (which key by unit id, never the cluster id).
-        List<HeadlineRecord> theme = agentRepo.getHeadlinesByClusterId(out.clusterId());
-        System.out.println("[UNITTICK-IT] theme line(s) under cluster " + out.clusterId() + ": "
-                + theme.stream().map(HeadlineRecord::headline).toList());
-        assertFalse(theme.isEmpty(),
-                "runUnitTick should also publish a cluster-theme headline keyed by the cluster id");
     }
 }

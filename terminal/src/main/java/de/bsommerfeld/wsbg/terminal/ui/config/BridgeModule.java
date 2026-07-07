@@ -7,7 +7,6 @@ import de.bsommerfeld.wsbg.terminal.ui.bridge.CommandBridge;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.SettingsBridge;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.UninstallService;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.UpdateService;
-import de.bsommerfeld.wsbg.terminal.ui.bridge.WatchlistBridge;
 
 /**
  * The inbound page→Java bridges (each owns its own {@code hub.on(...)} handlers).
@@ -19,11 +18,9 @@ final class BridgeModule extends AbstractModule {
     protected void configure() {
         // CommandBridge wires inbound window-control messages.
         bind(CommandBridge.class).asEagerSingleton();
-        // Archive layer: search/byTicker queries + scroll-back pagination, and
-        // the persisted watchlist — reading the permanent HeadlineArchive / the
-        // archive-seeded wire window.
+        // Archive layer: search/byTicker queries + scroll-back pagination over
+        // the permanent HeadlineArchive / the archive-seeded wire window.
         bind(ArchiveQueryBridge.class).asEagerSingleton();
-        bind(WatchlistBridge.class).asEagerSingleton();
         // Settings view backend: persists the config-backed preferences
         // (headline mode, language, auto-update) and pushes the current snapshot
         // on client open.

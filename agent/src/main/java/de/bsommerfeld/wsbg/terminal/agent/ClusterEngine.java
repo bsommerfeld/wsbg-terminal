@@ -23,11 +23,10 @@ import java.util.Set;
  * the cross-thread aggregation layer — NVIDIA from five threads folds into one
  * unit regardless of clustering — so merging threads was doing that same job twice,
  * one layer down. It was removed; a cluster is now a faithful 1:1 wrapper of a
- * single Reddit thread (the room's own grouping), which is also the atom the
- * cluster-theme producer writes from.
+ * single Reddit thread (the room's own grouping).
  *
  * <p>Pulled out of {@link PassiveMonitorService} so the assignment logic is one
- * reusable unit driven by both the live scanner and the {@code .lab} harness.
+ * reusable unit driven by the live scanner.
  *
  * <p>NOTE: assignment is now pure in-memory bookkeeping — it makes <b>no model
  * call</b>. The content embedding (the cluster's "centroid") used to be computed

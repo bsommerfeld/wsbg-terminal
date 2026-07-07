@@ -8,7 +8,7 @@
 // stays uncluttered but the data is one hover away.
 //
 // Zero coupling to headlines — it reads only the `snapshot` payload shape, so
-// the same chip can back the watchlist/archive UIs on the roadmap.
+// the same chip can back the archive UI on the roadmap.
 
 import { escapeHtml } from '../format/escape.js';
 import { fmtPrice, fmtNum, fmtVol, isNum } from '../format/numbers.js';

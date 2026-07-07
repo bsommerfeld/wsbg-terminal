@@ -123,8 +123,7 @@ public class EditorialAgent {
     /**
      * Live config — read fresh each tick, NOT cached in the ctor, so the Settings
      * view (SettingsBridge mutates this same instance) takes effect without a
-     * restart: cluster-theme mode (ALLES/NUR TICKER), news-coverage, and the
-     * context-relief window all switch live.
+     * restart: news-coverage and the context-relief window switch live.
      */
     private final GlobalConfig config;
 
@@ -209,7 +208,7 @@ public class EditorialAgent {
      * <p>Extraction must see ALL evidence (no coverage filter) — a subject named only
      * in an older, already-covered comment must still be extracted and attributed, or
      * its unit would stop accumulating. Coverage is applied at COMPOSE time (the per-unit
-     * brief / the cluster-theme brief), never at extraction.
+     * brief), never at extraction.
      */
     public List<ResolvedSubject> resolveClusterSubjects(String clusterId) {
         ChatModel model = brain.getAgentModel();
