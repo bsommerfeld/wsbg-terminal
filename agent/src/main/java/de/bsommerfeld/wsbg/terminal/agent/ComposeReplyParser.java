@@ -3,17 +3,14 @@ package de.bsommerfeld.wsbg.terminal.agent;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import de.bsommerfeld.wsbg.terminal.agent.HeadlineWriter.Draft;
-import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.regex.Pattern;
 
 /**
  * Turns one raw compose reply into a {@link Draft} plus the {@code newsUsed}/
  * {@code derivedFrom} ordinal lists, with the strict-parse → salvage cascade and
- * the redundant-empty determination. Also owns the price-in-headline detection
- * used to flag an unverified figure. Extracted verbatim from {@link EditorialAgent}.
+ * the redundant-empty determination. Extracted verbatim from {@link EditorialAgent}.
  */
 final class ComposeReplyParser {
 
@@ -120,22 +117,4 @@ final class ComposeReplyParser {
                 h.path("trigger").asText(""));
     }
 
-    /** True if the unit carries a resolved (Yahoo) live price — a "verified" figure source. */
-    static boolean unitHasVerifiedPrice(SubjectUnit unit) {
-        MarketSnapshot s = unit == null ? null : unit.snapshot();
-        return s != null && s.hasPrice();
-    }
-
-    /** A price-shaped number in the headline: a decimal, or a digit next to %/€/$/£. */
-    private static final Pattern PRICE_LIKE =
-            Pattern.compile("[-+]?\\d+[.,]\\d|\\d\\s*[%€$£]|[%€$£]\\s*\\d");
-
-    static boolean mentionsPrice(Draft draft) {
-        return draft != null && headlineHasPriceNumber(draft.headline());
-    }
-
-    /** A price-shaped figure in the text: a decimal, or a digit next to %/€/$/£ ("S&P 500" is not). */
-    static boolean headlineHasPriceNumber(String headline) {
-        return headline != null && PRICE_LIKE.matcher(headline).find();
-    }
 }

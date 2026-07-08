@@ -19,7 +19,20 @@ export const DICT = {
     // --- widget headers ---
     'widget.reddit.title': 'Schlagzeilen',
     'widget.reddit.open': 'r/wallstreetbetsGER öffnen',
+    'widget.reddit.ai': 'KI-generiert',
+    'widget.reddit.ai.hint': 'Automatisch von KI erstellt, nicht redaktionell geprüft - kann Fehler enthalten. Für Details klicken.',
     'widget.fj.open': 'Financial Juice öffnen',
+
+    // --- KI notice overlay ---
+    'ai.notice.title': 'KI-generierte Schlagzeilen',
+    'ai.notice.intro': 'Die Schlagzeilen in diesem Terminal werden vollautomatisch von einer KI aus Reddit-Diskussionen und Börsendaten formuliert. Es findet keine redaktionelle Prüfung durch einen Menschen statt - die KI kann sich irren.',
+    'ai.notice.wording.h': 'Formulierung',
+    'ai.notice.wording.t': 'Aussagen können zugespitzt, missverstanden oder aus dem Zusammenhang gerissen sein.',
+    'ai.notice.info.h': 'Informationen',
+    'ai.notice.info.t': 'Fakten, Namen und Zusammenhänge können falsch, veraltet oder frei erfunden sein.',
+    'ai.notice.price.h': 'Kurse & Zahlen',
+    'ai.notice.price.t': 'Preise, Prozente und Kennzahlen können fehlerhaft sein - besonders wenn sie aus Screenshots oder Kommentaren stammen.',
+    'ai.notice.footer': 'Nichts davon ist eine Anlageberatung. Prüfe jede Angabe selbst, bevor du danach handelst.',
 
     // --- settings ---
     'settings.title': 'Einstellungen',
@@ -78,6 +91,18 @@ export const DICT = {
     'quote.source': 'Kurs:',
     'quote.stale': 'außerhalb der Handelszeit — letzter Kurs',
 
+    // --- headline filter ---
+    'filter.open': 'Schlagzeilen filtern',
+    'filter.title': 'Filter',
+    'filter.reset': 'Zurücksetzen',
+    'filter.empty': 'Keine Schlagzeile passt zum Filter',
+    'filter.highlight.label': 'Wichtigkeit',
+    'filter.highlight.red': 'Nur Rot',
+    'filter.price.label': 'Preis',
+    'filter.news.label': 'News',
+    'filter.opt.with': 'mit',
+    'filter.opt.without': 'ohne',
+
     // --- financial juice ---
     'fj.waiting': 'Warte auf Financial Juice…',
 
@@ -117,7 +142,20 @@ export const DICT = {
     // --- widget headers ---
     'widget.reddit.title': 'Headlines',
     'widget.reddit.open': 'Open r/wallstreetbetsGER',
+    'widget.reddit.ai': 'AI-generated',
+    'widget.reddit.ai.hint': 'Generated automatically by AI, not editorially reviewed - may contain errors. Click for details.',
     'widget.fj.open': 'Open Financial Juice',
+
+    // --- KI notice overlay ---
+    'ai.notice.title': 'AI-generated headlines',
+    'ai.notice.intro': 'The headlines in this terminal are composed fully automatically by an AI from Reddit discussions and market data. There is no human editorial review - the AI can be wrong.',
+    'ai.notice.wording.h': 'Wording',
+    'ai.notice.wording.t': 'Statements can be overstated, misunderstood or taken out of context.',
+    'ai.notice.info.h': 'Information',
+    'ai.notice.info.t': 'Facts, names and connections can be wrong, outdated or entirely made up.',
+    'ai.notice.price.h': 'Prices & figures',
+    'ai.notice.price.t': 'Prices, percentages and key figures can be inaccurate - especially when they come from screenshots or comments.',
+    'ai.notice.footer': 'None of this is investment advice. Verify every detail yourself before acting on it.',
 
     // --- settings ---
     'settings.title': 'Settings',
@@ -175,6 +213,18 @@ export const DICT = {
     'quote.day': 'Day',
     'quote.source': 'Price:',
     'quote.stale': 'outside trading hours — last price',
+
+    // --- headline filter ---
+    'filter.open': 'Filter headlines',
+    'filter.title': 'Filter',
+    'filter.reset': 'Reset',
+    'filter.empty': 'No headline matches this filter',
+    'filter.highlight.label': 'Priority',
+    'filter.highlight.red': 'Red only',
+    'filter.price.label': 'Price',
+    'filter.news.label': 'News',
+    'filter.opt.with': 'with',
+    'filter.opt.without': 'without',
 
     // --- financial juice ---
     'fj.waiting': 'Waiting for Financial Juice…',

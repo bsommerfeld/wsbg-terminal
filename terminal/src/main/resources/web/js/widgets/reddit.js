@@ -19,6 +19,7 @@ import { t } from '../i18n/i18n.js';
 import { openNewsSources } from '../chrome/news-sources.js';
 import { quoteStripHtml } from './quote-strip.js';
 import { createHeadlineList } from './headline-list.js';
+import { matches, onFilterChange } from './headline-filter.js';
 
 // Gold subject highlight — LIVE since subject CONSOLIDATION (2026-07-01): one event now
 // composes exactly ONE headline under its primary subject, and the backend gilds the
@@ -37,7 +38,17 @@ function rowKey(h) {
   return h.clusterId + '@' + h.createdAt;
 }
 
-const list = createHeadlineList({ identity: rowKey, renderRow: buildRow, renderEmpty });
+const list = createHeadlineList({
+  identity: rowKey,
+  renderRow: buildRow,
+  renderEmpty,
+  filterFn: matches,
+  renderNoMatches: renderNoMatch,
+});
+
+// A spec change (from the filter popover) re-syncs the loaded rows in place —
+// no socket round-trip, the wire arrays stay complete.
+onFilterChange(() => list.rerender());
 
 export function renderHeadlines(host, items) {
   list.render(host, items);
@@ -58,6 +69,82 @@ function renderEmpty(host) {
     <div class="empty-cook" aria-label="${escapeHtml(t('reddit.empty'))}">
       <img src="/icons/cook.webp" alt="">
     </div>`;
+}
+
+// Shown when the wire HAS data but the active filter matches none of it. The
+// same cook as the empty state, but staged as a broken picture hanging askew
+// from a single nail: FROZEN (a canvas still frame — no CSS pauses an animated
+// webp in Chromium), tilted, cracked, and struck through in red. A wordless
+// "no headlines for this filter", visually distinct from the cold, still-
+// animating "still cooking" state.
+function renderNoMatch(host) {
+  host.innerHTML = `
+    <div class="empty-cook filter-blocked" aria-label="${escapeHtml(t('filter.empty'))}">
+      <div class="cook-frame">
+        <canvas class="cook-still" width="96" height="96"></canvas>
+      </div>
+    </div>`;
+  const canvas = host.querySelector('canvas');
+  const img = new Image();
+  img.onload = () => {
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const W = canvas.width, H = canvas.height;
+    // object-fit: cover — scale to fill the box, centred, so a non-square source
+    // isn't distorted (matches the .empty-cook img rendering).
+    const scale = Math.max(W / img.width, H / img.height);
+    const dw = img.width * scale, dh = img.height * scale;
+    try {
+      ctx.drawImage(img, (W - dw) / 2, (H - dh) / 2, dw, dh);
+      drawCracks(ctx, W, H);
+    } catch { /* ignore */ }
+  };
+  img.src = '/icons/cook.webp';
+}
+
+// Shattered-glass cracks radiating from an off-centre impact, drawn straight
+// onto the still. Deterministic (no randomness): a handful of jagged rays plus
+// a broken ring of connectors. A dark stroke with a thin light highlight offset
+// reads as depth.
+function drawCracks(ctx, w, h) {
+  const ix = w * 0.44, iy = h * 0.4;                 // impact point
+  const ends = [[6, 4], [70, 3], [93, 34], [88, 82], [40, 94], [3, 66], [2, 30]];
+
+  // One jagged polyline from the impact toward an edge point.
+  const ray = end => {
+    const [ex, ey] = end;
+    const dx = ex - ix, dy = ey - iy, len = Math.hypot(dx, dy);
+    const nx = -dy / len, ny = dx / len;             // unit normal, for the jag
+    ctx.moveTo(ix, iy);
+    const segs = 3;
+    for (let i = 1; i < segs; i++) {
+      const t = i / segs;
+      const off = (i % 2 ? 1 : -1) * 3.2;            // alternating perpendicular kink
+      ctx.lineTo(ix + dx * t + nx * off, iy + dy * t + ny * off);
+    }
+    ctx.lineTo(ex, ey);
+  };
+
+  const strokeAll = (color, width) => {
+    ctx.beginPath();
+    ends.forEach(ray);
+    // Broken ring: connect every other ray's ~mid-radius point.
+    for (let i = 0; i < ends.length; i += 2) {
+      const a = ends[i], b = ends[(i + 2) % ends.length];
+      const ax = ix + (a[0] - ix) * 0.55, ay = iy + (a[1] - iy) * 0.55;
+      const bx = ix + (b[0] - ix) * 0.55, by = iy + (b[1] - iy) * 0.55;
+      ctx.moveTo(ax, ay);
+      ctx.lineTo((ax + bx) / 2 + 2, (ay + by) / 2 - 2);
+      ctx.lineTo(bx, by);
+    }
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+  };
+
+  strokeAll('rgba(8,8,10,0.5)', 1.4);                // crack body
+  strokeAll('rgba(255,255,255,0.28)', 0.5);          // glint
 }
 
 function buildRow(h, isNew) {

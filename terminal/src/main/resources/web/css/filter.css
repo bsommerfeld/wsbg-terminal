@@ -1,0 +1,121 @@
+/* Headline filter — the funnel button in the Schlagzeilen header and its facet
+   popover. The button is an .iconbtn (sized in titlebar.css); this file adds the
+   per-line active state and the popover panel. Colours come from tokens.css, so
+   light/dark are handled for free. */
+
+.filter-btn { position: relative; }
+
+/* Header spacing: sit the funnel closer to LIVE and push the gap out toward the
+   Fear&Greed gauge instead. The live override also cancels .live's auto margin
+   (rows.css) so the button+LIVE stay a tight pair on the right. */
+.widget-head .filter-btn { margin-left: 16px; }
+.widget-head .filter-btn ~ .live { margin-left: -3px; }
+
+/* The icon is three strokes, one per facet (Highlight / Preis / News). An active
+   facet lights its own line amber; idle lines follow the button's currentColor
+   (muted, brighter on hover). So the icon itself shows WHICH filters are on -
+   no separate count badge needed. */
+.filter-btn svg .f-line { transition: stroke .12s; }
+.filter-btn svg .f-line.active { stroke: var(--amber); }
+
+/* The popover, anchored to the bottom-right of the header (its .widget-head
+   parent is position:relative). Floats over the wire rows. */
+.filter-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: var(--pad-x);
+  z-index: 30;
+  width: 264px;
+  padding: 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 18px 50px oklch(0 0 0 / .38);
+}
+.filter-pop[hidden] { display: none; }
+
+.filter-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 10px;
+}
+.filter-title {
+  color: var(--txt); font-weight: 600; font-size: var(--font-chrome);
+  letter-spacing: .16em; text-transform: uppercase;
+}
+.filter-reset {
+  color: var(--mute); background: none; border: 0; cursor: pointer;
+  font-size: 0.78em; padding: 2px 4px; border-radius: 6px;
+  transition: color .12s, background .12s;
+}
+.filter-reset:hover:not(:disabled) { color: var(--txt); background: var(--bg-1); }
+.filter-reset:disabled { opacity: .4; cursor: default; }
+
+.filter-row {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 7px 0;
+  border-top: 1px solid var(--line-soft);
+}
+.filter-label {
+  flex: 0 0 62px; padding-top: 4px;
+  color: var(--mute); font-size: 0.72em;
+  letter-spacing: .1em; text-transform: uppercase;
+}
+.filter-opts { display: flex; gap: 6px; flex: 1; }
+
+/* Facet chip: default = idle, .active = selected, :disabled = the ruled-out
+   sibling of an active mutually-exclusive pair. */
+.chip {
+  font: inherit; font-size: 0.78em;
+  padding: 3px 9px; border-radius: 999px;
+  color: var(--txt-2); background: var(--bg-1);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  transition: color .12s, background .12s, border-color .12s, opacity .12s;
+}
+.chip:hover:not(:disabled):not(.active) { border-color: var(--mute); color: var(--txt); }
+.chip.active {
+  color: var(--bg); background: var(--amber); border-color: var(--amber);
+  font-weight: 600;
+}
+.chip-red.active { background: var(--red); border-color: var(--red); color: #fff; }
+.chip:disabled { opacity: .32; cursor: default; }
+
+/* Filtered-empty state: the cook, FROZEN (a canvas snapshot) and struck through
+   in red — a wordless "no headlines for this filter", distinct from the cold,
+   still-animating "still cooking" empty state. Reuses .empty-cook's centring.
+
+   Staged as a broken picture hanging crooked: the frame is tilted (pivoting from
+   its top edge, as if off a nail); the red wash + strike sit on the frame so they
+   tilt with the picture. The cracks are drawn onto the canvas in reddit.js. */
+.empty-cook.filter-blocked { position: relative; opacity: 1; }
+/* The tilted picture, pivoting from its top edge. overflow:hidden clips the
+   strike-through to the picture so it never pokes past the border. */
+.filter-blocked .cook-frame {
+  position: relative;
+  overflow: hidden;
+  border-radius: 4px;
+  transform: rotate(-7deg);
+  transform-origin: top center;
+}
+.filter-blocked .cook-still {
+  display: block;
+  width: 96px; height: 96px;
+  filter: grayscale(.65) brightness(.8);
+  border-radius: 4px;
+}
+/* Red wash over the image (fills the frame). */
+.filter-blocked .cook-frame::before {
+  content: ""; position: absolute; inset: 0;
+  background: color-mix(in oklch, var(--red) 34%, transparent);
+  border-radius: 4px;
+  pointer-events: none;
+}
+/* Thick diagonal strike-through across the picture — deep red, and clipped to
+   the frame (via .cook-frame overflow:hidden) so it stops at the border. */
+.filter-blocked .cook-frame::after {
+  content: ""; position: absolute;
+  top: 50%; left: 50%; width: 160px; height: 9px;
+  transform: translate(-50%, -50%) rotate(-32deg);
+  background: color-mix(in oklch, var(--red) 58%, black);
+  pointer-events: none;
+}

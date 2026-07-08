@@ -112,22 +112,6 @@ class EditorialAgentTest {
 
 
 
-    // ---- headlineHasPriceNumber: detect a user-posted price for the "unverified" flag ----
-
-    @Test
-    void detectsPriceShapedNumbersForUnverifiedFlag() {
-        assertTrue(ComposeReplyParser.headlineHasPriceNumber("NVIDIA −4,97% im Depot"));
-        assertTrue(ComposeReplyParser.headlineHasPriceNumber("Ceres Power fällt auf 13,11%"));
-        assertTrue(ComposeReplyParser.headlineHasPriceNumber("TSLA 175.00 $ im Screenshot"));
-    }
-
-    @Test
-    void ignoresNonPriceNumbersAndPlainText() {
-        assertFalse(ComposeReplyParser.headlineHasPriceNumber("S&P 500 im Fokus der Apes"));
-        assertFalse(ComposeReplyParser.headlineHasPriceNumber("SAP taucht als Wette auf"));
-        assertFalse(ComposeReplyParser.headlineHasPriceNumber(null));
-    }
-
     @Test
     void regexStringFieldRecoversFromBrokenJson() {
         assertEquals("Oracle (ORCL) +2%", JsonReplies.regexStringField(

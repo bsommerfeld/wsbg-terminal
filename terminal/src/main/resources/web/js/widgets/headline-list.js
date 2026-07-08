@@ -22,7 +22,12 @@ const PAGE = 50;
 // while the user is reading the top of the wire — never under their viewport.
 const ARCHIVE_CAP = 300;
 
-export function createHeadlineList({ identity, renderRow, renderEmpty }) {
+export function createHeadlineList({ identity, renderRow, renderEmpty, filterFn, renderNoMatches }) {
+  // The scan filter (headline-filter.js). Applied at DISPLAY time only: the
+  // liveItems/archiveItems arrays stay complete, so the scroll-back paging cursor
+  // and a filter toggle-off both work without any re-fetch.
+  const passes = filterFn || (() => true);
+  const noMatches = renderNoMatches || renderEmpty;
   // Per-host caches. seenKeys: last render's live keys (new-row diffing). rowEls:
   // key -> row element, so a re-render only creates/removes/moves elements.
   const seenKeys = new WeakMap();
@@ -91,7 +96,7 @@ export function createHeadlineList({ identity, renderRow, renderEmpty }) {
     const host = hostRef;
     if (!host) return;
     const byKey = new Map();
-    for (const h of [...liveItems, ...archiveItems]) byKey.set(identity(h), h);
+    for (const h of [...liveItems, ...archiveItems]) if (passes(h)) byKey.set(identity(h), h);
 
     const prev = seenKeys.get(host) || new Set();
     const isFirstRender = prev.size === 0;
@@ -99,7 +104,23 @@ export function createHeadlineList({ identity, renderRow, renderEmpty }) {
 
     let els = rowEls.get(host);
     if (!els) { els = new Map(); rowEls.set(host, els); }
-    if (els.size === 0) host.innerHTML = ''; // clear the empty-state placeholder
+
+    // Nothing to show. Two distinct reasons, two distinct visuals:
+    //   - data exists but the filter hid all of it → the "no matches" filler;
+    //   - no data at all (still cold, or the wire is empty) → the cook state.
+    // Both must render HERE (not only in render()), because a filter toggle
+    // re-renders through this path — without it, toggling a filter on an empty
+    // wire would blank the cook GIF instead of keeping it until the first line.
+    if (byKey.size === 0) {
+      for (const [, el] of els) el.remove();
+      els.clear();
+      if (liveItems.length || archiveItems.length) noMatches(host);
+      else renderEmpty(host);
+      seenKeys.set(host, new Set());
+      return;
+    }
+
+    if (els.size === 0) host.innerHTML = ''; // clear the empty-state / no-match placeholder
 
     for (const [key, el] of els) {
       if (!byKey.has(key)) { el.remove(); els.delete(key); }
@@ -125,5 +146,11 @@ export function createHeadlineList({ identity, renderRow, renderEmpty }) {
     seenKeys.set(host, liveKeys);
   }
 
-  return { render, initScroll, appendArchivePage };
+  // Re-applies the current filter to the loaded data (called when the spec
+  // changes). No re-fetch — just a keyed re-sync over the intact arrays.
+  function rerender() {
+    if (hostRef) renderCombined();
+  }
+
+  return { render, initScroll, appendArchivePage, rerender };
 }

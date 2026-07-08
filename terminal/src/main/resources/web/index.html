@@ -16,6 +16,8 @@
   <link rel="stylesheet" href="/css/overlay.css">
   <link rel="stylesheet" href="/css/changelog.css">
   <link rel="stylesheet" href="/css/news-sources.css">
+  <link rel="stylesheet" href="/css/ai-notice.css">
+  <link rel="stylesheet" href="/css/filter.css">
 </head>
 <body>
 <div class="app">
@@ -75,7 +77,16 @@
         <div class="ident"><a class="glyph glyph-reddit" href="https://www.reddit.com/r/wallstreetbetsGER"
               target="_blank" rel="noopener" title="r/wallstreetbetsGER öffnen"
               aria-label="r/wallstreetbetsGER öffnen"
-              data-i18n-title="widget.reddit.open" data-i18n-aria-label="widget.reddit.open"></a><span data-i18n="widget.reddit.title">Schlagzeilen</span></div>
+              data-i18n-title="widget.reddit.open" data-i18n-aria-label="widget.reddit.open"></a><span data-i18n="widget.reddit.title">Schlagzeilen</span><!--
+          EU AI Act transparency (Art. 50(4) UAbs. 2): a persistent, clearly
+          visible "KI-generiert" label on the headline feed, disclosed at first
+          exposure. Hover = short teaser (title), click = the ai-notice overlay
+          explaining the model can err on wording, facts and prices. -->
+          <button type="button" class="ki-badge js-ai-notice"
+                  aria-haspopup="dialog"
+                  data-i18n="widget.reddit.ai"
+                  title="Automatisch von KI erstellt, nicht redaktionell geprüft - kann Fehler enthalten. Für Details klicken."
+                  data-i18n-title="widget.reddit.ai.hint">KI-generiert</button></div>
         <!-- The CNN Fear&Greed gauge (whole-market mood), pinned right before LIVE.
              The old BULLISH/BEARISH room-mood badge was removed — F&G covers market
              sentiment and the aggregate badge read misleadingly. -->
@@ -94,6 +105,23 @@
         <!-- Text is JS-controlled (Live ⇄ Defekt via reddit-status); no data-i18n
              here so applyStatic() can't clobber the health state. main.js re-applies
              the label on a language switch. "Live" reads the same in both languages. -->
+        <!-- Headline filter: funnel button (between F&G and LIVE) opens the facet
+             popover (filter-popover.js). The popover is a child of .widget-head
+             (its position:relative anchor). -->
+        <button class="iconbtn filter-btn" id="headline-filter-btn" type="button"
+                aria-haspopup="dialog" aria-expanded="false"
+                title="Schlagzeilen filtern" aria-label="Schlagzeilen filtern"
+                data-i18n-title="filter.open" data-i18n-aria-label="filter.open">
+          <!-- Three strokes = three facets; filter-popover.js lights each line
+               amber when its facet is active (Highlight / Preis / News). -->
+          <svg viewBox="0 0 24 24">
+            <line class="f-line" data-facet="highlight" x1="4" y1="6" x2="20" y2="6"/>
+            <line class="f-line" data-facet="price" x1="7" y1="12" x2="17" y2="12"/>
+            <line class="f-line" data-facet="news" x1="10" y1="18" x2="14" y2="18"/>
+          </svg>
+        </button>
+        <div class="filter-pop" id="headline-filter-popover" role="dialog"
+             aria-label="Filter" hidden></div>
         <span class="live" data-state="OK" aria-live="polite">Live</span>
       </header>
       <div class="widget-body" data-rows></div>
@@ -323,6 +351,37 @@
     </header>
     <div class="overlay-scroll">
       <ul class="news-src-list"></ul>
+    </div>
+  </div>
+</div>
+
+<!-- KI-notice overlay: opened by the "KI-generiert" header badge. The plain-
+     language EU AI Act transparency disclosure — the headlines are composed
+     fully automatically without human editorial review and can be wrong on
+     wording, facts and prices. Static, data-i18n-localized content; shares the
+     overlay skeleton + behaviour (overlay.css / chrome/overlay.js). -->
+<div class="overlay ai-notice-overlay" id="ai-notice-overlay" hidden role="dialog" aria-modal="true"
+     aria-label="KI-generierte Schlagzeilen" data-i18n-aria-label="ai.notice.title">
+  <div class="overlay-panel overlay-panel-sm">
+    <header class="overlay-head">
+      <div class="overlay-head-text">
+        <h1 class="overlay-title" data-i18n="ai.notice.title">KI-generierte Schlagzeilen</h1>
+      </div>
+      <button class="overlay-close" title="Schließen" aria-label="Schließen"
+              data-i18n-title="overlay.close" data-i18n-aria-label="overlay.close">
+        <svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+      </button>
+    </header>
+    <div class="overlay-scroll">
+      <div class="ai-notice-body">
+        <p data-i18n="ai.notice.intro">Die Schlagzeilen in diesem Terminal werden vollautomatisch von einer KI aus Reddit-Diskussionen und Börsendaten formuliert. Es findet keine redaktionelle Prüfung durch einen Menschen statt - die KI kann sich irren.</p>
+        <ul class="ai-notice-list">
+          <li><strong data-i18n="ai.notice.wording.h">Formulierung</strong><span data-i18n="ai.notice.wording.t">Aussagen können zugespitzt, missverstanden oder aus dem Zusammenhang gerissen sein.</span></li>
+          <li><strong data-i18n="ai.notice.info.h">Informationen</strong><span data-i18n="ai.notice.info.t">Fakten, Namen und Zusammenhänge können falsch, veraltet oder frei erfunden sein.</span></li>
+          <li><strong data-i18n="ai.notice.price.h">Kurse &amp; Zahlen</strong><span data-i18n="ai.notice.price.t">Preise, Prozente und Kennzahlen können fehlerhaft sein - besonders wenn sie aus Screenshots oder Kommentaren stammen.</span></li>
+        </ul>
+        <p class="ai-notice-footer" data-i18n="ai.notice.footer">Nichts davon ist eine Anlageberatung. Prüfe jede Angabe selbst, bevor du danach handelst.</p>
+      </div>
     </div>
   </div>
 </div>

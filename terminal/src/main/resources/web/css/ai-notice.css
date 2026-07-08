@@ -1,0 +1,106 @@
+/* EU AI Act transparency badge + notice overlay.
+   Art. 50(4) UAbs. 2 requires a clear, distinguishable disclosure that the
+   headline text is AI-generated, at the latest at first exposure. We satisfy
+   that with ONE persistent, always-visible label on the headline feed's header
+   (not a per-row repeat, not a one-off dialog): a "KI-generiert" pill that,
+   clicked, opens the plain-language notice overlay. Overlay skeleton lives in
+   overlay.css; this file only dresses the badge + the notice body. */
+
+/* --- the header badge --- */
+.widget-head .ki-badge {
+  position: relative;                         /* anchor for the CSS tooltip below */
+  flex: 0 0 auto;
+  margin-left: 2px;
+  padding: 2px 8px;
+  font-family: inherit;
+  font-size: var(--font-meta);
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: none;                       /* override .ident uppercase/spacing */
+  color: var(--amber);
+  background: color-mix(in oklch, var(--amber) 14%, transparent);
+  border: 1px solid color-mix(in oklch, var(--amber) 42%, transparent);
+  border-radius: 999px;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease;
+}
+.widget-head .ki-badge:hover {
+  background: color-mix(in oklch, var(--amber) 24%, transparent);
+  border-color: var(--amber);
+}
+
+/* Hover tooltip painted IN the page (content: attr(title) reuses the localized
+   title verbatim). The native browser title tooltip never renders in the
+   software-OSR Chromium — it's drawn by a native widget layer the onPaint
+   renderer doesn't host — so the teaser must be a real DOM-painted element. */
+.widget-head .ki-badge::after {
+  content: attr(title);
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 40;
+  width: max-content;
+  max-width: 260px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  color: var(--txt-2);
+  font-size: var(--font-meta);
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+  line-height: 1.45;
+  white-space: normal;
+  text-align: left;
+  box-shadow: 0 10px 30px oklch(0 0 0 / .4);
+  opacity: 0;
+  transform: translateY(-2px);
+  pointer-events: none;
+  transition: opacity .14s ease, transform .14s ease;
+}
+.widget-head .ki-badge:hover::after,
+.widget-head .ki-badge:focus-visible::after {
+  opacity: 1;
+  transform: none;
+}
+
+/* --- the notice overlay body --- */
+.ai-notice-body {
+  padding: 20px 32px 26px;
+  color: var(--txt-2);
+  font-size: .92rem;
+  line-height: 1.55;
+}
+.ai-notice-body p { margin: 0 0 14px; }
+
+.ai-notice-list {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+.ai-notice-list li {
+  position: relative;
+  padding-left: 15px;
+}
+.ai-notice-list li::before {
+  content: "-";
+  position: absolute;
+  left: 0;
+  color: var(--amber);
+}
+.ai-notice-list strong {
+  display: block;                             /* label on its own line, value beneath */
+  margin-bottom: 1px;
+  color: var(--txt);
+  font-weight: 600;
+}
+
+.ai-notice-footer {
+  color: var(--txt);
+  font-weight: 500;
+}

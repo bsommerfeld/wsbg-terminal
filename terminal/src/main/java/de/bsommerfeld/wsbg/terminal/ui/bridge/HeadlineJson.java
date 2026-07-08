@@ -37,12 +37,6 @@ final class HeadlineJson {
         m.put("assetClass", r.assetClass());
         m.put("sentiment", r.sentiment() == null ? "NEUTRAL" : r.sentiment().name());
         m.put("snapshot", snapshotJson(r.snapshot()));
-        // Provenance: the line carries a concrete Yahoo datum (a validated
-        // ticker, a live snapshot, or a price move) → it was enriched with
-        // Yahoo Finance data, which the UI flags with a subtle mark. Derived
-        // from persisted fields, so it needs no schema/snapshot change.
-        m.put("usedYahoo", r.tickerSymbol() != null || r.snapshot() != null
-                || r.priceMovePercent() != null);
         // Provenance: the compose stage leaned on ≥1 external news item. A quiet
         // bottom-right "News" tag in the UI; defaults false for old archive lines.
         m.put("newsEnriched", r.newsEnriched());

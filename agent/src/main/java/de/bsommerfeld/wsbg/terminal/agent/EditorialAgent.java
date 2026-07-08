@@ -263,11 +263,11 @@ public class EditorialAgent {
      */
     public UnitDraft composeUnit(SubjectUnit unit) {
         if (unit == null) {
-            return new UnitDraft("", "", null, false, "", 0, List.of(), false, false, List.of());
+            return new UnitDraft("", "", null, false, "", 0, List.of(), false, List.of());
         }
         ChatModel model = brain.getComposeModel(); // tight numPredict — one short headline JSON
         if (model == null) {
-            return new UnitDraft(unit.id, unit.canonicalName(), null, false, "", 0, List.of(), false, false, List.of());
+            return new UnitDraft(unit.id, unit.canonicalName(), null, false, "", 0, List.of(), false, List.of());
         }
         // Fully localized compose scaffold (German prompt + German room-slang + German brief
         // labels). This was held to English while the compose OUTPUT was a fat 9-field JSON —
@@ -321,26 +321,18 @@ public class EditorialAgent {
                     raw.length() > 400 ? raw.substring(0, 400) + "…" : raw);
         }
 
-        // A price/% in the line is UNVERIFIED when we have no resolved market data
-        // for the subject — it then comes from the room's own post/screenshot, not
-        // from Yahoo. The wire is a sentiment mirror; user numbers aren't facts.
-        boolean unverified = ComposeReplyParser.mentionsPrice(draft)
-                && !ComposeReplyParser.unitHasVerifiedPrice(unit);
         return new UnitDraft(unit.id, unit.canonicalName(), draft, salvaged, text, elapsed,
-                citedNews, unverified, whiffed, derivedFrom);
+                citedNews, whiffed, derivedFrom);
     }
 
     /**
      * One per-unit compose result (#2 step 3). {@code draft} is null when the model
      * wrote no usable headline. {@code newsUsed} = the 1-based brief ordinals of the
      * news items the model says the line leaned on (echoed from the numbered news
-     * list, like {@code derivedFrom} for prior headlines). {@code unverified} = the
-     * line carries a price/% that did NOT come from our data sources (no resolved
-     * Yahoo data) — it's a user-posted number, to be shown with an "unverified"
-     * marker, never as fact.
+     * list, like {@code derivedFrom} for prior headlines).
      */
     public record UnitDraft(String unitId, String label, Draft draft,
-            boolean salvaged, String raw, long ms, List<Integer> newsUsed, boolean unverified,
+            boolean salvaged, String raw, long ms, List<Integer> newsUsed,
             boolean whiffed, List<Integer> derivedFrom) {}
 
     /**
