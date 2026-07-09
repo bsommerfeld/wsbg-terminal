@@ -10,6 +10,8 @@ import { initChangelog } from './chrome/changelog.js';
 import { initNewsSources } from './chrome/news-sources.js';
 import { initAiNotice } from './chrome/ai-notice.js';
 import { initHeadlineFilter } from './chrome/filter-popover.js';
+import { initWidgetNav } from './chrome/widget-nav.js';
+import { initWidgetRail } from './chrome/widget-rail.js';
 import { initFooter } from './chrome/footer.js';
 import { setDonationStats } from './chrome/slider.js';
 import { initDonate } from './chrome/donate.js';
@@ -19,6 +21,7 @@ import { renderHeadlines, initHeadlineScroll, appendArchivePage } from './widget
 import { renderFjNews } from './widgets/financial-juice.js';
 import { renderEurUsd } from './widgets/eurusd.js';
 import { renderFearGreed } from './widgets/fear-greed.js';
+import { renderFearGreedDetail } from './widgets/fg-detail.js';
 import { setMarketCalendar } from './markets/state.js';
 import { t } from './i18n/i18n.js';
 
@@ -56,7 +59,12 @@ const WIDGETS = [
   { topic: 'fj-news',        relang: true, render: p => renderFjNews(fjBody, p ?? []) },
   { topic: 'eurusd',                       render: p => renderEurUsd(document.getElementById('eurusd-badge'), p) },
   { topic: 'market-hours',                 render: p => setMarketCalendar(p) },
-  { topic: 'fear-greed',     relang: true, render: p => renderFearGreed(document.getElementById('fear-greed-badge'), p) },
+  // One payload, two views: the header badge's mini gauge AND the detail
+  // widget (grid/focus) render from the same reading.
+  { topic: 'fear-greed',     relang: true, render: p => {
+      renderFearGreed(document.getElementById('fear-greed-badge'), p);
+      renderFearGreedDetail(document.getElementById('fg-detail'), p);
+    } },
   { topic: 'reddit-status',  relang: true, render: p => applyRedditStatus(p) },
   { topic: 'donation-stats',               render: p => setDonationStats(p) },
   { topic: 'os-appearance',                render: p => { if (p) setSystemAppearance(p.mode); } },
@@ -90,10 +98,16 @@ window.addEventListener('wsbg:languagechange', () => {
 
 initTheme();
 initSettings(socket);
+// Before the overlays/popovers: their document-level Escape handlers close
+// their own layer, and widget-nav's (registered here, i.e. earlier) must see
+// that layer still open to know the key was theirs — otherwise one Escape
+// would close an overlay AND navigate out of the focus view.
+initWidgetNav();
 initChangelog(socket);
 initNewsSources();
 initAiNotice();
 initHeadlineFilter();
+initWidgetRail(socket);
 initTitlebar(socket);
 initFooter();
 initDonate();

@@ -75,12 +75,14 @@ public class FearGreedClient {
      * Response shape:
      * <pre>{@code
      * { "fear_and_greed": { "score": 63.27, "rating": "greed",
-     *                       "timestamp": "...", "previous_close": 60.1, ... }, ... }
+     *                       "timestamp": "...", "previous_close": 60.1, ... },
+     *   "fear_and_greed_historical": { "data": [ {"x": 1719000000000, "y": 55.2}, ... ] }, ... }
      * }</pre>
      */
     Optional<FearGreedIndex> parse(String body) {
         try {
-            JsonNode fg = JSON.readTree(body).path("fear_and_greed");
+            JsonNode root = JSON.readTree(body);
+            JsonNode fg = root.path("fear_and_greed");
             JsonNode score = fg.path("score");
             if (!score.isNumber()) {
                 LOG.warn("Fear&Greed: score missing or non-numeric");
@@ -94,10 +96,35 @@ public class FearGreedClient {
             String rating = fg.path("rating").asText("");
             double prevClose = fg.path("previous_close").isNumber()
                     ? fg.path("previous_close").asDouble() : s;
-            return Optional.of(new FearGreedIndex(s, rating, prevClose, Instant.now()));
+            return Optional.of(new FearGreedIndex(s, rating, prevClose, Instant.now(),
+                    parseHistory(root.path("fear_and_greed_historical").path("data"))));
         } catch (Exception e) {
             LOG.warn("Fear&Greed parse failure: {}", e.getMessage());
             return Optional.empty();
         }
+    }
+
+    /**
+     * The ~1y daily series ({@code [{x: epochMs, y: score}, ...]}). Malformed or
+     * out-of-band samples are skipped rather than failing the whole reading; the
+     * series is capped by stride-sampling (keeping the newest point) so the
+     * websocket payload stays small no matter what CNN ships.
+     */
+    private static java.util.List<FearGreedIndex.Point> parseHistory(JsonNode data) {
+        if (!data.isArray() || data.isEmpty()) return java.util.List.of();
+        java.util.List<FearGreedIndex.Point> pts = new java.util.ArrayList<>(data.size());
+        for (JsonNode n : data) {
+            if (!n.path("x").isNumber() || !n.path("y").isNumber()) continue;
+            double y = n.path("y").asDouble();
+            if (!Double.isFinite(y) || y < 0 || y > 100) continue;
+            pts.add(new FearGreedIndex.Point(n.path("x").asLong(), y));
+        }
+        pts.sort(java.util.Comparator.comparingLong(FearGreedIndex.Point::epochMs));
+        int max = 400;
+        if (pts.size() <= max) return pts;
+        java.util.List<FearGreedIndex.Point> sampled = new java.util.ArrayList<>(max);
+        double stride = (pts.size() - 1) / (double) (max - 1);
+        for (int i = 0; i < max; i++) sampled.add(pts.get((int) Math.round(i * stride)));
+        return sampled;
     }
 }

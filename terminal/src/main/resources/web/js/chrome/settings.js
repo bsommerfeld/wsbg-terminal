@@ -71,6 +71,9 @@ export function initSettings(socket) {
   // Backend echoes the persisted snapshot on connect + after every change.
   socket.on('settings', payload => {
     if (!payload) return;
+    // Re-broadcast for other consumers of the snapshot (the socket allows one
+    // handler per topic) — the focus-rail's Schlagzeilen settings sync off this.
+    window.dispatchEvent(new CustomEvent('wsbg:settings', { detail: payload }));
     if (images && typeof payload.analyzeImages === 'boolean') images.checked = payload.analyzeImages;
     if (lang && payload.language) lang.value = payload.language;
     if (auto && typeof payload.autoUpdate === 'boolean') auto.checked = payload.autoUpdate;

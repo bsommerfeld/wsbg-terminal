@@ -1,0 +1,138 @@
+/* Fear & Greed detail widget (fg-detail.js) — hero gauge, band scale, 1y
+   history chart. Every color descends from tokens.css, so light/dark themes
+   are covered; the five band colors are the diverging fear↔greed scale the
+   header badge already speaks (red → amber → green). */
+
+/* Band → color mapping, usable by any element carrying [data-band]. */
+[data-band="EXTREME_FEAR"]  { --band-c: var(--red); }
+[data-band="FEAR"]          { --band-c: color-mix(in oklch, var(--red) 50%, var(--amber)); }
+[data-band="NEUTRAL"]       { --band-c: var(--amber); }
+[data-band="GREED"]         { --band-c: color-mix(in oklch, var(--green) 55%, var(--amber)); }
+[data-band="EXTREME_GREED"] { --band-c: var(--green); }
+
+.fg-detail {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 26px;
+  padding: 34px var(--pad-x) 44px;
+}
+
+/* ---- hero: gauge with the score inside, band pill + delta below ---- */
+
+.fg-hero { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+
+.fg-gauge-big { width: min(400px, 78vw); height: auto; overflow: visible; }
+.fg-gauge-big .fg-arc { stroke: var(--band-c); }
+.fg-needle-big { stroke: var(--txt); stroke-width: 3; stroke-linecap: round; }
+.fg-hub-big { fill: var(--txt); }
+.fg-big-val {
+  fill: var(--txt);
+  font-family: "Inter", sans-serif; font-weight: 600; font-size: 52px;
+  font-variant-numeric: tabular-nums;
+}
+.fg-big-val.loading { fill: var(--mute-2); }
+.fg-axis-end {
+  fill: var(--mute); font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.fg-hero-meta { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; justify-content: center; }
+
+.fg-band-pill {
+  color: var(--bg);
+  background: var(--band-c);
+  font-family: "Inter", sans-serif; font-weight: 600;
+  font-size: 0.86em; letter-spacing: .08em; text-transform: uppercase;
+  padding: 4px 14px; border-radius: 999px;
+}
+
+.fg-delta { font-size: 0.88em; font-variant-numeric: tabular-nums; color: var(--mute); }
+.fg-delta.up   { color: var(--green); }
+.fg-delta.down { color: var(--red); }
+
+.fg-updated { color: var(--mute); font-size: 0.82em; }
+
+.fg-waiting { color: var(--mute); font-size: 0.9em; text-align: center; }
+
+/* ---- the five band chips: the scale legend, current band highlighted ---- */
+
+.fg-bands { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.fg-band-chip {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 4px 11px;
+  border: 1px solid var(--line-soft); border-radius: 999px;
+  color: var(--mute); font-size: 0.76em;
+  transition: border-color .2s, color .2s;
+}
+.fg-band-chip.current { border-color: var(--band-c); color: var(--txt); }
+.fg-band-swatch {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--band-c);
+  flex-shrink: 0;
+}
+.fg-band-range { color: var(--mute-2); font-variant-numeric: tabular-nums; }
+
+/* ---- history chart ---- */
+
+.fg-chart-block { width: 100%; max-width: 720px; }
+.fg-chart-title {
+  color: var(--mute); font-size: 0.76em;
+  letter-spacing: .14em; text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.fg-chart-wrap { position: relative; width: 100%; }
+.fg-chart { width: 100%; height: auto; display: block; }
+
+.fg-gridline { stroke: var(--line-soft); stroke-width: 1; }
+.fg-y-tick, .fg-x-tick {
+  fill: var(--mute-2); font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.fg-line { stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+/* Diverging gradient stops (y-mapped: greed high, fear low). */
+.fg-stop-greed   { stop-color: var(--green); }
+.fg-stop-neutral { stop-color: var(--amber); }
+.fg-stop-fear    { stop-color: var(--red); }
+
+.fg-last-dot {
+  fill: var(--band-c);
+  stroke: var(--bg); stroke-width: 2; /* surface ring over the line */
+}
+.fg-last-label {
+  fill: var(--band-c);
+  font-size: 13px; font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Crosshair + tooltip (hover layer). The [hidden] rules are load-bearing:
+   the HTML hidden attribute doesn't hide SVG elements, and .fg-tip's
+   display:flex would beat the UA [hidden] rule. */
+.fg-cross[hidden], .fg-tip[hidden] { display: none; }
+.fg-cross-line { stroke: var(--mute-2); stroke-width: 1; stroke-dasharray: 3 3; }
+.fg-cross-dot { fill: var(--txt); stroke: var(--bg); stroke-width: 2; }
+.fg-tip {
+  position: absolute;
+  transform: translate(0, -50%);
+  display: flex; align-items: center; gap: 8px;
+  white-space: nowrap;
+  padding: 5px 10px;
+  border: 1px solid var(--line); border-radius: 8px;
+  background: color-mix(in oklch, var(--bg) 88%, transparent);
+  backdrop-filter: blur(8px);
+  font-size: 0.78em;
+  pointer-events: none;
+  z-index: 5;
+  box-shadow: 0 8px 24px oklch(0 0 0 / .3);
+}
+.fg-tip.flip { transform: translate(-100%, -50%); }
+.fg-tip-date { color: var(--mute); }
+.fg-tip-val { color: var(--txt); font-weight: 600; font-variant-numeric: tabular-nums; }
+.fg-tip-band { color: var(--band-c); }
+
+/* ---- attribution ---- */
+
+.fg-attrib { color: var(--mute); font-size: 0.78em; text-align: center; }
+.fg-attrib a {
+  color: var(--txt-2); text-decoration: none;
+  border-bottom: 1px dashed var(--mute-2);
+}
+.fg-attrib a:hover { color: var(--txt); border-bottom-color: var(--mute); }

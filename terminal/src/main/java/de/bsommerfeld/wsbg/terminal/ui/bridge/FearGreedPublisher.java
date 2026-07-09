@@ -38,6 +38,11 @@ public final class FearGreedPublisher {
         m.put("band", idx.band().name());
         m.put("previousClose", Math.round(idx.previousClose()));
         m.put("fetchedAt", idx.fetchedAt().toString());
+        // ~1y daily series for the detail widget's chart: [[epochMs, score], ...]
+        // (compact pairs, already capped client-side in FearGreedClient).
+        m.put("history", idx.history().stream()
+                .map(p -> java.util.List.of(p.epochMs(), Math.round(p.score() * 10) / 10.0))
+                .toList());
         return m;
     }
 }

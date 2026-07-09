@@ -1,0 +1,71 @@
+// Focus-mode tool rail: the floating buttons on the left edge of a
+// fullscreened widget and their liquid-glass popups (widget-grid.css does the
+// clip-path "pour out of the button" reveal; this module only toggles state).
+//
+// Generic behaviour here: one popup open at a time, outside click / Escape /
+// view change closes. Widget-specific content:
+//   - Reddit  filter (the shared facet panel from filter-popover.js) and the
+//             Schlagzeilen settings that also live in the main settings view
+//             (config-backed over the socket, synced via the settings snapshot
+//             that settings.js re-broadcasts as `wsbg:settings`).
+//   - FJ/F&G  static info popups (markup lives in index.html, i18n-tagged).
+
+import { mountFilterPanel } from './filter-popover.js';
+import { onFilterChange, isActive } from '../widgets/headline-filter.js';
+
+export function initWidgetRail(socket) {
+  const items = [...document.querySelectorAll('.rail-item')];
+  const withPop = items.filter(i => i.querySelector('.rail-pop'));
+
+  const closeAll = except => {
+    for (const i of withPop) {
+      if (i === except) continue;
+      i.classList.remove('open');
+      i.querySelector('.rail-btn')?.setAttribute('aria-expanded', 'false');
+    }
+  };
+
+  for (const item of withPop) {
+    const btn = item.querySelector('.rail-btn');
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const open = !item.classList.contains('open');
+      closeAll(item);
+      item.classList.toggle('open', open);
+      btn.setAttribute('aria-expanded', String(open));
+    });
+    // Clicks inside the popup stay inside (checkboxes, chips).
+    item.querySelector('.rail-pop').addEventListener('click', e => e.stopPropagation());
+  }
+
+  document.addEventListener('click', () => closeAll(null));
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && document.querySelector('.rail-item.open')) closeAll(null);
+  });
+  // Leaving focus view (grid button, Escape, overview) drops any open popup.
+  window.addEventListener('wsbg:viewchange', () => closeAll(null));
+
+  // ---- Reddit: the shared headline-filter panel + its active marker ----
+  const filterBody = document.querySelector('.js-rail-filter');
+  if (filterBody) {
+    mountFilterPanel(filterBody);
+    const dot = filterBody.closest('.rail-item')?.querySelector('.rail-dot');
+    const syncDot = () => { if (dot) dot.hidden = !isActive(); };
+    onFilterChange(syncDot);
+    syncDot();
+  }
+
+  // ---- Reddit: Schlagzeilen settings (config-backed, mirrors settings view) ----
+  const images = document.querySelector('.js-rail-analyze-images');
+  if (images) {
+    images.addEventListener('change',
+      () => socket.send('settings', { command: 'set', key: 'analyzeImages', value: images.checked }));
+    // settings.js re-broadcasts every settings snapshot it receives on the
+    // socket; the backend echoes after each change, so both checkboxes
+    // (settings view + rail) stay in lock-step.
+    window.addEventListener('wsbg:settings', e => {
+      const p = e.detail;
+      if (p && typeof p.analyzeImages === 'boolean') images.checked = p.analyzeImages;
+    });
+  }
+}

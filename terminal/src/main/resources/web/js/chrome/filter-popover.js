@@ -4,13 +4,17 @@
 // module's setters. The wire re-renders via the module's own change
 // notification (reddit.js subscribes), so this file never touches the list.
 //
+// The panel itself is shared: mountFilterPanel() renders + wires the facet
+// controls into ANY container, so the header popover (dashboard) and the
+// focus-mode rail popup (widget-rail.js) show the same filter — one spec,
+// two anchors.
+//
 // Facet UX:
 //   - Highlight  one toggle chip ("Nur Rot"): on ⇄ off.
 //   - Price/News mutually-exclusive PAIR — when one value is active the sibling
 //     is truly disabled (not just styled), so "mit" and "ohne" can never both be
 //     picked; clicking the active one clears the facet. Exactly the contradiction
 //     rule the user asked for.
-//   - Sentiment/Asset  multi-select chips — any subset, OR within the facet.
 
 import { t } from '../i18n/i18n.js';
 import { escapeHtml } from '../format/escape.js';
@@ -22,25 +26,39 @@ import {
 let btn = null;
 let pop = null;
 
-export function initHeadlineFilter() {
-  btn = document.getElementById('headline-filter-btn');
-  pop = document.getElementById('headline-filter-popover');
-  if (!btn || !pop) return;
+/**
+ * Renders the facet panel into `container` and keeps it live: clicks route to
+ * the filter setters, and the markup re-renders on every spec change and on a
+ * live language switch. Re-rendering a hidden panel is harmless (cheap
+ * innerHTML), so no visibility bookkeeping is needed.
+ */
+export function mountFilterPanel(container) {
+  const render = () => { container.innerHTML = panelHtml(); };
 
-  btn.addEventListener('click', e => { e.stopPropagation(); toggle(); });
-
-  // Click on a facet control (event delegation over the whole panel). Stop the
-  // event here so it never reaches the document-level outside-click handler —
-  // otherwise the panel rebuild (renderPanel) detaches the clicked node before
-  // that handler runs, it reads the click as "outside", and the popover closes
-  // on every selection. The panel stays open until an explicit outside click.
-  pop.addEventListener('click', e => {
+  // Stop the click here so it never reaches document-level outside-click
+  // handlers — the re-render detaches the clicked node before they run, which
+  // would read as "outside" and close the hosting popover on every selection.
+  container.addEventListener('click', e => {
     e.stopPropagation();
     const el = e.target.closest('[data-facet], .filter-reset');
     if (!el || el.disabled) return;
     if (el.classList.contains('filter-reset')) { resetFilter(); return; }
     apply(el.dataset.facet, el.dataset.val);
   });
+
+  onFilterChange(render);
+  window.addEventListener('wsbg:languagechange', render);
+  render();
+}
+
+export function initHeadlineFilter() {
+  btn = document.getElementById('headline-filter-btn');
+  pop = document.getElementById('headline-filter-popover');
+  if (!btn || !pop) return;
+
+  mountFilterPanel(pop);
+
+  btn.addEventListener('click', e => { e.stopPropagation(); toggle(); });
 
   // Dismiss: outside click / Escape.
   document.addEventListener('click', e => {
@@ -49,12 +67,12 @@ export function initHeadlineFilter() {
     close();
   });
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && isOpen()) close(); });
+  // A view switch (grid/focus) re-homes the filter to the rail — don't leave
+  // the header popover floating over the miniature card.
+  window.addEventListener('wsbg:viewchange', () => { if (isOpen()) close(); });
 
-  // Keep the button badge + (if open) the panel in sync with every spec change,
-  // and re-label on a live language switch.
-  onFilterChange(() => { updateButton(); if (isOpen()) renderPanel(); });
-  window.addEventListener('wsbg:languagechange', () => { if (isOpen()) renderPanel(); });
-
+  // Keep the button badge in sync with every spec change.
+  onFilterChange(updateButton);
   updateButton();
 }
 
@@ -68,7 +86,6 @@ function isOpen() { return !pop.hasAttribute('hidden'); }
 function toggle() { isOpen() ? close() : open(); }
 
 function open() {
-  renderPanel();
   pop.removeAttribute('hidden');
   btn.setAttribute('aria-expanded', 'true');
 }
@@ -91,9 +108,9 @@ function updateButton() {
   });
 }
 
-function renderPanel() {
+function panelHtml() {
   const s = getSpec();
-  pop.innerHTML = `
+  return `
     <div class="filter-head">
       <span class="filter-title">${escapeHtml(t('filter.title'))}</span>
       <button type="button" class="filter-reset"${isActive() ? '' : ' disabled'}>${escapeHtml(t('filter.reset'))}</button>

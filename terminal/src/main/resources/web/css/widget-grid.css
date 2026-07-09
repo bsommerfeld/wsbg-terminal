@@ -1,0 +1,264 @@
+/* Widget system — the three views driven by [data-view] on .main
+   (widget-nav.js): "dashboard" (classic split, base.css owns the layout),
+   "grid" (Mission-Control overview: every widget a scaled-down card) and
+   "focus" (one widget fullscreen: centred column + floating tool rail).
+   The transitions BETWEEN the views are FLIP-animated in JS; everything
+   here is the static geometry of each state. */
+
+/* Anchor for the grid hit overlay + the focus tool rail. */
+.main > .widget { position: relative; }
+
+/* ---- dashboard ---- */
+
+/* The Fear&Greed detail widget has no dashboard slot (the header badge
+   covers the market mood there) — it exists in grid + focus only. */
+.main[data-view="dashboard"] > #widget-fg { display: none; }
+
+.grid-hit { display: none; }
+
+/* ---- grid view (Mission Control) ---- */
+
+.main[data-view="grid"] {
+  display: flex; align-items: center; justify-content: center;
+  gap: clamp(18px, 3.2vw, 52px);
+  padding: 0 clamp(18px, 4vw, 64px);
+  /* Subtle stage vignette so the cards read as elevated over a backdrop. */
+  background: radial-gradient(120% 95% at 50% 32%, var(--bg-1), var(--bg) 80%);
+}
+.main[data-view="grid"] > .vdivider { display: none; }
+
+/* A card. .exit-card mirrors the look for widgets that are animating OUT of
+   the grid (widget-nav.js pins them position:fixed while they fly away, after
+   [data-view] has already moved on — without the twin selector they would
+   snap to their new layout mid-flight). */
+.main[data-view="grid"] > .widget,
+.main > .widget.exit-card {
+  flex: 0 1 clamp(280px, 32%, 560px);
+  min-width: 0;
+  aspect-ratio: 16 / 10.5;
+  max-height: 68%;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--bg);
+  box-shadow: 0 26px 80px oklch(0 0 0 / .45);
+  overflow: hidden;
+  transition: transform .22s cubic-bezier(.3, .9, .4, 1), border-color .22s, box-shadow .22s;
+}
+html[data-theme="light"] .main[data-view="grid"] > .widget,
+html[data-theme="light"] .main > .widget.exit-card {
+  box-shadow: 0 26px 80px oklch(0 0 0 / .18);
+}
+.main[data-view="grid"] > .widget:hover {
+  transform: translateY(-6px) scale(1.02);
+  border-color: var(--mute);
+  box-shadow: 0 34px 90px oklch(0 0 0 / .55);
+}
+
+/* Miniature content: `zoom` lays the widget out as if it were ~1.8x larger,
+   then paints it scaled down — a true thumbnail of the focus view, exactly
+   like Mission Control windows. Inner links/rows are inert; the .grid-hit
+   overlay is the only click target. */
+.main[data-view="grid"] > .widget > .widget-head,
+.main[data-view="grid"] > .widget > .widget-body,
+.main > .widget.exit-card > .widget-head,
+.main > .widget.exit-card > .widget-body {
+  zoom: 0.55;
+  pointer-events: none;
+}
+
+/* The F&G miniature keeps only its hero + chart — the band-chip legend and
+   attribution line are reading matter, and in a thumbnail they just collide
+   with the name pill. */
+.main[data-view="grid"] > #widget-fg .fg-bands,
+.main[data-view="grid"] > #widget-fg .fg-attrib,
+.main > #widget-fg.exit-card .fg-bands,
+.main > #widget-fg.exit-card .fg-attrib { display: none; }
+
+/* Full-card hit target + the name pill (bottom-centred, like the app names
+   under Mission Control windows — kept inside the card so the rounded-corner
+   clip stays intact). */
+.main[data-view="grid"] .grid-hit,
+.main > .widget.exit-card .grid-hit {
+  display: block;
+  position: absolute; inset: 0; z-index: 6;
+  background: linear-gradient(to top, oklch(0 0 0 / .30), transparent 36%);
+  cursor: pointer;
+}
+html[data-theme="light"] .main[data-view="grid"] .grid-hit,
+html[data-theme="light"] .main > .widget.exit-card .grid-hit {
+  background: linear-gradient(to top, oklch(1 0 0 / .55), transparent 36%);
+}
+.grid-hit:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: -2px;
+  border-radius: 14px;
+}
+.grid-hit-label {
+  position: absolute; bottom: 14px; left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-family: "Inter", sans-serif; font-weight: 600;
+  font-size: 0.82em; letter-spacing: .06em;
+  color: var(--txt);
+  padding: 4px 15px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: color-mix(in oklch, var(--bg) 82%, transparent);
+  backdrop-filter: blur(8px);
+  transition: border-color .2s, color .2s;
+}
+.main[data-view="grid"] > .widget:hover .grid-hit-label {
+  border-color: var(--mute);
+}
+
+/* ---- focus view (one widget fullscreen) ---- */
+
+.main[data-view="focus"] { display: flex; }
+.main[data-view="focus"] > .vdivider,
+.main[data-view="focus"] > .widget:not(.focused) { display: none; }
+.main[data-view="focus"] > .widget.focused { flex: 1; min-width: 0; }
+
+/* The main content column sits dead centre so the eyes never wander; the
+   side padding keeps it clear of the floating rail on narrow windows. */
+.main[data-view="focus"] > .widget.focused { --focus-col: 920px; }
+.main[data-view="focus"] > .widget.focused .widget-head {
+  padding: 0 max(96px, calc((100% - var(--focus-col)) / 2));
+}
+.main[data-view="focus"] > .widget.focused .widget-body { padding: 0 96px; }
+.main[data-view="focus"] > .widget.focused .widget-body > * {
+  max-width: var(--focus-col);
+  margin-inline: auto;
+}
+
+/* In focus mode the rail owns the headline filter — hide the header funnel
+   (and its popover) so the control exists exactly once. */
+.main[data-view="focus"] > .widget.focused .filter-btn,
+.main[data-view="focus"] > .widget.focused .filter-pop { display: none; }
+
+/* ---- transition helpers (set/cleared by widget-nav.js) ---- */
+
+/* A widget flying out of the CURRENT view: [data-view] has already switched
+   (which would display:none it) — force it visible and inert while its exit
+   animation plays. Position/size are pinned inline (position:fixed). */
+.main > .widget.exiting {
+  display: flex !important;
+  pointer-events: none;
+  margin: 0 !important;
+}
+
+/* ---- floating tool rail (focus mode only) ---- */
+
+.widget-rail { display: none; }
+.main[data-view="focus"] > .widget.focused .widget-rail {
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  position: absolute; left: 18px; top: 50%;
+  transform: translateY(-50%);
+  z-index: 24;
+}
+
+.rail-sep { width: 20px; height: 1px; background: var(--line); }
+
+.rail-item { position: relative; }
+
+.rail-btn {
+  position: relative;
+  width: 44px; height: 44px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--txt-2);
+  background: color-mix(in oklch, var(--bg-1) 78%, transparent);
+  backdrop-filter: blur(14px) saturate(1.3);
+  border: 1px solid var(--line);
+  box-shadow: 0 10px 28px oklch(0 0 0 / .30);
+  transition: color .15s, border-color .15s, background .15s,
+              transform .18s cubic-bezier(.34, 1.4, .64, 1);
+}
+html[data-theme="light"] .rail-btn { box-shadow: 0 10px 28px oklch(0 0 0 / .12); }
+.rail-btn:hover { color: var(--txt); border-color: var(--mute); transform: scale(1.08); }
+.rail-item.open .rail-btn { color: var(--amber); border-color: var(--amber); }
+.rail-btn svg {
+  width: 19px; height: 19px;
+  stroke: currentColor; stroke-width: 1.6; fill: none;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+/* Active-filter marker on the rail funnel. */
+.rail-dot {
+  position: absolute; top: 2px; right: 2px;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--amber); box-shadow: 0 0 6px var(--amber);
+}
+
+/* ---- liquid-glass popup: spreads out of its button toward the centre ----
+   The reveal is a clip-path circle anchored at the button's side, so the
+   panel really does pour out of the knob like water over glass; frosted by
+   backdrop blur. Transient animation only — nothing loops (OSR paint rule). */
+.rail-pop {
+  position: absolute; left: calc(100% + 14px); top: 50%;
+  transform: translateY(-50%);
+  width: min(320px, 44vw);
+  background: color-mix(in oklch, var(--bg) 74%, transparent);
+  backdrop-filter: blur(18px) saturate(1.35);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 24px 70px oklch(0 0 0 / .40);
+  clip-path: circle(0px at -14px 50%);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  z-index: 30;
+  transition: clip-path .5s cubic-bezier(.3, .9, .32, 1), opacity .25s ease,
+              visibility 0s .5s;
+}
+html[data-theme="light"] .rail-pop { box-shadow: 0 24px 70px oklch(0 0 0 / .16); }
+.rail-item.open .rail-pop {
+  clip-path: circle(135% at -14px 50%);
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition: clip-path .5s cubic-bezier(.3, .9, .32, 1), opacity .18s ease,
+              visibility 0s;
+}
+
+.rail-pop-body { padding: 14px 16px; }
+.rail-pop-head {
+  font-family: "Inter", sans-serif; font-weight: 600;
+  font-size: var(--font-chrome);
+  letter-spacing: .14em; text-transform: uppercase;
+  color: var(--txt);
+  margin-bottom: 10px;
+}
+.rail-pop-text { color: var(--txt-2); font-size: .86em; line-height: 1.6; }
+
+/* One setting row inside a rail popup (mirrors the settings view's row
+   grammar in miniature; .checkbox/.checkbox-box come from settings.css). */
+.rail-setting {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+}
+.rail-setting-label { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.rail-setting-hint { color: var(--mute); font-size: .78em; line-height: 1.5; }
+
+/* ---- chrome buttons ---- */
+
+/* Titlebar/footer grid button: lit while the grid or a focused widget is open. */
+.grid-btn[aria-pressed="true"] { color: var(--amber); }
+
+/* Footer twin for Linux (native titlebar there) — mirrors .footer-settings. */
+.footer-grid {
+  display: none;
+  flex: 0 0 auto;
+  margin: 0 0 0 8px;
+  border-left: 1px solid var(--line-soft);
+  border-radius: 0;
+  padding-left: 12px;
+}
+html[data-platform="other"] .footer-grid { display: inline-flex; }
+
+/* Fear&Greed widget header glyph (inline SVG speedometer, amber like the
+   other idents' brand colour). */
+.glyph-fg svg {
+  width: 22px; height: 22px;
+  stroke: var(--amber); stroke-width: 1.8; fill: none;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.glyph-fg circle { fill: var(--amber); stroke: none; }
