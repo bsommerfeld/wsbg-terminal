@@ -14,6 +14,10 @@ Im Vollbild schweben links am Rand runde Knöpfe mit allem, was nur dieses Widge
 
 > 📸 **[Bild einfügen: Das Fear-&-Greed-Widget im Vollbild - großes Barometer mit „63", GIER-Pille, Zonen-Chips und dem 12-Monats-Chart]**
 
+**Daneben liegt jetzt ein EUR/USD-Widget.** Der kleine Kurs aus der Financial-Juice-Kopfzeile ist zum eigenen Widget ausgewachsen: In der Übersicht eine kompakte Kachel neben dem Fear & Greed - großer Kurs zwischen EU- und US-Flagge, die Tagesveränderung in Grün oder Rot und der Kursverlauf des Tages. Im Vollbild kommen Tagesspanne, 52-Wochen-Spanne, der offizielle EZB-Referenzkurs, der Blick in die Gegenrichtung (1 USD in Euro) und ein ganzes Jahr Kursverlauf als Chart mit Details beim Drüberfahren dazu. Warum das zählt: US-Aktien, Optionen und Krypto sind in Dollar gepreist - steigt der Euro, wird euer Einstieg billiger, fällt er, teurer.
+
+> 📸 **[Bild einfügen: Das EUR/USD-Widget im Vollbild - großer Kurs „1,1435" zwischen den Flaggen, grüne Tages-Pille, Kennzahlen-Kacheln und das 12-Monats-Chart]**
+
 ## Restliches
 
 - Der Schlagzeilen-Filter wandert im Vollbild in die schwebenden Knöpfe links - in der klassischen Ansicht bleibt er wie gewohnt oben im Kopf.

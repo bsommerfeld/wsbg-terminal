@@ -20,6 +20,7 @@ import { initKeyboardCopy } from './chrome/copy-fx.js';
 import { renderHeadlines, initHeadlineScroll, appendArchivePage } from './widgets/reddit.js';
 import { renderFjNews } from './widgets/financial-juice.js';
 import { renderEurUsd } from './widgets/eurusd.js';
+import { renderEurUsdDetail } from './widgets/eurusd-detail.js';
 import { renderFearGreed } from './widgets/fear-greed.js';
 import { renderFearGreedDetail } from './widgets/fg-detail.js';
 import { setMarketCalendar } from './markets/state.js';
@@ -57,7 +58,12 @@ function applyRedditStatus(payload) {
 const WIDGETS = [
   { topic: 'headlines',      relang: true, render: p => renderHeadlines(redditBody, p ?? []) },
   { topic: 'fj-news',        relang: true, render: p => renderFjNews(fjBody, p ?? []) },
-  { topic: 'eurusd',                       render: p => renderEurUsd(document.getElementById('eurusd-badge'), p) },
+  // One payload, two views (like fear-greed): the FJ header badge AND the
+  // EUR/USD detail widget (grid/focus) render from the same quote.
+  { topic: 'eurusd',         relang: true, render: p => {
+      renderEurUsd(document.getElementById('eurusd-badge'), p);
+      renderEurUsdDetail(document.getElementById('eurusd-detail'), p);
+    } },
   { topic: 'market-hours',                 render: p => setMarketCalendar(p) },
   // One payload, two views: the header badge's mini gauge AND the detail
   // widget (grid/focus) render from the same reading.

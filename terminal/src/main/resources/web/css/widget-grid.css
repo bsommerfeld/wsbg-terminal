@@ -10,9 +10,10 @@
 
 /* ---- dashboard ---- */
 
-/* The Fear&Greed detail widget has no dashboard slot (the header badge
-   covers the market mood there) — it exists in grid + focus only. */
-.main[data-view="dashboard"] > #widget-fg { display: none; }
+/* The Fear&Greed and EUR/USD detail widgets have no dashboard slot (their
+   header badges cover the figures there) — they exist in grid + focus only. */
+.main[data-view="dashboard"] > #widget-fg,
+.main[data-view="dashboard"] > #widget-eurusd { display: none; }
 
 .grid-hit { display: none; }
 
@@ -104,6 +105,25 @@ html[data-theme="light"] .main > .widget.exit-card {
   height: 100%;
   justify-content: center;
   padding: 12px;
+}
+
+/* Same treatment for the EUR/USD card: only the hero core (rate + day delta +
+   intraday spark) — meta, stat tiles, history chart and attribution are
+   focus-view content. */
+.main[data-view="grid"] > #widget-eurusd .fx-hero-meta,
+.main[data-view="grid"] > #widget-eurusd .fx-stats,
+.main[data-view="grid"] > #widget-eurusd .fx-chart-block,
+.main[data-view="grid"] > #widget-eurusd .fx-attrib,
+.main > #widget-eurusd.exit-card .fx-hero-meta,
+.main > #widget-eurusd.exit-card .fx-stats,
+.main > #widget-eurusd.exit-card .fx-chart-block,
+.main > #widget-eurusd.exit-card .fx-attrib { display: none; }
+.main[data-view="grid"] > #widget-eurusd .fx-detail,
+.main > #widget-eurusd.exit-card .fx-detail {
+  height: 100%;
+  justify-content: center;
+  padding: 12px;
+  gap: 12px;
 }
 
 /* Full-card hit target + the name pill (bottom-centred, like the app names

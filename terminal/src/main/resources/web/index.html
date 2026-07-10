@@ -20,6 +20,7 @@
   <link rel="stylesheet" href="/css/filter.css">
   <link rel="stylesheet" href="/css/widget-grid.css">
   <link rel="stylesheet" href="/css/fear-greed.css">
+  <link rel="stylesheet" href="/css/eurusd.css">
 </head>
 <body>
 <div class="app">
@@ -326,6 +327,54 @@
             <div class="rail-pop-body">
               <div class="rail-pop-head" data-i18n="rail.info.title">Info</div>
               <p class="rail-pop-text" data-i18n="fg.info.text">CNNs Fear & Greed Index verdichtet sieben Marktindikatoren (u. a. Momentum, Volatilität, Put/Call-Verhältnis) zu einem Wert von 0 bis 100: 0 = extreme Angst, 100 = extreme Gier. Er misst den breiten US-Markt - nicht die Stimmung im Käfig.</p>
+            </div>
+          </div>
+        </div>
+      </nav>
+    </section>
+
+    <!-- EUR/USD detail widget: like Fear & Greed it has no dashboard slot (the
+         FJ header badge covers the rate there) — it lives as a compact card in
+         the grid view (rate + day change + intraday sparkline) and fullscreen
+         in focus view (stat tiles + 1y ECB history chart). Body is rendered by
+         js/widgets/eurusd-detail.js from the same eurusd socket payload. -->
+    <section class="widget" id="widget-eurusd">
+      <header class="widget-head">
+        <div class="ident"><a class="glyph glyph-fx" href="https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/eurofxref-graph-usd.en.html"
+              target="_blank" rel="noopener" title="EUR/USD bei der EZB öffnen"
+              aria-label="EUR/USD bei der EZB öffnen"
+              data-i18n-title="fx.open" data-i18n-aria-label="fx.open"><svg viewBox="0 0 64 20" aria-hidden="true"><rect width="30" height="20" rx="1.5" fill="#003399"/><g fill="#FFCC00"><circle cx="15" cy="4" r="1.1"/><circle cx="18" cy="4.8" r="1.1"/><circle cx="20.2" cy="7" r="1.1"/><circle cx="21" cy="10" r="1.1"/><circle cx="20.2" cy="13" r="1.1"/><circle cx="18" cy="15.2" r="1.1"/><circle cx="15" cy="16" r="1.1"/><circle cx="12" cy="15.2" r="1.1"/><circle cx="9.8" cy="13" r="1.1"/><circle cx="9" cy="10" r="1.1"/><circle cx="9.8" cy="7" r="1.1"/><circle cx="12" cy="4.8" r="1.1"/></g><g transform="translate(34)"><rect width="30" height="20" rx="1.5" fill="#B22234"/><g fill="#FFFFFF"><rect y="1.54" width="30" height="1.54"/><rect y="4.62" width="30" height="1.54"/><rect y="7.69" width="30" height="1.54"/><rect y="10.77" width="30" height="1.54"/><rect y="13.85" width="30" height="1.54"/><rect y="16.92" width="30" height="1.54"/></g><rect width="12" height="10.77" fill="#3C3B6E"/></g></svg></a><span data-i18n="widget.eurusd.title">EUR/USD</span></div>
+        <span class="live" data-i18n="common.live">Live</span>
+      </header>
+      <div class="widget-body">
+        <div id="eurusd-detail" class="fx-detail"></div>
+      </div>
+      <button class="grid-hit" type="button" aria-label="EUR/USD öffnen"
+              data-i18n-aria-label="grid.open.eurusd">
+        <span class="grid-hit-tag">
+          <svg class="grid-hit-icon-fx" viewBox="0 0 64 20" aria-hidden="true"><rect width="30" height="20" rx="1.5" fill="#003399"/><g fill="#FFCC00"><circle cx="15" cy="4" r="1.1"/><circle cx="18" cy="4.8" r="1.1"/><circle cx="20.2" cy="7" r="1.1"/><circle cx="21" cy="10" r="1.1"/><circle cx="20.2" cy="13" r="1.1"/><circle cx="18" cy="15.2" r="1.1"/><circle cx="15" cy="16" r="1.1"/><circle cx="12" cy="15.2" r="1.1"/><circle cx="9.8" cy="13" r="1.1"/><circle cx="9" cy="10" r="1.1"/><circle cx="9.8" cy="7" r="1.1"/><circle cx="12" cy="4.8" r="1.1"/></g><g transform="translate(34)"><rect width="30" height="20" rx="1.5" fill="#B22234"/><g fill="#FFFFFF"><rect y="1.54" width="30" height="1.54"/><rect y="4.62" width="30" height="1.54"/><rect y="7.69" width="30" height="1.54"/><rect y="10.77" width="30" height="1.54"/><rect y="13.85" width="30" height="1.54"/><rect y="16.92" width="30" height="1.54"/></g><rect width="12" height="10.77" fill="#3C3B6E"/></g></svg>
+          <span class="grid-hit-label" data-i18n="widget.eurusd.title">EUR/USD</span>
+        </span>
+      </button>
+      <nav class="widget-rail" aria-label="Widget-Werkzeuge" data-i18n-aria-label="rail.tools">
+        <a class="rail-logo" href="https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/eurofxref-graph-usd.en.html"
+           target="_blank" rel="noopener" title="EUR/USD bei der EZB öffnen"
+           aria-label="EUR/USD bei der EZB öffnen"
+           data-i18n-title="fx.open" data-i18n-aria-label="fx.open">
+          <!-- No brand mark — the flag pair is the logo. -->
+          <svg class="rail-logo-fx" viewBox="0 0 64 20" aria-hidden="true"><rect width="30" height="20" rx="1.5" fill="#003399"/><g fill="#FFCC00"><circle cx="15" cy="4" r="1.1"/><circle cx="18" cy="4.8" r="1.1"/><circle cx="20.2" cy="7" r="1.1"/><circle cx="21" cy="10" r="1.1"/><circle cx="20.2" cy="13" r="1.1"/><circle cx="18" cy="15.2" r="1.1"/><circle cx="15" cy="16" r="1.1"/><circle cx="12" cy="15.2" r="1.1"/><circle cx="9.8" cy="13" r="1.1"/><circle cx="9" cy="10" r="1.1"/><circle cx="9.8" cy="7" r="1.1"/><circle cx="12" cy="4.8" r="1.1"/></g><g transform="translate(34)"><rect width="30" height="20" rx="1.5" fill="#B22234"/><g fill="#FFFFFF"><rect y="1.54" width="30" height="1.54"/><rect y="4.62" width="30" height="1.54"/><rect y="7.69" width="30" height="1.54"/><rect y="10.77" width="30" height="1.54"/><rect y="13.85" width="30" height="1.54"/><rect y="16.92" width="30" height="1.54"/></g><rect width="12" height="10.77" fill="#3C3B6E"/></g></svg>
+        </a>
+        <span class="rail-sep" aria-hidden="true"></span>
+        <div class="rail-item">
+          <button class="rail-btn" type="button" aria-haspopup="dialog" aria-expanded="false"
+                  title="Info" aria-label="Was zeigt das EUR/USD-Widget?"
+                  data-i18n-title="rail.info.title" data-i18n-aria-label="fx.info.aria">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+          </button>
+          <div class="rail-pop" role="dialog" aria-label="Info" data-i18n-aria-label="rail.info.title">
+            <div class="rail-pop-body">
+              <div class="rail-pop-head" data-i18n="rail.info.title">Info</div>
+              <p class="rail-pop-text" data-i18n="fx.info.text">EUR/USD sagt, wie viele US-Dollar ein Euro kostet. Für den Käfig zählt das doppelt: US-Aktien, Optionen und Krypto sind in Dollar gepreist - steigt der Euro, wird der Einstieg für dich billiger, fällt er, teurer. Dazu Tages- und 52-Wochen-Spanne, der offizielle EZB-Referenzkurs und ein Jahr Historie.</p>
             </div>
           </div>
         </div>

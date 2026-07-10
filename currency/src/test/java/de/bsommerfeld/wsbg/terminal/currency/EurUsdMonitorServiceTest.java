@@ -13,10 +13,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class EurUsdMonitorServiceTest {
 
+    /** Minimal Yahoo picture: just the rate, no extras — what the old rate-only stub was. */
+    private static EurUsdClient.YahooFx fx(double rate) {
+        return new EurUsdClient.YahooFx(rate, null, null, null, null, null, List.of());
+    }
+
     @Test
     void usesPrimaryWhenAvailable() {
         EurUsdClient client = Mockito.mock(EurUsdClient.class);
-        Mockito.when(client.fetchYahoo()).thenReturn(Optional.of(1.0876));
+        Mockito.when(client.fetchYahooDetailed()).thenReturn(Optional.of(fx(1.0876)));
 
         EurUsdMonitorService service = newServiceWithoutAutoStart(client);
         service.tick();
@@ -31,7 +36,7 @@ class EurUsdMonitorServiceTest {
     @Test
     void fallsBackToFrankfurterWhenPrimaryFails() {
         EurUsdClient client = Mockito.mock(EurUsdClient.class);
-        Mockito.when(client.fetchYahoo()).thenReturn(Optional.empty());
+        Mockito.when(client.fetchYahooDetailed()).thenReturn(Optional.empty());
         Mockito.when(client.fetchFrankfurter()).thenReturn(Optional.of(1.0832));
 
         EurUsdMonitorService service = newServiceWithoutAutoStart(client);
@@ -46,8 +51,8 @@ class EurUsdMonitorServiceTest {
     @Test
     void keepsLastQuoteWhenBothSourcesFail() {
         EurUsdClient client = Mockito.mock(EurUsdClient.class);
-        Mockito.when(client.fetchYahoo())
-                .thenReturn(Optional.of(1.0876), Optional.empty());
+        Mockito.when(client.fetchYahooDetailed())
+                .thenReturn(Optional.of(fx(1.0876)), Optional.empty());
         Mockito.when(client.fetchFrankfurter()).thenReturn(Optional.empty());
 
         EurUsdMonitorService service = newServiceWithoutAutoStart(client);
@@ -62,11 +67,11 @@ class EurUsdMonitorServiceTest {
     @Test
     void directionUpdatesAcrossTicks() {
         EurUsdClient client = Mockito.mock(EurUsdClient.class);
-        Mockito.when(client.fetchYahoo())
-                .thenReturn(Optional.of(1.0876),
-                        Optional.of(1.0900),
-                        Optional.of(1.0850),
-                        Optional.of(1.0850));
+        Mockito.when(client.fetchYahooDetailed())
+                .thenReturn(Optional.of(fx(1.0876)),
+                        Optional.of(fx(1.0900)),
+                        Optional.of(fx(1.0850)),
+                        Optional.of(fx(1.0850)));
 
         EurUsdMonitorService service = newServiceWithoutAutoStart(client);
 
@@ -86,10 +91,10 @@ class EurUsdMonitorServiceTest {
     @Test
     void notifiesListenersOnEverySuccessfulTick() {
         EurUsdClient client = Mockito.mock(EurUsdClient.class);
-        Mockito.when(client.fetchYahoo())
-                .thenReturn(Optional.of(1.0876),
+        Mockito.when(client.fetchYahooDetailed())
+                .thenReturn(Optional.of(fx(1.0876)),
                         Optional.empty(),
-                        Optional.of(1.0900));
+                        Optional.of(fx(1.0900)));
         Mockito.when(client.fetchFrankfurter()).thenReturn(Optional.empty());
 
         EurUsdMonitorService service = newServiceWithoutAutoStart(client);
@@ -109,7 +114,7 @@ class EurUsdMonitorServiceTest {
     @Test
     void listenerExceptionDoesNotBreakOtherListeners() {
         EurUsdClient client = Mockito.mock(EurUsdClient.class);
-        Mockito.when(client.fetchYahoo()).thenReturn(Optional.of(1.0876));
+        Mockito.when(client.fetchYahooDetailed()).thenReturn(Optional.of(fx(1.0876)));
 
         EurUsdMonitorService service = newServiceWithoutAutoStart(client);
         List<EurUsdQuote> received = new ArrayList<>();
@@ -127,7 +132,7 @@ class EurUsdMonitorServiceTest {
         cfg.setPollIntervalSeconds(0);
 
         EurUsdClient client = Mockito.mock(EurUsdClient.class);
-        Mockito.when(client.fetchYahoo()).thenReturn(Optional.empty());
+        Mockito.when(client.fetchYahooDetailed()).thenReturn(Optional.empty());
         Mockito.when(client.fetchFrankfurter()).thenReturn(Optional.empty());
 
         EurUsdMonitorService service = new EurUsdMonitorService(client, cfg);

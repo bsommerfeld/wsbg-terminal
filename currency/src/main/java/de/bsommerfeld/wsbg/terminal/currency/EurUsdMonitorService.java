@@ -48,9 +48,20 @@ public class EurUsdMonitorService extends PollingMonitor<EurUsdQuote> {
      */
     private static final long INITIAL_DELAY_SECONDS = 0;
 
+    /**
+     * How long the cached ECB history stays fresh. The ECB fixes once per
+     * business day (~16:00 CET), so a 6h cadence catches every new fix without
+     * hammering Frankfurter from the 30s rate loop.
+     */
+    private static final long ECB_HISTORY_TTL_MS = 6 * 60 * 60 * 1000L;
+
     private final EurUsdClient client;
     private final long pollIntervalSeconds;
     private final double pollJitterPercent;
+
+    /** Cached ~1y daily ECB series; refreshed on its own long cadence inside tick(). */
+    private volatile EurUsdClient.EcbHistory ecbHistory;
+    private volatile long ecbFetchedAtMs;
 
     public EurUsdMonitorService() {
         this(new EurUsdClient(), new CurrencyConfig());
@@ -116,12 +127,12 @@ public class EurUsdMonitorService extends PollingMonitor<EurUsdQuote> {
      */
     void tick() {
         try {
-            Optional<Double> primary = client.fetchYahoo();
+            Optional<EurUsdClient.YahooFx> primary = client.fetchYahooDetailed();
             EurUsdQuote.Source source;
             double rate;
             if (primary.isPresent()) {
                 source = EurUsdQuote.Source.YAHOO;
-                rate = primary.get();
+                rate = primary.get().rate();
             } else {
                 LOG.info("Yahoo EUR/USD unavailable, falling back to Frankfurter");
                 Optional<Double> fallback = client.fetchFrankfurter();
@@ -133,15 +144,66 @@ public class EurUsdMonitorService extends PollingMonitor<EurUsdQuote> {
                 rate = fallback.get();
             }
 
+            refreshEcbHistoryIfStale();
+
             EurUsdQuote prev = getCurrent().orElse(null);
             Double previousRate = prev == null ? null : prev.rate();
-            EurUsdQuote next = EurUsdQuote.of(rate, previousRate, source, Instant.now());
+            EurUsdQuote next = EurUsdQuote.of(rate, previousRate, source, Instant.now(),
+                    buildDetails(primary.orElse(null)));
             setCurrent(next);
             LOG.debug("EUR/USD = {} ({}, {})", next.rate(), next.source(), next.direction());
 
             fanOut(next);
         } catch (Exception e) {
             LOG.error("EUR/USD tick failed", e);
+        }
+    }
+
+    /**
+     * Assembles the widget's detail context from the Yahoo picture (may be null on
+     * the Frankfurter fallback) plus the cached ECB series. The 52-week band
+     * prefers Yahoo's own figure and falls back to the min/max of the ECB year.
+     */
+    private FxDetails buildDetails(EurUsdClient.YahooFx fx) {
+        EurUsdClient.EcbHistory ecb = ecbHistory;
+        Double week52High = fx == null ? null : fx.week52High();
+        Double week52Low = fx == null ? null : fx.week52Low();
+        if ((week52High == null || week52Low == null) && ecb != null && !ecb.points().isEmpty()) {
+            double hi = Double.NEGATIVE_INFINITY, lo = Double.POSITIVE_INFINITY;
+            for (double[] p : ecb.points()) { hi = Math.max(hi, p[1]); lo = Math.min(lo, p[1]); }
+            if (week52High == null) week52High = hi;
+            if (week52Low == null) week52Low = lo;
+        }
+        return new FxDetails(
+                fx == null ? null : fx.previousClose(),
+                fx == null ? null : fx.dayHigh(),
+                fx == null ? null : fx.dayLow(),
+                week52High, week52Low,
+                fx == null ? null : fx.spark(),
+                ecb == null ? null : ecb.points(),
+                ecb == null ? null : ecb.latestRate(),
+                ecb == null ? null : ecb.latestDate());
+    }
+
+    /**
+     * Refreshes the ECB daily series when the cache is empty or older than
+     * {@link #ECB_HISTORY_TTL_MS}. A failed refresh keeps the old series (stale
+     * beats absent) and retries on the next expiry check.
+     */
+    private void refreshEcbHistoryIfStale() {
+        long now = System.currentTimeMillis();
+        if (ecbHistory != null && now - ecbFetchedAtMs < ECB_HISTORY_TTL_MS) return;
+        Optional<EurUsdClient.EcbHistory> fresh = client.fetchEcbHistory();
+        if (fresh.isPresent()) {
+            ecbHistory = fresh.get();
+            ecbFetchedAtMs = now;
+            LOG.info("EUR/USD: ECB history refreshed ({} points, latest {})",
+                    fresh.get().points().size(), fresh.get().latestDate());
+        } else if (ecbHistory == null) {
+            LOG.warn("EUR/USD: ECB history unavailable (will retry next tick)");
+        } else {
+            // Keep the stale series; retry in ~10 min instead of on every rate tick.
+            ecbFetchedAtMs = now - ECB_HISTORY_TTL_MS + 10 * 60_000L;
         }
     }
 

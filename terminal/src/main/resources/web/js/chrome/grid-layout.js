@@ -22,13 +22,15 @@ const HSCALE = 0.52;            // height runs slightly shorter than a strict pa
                                 // .58 read as too tall next to the .29 width
 const MIN_W = 240;              // px floor so tiny windows keep usable cards
 
-// Per-widget size factor on the common card size: Fear & Greed shows only its
-// gauge in the overview, so its card is a compact square-ish tile — the size
-// variety real Mission Control windows have.
+// Per-widget size factor on the common card size: Fear & Greed and EUR/USD
+// show only their hero (gauge / rate + spark) in the overview, so their cards
+// are compact square-ish tiles — the size variety real Mission Control
+// windows have.
 const SIZE_F = {
   'widget-reddit': 1,
   'widget-fj': 1,
   'widget-fg': 0.62,
+  'widget-eurusd': 0.62,
 };
 
 // Normalized default centres per widget id.
@@ -38,13 +40,16 @@ const SIZE_F = {
 // position and is then iteratively nudged apart until nothing overlaps — the
 // spatial relationship survives the zoom-out. For us that means: Schlagzeilen
 // seeds where its dashboard pane lives (left half), Financial Juice right
-// half, and Fear & Greed — which has no dashboard slot — slots in between,
-// a notch lower. separate() below is that same iterative relaxation; user
-// drags simply replace the seed and go through the identical pipeline.
+// half. The two compact gauges — Fear & Greed and EUR/USD, neither of which
+// has a dashboard pane — sit side by side as a top row above the panes
+// (user-mandated: the small tiles live "oben"). separate() below is that same
+// iterative relaxation; user drags simply replace the seed and go through the
+// identical pipeline.
 const DEFAULTS = {
-  'widget-reddit': { x: 0.250, y: 0.46 },
-  'widget-fj':     { x: 0.750, y: 0.46 },
-  'widget-fg':     { x: 0.500, y: 0.54 },
+  'widget-reddit': { x: 0.250, y: 0.56 },
+  'widget-fj':     { x: 0.750, y: 0.56 },
+  'widget-fg':     { x: 0.400, y: 0.17 },
+  'widget-eurusd': { x: 0.600, y: 0.17 },
 };
 
 let main = null;

@@ -25,7 +25,8 @@ public record EurUsdQuote(
         Double previousRate,
         Direction direction,
         Source source,
-        Instant fetchedAt) {
+        Instant fetchedAt,
+        FxDetails details) {
 
     /**
      * Direction of change versus the previous successful poll. Drives the
@@ -51,6 +52,12 @@ public record EurUsdQuote(
      * direction will be {@link Direction#NEUTRAL}.
      */
     public static EurUsdQuote of(double rate, Double previousRate, Source source, Instant fetchedAt) {
+        return of(rate, previousRate, source, fetchedAt, null);
+    }
+
+    /** Same, with the detail context (day range, 52w band, spark, ECB history). */
+    public static EurUsdQuote of(double rate, Double previousRate, Source source, Instant fetchedAt,
+            FxDetails details) {
         Direction direction;
         if (previousRate == null || rate == previousRate) {
             direction = Direction.NEUTRAL;
@@ -59,6 +66,6 @@ public record EurUsdQuote(
         } else {
             direction = Direction.DOWN;
         }
-        return new EurUsdQuote(rate, previousRate, direction, source, fetchedAt);
+        return new EurUsdQuote(rate, previousRate, direction, source, fetchedAt, details);
     }
 }

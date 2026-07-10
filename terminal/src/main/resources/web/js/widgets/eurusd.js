@@ -11,12 +11,13 @@ const FLASH_MS = 2000;
 
 // Twelve yellow 5-point stars arranged in a ring on a blue field —
 // the proper EU emblem layout. Building the polygon list once at
-// module load keeps the per-render path cheap.
-const FLAG_EU = buildEuFlag();
+// module load keeps the per-render path cheap. Exported: the EUR/USD
+// detail widget (eurusd-detail.js) renders the same pair.
+export const FLAG_EU = buildEuFlag();
 
 // Stylised US flag — 13 stripes alternating red/white plus the blue
 // canton. Stars in the canton are omitted (illegible at this size).
-const FLAG_US = `<svg class="flag flag-us" viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" aria-label="USD">` +
+export const FLAG_US = `<svg class="flag flag-us" viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" aria-label="USD">` +
   `<rect width="30" height="20" fill="#B22234"/>` +
   `<g fill="#FFFFFF">` +
     `<rect y="1.54" width="30" height="1.54"/>` +

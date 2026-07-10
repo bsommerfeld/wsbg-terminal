@@ -1,0 +1,147 @@
+/* EUR/USD detail widget (eurusd-detail.js) — hero rate between the flag pair,
+   day-change pill, intraday sparkline, stat tiles and the 1y ECB history
+   chart. Every color descends from tokens.css so light/dark are covered.
+   Polarity (up/down on the day) speaks the app-wide green/red; the history
+   line wears the single amber accent — a rate is a level, not a diverging
+   score, so no gradient scale here (contrast: fear-greed.css). */
+
+.fx-detail {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 22px;
+  padding: 34px var(--pad-x) 44px;
+}
+
+/* ---- hero: flags around the big figure, delta pill, sparkline ---- */
+
+.fx-rate-row {
+  display: flex; align-items: center; gap: 18px;
+}
+.fx-rate-row .flag {
+  width: 34px; height: auto; border-radius: 3px;
+  box-shadow: 0 1px 4px oklch(0 0 0 / .35);
+}
+.fx-rate {
+  font-family: "Inter", sans-serif; font-weight: 600; font-size: 46px;
+  font-variant-numeric: tabular-nums;
+  color: var(--txt);
+  transition: color 1.2s ease;
+}
+.fx-rate.flash-up   { color: var(--green); transition: none; }
+.fx-rate.flash-down { color: var(--red);   transition: none; }
+.fx-rate.loading    { color: var(--mute-2); filter: blur(6px); }
+
+.fx-delta {
+  font-size: 0.92em; font-variant-numeric: tabular-nums;
+  color: var(--mute);
+}
+.fx-delta.up   { color: var(--green); }
+.fx-delta.down { color: var(--red); }
+
+.fx-spark { width: min(220px, 60vw); height: 48px; overflow: visible; }
+.fx-spark .line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.fx-spark .area { opacity: .10; }
+.fx-spark.up   .line { stroke: var(--green); } .fx-spark.up   .area, .fx-spark.up   .dot { fill: var(--green); }
+.fx-spark.down .line { stroke: var(--red); }   .fx-spark.down .area, .fx-spark.down .dot { fill: var(--red); }
+.fx-spark.flat .line { stroke: var(--mute); }  .fx-spark.flat .area, .fx-spark.flat .dot { fill: var(--mute); }
+
+.fx-hero-meta {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap; justify-content: center;
+}
+.fx-updated { color: var(--mute); font-size: 0.82em; }
+.fx-src-note { color: var(--amber); font-size: 0.82em; }
+
+.fx-waiting { color: var(--mute); font-size: 0.9em; text-align: center; }
+
+/* ---- stat tiles ---- */
+
+.fx-stats {
+  display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;
+}
+.fx-stat {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 10px 18px;
+  border: 1px solid var(--line-soft); border-radius: 12px;
+  min-width: 128px;
+}
+.fx-stat-label {
+  color: var(--mute); font-size: 0.72em;
+  letter-spacing: .1em; text-transform: uppercase;
+  white-space: nowrap;
+}
+.fx-stat-value {
+  color: var(--txt); font-size: 0.95em; font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.fx-stat-hint { color: var(--mute-2); font-size: 0.74em; }
+
+/* ---- 1y ECB history chart ---- */
+
+.fx-chart-block { width: 100%; max-width: 720px; }
+.fx-chart-title {
+  color: var(--mute); font-size: 0.76em;
+  letter-spacing: .14em; text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.fx-chart-wrap { position: relative; width: 100%; }
+.fx-chart { width: 100%; height: auto; display: block; }
+
+.fx-gridline { stroke: var(--line-soft); stroke-width: 1; }
+.fx-y-tick, .fx-x-tick {
+  fill: var(--mute-2); font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.fx-line { stroke: var(--amber); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.fx-area { fill: var(--amber); opacity: .08; }
+.fx-last-dot {
+  fill: var(--amber);
+  stroke: var(--bg); stroke-width: 2; /* surface ring over the line */
+}
+.fx-last-label {
+  fill: var(--amber);
+  font-size: 13px; font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Crosshair + tooltip — the [hidden] rules are load-bearing (SVG ignores the
+   HTML hidden attribute; .fx-tip's display:flex would beat the UA rule). */
+.fx-cross[hidden], .fx-tip[hidden] { display: none; }
+.fx-cross-line { stroke: var(--mute-2); stroke-width: 1; stroke-dasharray: 3 3; }
+.fx-cross-dot { fill: var(--txt); stroke: var(--bg); stroke-width: 2; }
+.fx-tip {
+  position: absolute;
+  transform: translate(0, -50%);
+  display: flex; align-items: center; gap: 8px;
+  white-space: nowrap;
+  padding: 5px 10px;
+  border: 1px solid var(--line); border-radius: 8px;
+  background: color-mix(in oklch, var(--bg) 88%, transparent);
+  backdrop-filter: blur(8px);
+  font-size: 0.78em;
+  pointer-events: none;
+  z-index: 5;
+  box-shadow: 0 8px 24px oklch(0 0 0 / .3);
+}
+.fx-tip.flip { transform: translate(-100%, -50%); }
+.fx-tip-date { color: var(--mute); }
+.fx-tip-val { color: var(--txt); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* ---- attribution ---- */
+
+.fx-attrib { color: var(--mute); font-size: 0.78em; text-align: center; }
+.fx-attrib a {
+  color: var(--txt-2); text-decoration: none;
+  border-bottom: 1px dashed var(--mute-2);
+}
+.fx-attrib a:hover { color: var(--txt); border-bottom-color: var(--mute); }
+
+/* ---- widget chrome: header glyph, grid-hit icon, rail logo ----
+   All three are the same inline flag-pair SVG at different sizes. */
+
+.glyph-fx svg { width: 30px; height: auto; border-radius: 2px; }
+.grid-hit-icon-fx {
+  width: 46px; height: auto;
+  margin-top: 6px; /* optical: the flag pair is flatter than the square marks */
+  filter: drop-shadow(0 2px 6px oklch(0 0 0 / .45));
+}
+.rail-logo-fx { width: 30px; height: auto; }
