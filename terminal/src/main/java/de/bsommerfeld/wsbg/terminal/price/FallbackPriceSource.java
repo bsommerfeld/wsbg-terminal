@@ -98,7 +98,12 @@ public class FallbackPriceSource implements PriceSource {
         // from its $590 US listing instead of the EUR product. It stays out only for
         // non-equities — crypto (BTC-USD), index (^IXIC), FX (=X) — which would mis-match
         // a same-named German share ("Bitcoin" → "Bitcoin Group SE"); those go to Yahoo.
-        boolean germanVenueEligible = isEquityTicker(ref.ticker());
+        // A STAMPED ref (the identity desk pinned the exact venue instrument — venueId
+        // and/or ISIN) is always L&S-eligible regardless of ticker shape: that is what
+        // lets a crypto/commodity subject price in EUR from the venue notation the desk
+        // chose, instead of a Yahoo USD line. Unstamped refs keep the equity-shape rule.
+        boolean stamped = ref.hasVenueId() || ref.hasIsin();
+        boolean germanVenueEligible = stamped || isEquityTicker(ref.ticker());
         // Yahoo is a SAFETY NET, not a competitor: the attempts run L&S FIRST, so for an
         // equity Yahoo only ever fires when L&S genuinely found nothing — the "are you SURE
         // there's no price?" check (2026-06-30). It rescues real stocks L&S simply doesn't
@@ -110,37 +115,50 @@ public class FallbackPriceSource implements PriceSource {
         // For an EQUITY that fell through to the Yahoo net we keep the NATIVE price
         // ($, the honest listing — not a misleading EUR conversion of the wrong product).
         // A non-equity normalises through toEur (index → points, crypto → EUR, commodity → USD).
-        boolean convertUs = !germanVenueEligible;
+        boolean convertUs = !isEquityTicker(ref.ticker());
         final String[] isin = { ref.hasIsin() ? ref.isin() : null };
 
-        // L&S BY NAME FIRST (2026-06-30): the audience's EUR venue resolves ~80% of subjects
-        // straight from a name search (and carries the sparkline) — NO WSO call for the common
-        // case. Only when the name search MISSES do we pay wallstreet-online for a structured
-        // ISIN anchor and retry L&S by that exact ISIN. So WSO is the FALLBACK, not the per-equity
-        // primary (it stays cached either way). Prices are L&S-only ("weniger ist mehr"); Yahoo
-        // remains the opt-in US fallback + the always-on source for index points / crypto.
+        // EXECUTE THE STAMP FIRST: a desk-stamped ref carries the exact venue
+        // instrument, so there is nothing left to resolve — no name search, no WSO,
+        // no wrong-twin risk. The name/WSO cascade below runs only for unstamped refs
+        // (desk off/abstained). A crypto notation (CUR) trades around the clock, so it
+        // is labelled "L&S 24/7" and exempted from the German-session stale rule.
         List<Supplier<Optional<MarketSnapshot>>> attempts = new ArrayList<>(2);
         attempts.add(() -> {
             if (!germanVenueEligible) return Optional.empty();
-            // 1) L&S by name — the cheap 80% common path, no WSO.
-            LsInstrument inst = ref.hasName()
-                    ? safe(() -> ls.resolveInstrument(ref.name())).orElse(null) : null;
+            LsInstrument inst = null;
+            if (ref.hasVenueId()) {
+                inst = new LsInstrument(ref.venueId(), isin[0] == null ? "" : isin[0],
+                        ref.hasName() ? ref.name() : "");
+            }
+            if (inst == null && isin[0] != null) {
+                inst = safe(() -> ls.resolveByIsin(isin[0])).orElse(null);
+            }
+            // 1) L&S by name — the cheap common path for unstamped refs, no WSO.
+            // NOT for a desk-ruled-out ref: the desk saw the venue's candidates and
+            // struck every one, so the fuzzy name search would only re-find the
+            // same-named twin it just rejected (BlackRock → Blackrock Silver, P&G →
+            // the XS note). The WSO→exact-ISIN step below stays open — an ISIN
+            // anchor is a fact, not a re-guess.
+            if (inst == null && ref.hasName() && !ref.venueRuledOut()) {
+                inst = safe(() -> ls.resolveInstrument(ref.name())).orElse(null);
+            }
             // 2) Name missed → wallstreet-online's structured ISIN, then L&S by that exact ISIN.
             if (inst == null) {
-                String wsoIsin = isin[0] != null ? isin[0]
-                        : (ref.hasName()
-                            ? safe(() -> wso.resolve(ref.name(), ref.hasTicker() ? ref.ticker() : null))
-                                    .map(WsoInstrument::isin).orElse(null)
-                            : null);
+                String wsoIsin = ref.hasName()
+                        ? safe(() -> wso.resolve(ref.name(), ref.hasTicker() ? ref.ticker() : null))
+                                .map(WsoInstrument::isin).orElse(null)
+                        : null;
                 if (wsoIsin != null) {
-                    if (isin[0] == null) isin[0] = wsoIsin;
+                    isin[0] = wsoIsin;
                     inst = safe(() -> ls.resolveByIsin(wsoIsin)).orElse(null);
                 }
             }
             if (inst == null) return Optional.empty();
             if (isin[0] == null) isin[0] = blankToNull(inst.isin());
             LsInstrument fi = inst;
-            return safe(() -> ls.fetchSnapshot(fi));
+            String label = ref.isCategory("CUR") ? "L&S 24/7" : "L&S";
+            return safe(() -> ls.fetchSnapshot(fi, label));
         });
         // US fallback — Yahoo only (opt-in for equities; always on for index points / crypto).
         attempts.add(() -> {
@@ -177,15 +195,17 @@ public class FallbackPriceSource implements PriceSource {
     }
 
     /**
-     * True for an L&amp;S snapshot — the one venue that reports a fresh-looking
-     * timestamp even when closed, so off-session it must be forced stale. Yahoo/NASDAQ
-     * carry an honest last-trade timestamp and need no override.
+     * True for a session-bound L&amp;S snapshot — the one venue that reports a
+     * fresh-looking timestamp even when closed, so off-session it must be forced
+     * stale. The desk's crypto notations are labelled {@code "L&S 24/7"} and exempt
+     * (they genuinely trade around the clock). Yahoo carries an honest last-trade
+     * timestamp and needs no override.
      */
     private static boolean isGermanVenue(MarketSnapshot s) {
         String x = s == null ? null : s.exchangeName();
         if (x == null) return false;
         String t = x.toLowerCase(Locale.ROOT);
-        return t.contains("l&s") || t.contains("lang");
+        return (t.contains("l&s") || t.contains("lang")) && !t.contains("24/7");
     }
 
     /** Logs which source won (price + currency + venue + freshness), caches it, and returns it. */

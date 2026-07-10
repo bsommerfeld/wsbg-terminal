@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
+import de.bsommerfeld.wsbg.terminal.core.price.InstrumentCandidate;
+import de.bsommerfeld.wsbg.terminal.core.price.InstrumentLookup;
 import de.bsommerfeld.wsbg.terminal.core.util.BrowserUserAgent;
 import de.bsommerfeld.wsbg.terminal.core.util.Sparklines;
 import de.bsommerfeld.wsbg.terminal.source.net.DirectWebFetcher;
@@ -44,7 +46,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * the price-source chain falls through to the next provider.
  */
 @Singleton
-public class LangSchwarzClient {
+public class LangSchwarzClient implements InstrumentLookup {
 
     private static final Logger LOG = LoggerFactory.getLogger(LangSchwarzClient.class);
 
@@ -63,6 +65,9 @@ public class LangSchwarzClient {
 
     /** name (lowercased) → resolved instrument; null sentinel via Optional caching omitted for simplicity. */
     private final Map<String, LsInstrument> instrumentCache = new ConcurrentHashMap<>();
+
+    /** name (lowercased) → typed search candidates for the identity desk; misses cached as empty. */
+    private final Map<String, List<InstrumentCandidate>> candidateCache = new ConcurrentHashMap<>();
 
     /** Test/default: plain direct transport (hits the bot wall live — joker needed). */
     public LangSchwarzClient() {
@@ -148,6 +153,85 @@ public class LangSchwarzClient {
         }
     }
 
+    /**
+     * The {@link InstrumentLookup} seam for the identity desk: ALL typed candidates the
+     * L&amp;S search returns — every category ({@code STK}/{@code ETF}/{@code CUR}/{@code RES}/…),
+     * unfiltered, unranked. No picking happens here: the desk hands these facts to the
+     * LLM judge next to the Yahoo facts and the judge decides which one IS the subject.
+     * Tries the same progressive queries as {@link #resolveInstrument}; the first query
+     * with any hits wins. Never throws; a venue failure returns empty (cached).
+     */
+    @Override
+    public List<InstrumentCandidate> search(String query) {
+        if (query == null || query.isBlank()) return List.of();
+        String key = query.trim().toLowerCase(Locale.ROOT);
+        List<InstrumentCandidate> cached = candidateCache.get(key);
+        if (cached != null) return cached;
+        List<InstrumentCandidate> out = List.of();
+        for (String q : queryCandidates(query)) {
+            try {
+                WebResponse resp = get(SEARCH_URL + URLEncoder.encode(q, StandardCharsets.UTF_8));
+                if (resp == null) continue;
+                List<InstrumentCandidate> cands = parseCandidates(resp.body());
+                if (!cands.isEmpty()) {
+                    out = cands;
+                    break;
+                }
+            } catch (Exception e) {
+                warn("candidate-search", q, e);
+            }
+        }
+        // Only hits are cached (like resolveInstrument): an empty result can be a
+        // venue outage, and freezing that for the whole session would leave every
+        // verdict of the hour unstamped.
+        if (!out.isEmpty()) candidateCache.put(key, out);
+        LOG.info("[L&S] candidates '{}' → {}", query, out.size());
+        return out;
+    }
+
+    /** Parses the search array into typed candidates — every category, no filtering. Package-private, network-free. */
+    List<InstrumentCandidate> parseCandidates(String body) {
+        try {
+            JsonNode arr = JSON.readTree(body);
+            if (!arr.isArray() || arr.isEmpty()) return List.of();
+            List<InstrumentCandidate> out = new ArrayList<>(arr.size());
+            for (JsonNode n : arr) {
+                long id = n.path("instrumentId").asLong(n.path("id").asLong(0));
+                if (id <= 0) continue;
+                out.add(new InstrumentCandidate("L&S", id,
+                        n.path("isin").asText(""), n.path("wkn").asText(""),
+                        n.path("displayname").asText(""),
+                        n.path("categorySymbol").asText(""), n.path("categoryName").asText("")));
+            }
+            return List.copyOf(out);
+        } catch (Exception e) {
+            LOG.warn("L&S candidate parse failure: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    /**
+     * The desk's price-plausibility fact: the venue's current price for ONE judged
+     * candidate (EUR), via the same chart endpoint the price chain executes later.
+     * One extra call per freshly-judged subject with both picks set — cheap, and it
+     * is what catches a wrong paper (depositary receipt, bond, share-class twin)
+     * whose name matched perfectly but whose price sits orders of magnitude off
+     * the Yahoo reference.
+     */
+    @Override
+    public Optional<Double> lastPrice(InstrumentCandidate candidate) {
+        if (candidate == null || candidate.venueId() <= 0) return Optional.empty();
+        try {
+            return fetchSnapshot(new LsInstrument(candidate.venueId(), candidate.isin(),
+                    candidate.displayName()))
+                    .filter(MarketSnapshot::hasPrice)
+                    .map(MarketSnapshot::price);
+        } catch (Exception e) {
+            warn("last-price", candidate.displayName(), e);
+            return Optional.empty();
+        }
+    }
+
     /** Search queries to try, simplest-matching-first: cleaned name, first word, raw. */
     static List<String> queryCandidates(String name) {
         java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
@@ -174,11 +258,22 @@ public class LangSchwarzClient {
 
     /** Live EUR snapshot for an already-resolved instrument. */
     public Optional<MarketSnapshot> fetchSnapshot(LsInstrument inst) {
+        return fetchSnapshot(inst, "L&S");
+    }
+
+    /**
+     * Live EUR snapshot with an explicit venue label. The label is the session-rule
+     * channel: the price chain marks an L&amp;S quote stale off the German session
+     * (L&amp;S reports a fresh-looking stamp on a last close), but a crypto notation
+     * trades around the clock — the desk prices those under the {@code "L&S 24/7"}
+     * label, which the chain exempts from the session rule.
+     */
+    public Optional<MarketSnapshot> fetchSnapshot(LsInstrument inst, String exchangeLabel) {
         if (inst == null) return Optional.empty();
         try {
             WebResponse resp = get(CHART_URL + inst.instrumentId());
             if (resp == null) { LOG.info("[L&S] chart id={} → no/blocked response", inst.instrumentId()); return Optional.empty(); }
-            Optional<MarketSnapshot> snap = parseChart(resp.body(), inst.isin());
+            Optional<MarketSnapshot> snap = parseChart(resp.body(), inst.isin(), exchangeLabel);
             if (snap.isEmpty()) {
                 LOG.info("[L&S] chart id={} → unparseable (body {} chars)", inst.instrumentId(),
                         resp.body() == null ? 0 : resp.body().length());
@@ -238,6 +333,10 @@ public class LangSchwarzClient {
      * previous close from {@code info.plotlines} → day move.
      */
     Optional<MarketSnapshot> parseChart(String body, String isin) {
+        return parseChart(body, isin, "L&S");
+    }
+
+    Optional<MarketSnapshot> parseChart(String body, String isin, String exchangeLabel) {
         try {
             JsonNode root = JSON.readTree(body);
             JsonNode data = root.path("series").path("intraday").path("data");
@@ -277,7 +376,7 @@ public class LangSchwarzClient {
                     isin == null ? "" : isin, last,
                     Double.isFinite(prevClose) ? prevClose : Double.NaN, dayChange,
                     high, low, -1, week52High, week52Low,
-                    "EUR", "L&S", lastTsMs / 1000, Sparklines.downsample(prices, SPARK_POINTS), dailyCloses));
+                    "EUR", exchangeLabel, lastTsMs / 1000, Sparklines.downsample(prices, SPARK_POINTS), dailyCloses));
         } catch (Exception e) {
             LOG.warn("L&S chart parse failure: {}", e.getMessage());
             return Optional.empty();

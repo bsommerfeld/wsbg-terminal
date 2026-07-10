@@ -25,8 +25,24 @@ public class AgentConfig {
             + "memory).")
     private int contextTokens = 8192;
 
+    @Key("agent.identity-desk")
+    @Comment("The AI identity desk (border control): subject identity is decided by ONE "
+            + "gemma4 judgment over the combined Yahoo + Lang & Schwarz search facts and the "
+            + "verdict is stamped (ISIN + venue instrument) onto the price lookup. Off = the "
+            + "legacy deterministic guard tower decides alone (the desk's outage fallback). "
+            + "Live-toggleable; keep on.")
+    private boolean identityDesk = true;
+
     public String getEditorialModel() {
         return editorialModel;
+    }
+
+    public boolean isIdentityDesk() {
+        return identityDesk;
+    }
+
+    public void setIdentityDesk(boolean identityDesk) {
+        this.identityDesk = identityDesk;
     }
 
     public void setEditorialModel(String editorialModel) {

@@ -5,7 +5,9 @@ import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.agent.AgentCoordinator;
 import de.bsommerfeld.wsbg.terminal.agent.EditorialPipeline;
 import de.bsommerfeld.wsbg.terminal.agent.PassiveMonitorService;
+import de.bsommerfeld.wsbg.terminal.core.price.InstrumentLookup;
 import de.bsommerfeld.wsbg.terminal.core.price.PriceSource;
+import de.bsommerfeld.wsbg.terminal.langschwarz.LangSchwarzClient;
 import de.bsommerfeld.wsbg.terminal.price.FallbackPriceSource;
 import de.bsommerfeld.wsbg.terminal.ui.TimeTracker;
 
@@ -40,5 +42,10 @@ final class AgentPipelineModule extends AbstractModule {
         // The live price chain (EUR-first: L&S, then US fallback Yahoo).
         // Optionally injected into TickerResolver; Yahoo stays the search + news source.
         bind(PriceSource.class).to(FallbackPriceSource.class).in(Singleton.class);
+
+        // The identity desk's venue candidate search: L&S typed search results
+        // (STK/ETF/CUR/RES) feed the gemma4 identity judgment. Optionally injected
+        // into EditorialAgent, which also arms the persistent verdict ledger.
+        bind(InstrumentLookup.class).to(LangSchwarzClient.class).in(Singleton.class);
     }
 }

@@ -36,6 +36,45 @@ class LangSchwarzClientTest {
     }
 
     @Test
+    void candidatesCarryEveryCategoryUnfiltered() {
+        // Real-shaped "Bitcoin" list (live-captured 2026-07-09): the identity desk needs
+        // ALL categories side by side — the same-named stock (STK), the ETPs (ETF) and
+        // the currency notation (CUR) — so the judge can pick on the category fact.
+        String body = """
+            [{"id":451698,"displayname":"BITCOIN GROUP SE  O.N.","isin":"DE000A1TNV91","wkn":"A1TNV9",
+              "instrumentId":451698,"categorySymbol":"STK","categoryName":"Aktie"},
+             {"id":982480,"displayname":"21SHARES BITCOIN ETP OE","isin":"CH0454664001","wkn":"A2T64E",
+              "instrumentId":982480,"categorySymbol":"ETF","categoryName":"ETF"},
+             {"id":3477757,"displayname":"Bitcoin (BTC)","isin":"LS000LSOBTC1","wkn":"",
+              "instrumentId":3477757,"categorySymbol":"CUR","categoryName":"Währung"}]
+            """;
+        var cands = client.parseCandidates(body);
+        assertEquals(3, cands.size(), "nothing filtered, nothing ranked — the judge decides");
+        assertEquals("STK", cands.get(0).category());
+        assertEquals("A1TNV9", cands.get(0).wkn());
+        assertEquals("CUR", cands.get(2).category());
+        assertEquals("Währung", cands.get(2).categoryName());
+        assertEquals(3477757L, cands.get(2).venueId());
+        assertEquals("LS000LSOBTC1", cands.get(2).isin(), "the venue pseudo-ISIN keys the crypto notation");
+        assertTrue(client.parseCandidates("[]").isEmpty());
+        assertTrue(client.parseCandidates("not json").isEmpty());
+    }
+
+    @Test
+    void chartLabelParameterNamesTheVenueOnTheSnapshot() {
+        String body = """
+            {"series":{"intraday":{"data":[[1751900000000,63000.0],[1751900600000,63287.65]]}},
+             "info":{"plotlines":[{"value":62087.85}]}}
+            """;
+        MarketSnapshot s = client.parseChart(body, "LS000LSOBTC1", "L&S 24/7").orElseThrow();
+        assertEquals("L&S 24/7", s.exchangeName(),
+                "the 24/7 label is the session-rule channel for crypto notations");
+        assertEquals(63287.65, s.price(), 1e-9);
+        MarketSnapshot plain = client.parseChart(body, "X").orElseThrow();
+        assertEquals("L&S", plain.exchangeName(), "default label unchanged");
+    }
+
+    @Test
     void searchRanksFullNameAndPicksThePlainTracker() {
         // Real-shaped "MSCI World" list: must reject MSCI Inc (the stock), MSCI USA
         // and the factor variant, and pick a plain World tracker.

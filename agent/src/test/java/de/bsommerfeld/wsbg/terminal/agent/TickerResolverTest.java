@@ -430,12 +430,13 @@ class TickerResolverTest {
     void guardTowerStagesAreWiredInTheLoadBearingOrder() {
         // The cascade order encodes real fixes (DAX-ETF trap, „Gold" mining-stock trap,
         // SPD/Kakao veto, „OP"/Polen prefix-trap, tier-3 rescue) and must not drift:
-        // Index → Commodity → Strong⊕Veto → Judge → Corpus.
+        // Index → Commodity → Desk (the identity border control; primary once armed)
+        // → Strong⊕Veto → Judge → Corpus (the desk's outage fallback).
         java.util.List<SubjectMatcher> stages = new TickerResolver(null).matchTower().stages();
         java.util.List<Class<?>> order = stages.stream().map(Object::getClass).toList();
         assertEquals(
-                List.of(IndexMatcher.class, CommodityMatcher.class, IdentityVeto.class,
-                        JudgeMatcher.class, CorpusMatcher.class),
+                List.of(IndexMatcher.class, CommodityMatcher.class, DeskMatcher.class,
+                        IdentityVeto.class, JudgeMatcher.class, CorpusMatcher.class),
                 order);
     }
 }

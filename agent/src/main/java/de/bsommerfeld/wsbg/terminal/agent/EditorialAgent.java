@@ -97,10 +97,14 @@ public class EditorialAgent {
     private final SubjectRegistry subjectRegistry;
     /** The single semaphore-gated model-call seam (NUM_PARALLEL=2), shared by every stage below. */
     private final ChatGateway chatGateway;
-    /** The two discrete gemma4 judge calls (tier-2 instrument match, same-story dup). */
+    /** The discrete gemma4 judge calls (identity desk pick, tier-2 instrument match, same-story dup). */
     private final Gemma4Judge gemma4Judge;
+    /** The identity border control — constructed here, venue lookup + ledger installed via Guice. */
+    private final IdentityDesk identityDesk;
     /** Stage 1 — subject extraction (brief + cluster → names + model primary). */
     private final SubjectExtractor subjectExtractor;
+    /** The news pre-stage: full article → key-fact digest, cached per link (vision pattern). */
+    private final NewsDigester newsDigester;
     /**
      * Per-unit count of consecutive compose whiffs (cleared on a publish, a
      * redundant-empty, or once the unit is parked). Bounds {@link #MAX_COMPOSE_RETRIES}.
@@ -144,11 +148,35 @@ public class EditorialAgent {
         this.chatGateway = new ChatGateway(brain, llmGate);
         this.gemma4Judge = new Gemma4Judge(brain, chatGateway);
         this.tickerResolver.setMatchJudge(gemma4Judge::matchInstrument); // Tier 2 enabled
+        // The identity desk (border control): identity decided ONCE per subject by a
+        // gemma4 judgment over the combined venue facts. The enabled flag reads the
+        // live config so the gate flips without a restart; without a config (tests)
+        // the desk is on but inert (no venue lookup, judge fails to abstain).
+        this.identityDesk = new IdentityDesk(gemma4Judge::pickIdentity,
+                () -> config == null || config.getAgent() == null || config.getAgent().isIdentityDesk());
+        this.tickerResolver.setIdentityDesk(identityDesk);
         this.headlineWriter = new HeadlineWriter(agentRepository, eventBus);
         this.attributor = new SubjectAttributor(redditRepository, brain);
         this.subjectExtractor = new SubjectExtractor(brain, redditRepository, chatGateway);
+        this.newsDigester = new NewsDigester(brain, chatGateway, config);
         this.subjectRegistry = subjectRegistry;
         this.config = config;
+    }
+
+    /**
+     * Installs the shared web transport onto the article digester (the news
+     * pre-stage: full article → key-fact digest → compose brief). Optional Guice
+     * method-injection like the seams below: present in production (NetModule binds
+     * the {@link de.bsommerfeld.wsbg.terminal.source.net.WebFetcher} chain), absent
+     * in tests, where the digester stays inert and briefs fall back to the teaser.
+     */
+    @com.google.inject.Inject(optional = true)
+    void setArticleFetcher(de.bsommerfeld.wsbg.terminal.source.net.WebFetcher webFetcher) {
+        newsDigester.setFetcher(webFetcher,
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) "
+                        + "Chrome/126.0.0.0 Safari/537.36");
+        LOG.info("[NEWS] article digester installed (headlines.read-articles={}).",
+                config.getHeadlines().isReadArticles());
     }
 
     /**
@@ -182,6 +210,21 @@ public class EditorialAgent {
     void setNewsAggregator(de.bsommerfeld.wsbg.terminal.aggregator.NewsAggregator aggregator) {
         tickerResolver.setNewsAggregator(aggregator);
         LOG.info("[NEWS] multi-source aggregator installed on the resolver.");
+    }
+
+    /**
+     * Installs the venue candidate search (L&amp;S) + the persistent verdict ledger
+     * onto the identity desk. Optional Guice method-injection: present in production
+     * (AppModule binds {@link de.bsommerfeld.wsbg.terminal.core.price.InstrumentLookup}),
+     * absent in tests, where the desk stays memory-only and judges Yahoo facts alone.
+     */
+    @com.google.inject.Inject(optional = true)
+    void setInstrumentLookup(de.bsommerfeld.wsbg.terminal.core.price.InstrumentLookup lookup) {
+        identityDesk.installLookup(lookup);
+        identityDesk.installLedger(new IdentityLedger(
+                de.bsommerfeld.wsbg.terminal.core.util.StorageUtils.getAppDataDir()
+                        .resolve("identity-ledger.jsonl")));
+        LOG.info("[IDENTITY] desk armed: venue lookup + persistent ledger installed.");
     }
 
     /**
@@ -233,7 +276,15 @@ public class EditorialAgent {
                 subjects.names().size(), RELATED_BUDGET, RELATED_PER_SUBJECT);
         // The thread title is the identity judge's context: it tells „Kakao" (the
         // commodity talk) apart from Kakao Corp when both spell the same.
-        return tickerResolver.resolveAll(subjects.names(), relatedAlloc, cluster.initialTitle);
+        List<ResolvedSubject> resolved =
+                tickerResolver.resolveAll(subjects.names(), relatedAlloc, cluster.initialTitle);
+        // Warm the article-digest cache for every fetched news item (fire-and-forget,
+        // one background worker): by the time this unit composes — the settle delay
+        // alone is 30 s — the digests are usually in, and the brief reads cache-only.
+        for (ResolvedSubject rs : resolved) {
+            newsDigester.prefetch(rs.news());
+        }
+        return resolved;
     }
 
     /** Per-cluster primary-subject hint from extraction, consumed by {@link #attributeResolved}. */
@@ -278,7 +329,8 @@ public class EditorialAgent {
         String sys = PromptLoader.loadLocalized("headline-compose-unit", lang)
                 .replace("{{LANGUAGE}}", brain.getUserLanguage().displayName())
                 .replace("{{ROOM_SLANG}}", WsbgJargon.roomSlangForPrompt(lang));
-        String user = UnitBriefWriter.unitBrief(unit, config.getHeadlines().isNewsCoverageEnabled(), BriefLabels.of(lang));
+        String user = UnitBriefWriter.unitBrief(unit, config.getHeadlines().isNewsCoverageEnabled(),
+                BriefLabels.of(lang), newsDigester::ifCached);
 
         boolean hasPriors = !unit.headlines().isEmpty();
         long t0 = System.nanoTime();

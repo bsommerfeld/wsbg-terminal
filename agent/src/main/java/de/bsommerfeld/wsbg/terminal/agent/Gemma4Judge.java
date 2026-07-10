@@ -9,15 +9,15 @@ import java.time.Instant;
 import java.util.List;
 
 /**
- * The two discrete gemma4 JSON-mode judge calls: the resolver's identity/tier-2
- * instrument match, and the same-story near-duplicate check. Both build a numbered
- * candidate/prior prompt, call the model through the shared {@link ChatGateway}, and
- * parse a single {@code {match}} / {@code {repeat}} field. Extracted verbatim from
- * {@link EditorialAgent}.
+ * The discrete gemma4 JSON-mode judge calls: the identity desk's two-venue pick,
+ * the legacy resolver's identity/tier-2 instrument match, and the same-story
+ * near-duplicate check. Each builds a numbered candidate/prior prompt, calls the
+ * model through the shared {@link ChatGateway}, and parses a tiny JSON verdict.
  *
- * <p><b>Fail semantics are load-bearing:</b> {@link #matchInstrument} fails CLOSED
- * ({@code -1}, never a guess), {@link #isSameStoryRepeat} fails OPEN ({@code false},
- * never blocks a publish).
+ * <p><b>Fail semantics are load-bearing:</b> {@link #pickIdentity} fails to
+ * {@code null} (the desk abstains to the legacy tower), {@link #matchInstrument}
+ * fails CLOSED ({@code -1}, never a guess), {@link #isSameStoryRepeat} fails OPEN
+ * ({@code false}, never blocks a publish).
  */
 final class Gemma4Judge {
 
@@ -62,6 +62,52 @@ final class Gemma4Judge {
         } catch (Exception e) {
             LOG.debug("resolver identity judge failed (fail-closed): {}", e.getMessage());
             return -1;
+        }
+    }
+
+    /** The identity desk's per-venue verdict: 1-based candidate picks, 0 = none. */
+    record DeskPick(int yahoo, int ls) {}
+
+    /**
+     * The identity desk's judge call ({@link IdentityDesk.PickJudge}): ONE gemma4
+     * JSON-mode pick over BOTH venues' numbered fact lines — "which YAHOO candidate
+     * and which LS candidate IS the subject, or none each". The successor of
+     * {@link #matchInstrument} for desk-decided subjects: same closed-choice
+     * discipline, richer facts (the venue side carries category + ISIN, which is
+     * what separates a crypto notation from a same-named stock and a listing from
+     * its foreign twin). Fail-closed: any error or model absence returns
+     * {@code null} — the desk then abstains and the legacy tower decides; it never
+     * guesses.
+     */
+    DeskPick pickIdentity(String subject, String context, List<String> yahooLines, List<String> lsLines) {
+        ChatModel model = brain.getAgentModel();
+        if (model == null || subject == null) return null;
+        try {
+            String sys = PromptLoader.loadLocalized("identity-check", brain.getUserLanguage().code());
+            StringBuilder user = new StringBuilder("SUBJECT: ").append(subject).append('\n');
+            if (context != null && !context.isBlank()) {
+                user.append("CONTEXT: ").append(context.strip()).append('\n');
+            }
+            user.append("YAHOO:\n");
+            if (yahooLines == null || yahooLines.isEmpty()) user.append("(none)\n");
+            else for (int i = 0; i < yahooLines.size(); i++) {
+                user.append('Y').append(i + 1).append(". ").append(yahooLines.get(i)).append('\n');
+            }
+            user.append("LS:\n");
+            if (lsLines == null || lsLines.isEmpty()) user.append("(none)\n");
+            else for (int i = 0; i < lsLines.size(); i++) {
+                user.append('L').append(i + 1).append(". ").append(lsLines.get(i)).append('\n');
+            }
+            JsonNode obj = JsonReplies.parseJson(chatGateway.chat(model, sys, user.toString()));
+            if (obj == null) return null;
+            int y = obj.path("yahoo").asInt(0);
+            int l = obj.path("ls").asInt(0);
+            if (yahooLines == null || y < 0 || y > yahooLines.size()) y = 0;
+            if (lsLines == null || l < 0 || l > lsLines.size()) l = 0;
+            return new DeskPick(y, l);
+        } catch (Exception e) {
+            LOG.debug("identity desk judge failed (abstain): {}", e.getMessage());
+            return null;
         }
     }
 

@@ -120,15 +120,27 @@ public final class TickerResolver {
     /** The multi-source news pool (Yahoo + …). Null in tests, where news comes from the search result. */
     private NewsAggregator newsAggregator;
 
+    /**
+     * The identity desk — the border-control checkpoint that decides identity ONCE
+     * with both venues' facts on the table (see {@link IdentityDesk}). Set
+     * post-construction by {@code EditorialAgent}; null (tests) = the desk stage
+     * abstains and the legacy tower below decides as before.
+     */
+    private IdentityDesk identityDesk;
+
     // ---- The guard tower and its stages ----
     // Single shared stage instances: the veto/corpus verdict caches are instance fields
-    // of these, so caching survives across calls. The judge/corpus deps are read LIVE
-    // via suppliers so the post-construction setters below take effect.
+    // of these, so caching survives across calls. The judge/corpus/desk deps are read
+    // LIVE via suppliers so the post-construction setters below take effect. Order:
+    // curated catalogues first (curated identity needs no judgment), then the desk
+    // (the primary identity decision), then the legacy token/veto/judge/corpus stages
+    // as the desk's outage fallback.
     private final IdentityVeto identityVeto = new IdentityVeto(new StrongTokenMatcher(), () -> matchJudge);
     private final JudgeMatcher judgeMatcher = new JudgeMatcher(() -> matchJudge);
     private final CorpusMatcher corpusMatcher = new CorpusMatcher(() -> matchJudge, () -> corpus);
     private final MatchTower tower = new MatchTower(List.of(
-            new IndexMatcher(), new CommodityMatcher(), identityVeto, judgeMatcher, corpusMatcher));
+            new IndexMatcher(), new CommodityMatcher(), new DeskMatcher(() -> identityDesk),
+            identityVeto, judgeMatcher, corpusMatcher));
 
     public TickerResolver(YahooFinanceClient yahoo) {
         this.yahoo = yahoo;
@@ -137,6 +149,11 @@ public final class TickerResolver {
     /** Installs the tier-2 LLM match judge. Forwarded by {@code EditorialAgent}; null in tests. */
     void setMatchJudge(MatchJudge matchJudge) {
         this.matchJudge = matchJudge;
+    }
+
+    /** Installs the identity desk. Forwarded by {@code EditorialAgent}; null in tests (stage abstains). */
+    void setIdentityDesk(IdentityDesk identityDesk) {
+        this.identityDesk = identityDesk;
     }
 
     /** Installs the tier-3 instrument corpus. Forwarded by {@code EditorialAgent}; null in tests. */
@@ -235,6 +252,14 @@ public final class TickerResolver {
             SubjectMatch match = tower.resolve(new MatchContext(query, context, sr.quotes())).orElse(null);
             String ownTicker = match == null ? null : match.symbol();
             String canonical = match == null ? query : match.canonicalName();
+            // The desk's stamp (exact venue instrument) rides along so the price
+            // chain executes the verdict instead of re-resolving the name — and so
+            // does its considered "no venue listing" (venueRuledOut), which keeps
+            // the chain's fuzzy name search shut.
+            String isin = match == null ? null : match.isin();
+            long venueId = match == null ? 0 : match.venueId();
+            String category = match == null ? null : match.category();
+            boolean venueRuledOut = match != null && match.venueRuledOut();
 
             // News: triangulated across all sources by the resolved ticker AND the
             // company name — Yahoo answers the symbol, the German name-addressed venues
@@ -244,7 +269,8 @@ public final class TickerResolver {
             List<RawNewsItem> news = resolveNews(ownTicker, canonical, sr);
             Map<String, List<RawNewsItem>> relNews = new LinkedHashMap<>();
             List<String> relSyms = collectRelated(news, ownTicker, maxRelated, relNews);
-            return new Pending(query, canonical, ownTicker, news, relSyms, relNews, false);
+            return new Pending(query, canonical, ownTicker, isin, venueId, category, venueRuledOut,
+                    news, relSyms, relNews, false);
         } catch (Exception e) {
             LOG.debug("Subject resolution failed for '{}': {}", query, e.getMessage());
             return Pending.empty(query);
@@ -300,7 +326,8 @@ public final class TickerResolver {
                 if (p.ownTicker() == null) continue;
                 String key = p.ownTicker().toUpperCase(Locale.ROOT);
                 if (snaps.containsKey(key)) continue;
-                priceSource.snapshot(new PriceRef(p.canonical(), p.ownTicker()))
+                priceSource.snapshot(new PriceRef(p.canonical(), p.ownTicker(),
+                                p.isin(), p.venueId(), p.category(), p.venueRuledOut()))
                         .ifPresent(s -> snaps.put(key, s));
             }
             // Own tickers are fully the chain's job — it already includes Yahoo as a
@@ -340,8 +367,8 @@ public final class TickerResolver {
                         related.isEmpty() ? "" : ", +" + related.size() + " related");
             }
             if (p.rateLimited()) rateLimited++;
-            out.add(new ResolvedSubject(p.query(), p.canonical(), p.ownTicker(), ownSnap, p.news(), related,
-                    p.rateLimited()));
+            out.add(new ResolvedSubject(p.query(), p.canonical(), p.ownTicker(), p.isin(),
+                    ownSnap, p.news(), related, p.rateLimited()));
         }
         if (rateLimited > 0) {
             LOG.warn("[RESOLVE] Yahoo rate-limited — {} subject(s) un-enriched this pass "
@@ -373,15 +400,18 @@ public final class TickerResolver {
 
     /** Per-subject scratch between phase 1 (collect) and phase 3 (assemble). */
     private record Pending(String query, String canonical, String ownTicker,
+            String isin, long venueId, String category, boolean venueRuledOut,
             List<RawNewsItem> news, List<String> relSyms,
             Map<String, List<RawNewsItem>> relNews, boolean rateLimited) {
         static Pending empty(String query) {
-            return new Pending(query, query, null, List.of(), List.of(), Map.of(), false);
+            return new Pending(query, query, null, null, 0, null, false,
+                    List.of(), List.of(), Map.of(), false);
         }
 
         /** Search skipped/throttled by Yahoo — the subject is left unresolved, not tickerless. */
         static Pending rateLimited(String query) {
-            return new Pending(query, query, null, List.of(), List.of(), Map.of(), true);
+            return new Pending(query, query, null, null, 0, null, false,
+                    List.of(), List.of(), Map.of(), true);
         }
     }
 
@@ -395,6 +425,11 @@ public final class TickerResolver {
             String query,
             String canonicalName,
             String ticker,
+            // The desk-stamped ISIN (or venue pseudo-ISIN), null when unstamped. The
+            // hard identity fact behind the symbol: two units whose ISINs agree ARE
+            // the same paper, which is what lets the registry's identity-merge fold a
+            // WKN-keyed venue unit into its Yahoo-keyed twin (A419CG vs RKLB).
+            String isin,
             MarketSnapshot snapshot,
             List<RawNewsItem> news,
             List<RelatedInstrument> related,
@@ -403,6 +438,13 @@ public final class TickerResolver {
             // from the room evidence (Yahoo only enriches); it re-resolves to its
             // ticker on the next evidence, and the identity-merge folds any duplicate.
             boolean unresolved) {
+
+        /** Pre-stamp shape (tests, older call sites): no ISIN. */
+        public ResolvedSubject(String query, String canonicalName, String ticker,
+                MarketSnapshot snapshot, List<RawNewsItem> news,
+                List<RelatedInstrument> related, boolean unresolved) {
+            this(query, canonicalName, ticker, null, snapshot, news, related, unresolved);
+        }
 
         public boolean isInstrument() {
             return ticker != null && !ticker.isBlank();
