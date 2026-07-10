@@ -365,6 +365,42 @@ class SubjectAttributorTest {
     }
 
     @Test
+    void enumerationCommentSpawnsNoOwnStories_theLonePickStillComposes() {
+        // The long-term-depot case: ONE comment lists many names — by the maxim of
+        // quantity that is one statement about a portfolio, not one story per name
+        // (a live enumeration thread once spun ~60 filler headlines). A subject
+        // whose own comment names only it (the quiet pick) still composes.
+        long now = System.currentTimeMillis() / 1000;
+        var thread = new RedditThread("t3_1", "wsb", "Welche Aktien haltet ihr long-term?",
+                "op", "", now, "/p", 10, 0.9, 3, now, null);
+        var c1 = new RedditComment("t1_a", "t3_1", "t3_1", "ape", "Nvidia, ganz klar", 5, now, now, now);
+        var c2 = new RedditComment("t1_b", "t3_1", "t3_1", "ape",
+                "Alphabet, Amazon, Microsoft — kaufen und vergessen", 3, now, now, now);
+        var c3 = new RedditComment("t1_c", "t3_1", "t3_1", "ape", "Duolingo ist mein Ding", 1, now, now, now);
+        var repository = mock(RedditRepository.class);
+        when(repository.getThread("t3_1")).thenReturn(thread);
+        when(repository.getCommentsForThread("t3_1", 0)).thenReturn(List.of(c1, c2, c3));
+        var brain = mock(AgentBrain.class);
+        when(brain.describeImageIfCached(org.mockito.ArgumentMatchers.anyString())).thenReturn("");
+
+        var cluster = new InvestigationCluster(thread);
+        var registry = new SubjectRegistry();
+        new SubjectAttributor(repository, brain).attribute(registry, cluster, List.of(
+                instrument("Nvidia", "NVIDIA Corporation", "NVDA"),
+                instrument("Alphabet", "Alphabet Inc.", "GOOG"),
+                instrument("Amazon", "Amazon.com, Inc.", "AMZN"),
+                instrument("Microsoft", "Microsoft Corporation", "MSFT"),
+                instrument("Duolingo", "Duolingo, Inc.", "DUOL")));
+
+        assertEquals(Set.of("NVDA", "DUOL"), registry.drainDirty(),
+                "the enumeration trio stays context; the primary and the lone pick compose");
+        assertNotNull(registry.get("GOOG"), "enumerated subjects still accumulate their evidence");
+        assertTrue(registry.get("NVDA").evidence().stream().anyMatch(
+                        e -> "reddit-context".equals(e.source()) && e.snippet().startsWith("[Alphabet]")),
+                "the enumeration still rides on the primary as named context");
+    }
+
+    @Test
     void modelPrimaryOverridesTheHeuristic_evenWhenNotTradeable() {
         // Extraction read the whole thread and named the NON-tradeable protagonist.
         // The heuristic would pick the more-mentioned instrument — the model wins.

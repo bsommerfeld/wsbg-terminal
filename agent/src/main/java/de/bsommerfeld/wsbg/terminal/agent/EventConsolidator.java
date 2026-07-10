@@ -26,11 +26,28 @@ import java.util.Set;
  * own comment = its own story); otherwise it is context of the same event and stays
  * silent, its mentions riding on the primary as {@code reddit-context} refs prefixed
  * with the co-subject's name.
+ *
+ * <h3>Enumeration brake (2026-07-10)</h3>
+ * A mention only counts towards "its own story" when the comment carrying it names
+ * at most {@link #ENUMERATION_BREADTH} of the pass's subjects. A comment that lists
+ * many names at once ("Alphabet, Amazon, Microsoft, ASML, TSMC, …" — the long-term-
+ * depot enumeration, the depot screenshot) tells no separate story per name — by
+ * the maxim of quantity it is ONE statement about a portfolio, and it rides on the
+ * primary as context like any shared mention. The quiet noname pick survives
+ * untouched: its one-liner names only itself. (A live enumeration thread once spun
+ * ~60 filler headlines out of 99 extracted subjects; this is the bound.)
  */
 final class EventConsolidator {
 
     private static final org.slf4j.Logger LOG =
             org.slf4j.LoggerFactory.getLogger(EventConsolidator.class);
+
+    /**
+     * How many of the pass's subjects one comment may name before its mentions stop
+     * counting as "own story" evidence (enumeration brake, see class doc). 2 keeps
+     * the pair-pick ("Novo short oder Nestle long") alive; 3+ is a list.
+     */
+    static final int ENUMERATION_BREADTH = 2;
 
     private EventConsolidator() {
     }
@@ -55,12 +72,27 @@ final class EventConsolidator {
         Set<String> primaryKeys = new HashSet<>();
         for (EvidenceRef ref : primary.found()) primaryKeys.add(ref.key());
 
+        // Enumeration brake: how many of the pass's subjects each real mention key
+        // names. A key carried by many candidates is a LIST (one statement about a
+        // portfolio), not one story per name.
+        java.util.Map<String, Integer> namedBy = new java.util.HashMap<>();
+        for (Candidate c : candidates) {
+            Set<String> keys = new HashSet<>();
+            for (EvidenceRef ref : c.found()) {
+                if (!"reddit-context".equals(ref.source())) keys.add(ref.key());
+            }
+            for (String k : keys) namedBy.merge(k, 1, Integer::sum);
+        }
+
         SubjectUnit primaryUnit = null;
         boolean primaryGained = false;
         int ownStories = 0;
         for (Candidate c : candidates) {
             SubjectUnit unit = registry.findOrCreate(SubjectAttributor.unitKey(c.rs()), c.rs().canonicalName());
             unit.updateResolved(c.rs().canonicalName(), c.rs().ticker(), c.rs().snapshot(), c.rs().news());
+            // The desk-stamped ISIN is the hard identity behind the symbol — noted so
+            // the registry's identity-merge can fold a WKN-keyed twin of the same paper.
+            unit.noteIsin(c.rs().isin());
             // Dirty only on genuinely-new REAL evidence: re-running attribution over
             // an unchanged cluster (same comments) must NOT re-wake a unit — otherwise
             // every pass re-composes the whole feed — and a price refresh alone
@@ -86,10 +118,15 @@ final class EventConsolidator {
             // thread (the product's core discovery case). A co-subject whose every
             // mention is shared with the primary (same title, same comment, same
             // screenshot) — or that isn't tradeable at all (NSF, Chips Act, themes) —
-            // is context of the SAME story and stays silent.
+            // is context of the SAME story and stays silent. The enumeration brake
+            // (class doc) additionally discounts mentions from list-comments naming
+            // more than ENUMERATION_BREADTH subjects — a list is one statement, not
+            // one story per name; the evidence still accumulates as context below.
             boolean ownStory = (c.rs().isInstrument() || c.rs().unresolved())
                     && c.found().stream().anyMatch(ref ->
-                            !"reddit-context".equals(ref.source()) && !primaryKeys.contains(ref.key()));
+                            !"reddit-context".equals(ref.source())
+                                    && !primaryKeys.contains(ref.key())
+                                    && namedBy.getOrDefault(ref.key(), 1) <= ENUMERATION_BREADTH);
             if (ownStory && gained) {
                 registry.markDirty(unit.id);
                 ownStories++;

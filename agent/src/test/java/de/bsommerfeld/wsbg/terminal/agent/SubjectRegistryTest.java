@@ -74,6 +74,45 @@ class SubjectRegistryTest {
     }
 
     @Test
+    void foldsTickerTwinsSharingTheStampedIsin() {
+        // The live A419CG/RKLB twins: the desk resolved room slang to a WKN-keyed
+        // unit while the plain name resolved to the Yahoo symbol — SAME ISIN, same
+        // paper. No evidence overlap required: the ISIN is the hard identity fact.
+        SubjectRegistry reg = new SubjectRegistry();
+        SubjectUnit yahooKeyed = reg.findOrCreate("RKLB", "Rocket Lab Corporation");
+        yahooKeyed.updateResolved("Rocket Lab Corporation", "RKLB", null, null);
+        yahooKeyed.noteIsin("US7731211089");
+        yahooKeyed.addHeadline("Rocket Lab fliegt");
+        yahooKeyed.addEvidence(ev("t3_x", "t1_a", "Rocket Lab mindestens 5 Jahre"));
+
+        SubjectUnit wknKeyed = reg.findOrCreate("A419CG", "Rocket Lappen");
+        wknKeyed.updateResolved("Rocket Lappen", "A419CG", null, null);
+        wknKeyed.noteIsin("US7731211089");
+        wknKeyed.addEvidence(ev("t3_y", "t1_b", "Rocket Lappen short"));
+
+        assertEquals(1, reg.mergeIdentities());
+        assertNull(reg.get("A419CG"), "the headline-less twin is absorbed");
+        SubjectUnit kept = reg.get("RKLB");
+        assertNotNull(kept);
+        assertEquals(2, kept.evidenceCount(), "the twin's evidence rides along");
+    }
+
+    @Test
+    void distinctIsinsNeverFold() {
+        SubjectRegistry reg = new SubjectRegistry();
+        SubjectUnit a = reg.findOrCreate("RKLB", "Rocket Lab Corporation");
+        a.updateResolved("Rocket Lab Corporation", "RKLB", null, null);
+        a.noteIsin("US7731211089");
+        SubjectUnit b = reg.findOrCreate("ASTS", "AST SpaceMobile, Inc.");
+        b.updateResolved("AST SpaceMobile, Inc.", "ASTS", null, null);
+        b.noteIsin("US00217D1000");
+
+        assertEquals(0, reg.mergeIdentities(), "distinct ISINs = distinct papers");
+        assertNotNull(reg.get("RKLB"));
+        assertNotNull(reg.get("ASTS"));
+    }
+
+    @Test
     void prunesConsumedEvidencePastThresholdButKeepsUnitAndHeadlines() {
         SubjectRegistry reg = new SubjectRegistry();
         SubjectUnit u = reg.findOrCreate("NVDA", "NVIDIA");

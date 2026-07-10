@@ -5,8 +5,10 @@ import com.google.inject.Singleton;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -75,6 +77,12 @@ public final class SubjectRegistry {
      * ticker pass's any-shared-word on purpose: "Deutsche Bank" and "Deutsche
      * Telekom" share a word but are no subset of each other.
      *
+     * <p>A pass 0 folds two ticker units whose desk-stamped ISINs AGREE — the one
+     * relaxation of "ticker↔ticker never merge": a WKN-keyed venue unit and its
+     * Yahoo-keyed twin ({@code A419CG} vs {@code RKLB}) are the SAME paper by the
+     * hard identity fact, no evidence overlap required. The unit with the longer
+     * headline history absorbs (story memory survives), ties go to the older unit.
+     *
      * <p><b>Not atomic:</b> it iterates a snapshot of {@code byId.values()} while
      * removing entries, so the caller must hold the {@code EditorialPipeline} merge
      * write lock (the {@code MERGE_INTERVAL_MS} cadence). Tests call it directly on
@@ -89,6 +97,20 @@ public final class SubjectRegistry {
             (u.isInstrument() ? tickerUnits : nameUnits).add(u);
         }
         int merged = 0;
+        // Pass 0 — same stamped ISIN = same paper (see doc above).
+        Map<String, SubjectUnit> byIsin = new HashMap<>();
+        for (SubjectUnit t : tickerUnits) {
+            String isin = t.isin();
+            if (isin == null || isin.isBlank()) continue;
+            SubjectUnit other = byIsin.putIfAbsent(isin, t);
+            if (other == null || byId.get(t.id) != t) continue;
+            SubjectUnit absorber = preferredIdentity(other, t);
+            SubjectUnit victim = absorber == other ? t : other;
+            fold(absorber, victim);
+            byIsin.put(isin, absorber);
+            merged++;
+        }
+        tickerUnits.removeIf(u -> byId.get(u.id) != u);
         for (SubjectUnit n : nameUnits) {
             if (byId.get(n.id) != n) continue; // defensive
             Set<String> nWords = NameMatcher.significantWords(n.canonicalName());
@@ -139,6 +161,18 @@ public final class SubjectRegistry {
         absorber.absorb(victim);
         byId.remove(victim.id);
         if (dirty.remove(victim.id)) dirty.add(absorber.id);
+    }
+
+    /**
+     * Which of two same-ISIN ticker units keeps its identity: the one with the
+     * longer headline history (its id is the story readers already follow), ties
+     * to the older unit. Deterministic — the pass must not flip on re-runs.
+     */
+    private static SubjectUnit preferredIdentity(SubjectUnit a, SubjectUnit b) {
+        int ha = a.headlines().size();
+        int hb = b.headlines().size();
+        if (ha != hb) return ha > hb ? a : b;
+        return a.firstSeen.isAfter(b.firstSeen) ? b : a;
     }
 
     /**
