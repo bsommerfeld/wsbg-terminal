@@ -60,7 +60,9 @@
   color: var(--mute); font-size: 0.72em;
   letter-spacing: .1em; text-transform: uppercase;
 }
-.filter-opts { display: flex; gap: 6px; flex: 1; }
+/* Options hug the right edge; the facet label stays left — one clean
+   left-label / right-controls axis per row. */
+.filter-opts { display: flex; gap: 6px; flex: 1; justify-content: flex-end; }
 
 /* Facet chip: default = idle, .active = selected, :disabled = the ruled-out
    sibling of an active mutually-exclusive pair. */

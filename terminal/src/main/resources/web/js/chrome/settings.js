@@ -15,7 +15,13 @@ export function initSettings(socket) {
   if (!main || !view) return;
 
   const open = () => { view.hidden = false; main.classList.add('settings-open'); syncAppearance(); };
-  const close = () => { view.hidden = true; main.classList.remove('settings-open'); };
+  const close = () => {
+    view.hidden = true;
+    main.classList.remove('settings-open');
+    // widget-nav restores the view the settings were opened from (a focused
+    // widget / the grid), which it parked on the dashboard while we were open.
+    window.dispatchEvent(new CustomEvent('wsbg:settingsclosed'));
+  };
 
   document.querySelectorAll('.js-settings-toggle').forEach(b => b.addEventListener('click', open));
   document.querySelectorAll('.js-settings-close').forEach(b => b.addEventListener('click', close));
@@ -57,12 +63,11 @@ export function initSettings(socket) {
   });
 
   // ---- Config-backed settings (over the socket) ----
-  const images = view.querySelector('.js-analyze-images');
+  // (analyzeImages has no control here anymore — it lives in the Schlagzeilen
+  // widget's rail settings, wired in widget-rail.js off the same snapshot.)
   const lang = view.querySelector('.js-language');
   const auto = view.querySelector('.js-auto-update');
 
-  if (images) images.addEventListener('change',
-      () => socket.send('settings', { command: 'set', key: 'analyzeImages', value: images.checked }));
   if (lang) lang.addEventListener('change',
       () => socket.send('settings', { command: 'set', key: 'language', value: lang.value }));
   if (auto) auto.addEventListener('change',
@@ -74,7 +79,6 @@ export function initSettings(socket) {
     // Re-broadcast for other consumers of the snapshot (the socket allows one
     // handler per topic) — the focus-rail's Schlagzeilen settings sync off this.
     window.dispatchEvent(new CustomEvent('wsbg:settings', { detail: payload }));
-    if (images && typeof payload.analyzeImages === 'boolean') images.checked = payload.analyzeImages;
     if (lang && payload.language) lang.value = payload.language;
     if (auto && typeof payload.autoUpdate === 'boolean') auto.checked = payload.autoUpdate;
     // Drive the whole UI language off the persisted setting: applies on connect
@@ -97,7 +101,9 @@ export function initSettings(socket) {
 
   // ---- Destructive: full data wipe (two-click arm, no OSR-unfriendly confirm()) ----
   // Confirmed → a visual 10-min cooldown that mirrors the server-side gate, then re-arm.
-  armedButton(view.querySelector('.js-clear-data'), {
+  // The button lives in the Schlagzeilen widget's rail settings (document-wide
+  // lookup), not in this view — the wiring stays here beside its socket command.
+  armedButton(document.querySelector('.js-clear-data'), {
     armLabel: () => t('settings.data.clear.btn'),
     confirmLabel: () => t('settings.data.clear.confirm'),
     doneLabel: () => t('settings.data.clear.done'),

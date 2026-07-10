@@ -19,9 +19,10 @@
 /* ---- grid view (Mission Control) ---- */
 
 .main[data-view="grid"] {
-  display: flex; align-items: center; justify-content: center;
-  gap: clamp(18px, 3.2vw, 52px);
-  padding: 0 clamp(18px, 4vw, 64px);
+  /* Free-form canvas: grid-layout.js positions each card absolutely (inline
+     px left/top/width, persisted drag-&-drop arrangement, gap enforced). */
+  display: block;
+  position: relative;
   /* Subtle stage vignette so the cards read as elevated over a backdrop. */
   background: radial-gradient(120% 95% at 50% 32%, var(--bg-1), var(--bg) 80%);
 }
@@ -33,46 +34,77 @@
    snap to their new layout mid-flight). */
 .main[data-view="grid"] > .widget,
 .main > .widget.exit-card {
-  flex: 0 1 clamp(280px, 32%, 560px);
-  min-width: 0;
-  aspect-ratio: 16 / 10.5;
-  max-height: 68%;
+  position: absolute;
+  /* Size comes from grid-layout.js: the widget's ORIGINAL pane proportions ×
+     one common scale (Mission-Control-relative). No aspect-ratio here. */
   border: 1px solid var(--line);
   border-radius: 14px;
   background: var(--bg);
   box-shadow: 0 26px 80px oklch(0 0 0 / .45);
-  overflow: hidden;
+  /* Visible: the icon straddles the lower edge and the name pill hangs BELOW
+     the card. Content clipping moved onto the body. */
+  overflow: visible;
   transition: transform .22s cubic-bezier(.3, .9, .4, 1), border-color .22s, box-shadow .22s;
+}
+.main[data-view="grid"] > .widget > .widget-body,
+.main > .widget.exit-card > .widget-body {
+  border-radius: 13px;
+  overflow: hidden;
+}
+/* While dragging: lifted, no lag from transitions, above the neighbours. */
+.main[data-view="grid"] > .widget.dragging {
+  transition: none;
+  z-index: 30;
+  border-color: var(--mute);
+  box-shadow: 0 40px 100px oklch(0 0 0 / .6);
+}
+/* Displaced neighbours glide to their post-drop spot. */
+.main[data-view="grid"] > .widget.settle {
+  transition: left .35s cubic-bezier(.25, .9, .3, 1), top .35s cubic-bezier(.25, .9, .3, 1),
+              border-color .22s, box-shadow .22s;
 }
 html[data-theme="light"] .main[data-view="grid"] > .widget,
 html[data-theme="light"] .main > .widget.exit-card {
   box-shadow: 0 26px 80px oklch(0 0 0 / .18);
 }
-.main[data-view="grid"] > .widget:hover {
+.main[data-view="grid"] > .widget:hover:not(.dragging) {
   transform: translateY(-6px) scale(1.02);
   border-color: var(--mute);
   box-shadow: 0 34px 90px oklch(0 0 0 / .55);
 }
 
-/* Miniature content: `zoom` lays the widget out as if it were ~1.8x larger,
-   then paints it scaled down — a true thumbnail of the focus view, exactly
-   like Mission Control windows. Inner links/rows are inert; the .grid-hit
-   overlay is the only click target. */
+/* Cards are pure content: the widget header bar is chrome and disappears in
+   the overview (the name pill identifies the card). */
 .main[data-view="grid"] > .widget > .widget-head,
+.main > .widget.exit-card > .widget-head { display: none; }
+
+/* Miniature content: `zoom` matches grid-layout.js's SCALE, so the card IS
+   the widget at its original terminal size, painted smaller — a true
+   Mission-Control thumbnail. Inner links/rows are inert; the .grid-hit
+   overlay is the only click target. */
 .main[data-view="grid"] > .widget > .widget-body,
-.main > .widget.exit-card > .widget-head,
 .main > .widget.exit-card > .widget-body {
-  zoom: 0.55;
+  zoom: 0.58;
   pointer-events: none;
 }
 
-/* The F&G miniature keeps only its hero + chart — the band-chip legend and
-   attribution line are reading matter, and in a thumbnail they just collide
-   with the name pill. */
+/* The F&G card is a compact tile showing ONLY the gauge (the "Diagramm"),
+   centred — band chips, meta row, chart and attribution stay in focus view.
+   grid-layout.js sizes the tile smaller (SIZE_F). */
 .main[data-view="grid"] > #widget-fg .fg-bands,
+.main[data-view="grid"] > #widget-fg .fg-hero-meta,
+.main[data-view="grid"] > #widget-fg .fg-chart-block,
 .main[data-view="grid"] > #widget-fg .fg-attrib,
 .main > #widget-fg.exit-card .fg-bands,
+.main > #widget-fg.exit-card .fg-hero-meta,
+.main > #widget-fg.exit-card .fg-chart-block,
 .main > #widget-fg.exit-card .fg-attrib { display: none; }
+.main[data-view="grid"] > #widget-fg .fg-detail,
+.main > #widget-fg.exit-card .fg-detail {
+  height: 100%;
+  justify-content: center;
+  padding: 12px;
+}
 
 /* Full-card hit target + the name pill (bottom-centred, like the app names
    under Mission Control windows — kept inside the card so the rounded-corner
@@ -81,9 +113,12 @@ html[data-theme="light"] .main > .widget.exit-card {
 .main > .widget.exit-card .grid-hit {
   display: block;
   position: absolute; inset: 0; z-index: 6;
+  border-radius: 14px;
   background: linear-gradient(to top, oklch(0 0 0 / .30), transparent 36%);
-  cursor: pointer;
+  cursor: grab;
+  touch-action: none; /* the hit owns the pointer: drag, don't scroll */
 }
+.main[data-view="grid"] > .widget.dragging .grid-hit { cursor: grabbing; }
 html[data-theme="light"] .main[data-view="grid"] .grid-hit,
 html[data-theme="light"] .main > .widget.exit-card .grid-hit {
   background: linear-gradient(to top, oklch(1 0 0 / .55), transparent 36%);
@@ -93,9 +128,29 @@ html[data-theme="light"] .main > .widget.exit-card .grid-hit {
   outline-offset: -2px;
   border-radius: 14px;
 }
-.grid-hit-label {
-  position: absolute; bottom: 14px; left: 50%;
+/* Icon straddling the card's lower edge, name pill hanging below the card —
+   like the app icon + name under a Mission Control window. */
+.grid-hit-tag {
+  position: absolute;
+  top: calc(100% - 17px);   /* half the icon above the edge, half below */
+  left: 50%;
   transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+}
+.grid-hit-icon {
+  width: 34px; height: 34px;
+  background-position: center; background-repeat: no-repeat; background-size: contain;
+  filter: drop-shadow(0 2px 6px oklch(0 0 0 / .45));
+}
+.grid-hit-icon.icon-reddit { background-image: url("/icons/reddit.png"); }
+.grid-hit-icon.icon-fj     { background-image: url("/icons/financialjuice.png"); }
+.grid-hit-icon-fg {
+  width: 44px; height: 28px;
+  margin-top: 3px; /* optical: the gauge is flatter than the square marks */
+  color: var(--txt);
+  filter: drop-shadow(0 2px 6px oklch(0 0 0 / .45));
+}
+.grid-hit-label {
   white-space: nowrap;
   font-family: "Inter", sans-serif; font-weight: 600;
   font-size: 0.82em; letter-spacing: .06em;
@@ -118,22 +173,17 @@ html[data-theme="light"] .main > .widget.exit-card .grid-hit {
 .main[data-view="focus"] > .widget:not(.focused) { display: none; }
 .main[data-view="focus"] > .widget.focused { flex: 1; min-width: 0; }
 
-/* The main content column sits dead centre so the eyes never wander; the
-   side padding keeps it clear of the floating rail on narrow windows. */
+/* Fullscreen is pure content: the header bar disappears entirely — its
+   controls live in the rail (filter, headline settings, the KI notice). The
+   content column sits dead centre so the eyes never wander; the side padding
+   keeps it clear of the floating rail on narrow windows. */
 .main[data-view="focus"] > .widget.focused { --focus-col: 920px; }
-.main[data-view="focus"] > .widget.focused .widget-head {
-  padding: 0 max(96px, calc((100% - var(--focus-col)) / 2));
-}
+.main[data-view="focus"] > .widget.focused > .widget-head { display: none; }
 .main[data-view="focus"] > .widget.focused .widget-body { padding: 0 96px; }
 .main[data-view="focus"] > .widget.focused .widget-body > * {
   max-width: var(--focus-col);
   margin-inline: auto;
 }
-
-/* In focus mode the rail owns the headline filter — hide the header funnel
-   (and its popover) so the control exists exactly once. */
-.main[data-view="focus"] > .widget.focused .filter-btn,
-.main[data-view="focus"] > .widget.focused .filter-pop { display: none; }
 
 /* ---- transition helpers (set/cleared by widget-nav.js) ---- */
 
@@ -156,9 +206,42 @@ html[data-theme="light"] .main > .widget.exit-card .grid-hit {
   z-index: 24;
 }
 
-.rail-sep { width: 20px; height: 1px; background: var(--line); }
+/* ---- platform logo ----
+   Sits first, set apart by the hairline. A LINK to the source platform
+   (opened in the OS browser), styled like the tool buttons so the column
+   reads as one family. */
+.rail-logo {
+  width: 46px; height: 46px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--txt-2);
+  background: color-mix(in oklch, var(--bg-1) 78%, transparent);
+  backdrop-filter: blur(14px) saturate(1.3);
+  border: 1px solid var(--line);
+  box-shadow: 0 10px 28px oklch(0 0 0 / .30);
+  transition: border-color .15s, transform .18s cubic-bezier(.34, 1.4, .64, 1);
+}
+html[data-theme="light"] .rail-logo { box-shadow: 0 10px 28px oklch(0 0 0 / .12); }
+.rail-logo:hover { border-color: var(--mute); transform: scale(1.08); }
+.rail-logo-img {
+  width: 24px; height: 24px;
+  background-position: center; background-repeat: no-repeat; background-size: contain;
+}
+.rail-logo-reddit { background-image: url("/icons/reddit.png"); }
+.rail-logo-fj     { background-image: url("/icons/financialjuice.png"); }
+.rail-logo-fg     { width: 32px; height: 21px; }
+
+.rail-sep {
+  display: block;
+  width: 20px; height: 1px; flex-shrink: 0;
+  background: var(--line);
+}
 
 .rail-item { position: relative; }
+
+/* Facet strokes on the rail's filter button — same status readout as the
+   dashboard funnel: an active facet lights its own stroke amber. */
+.rail-btn svg .f-line { transition: stroke .12s; }
+.rail-btn svg .f-line.active { stroke: var(--amber); }
 
 .rail-btn {
   position: relative;
@@ -179,12 +262,6 @@ html[data-theme="light"] .rail-btn { box-shadow: 0 10px 28px oklch(0 0 0 / .12);
   width: 19px; height: 19px;
   stroke: currentColor; stroke-width: 1.6; fill: none;
   stroke-linecap: round; stroke-linejoin: round;
-}
-/* Active-filter marker on the rail funnel. */
-.rail-dot {
-  position: absolute; top: 2px; right: 2px;
-  width: 8px; height: 8px; border-radius: 50%;
-  background: var(--amber); box-shadow: 0 0 6px var(--amber);
 }
 
 /* ---- liquid-glass popup: spreads out of its button toward the centre ----
@@ -218,6 +295,10 @@ html[data-theme="light"] .rail-pop { box-shadow: 0 24px 70px oklch(0 0 0 / .16);
               visibility 0s;
 }
 
+/* Settings popup runs wider so each row reads horizontally: label + hint
+   left, control right, nothing stacked. */
+.rail-pop.rail-pop-wide { width: min(440px, 56vw); }
+
 .rail-pop-body { padding: 14px 16px; }
 .rail-pop-head {
   font-family: "Inter", sans-serif; font-weight: 600;
@@ -228,15 +309,23 @@ html[data-theme="light"] .rail-pop { box-shadow: 0 24px 70px oklch(0 0 0 / .16);
 }
 .rail-pop-text { color: var(--txt-2); font-size: .86em; line-height: 1.6; }
 
+.rail-pop-divider {
+  display: block; height: 1px;
+  margin: 12px 0;
+  background: var(--line-soft);
+}
+
 /* One setting row inside a rail popup (mirrors the settings view's row
    grammar in miniature; .checkbox/.checkbox-box come from settings.css). */
 .rail-setting {
-  display: flex; align-items: flex-start; justify-content: space-between;
-  gap: 12px;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 18px;
   cursor: pointer;
 }
-.rail-setting-label { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.rail-setting-label { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
 .rail-setting-hint { color: var(--mute); font-size: .78em; line-height: 1.5; }
+.rail-setting .checkbox,
+.rail-setting .danger-btn { flex-shrink: 0; }
 
 /* ---- chrome buttons ---- */
 

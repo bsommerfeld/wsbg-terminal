@@ -33,13 +33,17 @@ html[data-platform="other"] .footer-settings { display: inline-flex; }
 .slide[data-pos="left"]   { transform: translateX(-100%); }
 .slide.animate { transition: transform .8s cubic-bezier(.65,.02,.2,1); }
 
-/* Exchange chips evenly spread the full strip width. */
+/* Exchange chips evenly spread the full strip width. Content never wraps —
+   on a narrow window the countdown was stacking under the label (last cell
+   first); it clips instead. */
 .cell {
   flex: 1 1 0; min-width: 0;
   display: flex; align-items: center; justify-content: center; gap: 10px;
   padding: 0 16px; height: 100%;
   border-right: 1px solid var(--line-soft);
   font-size: var(--font-chrome); letter-spacing: .08em;
+  white-space: nowrap;
+  overflow: hidden;
 }
 .cell:last-child { border-right: 0; }
 

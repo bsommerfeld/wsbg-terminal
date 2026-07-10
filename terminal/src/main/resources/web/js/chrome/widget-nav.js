@@ -9,6 +9,8 @@
 // they settle back in). All animations are transient one-shots — nothing
 // loops (software-OSR paint rule).
 
+import { initGridLayout, applyGridLayout, clearGridLayout } from './grid-layout.js';
+
 const DUR = 460;                                // box morph
 const EASE = 'cubic-bezier(.22,.86,.3,1)';      // fast start, soft landing
 const EXIT_DUR = 340;
@@ -18,6 +20,10 @@ let main = null;
 let widgets = [];
 let view = 'dashboard';
 let busy = false;
+// Where to return when the settings view closes: the settings only ever render
+// over the dashboard, so opening them from grid/focus parks the view — and
+// closing them must land back where the user actually was.
+let settingsReturn = null;
 
 const reducedMotion = () =>
   window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -30,22 +36,34 @@ export function initWidgetNav() {
   document.querySelectorAll('.js-grid-toggle').forEach(b =>
     b.addEventListener('click', onGridButton));
 
-  for (const w of widgets) {
-    const hit = w.querySelector('.grid-hit');
-    if (hit) hit.addEventListener('click', () => {
-      if (view === 'grid') setView('focus', w);
-    });
-    // The rail's topmost button: back to the overview.
-    w.querySelectorAll('.js-rail-overview').forEach(b =>
-      b.addEventListener('click', () => { if (view === 'focus') setView('grid'); }));
-  }
+  // Card geometry, drag & drop and click-vs-drag live in grid-layout.js;
+  // it calls back here when a card is activated (click / Enter).
+  initGridLayout(main, {
+    onActivate: w => { if (view === 'grid') setView('focus', w); },
+  });
 
   // The settings view replaces the centre widgets — it only ever opens over
-  // the dashboard, so leave grid/focus instantly (no animation) first.
+  // the dashboard, so leave grid/focus instantly (no animation) first, but
+  // remember where we were: the settings back arrow returns THERE.
   document.querySelectorAll('.js-settings-toggle').forEach(b =>
     b.addEventListener('click', () => {
-      if (view !== 'dashboard') setView('dashboard', null, { instant: true });
+      if (view !== 'dashboard') {
+        settingsReturn = {
+          view,
+          focused: widgets.find(w => w.classList.contains('focused')) || null,
+        };
+        setView('dashboard', null, { instant: true });
+      } else {
+        settingsReturn = null;
+      }
     }));
+
+  // Settings closed (back arrow / Escape): restore the parked view.
+  window.addEventListener('wsbg:settingsclosed', () => {
+    const r = settingsReturn;
+    settingsReturn = null;
+    if (r) setView(r.view, r.focused, { instant: true });
+  });
 
   document.addEventListener('keydown', onKey);
 }
@@ -64,6 +82,9 @@ function closeSettingsView() {
   if (sv && !sv.hidden) {
     sv.hidden = true;
     main.classList.remove('settings-open');
+    // Deliberate navigation to the grid — drop the parked return view (and
+    // don't dispatch wsbg:settingsclosed, which would race the restore).
+    settingsReturn = null;
   }
 }
 
@@ -103,10 +124,14 @@ function setView(next, focusEl = null, opts = {}) {
   const before = new Map();
   for (const w of widgets) if (isVisible(w)) before.set(w, w.getBoundingClientRect());
 
-  // MUTATE: flip the state, let CSS lay out the target view.
+  // MUTATE: flip the state, let CSS lay out the target view. The grid's card
+  // geometry is inline px (free-form layout) — applied on entry, removed on
+  // exit, both BEFORE the "after" rects are measured below.
   view = next;
   main.dataset.view = next;
   for (const w of widgets) w.classList.toggle('focused', next === 'focus' && w === focusEl);
+  if (next === 'grid') applyGridLayout();
+  else if (prev === 'grid') clearGridLayout();
   syncGridButtons();
   window.dispatchEvent(new CustomEvent('wsbg:viewchange', { detail: { view: next } }));
 
@@ -140,6 +165,12 @@ function flip(el, was, now, elevated) {
   if (Math.abs(dx) < 1 && Math.abs(dy) < 1 && Math.abs(sx - 1) < 0.01 && Math.abs(sy - 1) < 0.01) return;
 
   el.style.transformOrigin = '0 0';
+  // Promote to a compositor layer for the animation: the content rasters
+  // once and only the transform changes per frame. Without this, every frame
+  // re-rasters the whole widget — visibly janky while gemma saturates the
+  // machine. Cleared on finish (a permanently promoted fullscreen layer
+  // would cost memory and dull text rendering).
+  el.style.willChange = 'transform';
   if (elevated) el.style.zIndex = '10';
   el.animate([
     { transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})` },
@@ -147,15 +178,16 @@ function flip(el, was, now, elevated) {
   ], { duration: DUR, easing: EASE }).onfinish = () => {
     el.style.transformOrigin = '';
     el.style.zIndex = '';
+    el.style.willChange = '';
   };
 
   // The content re-flows between the miniature and the full layout at the
   // moment of mutation — a quick body crossfade masks the reflow inside the
-  // morphing box.
+  // morphing box. Short and opacity-only (compositor-cheap).
   const body = el.querySelector('.widget-body');
   if (body) body.animate(
     [{ opacity: 0.35 }, { opacity: 1 }],
-    { duration: DUR * 0.8, easing: 'ease-out' });
+    { duration: 240, easing: 'ease-out' });
 }
 
 /** Not visible before, visible now: settle in (radially from `from`, if any). */
@@ -170,9 +202,13 @@ function enter(el, from, now) {
     start = { transform: 'scale(.72)', opacity: 0 };
   }
   el.style.transformOrigin = '50% 50%';
+  el.style.willChange = 'transform, opacity';
   el.animate([start, { transform: 'none', opacity: 1 }],
       { duration: DUR * 0.85, delay: 40, easing: EASE, fill: 'backwards' })
-    .onfinish = () => { el.style.transformOrigin = ''; };
+    .onfinish = () => {
+      el.style.transformOrigin = '';
+      el.style.willChange = '';
+    };
 }
 
 /**
@@ -190,6 +226,7 @@ function exit(el, was, awayFrom) {
     width: `${was.width}px`,
     height: `${was.height}px`,
     zIndex: '8',
+    willChange: 'transform, opacity',
   });
   let end;
   if (awayFrom) {
@@ -216,6 +253,7 @@ function exit(el, was, awayFrom) {
       el.style.width = '';
       el.style.height = '';
       el.style.zIndex = '';
+      el.style.willChange = '';
     };
 }
 

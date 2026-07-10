@@ -11,7 +11,7 @@
 //   - FJ/F&G  static info popups (markup lives in index.html, i18n-tagged).
 
 import { mountFilterPanel } from './filter-popover.js';
-import { onFilterChange, isActive } from '../widgets/headline-filter.js';
+import { getSpec, onFilterChange } from '../widgets/headline-filter.js';
 
 export function initWidgetRail(socket) {
   const items = [...document.querySelectorAll('.rail-item')];
@@ -45,14 +45,26 @@ export function initWidgetRail(socket) {
   // Leaving focus view (grid button, Escape, overview) drops any open popup.
   window.addEventListener('wsbg:viewchange', () => closeAll(null));
 
-  // ---- Reddit: the shared headline-filter panel + its active marker ----
+  // ---- Reddit: the shared headline-filter panel + the facet-stroke readout
+  // (same visual language as the dashboard funnel: an active facet lights
+  // its own stroke amber). ----
   const filterBody = document.querySelector('.js-rail-filter');
   if (filterBody) {
     mountFilterPanel(filterBody);
-    const dot = filterBody.closest('.rail-item')?.querySelector('.rail-dot');
-    const syncDot = () => { if (dot) dot.hidden = !isActive(); };
-    onFilterChange(syncDot);
-    syncDot();
+    const filterBtn = document.querySelector('.js-rail-filter-btn');
+    const syncLines = () => {
+      if (!filterBtn) return;
+      const s = getSpec();
+      const on = {
+        highlight: s.highlight !== 'ALL',
+        price: s.price !== null,
+        news: s.news !== null,
+      };
+      filterBtn.querySelectorAll('.f-line').forEach(line =>
+        line.classList.toggle('active', !!on[line.dataset.facet]));
+    };
+    onFilterChange(syncLines);
+    syncLines();
   }
 
   // ---- Reddit: Schlagzeilen settings (config-backed, mirrors settings view) ----

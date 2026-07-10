@@ -143,24 +143,37 @@
            carries the Mission-Control-style name pill. Visible only in grid view. -->
       <button class="grid-hit" type="button" aria-label="Schlagzeilen öffnen"
               data-i18n-aria-label="grid.open.reddit">
-        <span class="grid-hit-label" data-i18n="widget.reddit.title">Schlagzeilen</span>
+        <span class="grid-hit-tag">
+          <span class="grid-hit-icon icon-reddit" aria-hidden="true"></span>
+          <span class="grid-hit-label" data-i18n="widget.reddit.title">Schlagzeilen</span>
+        </span>
       </button>
       <!-- Focus-mode tool rail: floating buttons on the left edge; each popup
-           spreads out of its button toward the centre (liquid glass). -->
+           spreads out of its button toward the centre (liquid glass). No
+           overview button here — the titlebar grid button owns navigation. -->
       <nav class="widget-rail" aria-label="Widget-Werkzeuge" data-i18n-aria-label="rail.tools">
+        <!-- Platform logo above the buttons, set apart by the hairline —
+             a LINK to the source (like the old header glyph), opened in the
+             OS browser via external-links.js. -->
+        <a class="rail-logo" href="https://www.reddit.com/r/wallstreetbetsGER"
+           target="_blank" rel="noopener" title="r/wallstreetbetsGER öffnen"
+           aria-label="r/wallstreetbetsGER öffnen"
+           data-i18n-title="widget.reddit.open" data-i18n-aria-label="widget.reddit.open">
+          <span class="rail-logo-img rail-logo-reddit" aria-hidden="true"></span>
+        </a>
+        <span class="rail-sep" aria-hidden="true"></span>
         <div class="rail-item">
-          <button class="rail-btn js-rail-overview" type="button" title="Zur Übersicht"
-                  aria-label="Zur Übersicht" data-i18n-title="rail.overview" data-i18n-aria-label="rail.overview">
-            <svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.6"/></svg>
-          </button>
-        </div>
-        <div class="rail-sep" aria-hidden="true"></div>
-        <div class="rail-item">
-          <button class="rail-btn" type="button" aria-haspopup="dialog" aria-expanded="false"
+          <!-- Same status-readout icon as the dashboard funnel: each stroke is
+               one facet and lights amber while that facet filters
+               (widget-rail.js syncs the .active classes). -->
+          <button class="rail-btn js-rail-filter-btn" type="button" aria-haspopup="dialog" aria-expanded="false"
                   title="Filter" aria-label="Schlagzeilen filtern"
                   data-i18n-title="filter.title" data-i18n-aria-label="filter.open">
-            <svg viewBox="0 0 24 24"><line x1="4" y1="6" x2="20" y2="6"/><line x1="7" y1="12" x2="17" y2="12"/><line x1="10" y1="18" x2="14" y2="18"/></svg>
-            <span class="rail-dot" hidden></span>
+            <svg viewBox="0 0 24 24">
+              <line class="f-line" data-facet="highlight" x1="4" y1="6" x2="20" y2="6"/>
+              <line class="f-line" data-facet="price" x1="7" y1="12" x2="17" y2="12"/>
+              <line class="f-line" data-facet="news" x1="10" y1="18" x2="14" y2="18"/>
+            </svg>
           </button>
           <div class="rail-pop" role="dialog" aria-label="Filter" data-i18n-aria-label="filter.title">
             <div class="rail-pop-body js-rail-filter"></div>
@@ -172,7 +185,7 @@
                   data-i18n-title="rail.headlines.title" data-i18n-aria-label="rail.headlines.title">
             <svg viewBox="0 0 24 24"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
           </button>
-          <div class="rail-pop" role="dialog" aria-label="Schlagzeilen-Einstellungen"
+          <div class="rail-pop rail-pop-wide" role="dialog" aria-label="Schlagzeilen-Einstellungen"
                data-i18n-aria-label="rail.headlines.title">
             <div class="rail-pop-body">
               <div class="rail-pop-head" data-i18n="rail.headlines.title">Schlagzeilen-Einstellungen</div>
@@ -183,8 +196,30 @@
                 </span>
                 <span class="checkbox"><input type="checkbox" class="js-rail-analyze-images"><span class="checkbox-box"></span></span>
               </label>
+              <!-- "Daten löschen" lives HERE (moved out of the general
+                   settings view): it resets Reddit-derived state + the wire,
+                   so it belongs to the Schlagzeilen widget. Same two-click
+                   arm + cooldown wiring (settings.js). -->
+              <span class="rail-pop-divider" aria-hidden="true"></span>
+              <div class="rail-setting">
+                <span class="rail-setting-label">
+                  <span data-i18n="settings.data.clear.name">Daten löschen</span>
+                  <span class="rail-setting-hint" data-i18n="settings.data.clear.hint">Setzt das Terminal komplett zurück - Threads, Cluster, Schlagzeilen und Archiv.</span>
+                </span>
+                <button class="danger-btn js-clear-data" data-i18n="settings.data.clear.btn">Daten löschen</button>
+              </div>
             </div>
           </div>
+        </div>
+        <!-- EU AI Act disclosure in focus mode: the header (and its KI badge)
+             is hidden fullscreen, so the rail carries the notice — opens the
+             same ai-notice overlay. -->
+        <div class="rail-item">
+          <button class="rail-btn js-ai-notice" type="button"
+                  title="KI-generiert" aria-haspopup="dialog" aria-label="KI-generierte Schlagzeilen - Details"
+                  data-i18n-title="widget.reddit.ai" data-i18n-aria-label="widget.reddit.ai.hint">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+          </button>
         </div>
       </nav>
     </section>
@@ -203,16 +238,19 @@
       <div class="widget-body" data-rows></div>
       <button class="grid-hit" type="button" aria-label="Financial Juice öffnen"
               data-i18n-aria-label="grid.open.fj">
-        <span class="grid-hit-label">Financial Juice</span>
+        <span class="grid-hit-tag">
+          <span class="grid-hit-icon icon-fj" aria-hidden="true"></span>
+          <span class="grid-hit-label">Financial Juice</span>
+        </span>
       </button>
       <nav class="widget-rail" aria-label="Widget-Werkzeuge" data-i18n-aria-label="rail.tools">
-        <div class="rail-item">
-          <button class="rail-btn js-rail-overview" type="button" title="Zur Übersicht"
-                  aria-label="Zur Übersicht" data-i18n-title="rail.overview" data-i18n-aria-label="rail.overview">
-            <svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.6"/></svg>
-          </button>
-        </div>
-        <div class="rail-sep" aria-hidden="true"></div>
+        <a class="rail-logo" href="https://www.financialjuice.com/"
+           target="_blank" rel="noopener" title="Financial Juice öffnen"
+           aria-label="Financial Juice öffnen"
+           data-i18n-title="widget.fj.open" data-i18n-aria-label="widget.fj.open">
+          <span class="rail-logo-img rail-logo-fj" aria-hidden="true"></span>
+        </a>
+        <span class="rail-sep" aria-hidden="true"></span>
         <div class="rail-item">
           <button class="rail-btn" type="button" aria-haspopup="dialog" aria-expanded="false"
                   title="Info" aria-label="Was ist Financial Juice?"
@@ -246,16 +284,38 @@
       </div>
       <button class="grid-hit" type="button" aria-label="Fear & Greed öffnen"
               data-i18n-aria-label="grid.open.fg">
-        <span class="grid-hit-label" data-i18n="widget.fg.title">Fear &amp; Greed</span>
+        <span class="grid-hit-tag">
+          <svg class="grid-hit-icon-fg" viewBox="0 0 40 26" aria-hidden="true">
+            <defs>
+              <linearGradient id="gridfg-grad" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0" stop-color="#e2504a"/><stop offset="0.5" stop-color="#e0b000"/><stop offset="1" stop-color="#3fb950"/>
+              </linearGradient>
+            </defs>
+            <path d="M5,22 A15,15 0 0 1 35,22" fill="none" stroke="url(#gridfg-grad)" stroke-width="4" stroke-linecap="round"/>
+            <line x1="20" y1="22" x2="24" y2="11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <circle cx="20" cy="22" r="2.4" fill="currentColor"/>
+          </svg>
+          <span class="grid-hit-label" data-i18n="widget.fg.title">Fear &amp; Greed</span>
+        </span>
       </button>
       <nav class="widget-rail" aria-label="Widget-Werkzeuge" data-i18n-aria-label="rail.tools">
-        <div class="rail-item">
-          <button class="rail-btn js-rail-overview" type="button" title="Zur Übersicht"
-                  aria-label="Zur Übersicht" data-i18n-title="rail.overview" data-i18n-aria-label="rail.overview">
-            <svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.6"/></svg>
-          </button>
-        </div>
-        <div class="rail-sep" aria-hidden="true"></div>
+        <a class="rail-logo" href="https://edition.cnn.com/markets/fear-and-greed"
+           target="_blank" rel="noopener" title="CNN Fear & Greed Index öffnen"
+           aria-label="CNN Fear & Greed Index öffnen"
+           data-i18n-title="fg.open" data-i18n-aria-label="fg.open">
+          <!-- No brand mark for F&G — a miniature of its own gauge is the logo. -->
+          <svg class="rail-logo-fg" viewBox="0 0 40 26" aria-hidden="true">
+            <defs>
+              <linearGradient id="railfg-grad" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0" stop-color="#e2504a"/><stop offset="0.5" stop-color="#e0b000"/><stop offset="1" stop-color="#3fb950"/>
+              </linearGradient>
+            </defs>
+            <path d="M5,22 A15,15 0 0 1 35,22" fill="none" stroke="url(#railfg-grad)" stroke-width="4" stroke-linecap="round"/>
+            <line x1="20" y1="22" x2="24" y2="11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <circle cx="20" cy="22" r="2.4" fill="currentColor"/>
+          </svg>
+        </a>
+        <span class="rail-sep" aria-hidden="true"></span>
         <div class="rail-item">
           <button class="rail-btn" type="button" aria-haspopup="dialog" aria-expanded="false"
                   title="Info" aria-label="Was ist der Fear & Greed Index?"
@@ -314,26 +374,9 @@
           </div>
         </section>
 
-        <section class="settings-cat">
-          <h2 class="cat-title" data-i18n="settings.headlines.title">Schlagzeilen</h2>
-          <div class="setting-row">
-            <div class="setting-label">
-              <div class="setting-name-row">
-                <span class="setting-name" data-i18n="settings.headlines.images.name">Bilder mitanalysieren</span>
-                <button class="setting-info js-info" type="button" aria-expanded="false" title="Mehr Infos"
-                        aria-label="Mehr Infos" data-i18n-title="settings.more.aria" data-i18n-aria-label="settings.more.aria">
-                  <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-                </button>
-              </div>
-              <span class="setting-hint" data-i18n="settings.headlines.images.hint">Wertet Bilder aus Threads und Kommentaren aus und lässt sie in Schlagzeilen einfließen.</span>
-              <p class="setting-more" hidden data-i18n="settings.headlines.images.more">Aus = schnellere, reine Text-Schlagzeilen ohne Bildanalyse.</p>
-            </div>
-            <label class="checkbox">
-              <input type="checkbox" class="js-analyze-images">
-              <span class="checkbox-box"></span>
-            </label>
-          </div>
-        </section>
+        <!-- The "Schlagzeilen" category moved wholesale into the Schlagzeilen
+             widget's rail settings (focus mode): "Bilder mitanalysieren" and
+             "Daten löschen" are that widget's domain, not app chrome. -->
 
         <section class="settings-cat">
           <h2 class="cat-title" data-i18n="settings.language.title">Sprache</h2>
@@ -380,20 +423,9 @@
             </div>
             <button class="plain-btn js-open-logs" data-i18n="settings.data.logs.btn">Ordner öffnen</button>
           </div>
-          <div class="setting-row">
-            <div class="setting-label">
-              <div class="setting-name-row">
-                <span class="setting-name" data-i18n="settings.data.clear.name">Daten löschen</span>
-                <button class="setting-info js-info" type="button" aria-expanded="false" title="Mehr Infos"
-                        aria-label="Mehr Infos" data-i18n-title="settings.more.aria" data-i18n-aria-label="settings.more.aria">
-                  <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-                </button>
-              </div>
-              <span class="setting-hint" data-i18n="settings.data.clear.hint">Setzt das Terminal komplett zurück - Threads, Cluster, Schlagzeilen und Archiv.</span>
-              <p class="setting-more" hidden data-i18n="settings.data.clear.more">Danach füllt sich die Wire vom nächsten Scan neu. Höchstens alle 10 Minuten.</p>
-            </div>
-            <button class="danger-btn js-clear-data" data-i18n="settings.data.clear.btn">Daten löschen</button>
-          </div>
+          <!-- "Daten löschen" moved into the Schlagzeilen widget's rail
+               settings (focus mode) — it resets wire/threads/archive, which
+               is that widget's domain. -->
           <div class="setting-row">
             <div class="setting-label">
               <div class="setting-name-row">
