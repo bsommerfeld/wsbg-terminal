@@ -20,7 +20,10 @@ const LABEL_H = 46;             // room below every card for its icon-on-edge + 
 const SCALE = 0.58;             // uniform miniature scale of a widget's real width
 const HSCALE = 0.52;            // height runs slightly shorter than a strict pane — full
                                 // .58 read as too tall next to the .29 width
-const MIN_W = 240;              // px floor so tiny windows keep usable cards
+const MIN_W = 96;               // degenerate-sliver floor ONLY — small enough that the
+                                // fit guards, not the floor, decide on any real window
+                                // (a big floor re-inflating past the guards is what used
+                                // to make cards overlap on small windows)
 
 // Per-widget size factor on the common card size: Fear & Greed and EUR/USD
 // show only their hero (gauge / rate + spark) in the overview, so their cards
@@ -87,6 +90,19 @@ function inGrid() {
 }
 
 /**
+ * A widget's natural pane width: half the SCREEN, not half the current
+ * window. The screen resolution is the fixed reference viewport every
+ * miniature lays out against, so the painted zoom (card width / natural
+ * width) tracks the window size — shrink the window and text/images shrink
+ * WITH the card. (The old fixed CSS zoom kept content at a constant size
+ * while the card scaled around it.) Math.max guards a bogus/unavailable
+ * screen value under OSR: the reference is never smaller than the window.
+ */
+function naturalPaneW(W) {
+  return 0.5 * Math.max(W, (window.screen && window.screen.width) || 0);
+}
+
+/**
  * The uniform card size: a card is the widget at its ORIGINAL terminal size
  * (a dashboard pane, half the width × full height), scaled by one common
  * factor so all of them fit — relative, exactly like Mission Control scales
@@ -98,7 +114,12 @@ function cardSize(W, H) {
   let h = H * HSCALE;
   const maxW = (W - 4 * GAP) / 3;
   if (w > maxW) { h *= maxW / w; w = maxW; }
-  const maxH = H - 2 * GAP - LABEL_H;
+  // The arrangement stacks TWO rows — the compact tiles above the two big
+  // panes — so the height guard must fit both rows plus their label zones.
+  // (The old single-row guard let the tile row overlap the panes as soon as
+  // the window got short.)
+  const tileF = SIZE_F['widget-fg'];
+  const maxH = (H - 3 * GAP - 2 * LABEL_H) / (1 + tileF);
   if (h > maxH) { w *= maxH / h; h = maxH; }
   if (w < MIN_W) { h *= MIN_W / w; w = MIN_W; }
   return { w, h };
@@ -176,6 +197,17 @@ export function applyGridLayout(settle = false, pinnedId = null) {
   const W = main.clientWidth;
   const H = main.clientHeight;
   if (!W || !H) return;
+  // One shared miniature zoom for all cards: every card's layout viewport is
+  // its natural (screen-pane × SIZE_F) size, painted at whatever the card
+  // measures right now — widget-grid.css consumes the var. Stays set after
+  // leaving the grid so exiting cards keep their scale mid-flight.
+  const zoom = cardSize(W, H).w / naturalPaneW(W);
+  main.style.setProperty('--grid-zoom', zoom.toFixed(4));
+  // The icon + name pill live OUTSIDE the zoomed body at fixed design sizes
+  // (tuned for a maximized window, zoom == SCALE). Scale them by the same
+  // ratio the cards shrink, else the nowrap pills collide long before the
+  // cards do on small windows. Capped at 1 — they never grow past design.
+  main.style.setProperty('--grid-tag-scale', Math.min(1, zoom / SCALE).toFixed(4));
   const rects = cards().map(c => rectFor(c.id, W, H));
   rects.forEach(r => clamp(r, W, H));
   separate(rects, W, H, pinnedId);

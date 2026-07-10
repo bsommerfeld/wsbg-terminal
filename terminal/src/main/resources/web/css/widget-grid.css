@@ -79,13 +79,14 @@ html[data-theme="light"] .main > .widget.exit-card {
 .main[data-view="grid"] > .widget > .widget-head,
 .main > .widget.exit-card > .widget-head { display: none; }
 
-/* Miniature content: `zoom` matches grid-layout.js's SCALE, so the card IS
-   the widget at its original terminal size, painted smaller — a true
-   Mission-Control thumbnail. Inner links/rows are inert; the .grid-hit
+/* Miniature content: grid-layout.js computes the zoom live (card width /
+   natural screen-pane width, --grid-zoom), so the card IS the widget at its
+   natural fullscreen size, painted smaller — and content scales WITH the
+   card on every window resize. Inner links/rows are inert; the .grid-hit
    overlay is the only click target. */
 .main[data-view="grid"] > .widget > .widget-body,
 .main > .widget.exit-card > .widget-body {
-  zoom: 0.58;
+  zoom: var(--grid-zoom, 0.58);
   pointer-events: none;
 }
 
@@ -149,12 +150,16 @@ html[data-theme="light"] .main > .widget.exit-card .grid-hit {
   border-radius: 14px;
 }
 /* Icon straddling the card's lower edge, name pill hanging below the card —
-   like the app icon + name under a Mission Control window. */
+   like the app icon + name under a Mission Control window. Scales with the
+   cards (--grid-tag-scale, 1 on a maximized window): the pills are nowrap
+   and would collide on small windows if they kept their design size. */
 .grid-hit-tag {
   position: absolute;
-  top: calc(100% - 17px);   /* half the icon above the edge, half below */
+  /* half the (scaled) icon above the edge, half below */
+  top: calc(100% - 17px * var(--grid-tag-scale, 1));
   left: 50%;
-  transform: translateX(-50%);
+  transform: translateX(-50%) scale(var(--grid-tag-scale, 1));
+  transform-origin: 50% 0;
   display: flex; flex-direction: column; align-items: center; gap: 8px;
 }
 .grid-hit-icon {
@@ -199,7 +204,16 @@ html[data-theme="light"] .main > .widget.exit-card .grid-hit {
    keeps it clear of the floating rail on narrow windows. */
 .main[data-view="focus"] > .widget.focused { --focus-col: 920px; }
 .main[data-view="focus"] > .widget.focused > .widget-head { display: none; }
-.main[data-view="focus"] > .widget.focused .widget-body { padding: 0 96px; }
+/* Focus content scales with the window (widget-nav.js keeps --focus-zoom =
+   window width / screen width; 1 when maximized): on a smaller window the
+   whole column — text, charts, images — paints proportionally smaller
+   instead of reflowing at full-size type. The side padding is divided by
+   the zoom so its PAINTED width stays 96px — the floating rail sits outside
+   the zoomed subtree and must keep its clearance. */
+.main[data-view="focus"] > .widget.focused .widget-body {
+  zoom: var(--focus-zoom, 1);
+  padding: 0 calc(96px / var(--focus-zoom, 1));
+}
 .main[data-view="focus"] > .widget.focused .widget-body > * {
   max-width: var(--focus-col);
   margin-inline: auto;

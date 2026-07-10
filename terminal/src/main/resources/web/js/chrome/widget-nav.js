@@ -33,6 +33,13 @@ export function initWidgetNav() {
   if (!main) return;
   widgets = [...main.querySelectorAll(':scope > .widget')];
 
+  // Focus-view content scale: window width relative to the screen (1 when
+  // maximized — the fullscreen layout is the reference, like the grid's
+  // miniature zoom). Floored so type never shrinks past readable; below the
+  // floor the column reflows within its painted width instead.
+  syncFocusZoom();
+  window.addEventListener('resize', syncFocusZoom);
+
   document.querySelectorAll('.js-grid-toggle').forEach(b =>
     b.addEventListener('click', onGridButton));
 
@@ -66,6 +73,13 @@ export function initWidgetNav() {
   });
 
   document.addEventListener('keydown', onKey);
+}
+
+function syncFocusZoom() {
+  const W = main.clientWidth;
+  const ref = Math.max(W, (window.screen && window.screen.width) || 0);
+  const z = Math.min(1, Math.max(0.55, W / ref));
+  main.style.setProperty('--focus-zoom', z.toFixed(4));
 }
 
 function onGridButton() {
