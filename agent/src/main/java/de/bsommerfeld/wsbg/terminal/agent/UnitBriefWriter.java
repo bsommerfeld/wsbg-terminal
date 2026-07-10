@@ -38,12 +38,26 @@ final class UnitBriefWriter {
      */
     static final int EVIDENCE_CHAR_BUDGET = 4500;
 
+    /** Cap for the per-item article digest rendered under a news title (a runaway model reply must not eat the brief). */
+    static final int DIGEST_CHAR_CAP = 500;
+
     /** Builds the per-unit brief: Yahoo data + the room's evidence about this subject + its story memory. Static for testability. */
     static String unitBrief(SubjectUnit unit, boolean newsCoverageEnabled) {
         return unitBrief(unit, newsCoverageEnabled, BriefLabels.EN);
     }
 
     static String unitBrief(SubjectUnit unit, boolean newsCoverageEnabled, BriefLabels lbl) {
+        return unitBrief(unit, newsCoverageEnabled, lbl, null);
+    }
+
+    /**
+     * Full form: {@code digestLookup} resolves an article link to its cached
+     * key-fact digest ({@link NewsDigester#ifCached}) — rendered under the news
+     * title in place of the source teaser, so the compose model sees the article's
+     * substance. Null (tests, digester off) falls back to the teaser-only brief.
+     */
+    static String unitBrief(SubjectUnit unit, boolean newsCoverageEnabled, BriefLabels lbl,
+            java.util.function.Function<String, String> digestLookup) {
         StringBuilder sb = new StringBuilder();
         sb.append(lbl.subjectHeader(unit.canonicalName(), unit.isInstrument() ? unit.ticker() : null));
 
@@ -122,7 +136,15 @@ final class UnitBriefWriter {
                 }
                 sb.append(n.title());
                 if (n.publisher() != null && !n.publisher().isEmpty()) sb.append(" · ").append(n.publisher());
-                if (n.summary() != null && !n.summary().isBlank()) {
+                // Substance under the title: the article's key-fact digest when the
+                // background reader has it (beats the teaser — Yahoo's teaser is even
+                // null), else the source teaser as before. Cache-only lookup, never blocks.
+                String digest = digestLookup == null ? "" : digestLookup.apply(n.link());
+                if (digest != null && !digest.isBlank()) {
+                    String dg = digest.replace('\n', ' ').strip();
+                    sb.append("\n      ").append(dg.length() > DIGEST_CHAR_CAP
+                            ? dg.substring(0, DIGEST_CHAR_CAP) + "…" : dg);
+                } else if (n.summary() != null && !n.summary().isBlank()) {
                     String sum = n.summary().replace('\n', ' ').strip();
                     sb.append("\n      ").append(sum.length() > 200 ? sum.substring(0, 200) + "…" : sum);
                 }

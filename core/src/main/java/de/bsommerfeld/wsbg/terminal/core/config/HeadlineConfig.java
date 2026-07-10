@@ -45,12 +45,28 @@ public class HeadlineConfig {
         this.analyzeImages = analyzeImages;
     }
 
+    @Key("read-articles")
+    @Comment("When true, the editorial pipeline fetches each news item's FULL article in the "
+            + "background and distills it into a few key-fact sentences (one extra model call "
+            + "per article, cached per link), so headlines can lean on the article's substance "
+            + "instead of its bare title. Default true; turn off to save the per-article fetch "
+            + "and model call.")
+    private boolean readArticles = true;
+
     public boolean isNewsCoverageEnabled() {
         return newsCoverageEnabled;
     }
 
     public void setNewsCoverageEnabled(boolean newsCoverageEnabled) {
         this.newsCoverageEnabled = newsCoverageEnabled;
+    }
+
+    public boolean isReadArticles() {
+        return readArticles;
+    }
+
+    public void setReadArticles(boolean readArticles) {
+        this.readArticles = readArticles;
     }
 
 }
