@@ -30,6 +30,7 @@ Im Vollbild schweben links am Rand runde Knöpfe mit allem, was nur dieses Widge
 
 ## Restliches
 
+- In der Übersicht könnt ihr direkt in die Karten hineinscrollen: Mausrad über einer Karte scrollt deren Inhalt - die Miniaturen sind lebendig, kein Standbild.
 - Der Schlagzeilen-Filter wandert im Vollbild in die schwebenden Knöpfe links - in der klassischen Ansicht bleibt er wie gewohnt oben im Kopf.
 - „Bilder mitanalysieren" und „Daten löschen" sind aus den allgemeinen Einstellungen in die schwebenden Knöpfe des Schlagzeilen-Widgets umgezogen - sie betreffen nur die Schlagzeilen, also wohnen sie jetzt auch dort.
 - Das Erscheinungsbild (hell/dunkel) gilt auch in der neuen Übersicht und im Vollbild.

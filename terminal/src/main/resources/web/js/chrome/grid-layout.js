@@ -261,6 +261,22 @@ export function initGridLayout(mainEl, opts = {}) {
     if (!hit) continue;
     let drag = null;          // { startX, startY, left, top, moved }
 
+    // Wheel over a card scrolls INSIDE the widget: the hit overlay owns the
+    // pointer (the miniature content is inert), so it forwards the wheel to
+    // the card's .widget-body — the one scroller every widget has. Delta is
+    // divided by the miniature zoom so the PAINTED scroll speed matches the
+    // wheel 1:1 (scrollTop lives in the body's own, un-zoomed units). Cards
+    // with a dedicated .grid-thumb have their body hidden — nothing scrolls,
+    // which is the honest behaviour for a static tile.
+    hit.addEventListener('wheel', e => {
+      if (!inGrid() || drag) return;
+      const body = card.querySelector('.widget-body');
+      if (!body) return;
+      e.preventDefault();
+      const zoom = parseFloat(main.style.getPropertyValue('--grid-zoom')) || 1;
+      body.scrollTop += e.deltaY / zoom;
+    }, { passive: false });
+
     hit.addEventListener('pointerdown', e => {
       if (!inGrid() || e.button !== 0) return;
       try { hit.setPointerCapture(e.pointerId); } catch { /* capture is best-effort */ }
