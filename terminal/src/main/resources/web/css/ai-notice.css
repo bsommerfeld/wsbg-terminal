@@ -66,6 +66,26 @@
   transform: none;
 }
 
+/* --- the focus-rail disclosure button --- */
+/* The rail twin of the header pill: same amber identity + its own sparkle
+   mark, and deliberately set apart from the tool buttons — a hairline above
+   and pinned to the rail's END via flex order, so it stays last even if new
+   tools get added after it in the markup. */
+.rail-ai-sep { order: 98; }
+.rail-item.rail-ai { order: 99; }
+.rail-item.rail-ai .rail-btn {
+  color: var(--amber);
+  border-color: color-mix(in oklch, var(--amber) 42%, transparent);
+  background: color-mix(in oklch, var(--amber) 12%,
+              color-mix(in oklch, var(--bg-1) 78%, transparent));
+}
+.rail-item.rail-ai .rail-btn:hover {
+  color: var(--amber);
+  border-color: var(--amber);
+  background: color-mix(in oklch, var(--amber) 20%,
+              color-mix(in oklch, var(--bg-1) 78%, transparent));
+}
+
 /* --- the notice overlay body --- */
 .ai-notice-body {
   padding: 20px 32px 26px;
