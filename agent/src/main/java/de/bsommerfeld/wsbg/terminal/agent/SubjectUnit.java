@@ -37,6 +37,7 @@ public final class SubjectUnit {
 
     private volatile String canonicalName;
     private volatile String ticker;            // null for theme/person
+    private volatile String isin;              // desk-stamped hard identity; null when unstamped
     private volatile MarketSnapshot snapshot;  // latest resolved
 
     /** News + covered-news-ids for this unit. Accessed only under this unit's monitor. */
@@ -52,6 +53,26 @@ public final class SubjectUnit {
 
     /** Evidence keyed by thread/comment so the same source is never double-counted. */
     private final Map<String, EvidenceRef> evidence = new LinkedHashMap<>();
+
+    /**
+     * How long the unit REMEMBERS having seen an evidence key after the content
+     * itself was pruned. Must comfortably outlive the Reddit repository's thread
+     * retention ({@code reddit.data-retention-hours}, default 6 h): as long as the
+     * source comment still exists, every re-prep re-delivers it — and without this
+     * memory the prune (60 min TTL) wiped the dedupe key, so the SAME old comment
+     * re-entered as "genuinely new" evidence, re-dirtied the unit and re-composed
+     * it in an endless loop (the 2026-07-09 re-dirty bug). Once the comment has
+     * aged out of the repository it can never be re-delivered, so forgetting the
+     * key after 24 h is safe and bounds the memory.
+     */
+    static final Duration SEEN_RETENTION = Duration.ofHours(24);
+
+    /**
+     * Every evidence key this unit has EVER accepted (within {@link #SEEN_RETENTION}),
+     * mapped to when it was first added — survives the content prune, which
+     * {@link #evidence} deliberately does not. Guarded by this unit's monitor.
+     */
+    private final Map<String, Long> seenEvidence = new LinkedHashMap<>();
 
     /**
      * Evidence-version + compose-timing gate: "has anything changed since the last
@@ -84,6 +105,7 @@ public final class SubjectUnit {
         this.id = s.id();
         this.canonicalName = s.canonicalName() == null ? s.id() : s.canonicalName();
         this.ticker = s.ticker();
+        this.isin = s.isin();
         this.firstSeen = Instant.ofEpochSecond(s.firstSeenEpoch());
         this.lastActivity = Instant.ofEpochSecond(s.lastActivityEpoch());
         this.firstPrice = s.firstPrice();
@@ -91,7 +113,12 @@ public final class SubjectUnit {
                 : Instant.ofEpochSecond(s.firstPriceAtEpoch());
         this.snapshot = s.snapshot();
         if (s.evidence() != null) {
-            for (EvidenceRef e : s.evidence()) evidence.put(e.key(), e);
+            for (EvidenceRef e : s.evidence()) {
+                evidence.put(e.key(), e);
+                // Seed the seen-memory from the restored refs so the first prune
+                // after a restart can't re-open the re-dirty loop for them.
+                seenEvidence.put(e.key(), e.addedAtEpoch());
+            }
         }
         if (s.headlines() != null) headlines.addAll(s.headlines());
         newsBox.restore(s.coveredNewsIds());
@@ -121,15 +148,40 @@ public final class SubjectUnit {
         newsBox.merge(news);
     }
 
-    /** Adds one piece of evidence; returns {@code true} if it was new (not a duplicate source). */
+    /**
+     * Adds one piece of evidence; returns {@code true} if it was new (not a
+     * duplicate source). "New" is judged against {@link #seenEvidence}, not just
+     * the live {@link #evidence} map: a key whose content the TTL prune dropped
+     * but that the unit has already seen is a RE-DELIVERY (the source thread still
+     * lives in the repository), not news — re-accepting it as fresh was the
+     * re-dirty loop. Such a re-delivery is ignored entirely (not re-inserted):
+     * the prune dropped that content deliberately, for context relief.
+     */
     public synchronized boolean addEvidence(EvidenceRef ref) {
-        boolean added = evidence.putIfAbsent(ref.key(), ref) == null;
+        String key = ref.key();
+        if (seenEvidence.containsKey(key) && !evidence.containsKey(key)) {
+            return false; // seen before, content pruned — a re-delivery is not new evidence
+        }
+        boolean added = evidence.putIfAbsent(key, ref) == null;
         if (added) {
+            seenEvidence.put(key, ref.addedAtEpoch());
             lastActivity = Instant.now();
             composeGate.onEvidenceAdded();
         }
         return added;
     }
+
+    /**
+     * Notes the desk-stamped ISIN (last verdict wins; a stampless re-resolve never
+     * clears it). The hard identity fact behind the ticker: the registry's
+     * identity-merge folds two ticker units whose ISINs agree — a WKN-keyed venue
+     * unit and its Yahoo-keyed twin are the SAME paper.
+     */
+    public void noteIsin(String isin) {
+        if (isin != null && !isin.isBlank()) this.isin = isin;
+    }
+
+    public String isin() { return isin; }
 
     public String canonicalName() { return canonicalName; }
     public String ticker() { return ticker; }
@@ -178,7 +230,17 @@ public final class SubjectUnit {
     /** Absorbs another unit's evidence (and headline history) into this one. Used by identity-merge. */
     public synchronized void absorb(SubjectUnit other) {
         for (EvidenceRef ref : other.evidence()) addEvidence(ref);
+        // The victim's seen-memory rides along: keys it already saw (even ones whose
+        // content its prune dropped) must not re-dirty the absorber on the next re-prep.
+        for (Map.Entry<String, Long> seen : other.seenEvidenceSnapshot().entrySet()) {
+            seenEvidence.putIfAbsent(seen.getKey(), seen.getValue());
+        }
         headlines.addAll(other.headlines());
+    }
+
+    /** Copy of the seen-evidence memory — for {@link #absorb} (lock order: absorber, then victim). */
+    private synchronized Map<String, Long> seenEvidenceSnapshot() {
+        return new LinkedHashMap<>(seenEvidence);
     }
 
     /** Records a headline published for this unit, with its sentiment + the verified price at publish time. */
@@ -225,6 +287,11 @@ public final class SubjectUnit {
         long cutoff = Instant.now().minus(maxAge).getEpochSecond();
         int before = evidence.size();
         evidence.values().removeIf(e -> e.addedAtEpoch() < cutoff);
+        // The seen-keys survive the CONTENT prune on purpose (they are what stops a
+        // pruned-but-still-live comment from re-entering as "new") and age out on
+        // their own, longer horizon — see SEEN_RETENTION.
+        long seenCutoff = Instant.now().minus(SEEN_RETENTION).getEpochSecond();
+        seenEvidence.values().removeIf(at -> at < seenCutoff);
         return before - evidence.size();
     }
 
@@ -245,7 +312,7 @@ public final class SubjectUnit {
 
     /** Captures the unit's full state for short-TTL session persistence (see the restore ctor). */
     public synchronized Snapshot toSnapshot() {
-        return new Snapshot(id, canonicalName, ticker,
+        return new Snapshot(id, canonicalName, ticker, isin,
                 firstSeen.getEpochSecond(), lastActivity.getEpochSecond(),
                 firstPrice, firstPriceAt == null ? null : firstPriceAt.getEpochSecond(),
                 snapshot,
@@ -260,7 +327,7 @@ public final class SubjectUnit {
      * absent — re-fetched from Yahoo on the next attribution (see the restore ctor).
      */
     public record Snapshot(
-            String id, String canonicalName, String ticker,
+            String id, String canonicalName, String ticker, String isin,
             long firstSeenEpoch, long lastActivityEpoch,
             Double firstPrice, Long firstPriceAtEpoch,
             MarketSnapshot snapshot,

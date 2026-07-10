@@ -124,6 +124,50 @@ class SubjectUnitTest {
     }
 
     @Test
+    void prunedEvidenceIsNotNewOnRedelivery() {
+        // The 2026-07-09 re-dirty loop: the TTL prune dropped the dedupe key while
+        // the source comment still lived in the repository (6 h retention), so the
+        // next re-prep re-delivered the SAME comment as "genuinely new" evidence —
+        // re-dirty → re-compose, forever. The seen-memory must outlive the prune.
+        SubjectUnit u = new SubjectUnit("NVDA", "NVIDIA");
+        assertTrue(u.addEvidence(ev("t1")));
+        u.markComposedAt(u.evidenceVersion());
+
+        u.pruneOlderThan(java.time.Duration.ofMinutes(-1)); // content prune drops everything
+        assertEquals(0, u.evidenceCount(), "content is pruned");
+
+        assertFalse(u.addEvidence(ev("t1")), "a re-delivered pruned key is not new evidence");
+        assertFalse(u.hasUncomposedEvidence(), "re-delivery must not re-arm the compose gate");
+
+        assertTrue(u.addEvidence(ev("t2")), "genuinely new evidence still lands");
+    }
+
+    @Test
+    void seenMemorySurvivesSnapshotRestore() {
+        SubjectUnit u = new SubjectUnit("NVDA", "NVIDIA");
+        u.addEvidence(ev("t1"));
+
+        SubjectUnit restored = new SubjectUnit(u.toSnapshot());
+        restored.pruneOlderThan(java.time.Duration.ofMinutes(-1));
+
+        assertFalse(restored.addEvidence(ev("t1")),
+                "restored unit remembers pruned keys — restart must not re-open the loop");
+    }
+
+    @Test
+    void absorbCarriesSeenMemory() {
+        SubjectUnit victim = new SubjectUnit("name:nvidia", "Nvidia");
+        victim.addEvidence(ev("t1"));
+        victim.pruneOlderThan(java.time.Duration.ofMinutes(-1)); // content gone, memory stays
+
+        SubjectUnit absorber = new SubjectUnit("NVDA", "NVIDIA");
+        absorber.absorb(victim);
+
+        assertFalse(absorber.addEvidence(ev("t1")),
+                "a key the absorbed unit already saw must not re-dirty the absorber");
+    }
+
+    @Test
     void headlineRecordsSentimentAndPriceOfItsMoment() {
         SubjectUnit u = new SubjectUnit("NVDA", "NVIDIA");
         u.updateResolved("NVIDIA", "NVDA", snap(100.0), null);
