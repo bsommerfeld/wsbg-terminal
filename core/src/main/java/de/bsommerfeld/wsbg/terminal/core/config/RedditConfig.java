@@ -77,12 +77,14 @@ public class RedditConfig {
     private double browserRateLimitBurst = 20.0;
 
     @Key("snapshot-ttl-minutes")
-    @Comment("How long an on-disk Reddit snapshot stays valid across restarts "
-            + "(default: 60, set 0 to disable). On startup, if a snapshot newer "
-            + "than this exists, threads+comments are restored from it instead "
-            + "of being re-fetched — so a quick restart (e.g. during testing) "
-            + "skips the expensive cold-start scan. Older snapshots are discarded "
-            + "to avoid ghost clusters from posts that have since disappeared.")
+    @Comment("Freshness of the on-disk session snapshots across restarts "
+            + "(default: 60, set 0 to disable restore). A snapshot from TODAY "
+            + "(same local calendar day) is always restored — the day's context "
+            + "must survive any restart so the evening Wetterbericht covers the "
+            + "whole day; this value is the extra cross-midnight grace in "
+            + "minutes. Anything neither from today nor inside the grace is "
+            + "discarded to avoid ghost clusters from posts that have since "
+            + "disappeared.")
     private long snapshotTtlMinutes = 60;
 
     public List<String> getSubreddits() {

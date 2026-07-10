@@ -7,6 +7,8 @@ import de.bsommerfeld.wsbg.terminal.ui.bridge.CommandBridge;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.SettingsBridge;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.UninstallService;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.UpdateService;
+import de.bsommerfeld.wsbg.terminal.ui.bridge.WatchlistBridge;
+import de.bsommerfeld.wsbg.terminal.ui.bridge.WeatherReportBridge;
 
 /**
  * The inbound page→Java bridges (each owns its own {@code hub.on(...)} handlers).
@@ -34,5 +36,11 @@ final class BridgeModule extends AbstractModule {
         // "Was hat sich geändert" overlay: pushes the GitHub release notes
         // once after a fresh update (installed version ≠ last seen).
         bind(ChangelogBridge.class).asEagerSingleton();
+        // AI watchlist: add/remove/suggestions inbound, the standing dossiers
+        // outbound (also constructs the WatchlistService + its revision loop).
+        bind(WatchlistBridge.class).asEagerSingleton();
+        // Wetterbericht widget backend: schedule state + report history out,
+        // report-time setting in.
+        bind(WeatherReportBridge.class).asEagerSingleton();
     }
 }

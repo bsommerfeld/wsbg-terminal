@@ -35,6 +35,10 @@ public class GlobalConfig extends ConfigurablePojo<GlobalConfig> {
     @Comment("Network Traffic Blending (poll jitter, conditional requests)")
     private NetConfig net = new NetConfig();
 
+    @Section("weather")
+    @Comment("Daily Wetterbericht (evening AI day-summary)")
+    private WeatherConfig weather = new WeatherConfig();
+
     public AgentConfig getAgent() {
         return agent;
     }
@@ -61,5 +65,9 @@ public class GlobalConfig extends ConfigurablePojo<GlobalConfig> {
 
     public NetConfig getNet() {
         return net;
+    }
+
+    public WeatherConfig getWeather() {
+        return weather;
     }
 }

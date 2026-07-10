@@ -23,6 +23,8 @@ import { renderEurUsd } from './widgets/eurusd.js';
 import { renderEurUsdDetail } from './widgets/eurusd-detail.js';
 import { renderFearGreed } from './widgets/fear-greed.js';
 import { renderFearGreedDetail } from './widgets/fg-detail.js';
+import { initWatchlist, renderWatchlist, renderWatchlistSubjects } from './widgets/watchlist.js';
+import { initWeather, renderWeather } from './widgets/weather.js';
 import { setMarketCalendar } from './markets/state.js';
 import { t } from './i18n/i18n.js';
 
@@ -71,6 +73,10 @@ const WIDGETS = [
       renderFearGreed(document.getElementById('fear-greed-badge'), p);
       renderFearGreedDetail(document.getElementById('fg-detail'), p);
     } },
+  // The AI watchlist: hand-picked subjects, each with a standing AI dossier.
+  { topic: 'watchlist',      relang: true, render: p => renderWatchlist(p) },
+  // Daily Wetterbericht: countdown / generating shimmer / the archived reports.
+  { topic: 'weather',        relang: true, render: p => renderWeather(document.getElementById('weather-detail'), p) },
   { topic: 'reddit-status',  relang: true, render: p => applyRedditStatus(p) },
   { topic: 'donation-stats',               render: p => setDonationStats(p) },
   { topic: 'os-appearance',                render: p => { if (p) setSystemAppearance(p.mode); } },
@@ -80,7 +86,7 @@ const WIDGETS = [
 // content (translated strings live inside these renderers) without waiting for
 // the next server push. headlines/fj seed to [] so they always paint (matching
 // the empty-state render); the rest stay unset until their first push.
-const last = { 'headlines': [], 'fj-news': [] };
+const last = { 'headlines': [], 'fj-news': [], 'watchlist': { entries: [] } };
 
 for (const w of WIDGETS) {
   socket.on(w.topic, payload => { last[w.topic] = payload; w.render(payload); });
@@ -91,6 +97,9 @@ initHeadlineScroll(redditBody, socket);
 socket.on('archive-results', payload => {
   if (payload && payload.command === 'page') appendArchivePage(payload.items);
 });
+
+// Watchlist add-suggestions (requested when the add input gains focus).
+socket.on('watchlist-subjects', renderWatchlistSubjects);
 
 // Live language switch: setLang() has already rewritten the static markup;
 // re-render the language-sensitive widgets from their last payload so their
@@ -114,6 +123,8 @@ initNewsSources();
 initAiNotice();
 initHeadlineFilter();
 initWidgetRail(socket);
+initWatchlist(socket);
+initWeather(socket);
 initTitlebar(socket);
 initFooter();
 initDonate();

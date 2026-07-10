@@ -18,6 +18,16 @@ Im Vollbild schweben links am Rand runde Knöpfe mit allem, was nur dieses Widge
 
 > 📸 **[Bild einfügen: Das EUR/USD-Widget im Vollbild - großer Kurs „1,1435" zwischen den Flaggen, grüne Tages-Pille, Kennzahlen-Kacheln und das 12-Monats-Chart]**
 
+**Und das größte Stück: die KI-Watchliste.** Ihr setzt Subjekte auf eine Liste - aus den Themen ausgewählt, über die der Käfig gerade redet, oder frei eingetippt. Auch ein Name, der noch nie gefallen ist, funktioniert: Das Terminal wartet geduldig, bis der Käfig ihn zum ersten Mal erwähnt, und klinkt sich dann ein. Zu jedem Subjekt führt die KI ein stehendes Dossier - keine Schlagzeilen-Häppchen, sondern eine Analyse, die mit jeder neuen Evidenz fortgeschrieben wird, statt jeden Tag bei null anzufangen. Zeitlos formuliert, mit Datumsstempeln statt „heute" und „gestern", und sie überlebt jeden Neustart. In der Liste steht neben jedem Namen das Einzeiler-Fazit; ein Klick klappt das komplette Dossier auf - mit Live-Kurs in Euro direkt vom Handelsplatz, Tages-, 5-Tage- und Monats-Trend, Kurs-Chart, dem Blick „seit erster Erwähnung", den News zum Subjekt und den letzten Zeilen, die dazu über die Wire liefen. Und in der Widget-Übersicht zeigt die Watchlist-Karte keine geschrumpfte Bedienoberfläche, sondern eine aufgeräumte Kachel: eure Namen untereinander, daneben die Tagesbewegung in Grün oder Rot.
+
+> 📸 **[Bild einfügen: Die KI-Watchliste im Vollbild - zwei, drei Einträge mit Einzeiler-Fazit rechts, einer aufgeklappt mit Kurs, Chart und Dossier-Text]**
+
+**Und zum Feierabend: der Wetterbericht.** Einmal am Tag - die Uhrzeit stellt ihr direkt im Widget ein, Standard 20:00 - liest die KI alles noch einmal, was über die Wire lief, und schreibt daraus eine Abendübersicht im nüchternen Analysten-Ton: erst die Großwetterlage, dann die Geschichten, die den Tag getragen haben, mit ihren Zahlen, zum Schluss die Randnotizen. Weil ein ganzer Käfig-Tag mehr ist, als die KI auf einen Blick überschauen kann, arbeitet sie wie eine Redaktion: Vorarbeiter verdichten den Tag portionsweise, der Abend-Analyst schreibt daraus den Bericht. Bis dahin zählt ein großer Countdown zur eingestellten Uhrzeit herunter, und während geschrieben wird, schimmert an der Stelle des Texts ein unscharfer Platzhalter. Unter dem Bericht steht der eingefrorene Tagesstand zum Runterscrollen: DAX, S&P 500, Nasdaq 100 und VIX mit Tagesverlauf, die meistdiskutierten Papiere des Käfigs mit Kurs und Tagesbewegung, und die News, auf die sich die Zeilen des Tages am häufigsten gestützt haben. Ältere Berichte bleiben dauerhaft erhalten - mit den Pfeilen blättert ihr tageweise zurück, und jeder alte Bericht zeigt seinen damaligen Marktstand, nicht den heutigen.
+
+> 📸 **[Bild einfügen: Der Wetterbericht im Vollbild - Berichtstext oben, darunter die vier Index-Kacheln mit Sparklines und die Liste der meistdiskutierten Papiere]**
+
+> 📸 **[Bild einfügen: Die Wetterbericht-Kachel in der Übersicht mit dem großen Countdown „2h 14m"]**
+
 ## Restliches
 
 - Der Schlagzeilen-Filter wandert im Vollbild in die schwebenden Knöpfe links - in der klassischen Ansicht bleibt er wie gewohnt oben im Kopf.
@@ -32,3 +42,4 @@ Im Vollbild schweben links am Rand runde Knöpfe mit allem, was nur dieses Widge
 - Sammel-Threads ("Welche Aktien haltet ihr?") fluten die Wire nicht mehr: Ein Kommentar, der viele Namen aufzählt, erzählt eine Geschichte - nicht eine pro Name. Der leise Einzel-Pick bekommt weiterhin seine eigene Zeile.
 - Rote Markierungen sitzen wieder präziser: Ein Analysten-Kursziel allein macht keine Zeile mehr rot - es zählt aber mit, wenn Kurs, News und Käfig alle in dieselbe Richtung zeigen.
 - Das Artikel-Lesen erkennt jetzt Cookie-Zustimmungsseiten und ähnliche Hüllen und wertet sie nicht mehr als Artikel aus - vorher landete dort nur Datenmüll statt Fakten in der Zeile.
+- Das Terminal hält seinen Arbeitsstand jetzt den ganzen Tag: Ein Neustart am Nachmittag verliert den Vormittag nicht mehr - erst der Wechsel auf den nächsten Kalendertag räumt auf. Schlagzeilen bleiben wie gehabt dauerhaft erhalten.

@@ -40,9 +40,9 @@ final class OllamaModelFactory {
         this.baseUrl = baseUrl;
     }
 
-    /** The three built models plus the resolved model names (for the init log line). */
+    /** The built models plus the resolved model names (for the init log line). */
     record Models(ChatModel agentModel, ChatModel composeModel, ChatModel visionModel,
-            String activeAgentModel, String visionModelName) {
+            ChatModel proseModel, String activeAgentModel, String visionModelName) {
     }
 
     /**
@@ -137,7 +137,21 @@ final class OllamaModelFactory {
                 .timeout(timeout)
                 .maxRetries(1).build();
 
-        return new Models(agentModel, composeModel, visionModel, agentName, visionName);
+        // Prose model — the SAME gemma4 (same name + num_ctx, still ONE runner),
+        // but FREE-FORM output: no responseFormat at all. Used by the daily
+        // Wetterbericht map-reduce, whose two stages (digest lines, final report
+        // prose) are plain text — JSON mode would only add escaping/truncation
+        // risk to running prose. numPredict 1024 comfortably holds a ~200-word
+        // report or a digest of a full batch.
+        ChatModel proseModel = OllamaChatModel.builder()
+                .baseUrl(baseUrl).modelName(agentName)
+                .temperature(agentModelEnum.getTemperature()).topP(0.9).topK(40)
+                .numCtx(ctxTokens).numPredict(1024)
+                .think(think)
+                .timeout(timeout)
+                .build();
+
+        return new Models(agentModel, composeModel, visionModel, proseModel, agentName, visionName);
     }
 
     /**

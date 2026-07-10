@@ -2,6 +2,7 @@ package de.bsommerfeld.wsbg.terminal.agent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.inject.Singleton;
+import de.bsommerfeld.wsbg.terminal.core.util.SnapshotFreshness;
 import de.bsommerfeld.wsbg.terminal.core.util.StorageUtils;
 import de.bsommerfeld.wsbg.terminal.db.HeadlineRecord;
 import jakarta.inject.Inject;
@@ -30,9 +31,10 @@ import java.util.Optional;
  *       re-embedding) and the same shown-image bookkeeping.</li>
  * </ul>
  *
- * <p>Same short-TTL contract as the Reddit snapshot ({@code
- * reddit.snapshot-ttl-minutes}): restored only if younger than the TTL, deleted
- * otherwise. Best-effort — any I/O/parse failure degrades to "no snapshot".
+ * <p>Same freshness contract as the Reddit snapshot ({@code
+ * reddit.snapshot-ttl-minutes}, day-or-TTL rule via {@link SnapshotFreshness}):
+ * restored when from today or younger than the TTL, deleted otherwise.
+ * Best-effort — any I/O/parse failure degrades to "no snapshot".
  */
 @Singleton
 public final class AgentSnapshotStore {
@@ -77,13 +79,13 @@ public final class AgentSnapshotStore {
         try {
             AgentSnapshot snapshot = mapper.readValue(file.toFile(), AgentSnapshot.class);
             long ageMinutes = (Instant.now().getEpochSecond() - snapshot.savedAtEpochSeconds()) / 60;
-            if (ageMinutes > ttlMinutes) {
-                LOG.info("Agent snapshot is stale ({} min > {} min TTL); discarding.",
-                        ageMinutes, ttlMinutes);
+            if (!SnapshotFreshness.isFresh(snapshot.savedAtEpochSeconds(), ttlMinutes)) {
+                LOG.info("Agent snapshot is stale ({} min old, not from today); discarding.",
+                        ageMinutes);
                 Files.deleteIfExists(file);
                 return Optional.empty();
             }
-            LOG.info("Agent snapshot is fresh ({} min ≤ {} min TTL): {} vision, {} headlines, {} clusters, {} subject units.",
+            LOG.info("Agent snapshot is fresh ({} min old, day-or-TTL rule, TTL {} min): {} vision, {} headlines, {} clusters, {} subject units.",
                     ageMinutes, ttlMinutes, size(snapshot.visionCache()),
                     size(snapshot.headlines()), size(snapshot.clusters()), size(snapshot.subjectUnits()));
             return Optional.of(snapshot);

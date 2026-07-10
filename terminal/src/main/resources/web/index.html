@@ -21,6 +21,8 @@
   <link rel="stylesheet" href="/css/widget-grid.css">
   <link rel="stylesheet" href="/css/fear-greed.css">
   <link rel="stylesheet" href="/css/eurusd.css">
+  <link rel="stylesheet" href="/css/watchlist.css">
+  <link rel="stylesheet" href="/css/weather.css">
 </head>
 <body>
 <div class="app">
@@ -377,6 +379,140 @@
               <p class="rail-pop-text" data-i18n="fx.info.text">EUR/USD sagt, wie viele US-Dollar ein Euro kostet. Für den Käfig zählt das doppelt: US-Aktien, Optionen und Krypto sind in Dollar gepreist - steigt der Euro, wird der Einstieg für dich billiger, fällt er, teurer. Dazu Tages- und 52-Wochen-Spanne, der offizielle EZB-Referenzkurs und ein Jahr Historie.</p>
             </div>
           </div>
+        </div>
+      </nav>
+    </section>
+
+    <!-- AI watchlist widget: hand-picked subjects, each with a standing AI
+         dossier (name + one-line TLDR, click expands the full report). Like
+         F&G/EUR-USD it has no dashboard slot — grid card + focus fullscreen
+         only. Body is rendered by js/widgets/watchlist.js from the watchlist
+         socket payload; add/remove go back over the same socket type.
+         has-grid-thumb: the grid card shows the DEDICATED .grid-thumb tile
+         (names + day moves, rendered by the same module) instead of a
+         miniature of the real view — add form + row chrome read as noise at
+         card scale. -->
+    <section class="widget has-grid-thumb" id="widget-watchlist">
+      <header class="widget-head">
+        <div class="ident"><span class="glyph glyph-wl" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg></span><span data-i18n="widget.watchlist.title">KI-Watchliste</span><button type="button" class="ki-badge js-ai-notice"
+                  aria-haspopup="dialog"
+                  data-i18n="widget.reddit.ai"
+                  title="Automatisch von KI erstellt, nicht redaktionell geprüft - kann Fehler enthalten. Für Details klicken."
+                  data-i18n-title="widget.reddit.ai.hint">KI-generiert</button></div>
+        <span class="live" data-i18n="common.live">Live</span>
+      </header>
+      <div class="widget-body">
+        <div id="watchlist-detail" class="wl-detail"></div>
+      </div>
+      <!-- Dedicated grid-card tile (shown INSTEAD of .widget-body in the
+           overview): the watched names with their day moves — content-first,
+           no form chrome. Rendered by watchlist.js alongside the list. -->
+      <div class="grid-thumb wl-thumb" id="watchlist-thumb" aria-hidden="true"></div>
+      <button class="grid-hit" type="button" aria-label="KI-Watchliste öffnen"
+              data-i18n-aria-label="grid.open.watchlist">
+        <span class="grid-hit-tag">
+          <svg class="grid-hit-icon-wl" viewBox="0 0 24 24" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+          <span class="grid-hit-label" data-i18n="widget.watchlist.title">KI-Watchliste</span>
+        </span>
+      </button>
+      <nav class="widget-rail" aria-label="Widget-Werkzeuge" data-i18n-aria-label="rail.tools">
+        <!-- No external platform — the widget's own eye glyph is the logo. -->
+        <span class="rail-logo" aria-hidden="true">
+          <svg class="rail-logo-wl" viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+        </span>
+        <span class="rail-sep" aria-hidden="true"></span>
+        <div class="rail-item">
+          <button class="rail-btn" type="button" aria-haspopup="dialog" aria-expanded="false"
+                  title="Info" aria-label="Was ist die KI-Watchliste?"
+                  data-i18n-title="rail.info.title" data-i18n-aria-label="wl.info.aria">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+          </button>
+          <div class="rail-pop" role="dialog" aria-label="Info" data-i18n-aria-label="rail.info.title">
+            <div class="rail-pop-body">
+              <div class="rail-pop-head" data-i18n="rail.info.title">Info</div>
+              <p class="rail-pop-text" data-i18n="wl.info.text">Deine handverlesenen Subjekte, jedes mit einem fortlaufenden KI-Dossier: Die KI sammelt alles, was der Käfig, die News und der Kurs hergeben, und schreibt ihre Analyse mit jeder neuen Evidenz fort - zeitlos formuliert, mit Datumsstempeln, über Neustarts hinweg. Ein Name, der noch nie gefallen ist, wartet einfach, bis der Käfig ihn zum ersten Mal erwähnt. Alles davon ist KI-generiert und kann Fehler enthalten.</p>
+            </div>
+          </div>
+        </div>
+        <!-- EU AI Act disclosure in focus mode: header (and its KI badge) is
+             hidden fullscreen, so the rail carries the notice (same overlay). -->
+        <div class="rail-item">
+          <button class="rail-btn js-ai-notice" type="button"
+                  title="KI-generiert" aria-haspopup="dialog" aria-label="KI-generierte Inhalte - Details"
+                  data-i18n-title="widget.reddit.ai" data-i18n-aria-label="widget.reddit.ai.hint">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+          </button>
+        </div>
+      </nav>
+    </section>
+
+    <!-- Wetterbericht widget: once a day (time configurable in the rail) the
+         AI condenses the WHOLE day's wire into a white-paper-style evening
+         report, frozen together with the day's market stats. No dashboard
+         slot — grid card + focus fullscreen only. Body is rendered by
+         js/widgets/weather.js from the weather socket payload; the report
+         time goes back over the same socket type. -->
+    <section class="widget" id="widget-weather">
+      <header class="widget-head">
+        <div class="ident"><span class="glyph glyph-weather" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M17.5 18.5H7a4 4 0 0 1-.4-7.98 5.5 5.5 0 0 1 10.8-1.02 4.25 4.25 0 0 1 .1 9z"/></svg></span><span data-i18n="widget.weather.title">Wetterbericht</span><button type="button" class="ki-badge js-ai-notice"
+                  aria-haspopup="dialog"
+                  data-i18n="widget.reddit.ai"
+                  title="Automatisch von KI erstellt, nicht redaktionell geprüft - kann Fehler enthalten. Für Details klicken."
+                  data-i18n-title="widget.reddit.ai.hint">KI-generiert</button></div>
+        <span class="live" data-i18n="weather.daily">Täglich</span>
+      </header>
+      <div class="widget-body">
+        <div id="weather-detail" class="weather-detail"></div>
+      </div>
+      <button class="grid-hit" type="button" aria-label="Wetterbericht öffnen"
+              data-i18n-aria-label="grid.open.weather">
+        <span class="grid-hit-tag">
+          <svg class="grid-hit-icon-weather" viewBox="0 0 24 24" aria-hidden="true"><path d="M17.5 18.5H7a4 4 0 0 1-.4-7.98 5.5 5.5 0 0 1 10.8-1.02 4.25 4.25 0 0 1 .1 9z"/></svg>
+          <span class="grid-hit-label" data-i18n="widget.weather.title">Wetterbericht</span>
+        </span>
+      </button>
+      <nav class="widget-rail" aria-label="Widget-Werkzeuge" data-i18n-aria-label="rail.tools">
+        <!-- No external platform — the widget's own cloud glyph is the logo. -->
+        <span class="rail-logo" aria-hidden="true">
+          <svg class="rail-logo-weather" viewBox="0 0 24 24"><path d="M17.5 18.5H7a4 4 0 0 1-.4-7.98 5.5 5.5 0 0 1 10.8-1.02 4.25 4.25 0 0 1 .1 9z"/></svg>
+        </span>
+        <span class="rail-sep" aria-hidden="true"></span>
+        <div class="rail-item">
+          <button class="rail-btn" type="button" aria-haspopup="dialog" aria-expanded="false"
+                  title="Uhrzeit" aria-label="Uhrzeit des Wetterberichts einstellen"
+                  data-i18n-title="weather.time.label" data-i18n-aria-label="weather.time.aria">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+          </button>
+          <div class="rail-pop" role="dialog" aria-label="Uhrzeit" data-i18n-aria-label="weather.time.label">
+            <div class="rail-pop-body">
+              <div class="rail-pop-head" data-i18n="weather.time.label">Uhrzeit</div>
+              <p class="rail-pop-text" data-i18n="weather.time.hint">Uhrzeit, zu der der tägliche Wetterbericht geschrieben wird.</p>
+              <input type="time" id="weather-time-input" class="weather-time-input" value="20:00"
+                     aria-label="Uhrzeit des Wetterberichts" data-i18n-aria-label="weather.time.aria">
+            </div>
+          </div>
+        </div>
+        <div class="rail-item">
+          <button class="rail-btn" type="button" aria-haspopup="dialog" aria-expanded="false"
+                  title="Info" aria-label="Was ist der Wetterbericht?"
+                  data-i18n-title="rail.info.title" data-i18n-aria-label="weather.info.aria">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+          </button>
+          <div class="rail-pop" role="dialog" aria-label="Info" data-i18n-aria-label="rail.info.title">
+            <div class="rail-pop-body">
+              <div class="rail-pop-head" data-i18n="rail.info.title">Info</div>
+              <p class="rail-pop-text" data-i18n="weather.info.text">Einmal am Tag - zur eingestellten Uhrzeit - verdichtet die KI alles, was über die Wire lief, zu einem Tagesreport: Großwetterlage, die tragenden Geschichten mit ihren Zahlen, Randnotizen. Dazu der eingefrorene Tagesstand der Indizes, die meistdiskutierten Papiere und die meistzitierten News. Ältere Berichte bleiben abrufbar. KI-generiert - kann Fehler enthalten.</p>
+            </div>
+          </div>
+        </div>
+        <!-- EU AI Act disclosure in focus mode: header (and its KI badge) is
+             hidden fullscreen, so the rail carries the notice (same overlay). -->
+        <div class="rail-item">
+          <button class="rail-btn js-ai-notice" type="button"
+                  title="KI-generiert" aria-haspopup="dialog" aria-label="KI-generierte Inhalte - Details"
+                  data-i18n-title="widget.reddit.ai" data-i18n-aria-label="widget.reddit.ai.hint">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+          </button>
         </div>
       </nav>
     </section>

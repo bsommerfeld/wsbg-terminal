@@ -34,6 +34,8 @@ const SIZE_F = {
   'widget-fj': 1,
   'widget-fg': 0.62,
   'widget-eurusd': 0.62,
+  'widget-weather': 0.62,
+  'widget-watchlist': 0.8,
 };
 
 // Normalized default centres per widget id.
@@ -51,8 +53,12 @@ const SIZE_F = {
 const DEFAULTS = {
   'widget-reddit': { x: 0.250, y: 0.56 },
   'widget-fj':     { x: 0.750, y: 0.56 },
-  'widget-fg':     { x: 0.400, y: 0.17 },
-  'widget-eurusd': { x: 0.600, y: 0.17 },
+  'widget-fg':     { x: 0.320, y: 0.17 },
+  'widget-eurusd': { x: 0.500, y: 0.17 },
+  'widget-weather': { x: 0.680, y: 0.17 },
+  // The watchlist has no dashboard pane to inherit a position from — it seeds
+  // dead centre between the two big panes; separate() makes room.
+  'widget-watchlist': { x: 0.500, y: 0.62 },
 };
 
 let main = null;

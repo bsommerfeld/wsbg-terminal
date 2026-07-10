@@ -40,6 +40,8 @@ public class AgentBrain {
     private ChatModel agentModel;
     /** Same gemma4 model as {@link #agentModel}, but a TIGHT numPredict — for headline composition. */
     private ChatModel composeModel;
+    /** Same gemma4 model, FREE-FORM output (no JSON mode) — for Wetterbericht prose. */
+    private ChatModel proseModel;
     private String activeAgentModel;
 
     private final GlobalConfig config;
@@ -69,6 +71,7 @@ public class AgentBrain {
         this.agentModel = models.agentModel();
         this.composeModel = models.composeModel();
         this.visionModel = models.visionModel();
+        this.proseModel = models.proseModel();
         this.activeAgentModel = models.activeAgentModel();
         this.userLanguage = this.config.getUser().getUserLanguage();
 
@@ -209,6 +212,11 @@ public class AgentBrain {
     /** The tight-numPredict compose model (headline composition); see {@link #composeModel}. */
     public ChatModel getComposeModel() {
         return composeModel;
+    }
+
+    /** The free-form prose model (no JSON mode) — Wetterbericht digests + report text. */
+    public ChatModel getProseModel() {
+        return proseModel;
     }
 
     /** Returns the resolved Ollama model name used by {@link #getAgentModel()}. */

@@ -13,7 +13,8 @@
 /* The Fear&Greed and EUR/USD detail widgets have no dashboard slot (their
    header badges cover the figures there) — they exist in grid + focus only. */
 .main[data-view="dashboard"] > #widget-fg,
-.main[data-view="dashboard"] > #widget-eurusd { display: none; }
+.main[data-view="dashboard"] > #widget-eurusd,
+.main[data-view="dashboard"] > #widget-watchlist { display: none; }
 
 .grid-hit { display: none; }
 
@@ -86,6 +87,31 @@ html[data-theme="light"] .main > .widget.exit-card {
    overlay is the only click target. */
 .main[data-view="grid"] > .widget > .widget-body,
 .main > .widget.exit-card > .widget-body {
+  zoom: var(--grid-zoom, 0.58);
+  pointer-events: none;
+}
+
+/* ---- dedicated grid thumbnails ----
+   A widget whose real view doesn't miniaturise well (form chrome, dense row
+   furniture) opts in with .has-grid-thumb on its <section> and a .grid-thumb
+   direct child: in the overview the card then shows THAT tile instead of the
+   zoomed .widget-body. Same zoom var as the miniatures, so a thumb designed
+   at natural pane size scales with the card exactly like every other card.
+   Hidden everywhere else (dashboard/focus show the real view). */
+.grid-thumb { display: none; }
+.main[data-view="grid"] > .widget.has-grid-thumb > .widget-body,
+.main > .widget.has-grid-thumb.exit-card > .widget-body { display: none; }
+.main[data-view="grid"] > .widget.has-grid-thumb > .grid-thumb,
+.main > .widget.has-grid-thumb.exit-card > .grid-thumb {
+  display: flex;
+  position: absolute;
+  inset: 0;
+  /* The thumb lives INSIDE the zoom, so painted lengths are divided by it —
+     the corner clip must be 13px ON SCREEN (the card's inner radius), not
+     13 zoomed units (~6px), or an opaque thumb overpaints the card's rounded
+     border corners. */
+  border-radius: calc(13px / var(--grid-zoom, 0.58));
+  overflow: hidden;
   zoom: var(--grid-zoom, 0.58);
   pointer-events: none;
 }

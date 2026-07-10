@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditComment;
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
+import de.bsommerfeld.wsbg.terminal.core.util.SnapshotFreshness;
 import de.bsommerfeld.wsbg.terminal.core.util.StorageUtils;
 import jakarta.inject.Inject;
 import org.slf4j.Logger;
@@ -23,10 +24,12 @@ import java.util.Optional;
  * This is the one deliberate crack in the "everything in-memory" rule. The
  * project keeps Reddit state in memory precisely because persisting old
  * snapshots produced <em>ghost clusters</em> — clusters built from posts that
- * had since vanished from the live feed. The mitigation is a hard time-to-live
- * (default 60 min, {@code reddit.snapshot-ttl-minutes}): a snapshot older than
- * the TTL is discarded on load, so only data fresh enough that its posts almost
- * certainly still exist is ever restored. The cold-start scan of a busy
+ * had since vanished from the live feed. The mitigation is the day-or-TTL rule
+ * ({@link SnapshotFreshness}, {@code reddit.snapshot-ttl-minutes}): a snapshot
+ * from today is restored (the evening Wetterbericht needs the day's context to
+ * survive restarts), anything older than today and the short TTL is discarded;
+ * ghost risk within the day is bounded by the normal thread retention. The
+ * cold-start scan of a busy
  * subreddit costs hundreds of requests and minutes of wall-clock under the
  * anonymous rate budget; skipping it on a quick restart is a large saving,
  * especially while developing/testing.
@@ -73,22 +76,24 @@ public final class RedditSnapshotStore {
     }
 
     /**
-     * Loads the snapshot only if it exists and is younger than {@code
-     * ttlMinutes}. A stale snapshot is deleted and {@link Optional#empty()}
-     * returned. {@code ttlMinutes <= 0} disables restore entirely.
+     * Loads the snapshot only if it is from TODAY or still inside {@code
+     * ttlMinutes} (see {@link SnapshotFreshness} — the day window keeps the
+     * Wetterbericht's day-context alive across restarts). A stale snapshot is
+     * deleted and {@link Optional#empty()} returned. {@code ttlMinutes <= 0}
+     * disables restore entirely.
      */
     public synchronized Optional<RedditSnapshot> loadIfFresh(long ttlMinutes) {
         if (ttlMinutes <= 0 || !Files.exists(file)) return Optional.empty();
         try {
             RedditSnapshot snapshot = mapper.readValue(file.toFile(), RedditSnapshot.class);
             long ageMinutes = (Instant.now().getEpochSecond() - snapshot.savedAtEpochSeconds()) / 60;
-            if (ageMinutes > ttlMinutes) {
-                LOG.info("Reddit snapshot is stale ({} min > {} min TTL); discarding.",
-                        ageMinutes, ttlMinutes);
+            if (!SnapshotFreshness.isFresh(snapshot.savedAtEpochSeconds(), ttlMinutes)) {
+                LOG.info("Reddit snapshot is stale ({} min old, not from today); discarding.",
+                        ageMinutes);
                 Files.deleteIfExists(file);
                 return Optional.empty();
             }
-            LOG.info("Reddit snapshot is fresh ({} min ≤ {} min TTL): {} threads, {} comments.",
+            LOG.info("Reddit snapshot is fresh ({} min old, day-or-TTL rule, TTL {} min): {} threads, {} comments.",
                     ageMinutes, ttlMinutes,
                     snapshot.threads() != null ? snapshot.threads().size() : 0,
                     snapshot.comments() != null ? snapshot.comments().size() : 0);

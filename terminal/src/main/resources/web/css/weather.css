@@ -1,0 +1,335 @@
+/* Wetterbericht widget — the daily AI day report.
+   Three states (weather.js): countdown, generating (blur + shimmer ghosts),
+   report (white-paper text on top, frozen day stats below — scrollable).
+   All colors from tokens; direction tint via --green/--red like every other
+   quote surface. */
+
+/* No dashboard slot — grid card + focus fullscreen only (same rule the
+   F&G/EUR-USD detail widgets get in widget-grid.css; kept here so the
+   widget is self-contained). */
+.main[data-view="dashboard"] > #widget-weather { display: none; }
+
+/* NO own scroller/height cap: the .widget-body is the ONE scroller
+   (rows.css, thin scrollbar) — the proven focus-mode pattern. A nested
+   inner scroller capped the report and fought the OSR wheel forwarding. */
+.weather-detail {
+  padding: 18px 22px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ---- waiting: the big countdown ---- */
+
+.weather-wait {
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+}
+.weather-wait-label {
+  font-size: 0.82em;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.weather-count {
+  font-variant-numeric: tabular-nums;
+  font-size: 3.4em;
+  font-weight: 650;
+  letter-spacing: .02em;
+  color: var(--txt);
+}
+.weather-wait-time {
+  font-size: 0.95em;
+  color: var(--amber);
+  font-variant-numeric: tabular-nums;
+}
+.weather-wait-hint {
+  max-width: 46ch;
+  font-size: 0.88em;
+  line-height: 1.5;
+  color: var(--mute);
+}
+
+/* ---- generating: blurred ghost lines with the shimmer sweep ---- */
+
+.weather-generating {
+  margin: auto 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.weather-status {
+  font-size: 0.86em;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--amber);
+}
+.weather-ghosts {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.weather-ghost-gap { height: 6px; }
+/* A ghost text line: blurred bar + the shared shimmer sweeping right.
+   `infinite` is the sanctioned skeleton exception — these elements exist
+   only for the few minutes the model writes, then the report replaces them. */
+.weather-ghost {
+  position: relative;
+  height: 0.9em;
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--mute-2) 32%, transparent);
+  filter: blur(3px);
+  overflow: hidden;
+}
+.weather-ghost::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 15%, var(--txt-2) 50%, transparent 85%);
+  opacity: .25;
+  transform: translateX(-120%);
+  animation: eurusd-skeleton 1.5s ease-in-out infinite;
+}
+
+/* ---- report ---- */
+
+.weather-nav {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.weather-nav-btn {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--bg-1);
+  color: var(--txt-2);
+  font-size: 1.1em;
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color .15s, color .15s, background .15s;
+}
+.weather-nav-btn:hover:not(:disabled) {
+  border-color: var(--mute);
+  color: var(--txt);
+  background: var(--bg-hover);
+}
+.weather-nav-btn:disabled { opacity: .35; cursor: default; }
+.weather-nav-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: center;
+}
+.weather-nav-date {
+  font-weight: 650;
+  color: var(--txt);
+}
+.weather-nav-meta {
+  font-size: 0.8em;
+  color: var(--mute);
+}
+.weather-nav-meta b { color: var(--red); font-weight: 650; }
+
+.weather-text {
+  font-size: 0.98em;
+  line-height: 1.62;
+  color: var(--txt-2);
+}
+.weather-text p { margin: 0 0 0.8em; }
+.weather-text p:last-child { margin-bottom: 0; }
+.weather-text strong { color: var(--txt); }
+
+.weather-next-line {
+  font-size: 0.82em;
+  color: var(--mute);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- day-stats sections (scroll down for more) ---- */
+
+.weather-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding-top: 4px;
+  border-top: 1px solid var(--line-soft);
+}
+.weather-section { min-width: 0; }
+.weather-section-title {
+  margin: 12px 0 10px;
+  font-size: 0.78em;
+  font-weight: 650;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+
+/* Index tiles: name + change pill, house sparkline, points/volume line. */
+.weather-idx-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+}
+.weather-idx {
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: var(--bg-1);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.weather-idx-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.weather-idx-name { font-weight: 650; color: var(--txt); }
+.weather-idx-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.82em;
+  color: var(--mute);
+  font-variant-numeric: tabular-nums;
+}
+
+.weather-spark { width: 100%; height: 36px; display: block; }
+.weather-spark-empty { height: 36px; }
+.weather-spark .line { fill: none; stroke-width: 1.6; stroke: var(--mute); }
+.weather-spark .area { fill: var(--mute); opacity: .12; }
+.weather-spark .dot { fill: var(--mute); }
+.weather-spark.up .line, .weather-spark.up .dot { stroke: var(--green); fill: var(--green); }
+.weather-spark.up .line { fill: none; }
+.weather-spark.up .area { fill: var(--green); }
+.weather-spark.down .line, .weather-spark.down .dot { stroke: var(--red); fill: var(--red); }
+.weather-spark.down .line { fill: none; }
+.weather-spark.down .area { fill: var(--red); }
+
+.weather-pct {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85em;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.weather-pct.up { color: var(--green); }
+.weather-pct.down { color: var(--red); }
+.weather-pct.flat { color: var(--mute); }
+
+/* Ticker + news rows. */
+.weather-tick-list, .weather-news-list {
+  display: flex;
+  flex-direction: column;
+}
+.weather-tick, .weather-news {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 2px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.weather-tick:last-child, .weather-news:last-child { border-bottom: none; }
+.weather-tick-count, .weather-news-count {
+  flex: 0 0 34px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--mute);
+  font-size: 0.85em;
+}
+.weather-tick-name, .weather-news-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--txt-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.weather-tick-sym {
+  margin-left: 6px;
+  font-size: 0.78em;
+  letter-spacing: .06em;
+  color: var(--mute);
+}
+.weather-tick-red {
+  margin-left: 6px;
+  font-size: 0.78em;
+  font-weight: 650;
+  color: var(--red);
+}
+.weather-tick-quote {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.weather-tick-price { color: var(--txt); font-size: 0.9em; }
+.weather-news-src {
+  margin-left: 6px;
+  font-size: 0.78em;
+  color: var(--mute);
+}
+
+/* Time input in the rail popup. */
+.weather-time-input {
+  margin-top: 10px;
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-1);
+  color: var(--txt);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+.weather-time-input:focus-visible {
+  outline: none;
+  border-color: var(--amber);
+}
+
+/* ---- grid card trim: the compact tile shows the hero only (countdown /
+   ghosts / report head + clamped text) — sections and history nav are
+   focus-view content (same treatment as the F&G/EUR-USD tiles). ---- */
+.main[data-view="grid"] > #widget-weather .weather-sections,
+.main[data-view="grid"] > #widget-weather .weather-nav-btn,
+.main[data-view="grid"] > #widget-weather .weather-next-line,
+.main > #widget-weather.exit-card .weather-sections,
+.main > #widget-weather.exit-card .weather-nav-btn,
+.main > #widget-weather.exit-card .weather-next-line { display: none; }
+.main[data-view="grid"] > #widget-weather .weather-detail,
+.main > #widget-weather.exit-card .weather-detail {
+  /* The tile (unlike the scrolling focus view) fills its card, so the hero
+     states (countdown/ghosts) stay vertically composed. */
+  height: 100%;
+  overflow: hidden;
+  padding: 12px 14px;
+}
+.main[data-view="grid"] > #widget-weather .weather-text,
+.main > #widget-weather.exit-card .weather-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 8;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* The cloud glyphs inherit the shared stroke style of .glyph/.rail-logo
+   svgs; explicit here in case the shared rules key on specific classes. */
+.glyph-weather svg, .rail-logo-weather, .grid-hit-icon-weather {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.grid-hit-icon-weather { width: 34px; height: 34px; }
