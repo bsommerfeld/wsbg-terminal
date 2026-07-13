@@ -18,6 +18,7 @@
         <module>currency</module>
         <module>fear-greed</module>
         <module>lang-schwarz</module>
+        <module>tradegate</module>
         <module>wallstreet-online</module>
         <module>source-api</module>
         <module>instrument-corpus</module>
@@ -96,6 +97,11 @@
             <dependency>
                 <groupId>de.bsommerfeld</groupId>
                 <artifactId>lang-schwarz</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>tradegate</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
