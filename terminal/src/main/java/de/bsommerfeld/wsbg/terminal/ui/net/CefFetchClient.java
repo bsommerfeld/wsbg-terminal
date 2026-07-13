@@ -89,11 +89,26 @@ public final class CefFetchClient {
     private static final Duration WARMUP_FETCH_TIMEOUT = Duration.ofSeconds(15);
 
     private final AtomicBoolean started = new AtomicBoolean(false);
+    /** Router handler + load listener registered exactly once — a failed browser
+     *  creation must NOT re-register them on retry (they'd accumulate, audit C5). */
+    private final AtomicBoolean handlersRegistered = new AtomicBoolean(false);
     private final AtomicBoolean warmupRunning = new AtomicBoolean(false);
     private volatile CountDownLatch readyLatch = new CountDownLatch(1);
     private volatile boolean ready = false;
+    /**
+     * Wall-clock ms the last FULL warmup budget expired without success (0 =
+     * never). While set, {@link #ensureReady} fails FAST instead of stalling
+     * every caller 45 s — a known-dead anchor must not train up scheduler
+     * threads (audit C2). Cleared the moment a warmup probe succeeds.
+     */
+    private volatile long warmupExhaustedAt = 0L;
     private volatile CefBrowser browser;
     private volatile long lastReloadAt = 0L;
+
+    /** How long a caller may wait on a HEALTHY (first-use/reloading) session. */
+    private static final Duration READY_WAIT = Duration.ofSeconds(45);
+    /** How long a caller may wait when the last full warmup already failed. */
+    private static final Duration READY_WAIT_EXHAUSTED = Duration.ofSeconds(3);
 
     private final AtomicLong nextId = new AtomicLong();
     private final Map<Long, Pending> pending = new ConcurrentHashMap<>();
@@ -132,7 +147,15 @@ public final class CefFetchClient {
      *                   not arrive within {@code timeout}
      */
     public HttpResult fetch(String url, Duration timeout) throws Exception {
-        ensureReady(Duration.ofSeconds(45));
+        // Hard rule: never fetch FROM the EDT. The whole JCEF pump (page loads,
+        // injected JS, router replies) rides EDT cycles — a blocked EDT can't
+        // pump the work that would complete this future: deadlock-until-timeout.
+        if (SwingUtilities.isEventDispatchThread()) {
+            throw new IllegalStateException(
+                    "CefFetchClient.fetch must not be called on the EDT (JCEF is EDT-pumped)");
+        }
+        // Fail fast on a known-dead anchor instead of stalling every caller 45 s.
+        ensureReady(warmupExhaustedAt != 0 ? READY_WAIT_EXHAUSTED : READY_WAIT);
         HttpResult result = rawFetch(url, timeout);
         // A restricted status mid-session usually means the document's session
         // went stale; reload the anchor so the next request runs against a fresh
@@ -208,6 +231,9 @@ public final class CefFetchClient {
         kickWarmup(); // re-arm if a previous warmup expired without success
         CountDownLatch latch = readyLatch;
         if (!latch.await(timeout.toMillis(), TimeUnit.MILLISECONDS)) {
+            // The latch may have been swapped by a concurrent reloadAnchor while
+            // we waited on the old instance — readiness itself is the truth.
+            if (ready) return;
             throw new IllegalStateException(
                     "CEF fetch browser for '" + label + "' session not ready within " + timeout);
         }
@@ -238,6 +264,7 @@ public final class CefFetchClient {
                         status = r.status();
                         if (status == 200) {
                             ready = true;
+                            warmupExhaustedAt = 0L; // healthy again — full patience restored
                             readyLatch.countDown();
                             LOG.info("CEF fetch '{}' session ready after {} probe(s).", label, attempt);
                             return;
@@ -260,8 +287,9 @@ public final class CefFetchClient {
                     Thread.sleep(delay);
                 }
                 if (!ready) {
-                    LOG.info("CEF fetch '{}' warmup gave up after {} — fallback handles it.",
-                            label, java.time.Duration.ofMillis(WARMUP_BUDGET_MS));
+                    warmupExhaustedAt = System.currentTimeMillis();
+                    LOG.info("CEF fetch '{}' warmup gave up after {} — callers fail fast, "
+                            + "fallback handles it.", label, java.time.Duration.ofMillis(WARMUP_BUDGET_MS));
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -275,6 +303,13 @@ public final class CefFetchClient {
 
     private void start() {
         if (!started.compareAndSet(false, true)) return;
+        registerHandlersOnce();
+        createBrowserOnEdt();
+    }
+
+    /** One-shot registration — survives a failed browser creation without duplicating (audit C5). */
+    private void registerHandlersOnce() {
+        if (!handlersRegistered.compareAndSet(false, true)) return;
 
         cefHost.addFetchQueryHandler(new CefMessageRouterHandlerAdapter() {
             @Override
@@ -302,8 +337,6 @@ public final class CefFetchClient {
                 kickWarmup();
             }
         });
-
-        createBrowserOnEdt();
     }
 
     /**

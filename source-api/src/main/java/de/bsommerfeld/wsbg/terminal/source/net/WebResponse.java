@@ -27,9 +27,22 @@ public record WebResponse(int status, String body, Map<String, String> headers) 
         return new WebResponse(0, "", Map.of());
     }
 
-    /** True when the status is a definitive answer (2xx success or 404 not-found). */
+    /**
+     * True when the status is a definitive answer another transport could not
+     * improve on, so a {@link WebFetchChain} must stop here: 2xx success,
+     * <b>304 not-modified</b> (the conditional-request success — without it a
+     * direct-first chain would "fall through" every cache revalidation into the
+     * browser joker and refetch a full 200, 2026-07-13 audit C1), and the
+     * plain client errors that are about the REQUEST, not the client's
+     * fingerprint (404/400/405/410/451 — a real browser gets the same answer;
+     * 401 stays NON-definitive on purpose: Yahoo's crumb-locked endpoints
+     * 401 a bare client but can answer a browser session). Wall-shaped
+     * statuses (403/429/5xx) stay non-definitive so the joker can rescue them.
+     */
     public boolean isDefinitive() {
-        return (status >= 200 && status < 300) || status == 404;
+        return (status >= 200 && status < 300) || status == 304
+                || status == 404 || status == 400 || status == 405
+                || status == 410 || status == 451;
     }
 
     /** Case-insensitive header lookup. */

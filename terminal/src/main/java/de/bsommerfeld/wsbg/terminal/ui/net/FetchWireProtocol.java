@@ -37,6 +37,14 @@ final class FetchWireProtocol {
     }
 
     /**
+     * Page-side abort for a server that never answers: without it the promise
+     * (and eventually the whole body) stays alive in the hidden page until the
+     * next anchor reload — the Java side times out cleanly, the page did not.
+     * Comfortably above every caller timeout, so it never races a healthy fetch.
+     */
+    static final int PAGE_ABORT_MS = 60_000;
+
+    /**
      * Builds the injected fetch script. The URL and tag are emitted as JSON
      * string literals (valid JS literals) so no value can break out of the
      * script. The browser slices the body so a multi-MB response survives the
@@ -47,7 +55,9 @@ final class FetchWireProtocol {
         String jsUrl = JSON.writeValueAsString(url);
         return "(function(){var TAG=" + jsTag + ",ID=" + id + ",URL=" + jsUrl + ",D='\\u0001';"
                 + "function q(s){window.wsbgFetchQuery({request:s,onSuccess:function(){},onFailure:function(){}});}"
-                + "fetch(URL,{credentials:'" + credentials + "',headers:{'Accept':'application/json'}}).then(function(r){"
+                + "var AC=new AbortController();setTimeout(function(){AC.abort();}," + PAGE_ABORT_MS + ");"
+                + "fetch(URL,{credentials:'" + credentials + "',signal:AC.signal,"
+                + "headers:{'Accept':'application/json'}}).then(function(r){"
                 + "var h={};r.headers.forEach(function(v,k){h[k]=v;});"
                 + "return r.text().then(function(t){"
                 + "var CH=" + CHUNK + ",total=Math.max(1,Math.ceil(t.length/CH));"

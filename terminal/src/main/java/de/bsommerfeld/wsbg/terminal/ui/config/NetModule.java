@@ -15,6 +15,7 @@ import de.bsommerfeld.wsbg.terminal.reddit.RedditSource;
 import de.bsommerfeld.wsbg.terminal.reddit.RssRedditScraper;
 import de.bsommerfeld.wsbg.terminal.source.net.TokenBucketRateLimiter;
 import de.bsommerfeld.wsbg.terminal.source.net.CachingWebFetcher;
+import de.bsommerfeld.wsbg.terminal.source.net.DirectFirst;
 import de.bsommerfeld.wsbg.terminal.source.net.DirectWebFetcher;
 import de.bsommerfeld.wsbg.terminal.source.net.WebFetchChain;
 import de.bsommerfeld.wsbg.terminal.source.net.WebFetcher;
@@ -56,9 +57,19 @@ final class NetModule extends AbstractModule {
      * its own headers and drops the conditional ones; that path just keeps
      * returning full 200s — a clean fallback, not a bug.
      */
+    /**
+     * The ONE browser-joker transport — shared by both chains below so an origin
+     * reachable through both never anchors two hidden tabs (2026-07-13 audit C4).
+     */
     @Provides
     @Singleton
-    WebFetcher provideWebFetcher(GlobalConfig config, CefHost cefHost) {
+    CefWebFetcher provideCefWebFetcher(CefHost cefHost) {
+        return new CefWebFetcher(cefHost);
+    }
+
+    @Provides
+    @Singleton
+    WebFetcher provideWebFetcher(GlobalConfig config, CefWebFetcher joker) {
         DirectWebFetcher direct = new DirectWebFetcher();
         WebFetcher chain;
         if (config.getYahoo().isBrowserFetchEnabled()) {
@@ -67,7 +78,7 @@ final class NetModule extends AbstractModule {
             // forced CEF init off the EDT (before the window initializes it on the
             // EDT), which hangs on macOS. A correct prewarm must run AFTER the
             // window has brought CEF up; deferred until that hook exists.
-            chain = new WebFetchChain(List.of(new CefWebFetcher(cefHost), direct));
+            chain = new WebFetchChain(List.of(joker, direct));
         } else {
             chain = new WebFetchChain(List.of(direct));
         }
@@ -75,6 +86,33 @@ final class NetModule extends AbstractModule {
                 ? new CachingWebFetcher(chain)
                 : chain;
         LOG.info("WebFetcher: {}", fetcher.name());
+        return fetcher;
+    }
+
+    /**
+     * The {@link DirectFirst} variant for keyless APIs WITHOUT a bot wall
+     * (Consorsbank, onvista, Tradegate, BaFin, Bundesanzeiger, Google News):
+     * plain HTTP leads — these hosts answer a bare client with 200 every time,
+     * so the hidden Chromium is never touched and its per-origin tabs never
+     * spawn — with the browser joker only as the per-request FALLBACK should
+     * such a host ever grow a wall. Keeps the joker's capacity reserved for
+     * the hosts that genuinely need a real browser fingerprint (the
+     * unannotated browser-first chain above). Load-bearing prerequisite: a 304
+     * counts as DEFINITIVE in {@code WebResponse.isDefinitive} — otherwise every
+     * conditional revalidation would "fall through" into the joker (audit C1).
+     */
+    @Provides
+    @Singleton
+    @DirectFirst
+    WebFetcher provideDirectFirstWebFetcher(GlobalConfig config, CefWebFetcher joker) {
+        DirectWebFetcher direct = new DirectWebFetcher();
+        WebFetcher chain = config.getYahoo().isBrowserFetchEnabled()
+                ? new WebFetchChain(List.of(direct, joker))
+                : new WebFetchChain(List.of(direct));
+        WebFetcher fetcher = config.getNet().isConditionalRequests()
+                ? new CachingWebFetcher(chain)
+                : chain;
+        LOG.info("WebFetcher (direct-first): {}", fetcher.name());
         return fetcher;
     }
 
