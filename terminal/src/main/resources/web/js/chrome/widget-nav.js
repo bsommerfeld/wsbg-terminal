@@ -1,4 +1,4 @@
-// Widget system navigation: dashboard ⇄ grid (Mission-Control overview) ⇄
+// Widget system navigation: dashboard ⇄ grid (fixed-raster overview) ⇄
 // focus (one widget fullscreen). The state lives as [data-view] on .main plus
 // .focused on the fullscreen widget; widget-grid.css owns each state's static
 // geometry. This module owns the TRANSITIONS: every view switch is
@@ -43,8 +43,8 @@ export function initWidgetNav() {
   document.querySelectorAll('.js-grid-toggle').forEach(b =>
     b.addEventListener('click', onGridButton));
 
-  // Card geometry, drag & drop and click-vs-drag live in grid-layout.js;
-  // it calls back here when a card is activated (click / Enter).
+  // Card geometry and wheel forwarding live in grid-layout.js; it calls
+  // back here when a card is activated (click / Enter).
   initGridLayout(main, {
     onActivate: w => { if (view === 'grid') setView('focus', w); },
   });
@@ -139,7 +139,7 @@ function setView(next, focusEl = null, opts = {}) {
   for (const w of widgets) if (isVisible(w)) before.set(w, w.getBoundingClientRect());
 
   // MUTATE: flip the state, let CSS lay out the target view. The grid's card
-  // geometry is inline px (free-form layout) — applied on entry, removed on
+  // geometry is inline px (fixed raster) — applied on entry, removed on
   // exit, both BEFORE the "after" rects are measured below.
   view = next;
   main.dataset.view = next;

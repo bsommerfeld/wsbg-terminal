@@ -60,8 +60,8 @@
               data-i18n-title="titlebar.update.title" data-i18n-aria-label="titlebar.update.aria">
         <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       </button>
-      <!-- Widget grid (Mission-Control-style overview): toggles the zoomed-out
-           view of all widgets; clicking a card zooms it to fullscreen. Sits
+      <!-- Widget grid (fixed-raster overview): toggles the zoomed-out view
+           of all widgets; clicking a card zooms it to fullscreen. Sits
            inboard of the heart, toward the window centre. -->
       <button class="iconbtn grid-btn js-grid-toggle" title="Widget-Übersicht" aria-label="Widget-Übersicht öffnen"
               aria-pressed="false"
@@ -86,7 +86,7 @@
   </header>
 
   <!-- data-view drives the widget system's three states (widget-nav.js):
-       "dashboard" (classic split), "grid" (Mission-Control overview of all
+       "dashboard" (classic split), "grid" (fixed-raster overview of all
        widgets as cards) and "focus" (one widget fullscreen, centred column +
        floating tool rail). Transitions between them are FLIP-animated. -->
   <main class="main" data-view="dashboard">

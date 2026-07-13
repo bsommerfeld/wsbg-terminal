@@ -1,9 +1,9 @@
 /* Widget system — the three views driven by [data-view] on .main
    (widget-nav.js): "dashboard" (classic split, base.css owns the layout),
-   "grid" (Mission-Control overview: every widget a scaled-down card) and
-   "focus" (one widget fullscreen: centred column + floating tool rail).
-   The transitions BETWEEN the views are FLIP-animated in JS; everything
-   here is the static geometry of each state. */
+   "grid" (fixed-grid overview: every widget a scaled-down card, anchored in
+   a deterministic raster) and "focus" (one widget fullscreen: centred column
+   + floating tool rail). The transitions BETWEEN the views are FLIP-animated
+   in JS; everything here is the static geometry of each state. */
 
 /* Anchor for the grid hit overlay + the focus tool rail. */
 .main > .widget { position: relative; }
@@ -19,11 +19,12 @@
 
 .grid-hit { display: none; }
 
-/* ---- grid view (Mission Control) ---- */
+/* ---- grid view (fixed raster overview) ---- */
 
 .main[data-view="grid"] {
-  /* Free-form canvas: grid-layout.js positions each card absolutely (inline
-     px left/top/width, persisted drag-&-drop arrangement, gap enforced). */
+  /* Anchored canvas: grid-layout.js positions each card absolutely (inline
+     px left/top/width) in a deterministic grid — uniform card size, fixed
+     order, recomputed from the container size on every resize. */
   display: block;
   position: relative;
   /* Subtle stage vignette so the cards read as elevated over a backdrop. */
@@ -38,8 +39,8 @@
 .main[data-view="grid"] > .widget,
 .main > .widget.exit-card {
   position: absolute;
-  /* Size comes from grid-layout.js: the widget's ORIGINAL pane proportions ×
-     one common scale (Mission-Control-relative). No aspect-ratio here. */
+  /* Size comes from grid-layout.js: one uniform card size fitted to the
+     fixed raster. No aspect-ratio here. */
   border: 1px solid var(--line);
   border-radius: 14px;
   background: var(--bg);
@@ -54,23 +55,11 @@
   border-radius: 13px;
   overflow: hidden;
 }
-/* While dragging: lifted, no lag from transitions, above the neighbours. */
-.main[data-view="grid"] > .widget.dragging {
-  transition: none;
-  z-index: 30;
-  border-color: var(--mute);
-  box-shadow: 0 40px 100px oklch(0 0 0 / .6);
-}
-/* Displaced neighbours glide to their post-drop spot. */
-.main[data-view="grid"] > .widget.settle {
-  transition: left .35s cubic-bezier(.25, .9, .3, 1), top .35s cubic-bezier(.25, .9, .3, 1),
-              border-color .22s, box-shadow .22s;
-}
 html[data-theme="light"] .main[data-view="grid"] > .widget,
 html[data-theme="light"] .main > .widget.exit-card {
   box-shadow: 0 26px 80px oklch(0 0 0 / .18);
 }
-.main[data-view="grid"] > .widget:hover:not(.dragging) {
+.main[data-view="grid"] > .widget:hover {
   transform: translateY(-6px) scale(1.02);
   border-color: var(--mute);
   box-shadow: 0 34px 90px oklch(0 0 0 / .55);
@@ -117,9 +106,8 @@ html[data-theme="light"] .main > .widget.exit-card {
   pointer-events: none;
 }
 
-/* The F&G card is a compact tile showing ONLY the gauge (the "Diagramm"),
-   centred — band chips, meta row, chart and attribution stay in focus view.
-   grid-layout.js sizes the tile smaller (SIZE_F). */
+/* The F&G card shows ONLY the gauge (the "Diagramm"), centred — band chips,
+   meta row, chart and attribution stay in focus view. */
 .main[data-view="grid"] > #widget-fg .fg-bands,
 .main[data-view="grid"] > #widget-fg .fg-hero-meta,
 .main[data-view="grid"] > #widget-fg .fg-prevs,
@@ -171,10 +159,8 @@ html[data-theme="light"] .main > .widget.exit-card {
   position: absolute; inset: 0; z-index: 6;
   border-radius: 14px;
   background: linear-gradient(to top, oklch(0 0 0 / .30), transparent 36%);
-  cursor: grab;
-  touch-action: none; /* the hit owns the pointer: drag, don't scroll */
+  cursor: pointer;
 }
-.main[data-view="grid"] > .widget.dragging .grid-hit { cursor: grabbing; }
 html[data-theme="light"] .main[data-view="grid"] .grid-hit,
 html[data-theme="light"] .main > .widget.exit-card .grid-hit {
   background: linear-gradient(to top, oklch(1 0 0 / .55), transparent 36%);
