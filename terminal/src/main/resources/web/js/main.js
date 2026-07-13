@@ -120,28 +120,40 @@ window.addEventListener('wsbg:languagechange', () => {
   }
 });
 
-initTheme();
-initSettings(socket);
+// One broken widget must never blank the whole terminal (live-observed
+// 2026-07-13: a single ReferenceError in one widget's init aborted the module
+// body — every later init never ran, completely empty UI). A failed init
+// costs its widget, logs loudly, and the rest of the terminal keeps living.
+function safeInit(name, fn) {
+  try {
+    fn();
+  } catch (e) {
+    console.error(`[init] ${name} failed — widget dead, terminal continues:`, e);
+  }
+}
+
+safeInit('theme', () => initTheme());
+safeInit('settings', () => initSettings(socket));
 // Before the overlays/popovers: their document-level Escape handlers close
 // their own layer, and widget-nav's (registered here, i.e. earlier) must see
 // that layer still open to know the key was theirs — otherwise one Escape
 // would close an overlay AND navigate out of the focus view.
-initWidgetNav();
-initChangelog(socket);
-initNewsSources();
-initAiNotice();
-initHeadlineFilter();
-initWidgetRail(socket);
+safeInit('widget-nav', () => initWidgetNav());
+safeInit('changelog', () => initChangelog(socket));
+safeInit('news-sources', () => initNewsSources());
+safeInit('ai-notice', () => initAiNotice());
+safeInit('headline-filter', () => initHeadlineFilter());
+safeInit('widget-rail', () => initWidgetRail(socket));
 // AFTER the rail: the search button's own click handler must run after the
 // rail's generic popup toggle (same-element listener order) to see the new state.
-initHeadlineSearch(socket);
-initWatchlist(socket);
-initWeather(socket);
-initDeepDive(socket);
-initTitlebar(socket);
-initFooter();
-initDonate();
-initExternalLinks(socket);
-initKeyboardCopy();
+safeInit('headline-search', () => initHeadlineSearch(socket));
+safeInit('watchlist', () => initWatchlist(socket));
+safeInit('weather', () => initWeather(socket));
+safeInit('deepdive', () => initDeepDive(socket));
+safeInit('titlebar', () => initTitlebar(socket));
+safeInit('footer', () => initFooter());
+safeInit('donate', () => initDonate());
+safeInit('external-links', () => initExternalLinks(socket));
+safeInit('keyboard-copy', () => initKeyboardCopy());
 
 socket.connect();
