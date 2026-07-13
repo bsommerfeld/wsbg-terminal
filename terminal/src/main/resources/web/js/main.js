@@ -25,6 +25,7 @@ import { renderFearGreed } from './widgets/fear-greed.js';
 import { renderFearGreedDetail } from './widgets/fg-detail.js';
 import { initWatchlist, renderWatchlist, renderWatchlistSubjects } from './widgets/watchlist.js';
 import { initWeather, renderWeather } from './widgets/weather.js';
+import { initDeepDive, renderDeepDive, renderDeepDiveReport } from './widgets/deepdive.js';
 import { setMarketCalendar } from './markets/state.js';
 import { t } from './i18n/i18n.js';
 
@@ -77,6 +78,8 @@ const WIDGETS = [
   { topic: 'watchlist',      relang: true, render: p => renderWatchlist(p) },
   // Daily Wetterbericht: countdown / generating shimmer / the archived reports.
   { topic: 'weather',        relang: true, render: p => renderWeather(document.getElementById('weather-detail'), p) },
+  // KI-DD: one fixed research report per subject, generated on demand.
+  { topic: 'deepdive',       relang: true, render: p => renderDeepDive(p) },
   { topic: 'reddit-status',  relang: true, render: p => applyRedditStatus(p) },
   { topic: 'donation-stats',               render: p => setDonationStats(p) },
   { topic: 'os-appearance',                render: p => { if (p) setSystemAppearance(p.mode); } },
@@ -100,6 +103,9 @@ socket.on('archive-results', payload => {
 
 // Watchlist add-suggestions (requested when the add input gains focus).
 socket.on('watchlist-subjects', renderWatchlistSubjects);
+
+// One full KI-DD report, requested from the history list.
+socket.on('deepdive-report', renderDeepDiveReport);
 
 // Live language switch: setLang() has already rewritten the static markup;
 // re-render the language-sensitive widgets from their last payload so their
@@ -125,6 +131,7 @@ initHeadlineFilter();
 initWidgetRail(socket);
 initWatchlist(socket);
 initWeather(socket);
+initDeepDive(socket);
 initTitlebar(socket);
 initFooter();
 initDonate();

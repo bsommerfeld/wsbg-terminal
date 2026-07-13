@@ -327,6 +327,12 @@ public final class CefHost {
         loadEndListeners.add(listener);
     }
 
+    /** Removes a load-end listener again — short-lived consumers (e.g. a one-shot
+     *  PDF print browser) must not accumulate in the multiplex list. */
+    public void removeLoadEndListener(BiConsumer<CefBrowser, Integer> listener) {
+        loadEndListeners.remove(listener);
+    }
+
     public synchronized void dispose() {
         if (cefApp != null) {
             try {

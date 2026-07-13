@@ -42,5 +42,8 @@ final class BridgeModule extends AbstractModule {
         // Wetterbericht widget backend: schedule state + report history out,
         // report-time setting in.
         bind(WeatherReportBridge.class).asEagerSingleton();
+        // KI-DD backend: generate/get/export-pdf inbound, generation progress +
+        // the archived reports outbound (also constructs the DeepDiveService).
+        bind(de.bsommerfeld.wsbg.terminal.ui.bridge.DeepDiveBridge.class).asEagerSingleton();
     }
 }

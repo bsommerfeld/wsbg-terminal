@@ -1,0 +1,318 @@
+/* KI-DD widget (grid card + focus; no dashboard slot). One fixed research
+   report per subject: generate form on top, then either the progress state
+   (three passes narrated), the current report (markdown with amber-ticked
+   crossheads, PDF export button), and the history of earlier reports. All
+   colors ride the tokens; no looping animations (OSR paint rule). */
+
+.dd-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 0 24px;
+}
+
+/* ---- generate form (mirrors the watchlist add form) ---- */
+
+.dd-form {
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.dd-input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  color: var(--txt);
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 9px 14px;
+  outline: none;
+  transition: border-color .15s;
+}
+.dd-input:focus { border-color: var(--mute); }
+.dd-input::placeholder { color: var(--mute); }
+.dd-btn {
+  font-family: "Inter", sans-serif;
+  font-weight: 600;
+  font-size: var(--font-chrome);
+  letter-spacing: .04em;
+  color: var(--txt);
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 9px 18px;
+  cursor: pointer;
+  transition: border-color .15s, color .15s;
+}
+.dd-btn:hover:not(:disabled) { border-color: var(--amber); color: var(--amber); }
+.dd-btn:disabled { opacity: .45; cursor: default; }
+
+.dd-empty {
+  color: var(--mute);
+  font-size: .9em;
+  line-height: 1.6;
+  padding: 18px 4px;
+}
+
+/* ---- progress: the three passes, narrated ---- */
+
+.dd-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 4px;
+}
+.dd-progress-subject {
+  font-family: "Inter", sans-serif;
+  font-weight: 650;
+  font-size: 1.05em;
+}
+.dd-progress-stage {
+  color: var(--txt-2);
+  font-size: .92em;
+}
+.dd-progress-steps {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.dd-step {
+  flex: 1;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--line);
+}
+.dd-step.done { background: var(--amber); }
+
+/* ---- the report ---- */
+
+.dd-report-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.dd-report-title {
+  font-family: "Inter", sans-serif;
+  font-weight: 650;
+  font-size: 1.12em;
+}
+.dd-report-meta {
+  font-family: "JetBrains Mono", monospace;
+  font-size: .78em;
+  color: var(--mute);
+}
+.dd-pdf {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: "Inter", sans-serif;
+  font-weight: 600;
+  font-size: .8em;
+  letter-spacing: .04em;
+  color: var(--txt-2);
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: border-color .15s, color .15s;
+}
+.dd-pdf:hover { border-color: var(--amber); color: var(--amber); }
+.dd-pdf svg {
+  width: 13px; height: 13px;
+  stroke: currentColor; stroke-width: 2; fill: none;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.dd-pdf-note {
+  font-size: .78em;
+  color: var(--mute);
+}
+
+/* The report body reads like a paper, not a dossier: five uppercase tracked
+   crossheads (amber tick + trailing hairline, the kicker pattern), a lead
+   paragraph under the first crosshead, calm paragraph rhythm, tabular
+   figures so inline values align. */
+.dd-report {
+  max-width: 70ch;
+  font-variant-numeric: tabular-nums;
+}
+.dd-report p {
+  color: var(--txt-2);
+  font-size: .95em;
+  line-height: 1.75;
+}
+.dd-report p + p { margin-top: 12px; }
+.dd-report h1, .dd-report h2, .dd-report h3 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: "Inter", sans-serif;
+  font-weight: 700;
+  font-size: .74em;
+  letter-spacing: .15em;
+  text-transform: uppercase;
+  color: var(--txt);
+  margin: 24px 0 10px;
+  padding-left: 10px;
+  border-left: 2px solid var(--amber);
+}
+.dd-report h1::after, .dd-report h2::after, .dd-report h3::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--line-soft);
+}
+.dd-report h1:first-child, .dd-report h2:first-child, .dd-report h3:first-child { margin-top: 2px; }
+/* The standfirst: the first paragraph of the report answers "worum geht es?"
+   and gets to speak up. */
+.dd-report h2:first-child + p {
+  font-size: 1.03em;
+  color: var(--txt);
+  line-height: 1.7;
+}
+.dd-report strong { color: var(--txt); font-weight: 650; }
+/* The only list a DD carries is the deterministic source register ("- [n] …",
+   house-maintained, never model output) — set like footnotes: small, muted,
+   hanging numbers. */
+.dd-report ul, .dd-report ol { padding-left: 4px; list-style: none; }
+.dd-report li {
+  color: var(--mute);
+  font-size: .82em;
+  line-height: 1.6;
+  padding-left: 14px;
+  text-indent: -14px;
+}
+
+/* ---- figures (server-rendered SVG, white-paper style) ----
+   Colors ride --ddc-* custom properties: DARK values here (the app is
+   dark-first), light overrides below; the SVG's own var() fallbacks are the
+   light palette, which is what the PDF renders. Series hues are the validated
+   reference pair (blue/aqua); gain/loss maps to the app's green/red tokens —
+   every such mark carries its signed value as text (CVD relief). */
+
+.dd-figure {
+  margin: 16px 0 22px;
+  max-width: 70ch;
+  --ddc-ink: var(--txt);
+  --ddc-mute: var(--mute);
+  --ddc-grid: var(--line-soft);
+  --ddc-axis: var(--line);
+  --ddc-surface: var(--bg);
+  --ddc-pos: var(--green);
+  --ddc-neg: var(--red);
+  --ddc-s1: #3987e5;
+  --ddc-s2: #199e70;
+}
+html[data-theme="light"] .dd-figure {
+  --ddc-s1: #2a78d6;
+  --ddc-s2: #1baf7a;
+}
+.dd-figure svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.dd-figure figcaption {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.dd-figure-title {
+  flex-shrink: 0;
+  font-family: "Inter", sans-serif;
+  font-weight: 600;
+  font-size: .78em;
+  color: var(--txt-2);
+}
+.dd-figure-rule {
+  flex: 1;
+  border-top: 1px solid var(--line-soft);
+  transform: translateY(-.28em);
+}
+.dd-figure-note {
+  flex-shrink: 0;
+  font-family: "JetBrains Mono", monospace;
+  font-size: .7em;
+  color: var(--mute);
+}
+
+/* ---- history of earlier reports ---- */
+
+.dd-history { list-style: none; padding: 0; }
+.dd-history li { border-bottom: 1px solid var(--line-soft); }
+.dd-history-btn {
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  text-align: left;
+  font: inherit;
+  color: var(--txt);
+  background: none;
+  border: 0;
+  padding: 9px 4px;
+  cursor: pointer;
+}
+.dd-history-btn:hover .dd-history-name { color: var(--amber); }
+.dd-history-btn.active .dd-history-name { color: var(--amber); }
+.dd-history-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  transition: color .15s;
+}
+.dd-history-meta {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-family: "JetBrains Mono", monospace;
+  font-size: .78em;
+  color: var(--mute);
+}
+
+/* ---- section head reuse (kicker + hairline, watchlist pattern) ---- */
+
+.dd-sec-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 8px 0 6px;
+}
+.dd-sec-kicker {
+  flex-shrink: 0;
+  font-family: "Inter", sans-serif;
+  font-weight: 700;
+  font-size: .72em;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.dd-sec-rule {
+  flex: 1;
+  border-top: 1px solid var(--line-soft);
+  transform: translateY(-.28em);
+}
+
+/* ---- header glyph + grid/rail icons (amber ident like the siblings) ---- */
+
+.glyph-dd svg {
+  width: 22px; height: 22px;
+  stroke: var(--amber); stroke-width: 1.8; fill: none;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.grid-hit-icon-dd {
+  width: 34px; height: 34px;
+  color: var(--txt);
+  stroke: currentColor; stroke-width: 1.8; fill: none;
+  stroke-linecap: round; stroke-linejoin: round;
+  filter: drop-shadow(0 2px 6px oklch(0 0 0 / .45));
+}
+.rail-logo-dd {
+  width: 24px; height: 24px;
+  stroke: currentColor; stroke-width: 1.8; fill: none;
+  stroke-linecap: round; stroke-linejoin: round;
+}

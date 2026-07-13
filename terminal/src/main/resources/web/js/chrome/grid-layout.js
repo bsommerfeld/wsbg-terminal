@@ -36,6 +36,7 @@ const SIZE_F = {
   'widget-eurusd': 0.62,
   'widget-weather': 0.62,
   'widget-watchlist': 0.8,
+  'widget-deepdive': 0.8,
 };
 
 // Normalized default centres per widget id.
@@ -59,6 +60,8 @@ const DEFAULTS = {
   // The watchlist has no dashboard pane to inherit a position from — it seeds
   // dead centre between the two big panes; separate() makes room.
   'widget-watchlist': { x: 0.500, y: 0.62 },
+  // The KI-DD seeds beside the watchlist (its on-demand sibling).
+  'widget-deepdive': { x: 0.780, y: 0.62 },
 };
 
 let main = null;

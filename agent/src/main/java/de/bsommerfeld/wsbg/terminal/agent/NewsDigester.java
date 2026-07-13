@@ -112,6 +112,23 @@ final class NewsDigester {
         return byLink.getOrDefault(link.trim(), "");
     }
 
+    /**
+     * Synchronous read for the on-demand KI-DD: fetches + distills the article
+     * INLINE on the caller's thread (the DD's own daemon worker — never the
+     * editorial pools) and returns the digest, or {@code ""} when the article
+     * is unreadable or {@code read-articles} is off. One article per call, the
+     * body capped at {@link ArticleReader#ARTICLE_MAX_CHARS}, the model call
+     * gated by the shared {@link ChatGateway} — a long article can never
+     * overload the model, and the session cache is shared with the wire's
+     * background lane (a digest read here enriches the next compose too).
+     */
+    String digestNow(String link) {
+        if (link == null || link.isBlank() || articleReader == null || !readArticles()) return "";
+        String trimmed = link.trim();
+        digest(trimmed);
+        return byLink.getOrDefault(trimmed, "");
+    }
+
     /** Fetch + distill one article; every outcome (including failure) is cached. */
     private void digest(String link) {
         if (byLink.containsKey(link) || !readArticles()) return;

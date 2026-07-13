@@ -14,7 +14,8 @@
    header badges cover the figures there) — they exist in grid + focus only. */
 .main[data-view="dashboard"] > #widget-fg,
 .main[data-view="dashboard"] > #widget-eurusd,
-.main[data-view="dashboard"] > #widget-watchlist { display: none; }
+.main[data-view="dashboard"] > #widget-watchlist,
+.main[data-view="dashboard"] > #widget-deepdive { display: none; }
 
 .grid-hit { display: none; }
 
