@@ -44,6 +44,8 @@ const list = createHeadlineList({
   renderEmpty,
   filterFn: matches,
   renderNoMatches: renderNoMatch,
+  renderSearchHead: buildSearchHead,
+  renderSearchEmpty: buildSearchEmpty,
 });
 
 // A spec change (from the filter popover) re-syncs the loaded rows in place —
@@ -62,6 +64,36 @@ export function initHeadlineScroll(host, socket) {
 /** Appends an older archive page (from the `archive-results` page command). */
 export function appendArchivePage(items) {
   list.appendArchivePage(items);
+}
+
+/** Shows an archive-search result set in place of the wire (headline-search.js). */
+export function showSearchResults(query, total, items) {
+  list.showSearch(query, total, items);
+}
+
+// The dismissible banner above the search results: what was searched, how many
+// hits, and the way back to the live wire.
+function buildSearchHead(query, total, shown, onClear) {
+  const el = document.createElement('div');
+  el.className = 'search-banner';
+  const capped = shown < total
+    ? ` <span class="search-banner-cap">(${shown} ${escapeHtml(t('search.shown'))})</span>` : '';
+  el.innerHTML = `
+    <span class="search-banner-text">
+      <span class="search-banner-q">${escapeHtml(query)}</span>
+      <span class="search-banner-count">· ${total} ${escapeHtml(t('search.hits'))}${capped}</span>
+    </span>
+    <button type="button" class="search-banner-close" title="${escapeHtml(t('search.clear'))}"
+            aria-label="${escapeHtml(t('search.clear'))}">×</button>`;
+  el.querySelector('.search-banner-close').addEventListener('click', onClear);
+  return el;
+}
+
+function buildSearchEmpty() {
+  const el = document.createElement('div');
+  el.className = 'search-empty';
+  el.textContent = t('search.none');
+  return el;
 }
 
 function renderEmpty(host) {

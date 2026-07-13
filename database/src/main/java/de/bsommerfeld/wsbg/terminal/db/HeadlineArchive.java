@@ -132,4 +132,22 @@ public class HeadlineArchive {
     public synchronized List<HeadlineRecord> search(String query) {
         return index.search(query);
     }
+
+    /**
+     * Subject search — everything the wire ever said about one subject, by
+     * name AND ticker together (union of the ticker index and the full-text
+     * name search, deduped, newest first). Either argument may be null.
+     */
+    public synchronized List<HeadlineRecord> searchSubject(String name, String ticker) {
+        return index.searchSubject(name, ticker);
+    }
+
+    /**
+     * The subject vocabulary — every subject the wire ever named, aggregated
+     * (display name, nullable ticker, headline count, newest mention),
+     * most-named first. The suggestion index behind the search UI.
+     */
+    public synchronized List<HeadlineSubjectStat> subjectStats() {
+        return index.subjectStats();
+    }
 }

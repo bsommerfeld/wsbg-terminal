@@ -1,0 +1,108 @@
+/* Archive search — the rail popup's panel (input + suggestions + recent
+   searches) and the result banner that sits atop the widget body while a
+   search result set replaces the wire. */
+
+/* ---- popup panel ---- */
+
+.search-input {
+  width: 100%;
+  font: inherit;
+  color: var(--txt);
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 9px 14px;
+  outline: none;
+  transition: border-color .15s;
+}
+.search-input:focus { border-color: var(--mute); }
+.search-input::placeholder { color: var(--mute); }
+
+.search-suggest { margin-top: 8px; }
+
+.search-recent { margin-top: 10px; }
+.search-recent:empty { margin-top: 0; }
+.search-recent-head {
+  font-family: "Inter", sans-serif; font-weight: 600;
+  font-size: .72em;
+  letter-spacing: .12em; text-transform: uppercase;
+  color: var(--mute);
+  margin: 4px 0 6px;
+}
+
+/* One suggestion / recent-search row: name left, ticker chip right. */
+.search-option {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  color: var(--txt-2);
+  background: none;
+  border: 0;
+  border-radius: 8px;
+  padding: 7px 10px;
+  cursor: pointer;
+  transition: background .12s, color .12s;
+}
+.search-option:hover,
+.search-option.active {
+  color: var(--txt);
+  background: color-mix(in oklch, var(--bg-1) 82%, transparent);
+}
+.search-option-name {
+  min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.search-option-ticker {
+  flex-shrink: 0;
+  font-family: "Inter", sans-serif; font-weight: 600;
+  font-size: .74em;
+  letter-spacing: .06em;
+  color: var(--amber);
+  border: 1px solid color-mix(in oklch, var(--amber) 45%, transparent);
+  border-radius: 6px;
+  padding: 1px 7px;
+}
+
+/* ---- result banner in the widget body ---- */
+
+.search-banner {
+  position: sticky; top: 0; z-index: 2;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  background: color-mix(in oklch, var(--bg) 88%, var(--amber));
+  border-bottom: 1px solid var(--line);
+}
+.search-banner-text {
+  min-width: 0;
+  display: flex; align-items: baseline; gap: 7px;
+  overflow: hidden; white-space: nowrap;
+}
+.search-banner-q {
+  font-weight: 600;
+  color: var(--txt);
+  overflow: hidden; text-overflow: ellipsis;
+}
+.search-banner-count { color: var(--txt-2); font-size: .86em; flex-shrink: 0; }
+.search-banner-cap { color: var(--mute); }
+.search-banner-close {
+  flex-shrink: 0;
+  font: inherit; font-size: 1.05em; line-height: 1;
+  color: var(--txt-2);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  width: 26px; height: 26px;
+  cursor: pointer;
+  transition: color .12s, border-color .12s;
+}
+.search-banner-close:hover { color: var(--amber); border-color: var(--amber); }
+
+.search-empty {
+  color: var(--mute);
+  font-size: .9em;
+  padding: 26px 16px;
+  text-align: center;
+}

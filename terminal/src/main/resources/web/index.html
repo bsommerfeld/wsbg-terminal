@@ -18,6 +18,7 @@
   <link rel="stylesheet" href="/css/news-sources.css">
   <link rel="stylesheet" href="/css/ai-notice.css">
   <link rel="stylesheet" href="/css/filter.css">
+  <link rel="stylesheet" href="/css/search.css">
   <link rel="stylesheet" href="/css/widget-grid.css">
   <link rel="stylesheet" href="/css/fear-greed.css">
   <link rel="stylesheet" href="/css/eurusd.css">
@@ -181,6 +182,19 @@
           </button>
           <div class="rail-pop" role="dialog" aria-label="Filter" data-i18n-aria-label="filter.title">
             <div class="rail-pop-body js-rail-filter"></div>
+          </div>
+        </div>
+        <!-- Archive search: input + the last 5 searches + live suggestions from
+             the archive's subject vocabulary (headline-search.js resolves while
+             typing). Results replace the wire list until the banner is closed. -->
+        <div class="rail-item">
+          <button class="rail-btn js-rail-search-btn" type="button" aria-haspopup="dialog" aria-expanded="false"
+                  title="Schlagzeilen durchsuchen" aria-label="Schlagzeilen durchsuchen"
+                  data-i18n-title="search.open" data-i18n-aria-label="search.open">
+            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="16.4" y1="16.4" x2="21" y2="21"/></svg>
+          </button>
+          <div class="rail-pop" role="dialog" aria-label="Suche" data-i18n-aria-label="search.title">
+            <div class="rail-pop-body js-headline-search"></div>
           </div>
         </div>
         <div class="rail-item">

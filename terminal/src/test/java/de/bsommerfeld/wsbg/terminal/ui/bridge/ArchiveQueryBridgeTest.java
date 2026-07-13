@@ -88,4 +88,57 @@ class ArchiveQueryBridgeTest {
         assertEquals(0, r.get("total"));
         assertTrue(items(r).isEmpty());
     }
+
+    @Test
+    void subjectCommandUnionsTickerIndexAndNameSearch() {
+        HeadlineArchive a = archive();
+        // Ticker-carrying line that never writes the name.
+        a.append(rec("t3_a", "Chips ziehen an", 1000L, "RHM.DE"));
+        // Name-only line — no resolved ticker (the case a pure ticker search misses).
+        a.append(new HeadlineRecord("t3_b", "Rheinmetall vor Rekordauftrag", "", 2000L,
+                List.of(), List.of(), HeadlineHighlight.NORMAL, null,
+                List.of(new HeadlineSubject("Rheinmetall", null)),
+                null, List.of(), "stock", HeadlineSentiment.BULLISH, null));
+        a.append(rec("t3_c", "Gold glänzt", 3000L, null));
+
+        Map<String, Object> r = ArchiveQueryBridge.respond(a,
+                Map.of("command", "subject", "query", "Rheinmetall", "symbol", "RHM.DE"));
+        assertEquals(2, r.get("total"), "ticker hit + name-only hit, deduped");
+        assertEquals("Rheinmetall vor Rekordauftrag", items(r).get(0).get("headline"), "newest first");
+        assertEquals("Chips ziehen an", items(r).get(1).get("headline"));
+        assertEquals("Rheinmetall", r.get("query"), "name echoed for the UI");
+    }
+
+    @Test
+    void subjectsCommandAggregatesTheVocabularyMostNamedFirst() {
+        HeadlineArchive a = archive();
+        a.append(new HeadlineRecord("t3_a", "NVIDIA zieht an", "", 1000L, List.of(), List.of(),
+                HeadlineHighlight.NORMAL, "NVDA",
+                List.of(new HeadlineSubject("Nvidia Corp", "NVDA")),
+                null, List.of(), "stock", HeadlineSentiment.BULLISH, null));
+        a.append(new HeadlineRecord("t3_b", "NVIDIA weiter stark", "", 2000L, List.of(), List.of(),
+                HeadlineHighlight.NORMAL, "NVDA",
+                List.of(new HeadlineSubject("NVIDIA", "NVDA")),
+                null, List.of(), "stock", HeadlineSentiment.BULLISH, null));
+        a.append(new HeadlineRecord("t3_c", "Diesel wird teurer", "", 3000L, List.of(), List.of(),
+                HeadlineHighlight.NORMAL, null,
+                List.of(new HeadlineSubject("Diesel", null)),
+                null, List.of(), "other", HeadlineSentiment.NEUTRAL, null));
+
+        // A fresh instance over the same file — the vocabulary survives a reload.
+        Map<String, Object> r = ArchiveQueryBridge.respond(archive(),
+                Map.of("command", "subjects", "requestId", "search-vocab"));
+        assertEquals("subjects", r.get("command"));
+        assertEquals("search-vocab", r.get("requestId"));
+        assertEquals(2, r.get("total"));
+
+        Map<String, Object> first = items(r).get(0);
+        assertEquals("NVIDIA", first.get("name"), "newest display name wins");
+        assertEquals("NVDA", first.get("ticker"));
+        assertEquals(2, first.get("count"), "primary ticker + subject count once per headline");
+
+        Map<String, Object> second = items(r).get(1);
+        assertEquals("Diesel", second.get("name"), "name-only subjects are first-class");
+        assertTrue(!second.containsKey("ticker"));
+    }
 }

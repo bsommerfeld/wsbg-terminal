@@ -22,7 +22,8 @@ const PAGE = 50;
 // while the user is reading the top of the wire — never under their viewport.
 const ARCHIVE_CAP = 300;
 
-export function createHeadlineList({ identity, renderRow, renderEmpty, filterFn, renderNoMatches }) {
+export function createHeadlineList({ identity, renderRow, renderEmpty, filterFn, renderNoMatches,
+                                     renderSearchHead, renderSearchEmpty }) {
   // The scan filter (headline-filter.js). Applied at DISPLAY time only: the
   // liveItems/archiveItems arrays stay complete, so the scroll-back paging cursor
   // and a filter toggle-off both work without any re-fetch.
@@ -39,11 +40,18 @@ export function createHeadlineList({ identity, renderRow, renderEmpty, filterFn,
   let socketRef = null;
   let loadingMore = false;
   let exhausted = false;     // archive returned a short/empty page → nothing older left
+  // Search mode: an explicit archive lookup replaces the wire view until the
+  // banner is closed. The wire arrays keep updating underneath (a live push
+  // only stores), so closing the search restores the current state instantly.
+  // Search results deliberately bypass the scan filter — they are what the
+  // user asked for, not the wire's rolling display.
+  let search = null;         // { query, total, items } | null
 
   function render(host, items) {
     if (!host) return;
     hostRef = host;
     liveItems = items || [];
+    if (search) return;      // store only — the search view owns the host
     if (liveItems.length === 0 && archiveItems.length === 0) {
       renderEmpty(host);
       seenKeys.set(host, new Set());
@@ -63,7 +71,7 @@ export function createHeadlineList({ identity, renderRow, renderEmpty, filterFn,
     hostRef = host;
     socketRef = socket;
     host.addEventListener('scroll', () => {
-      if (loadingMore || exhausted) return;
+      if (search || loadingMore || exhausted) return;
       // within ~1.5 rows of the bottom → fetch the next older page
       if (host.scrollTop + host.clientHeight >= host.scrollHeight - 120) loadMore();
     }, { passive: true });
@@ -78,7 +86,7 @@ export function createHeadlineList({ identity, renderRow, renderEmpty, filterFn,
     if (fresh.length === 0) { exhausted = true; return; }
     if (items.length < PAGE) exhausted = true; // last page
     archiveItems = archiveItems.concat(fresh);
-    renderCombined();
+    if (!search) renderCombined(); // a late page must not clobber an open search view
   }
 
   function loadMore() {
@@ -148,9 +156,52 @@ export function createHeadlineList({ identity, renderRow, renderEmpty, filterFn,
 
   // Re-applies the current filter to the loaded data (called when the spec
   // changes). No re-fetch — just a keyed re-sync over the intact arrays.
+  // While a search is showing, keep showing it (the filter doesn't apply there).
   function rerender() {
-    if (hostRef) renderCombined();
+    if (!hostRef) return;
+    if (search) renderSearch();
+    else renderCombined();
   }
 
-  return { render, initScroll, appendArchivePage, rerender };
+  /** Enters (or replaces) the search-result view. */
+  function showSearch(query, total, items) {
+    search = { query, total, items: items || [] };
+    renderSearch();
+  }
+
+  /** Leaves the search view and restores the live wire + scroll-back state. */
+  function clearSearch() {
+    if (!search) return;
+    search = null;
+    const host = hostRef;
+    if (!host) return;
+    // The search view painted freehand — drop the keyed caches so the wire
+    // re-syncs from scratch (and without replaying the gold flash).
+    const els = rowEls.get(host);
+    if (els) els.clear();
+    seenKeys.set(host, new Set());
+    host.innerHTML = '';
+    renderCombined();
+    host.scrollTop = 0;
+  }
+
+  // Search results are a static snapshot — no keyed sync, no flash: a plain
+  // banner (query + hit count + close) followed by the result rows.
+  function renderSearch() {
+    const host = hostRef;
+    if (!host || !search) return;
+    const els = rowEls.get(host);
+    if (els) els.clear();
+    seenKeys.set(host, new Set());
+    host.innerHTML = '';
+    host.appendChild(renderSearchHead(search.query, search.total, search.items.length, clearSearch));
+    if (search.items.length === 0) {
+      host.appendChild(renderSearchEmpty());
+    } else {
+      for (const h of search.items) host.appendChild(renderRow(h, false));
+    }
+    host.scrollTop = 0;
+  }
+
+  return { render, initScroll, appendArchivePage, rerender, showSearch, clearSearch };
 }

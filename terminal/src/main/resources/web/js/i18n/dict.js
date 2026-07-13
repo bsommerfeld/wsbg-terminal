@@ -103,6 +103,16 @@ export const DICT = {
     'filter.opt.with': 'mit',
     'filter.opt.without': 'ohne',
 
+    // --- headline search ---
+    'search.open': 'Schlagzeilen durchsuchen',
+    'search.title': 'Suche',
+    'search.placeholder': 'Ticker, Name oder Begriff…',
+    'search.recent': 'Zuletzt gesucht',
+    'search.hits': 'Treffer',
+    'search.shown': 'angezeigt',
+    'search.clear': 'Suche schließen',
+    'search.none': 'Keine Treffer im Archiv',
+
     // --- financial juice ---
     'fj.waiting': 'Warte auf Financial Juice…',
 
@@ -424,6 +434,16 @@ export const DICT = {
     'filter.news.label': 'News',
     'filter.opt.with': 'with',
     'filter.opt.without': 'without',
+
+    // --- headline search ---
+    'search.open': 'Search headlines',
+    'search.title': 'Search',
+    'search.placeholder': 'Ticker, name or term…',
+    'search.recent': 'Recent searches',
+    'search.hits': 'hits',
+    'search.shown': 'shown',
+    'search.clear': 'Close search',
+    'search.none': 'No hits in the archive',
 
     // --- financial juice ---
     'fj.waiting': 'Waiting for Financial Juice…',

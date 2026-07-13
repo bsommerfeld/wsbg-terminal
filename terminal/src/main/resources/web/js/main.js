@@ -18,6 +18,7 @@ import { initDonate } from './chrome/donate.js';
 import { initExternalLinks } from './chrome/external-links.js';
 import { initKeyboardCopy } from './chrome/copy-fx.js';
 import { renderHeadlines, initHeadlineScroll, appendArchivePage } from './widgets/reddit.js';
+import { initHeadlineSearch, onArchiveResults } from './widgets/headline-search.js';
 import { renderFjNews } from './widgets/financial-juice.js';
 import { renderEurUsd } from './widgets/eurusd.js';
 import { renderEurUsdDetail } from './widgets/eurusd-detail.js';
@@ -98,7 +99,9 @@ for (const w of WIDGETS) {
 // Scroll-back: load older archived headlines as the user scrolls past the live wire.
 initHeadlineScroll(redditBody, socket);
 socket.on('archive-results', payload => {
-  if (payload && payload.command === 'page') appendArchivePage(payload.items);
+  if (!payload) return;
+  if (payload.command === 'page') appendArchivePage(payload.items);
+  else onArchiveResults(payload); // search vocabulary + result sets (headline-search.js)
 });
 
 // Watchlist add-suggestions (requested when the add input gains focus).
@@ -129,6 +132,9 @@ initNewsSources();
 initAiNotice();
 initHeadlineFilter();
 initWidgetRail(socket);
+// AFTER the rail: the search button's own click handler must run after the
+// rail's generic popup toggle (same-element listener order) to see the new state.
+initHeadlineSearch(socket);
 initWatchlist(socket);
 initWeather(socket);
 initDeepDive(socket);
