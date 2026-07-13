@@ -56,6 +56,13 @@ public final class EurUsdPublisher {
             putIf(m, "week52Low", d.week52Low());
             putIf(m, "ecbRate", d.ecbRate());
             putIf(m, "ecbDate", d.ecbDate());
+            putIf(m, "dxy", d.dxy());
+            putIf(m, "dxyPreviousClose", d.dxyPreviousClose());
+            // Latest ECB fixes for the EUR crosses: {"GBP": 0.85155, ...} in display order.
+            if (!d.crosses().isEmpty()) {
+                m.put("crosses", d.crosses());
+                putIf(m, "crossesDate", d.crossesDate());
+            }
             if (!d.spark().isEmpty()) m.put("spark", pairs(d.spark()));
             if (!d.history().isEmpty()) m.put("history", pairs(d.history()));
         }

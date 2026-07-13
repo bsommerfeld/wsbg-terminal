@@ -1,15 +1,22 @@
 // Fear & Greed detail widget — the elaborate version of the header badge's
 // mini gauge, rendered as the third plannable widget (grid card / focus
 // fullscreen). Fed by the same `fear-greed` socket payload:
-// { score, rating, band, previousClose, fetchedAt, history: [[epochMs, score], …] }.
+// { score, rating, band, previousClose, previousWeek?, previousMonth?,
+//   previousYear?, fetchedAt, history: [[epochMs, score], …],
+//   components?: [{ key, score, rating, band }, …],
+//   crypto?: { score, rating, band, previousClose?, fetchedAt,
+//              history: [[epochMs, score], …] } }.
 //
 // Anatomy (top to bottom): hero gauge with the score inside + band pill +
 // delta vs yesterday, the five band chips (the scale legend — identity by
-// label, never color alone), and the ~1y history line chart with a hover
-// crosshair + tooltip. The score is a diverging measure (fear ↔ greed around
-// a neutral middle), so the line wears a y-mapped red→amber→green gradient —
-// the same semantics as the gauge arc. All colors resolve through CSS vars
-// (fear-greed.css), so light/dark are covered for free.
+// label, never color alone), the week/month/year look-backs, the seven
+// sub-indicator bars behind the composite, the ~1y history line chart with a
+// hover crosshair + tooltip, and the crypto counterpart (alternative.me) as
+// its own compact block. The score is a diverging measure (fear ↔ greed
+// around a neutral middle), so the line wears a y-mapped red→amber→green
+// gradient — the same semantics as the gauge arc. All colors resolve through
+// CSS vars (fear-greed.css), so light/dark are covered for free. Every extra
+// block is optional: a missing payload field simply doesn't render.
 
 import { t, currentLang } from '../i18n/i18n.js';
 import { escapeHtml } from '../format/escape.js';
@@ -22,12 +29,32 @@ const BANDS = [
   { key: 'EXTREME_GREED', from: 75, to: 100 },
 ];
 
+// The seven CNN sub-indicators → their label keys. Also the whitelist: an
+// unknown component key from the payload is skipped, never rendered raw.
+const COMPONENT_LABELS = {
+  market_momentum_sp500: 'fg.comp.momentum',
+  stock_price_strength: 'fg.comp.strength',
+  stock_price_breadth: 'fg.comp.breadth',
+  put_call_options: 'fg.comp.putcall',
+  market_volatility_vix: 'fg.comp.vix',
+  junk_bond_demand: 'fg.comp.junk',
+  safe_haven_demand: 'fg.comp.safehaven',
+};
+
+const BAND_KEYS = new Set(BANDS.map(b => b.key));
+
 function bandOf(score) {
   if (score < 25) return 'EXTREME_FEAR';
   if (score < 45) return 'FEAR';
   if (score <= 55) return 'NEUTRAL';
   if (score <= 75) return 'GREED';
   return 'EXTREME_GREED';
+}
+
+// A payload band string is only trusted when it names one of the five known
+// bands (it lands in a data- attribute); anything else falls back to the score.
+function safeBand(raw, score) {
+  return BAND_KEYS.has(raw) ? raw : bandOf(score);
 }
 
 export function renderFearGreedDetail(host, d) {
@@ -45,7 +72,7 @@ export function renderFearGreedDetail(host, d) {
   }
 
   const score = Math.max(0, Math.min(100, d.score));
-  const band = d.band || bandOf(score);
+  const band = safeBand(d.band, score);
   const prev = typeof d.previousClose === 'number' && isFinite(d.previousClose)
     ? Math.max(0, Math.min(100, d.previousClose)) : null;
   const history = Array.isArray(d.history)
@@ -70,12 +97,110 @@ export function renderFearGreedDetail(host, d) {
           <span class="fg-band-range">${b.from}–${b.to}</span>
         </span>`).join('')}
     </div>
+    ${prevsHtml(d)}
+    ${componentsHtml(d.components)}
     ${history.length >= 2 ? chartHtml(history, band) : ''}
+    ${cryptoHtml(d.crypto)}
     <p class="fg-attrib">${escapeHtml(t('fg.detail.source'))}
       <a href="https://edition.cnn.com/markets/fear-and-greed" target="_blank" rel="noopener">CNN Fear &amp; Greed Index</a>
       · ${escapeHtml(t('fg.detail.scope'))}</p>`;
 
   if (history.length >= 2) wireChartHover(host, history);
+}
+
+/* ---- the week / month / year look-backs CNN ships beside the close ---- */
+
+function prevsHtml(d) {
+  const items = [
+    ['fg.prev.week', d.previousWeek],
+    ['fg.prev.month', d.previousMonth],
+    ['fg.prev.year', d.previousYear],
+  ].filter(([, v]) => typeof v === 'number' && isFinite(v));
+  if (!items.length) return '';
+  return `<div class="fg-prevs">${items.map(([key, v]) => {
+    const s = Math.max(0, Math.min(100, v));
+    return `<span class="fg-prev" data-band="${bandOf(s)}">
+      <span class="fg-prev-label">${escapeHtml(t(key))}</span>
+      <span class="fg-prev-dot" aria-hidden="true"></span>
+      <span class="fg-prev-val">${Math.round(s)}</span>
+    </span>`;
+  }).join('')}</div>`;
+}
+
+/* ---- the seven sub-indicators behind the composite ---- */
+
+function componentsHtml(components) {
+  const list = Array.isArray(components)
+    ? components.filter(c => c && COMPONENT_LABELS[c.key]
+        && typeof c.score === 'number' && isFinite(c.score))
+    : [];
+  if (!list.length) return '';
+  return `
+  <div class="fg-comps">
+    <div class="fg-comps-title">${escapeHtml(t('fg.comps.title'))}</div>
+    ${list.map(c => {
+      const s = Math.max(0, Math.min(100, c.score));
+      const band = safeBand(c.band, s);
+      return `
+      <div class="fg-comp" data-band="${band}">
+        <span class="fg-comp-name">${escapeHtml(t(COMPONENT_LABELS[c.key]))}</span>
+        <span class="fg-comp-track" aria-hidden="true">
+          <span class="fg-comp-fill" style="width:${s.toFixed(0)}%"></span>
+        </span>
+        <span class="fg-comp-val">${Math.round(s)}</span>
+        <span class="fg-comp-band">${escapeHtml(bandLabel(band))}</span>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+/* ---- the crypto counterpart (alternative.me), one compact block ---- */
+
+function cryptoHtml(c) {
+  if (!c || typeof c.score !== 'number' || !isFinite(c.score)) return '';
+  const score = Math.max(0, Math.min(100, c.score));
+  const band = safeBand(c.band, score);
+  const prev = typeof c.previousClose === 'number' && isFinite(c.previousClose)
+    ? Math.max(0, Math.min(100, c.previousClose)) : null;
+  const history = Array.isArray(c.history)
+    ? c.history.filter(p => Array.isArray(p) && p.length === 2
+        && isFinite(p[0]) && isFinite(p[1]))
+    : [];
+  return `
+  <div class="fg-crypto" data-band="${band}">
+    <div class="fg-crypto-title">${escapeHtml(t('fg.crypto.title'))}</div>
+    <div class="fg-crypto-row">
+      <span class="fg-crypto-score">${Math.round(score)}</span>
+      <span class="fg-band-pill" data-band="${band}">${escapeHtml(bandLabel(band))}</span>
+      ${deltaHtml(score, prev)}
+      ${cryptoSparkHtml(history)}
+    </div>
+    <p class="fg-crypto-attrib">${escapeHtml(t('fg.detail.source'))}
+      <a href="https://alternative.me/crypto/fear-and-greed-index/" target="_blank" rel="noopener">alternative.me</a>
+      · ${escapeHtml(t('fg.crypto.scope'))}</p>
+  </div>`;
+}
+
+// ~45d mini trend, single line in the current band's color (a compact rider,
+// not a second full chart — the big diverging chart stays the composite's).
+function cryptoSparkHtml(history) {
+  if (history.length < 2) return '';
+  const W = 180, H = 40, pad = 3;
+  let min = Infinity, max = -Infinity;
+  for (const [, v] of history) { if (v < min) min = v; if (v > max) max = v; }
+  const range = (max - min) || 1;
+  const n = history.length;
+  const pts = history.map(([, v], i) => {
+    const x = (i / (n - 1)) * W;
+    const y = H - pad - ((v - min) / range) * (H - 2 * pad);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  const lastY = pts[n - 1].split(',')[1];
+  return `
+    <svg class="fg-crypto-spark" viewBox="0 0 ${W} ${H}" aria-hidden="true">
+      <polyline class="line" points="${pts.join(' ')}"/>
+      <circle class="dot" cx="${W}" cy="${lastY}" r="2.4"/>
+    </svg>`;
 }
 
 function bandLabel(band) {

@@ -26,6 +26,59 @@ class FearGreedClientTest {
     }
 
     @Test
+    void parsesLookBacksAndComponents() {
+        String body = """
+            {"fear_and_greed":{"score":47.97,"rating":"neutral","previous_close":47.29,
+             "previous_1_week":32.4,"previous_1_month":26.91,"previous_1_year":76.97},
+             "market_momentum_sp500":{"score":61.2,"rating":"greed","data":[]},
+             "market_momentum_sp125":{"score":61.2,"rating":"greed"},
+             "stock_price_strength":{"score":40.6,"rating":"fear"},
+             "stock_price_breadth":{"score":25.6,"rating":"fear"},
+             "put_call_options":{"score":58.2,"rating":"greed"},
+             "market_volatility_vix":{"score":50,"rating":"neutral"},
+             "market_volatility_vix_50":{"score":50,"rating":"neutral"},
+             "junk_bond_demand":{"score":35.4,"rating":"fear"},
+             "safe_haven_demand":{"score":64.2,"rating":"greed"}}
+            """;
+        FearGreedIndex idx = new FearGreedClient().parse(body).orElseThrow();
+        assertEquals(32.4, idx.previousWeek(), 1e-9);
+        assertEquals(26.91, idx.previousMonth(), 1e-9);
+        assertEquals(76.97, idx.previousYear(), 1e-9);
+        // The seven canonical components, in CNN's order; the sp125/vix_50
+        // duplicates are deliberately not parsed.
+        assertEquals(7, idx.components().size());
+        assertEquals("market_momentum_sp500", idx.components().get(0).key());
+        assertEquals(61.2, idx.components().get(0).score(), 1e-9);
+        assertEquals("greed", idx.components().get(0).rating());
+        assertEquals(FearGreedIndex.Band.GREED, idx.components().get(0).band());
+        assertEquals("safe_haven_demand", idx.components().get(6).key());
+    }
+
+    @Test
+    void missingComponentsAndLookBacksStayEmpty() {
+        FearGreedIndex idx = new FearGreedClient()
+                .parse("{\"fear_and_greed\":{\"score\":50,\"rating\":\"neutral\",\"previous_close\":49}}")
+                .orElseThrow();
+        assertTrue(idx.components().isEmpty());
+        assertEquals(null, idx.previousWeek());
+        assertEquals(null, idx.previousMonth());
+        assertEquals(null, idx.previousYear());
+    }
+
+    @Test
+    void malformedComponentBlockIsSkippedNotFatal() {
+        String body = """
+            {"fear_and_greed":{"score":50,"rating":"neutral","previous_close":49},
+             "market_momentum_sp500":{"score":"kaputt","rating":"greed"},
+             "junk_bond_demand":{"score":140,"rating":"fear"},
+             "safe_haven_demand":{"score":64.2,"rating":"greed"}}
+            """;
+        FearGreedIndex idx = new FearGreedClient().parse(body).orElseThrow();
+        assertEquals(1, idx.components().size());
+        assertEquals("safe_haven_demand", idx.components().get(0).key());
+    }
+
+    @Test
     void parsesHistorySkippingMalformedSamples() {
         String body = """
             {"fear_and_greed":{"score":50,"rating":"neutral","previous_close":49},

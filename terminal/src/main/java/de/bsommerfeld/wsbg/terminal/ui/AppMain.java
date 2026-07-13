@@ -4,6 +4,7 @@ import com.google.inject.Guice;
 import com.google.inject.Injector;
 import de.bsommerfeld.wsbg.terminal.agent.WeatherReportService;
 import de.bsommerfeld.wsbg.terminal.currency.EurUsdMonitorService;
+import de.bsommerfeld.wsbg.terminal.feargreed.CryptoFearGreedMonitorService;
 import de.bsommerfeld.wsbg.terminal.feargreed.FearGreedMonitorService;
 import de.bsommerfeld.wsbg.terminal.ui.config.AppModule;
 import de.bsommerfeld.wsbg.terminal.ui.web.AssetServer;
@@ -95,6 +96,7 @@ public final class AppMain {
             // window (no UI, unkillable JVM). Deferring them here removes the race.
             injector.getInstance(EurUsdMonitorService.class).start();
             injector.getInstance(FearGreedMonitorService.class).start();
+            injector.getInstance(CryptoFearGreedMonitorService.class).start();
             // Daily Wetterbericht: arms the wall-clock schedule (and the boot
             // catch-up when today's report time already passed).
             injector.getInstance(WeatherReportService.class).start();

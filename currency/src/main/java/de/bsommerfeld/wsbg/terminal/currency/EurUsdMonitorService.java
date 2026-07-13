@@ -55,6 +55,13 @@ public class EurUsdMonitorService extends PollingMonitor<EurUsdQuote> {
      */
     private static final long ECB_HISTORY_TTL_MS = 6 * 60 * 60 * 1000L;
 
+    /**
+     * How long the cached Dollar-Index reading stays fresh. Pure context next to
+     * the pair — 5 min keeps the day move honest without doubling the Yahoo
+     * traffic of the 30s rate loop.
+     */
+    private static final long DXY_TTL_MS = 5 * 60 * 1000L;
+
     private final EurUsdClient client;
     private final long pollIntervalSeconds;
     private final double pollJitterPercent;
@@ -62,6 +69,14 @@ public class EurUsdMonitorService extends PollingMonitor<EurUsdQuote> {
     /** Cached ~1y daily ECB series; refreshed on its own long cadence inside tick(). */
     private volatile EurUsdClient.EcbHistory ecbHistory;
     private volatile long ecbFetchedAtMs;
+
+    /** Cached Dollar-Index reading; refreshed on its own cadence inside tick(). */
+    private volatile EurUsdClient.DxyQuote dxy;
+    private volatile long dxyFetchedAtMs;
+
+    /** Cached ECB EUR-cross fixes (GBP/CHF/JPY); same lazy cadence as the history. */
+    private volatile EurUsdClient.EcbCrosses ecbCrosses;
+    private volatile long crossesFetchedAtMs;
 
     public EurUsdMonitorService() {
         this(new EurUsdClient(), new CurrencyConfig());
@@ -145,6 +160,8 @@ public class EurUsdMonitorService extends PollingMonitor<EurUsdQuote> {
             }
 
             refreshEcbHistoryIfStale();
+            refreshDxyIfStale();
+            refreshCrossesIfStale();
 
             EurUsdQuote prev = getCurrent().orElse(null);
             Double previousRate = prev == null ? null : prev.rate();
@@ -174,6 +191,8 @@ public class EurUsdMonitorService extends PollingMonitor<EurUsdQuote> {
             if (week52High == null) week52High = hi;
             if (week52Low == null) week52Low = lo;
         }
+        EurUsdClient.DxyQuote dx = dxy;
+        EurUsdClient.EcbCrosses crosses = ecbCrosses;
         return new FxDetails(
                 fx == null ? null : fx.previousClose(),
                 fx == null ? null : fx.dayHigh(),
@@ -182,7 +201,11 @@ public class EurUsdMonitorService extends PollingMonitor<EurUsdQuote> {
                 fx == null ? null : fx.spark(),
                 ecb == null ? null : ecb.points(),
                 ecb == null ? null : ecb.latestRate(),
-                ecb == null ? null : ecb.latestDate());
+                ecb == null ? null : ecb.latestDate(),
+                dx == null ? null : dx.value(),
+                dx == null ? null : dx.previousClose(),
+                crosses == null ? null : crosses.rates(),
+                crosses == null ? null : crosses.date());
     }
 
     /**
@@ -204,6 +227,42 @@ public class EurUsdMonitorService extends PollingMonitor<EurUsdQuote> {
         } else {
             // Keep the stale series; retry in ~10 min instead of on every rate tick.
             ecbFetchedAtMs = now - ECB_HISTORY_TTL_MS + 10 * 60_000L;
+        }
+    }
+
+    /**
+     * Refreshes the Dollar-Index reading when the cache is older than
+     * {@link #DXY_TTL_MS}. A failed refresh keeps the old reading (stale beats
+     * absent) and backs off ~2 min instead of retrying on every 30s rate tick.
+     */
+    private void refreshDxyIfStale() {
+        long now = System.currentTimeMillis();
+        if (dxy != null && now - dxyFetchedAtMs < DXY_TTL_MS) return;
+        Optional<EurUsdClient.DxyQuote> fresh = client.fetchDxy();
+        if (fresh.isPresent()) {
+            dxy = fresh.get();
+            dxyFetchedAtMs = now;
+            LOG.debug("DXY refreshed: {}", fresh.get().value());
+        } else {
+            dxyFetchedAtMs = now - DXY_TTL_MS + 2 * 60_000L;
+        }
+    }
+
+    /**
+     * Refreshes the ECB EUR-cross fixes when the cache is older than
+     * {@link #ECB_HISTORY_TTL_MS} (one fix per business day, same cadence as the
+     * history). A failed refresh keeps the old fixes and retries in ~10 min.
+     */
+    private void refreshCrossesIfStale() {
+        long now = System.currentTimeMillis();
+        if (ecbCrosses != null && now - crossesFetchedAtMs < ECB_HISTORY_TTL_MS) return;
+        Optional<EurUsdClient.EcbCrosses> fresh = client.fetchEcbCrosses();
+        if (fresh.isPresent()) {
+            ecbCrosses = fresh.get();
+            crossesFetchedAtMs = now;
+            LOG.debug("ECB EUR crosses refreshed ({})", fresh.get().date());
+        } else if (ecbCrosses != null) {
+            crossesFetchedAtMs = now - ECB_HISTORY_TTL_MS + 10 * 60_000L;
         }
     }
 

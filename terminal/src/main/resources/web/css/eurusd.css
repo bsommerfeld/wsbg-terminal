@@ -74,6 +74,20 @@
   white-space: nowrap;
 }
 .fx-stat-hint { color: var(--mute-2); font-size: 0.74em; }
+/* Colored day-move variant (Dollar-Index tile) — same green/red the deltas speak. */
+.fx-stat-delta.up   { color: var(--green); }
+.fx-stat-delta.down { color: var(--red); }
+
+/* ---- context row: Dollar-Index + EUR crosses ---- */
+
+.fx-ctx {
+  width: 100%;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+}
+.fx-ctx-title {
+  color: var(--mute); font-size: 0.76em;
+  letter-spacing: .14em; text-transform: uppercase;
+}
 
 /* ---- 1y ECB history chart ---- */
 

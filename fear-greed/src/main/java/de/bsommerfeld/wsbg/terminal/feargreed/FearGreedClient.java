@@ -72,11 +72,23 @@ public class FearGreedClient {
     }
 
     /**
+     * The seven sub-indicator blocks CNN folds into the composite, in CNN's own
+     * display order. The response also carries {@code market_momentum_sp125} and
+     * {@code market_volatility_vix_50}, which duplicate their siblings' scores —
+     * deliberately skipped.
+     */
+    private static final java.util.List<String> COMPONENT_KEYS = java.util.List.of(
+            "market_momentum_sp500", "stock_price_strength", "stock_price_breadth",
+            "put_call_options", "market_volatility_vix", "junk_bond_demand",
+            "safe_haven_demand");
+
+    /**
      * Response shape:
      * <pre>{@code
-     * { "fear_and_greed": { "score": 63.27, "rating": "greed",
-     *                       "timestamp": "...", "previous_close": 60.1, ... },
-     *   "fear_and_greed_historical": { "data": [ {"x": 1719000000000, "y": 55.2}, ... ] }, ... }
+     * { "fear_and_greed": { "score": 63.27, "rating": "greed", "timestamp": "...",
+     *                       "previous_close": 60.1, "previous_1_week": 55, ... },
+     *   "fear_and_greed_historical": { "data": [ {"x": 1719000000000, "y": 55.2}, ... ] },
+     *   "market_momentum_sp500": { "score": 61.2, "rating": "greed", "data": [...] }, ... }
      * }</pre>
      */
     Optional<FearGreedIndex> parse(String body) {
@@ -96,12 +108,39 @@ public class FearGreedClient {
             String rating = fg.path("rating").asText("");
             double prevClose = fg.path("previous_close").isNumber()
                     ? fg.path("previous_close").asDouble() : s;
-            return Optional.of(new FearGreedIndex(s, rating, prevClose, Instant.now(),
-                    parseHistory(root.path("fear_and_greed_historical").path("data"))));
+            return Optional.of(new FearGreedIndex(s, rating, prevClose,
+                    scoreOrNull(fg.path("previous_1_week")),
+                    scoreOrNull(fg.path("previous_1_month")),
+                    scoreOrNull(fg.path("previous_1_year")),
+                    Instant.now(),
+                    parseHistory(root.path("fear_and_greed_historical").path("data")),
+                    parseComponents(root)));
         } catch (Exception e) {
             LOG.warn("Fear&Greed parse failure: {}", e.getMessage());
             return Optional.empty();
         }
+    }
+
+    /** A 0–100 score field, or {@code null} when absent/out-of-band (best-effort extras). */
+    private static Double scoreOrNull(JsonNode n) {
+        if (n == null || !n.isNumber()) return null;
+        double v = n.asDouble();
+        return Double.isFinite(v) && v >= 0 && v <= 100 ? v : null;
+    }
+
+    /**
+     * The seven sub-indicator blocks (score + rating each). Best-effort: a block
+     * that's missing or malformed is skipped, never fails the composite reading.
+     */
+    private static java.util.List<FearGreedIndex.Component> parseComponents(JsonNode root) {
+        java.util.List<FearGreedIndex.Component> out = new java.util.ArrayList<>(COMPONENT_KEYS.size());
+        for (String key : COMPONENT_KEYS) {
+            JsonNode block = root.path(key);
+            Double v = scoreOrNull(block.path("score"));
+            if (v == null) continue;
+            out.add(new FearGreedIndex.Component(key, v, block.path("rating").asText("")));
+        }
+        return out;
     }
 
     /**

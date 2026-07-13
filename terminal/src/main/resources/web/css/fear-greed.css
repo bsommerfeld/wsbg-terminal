@@ -71,6 +71,50 @@
 }
 .fg-band-range { color: var(--mute-2); font-variant-numeric: tabular-nums; }
 
+/* ---- the week / month / year look-backs (fg-prevs) ---- */
+
+.fg-prevs { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; }
+.fg-prev { display: inline-flex; align-items: center; gap: 7px; font-size: 0.8em; }
+.fg-prev-label { color: var(--mute); }
+.fg-prev-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--band-c);
+  flex-shrink: 0;
+}
+.fg-prev-val { color: var(--txt); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* ---- the seven sub-indicator bars (fg-comps) ---- */
+
+.fg-comps {
+  width: 100%; max-width: 720px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.fg-comps-title {
+  color: var(--mute); font-size: 0.76em;
+  letter-spacing: .14em; text-transform: uppercase;
+  margin-bottom: 2px;
+}
+.fg-comp {
+  display: grid;
+  grid-template-columns: minmax(140px, 210px) 1fr 30px minmax(86px, auto);
+  align-items: center; gap: 12px;
+}
+.fg-comp-name { color: var(--txt-2); font-size: 0.82em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fg-comp-track {
+  display: block; height: 7px; border-radius: 999px;
+  background: var(--line-soft);
+  overflow: hidden;
+}
+.fg-comp-fill {
+  display: block; height: 100%; border-radius: inherit;
+  background: var(--band-c);
+}
+.fg-comp-val {
+  color: var(--txt); font-size: 0.84em; font-weight: 600;
+  font-variant-numeric: tabular-nums; text-align: right;
+}
+.fg-comp-band { color: var(--band-c); font-size: 0.76em; white-space: nowrap; }
+
 /* ---- history chart ---- */
 
 .fg-chart-block { width: 100%; max-width: 720px; }
@@ -127,6 +171,36 @@
 .fg-tip-date { color: var(--mute); }
 .fg-tip-val { color: var(--txt); font-weight: 600; font-variant-numeric: tabular-nums; }
 .fg-tip-band { color: var(--band-c); }
+
+/* ---- the crypto counterpart (fg-crypto) ---- */
+
+.fg-crypto {
+  width: 100%; max-width: 720px;
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 14px 18px;
+  border: 1px solid var(--line-soft); border-radius: 12px;
+}
+.fg-crypto-title {
+  color: var(--mute); font-size: 0.76em;
+  letter-spacing: .14em; text-transform: uppercase;
+}
+.fg-crypto-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.fg-crypto-score {
+  font-family: "Inter", sans-serif; font-weight: 600; font-size: 30px;
+  color: var(--txt); font-variant-numeric: tabular-nums;
+}
+.fg-crypto-spark { width: 180px; height: 40px; margin-left: auto; overflow: visible; }
+.fg-crypto-spark .line {
+  fill: none; stroke: var(--band-c);
+  stroke-width: 2; stroke-linejoin: round; stroke-linecap: round;
+}
+.fg-crypto-spark .dot { fill: var(--band-c); }
+.fg-crypto-attrib { color: var(--mute); font-size: 0.74em; }
+.fg-crypto-attrib a {
+  color: var(--txt-2); text-decoration: none;
+  border-bottom: 1px dashed var(--mute-2);
+}
+.fg-crypto-attrib a:hover { color: var(--txt); border-bottom-color: var(--mute); }
 
 /* ---- attribution ---- */
 

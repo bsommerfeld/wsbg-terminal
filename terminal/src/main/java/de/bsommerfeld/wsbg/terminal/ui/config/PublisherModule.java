@@ -2,6 +2,7 @@ package de.bsommerfeld.wsbg.terminal.ui.config;
 
 import com.google.inject.AbstractModule;
 import de.bsommerfeld.wsbg.terminal.currency.EurUsdMonitorService;
+import de.bsommerfeld.wsbg.terminal.feargreed.CryptoFearGreedMonitorService;
 import de.bsommerfeld.wsbg.terminal.feargreed.FearGreedMonitorService;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.DonationStatsPublisher;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.EurUsdPublisher;
@@ -33,8 +34,10 @@ final class PublisherModule extends AbstractModule {
         // publisher can register its listener against a running poll loop.
         bind(EurUsdMonitorService.class).asEagerSingleton();
         bind(EurUsdPublisher.class).asEagerSingleton();
-        // Same ordering: the monitor's poll loop must exist before the publisher subscribes.
+        // Same ordering: the monitors' poll loops must exist before the publisher
+        // subscribes (the crypto counterpart rides the same fear-greed payload).
         bind(FearGreedMonitorService.class).asEagerSingleton();
+        bind(CryptoFearGreedMonitorService.class).asEagerSingleton();
         bind(FearGreedPublisher.class).asEagerSingleton();
         // Pushes the host OS dark/light appearance to the page. Needed because the
         // OSR Chromium can't see the real macOS theme, so the page's matchMedia

@@ -78,6 +78,22 @@ public class EurUsdClient {
      */
     private static final String ECB_HISTORY_URL =
             "https://api.frankfurter.dev/v1/%s..?base=EUR&symbols=USD";
+    /**
+     * The ICE US Dollar Index (DXY) from the same keyless Yahoo {@code v8/chart}
+     * endpoint the EUR/USD rate rides — dollar strength against the whole G10
+     * basket, the context figure next to the single pair. Meta-only parse (live
+     * value + previous close); the intraday series is not needed here.
+     */
+    private static final String DXY_URL =
+            "https://query1.finance.yahoo.com/v8/finance/chart/DX-Y.NYB?range=1d&interval=15m";
+    /**
+     * The classic EUR crosses from the same Frankfurter/ECB source as the 1y
+     * history — one keyless call, one fix per business day.
+     */
+    private static final String ECB_CROSSES_URL =
+            "https://api.frankfurter.dev/v1/latest?base=EUR&symbols=GBP,CHF,JPY";
+    /** Display order of the crosses (Frankfurter returns an unordered object). */
+    private static final List<String> CROSS_SYMBOLS = List.of("GBP", "CHF", "JPY");
 
     /** Intraday spark cap — enough shape for a widget-width chart, small on the socket. */
     private static final int MAX_SPARK_POINTS = 96;
@@ -150,6 +166,26 @@ public class EurUsdClient {
         String from = java.time.LocalDate.now(java.time.ZoneOffset.UTC).minusDays(370).toString();
         String body = fetchBody(String.format(ECB_HISTORY_URL, from), "Frankfurter-history");
         return body == null ? Optional.empty() : parseEcbHistory(body);
+    }
+
+    /**
+     * Fetches the current Dollar-Index level (live value + previous close).
+     * Slow-moving context data — the monitor refreshes it on its own cadence,
+     * not per rate tick.
+     */
+    public Optional<DxyQuote> fetchDxy() {
+        String body = fetchBody(DXY_URL, "Yahoo-DXY");
+        return body == null ? Optional.empty() : parseDxy(body);
+    }
+
+    /**
+     * Fetches the latest ECB fixes for the classic EUR crosses (GBP, CHF, JPY).
+     * One fix per business day — refreshed on the same lazy cadence as the
+     * 1y history.
+     */
+    public Optional<EcbCrosses> fetchEcbCrosses() {
+        String body = fetchBody(ECB_CROSSES_URL, "Frankfurter-crosses");
+        return body == null ? Optional.empty() : parseEcbCrosses(body);
     }
 
     private String fetchBody(String url, String label) {
@@ -327,6 +363,65 @@ public class EurUsdClient {
     }
 
     /**
+     * Same {@code v8/chart} shape as EUR/USD, meta only: {@code regularMarketPrice}
+     * is mandatory, {@code previousClose} (else {@code chartPreviousClose}) is
+     * best-effort. The DXY has lived between ~70 and ~165 since inception, so
+     * anything outside [50, 200] is a parsing accident, not a market event.
+     */
+    Optional<DxyQuote> parseDxy(String body) {
+        try {
+            JsonNode result = JSON.readTree(body).path("chart").path("result");
+            if (!result.isArray() || result.isEmpty()) {
+                LOG.warn("Yahoo DXY: empty result array");
+                return Optional.empty();
+            }
+            JsonNode meta = result.get(0).path("meta");
+            Double value = numberOrNull(meta.path("regularMarketPrice"));
+            if (value == null || value < 50 || value > 200) {
+                LOG.warn("Yahoo DXY: value {} missing or outside sanity band [50, 200]", value);
+                return Optional.empty();
+            }
+            Double prevClose = numberOrNull(meta.path("previousClose"));
+            if (prevClose == null) prevClose = numberOrNull(meta.path("chartPreviousClose"));
+            if (prevClose != null && (prevClose < 50 || prevClose > 200)) prevClose = null;
+            return Optional.of(new DxyQuote(value, prevClose));
+        } catch (Exception e) {
+            LOG.warn("Yahoo DXY parse failure: {}", e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * Frankfurter latest response with several symbols:
+     * <pre>{@code
+     * { "base": "EUR", "date": "2026-07-10",
+     *   "rates": { "GBP": 0.85155, "CHF": 0.9223, "JPY": 185.02 } }
+     * }</pre>
+     * Rates land in {@link #CROSS_SYMBOLS} order; a missing/garbage symbol is
+     * skipped rather than failing the rest.
+     */
+    Optional<EcbCrosses> parseEcbCrosses(String body) {
+        try {
+            JsonNode root = JSON.readTree(body);
+            JsonNode rates = root.path("rates");
+            if (!rates.isObject() || rates.isEmpty()) {
+                LOG.warn("Frankfurter EUR crosses: no rates object");
+                return Optional.empty();
+            }
+            Map<String, Double> out = new java.util.LinkedHashMap<>();
+            for (String sym : CROSS_SYMBOLS) {
+                Double v = numberOrNull(rates.path(sym));
+                if (v != null && v > 0) out.put(sym, v);
+            }
+            if (out.isEmpty()) return Optional.empty();
+            return Optional.of(new EcbCrosses(out, root.path("date").asText("")));
+        } catch (Exception e) {
+            LOG.warn("Frankfurter EUR crosses parse failure: {}", e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /**
      * Sanity-checks a rate value. EUR/USD has historically traded in the
      * 0.85–1.60 band — anything outside that range is almost certainly a
      * parsing accident (wrong field, inverted pair, etc.).
@@ -359,4 +454,13 @@ public class EurUsdClient {
      * chronological order plus the latest fix (ISO date + rate).
      */
     public record EcbHistory(List<double[]> points, String latestDate, double latestRate) {}
+
+    /** One Dollar-Index reading: the live level plus the day-change basis (best-effort). */
+    public record DxyQuote(double value, Double previousClose) {}
+
+    /**
+     * The latest ECB fixes for the classic EUR crosses, in display order
+     * (GBP, CHF, JPY), plus the fix's ISO date.
+     */
+    public record EcbCrosses(Map<String, Double> rates, String date) {}
 }

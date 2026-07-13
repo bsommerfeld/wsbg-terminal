@@ -3,12 +3,16 @@
 // `eurusd` socket payload:
 // { rate, previousRate, direction, source, fetchedAt,
 //   previousClose?, dayHigh?, dayLow?, week52High?, week52Low?,
-//   ecbRate?, ecbDate?, spark?: [[epochMs, rate], …], history?: [[epochMs, rate], …] }
+//   ecbRate?, ecbDate?, dxy?, dxyPreviousClose?,
+//   crosses?: { GBP, CHF, JPY }, crossesDate?,
+//   spark?: [[epochMs, rate], …], history?: [[epochMs, rate], …] }
 //
 // Anatomy (top to bottom): hero — the flag pair around the big rate, the
 // day-change pill (vs Yahoo's previous close) and the intraday sparkline;
 // then the stat tiles (day range, 52-week range, ECB reference fix, the
-// inverse 1 USD rate) and the ~1y ECB daily chart with a hover crosshair.
+// inverse 1 USD rate), the context row (Dollar-Index + the classic EUR
+// crosses from the same ECB fixing) and the ~1y ECB daily chart with a
+// hover crosshair.
 // The grid card shows only the hero core (rate + delta + spark), everything
 // else is focus-view content (widget-grid.css trims, like the F&G tile).
 //
@@ -58,6 +62,7 @@ export function renderEurUsdDetail(host, q) {
       ${q.source === 'FRANKFURTER' ? `<span class="fx-src-note">${escapeHtml(t('fx.detail.ecbFallback'))}</span>` : ''}
     </div>
     ${statsHtml(q)}
+    ${ctxHtml(q)}
     ${history.length >= 2 ? chartHtml(history) : ''}
     <p class="fx-attrib">${attribHtml()}</p>`;
 
@@ -137,6 +142,35 @@ function tile(label, value, hint = '') {
     <span class="fx-stat-label">${escapeHtml(label)}</span>
     <span class="fx-stat-value">${escapeHtml(value)}</span>
     ${hint ? `<span class="fx-stat-hint">${escapeHtml(hint)}</span>` : ''}
+  </div>`;
+}
+
+/* ---- context row: Dollar-Index + the classic EUR crosses ---- */
+
+function ctxHtml(q) {
+  const tiles = [];
+  if (num(q.dxy)) {
+    const prev = num(q.dxyPreviousClose) ? q.dxyPreviousClose : null;
+    const pct = prev ? ((q.dxy - prev) / prev) * 100 : null;
+    const dir = pct == null ? 'flat' : pct > 0.005 ? 'up' : pct < -0.005 ? 'down' : 'flat';
+    tiles.push(`<div class="fx-stat">
+      <span class="fx-stat-label">${escapeHtml(t('fx.detail.dxy'))}</span>
+      <span class="fx-stat-value">${escapeHtml(fmtRate(q.dxy, 2))}</span>
+      ${pct == null ? '' : `<span class="fx-stat-hint fx-stat-delta ${dir}">${escapeHtml(fmtPct(pct))} ${escapeHtml(t('fx.detail.today'))}</span>`}
+    </div>`);
+  }
+  const crosses = q.crosses && typeof q.crosses === 'object' ? q.crosses : {};
+  const date = q.crossesDate ? fmtDate(q.crossesDate) : '';
+  for (const sym of ['GBP', 'CHF', 'JPY']) {
+    const v = crosses[sym];
+    if (!num(v)) continue;
+    // JPY quotes in the hundreds — 2 decimals; the others speak the pair's 4.
+    tiles.push(tile(`EUR/${sym}`, fmtRate(v, sym === 'JPY' ? 2 : 4), date));
+  }
+  if (!tiles.length) return '';
+  return `<div class="fx-ctx">
+    <div class="fx-ctx-title">${escapeHtml(t('fx.detail.ctxTitle'))}</div>
+    <div class="fx-stats">${tiles.join('')}</div>
   </div>`;
 }
 

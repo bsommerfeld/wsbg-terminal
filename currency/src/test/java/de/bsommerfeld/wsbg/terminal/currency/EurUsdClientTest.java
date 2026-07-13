@@ -210,4 +210,63 @@ class EurUsdClientTest {
         assertTrue(client.parseEcbHistory("{ \"base\": \"EUR\", \"rates\": {} }").isEmpty());
         assertTrue(client.parseEcbHistory("not json").isEmpty());
     }
+
+    @Test
+    void parsesDxyMeta() {
+        String body = """
+                {
+                  "chart": {
+                    "result": [
+                      {
+                        "meta": {
+                          "symbol": "DX-Y.NYB",
+                          "regularMarketPrice": 100.746,
+                          "previousClose": 100.904
+                        }
+                      }
+                    ],
+                    "error": null
+                  }
+                }
+                """;
+
+        var dxy = client.parseDxy(body).orElseThrow();
+
+        assertEquals(100.746, dxy.value(), 1e-6);
+        assertEquals(100.904, dxy.previousClose(), 1e-6);
+    }
+
+    @Test
+    void rejectsDxyOutsideSanityBand() {
+        String body = """
+                { "chart": { "result": [ { "meta": { "regularMarketPrice": 8.5 } } ] } }
+                """;
+        assertTrue(client.parseDxy(body).isEmpty());
+        assertTrue(client.parseDxy("not json").isEmpty());
+    }
+
+    @Test
+    void parsesEcbCrossesInDisplayOrderSkippingGarbage() {
+        String body = """
+                {
+                  "base": "EUR",
+                  "date": "2026-07-10",
+                  "rates": { "JPY": 185.02, "GBP": 0.85155, "CHF": "kaputt" }
+                }
+                """;
+
+        var crosses = client.parseEcbCrosses(body).orElseThrow();
+
+        // GBP before JPY (display order, not response order); the garbage CHF is skipped.
+        assertEquals(java.util.List.of("GBP", "JPY"), java.util.List.copyOf(crosses.rates().keySet()));
+        assertEquals(0.85155, crosses.rates().get("GBP"), 1e-6);
+        assertEquals(185.02, crosses.rates().get("JPY"), 1e-6);
+        assertEquals("2026-07-10", crosses.date());
+    }
+
+    @Test
+    void rejectsEcbCrossesWithoutRates() {
+        assertTrue(client.parseEcbCrosses("{ \"base\": \"EUR\", \"rates\": {} }").isEmpty());
+        assertTrue(client.parseEcbCrosses("not json").isEmpty());
+    }
 }

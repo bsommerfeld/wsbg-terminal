@@ -121,11 +121,17 @@ html[data-theme="light"] .main > .widget.exit-card {
    grid-layout.js sizes the tile smaller (SIZE_F). */
 .main[data-view="grid"] > #widget-fg .fg-bands,
 .main[data-view="grid"] > #widget-fg .fg-hero-meta,
+.main[data-view="grid"] > #widget-fg .fg-prevs,
+.main[data-view="grid"] > #widget-fg .fg-comps,
 .main[data-view="grid"] > #widget-fg .fg-chart-block,
+.main[data-view="grid"] > #widget-fg .fg-crypto,
 .main[data-view="grid"] > #widget-fg .fg-attrib,
 .main > #widget-fg.exit-card .fg-bands,
 .main > #widget-fg.exit-card .fg-hero-meta,
+.main > #widget-fg.exit-card .fg-prevs,
+.main > #widget-fg.exit-card .fg-comps,
 .main > #widget-fg.exit-card .fg-chart-block,
+.main > #widget-fg.exit-card .fg-crypto,
 .main > #widget-fg.exit-card .fg-attrib { display: none; }
 .main[data-view="grid"] > #widget-fg .fg-detail,
 .main > #widget-fg.exit-card .fg-detail {
@@ -139,10 +145,12 @@ html[data-theme="light"] .main > .widget.exit-card {
    focus-view content. */
 .main[data-view="grid"] > #widget-eurusd .fx-hero-meta,
 .main[data-view="grid"] > #widget-eurusd .fx-stats,
+.main[data-view="grid"] > #widget-eurusd .fx-ctx,
 .main[data-view="grid"] > #widget-eurusd .fx-chart-block,
 .main[data-view="grid"] > #widget-eurusd .fx-attrib,
 .main > #widget-eurusd.exit-card .fx-hero-meta,
 .main > #widget-eurusd.exit-card .fx-stats,
+.main > #widget-eurusd.exit-card .fx-ctx,
 .main > #widget-eurusd.exit-card .fx-chart-block,
 .main > #widget-eurusd.exit-card .fx-attrib { display: none; }
 .main[data-view="grid"] > #widget-eurusd .fx-detail,
