@@ -444,4 +444,53 @@ class HeadlineWriterTest {
         String shortHead = "Kurs fällt, was den Raum beunruhigt";
         assertEquals(shortHead, HeadlineTailTrimmer.trimInterpretiveTail(shortHead));
     }
+
+    // ---- self-echo tail + brief-marker leaks (the 2026-07-13 degenerate-line class) ----
+
+    @Test
+    void trimsASelfEchoTail() {
+        // The live Siemens-Energy line: the second clause re-tells the head's own
+        // price anchor word for word — padded thin evidence, not a development.
+        assertEquals("Die Affen halten an ihrem Long bei Siemens Energy fest, obwohl der Kurs "
+                        + "seit dem letzten Kauf bei 151.63 EUR nicht weiter anzieht.",
+                HeadlineTailTrimmer.trimInterpretiveTail(
+                        "Die Affen halten an ihrem Long bei Siemens Energy fest, obwohl der Kurs "
+                                + "seit dem letzten Kauf bei 151.63 EUR nicht weiter anzieht, "
+                                + "während die allgemeine Marktstimmung nach dem letzten Kauf "
+                                + "bei 151.63 EUR verharrt."));
+    }
+
+    @Test
+    void keepsAFinalClauseWithAFreshFigure() {
+        // A repeated phrase BESIDE a figure the head does not carry is new detail.
+        String line = "Die Affen halten an ihrem Long bei Siemens Energy fest, obwohl der Kurs "
+                + "seit dem letzten Kauf stagniert, während der Umsatz seit dem letzten Kauf "
+                + "auf 12 Millionen stieg";
+        assertEquals(line, HeadlineTailTrimmer.trimInterpretiveTail(line));
+    }
+
+    @Test
+    void keepsAContrastClauseWithoutRepetition() {
+        String line = "Die Affen kaufen den Kakao-Dip, während die Lager laut Bericht "
+                + "voller sind als im Vorjahr";
+        assertEquals(line, HeadlineTailTrimmer.trimInterpretiveTail(line));
+    }
+
+    @Test
+    void trimsAClauseBuiltAroundALeakedBriefMarker() {
+        // The live Alibaba line: [N1] is the brief's citation handle, never reader-facing.
+        assertEquals("Die Affen signalisieren, dass für Alibaba keine klaren Kauf- oder "
+                        + "Verkaufsargumente vorliegen.",
+                HeadlineTailTrimmer.trimInterpretiveTail(
+                        "Die Affen signalisieren, dass für Alibaba keine klaren Kauf- oder "
+                                + "Verkaufsargumente vorliegen, während die Analysten in [N1] "
+                                + "andere Titel hervorheben."));
+    }
+
+    @Test
+    void scrubsAMidLineBriefMarker() {
+        assertEquals("Reuters meldet laut den Auftragseingang, die Affen bleiben long",
+                HeadlineTailTrimmer.trimInterpretiveTail(
+                        "Reuters meldet laut [N2] den Auftragseingang, die Affen bleiben long"));
+    }
 }
