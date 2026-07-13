@@ -42,6 +42,10 @@ public class AgentBrain {
     private ChatModel composeModel;
     /** Same gemma4 model, FREE-FORM output (no JSON mode) — for Wetterbericht prose. */
     private ChatModel proseModel;
+    /** Same gemma4 model, JSON mode with a ROOMY numPredict — for the watchlist dossier. */
+    private ChatModel dossierModel;
+    /** Same gemma4 model, free-form with the roomiest numPredict — for KI-DD report passes. */
+    private ChatModel deepDiveModel;
     private String activeAgentModel;
 
     private final GlobalConfig config;
@@ -72,6 +76,8 @@ public class AgentBrain {
         this.composeModel = models.composeModel();
         this.visionModel = models.visionModel();
         this.proseModel = models.proseModel();
+        this.dossierModel = models.dossierModel();
+        this.deepDiveModel = models.deepDiveModel();
         this.activeAgentModel = models.activeAgentModel();
         this.userLanguage = this.config.getUser().getUserLanguage();
 
@@ -217,6 +223,24 @@ public class AgentBrain {
     /** The free-form prose model (no JSON mode) — Wetterbericht digests + report text. */
     public ChatModel getProseModel() {
         return proseModel;
+    }
+
+    /**
+     * The dossier model (plain JSON mode, roomy numPredict) — watchlist dossier
+     * revisions, whose sectioned report would truncate at the agent model's 768
+     * backstop. Same resident gemma4.
+     */
+    public ChatModel getDossierModel() {
+        return dossierModel;
+    }
+
+    /**
+     * The deep-dive model (free-form, roomiest numPredict) — the KI-DD report
+     * passes: each pass emits a full markdown research report, far past the
+     * prose model's budget. On-demand only, never in the steady-state loop.
+     */
+    public ChatModel getDeepDiveModel() {
+        return deepDiveModel;
     }
 
     /** Returns the resolved Ollama model name used by {@link #getAgentModel()}. */

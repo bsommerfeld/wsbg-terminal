@@ -42,7 +42,8 @@ final class OllamaModelFactory {
 
     /** The built models plus the resolved model names (for the init log line). */
     record Models(ChatModel agentModel, ChatModel composeModel, ChatModel visionModel,
-            ChatModel proseModel, String activeAgentModel, String visionModelName) {
+            ChatModel proseModel, ChatModel dossierModel, ChatModel deepDiveModel,
+            String activeAgentModel, String visionModelName) {
     }
 
     /**
@@ -151,7 +152,40 @@ final class OllamaModelFactory {
                 .timeout(timeout)
                 .build();
 
-        return new Models(agentModel, composeModel, visionModel, proseModel, agentName, visionName);
+        // Dossier model — the SAME gemma4 (same name + num_ctx, still ONE runner),
+        // plain JSON mode like the agent model but a ROOMIER numPredict: the
+        // watchlist dossier is a sectioned ~2800-char report + tldr in one JSON
+        // object (~1100-1300 tokens with escaping) — the agent model's 768 backstop
+        // would truncate it mid-section. Not schema-constrained on purpose: the
+        // report VALUE is free-running markdown prose; JSON mode alone keeps the
+        // envelope parseable.
+        ChatModel dossierModel = OllamaChatModel.builder()
+                .baseUrl(baseUrl).modelName(agentName)
+                .temperature(agentModelEnum.getTemperature()).topP(0.9).topK(40)
+                .numCtx(ctxTokens).numPredict(1536)
+                .responseFormat(ResponseFormat.JSON)
+                .think(think)
+                .timeout(timeout)
+                .build();
+
+        // Deep-dive model — the SAME gemma4 (same name + num_ctx, still ONE
+        // runner), FREE-FORM like the prose model but with the roomiest
+        // numPredict of the fleet: a full KI-DD pass returns the ENTIRE revised
+        // report (~3-4k chars of markdown plus its own restatement overhead),
+        // and 2560 was measured cutting the final pass mid-sentence (out=2560
+        // in the live logs — "Der Raum" lost entirely). On-demand only (report
+        // generation), so the fatter budget never competes with the wire's
+        // steady-state calls.
+        ChatModel deepDiveModel = OllamaChatModel.builder()
+                .baseUrl(baseUrl).modelName(agentName)
+                .temperature(agentModelEnum.getTemperature()).topP(0.9).topK(40)
+                .numCtx(ctxTokens).numPredict(3584)
+                .think(think)
+                .timeout(timeout)
+                .build();
+
+        return new Models(agentModel, composeModel, visionModel, proseModel, dossierModel,
+                deepDiveModel, agentName, visionName);
     }
 
     /**
