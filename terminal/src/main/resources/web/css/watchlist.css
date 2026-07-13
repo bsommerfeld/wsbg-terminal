@@ -15,6 +15,15 @@
   padding: 16px 0 24px;
 }
 
+/* Two exclusive views inside: the home (add form + list) and one entry's own
+   detail view. [hidden] must win over the flex display. */
+.wl-home, .wl-detail-view {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.wl-home[hidden], .wl-detail-view[hidden] { display: none; }
+
 /* ---- add form ---- */
 
 .wl-add {
@@ -105,16 +114,15 @@
   padding: 1px 6px;
   vertical-align: 1px;
 }
+/* The TLDR wraps instead of ellipsizing — a status line that is cut off is
+   worthless (user mandate 2026-07-12); the row simply grows with it. */
 .wl-tldr {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   color: var(--txt-2);
   font-size: .92em;
+  line-height: 1.45;
 }
-.wl-row.open .wl-tldr { white-space: normal; }
 .wl-status { color: var(--mute); font-style: italic; }
 
 .wl-quote {
@@ -135,9 +143,7 @@
   width: 15px; height: 15px;
   stroke: var(--mute); stroke-width: 2; fill: none;
   stroke-linecap: round; stroke-linejoin: round;
-  transition: transform .18s;
 }
-.wl-row.open .wl-chev { transform: rotate(90deg); }
 
 .wl-del {
   flex-shrink: 0;
@@ -156,13 +162,90 @@
   stroke: currentColor; stroke-width: 2; fill: none; stroke-linecap: round;
 }
 
-/* ---- expanded body ---- */
+/* ---- the entry's own detail view: back arrow + title header ----
+   Opening a row REPLACES the list (settings-view pattern) instead of expanding
+   inline — the dossier gets the whole pane, the back arrow top-left returns.
+   In-content chrome, deliberately platform-uniform (like the settings back). */
+
+.wl-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 2px 0 4px;
+}
+.wl-back {
+  flex-shrink: 0;
+  width: 34px; height: 34px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--txt-2);
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+.wl-back:hover { color: var(--amber); border-color: var(--amber); }
+.wl-back svg {
+  width: 16px; height: 16px;
+  stroke: currentColor; stroke-width: 2; fill: none;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.wl-detail-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: "Inter", sans-serif;
+  font-weight: 650;
+  font-size: 1.12em;
+}
+.wl-detail-head .wl-quote { margin-left: auto; }
+.wl-detail-tldr {
+  color: var(--txt-2);
+  font-size: .95em;
+  line-height: 1.55;
+  max-width: 70ch;
+  padding: 0 2px;
+}
+
+/* ---- expanded body: sectioned report ----
+   Newspaper anatomy: every block opens with a kicker + hairline rule and an
+   optional right-hand source/time note, so the eye always knows WHAT it is
+   looking at and WHERE the figure comes from. Generous vertical rhythm — the
+   sections separate by whitespace + rule (Gestalt: common region), not boxes. */
 
 .wl-body {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 2px 4px 20px;
+  gap: 22px;
+  padding: 6px 4px 24px;
+}
+
+.wl-sec-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.wl-sec-kicker {
+  flex-shrink: 0;
+  font-family: "Inter", sans-serif;
+  font-weight: 700;
+  font-size: .72em;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.wl-sec-rule {
+  flex: 1;
+  border-top: 1px solid var(--line-soft);
+  transform: translateY(-.28em);
+}
+.wl-sec-note {
+  flex-shrink: 0;
+  font-family: "JetBrains Mono", monospace;
+  font-size: .72em;
+  color: var(--mute);
 }
 
 .wl-price-head {
@@ -186,12 +269,6 @@
   font-size: .85em;
   letter-spacing: .08em;
 }
-.wl-venue {
-  color: var(--mute);
-  font-family: "Inter", sans-serif;
-  font-size: .76em;
-  letter-spacing: .06em;
-}
 .wl-anchor {
   color: var(--txt-2);
   font-family: "Inter", sans-serif;
@@ -209,30 +286,76 @@
 .wl-chart.up   .wl-chart-dot { fill: var(--green); }
 .wl-chart.down .wl-chart-dot { fill: var(--red); }
 
-.wl-report p,
-.wl-report li {
+/* ---- Marktdaten grid: label-over-value tiles, mono values ---- */
+
+.wl-market {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 30px;
+}
+.wl-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 88px;
+}
+.wl-stat-label {
+  font-family: "Inter", sans-serif;
+  font-size: .68em;
+  font-weight: 600;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--mute);
+  white-space: nowrap;
+}
+.wl-stat-value {
+  font-family: "JetBrains Mono", monospace;
+  font-size: .92em;
+  color: var(--txt);
+  white-space: nowrap;
+}
+.wl-stat-sub {
+  font-family: "JetBrains Mono", monospace;
+  font-size: .74em;
+  color: var(--mute);
+  white-space: nowrap;
+}
+
+/* ---- the dossier: journalistic measure + crossheads ----
+   Readability: a bounded measure (~70ch) and a calm line height carry the eye;
+   the model's ## sections render as crossheads with an amber tick — scannable
+   anchor points (serial-position friendly), one accent colour, no boxes. */
+
+.wl-report { max-width: 70ch; }
+.wl-report p {
   color: var(--txt-2);
   font-size: .95em;
-  line-height: 1.65;
+  line-height: 1.7;
 }
-.wl-report p + p, .wl-report ul + p, .wl-report p + ul { margin-top: 9px; }
-.wl-report ul { padding-left: 20px; }
+.wl-report p + p { margin-top: 9px; }
+.wl-report h1, .wl-report h2, .wl-report h3 {
+  font-family: "Inter", sans-serif;
+  font-weight: 650;
+  font-size: .88em;
+  letter-spacing: .02em;
+  color: var(--txt);
+  margin: 16px 0 6px;
+  padding-left: 10px;
+  border-left: 2px solid var(--amber);
+}
+.wl-report h1:first-child, .wl-report h2:first-child, .wl-report h3:first-child { margin-top: 2px; }
+.wl-report strong { color: var(--txt); font-weight: 600; }
+/* The prompt forbids lists; if the model emits one anyway it still reads fine. */
+.wl-report ul, .wl-report ol { padding-left: 20px; }
+.wl-report li { color: var(--txt-2); font-size: .95em; line-height: 1.7; }
 
 .wl-meta {
+  margin-top: 10px;
   color: var(--mute);
   font-size: .78em;
   letter-spacing: .04em;
 }
 
-.wl-block-title {
-  font-family: "Inter", sans-serif;
-  font-weight: 600;
-  font-size: .76em;
-  letter-spacing: .14em;
-  text-transform: uppercase;
-  color: var(--mute);
-  margin-bottom: 6px;
-}
 .wl-news, .wl-wire { list-style: none; padding: 0; }
 .wl-news li, .wl-wire li {
   font-size: .88em;

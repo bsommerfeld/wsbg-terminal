@@ -39,11 +39,23 @@ import java.util.concurrent.TimeUnit;
  * stamps, so tomorrow's evidence (long after today's session snapshot died) still
  * only REVISES the standing text — the dossier never restarts from zero.
  *
+ * <p><b>Simplified to price + room (2026-07-13, user mandate):</b> the watchlist
+ * answers two questions per subject — what does it COST (minute-fresh L&S quote)
+ * and what does the ROOM say (the dossier, revised on room evidence only). The
+ * deep data legs (profile, analysts, insiders, shorts, fundamentals) moved into
+ * the on-demand KI-DD tool ({@link DeepDiveService}) — one fixed report instead
+ * of a continuously fattened dossier.
+ *
  * <p>Mapping: an entry names a subject; it binds to a live unit deterministically
  * (ticker/name equality, then significant-word subset). An entry whose subject the
- * feed hasn't produced yet ("Zukunftsname") simply stays unmapped and is re-tried
- * against new units on every tick — the moment the room first mentions it, the
- * entry latches on and the first report is written.
+ * feed hasn't produced yet is <b>researched by the watchlist itself</b> (2026-07-12):
+ * the name goes through the pipeline's own fully-wired {@link TickerResolver}
+ * (identity desk, price chain, news pool) and the result is seeded into the
+ * {@link SubjectRegistry} as a normal unit with zero room evidence — identity and
+ * price work without a single Käfig mention; the dossier waits for the room. The
+ * seed never marks the unit dirty: the wire stays room-driven. If the room mentions
+ * the subject later, the attributor's findOrCreate hits the SAME identity key and
+ * the evidence folds into this very unit.
  *
  * <p>LLM budget: one revision at a time (single tick thread), through the shared
  * {@link LlmGate} like every other model call, with a per-entry settle window and
@@ -60,13 +72,27 @@ public class WatchlistService {
     private static final long SETTLE_MS = 90_000;
     /** Minimum gap between two revisions of the same entry. */
     private static final long COOLDOWN_MS = 300_000;
+    /** A subject the feed doesn't know is researched (full resolver pass) at most this often. */
+    private static final long RESEARCH_RETRY_MS = 15 * 60 * 1000L;
+    /** Evidence-independent news refresh per mapped entry — context for the UI + the wire's units. */
+    private static final long NEWS_REFRESH_MS = 10 * 60 * 1000L;
+    /** News items asked from the pool per refresh (the unit merges by id and caps itself). */
+    private static final int NEWS_FETCH_COUNT = 6;
+    /**
+     * Only news at most this old reach the UI view, the revision brief and the
+     * change detection — the dossier must be CURRENT (user mandate 2026-07-12: a
+     * search hit from last year must never masquerade as the subject's news).
+     * Undated items are kept (can't be judged); the unit itself keeps its full
+     * merged set, the cut is a watchlist reading rule.
+     */
+    private static final long NEWS_MAX_AGE_DAYS = 30;
 
     /** Char budget for the room-evidence block of the revision brief (newest kept). */
     private static final int EVIDENCE_CHAR_BUDGET = 4000;
     private static final int MAX_NEWS_IN_BRIEF = 8;
     private static final int MAX_HEADLINES_IN_BRIEF = 6;
     /** Hard caps on the model's reply — a 4B occasionally rambles; the dossier stays compact. */
-    private static final int MAX_REPORT_CHARS = 2400;
+    private static final int MAX_REPORT_CHARS = 2000;
     private static final int MAX_TLDR_CHARS = 160;
 
     private static final DateTimeFormatter STAMP =
@@ -118,8 +144,14 @@ public class WatchlistService {
     public record SubjectOption(String name, String ticker) {
     }
 
-    /** Refresh a mapped instrument's quote when it is older than this — watchlist-only freshness. */
-    private static final long PRICE_REFRESH_MS = 180_000;
+    /**
+     * Watchlist quote cadence: every mapped instrument gets a fresh L&S snapshot
+     * plus Tradegate venue stats about once a MINUTE (user-mandated 2026-07-10 —
+     * the watchlist is the one place the user actively stares at a price).
+     */
+    private static final long PRICE_REFRESH_MS = 60_000;
+    /** Refresh at most this many instruments per 15 s tick — spreads a long list. */
+    private static final int MAX_PRICE_REFRESH_PER_TICK = 4;
 
     private final Map<String, Entry> entries = new LinkedHashMap<>();
 
@@ -132,6 +164,14 @@ public class WatchlistService {
     private volatile de.bsommerfeld.wsbg.terminal.core.price.PriceSource priceSource;
     /** Wall-clock ms of the last refresh ATTEMPT per entry — also spaces out unpriceable subjects. */
     private final Map<String, Long> lastPriceRefreshMs = new java.util.concurrent.ConcurrentHashMap<>();
+    /** Owner of the fully-wired TickerResolver (research leg) — optional, absent in tests. */
+    private volatile EditorialAgent editorialAgent;
+    /** Multi-source news pool for the evidence-independent refresh — optional, absent in tests. */
+    private volatile de.bsommerfeld.wsbg.terminal.aggregator.NewsAggregator newsAggregator;
+    /** Wall-clock ms of the last research ATTEMPT per entry — a miss re-tries after the backoff. */
+    private final Map<String, Long> lastResearchAttemptMs = new java.util.concurrent.ConcurrentHashMap<>();
+    /** Wall-clock ms of the last news-pool refresh per entry. */
+    private final Map<String, Long> lastNewsRefreshMs = new java.util.concurrent.ConcurrentHashMap<>();
 
     private final ScheduledExecutorService scheduler =
             Executors.newSingleThreadScheduledExecutor(r -> {
@@ -170,6 +210,31 @@ public class WatchlistService {
         this.priceSource = priceSource;
     }
 
+    /**
+     * Installs the editorial agent — solely as the owner of the process's ONE
+     * fully-wired {@link TickerResolver} (identity desk, judge, corpus, price
+     * chain, news pool), which the research leg shares so a watched subject the
+     * room never mentioned resolves through exactly the same identity machinery
+     * as a pipeline subject. Optional like the other legs: present in production,
+     * absent in tests, where entries simply stay unmapped until the feed produces
+     * their unit (the pre-research behaviour).
+     */
+    @com.google.inject.Inject(optional = true)
+    void setEditorialAgent(EditorialAgent editorialAgent) {
+        this.editorialAgent = editorialAgent;
+    }
+
+    /**
+     * Installs the multi-source news pool (Yahoo by symbol + the German
+     * name-addressed venues). Optional like the other legs. Powers the
+     * evidence-independent news refresh — without it a room-quiet subject's news
+     * would only ever update when the pipeline happens to re-resolve it.
+     */
+    @com.google.inject.Inject(optional = true)
+    void setNewsAggregator(de.bsommerfeld.wsbg.terminal.aggregator.NewsAggregator aggregator) {
+        this.newsAggregator = aggregator;
+    }
+
     // -- public API (bridge) --
 
     /** Snapshot of all entries, insertion-ordered. */
@@ -180,10 +245,11 @@ public class WatchlistService {
     }
 
     /**
-     * Adds a subject by name (an existing unit's name/ticker OR a future name that
-     * maps once the feed produces it). Room slang is canonicalized first, so
-     * whatever the user types funnels to the same identity the pipeline uses.
-     * Returns the created (or already-existing duplicate) entry.
+     * Adds a subject by name (an existing unit's name/ticker OR a name the feed
+     * has never produced — the research leg then resolves and seeds it itself).
+     * Room slang is canonicalized first, so whatever the user types funnels to
+     * the same identity the pipeline uses. Returns the created (or
+     * already-existing duplicate) entry.
      */
     public EntryView add(String rawName) {
         String name = rawName == null ? "" : rawName.strip();
@@ -211,6 +277,9 @@ public class WatchlistService {
     public synchronized boolean remove(String id) {
         Entry e = entries.remove(id);
         if (e == null) return false;
+        lastPriceRefreshMs.remove(id);
+        lastResearchAttemptMs.remove(id);
+        lastNewsRefreshMs.remove(id);
         persist();
         LOG.info("[WATCHLIST] removed '{}' ({})", e.name, id);
         eventBus.post(new WatchlistChangedEvent());
@@ -232,9 +301,10 @@ public class WatchlistService {
     // -- tick: map entries, detect fresh evidence, run due revisions --
 
     private void tick() {
+        long now = System.currentTimeMillis();
+        researchOneUnmapped(now);
         List<Entry> due = new ArrayList<>();
         boolean mappingChanged = false;
-        long now = System.currentTimeMillis();
         synchronized (this) {
             for (Entry e : entries.values()) {
                 SubjectUnit unit = e.unitId == null ? null : subjectRegistry.get(e.unitId);
@@ -248,12 +318,16 @@ public class WatchlistService {
                     // Baseline the version; anything the unit currently holds counts as
                     // unrevised material (first report, or a refresh after a restart).
                     e.observedVersion = unit.evidenceVersion();
-                    e.changeSeenAtMs = e.report.isBlank() || unit.evidenceCount() > 0 ? now : 0;
+                    // Whatever ROOM evidence the unit holds is unrevised material;
+                    // a room-quiet unit has nothing for the dossier to say yet.
+                    e.changeSeenAtMs = unit.evidenceCount() > 0 ? now : 0;
                     LOG.info("[WATCHLIST] '{}' mapped to unit {} ({})", e.name, unit.id,
                             unit.canonicalName());
                 }
-                long v = unit.evidenceVersion();
-                if (v != e.observedVersion && e.changeSeenAtMs == 0) {
+                // Revision material is ROOM EVIDENCE only (simplified 2026-07-13):
+                // the dossier answers "was sagt der Raum" — news and price move the
+                // UI, never the model.
+                if (unit.evidenceVersion() != e.observedVersion && e.changeSeenAtMs == 0) {
                     e.changeSeenAtMs = now; // fresh evidence — start the settle window
                 }
                 boolean initial = e.report.isBlank();
@@ -267,7 +341,8 @@ public class WatchlistService {
             }
         }
         if (mappingChanged) eventBus.post(new WatchlistChangedEvent());
-        refreshOnePrice(now);
+        refreshPrices(now);
+        refreshNews(now);
         for (Entry e : due) {
             try {
                 revise(e);
@@ -278,49 +353,185 @@ public class WatchlistService {
     }
 
     /**
-     * Watchlist-only quote freshness: at most ONE instrument per tick (≈4 venue
-     * calls/min at the 15 s cadence, trivially light) gets a fresh EUR snapshot
-     * from the price chain when its current quote is older than
-     * {@link #PRICE_REFRESH_MS}. The refresh rides {@link SubjectUnit#updateResolved}
-     * with the unit's own identity (ISIN-exact on L&S when stamped), so the wire's
-     * next line benefits too; the evidence version is untouched — a price move
-     * alone never triggers a dossier revision or a compose.
+     * The minute cadence for every mapped instrument: each entry whose last refresh
+     * attempt is older than {@link #PRICE_REFRESH_MS} gets a fresh EUR snapshot
+     * from the price chain when its quote has actually aged past the window.
+     * Capped at {@link #MAX_PRICE_REFRESH_PER_TICK} per 15 s tick (price-less
+     * instruments first, then oldest attempt), so a long list degrades to a
+     * slightly slower carousel instead of a burst. The snapshot refresh rides
+     * {@link SubjectUnit#updateResolved} with the unit's own identity (ISIN-exact
+     * on L&S when stamped), so the wire's next line benefits too; the evidence
+     * version is untouched — a price move alone never triggers a dossier revision
+     * or a compose.
      */
-    private void refreshOnePrice(long now) {
+    private void refreshPrices(long now) {
         de.bsommerfeld.wsbg.terminal.core.price.PriceSource source = priceSource;
         if (source == null) return;
-        Entry pick = null;
-        SubjectUnit pickUnit = null;
-        long oldestAttempt = Long.MAX_VALUE;
+        record Due(Entry entry, SubjectUnit unit, long lastAttempt) {}
+        List<Due> due = new ArrayList<>();
         synchronized (this) {
             for (Entry e : entries.values()) {
                 SubjectUnit unit = e.unitId == null ? null : subjectRegistry.get(e.unitId);
                 if (unit == null || !unit.isInstrument()) continue;
-                MarketSnapshot s = unit.snapshot();
-                boolean fresh = s != null && s.marketTimeEpochSeconds() > 0
-                        && now / 1000 - s.marketTimeEpochSeconds() < PRICE_REFRESH_MS / 1000;
                 long lastAttempt = lastPriceRefreshMs.getOrDefault(e.id, 0L);
-                if (fresh || now - lastAttempt < PRICE_REFRESH_MS) continue;
-                if (lastAttempt < oldestAttempt) {
-                    oldestAttempt = lastAttempt;
-                    pick = e;
-                    pickUnit = unit;
+                if (now - lastAttempt < PRICE_REFRESH_MS) continue;
+                due.add(new Due(e, unit, lastAttempt));
+            }
+        }
+        // Price-less instruments jump the queue (a watched name must never sit
+        // without a quote longer than necessary); within each group oldest first.
+        due.sort(Comparator
+                .comparing((Due d) -> d.unit().snapshot() != null && d.unit().snapshot().hasPrice())
+                .thenComparingLong(Due::lastAttempt));
+        boolean changed = false;
+        for (Due d : due.subList(0, Math.min(due.size(), MAX_PRICE_REFRESH_PER_TICK))) {
+            lastPriceRefreshMs.put(d.entry.id, now);
+            MarketSnapshot s = d.unit.snapshot();
+            boolean quoteFresh = s != null && s.marketTimeEpochSeconds() > 0
+                    && now / 1000 - s.marketTimeEpochSeconds() < PRICE_REFRESH_MS / 1000;
+            if (!quoteFresh) {
+                try {
+                    var ref = new de.bsommerfeld.wsbg.terminal.core.price.PriceRef(
+                            d.unit.canonicalName(), d.unit.ticker(), d.unit.isin());
+                    var snapshot = source.snapshot(ref);
+                    if (snapshot.isPresent()) {
+                        d.unit.updateResolved(null, d.unit.ticker(), snapshot.get(), List.of());
+                        changed = true;
+                    }
+                } catch (Exception ex) {
+                    LOG.debug("[WATCHLIST] price refresh for '{}' failed: {}",
+                            d.entry.name, ex.getMessage());
                 }
             }
         }
+        if (changed) eventBus.post(new WatchlistChangedEvent());
+    }
+
+    /**
+     * The research leg (2026-07-12): a watched subject the feed has never produced
+     * is resolved by the watchlist ITSELF — the entry's name goes through the same
+     * fully-wired {@link TickerResolver} the pipeline uses (identity desk, judge,
+     * price chain, news pool), and the verdict is seeded into the
+     * {@link SubjectRegistry} as a normal unit with ZERO room evidence — identity
+     * and the minute quote work without a single mention; the dossier waits for
+     * the room. When the room mentions the subject later the attributor's
+     * findOrCreate hits the SAME identity key, so the evidence folds into this
+     * very unit. The seed never marks the unit dirty — the wire stays room-driven;
+     * a researched subject never composes a headline out of thin air.
+     *
+     * <p>At most ONE subject per tick; the resolve (network + judge call) runs
+     * OUTSIDE the service monitor; a miss or a Yahoo throttle re-tries after
+     * {@link #RESEARCH_RETRY_MS}.
+     */
+    private void researchOneUnmapped(long now) {
+        EditorialAgent agent = editorialAgent;
+        if (agent == null) return;
+        Entry pick = null;
+        synchronized (this) {
+            for (Entry e : entries.values()) {
+                if (e.unitId != null && subjectRegistry.get(e.unitId) != null) continue;
+                if (findUnitFor(e.name) != null) continue; // a live unit exists — the mapping loop latches
+                if (now - lastResearchAttemptMs.getOrDefault(e.id, 0L) < RESEARCH_RETRY_MS) continue;
+                pick = e;
+                break;
+            }
+        }
         if (pick == null) return;
-        lastPriceRefreshMs.put(pick.id, now);
+        lastResearchAttemptMs.put(pick.id, now);
+        TickerResolver.ResolvedSubject rs;
         try {
-            var ref = new de.bsommerfeld.wsbg.terminal.core.price.PriceRef(
-                    pickUnit.canonicalName(), pickUnit.ticker(), pickUnit.isin());
-            var snapshot = source.snapshot(ref);
-            if (snapshot.isPresent()) {
-                pickUnit.updateResolved(null, pickUnit.ticker(), snapshot.get(), List.of());
+            rs = agent.tickerResolver().resolve(pick.name, 0);
+        } catch (Exception ex) {
+            LOG.warn("[WATCHLIST] research for '{}' failed: {}", pick.name, ex.getMessage());
+            return;
+        }
+        if (rs == null || rs.unresolved()) return; // Yahoo throttled — re-tried after the backoff
+        String key = SubjectAttributor.unitKey(rs);
+        if (key == null) return;
+        synchronized (this) {
+            if (!entries.containsKey(pick.id)) return; // removed while researching
+            SubjectUnit unit = subjectRegistry.findOrCreate(key, rs.canonicalName());
+            unit.updateResolved(rs.canonicalName(), rs.ticker(), rs.snapshot(), rs.news());
+            unit.noteIsin(rs.isin());
+            pick.unitId = unit.id;
+            pick.observedVersion = unit.evidenceVersion();
+            // Only ROOM evidence is dossier material; a freshly researched unit
+            // usually has none — the entry then shows price + "Raum still".
+            pick.changeSeenAtMs = unit.evidenceCount() > 0 ? now : 0;
+            LOG.info("[WATCHLIST] '{}' researched → unit {} ({}{})", pick.name, unit.id,
+                    rs.isInstrument() ? "instrument " + rs.ticker() : "theme/name",
+                    rs.hasNews() ? ", " + rs.news().size() + " news" : "");
+        }
+        eventBus.post(new WatchlistChangedEvent());
+    }
+
+    /**
+     * The evidence-independent news leg: every mapped entry re-asks the
+     * multi-source news pool about once every {@link #NEWS_REFRESH_MS} — by ticker
+     * AND canonical name, exactly like the pipeline's resolver — and merges the
+     * result into the unit (merge by id, never replace, unit-capped). Context for
+     * the UI's News list and the unit the wire composes from; deliberately NOT a
+     * dossier trigger (the dossier is room-only since the 2026-07-13
+     * simplification). One entry per tick (oldest refresh first) — a long list
+     * becomes a slow carousel, never a burst.
+     */
+    private void refreshNews(long now) {
+        de.bsommerfeld.wsbg.terminal.aggregator.NewsAggregator aggregator = newsAggregator;
+        if (aggregator == null) return;
+        Entry pick = null;
+        SubjectUnit pickUnit = null;
+        long oldest = Long.MAX_VALUE;
+        synchronized (this) {
+            for (Entry e : entries.values()) {
+                SubjectUnit unit = e.unitId == null ? null : subjectRegistry.get(e.unitId);
+                if (unit == null) continue;
+                long last = lastNewsRefreshMs.getOrDefault(e.id, 0L);
+                if (now - last < NEWS_REFRESH_MS || last >= oldest) continue;
+                oldest = last;
+                pick = e;
+                pickUnit = unit;
+            }
+        }
+        if (pick == null) return;
+        lastNewsRefreshMs.put(pick.id, now);
+        try {
+            List<RawNewsItem> fresh = aggregator.newsFor(
+                    pickUnit.ticker(), pickUnit.canonicalName(), NEWS_FETCH_COUNT);
+            // The freshness cut applies at the door too: a year-old search hit
+            // must not even enter the unit through the watchlist's own leg.
+            Instant cutoff = Instant.now().minus(java.time.Duration.ofDays(NEWS_MAX_AGE_DAYS));
+            fresh = fresh.stream()
+                    .filter(n -> n.publishedAt() == null || !n.publishedAt().isBefore(cutoff))
+                    .toList();
+            if (fresh.isEmpty()) return;
+            int before = freshNews(pickUnit).size();
+            pickUnit.updateResolved(null, pickUnit.ticker(), null, fresh);
+            // Warm the article-digest cache for these items (async, digester's own
+            // worker): the wire's next compose over this unit then carries the
+            // articles' substance, not just titles — the resolver only prefetches
+            // items IT fetched, never the watchlist's own leg.
+            EditorialAgent agent = editorialAgent;
+            if (agent != null) agent.newsDigester().prefetch(fresh);
+            if (freshNews(pickUnit).size() != before) {
                 eventBus.post(new WatchlistChangedEvent());
             }
         } catch (Exception ex) {
-            LOG.debug("[WATCHLIST] price refresh for '{}' failed: {}", pick.name, ex.getMessage());
+            LOG.debug("[WATCHLIST] news refresh for '{}' failed: {}", pick.name, ex.getMessage());
         }
+    }
+
+    /**
+     * The unit's news through the watchlist's freshness cut ({@link #NEWS_MAX_AGE_DAYS}):
+     * a stale search hit stays in the unit (the wire may still cite it) but never
+     * reaches the watchlist view, the revision brief or the change detection.
+     */
+    private static List<RawNewsItem> freshNews(SubjectUnit unit) {
+        Instant cutoff = Instant.now().minus(java.time.Duration.ofDays(NEWS_MAX_AGE_DAYS));
+        List<RawNewsItem> out = new ArrayList<>();
+        for (RawNewsItem n : unit.news()) {
+            if (n.publishedAt() == null || !n.publishedAt().isBefore(cutoff)) out.add(n);
+        }
+        return out;
     }
 
     /**
@@ -332,10 +543,14 @@ public class WatchlistService {
     private void revise(Entry e) {
         SubjectUnit unit = e.unitId == null ? null : subjectRegistry.get(e.unitId);
         if (unit == null) return;
-        ChatModel model = brain.getAgentModel();
+        // The roomy dossier handle — the agent model's 768-token backstop would
+        // truncate a sectioned report mid-heading. Agent model as test fallback.
+        ChatModel model = brain.getDossierModel() != null
+                ? brain.getDossierModel() : brain.getAgentModel();
         if (model == null) return;
 
-        long version = unit.evidenceVersion(); // captured BEFORE — mid-call evidence re-fires later
+        // Captured BEFORE the model call — evidence arriving mid-call re-fires later.
+        long version = unit.evidenceVersion();
         String lang = brain.getUserLanguage().code();
         String sys = PromptLoader.loadLocalized("watchlist-report", lang)
                 .replace("{{LANGUAGE}}", brain.getUserLanguage().displayName());
@@ -403,7 +618,7 @@ public class WatchlistService {
             sb.append('\n');
         }
 
-        List<RawNewsItem> news = unit.news();
+        List<RawNewsItem> news = freshNews(unit);
         if (!news.isEmpty()) {
             sb.append("NEWS (verified):\n");
             int n = 0;
@@ -498,7 +713,7 @@ public class WatchlistService {
                     e.updatedAtEpoch, false, null, null, null, null, null,
                     List.of(), List.of(), 0, null);
         }
-        List<RawNewsItem> news = unit.news();
+        List<RawNewsItem> news = freshNews(unit);
         if (news.size() > VIEW_NEWS) news = news.subList(0, VIEW_NEWS);
         List<SubjectUnit.UnitHeadline> headlines = unit.headlines();
         if (headlines.size() > VIEW_HEADLINES) {

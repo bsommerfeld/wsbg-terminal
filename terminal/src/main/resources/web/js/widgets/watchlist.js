@@ -4,41 +4,55 @@
 // ticker, snapshot, sinceFirst, news, wireLines, … }] }); add/remove and the
 // add-suggestions request go back over the same `watchlist` socket type.
 //
-// Anatomy: an add form (input with live subject suggestions), then one row per
-// entry — name + ticker chip, the one-line TLDR (or a waiting/analyzing status)
-// and a compact quote on the right. Clicking a row expands it into the full
-// dossier: price header with day/5d/1m trend and the "since first mention"
-// anchor, a multi-day close chart (L&S history, intraday spark as fallback),
-// the report text, the subject's news and its last wire lines. All transient
-// paints only — nothing loops (software-OSR paint rule).
+// Anatomy (simplified to PRICE + ROOM, 2026-07-13 — the deep data moved into
+// the KI-DD widget): an add form (input with live subject suggestions), then
+// one row per entry — name + ticker chip, the one-line TLDR (or a
+// researching/quiet status) and a compact quote on the right. Clicking a row
+// opens the entry's OWN detail view (back arrow top-left, like the settings
+// view): Kurs (price header with trends + the multi-day close chart, L&S
+// history, intraday spark as fallback), the room dossier (markdown with ##
+// crossheads as scannable section heads), News and the last wire lines. All
+// transient paints only — nothing loops (software-OSR paint rule).
 
 import { t, currentLang } from '../i18n/i18n.js';
 import { escapeHtml } from '../format/escape.js';
+import { renderMarkdown } from '../format/markdown.js';
 
 let sock = null;
+let hostEl = null;
+let homeEl = null;
 let listEl = null;
+let detailEl = null;
 let entries = [];
-const expanded = new Set();
+/** Id of the entry whose own detail view is open; null = the list. */
+let detailId = null;
+/** The list's scroll position, restored when the back arrow returns to it. */
+let listScrollTop = 0;
 
 export function initWatchlist(socket) {
   sock = socket;
-  const host = document.getElementById('watchlist-detail');
-  if (!host) return;
-  host.innerHTML = `
-    <form class="wl-add">
-      <input class="wl-add-input" type="text" list="wl-suggestions" maxlength="80"
-             autocomplete="off" spellcheck="false"
-             placeholder="${escapeHtml(t('wl.add.placeholder'))}"
-             aria-label="${escapeHtml(t('wl.add.aria'))}"
-             data-i18n-placeholder="wl.add.placeholder" data-i18n-aria-label="wl.add.aria">
-      <datalist id="wl-suggestions"></datalist>
-      <button class="wl-add-btn" type="submit" data-i18n="wl.add.btn">${escapeHtml(t('wl.add.btn'))}</button>
-    </form>
-    <div class="wl-list"></div>`;
-  listEl = host.querySelector('.wl-list');
+  hostEl = document.getElementById('watchlist-detail');
+  if (!hostEl) return;
+  hostEl.innerHTML = `
+    <div class="wl-home">
+      <form class="wl-add">
+        <input class="wl-add-input" type="text" list="wl-suggestions" maxlength="80"
+               autocomplete="off" spellcheck="false"
+               placeholder="${escapeHtml(t('wl.add.placeholder'))}"
+               aria-label="${escapeHtml(t('wl.add.aria'))}"
+               data-i18n-placeholder="wl.add.placeholder" data-i18n-aria-label="wl.add.aria">
+        <datalist id="wl-suggestions"></datalist>
+        <button class="wl-add-btn" type="submit" data-i18n="wl.add.btn">${escapeHtml(t('wl.add.btn'))}</button>
+      </form>
+      <div class="wl-list"></div>
+    </div>
+    <div class="wl-detail-view" hidden></div>`;
+  homeEl = hostEl.querySelector('.wl-home');
+  listEl = hostEl.querySelector('.wl-list');
+  detailEl = hostEl.querySelector('.wl-detail-view');
 
-  const form = host.querySelector('.wl-add');
-  const input = host.querySelector('.wl-add-input');
+  const form = hostEl.querySelector('.wl-add');
+  const input = hostEl.querySelector('.wl-add-input');
   form.addEventListener('submit', e => {
     e.preventDefault();
     const name = input.value.trim();
@@ -50,15 +64,14 @@ export function initWatchlist(socket) {
   input.addEventListener('focus', () => sock.send('watchlist', { command: 'subjects' }));
 
   listEl.addEventListener('click', onListClick);
+  detailEl.addEventListener('click', onDetailClick);
   renderList();
 }
 
-/** `watchlist` payload → full list re-render (the add form stays untouched). */
+/** `watchlist` payload → re-render whichever view is open (the add form stays untouched). */
 export function renderWatchlist(payload) {
   entries = payload && Array.isArray(payload.entries) ? payload.entries : [];
-  for (const id of [...expanded]) {
-    if (!entries.some(e => e.id === id)) expanded.delete(id);
-  }
+  if (detailId && !entries.some(e => e.id === detailId)) detailId = null;
   renderList();
 }
 
@@ -79,21 +92,63 @@ function onListClick(e) {
   }
   const head = e.target.closest('.wl-row-head');
   if (head) {
-    const id = head.closest('.wl-row').dataset.id;
-    if (expanded.has(id)) expanded.delete(id);
-    else expanded.add(id);
+    const scroller = hostEl.closest('.widget-body');
+    listScrollTop = scroller ? scroller.scrollTop : 0;
+    detailId = head.closest('.wl-row').dataset.id;
     renderList();
+    if (scroller) scroller.scrollTop = 0;
   }
 }
 
+function onDetailClick(e) {
+  if (e.target.closest('.wl-back')) {
+    detailId = null;
+    renderList();
+    const scroller = hostEl.closest('.widget-body');
+    if (scroller) scroller.scrollTop = listScrollTop;
+  }
+}
+
+/** Renders whichever view is open: the list (add form + rows) or one entry's detail view. */
 function renderList() {
   if (!listEl) return;
   renderThumb();
+  const detail = detailId ? entries.find(e => e.id === detailId) : null;
+  if (detail) {
+    homeEl.hidden = true;
+    detailEl.hidden = false;
+    detailEl.innerHTML = detailViewHtml(detail);
+    return;
+  }
+  detailId = null;
+  detailEl.hidden = true;
+  detailEl.innerHTML = '';
+  homeEl.hidden = false;
   if (!entries.length) {
     listEl.innerHTML = `<p class="wl-empty">${escapeHtml(t('wl.empty'))}</p>`;
     return;
   }
   listEl.innerHTML = entries.map(rowHtml).join('');
+}
+
+/* ---- the entry's own view: back arrow + title header, then the sectioned report ---- */
+
+function detailViewHtml(e) {
+  const tldr = e.tldr
+    ? `<p class="wl-detail-tldr">${escapeHtml(e.tldr)}</p>`
+    : `<p class="wl-detail-tldr wl-status">${escapeHtml(t(statusKey(e)))}</p>`;
+  return `
+  <div class="wl-detail-head">
+    <button class="wl-back" type="button" title="${escapeHtml(t('wl.back'))}"
+            aria-label="${escapeHtml(t('wl.back'))}">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
+    </button>
+    <span class="wl-detail-title">${escapeHtml(e.name)}${
+      e.ticker ? `<span class="wl-ticker">${escapeHtml(e.ticker)}</span>` : ''}</span>
+    ${miniQuoteHtml(e.snapshot)}
+  </div>
+  ${tldr}
+  ${bodyHtml(e)}`;
 }
 
 /* ---- the dedicated grid-card tile (.grid-thumb, shown instead of the
@@ -132,15 +187,20 @@ function renderThumb() {
     </div>`;
 }
 
+/** Status line while no TLDR exists: researching (unmapped), room-quiet, or writing. */
+function statusKey(e) {
+  if (!e.mapped) return 'wl.pending';
+  return e.evidenceCount ? 'wl.analyzing' : 'wl.quiet';
+}
+
 function rowHtml(e) {
-  const open = expanded.has(e.id);
   const status = e.tldr
     ? `<span class="wl-tldr">${escapeHtml(e.tldr)}</span>`
-    : `<span class="wl-tldr wl-status">${escapeHtml(t(e.mapped ? 'wl.analyzing' : 'wl.pending'))}</span>`;
+    : `<span class="wl-tldr wl-status">${escapeHtml(t(statusKey(e)))}</span>`;
   return `
-  <article class="wl-row${open ? ' open' : ''}" data-id="${escapeHtml(e.id)}">
+  <article class="wl-row" data-id="${escapeHtml(e.id)}">
     <div class="wl-row-line">
-      <button class="wl-row-head" type="button" aria-expanded="${open}"
+      <button class="wl-row-head" type="button"
               title="${escapeHtml(t('wl.expand'))}" aria-label="${escapeHtml(t('wl.expand'))}">
         <span class="wl-name">${escapeHtml(e.name)}${
           e.ticker ? `<span class="wl-ticker">${escapeHtml(e.ticker)}</span>` : ''}</span>
@@ -153,7 +213,6 @@ function rowHtml(e) {
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
       </button>
     </div>
-    ${open ? bodyHtml(e) : ''}
   </article>`;
 }
 
@@ -168,19 +227,50 @@ function miniQuoteHtml(s) {
   </span>`;
 }
 
-/* ---- expanded body ---- */
+/* ---- expanded body: sectioned report ---- */
+
+/** One report section: kicker + hairline + optional right-hand note, then content. */
+function sec(kicker, content, note) {
+  if (!content) return '';
+  return `<section class="wl-sec">
+    <div class="wl-sec-head">
+      <span class="wl-sec-kicker">${escapeHtml(kicker)}</span>
+      <span class="wl-sec-rule"></span>
+      ${note ? `<span class="wl-sec-note">${escapeHtml(note)}</span>` : ''}
+    </div>
+    ${content}
+  </section>`;
+}
 
 function bodyHtml(e) {
   const parts = [];
-  if (e.snapshot && isFinite(e.snapshot.price)) parts.push(priceHeadHtml(e));
-  parts.push(chartHtml(e.snapshot));
+
+  const priceInner = [
+    e.snapshot && isFinite(e.snapshot.price) ? priceHeadHtml(e) : '',
+    chartHtml(e.snapshot),
+  ].filter(Boolean).join('');
+  if (priceInner) parts.push(sec(t('wl.sec.price'), priceInner, e.snapshot?.source || ''));
+
   if (e.report) {
-    parts.push(`<div class="wl-report">${reportHtml(e.report)}</div>`);
+    parts.push(sec(t('wl.sec.dossier'),
+      `<div class="wl-report">${renderMarkdown(e.report)}</div>${metaHtml(e)}`,
+      e.updatedAt ? `${t('wl.updated')} ${fmtDateTime(e.updatedAt)}` : ''));
   }
-  parts.push(metaHtml(e));
-  if (Array.isArray(e.news) && e.news.length) parts.push(newsHtml(e.news));
-  if (Array.isArray(e.wireLines) && e.wireLines.length) parts.push(wireHtml(e.wireLines));
+  if (Array.isArray(e.news) && e.news.length) {
+    parts.push(sec(t('wl.news.title'), newsHtml(e.news)));
+  }
+  if (Array.isArray(e.wireLines) && e.wireLines.length) {
+    parts.push(sec(t('wl.wire.title'), wireHtml(e.wireLines)));
+  }
   return `<div class="wl-body">${parts.filter(Boolean).join('')}</div>`;
+}
+
+function stat(label, value, sub) {
+  return `<div class="wl-stat">
+    <span class="wl-stat-label">${escapeHtml(label)}</span>
+    <span class="wl-stat-value">${escapeHtml(value)}</span>
+    ${sub ? `<span class="wl-stat-sub">${escapeHtml(sub)}</span>` : ''}
+  </div>`;
 }
 
 function priceHeadHtml(e) {
@@ -199,7 +289,6 @@ function priceHeadHtml(e) {
     <span class="wl-price-big">${escapeHtml(fmtPrice(s.price, s.currency))}</span>
     ${pct == null ? '' : `<span class="wl-pct-big ${cls(pct)}">${escapeHtml(fmtPct(pct))}</span>`}
     ${tiles.join('')}
-    ${s.source ? `<span class="wl-venue">${escapeHtml(s.source)}</span>` : ''}
     ${anchor}
   </div>`;
 }
@@ -237,52 +326,23 @@ function chartHtml(s) {
   </div>`;
 }
 
-/* The dossier text: "- " lines become list items, everything else paragraphs. */
-function reportHtml(text) {
-  const out = [];
-  let ul = null;
-  for (const raw of String(text).split('\n')) {
-    const line = raw.trim();
-    if (!line) { ul = null; continue; }
-    if (line.startsWith('- ')) {
-      if (!ul) { ul = []; out.push(ul); }
-      ul.push(line.slice(2));
-    } else {
-      ul = null;
-      out.push(line);
-    }
-  }
-  return out.map(b => Array.isArray(b)
-    ? `<ul>${b.map(li => `<li>${escapeHtml(li)}</li>`).join('')}</ul>`
-    : `<p>${escapeHtml(b)}</p>`).join('');
-}
-
 function metaHtml(e) {
-  const bits = [];
-  if (e.updatedAt) bits.push(`${escapeHtml(t('wl.updated'))} ${escapeHtml(fmtDateTime(e.updatedAt))}`);
-  if (e.evidenceCount) bits.push(`${e.evidenceCount} ${escapeHtml(t('wl.mentions'))}`);
-  if (!bits.length) return '';
-  return `<p class="wl-meta">${bits.join(' · ')}</p>`;
+  if (!e.evidenceCount) return '';
+  return `<p class="wl-meta">${e.evidenceCount} ${escapeHtml(t('wl.mentions'))}</p>`;
 }
 
 function newsHtml(news) {
-  return `<div class="wl-block">
-    <div class="wl-block-title">${escapeHtml(t('wl.news.title'))}</div>
-    <ul class="wl-news">${news.map(n => `
-      <li><a href="${escapeHtml(n.url || '#')}" target="_blank" rel="noopener">${escapeHtml(n.title || '')}</a>
-        <span class="wl-news-meta">${escapeHtml([n.publisher, n.publishedAt ? fmtDate(n.publishedAt) : null]
-          .filter(Boolean).join(' · '))}</span></li>`).join('')}
-    </ul>
-  </div>`;
+  return `<ul class="wl-news">${news.map(n => `
+    <li><a href="${escapeHtml(n.url || '#')}" target="_blank" rel="noopener">${escapeHtml(n.title || '')}</a>
+      <span class="wl-news-meta">${escapeHtml([n.publisher, n.publishedAt ? fmtDate(n.publishedAt) : null]
+        .filter(Boolean).join(' · '))}</span></li>`).join('')}
+  </ul>`;
 }
 
 function wireHtml(lines) {
-  return `<div class="wl-block">
-    <div class="wl-block-title">${escapeHtml(t('wl.wire.title'))}</div>
-    <ul class="wl-wire">${[...lines].reverse().map(h => `
-      <li><span class="wl-wire-time">${escapeHtml(fmtDateTime(h.atEpoch))}</span> ${escapeHtml(h.text || '')}</li>`).join('')}
-    </ul>
-  </div>`;
+  return `<ul class="wl-wire">${[...lines].reverse().map(h => `
+    <li><span class="wl-wire-time">${escapeHtml(fmtDateTime(h.atEpoch))}</span> ${escapeHtml(h.text || '')}</li>`).join('')}
+  </ul>`;
 }
 
 /* ---- formatting ---- */
@@ -304,6 +364,24 @@ function fmtPrice(price, currency) {
   if (currency === 'EUR') return `${num} €`;
   if (currency === 'USD') return `${num} $`;
   return currency ? `${num} ${currency}` : num;
+}
+
+/** Bare number in the local format (the Marktdaten grid is implicitly EUR). */
+function fmtNum(v) {
+  const digits = Math.abs(v) < 1 ? 4 : 2;
+  return v.toLocaleString(locale(), {
+    minimumFractionDigits: digits, maximumFractionDigits: digits,
+  });
+}
+
+function fmtInt(v) {
+  return Math.round(v).toLocaleString(locale());
+}
+
+/** EUR turnover, compact: "38,3 Mio. €" / "38.3M €". */
+function fmtCompactEur(v) {
+  const num = v.toLocaleString(locale(), { notation: 'compact', maximumFractionDigits: 1 });
+  return `${num} €`;
 }
 
 /* Signed percent, wire convention: leading +/− directly on the number. */

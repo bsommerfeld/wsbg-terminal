@@ -186,6 +186,11 @@ public class EditorialAgent {
                 config.getHeadlines().isReadArticles());
     }
 
+    /** The article digester — shared with the KI-DD (digestNow) and the watchlist's news warmup. */
+    NewsDigester newsDigester() {
+        return newsDigester;
+    }
+
     /**
      * Installs the live price chain (L&amp;S → Deutsche Börse → NASDAQ → Yahoo, EUR) onto
      * the resolver. Optional Guice method-injection: present in production
@@ -232,6 +237,17 @@ public class EditorialAgent {
                 de.bsommerfeld.wsbg.terminal.core.util.StorageUtils.getAppDataDir()
                         .resolve("identity-ledger.jsonl")));
         LOG.info("[IDENTITY] desk armed: venue lookup + persistent ledger installed.");
+    }
+
+    /**
+     * The fully-wired resolver (identity desk, judge, corpus, price chain, news
+     * pool) — shared with the watchlist's research leg, so a watched subject the
+     * room has never mentioned resolves through exactly the same identity
+     * machinery as a pipeline subject. Package-private on purpose: the resolver's
+     * verdict caches are process-wide state that must stay single-instance.
+     */
+    TickerResolver tickerResolver() {
+        return tickerResolver;
     }
 
     /**
