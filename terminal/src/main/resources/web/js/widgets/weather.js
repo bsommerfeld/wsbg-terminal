@@ -154,10 +154,12 @@ function w(r) {
    morning / midday / evening with a deterministic weather symbol from that
    window's cage mood, plus the docket-based TOMORROW tile (a High-impact
    release is a storm warning, never a prediction). */
+const PART_LABELS = { MORNING: 'weather.part.morning', MIDDAY: 'weather.part.midday',
+  EVENING: 'weather.part.evening', TOMORROW: 'weather.part.tomorrow' };
+
 function forecastStripHtml(dayparts) {
   if (!Array.isArray(dayparts) || !dayparts.length) return '';
-  const labels = { MORNING: 'weather.part.morning', MIDDAY: 'weather.part.midday',
-    EVENING: 'weather.part.evening', TOMORROW: 'weather.part.tomorrow' };
+  const labels = PART_LABELS;
   const tiles = dayparts.map(d => {
     const warn = d.key === 'TOMORROW' && d.icon === 'STORM';
     let sub;
@@ -801,10 +803,12 @@ function syncTimeInput(p) {
 }
 
 // ---- the dedicated grid-card tile (.grid-thumb, shown instead of the
-// miniature view in the overview): the newest report's date, an excerpt of
-// its opening prose and the day's market moves as chips — or, before the
-// first report of the day's cycle, the big countdown. Laid out at natural
-// pane size; widget-grid.css zooms it with the card, so the type is LARGE. ----
+// miniature view in the overview): a real forecast tile — the newest
+// report's date as kicker, the daypart forecast strip LARGE (label + weather
+// symbol per window), a short excerpt of the opening prose and the day's
+// market moves as chips. Before the first report of the day's cycle the big
+// countdown takes the tile. Laid out at natural pane size; widget-grid.css
+// zooms it with the card, so the type is LARGE. ----
 
 const THUMB_MARKETS = 4;
 
@@ -831,17 +835,29 @@ function renderThumb(p) {
     return;
   }
   const r = reports[0];
+  const dayparts = Array.isArray(w(r).dayparts) ? w(r).dayparts : [];
+  const cast = dayparts.length
+    ? `<div class="weather-thumb-forecast">${dayparts.map(d => {
+        const warn = d.key === 'TOMORROW' && d.icon === 'STORM';
+        return `<div class="weather-thumb-cast${warn ? ' warn' : ''}">
+          ${wxIcon(d.icon)}
+          <span class="weather-thumb-cast-label">${escapeHtml(t(PART_LABELS[d.key] || d.key))}</span>
+          ${d.red > 0 ? `<span class="weather-thumb-cast-red">${d.red}!</span>` : ''}
+        </div>`;
+      }).join('')}</div>`
+    : '';
   const chips = (r.indices || []).slice(0, THUMB_MARKETS).map(ix => `
     <span class="weather-thumb-chip">
       <span class="weather-thumb-chip-name">${escapeHtml(ix.name || ix.symbol || '')}</span>
       ${pct(ix.changePercent)}
     </span>`).join('');
-  const dayparts = Array.isArray(w(r).dayparts) ? w(r).dayparts : [];
-  const cast = dayparts.length
-    ? `<div class="weather-thumb-cast">${dayparts.map(d => wxIcon(d.icon)).join('')}</div>` : '';
-  thumb.innerHTML = `<div class="weather-thumb-report">
-    <div class="weather-thumb-date">${escapeHtml(t('weather.report.from'))} ${escapeHtml(fmtDate(r.date))}${cast}</div>
-    <p class="weather-thumb-text">${escapeHtml(plainExcerpt(r.text))}</p>
+  // With the forecast strip the prose is a teaser; without one (pre-strip
+  // archive lines) it carries the tile and may run longer.
+  const excerpt = plainExcerpt(r.text, cast ? 200 : 320);
+  thumb.innerHTML = `<div class="weather-thumb-report${cast ? ' has-cast' : ''}">
+    <div class="weather-thumb-date">${escapeHtml(t('weather.report.from'))} ${escapeHtml(fmtDate(r.date))}</div>
+    ${cast}
+    <p class="weather-thumb-text">${escapeHtml(excerpt)}</p>
     ${chips ? `<div class="weather-thumb-markets">${chips}</div>` : ''}
   </div>`;
 }

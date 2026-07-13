@@ -379,8 +379,6 @@
 .weather-wx .wx-sun { stroke: var(--amber); }
 .weather-wx .wx-cloud { stroke: var(--mute); }
 .weather-wx .wx-wet { stroke: var(--red); }
-.weather-thumb-cast { display: inline-flex; gap: 14px; margin-left: 22px; vertical-align: middle; }
-.weather-thumb-cast .weather-wx { width: 34px; height: 34px; }
 
 /* ---- report figures (the KI-DD white-paper pattern) ----
    Colors ride the shared --ddc-* custom properties: DARK values here, the
@@ -592,12 +590,13 @@ html[data-theme="light"] .weather-figure {
 }
 
 /* ---- dedicated grid-card tile (.grid-thumb, see widget-grid.css) ----
-   Shown INSTEAD of the miniature view in the overview: the newest report's
-   date + prose excerpt + market chips, or the big countdown before the first
-   report. Laid out at NATURAL pane size (widget-grid.css zooms it with the
-   card), so the type here is deliberately large — it paints tile-sized.
-   Deliberately NO own background: the card behind it paints var(--bg) with
-   the card's rounding (see the wl-thumb note). ---- */
+   Shown INSTEAD of the miniature view in the overview: a forecast tile —
+   the newest report's date as kicker, the daypart forecast strip LARGE,
+   a short prose teaser + market chips; or the big countdown before the
+   first report. Laid out at NATURAL pane size (widget-grid.css zooms it
+   with the card), so the type here is deliberately large — it paints
+   tile-sized. Deliberately NO own background: the card behind it paints
+   var(--bg) with the card's rounding (see the wl-thumb note). ---- */
 .weather-thumb {
   flex-direction: column;
   padding: 64px 80px;
@@ -647,6 +646,51 @@ html[data-theme="light"] .weather-figure {
   text-transform: uppercase;
   color: var(--mute);
 }
+/* The forecast strip, tile-sized: one card per day part with its label and
+   the weather symbol LARGE — the thumb reads as an actual weather forecast
+   at a glance. Mirrors the focus view's .weather-cast grammar. */
+.weather-thumb-forecast {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 22px;
+}
+/* Icon on top, label below — the top corners stay free for the red count. */
+.weather-thumb-cast {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 28px 14px 22px;
+  border: 2px solid var(--line-soft);
+  border-radius: 20px;
+  background: var(--bg-1);
+}
+.weather-thumb-cast.warn {
+  border-color: color-mix(in oklch, var(--red) 45%, transparent);
+}
+.weather-thumb-cast-label {
+  font-family: "Inter", sans-serif;
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.weather-thumb-cast .weather-wx {
+  width: 76px;
+  height: 76px;
+  stroke-width: 1.4;
+}
+.weather-thumb-cast-red {
+  position: absolute;
+  top: 16px;
+  right: 20px;
+  font-family: "Inter", sans-serif;
+  font-size: 26px;
+  font-weight: 650;
+  color: var(--red);
+}
 .weather-thumb-text {
   margin: 0;
   font-family: "Inter", sans-serif;
@@ -657,6 +701,12 @@ html[data-theme="light"] .weather-figure {
   -webkit-line-clamp: 5;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+/* Beside the forecast strip the prose is a teaser, not the tile's body. */
+.weather-thumb-report.has-cast .weather-thumb-text {
+  -webkit-line-clamp: 3;
+  font-size: 36px;
+  color: var(--txt-2);
 }
 .weather-thumb-markets {
   display: flex;
