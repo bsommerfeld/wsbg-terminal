@@ -399,8 +399,12 @@
     <!-- KI-DD widget: one comprehensive, FIXED due-diligence report per subject,
          generated on demand from every data leg + the room, written in three
          AI passes (draft → adversarial Q&A → final), archived permanently,
-         exportable as PDF. Body rendered by js/widgets/deepdive.js. -->
-    <section class="widget" id="widget-deepdive">
+         exportable as PDF. Body rendered by js/widgets/deepdive.js.
+         has-grid-thumb: the grid card shows the DEDICATED .grid-thumb tile
+         (newest report as hero + earlier ones as rows, or the live run's
+         progress) instead of a miniature of the real view — the composer
+         form reads as noise at card scale. -->
+    <section class="widget has-grid-thumb" id="widget-deepdive">
       <header class="widget-head">
         <div class="ident"><span class="glyph glyph-dd" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><circle cx="11.5" cy="14.5" r="2.5"/><path d="m13.3 16.3 2.2 2.2"/></svg></span><span data-i18n="widget.deepdive.title">KI-DD</span><button type="button" class="ki-badge js-ai-notice"
                   aria-haspopup="dialog"
@@ -412,6 +416,9 @@
       <div class="widget-body">
         <div id="deepdive-detail" class="dd-detail"></div>
       </div>
+      <!-- Dedicated grid-card tile (shown INSTEAD of .widget-body in the
+           overview): rendered by deepdive.js alongside the detail view. -->
+      <div class="grid-thumb dd-thumb" id="deepdive-thumb" aria-hidden="true"></div>
       <button class="grid-hit" type="button" aria-label="KI-DD öffnen"
               data-i18n-aria-label="grid.open.deepdive">
         <span class="grid-hit-tag">

@@ -19,12 +19,14 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * The permanent, append-only KI-DD report history — one JSONL line per
- * generated report ({@code <app-data>/archive/deepdive-reports.jsonl}, never
- * deleted). Same discipline as the headline/weather archives: loaded + indexed
- * in memory at startup, torn lines from a crash are skipped, appends are
- * idempotent by report id. A report is a FIXED snapshot — it is never revised,
- * a new run appends a new record.
+ * The permanent KI-DD report history — one JSONL line per generated report
+ * ({@code <app-data>/archive/deepdive-reports.jsonl}). Same discipline as the
+ * headline/weather archives: loaded + indexed in memory at startup, torn lines
+ * from a crash are skipped, appends are idempotent by report id. A report is a
+ * FIXED snapshot — it is never revised, a new run appends a new record. The
+ * ONE mutation beyond append is an explicit user {@link #delete} (UI trash
+ * button, 2026-07-13) — the file is atomically rewritten without the record;
+ * the system itself never deletes.
  */
 @Singleton
 public class DeepDiveArchive {
@@ -88,6 +90,41 @@ public class DeepDiveArchive {
         } catch (IOException e) {
             LOG.warn("Failed to append deep-dive report {}: {}", record.id(), e.getMessage());
         }
+    }
+
+    /**
+     * Removes one report from the index AND the file — an explicit user action,
+     * never system-initiated. The JSONL is rewritten to a temp file and moved
+     * into place (atomic where the filesystem supports it), so a crash mid-way
+     * never tears the archive.
+     *
+     * @return true when the id existed and is gone
+     */
+    public synchronized boolean delete(String id) {
+        if (id == null || !ids.remove(id)) return false;
+        records.removeIf(r -> id.equals(r.id()));
+        try {
+            Files.createDirectories(file.getParent());
+            StringBuilder sb = new StringBuilder();
+            for (DeepDiveRecord r : records) {
+                sb.append(mapper.writeValueAsString(r)).append(System.lineSeparator());
+            }
+            Path tmp = file.resolveSibling(FILE_NAME + ".tmp");
+            Files.writeString(tmp, sb.toString(), StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
+                    StandardOpenOption.WRITE);
+            try {
+                Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                        java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+            } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+                Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+            LOG.info("Deep-dive report {} deleted ({} remain).", id, records.size());
+        } catch (IOException e) {
+            LOG.warn("Failed to rewrite deep-dive archive after deleting {}: {}",
+                    id, e.getMessage());
+        }
+        return true;
     }
 
     public synchronized Optional<DeepDiveRecord> byId(String id) {

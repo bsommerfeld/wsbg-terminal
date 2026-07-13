@@ -1,17 +1,40 @@
-/* KI-DD widget (grid card + focus; no dashboard slot). One fixed research
-   report per subject: generate form on top, then either the progress state
-   (three passes narrated), the current report (markdown with amber-ticked
-   crossheads, PDF export button), and the history of earlier reports. All
-   colors ride the tokens; no looping animations (OSR paint rule). */
+/* KI-DD widget (grid card + focus; no dashboard slot). Two views, the
+   watchlist pattern: `.dd-home` = ticker composer + progress card + report
+   CARDS (armed two-tap delete); `.dd-detail-view` = ONE report as its own
+   page (round back arrow, header, PDF export). View switches animate ONE-SHOT
+   (finite keyframes restarted by the hidden-toggle) — nothing loops (OSR
+   paint rule). All colors ride the tokens. */
 
 .dd-detail {
   display: flex;
   flex-direction: column;
-  gap: 14px;
   padding: 16px 0 24px;
 }
 
-/* ---- generate form (mirrors the watchlist add form) ---- */
+/* ---- one-shot view transitions (restart on display:none -> visible) ---- */
+
+@keyframes dd-view-in {
+  from { opacity: 0; transform: translateX(16px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes dd-view-back {
+  from { opacity: 0; transform: translateX(-10px); }
+  to   { opacity: 1; transform: none; }
+}
+.dd-detail-view:not([hidden]) { animation: dd-view-in .22s ease both; }
+.dd-home:not([hidden]) { animation: dd-view-back .18s ease both; }
+
+.dd-home {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+/* display:flex would defeat the hidden attribute (author styles beat the UA's
+   [hidden]{display:none}) — the open report would render BELOW the still-
+   visible list (live-observed 2026-07-13). Same guard as .dd-detail-view. */
+.dd-home[hidden] { display: none; }
+
+/* ---- the composer (ticker in, DD out) ---- */
 
 .dd-form {
   display: flex;
@@ -21,31 +44,45 @@
 .dd-input {
   flex: 1;
   min-width: 0;
-  font: inherit;
+  font-family: "JetBrains Mono", monospace;
+  font-size: .92em;
+  text-transform: uppercase;
+  letter-spacing: .06em;
   color: var(--txt);
   background: var(--bg-1);
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 9px 14px;
   outline: none;
-  transition: border-color .15s;
+  transition: border-color .15s, box-shadow .15s;
 }
-.dd-input:focus { border-color: var(--mute); }
-.dd-input::placeholder { color: var(--mute); }
+.dd-input:focus {
+  border-color: var(--amber);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--amber) 12%, transparent);
+}
+.dd-input::placeholder {
+  font-family: "Inter", sans-serif;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--mute);
+}
 .dd-btn {
   font-family: "Inter", sans-serif;
   font-weight: 600;
   font-size: var(--font-chrome);
   letter-spacing: .04em;
-  color: var(--txt);
-  background: var(--bg-1);
-  border: 1px solid var(--line);
+  color: var(--amber);
+  background: color-mix(in oklch, var(--amber) 8%, transparent);
+  border: 1px solid color-mix(in oklch, var(--amber) 35%, transparent);
   border-radius: 10px;
   padding: 9px 18px;
   cursor: pointer;
-  transition: border-color .15s, color .15s;
+  transition: border-color .15s, background .15s, opacity .15s;
 }
-.dd-btn:hover:not(:disabled) { border-color: var(--amber); color: var(--amber); }
+.dd-btn:hover:not(:disabled) {
+  border-color: var(--amber);
+  background: color-mix(in oklch, var(--amber) 14%, transparent);
+}
 .dd-btn:disabled { opacity: .45; cursor: default; }
 
 .dd-empty {
@@ -55,18 +92,22 @@
   padding: 18px 4px;
 }
 
-/* ---- progress: the three passes, narrated ---- */
+/* ---- progress: the passes, narrated (shown while a run is live) ---- */
 
 .dd-progress {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 14px 4px;
+  padding: 14px 16px;
+  background: var(--bg-1);
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
 }
 .dd-progress-subject {
-  font-family: "Inter", sans-serif;
-  font-weight: 650;
-  font-size: 1.05em;
+  font-family: "JetBrains Mono", monospace;
+  font-weight: 600;
+  font-size: 1em;
+  letter-spacing: .04em;
 }
 .dd-progress-stage {
   color: var(--txt-2);
@@ -84,27 +125,168 @@
   background: var(--line);
 }
 .dd-step.done { background: var(--amber); }
+.dd-step.live { background: color-mix(in oklch, var(--amber) 45%, transparent); }
 
-/* ---- the report ---- */
+/* ---- the report cards (newest first, armed two-tap delete) ---- */
 
-.dd-report-head {
+.dd-cards {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.dd-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  background: var(--bg-1);
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: border-color .15s, transform .15s;
+}
+.dd-card:hover {
+  border-color: var(--amber);
+  transform: translateX(2px);
+}
+.dd-card-main {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.dd-card-name {
   display: flex;
   align-items: baseline;
-  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: "Inter", sans-serif;
+  font-weight: 600;
+}
+.dd-ticker {
+  flex-shrink: 0;
+  font-family: "JetBrains Mono", monospace;
+  font-weight: 500;
+  font-size: .68em;
+  letter-spacing: .06em;
+  color: var(--mute);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 1px 6px;
+  transform: translateY(-1px);
+}
+.dd-card-meta {
+  font-family: "JetBrains Mono", monospace;
+  font-size: .74em;
+  color: var(--mute);
+}
+.dd-card-chevron {
+  flex-shrink: 0;
+  width: 14px; height: 14px;
+  color: var(--mute);
+  stroke: currentColor; stroke-width: 2; fill: none;
+  stroke-linecap: round; stroke-linejoin: round;
+  transition: color .15s, transform .15s;
+}
+.dd-card:hover .dd-card-chevron { color: var(--amber); transform: translateX(2px); }
+
+.dd-del {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 6px;
+  color: var(--mute);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity .15s, color .15s, border-color .15s;
+}
+.dd-card:hover .dd-del, .dd-del.armed { opacity: 1; }
+.dd-del:hover { color: var(--red); }
+.dd-del svg {
+  width: 14px; height: 14px;
+  stroke: currentColor; stroke-width: 2; fill: none;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.dd-del.armed {
+  color: var(--red);
+  border-color: var(--red);
+}
+.dd-del-confirm {
+  font-family: "Inter", sans-serif;
+  font-weight: 600;
+  font-size: .72em;
+  letter-spacing: .04em;
+  white-space: nowrap;
+}
+
+/* ---- the report's own page: back arrow + header + PDF ---- */
+
+.dd-detail-view {
+  display: flex;
+  flex-direction: column;
   gap: 12px;
 }
-.dd-report-title {
+.dd-detail-view[hidden] { display: none; }
+.dd-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.dd-back {
+  flex-shrink: 0;
+  width: 34px; height: 34px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--txt-2);
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+.dd-back:hover { color: var(--amber); border-color: var(--amber); }
+.dd-back svg {
+  width: 16px; height: 16px;
+  stroke: currentColor; stroke-width: 2; fill: none;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.dd-detail-titles {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.dd-detail-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: "Inter", sans-serif;
   font-weight: 650;
   font-size: 1.12em;
 }
-.dd-report-meta {
+.dd-detail-meta {
   font-family: "JetBrains Mono", monospace;
-  font-size: .78em;
+  font-size: .74em;
   color: var(--mute);
 }
 .dd-pdf {
-  margin-left: auto;
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -131,7 +313,7 @@
   color: var(--mute);
 }
 
-/* The report body reads like a paper, not a dossier: five uppercase tracked
+/* The report body reads like a paper, not a dossier: uppercase tracked
    crossheads (amber tick + trailing hairline, the kicker pattern), a lead
    paragraph under the first crosshead, calm paragraph rhythm, tabular
    figures so inline values align. */
@@ -239,42 +421,7 @@ html[data-theme="light"] .dd-figure {
   color: var(--mute);
 }
 
-/* ---- history of earlier reports ---- */
-
-.dd-history { list-style: none; padding: 0; }
-.dd-history li { border-bottom: 1px solid var(--line-soft); }
-.dd-history-btn {
-  width: 100%;
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  text-align: left;
-  font: inherit;
-  color: var(--txt);
-  background: none;
-  border: 0;
-  padding: 9px 4px;
-  cursor: pointer;
-}
-.dd-history-btn:hover .dd-history-name { color: var(--amber); }
-.dd-history-btn.active .dd-history-name { color: var(--amber); }
-.dd-history-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 500;
-  transition: color .15s;
-}
-.dd-history-meta {
-  margin-left: auto;
-  flex-shrink: 0;
-  font-family: "JetBrains Mono", monospace;
-  font-size: .78em;
-  color: var(--mute);
-}
-
-/* ---- section head reuse (kicker + hairline, watchlist pattern) ---- */
+/* ---- section head (kicker + hairline + count, watchlist pattern) ---- */
 
 .dd-sec-head {
   display: flex;
@@ -296,6 +443,12 @@ html[data-theme="light"] .dd-figure {
   border-top: 1px solid var(--line-soft);
   transform: translateY(-.28em);
 }
+.dd-sec-count {
+  flex-shrink: 0;
+  font-family: "JetBrains Mono", monospace;
+  font-size: .72em;
+  color: var(--mute);
+}
 
 /* ---- header glyph + grid/rail icons (amber ident like the siblings) ---- */
 
@@ -315,4 +468,129 @@ html[data-theme="light"] .dd-figure {
   width: 24px; height: 24px;
   stroke: currentColor; stroke-width: 1.8; fill: none;
   stroke-linecap: round; stroke-linejoin: round;
+}
+
+/* ---- dedicated grid-card tile (.grid-thumb, see widget-grid.css) ----
+   Shown INSTEAD of the miniature view in the overview: the newest report as
+   hero (name + ticker + date/price) with earlier reports as terse rows, the
+   live run's subject + pass bars while the AI writes, or a short empty
+   state. Laid out at NATURAL pane size (widget-grid.css zooms it with the
+   card), so the type here is deliberately large — it paints tile-sized.
+   Deliberately NO own background: the card behind it paints var(--bg) with
+   the card's rounding (see the wl-thumb note). ---- */
+
+.dd-thumb {
+  flex-direction: column;
+  padding: 56px 72px;
+}
+.dd-thumb-report,
+.dd-thumb-busy {
+  margin: auto 0;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  min-width: 0;
+}
+.dd-thumb-kicker {
+  font-family: "Inter", sans-serif;
+  font-weight: 700;
+  font-size: 26px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.dd-thumb-name {
+  display: flex;
+  align-items: baseline;
+  gap: 22px;
+  min-width: 0;
+  font-family: "Inter", sans-serif;
+  font-weight: 600;
+  font-size: 52px;
+  color: var(--txt);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dd-thumb-ticker {
+  flex-shrink: 0;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 30px;
+  letter-spacing: .06em;
+  color: var(--amber);
+}
+.dd-thumb-meta {
+  font-family: "Inter", sans-serif;
+  font-size: 30px;
+  color: var(--txt-2);
+  font-variant-numeric: tabular-nums;
+}
+.dd-thumb-rows {
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  border-top: 2px solid var(--line-soft);
+  padding-top: 30px;
+}
+.dd-thumb-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 40px;
+}
+.dd-thumb-row-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: "Inter", sans-serif;
+  font-size: 32px;
+  color: var(--txt-2);
+}
+.dd-thumb-row-date {
+  flex-shrink: 0;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 26px;
+  color: var(--mute);
+  font-variant-numeric: tabular-nums;
+}
+.dd-thumb-more {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 26px;
+  color: var(--mute);
+  text-align: right;
+}
+/* The pass bars, tile-sized (the .dd-step grammar scaled up). */
+.dd-thumb-steps {
+  display: flex;
+  gap: 16px;
+  margin-top: 10px;
+}
+.dd-thumb-step {
+  flex: 1;
+  height: 10px;
+  border-radius: 6px;
+  background: var(--line);
+}
+.dd-thumb-step.done { background: var(--amber); }
+.dd-thumb-step.live { background: color-mix(in oklch, var(--amber) 45%, transparent); }
+.dd-thumb-empty {
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28px;
+  color: var(--mute);
+  text-align: center;
+}
+.dd-thumb-empty svg {
+  width: 88px; height: 88px;
+  stroke: currentColor; stroke-width: 1.4; fill: none;
+  stroke-linecap: round; stroke-linejoin: round;
+  opacity: .8;
+}
+.dd-thumb-empty span {
+  font-family: "Inter", sans-serif;
+  font-size: 30px;
 }

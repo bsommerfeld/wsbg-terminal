@@ -25,7 +25,7 @@ import { renderFearGreed } from './widgets/fear-greed.js';
 import { renderFearGreedDetail } from './widgets/fg-detail.js';
 import { initWatchlist, renderWatchlist, renderWatchlistSubjects } from './widgets/watchlist.js';
 import { initWeather, renderWeather } from './widgets/weather.js';
-import { initDeepDive, renderDeepDive, renderDeepDiveReport } from './widgets/deepdive.js';
+import { initDeepDive, renderDeepDive, renderDeepDiveReport, renderDeepDiveSuggestions } from './widgets/deepdive.js';
 import { setMarketCalendar } from './markets/state.js';
 import { t } from './i18n/i18n.js';
 
@@ -102,7 +102,7 @@ socket.on('archive-results', payload => {
 });
 
 // Watchlist add-suggestions (requested when the add input gains focus).
-socket.on('watchlist-subjects', renderWatchlistSubjects);
+socket.on('watchlist-subjects', p => { renderWatchlistSubjects(p); renderDeepDiveSuggestions(p); });
 
 // One full KI-DD report, requested from the history list.
 socket.on('deepdive-report', renderDeepDiveReport);

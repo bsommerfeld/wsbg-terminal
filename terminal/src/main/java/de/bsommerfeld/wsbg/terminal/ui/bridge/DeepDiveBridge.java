@@ -32,6 +32,8 @@ import java.util.Map;
  *   <li>{@code {command:"list"}} — request the current state;</li>
  *   <li>{@code {command:"get", id:"dd-…"}} — one full report, answered with a
  *       {@code deepdive-report} broadcast;</li>
+ *   <li>{@code {command:"delete", id:"dd-…"}} — remove one archived report
+ *       (explicit user action; the archive rewrites its file);</li>
  *   <li>{@code {command:"export-pdf", id:"dd-…"}} — native save dialog (EDT),
  *       then Chromium {@code printToPDF}; the outcome rides the next state push.</li>
  * </ul>
@@ -106,6 +108,10 @@ public final class DeepDiveBridge {
                 case "list" -> push();
                 case "get" -> service.byId(Payloads.str(payload.get("id"))).ifPresent(r ->
                         hub.broadcastSafe("deepdive-report", () -> Map.of("item", itemJson(r, true))));
+                case "delete" -> {
+                    service.delete(Payloads.str(payload.get("id")));
+                    push();
+                }
                 case "export-pdf" -> service.byId(Payloads.str(payload.get("id")))
                         .ifPresent(this::exportPdf);
                 default -> LOG.debug("deepdive: ignoring unknown command '{}'", cmd);
