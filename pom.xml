@@ -22,6 +22,7 @@
         <module>onvista</module>
         <module>consorsbank</module>
         <module>bundesanzeiger</module>
+        <module>bafin</module>
         <module>wallstreet-online</module>
         <module>source-api</module>
         <module>instrument-corpus</module>
@@ -120,6 +121,11 @@
             <dependency>
                 <groupId>de.bsommerfeld</groupId>
                 <artifactId>bundesanzeiger</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>bafin</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
