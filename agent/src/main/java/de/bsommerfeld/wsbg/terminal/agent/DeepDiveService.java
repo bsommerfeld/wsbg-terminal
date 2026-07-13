@@ -56,16 +56,19 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * competes with the wire.
  *
  * <p><b>Loss-free is enforced MECHANICALLY, not just prompted (user mandate
- * 2026-07-13 "streng iterativ ohne Informationsverlust"):</b> every pass is
- * gated deterministically — the seven canonical headings must survive
- * ({@link #looksLikeReport}), the standing report's source markers must still
- * be present (retention), at least one of the new packet's markers must appear
- * (arrival), and the revised text must not shrink (a 4B model compresses under
- * length pressure). A failed pass retries ONCE; a packet whose both attempts
- * fail is requeued for a second integration round instead of being dropped.
- * Each pass also carries the MATERIAL PLAN in its letterhead (which packets
- * are done / current / pending — the model must know what it is working on),
- * and the per-pass input is budgeted against the model's context window
+ * 2026-07-13 "streng iterativ ohne Informationsverlust"):</b> the integrate and
+ * final passes emit EDIT OPERATIONS ({@link EditScript}: replace / insert-after
+ * / delete against verbatim anchors) instead of re-emitting the whole report —
+ * untouched text survives by construction, and the model's output stays small
+ * however long the report grows (no token-ceiling cuts). After applying, each
+ * pass is still gated deterministically: the seven canonical headings must
+ * survive ({@link #looksLikeReport}), at least one of the new packet's markers
+ * must appear (arrival), and the text must not net-shrink. A failed pass
+ * retries ONCE; a packet whose both attempts fail is requeued for a second
+ * integration round instead of being dropped. Each pass also carries the
+ * MATERIAL PLAN in its letterhead (which packets are done / current / pending —
+ * the model must know what it is working on), and the per-pass input is
+ * budgeted against the model's context window
  * ({@link AgentBrain#contextTokens()}), splitting a packet that would not fit
  * instead of letting Ollama truncate silently.
  *
@@ -228,27 +231,57 @@ public class DeepDiveService {
         return archive.byId(id);
     }
 
+    /** Deletes one archived report — an explicit user action from the widget. */
+    public boolean delete(String id) {
+        return archive.delete(id);
+    }
+
     /**
-     * Kicks one report generation. Returns {@code false} (and does nothing) when
-     * a generation is already running or the name is unusable — one DD at a time,
-     * the passes are heavyweight model calls.
+     * Kicks one report generation. The input is a TICKER, never a free name
+     * (user mandate 2026-07-13 "ausschließlich Ticker akzeptieren") — the whole
+     * collect keys on it: local lists first, the resolver as dynamic fallback,
+     * and the canonical name is LOOKED UP from the ticker for the name-addressed
+     * legs (Google News, WSO). Returns {@code false} (and does nothing) when a
+     * generation is already running or the input is not ticker-shaped — one DD
+     * at a time, the passes are heavyweight model calls.
      */
-    public boolean generate(String rawName) {
-        String name = rawName == null ? "" : rawName.strip();
-        if (name.isEmpty() || name.length() > 80) return false;
+    public boolean generate(String rawTicker) {
+        String ticker = rawTicker == null ? "" : rawTicker.strip().toUpperCase(Locale.ROOT);
+        if (!looksLikeTicker(ticker)) {
+            LOG.info("[DEEPDIVE] rejected non-ticker input: '{}'", rawTicker);
+            return false;
+        }
         if (!busy.compareAndSet(false, true)) return false;
-        String canonical = WsbgJargon.canonicalize(name);
         worker.execute(() -> {
             try {
-                run(canonical);
+                run(ticker);
             } catch (Exception e) {
-                LOG.warn("[DEEPDIVE] generation for '{}' failed: {}", canonical, e.getMessage());
-                finish(canonical, false, null);
+                LOG.warn("[DEEPDIVE] generation for '{}' failed: {}", ticker, e.getMessage());
+                finish(ticker, false, null);
             } finally {
                 busy.set(false); // safety net — finish() already dropped it
             }
         });
         return true;
+    }
+
+    /**
+     * Ticker shape: no whitespace, ≤15 chars, only symbol alphabet (letters,
+     * digits, and the venue/index/futures/FX markers {@code . - ^ =}). Covers
+     * RHM.DE, 005930.KS, BRK-B, ^GDAXI, CC=F, BTC-USD — and rejects free names.
+     */
+    static boolean looksLikeTicker(String s) {
+        if (s == null || s.isEmpty() || s.length() > 15) return false;
+        boolean alnum = false;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+                alnum = true;
+                continue;
+            }
+            if (c != '.' && c != '-' && c != '^' && c != '=') return false;
+        }
+        return alnum;
     }
 
     /**
@@ -323,12 +356,13 @@ public class DeepDiveService {
             return;
         }
 
-        // Passes 2..n — integration: standing report + ONE new packet per pass,
-        // the watchlist's revise discipline (unchanged passages word-for-word),
-        // now ENFORCED per pass: structure, marker retention, packet arrival and
-        // no-shrink are checked deterministically; a failed pass retries once,
-        // a twice-failed packet goes into a SECOND integration round instead of
-        // being dropped — no packet may silently fall out of the report.
+        // Passes 2..n — integration: standing report + ONE new packet per pass.
+        // The model emits EDIT OPERATIONS (EditScript), never the full report —
+        // untouched text survives mechanically, and the output stays small no
+        // matter how long the report grows (no token-ceiling cuts). Structure,
+        // packet arrival and no-shrink are still gated after applying; a failed
+        // pass retries once, a twice-failed packet goes into a SECOND
+        // integration round instead of being dropped.
         String integratePrompt = PromptLoader.loadLocalized("deepdive-integrate", lang)
                 .replace("{{LANGUAGE}}", langName);
         record Job(Packet packet, int originIdx) {}
@@ -372,30 +406,48 @@ public class DeepDiveService {
                 String plan = materialPlan(packets, job.originIdx(), doneIdx);
                 String accepted = null;
                 for (int attempt = 1; attempt <= 2 && accepted == null; attempt++) {
-                    String revised = cleanReport(chatGateway.chat(model, integratePrompt,
+                    String opsRaw = cleanReport(chatGateway.chat(model, integratePrompt,
                             header + plan + "STANDING REPORT:\n" + report
                                     + "\n\n" + packetBlock(p)));
-                    boolean structure = looksLikeReport(revised, headings);
-                    boolean arrived = packetArrived(p, revised, validNums);
-                    boolean retained = retainsMarkers(report, revised);
-                    boolean grown = notShrunk(report, revised);
-                    if (structure && arrived && retained && grown) {
-                        accepted = revised;
-                    } else if (attempt == 2 && structure && arrived && grown) {
-                        // A vanished marker CAN be legit (a corrected claim took
-                        // its source with it) — after a failed retry, losing the
-                        // whole packet is the bigger information loss.
+                    EditScript script = EditScript.parse(opsRaw);
+                    if (script.isEmpty()) {
+                        // New material ALWAYS warrants at least one op — a noop
+                        // or formatless reply is a whiffed pass, not a decision.
+                        LOG.warn("[DEEPDIVE] '{}' integrate '{}' attempt {} emitted no "
+                                        + "usable operations ({} chars).",
+                                subject, p.displayName(), attempt,
+                                opsRaw == null ? 0 : opsRaw.length());
+                        continue;
+                    }
+                    EditScript.Result res = script.apply(report);
+                    script.logFailures(subject, "integrate '" + p.displayName() + "'", res);
+                    boolean structure = looksLikeReport(res.text(), headings);
+                    boolean arrived = packetArrived(p, res.text(), validNums);
+                    boolean grown = notShrunk(report, res.text());
+                    if (res.applied() > 0 && structure && arrived && grown) {
+                        // Untouched text survived mechanically; a marker can only
+                        // vanish through an explicit REPLACE/DELETE — that is a
+                        // correction, not silent loss. Log it for the audit trail.
                         Set<Integer> lostMarkers = markersIn(report);
-                        lostMarkers.removeAll(markersIn(revised));
-                        LOG.warn("[DEEPDIVE] '{}' integrate '{}' accepted despite lost "
-                                        + "marker(s) {} — likely a corrected claim.",
-                                subject, p.displayName(), lostMarkers);
-                        accepted = revised;
+                        lostMarkers.removeAll(markersIn(res.text()));
+                        if (!lostMarkers.isEmpty()) {
+                            LOG.info("[DEEPDIVE] '{}' integrate '{}' removed marker(s) {} "
+                                            + "via explicit edit — corrected claim.",
+                                    subject, p.displayName(), lostMarkers);
+                        }
+                        // Deterministic repetition scrub after every accepted
+                        // pass — INSERT drift must never accumulate.
+                        accepted = dedupeRepeats(res.text());
+                        if (accepted.length() < res.text().length()) {
+                            LOG.info("[DEEPDIVE] '{}' integrate '{}': dedupe removed {} "
+                                            + "repeated chars.", subject, p.displayName(),
+                                    res.text().length() - accepted.length());
+                        }
                     } else {
                         LOG.warn("[DEEPDIVE] '{}' integrate '{}' attempt {} rejected "
-                                        + "(structure={}, arrival={}, retention={}, grown={}).",
+                                        + "(ops applied {}/{}, structure={}, arrival={}, grown={}).",
                                 subject, p.displayName(), attempt,
-                                structure, arrived, retained, grown);
+                                res.applied(), script.size(), structure, arrived, grown);
                     }
                 }
                 if (accepted != null) {
@@ -448,38 +500,47 @@ public class DeepDiveService {
                     subject);
         }
 
-        // Final: work the review in and smooth the red thread. Gated like every
-        // integrate pass (headings, marker retention, NO-SHRINK — the final pass
-        // must never compress away what the integrations accumulated), one
-        // retry, and a whiffed final degrades gracefully to the integrated
-        // report, which is complete on its own.
+        // Final: work the review in and smooth the red thread — as EDIT
+        // OPERATIONS against the standing report (compression is mechanically
+        // impossible; a review that confirmed everything says <<<NOOP). One
+        // retry; a whiffed final degrades gracefully to the integrated report,
+        // which is complete on its own.
         if (qaUsable) {
             eventBus.post(new DeepDiveProgressEvent(subject, "final"));
             String finalPrompt = PromptLoader.loadLocalized("deepdive-final", lang)
                     .replace("{{LANGUAGE}}", langName);
             for (int attempt = 1; attempt <= 2; attempt++) {
-                String finalPass = cleanReport(chatGateway.chat(model, finalPrompt,
+                String opsRaw = cleanReport(chatGateway.chat(model, finalPrompt,
                         header + "REPORT:\n" + report
                                 + "\n\nADVERSARIAL REVIEW (Q&A):\n" + qa));
-                boolean structure = looksLikeReport(finalPass, headings);
-                boolean grown = notShrunk(report, finalPass);
-                boolean retained = retainsMarkers(report, finalPass);
-                if (structure && grown && (retained || attempt == 2)) {
-                    if (!retained) {
-                        LOG.warn("[DEEPDIVE] '{}' final pass accepted despite lost marker(s) "
-                                + "— likely a refuted claim removed with its source.", subject);
-                    }
-                    report = finalPass;
+                EditScript script = EditScript.parse(opsRaw);
+                if (script.isNoop()) {
+                    LOG.info("[DEEPDIVE] '{}' final pass: review confirmed the report — no edits.",
+                            subject);
                     break;
                 }
-                LOG.warn("[DEEPDIVE] '{}' final attempt {} rejected (structure={}, "
-                                + "grown={}, retention={}){}", subject, attempt, structure,
-                        grown, retained,
+                if (script.isEmpty()) {
+                    LOG.warn("[DEEPDIVE] '{}' final attempt {} emitted no usable operations{}",
+                            subject, attempt,
+                            attempt == 1 ? " — retrying" : " — keeping the integrated report");
+                    continue;
+                }
+                EditScript.Result res = script.apply(report);
+                script.logFailures(subject, "final", res);
+                boolean structure = looksLikeReport(res.text(), headings);
+                boolean grown = notShrunk(report, res.text());
+                if (res.applied() > 0 && structure && grown) {
+                    report = dedupeRepeats(res.text());
+                    break;
+                }
+                LOG.warn("[DEEPDIVE] '{}' final attempt {} rejected (ops applied {}/{}, "
+                                + "structure={}, grown={}){}", subject, attempt,
+                        res.applied(), script.size(), structure, grown,
                         attempt == 1 ? " — retrying" : " — keeping the integrated report");
             }
         }
 
-        report = scrubPlaceholders(report);
+        report = dedupeRepeats(scrubPlaceholders(report));
         // Source discipline: the model may only COPY the material's [n] markers —
         // any number it invented (no matching source) is deterministically removed.
         report = scrubUnknownSourceMarkers(report, new HashSet<>(sourceNumbers(m).values()));
@@ -534,45 +595,83 @@ public class DeepDiveService {
         /** link -> key-fact digest of the FULL article, read during collect. */
         Map<String, String> digests = Map.of();
         SubjectUnit unit;
+        /**
+         * EVERY registry unit that belongs to this subject — the room speaks
+         * name AND ticker (a unit that says "Outlook" without ever writing
+         * OTLK belongs to the OTLK DD too); the room packets draw from their
+         * union. First entry = best-scoring (the primary {@link #unit}).
+         */
+        List<SubjectUnit> roomUnits = List.of();
         int evidenceCount;
     }
 
     /**
      * Gathers every leg, each individually guarded — a failing source costs its
-     * block, never the report. Identity first (the pipeline's own resolver, so
-     * the DD judges the SAME instrument the wire would), then the ISIN-keyed
-     * legs, then news and the room.
+     * block, never the report. Identity is TICKER-FIRST (user mandate
+     * 2026-07-13): the ticker is checked against the LOCAL lists (the feed-wide
+     * {@link SubjectRegistry}) before any network, the pipeline's fully-wired
+     * resolver is the dynamic fallback AND the name lookup (the name-addressed
+     * news legs need it), and the ISIN is salvaged from the L&S snapshot's
+     * symbol when no leg carried it — without an ISIN the five German data legs
+     * silently stay dark (live-observed with OTLK 2026-07-13: L&S knew the ISIN,
+     * the material never saw it).
      */
-    private Material collect(String subject) {
+    private Material collect(String ticker) {
         Material m = new Material();
-        m.canonicalName = subject;
+        m.ticker = ticker;
+        m.canonicalName = ticker;
 
-        // Identity + price via the pipeline's fully-wired resolver.
+        // LOCAL lists first: the feed-wide registry already knows most tickers —
+        // identity, ISIN, last snapshot and the room's evidence, zero network.
+        m.unit = findUnit(ticker, ticker);
+        if (m.unit != null) {
+            m.evidenceCount = m.unit.evidenceCount();
+            if (m.unit.canonicalName() != null && !m.unit.canonicalName().isBlank()) {
+                m.canonicalName = m.unit.canonicalName();
+            }
+            if (m.unit.isin() != null && !m.unit.isin().isBlank()) m.isin = m.unit.isin();
+            if (m.unit.snapshot() != null) m.snapshot = m.unit.snapshot();
+            LOG.info("[DEEPDIVE] '{}' identity from local registry: '{}' (isin={})",
+                    ticker, m.canonicalName, m.isin);
+        }
+
+        // Dynamic fallback + refresh via the pipeline's resolver: brings the
+        // canonical NAME (Google News/WSO query on it), a fresh snapshot and the
+        // Yahoo news leg — also for tickers the registry already knew.
         EditorialAgent agent = editorialAgent;
         if (agent != null) {
             try {
-                TickerResolver.ResolvedSubject rs = agent.tickerResolver().resolve(subject, 0);
+                TickerResolver.ResolvedSubject rs = agent.tickerResolver().resolve(ticker, 0);
                 if (rs != null && !rs.unresolved()) {
                     if (rs.canonicalName() != null && !rs.canonicalName().isBlank()) {
                         m.canonicalName = rs.canonicalName();
                     }
-                    m.ticker = rs.ticker();
-                    m.isin = rs.isin();
-                    m.snapshot = rs.snapshot();
-                    if (rs.news() != null) m.news = rs.news();
+                    if (rs.ticker() != null && !rs.ticker().isBlank()) m.ticker = rs.ticker();
+                    if (rs.isin() != null && !rs.isin().isBlank()) m.isin = rs.isin();
+                    if (rs.snapshot() != null) m.snapshot = rs.snapshot();
+                    if (rs.news() != null && !rs.news().isEmpty()) m.news = rs.news();
                 }
             } catch (Exception e) {
-                LOG.debug("[DEEPDIVE] resolve failed for '{}': {}", subject, e.getMessage());
+                LOG.debug("[DEEPDIVE] resolve failed for '{}': {}", ticker, e.getMessage());
             }
         }
 
-        // The room: the feed-wide unit, matched like the watchlist maps entries.
-        m.unit = findUnit(subject, m.ticker);
-        if (m.unit != null) {
-            m.evidenceCount = m.unit.evidenceCount();
+        // Room binding on NAME *and* TICKER (user mandate 2026-07-13): now that
+        // the resolver delivered the canonical name, gather EVERY unit that
+        // belongs to this subject — a "name:outlook" unit holding the cage's
+        // chatter must not lose to an evidence-less exact-ticker unit, and the
+        // room packets draw from the union of all of them.
+        m.roomUnits = findRoomUnits(m.canonicalName, m.ticker);
+        if (!m.roomUnits.isEmpty()) {
+            m.unit = m.roomUnits.get(0);
+            m.evidenceCount = 0;
+            for (SubjectUnit u : m.roomUnits) m.evidenceCount += u.evidenceCount();
             if (m.isin == null) m.isin = m.unit.isin();
-            if (m.ticker == null) m.ticker = m.unit.ticker();
             if (m.snapshot == null) m.snapshot = m.unit.snapshot();
+            if (m.roomUnits.size() > 1) {
+                LOG.info("[DEEPDIVE] '{}' room union: {} unit(s) ({} mentions total)",
+                        ticker, m.roomUnits.size(), m.evidenceCount);
+            }
         }
 
         // Fresh price when the resolver pass had none.
@@ -583,6 +682,16 @@ public class DeepDiveService {
             } catch (Exception e) {
                 LOG.debug("[DEEPDIVE] price failed: {}", e.getMessage());
             }
+        }
+
+        // ISIN salvage: an L&S snapshot carries the ISIN as its symbol. Without
+        // this, a resolver path that never pinned the ISIN (ticker fast-path)
+        // skips Tradegate, onvista, Consorsbank, Bundesanzeiger AND BaFin.
+        if ((m.isin == null || m.isin.isBlank()) && m.snapshot != null
+                && WeatherStatsCollector.looksLikeIsin(m.snapshot.symbol())) {
+            m.isin = m.snapshot.symbol();
+            LOG.info("[DEEPDIVE] '{}' ISIN salvaged from the price snapshot: {}",
+                    m.ticker, m.isin);
         }
 
         String isin = m.isin;
@@ -656,7 +765,7 @@ public class DeepDiveService {
                 if (done >= MAX_DIGESTED_ARTICLES) break;
                 if (item.link() == null || item.link().isBlank()) continue;
                 done++;
-                eventBus.post(new DeepDiveProgressEvent(subject, "collect",
+                eventBus.post(new DeepDiveProgressEvent(ticker, "collect",
                         "Artikel " + done + "/" + total));
                 try {
                     String digest = digestAgent.newsDigester().digestNow(item.link());
@@ -673,9 +782,24 @@ public class DeepDiveService {
 
     /** Deterministic unit lookup: exact ticker/name, then significant-word subset (watchlist rule). */
     private SubjectUnit findUnit(String name, String ticker) {
+        List<SubjectUnit> hits = findRoomUnits(name, ticker);
+        return hits.isEmpty() ? null : hits.get(0);
+    }
+
+    /** Sanity cap — the room union never needs more than a handful of units. */
+    private static final int MAX_ROOM_UNITS = 5;
+
+    /**
+     * EVERY registry unit belonging to the subject, best first: exact
+     * ticker/name matches, then significant-word-subset name matches (the
+     * watchlist rule) — so the "Outlook" name unit rides along with the OTLK
+     * ticker unit and the room's chatter is found under both identities.
+     */
+    private List<SubjectUnit> findRoomUnits(String name, String ticker) {
+        record Scored(SubjectUnit unit, int score) {
+        }
         Set<String> nameWords = NameMatcher.significantWords(name);
-        SubjectUnit best = null;
-        int bestScore = -1;
+        List<Scored> hits = new ArrayList<>();
         for (SubjectUnit u : subjectRegistry.all()) {
             int score = -1;
             if (name.equalsIgnoreCase(u.ticker()) || name.equalsIgnoreCase(u.canonicalName())
@@ -689,12 +813,15 @@ public class DeepDiveService {
             }
             if (score < 0) continue;
             score += (u.isInstrument() ? 100_000 : 0) + Math.min(u.evidenceCount(), 10_000);
-            if (score > bestScore) {
-                bestScore = score;
-                best = u;
-            }
+            hits.add(new Scored(u, score));
         }
-        return best;
+        hits.sort((a, b) -> Integer.compare(b.score(), a.score()));
+        List<SubjectUnit> out = new ArrayList<>(Math.min(hits.size(), MAX_ROOM_UNITS));
+        for (Scored s : hits) {
+            if (out.size() >= MAX_ROOM_UNITS) break;
+            out.add(s.unit());
+        }
+        return out;
     }
 
     // -- the material packets (the DD's red thread) --
@@ -820,8 +947,11 @@ public class DeepDiveService {
         // The room rides as SEVERAL small packets like the news (its section is
         // a real RETELLING of the discussion now, and a retelling can never be
         // better than its excerpt) — chronological, so the narrative builds and
-        // the newest evidence lands last (newest wins on contradiction).
-        List<String> roomChunks = roomBlocks(m.unit, nums);
+        // the newest evidence lands last (newest wins on contradiction). Drawn
+        // from the UNION of every matching unit (name AND ticker identity).
+        List<SubjectUnit> roomUnits = !m.roomUnits.isEmpty() ? m.roomUnits
+                : m.unit != null ? List.of(m.unit) : List.of();
+        List<String> roomChunks = roomBlocks(roomUnits, nums);
         for (int c = 0; c < roomChunks.size(); c++) {
             String part = roomChunks.size() == 1 ? "" : " (" + (c + 1) + "/" + roomChunks.size() + ")";
             sb.append(roomChunks.get(c));
@@ -938,7 +1068,9 @@ public class DeepDiveService {
                 sb.append(String.format(Locale.ROOT, "market cap %.1fB EUR; ", p.marketCapEur() / 1e9));
             }
             if (p.sharesOutstanding() > 0) {
-                sb.append(String.format(Locale.ROOT, "%,d shares; ", p.sharesOutstanding()));
+                // Space grouping — comma-grouped counts misread in German prose.
+                sb.append(String.format(Locale.ROOT, "%,d shares; ", p.sharesOutstanding())
+                        .replace(',', ' '));
             }
         }
         if (facts != null) {
@@ -1235,30 +1367,42 @@ public class DeepDiveService {
      * packet, ≤ {@link #ROOM_PACKET_CHARS}): the first carries the price anchor,
      * the last carries the already-published wire lines, evidence runs
      * CHRONOLOGICALLY through all of them so the retelling can follow the
-     * narrative. Newest evidence is kept when the total budget
+     * narrative. Draws from the UNION of every matching unit (the room speaks
+     * name AND ticker — "Outlook" chatter belongs to the OTLK DD), deduplicated
+     * by mention identity. Newest evidence is kept when the total budget
      * ({@code ROOM_PACKET_CHARS * MAX_ROOM_PACKETS}) is exceeded.
      */
-    static List<String> roomBlocks(SubjectUnit unit, Map<String, Integer> nums) {
+    static List<String> roomBlocks(List<SubjectUnit> units, Map<String, Integer> nums) {
         String head = "ROOM EVIDENCE (r/wallstreetbetsGER, unverified)" + mark(nums, "room");
-        if (unit == null) {
+        if (units == null || units.isEmpty()) {
             return List.of(head + ":\n  (the room has not taken this subject up)\n");
         }
+        SubjectUnit primary = units.get(0);
         List<StringBuilder> chunks = new ArrayList<>();
         StringBuilder cur = new StringBuilder(ROOM_PACKET_CHARS + 256);
         cur.append(head).append(":\n");
         chunks.add(cur);
-        // The unit's price anchor: since-first-mention is the room's own scoreboard.
-        if (unit.firstPrice() != null && unit.firstPrice() > 0 && unit.firstPriceAt() != null) {
-            cur.append("  First mentioned ").append(STAMP.format(unit.firstPriceAt()), 0, 10)
-                    .append(" at ").append(fmt2(unit.firstPrice()));
-            MarketSnapshot s = unit.snapshot();
+        // The primary unit's price anchor: since-first-mention is the room's own scoreboard.
+        if (primary.firstPrice() != null && primary.firstPrice() > 0 && primary.firstPriceAt() != null) {
+            cur.append("  First mentioned ").append(STAMP.format(primary.firstPriceAt()), 0, 10)
+                    .append(" at ").append(fmt2(primary.firstPrice()));
+            MarketSnapshot s = primary.snapshot();
             if (s != null && s.hasPrice()) {
                 cur.append(String.format(Locale.ROOT, " (%+.1f%% since)",
-                        (s.price() - unit.firstPrice()) / unit.firstPrice() * 100.0));
+                        (s.price() - primary.firstPrice()) / primary.firstPrice() * 100.0));
             }
             cur.append('\n');
         }
-        List<SubjectUnit.EvidenceRef> evidence = unit.evidence();
+        // Union of every unit's mentions, deduped by mention identity — the same
+        // comment attributed to both the ticker and the name unit rides once.
+        Map<String, SubjectUnit.EvidenceRef> byKey = new LinkedHashMap<>();
+        for (SubjectUnit u : units) {
+            for (SubjectUnit.EvidenceRef ref : u.evidence()) {
+                byKey.putIfAbsent(ref.threadId() + "|" + ref.commentId() + "|" + ref.snippet(), ref);
+            }
+        }
+        List<SubjectUnit.EvidenceRef> evidence = new ArrayList<>(byKey.values());
+        evidence.sort(java.util.Comparator.comparingLong(SubjectUnit.EvidenceRef::addedAtEpoch));
         if (evidence.isEmpty()) cur.append("  (none in the current window)\n");
         int start = evidence.size();
         int budget = ROOM_PACKET_CHARS * MAX_ROOM_PACKETS;
@@ -1277,7 +1421,10 @@ public class DeepDiveService {
             }
             cur.append(line);
         }
-        List<SubjectUnit.UnitHeadline> headlines = unit.headlines();
+        // Wire lines: union over all units, chronological, newest MAX_WIRE_LINES.
+        List<SubjectUnit.UnitHeadline> headlines = new ArrayList<>();
+        for (SubjectUnit u : units) headlines.addAll(u.headlines());
+        headlines.sort(java.util.Comparator.comparingLong(SubjectUnit.UnitHeadline::atEpoch));
         if (!headlines.isEmpty()) {
             cur.append("WIRE LINES ALREADY PUBLISHED FOR THIS SUBJECT:\n");
             int from = Math.max(0, headlines.size() - MAX_WIRE_LINES);
@@ -1603,6 +1750,95 @@ public class DeepDiveService {
      * draft plants for not-yet-fed sections. Deterministic belt-and-braces: the
      * prompts demand the replacement, a 4B occasionally leaves one standing.
      */
+    /** Below this normalized length, sentence dedupe stays out — short phrases collide legitimately. */
+    private static final int MIN_DEDUPE_SENTENCE_CHARS = 80;
+
+    /**
+     * Deterministic repetition scrub (live-observed with SAP 2026-07-13): the
+     * edit protocol's INSERT drift plants near-identical paragraphs and verbatim
+     * sentence repeats — the same sentence stood in the report FOUR times, and
+     * the model's own cleanup DELETEs missed their anchors — so the terminal
+     * removes exact repeats itself, after every accepted pass and before
+     * archiving. Whole duplicate paragraphs go first, then long verbatim
+     * sentence repeats across the whole report; the FIRST occurrence wins,
+     * heading lines and the section literals (placeholder / honest sentence)
+     * are never touched. A repeat with different source markers is a different
+     * claim and survives (markers are part of the normalized text).
+     */
+    static String dedupeRepeats(String report) {
+        if (report == null || report.isEmpty()) return report;
+        Set<String> seenBlocks = new HashSet<>();
+        Set<String> seenSentences = new HashSet<>();
+        StringBuilder out = new StringBuilder(report.length());
+        for (String rawBlock : report.split("\n\\s*\n")) {
+            String block = rawBlock.strip();
+            if (block.isEmpty()) continue;
+            if (block.startsWith("## ")) {
+                int nl = block.indexOf('\n');
+                String heading = nl < 0 ? block : block.substring(0, nl).strip();
+                appendBlock(out, heading);
+                block = nl < 0 ? "" : block.substring(nl + 1).strip();
+                if (block.isEmpty()) continue;
+            }
+            String blockNorm = normalizeForDedupe(block);
+            if (!isExemptLiteral(blockNorm) && !seenBlocks.add(blockNorm)) continue;
+            StringBuilder kept = new StringBuilder(block.length());
+            for (String sentence : splitSentenceish(block)) {
+                String norm = normalizeForDedupe(sentence);
+                if (norm.length() >= MIN_DEDUPE_SENTENCE_CHARS && !isExemptLiteral(norm)
+                        && !seenSentences.add(norm)) {
+                    continue;
+                }
+                if (kept.length() > 0) kept.append(' ');
+                kept.append(sentence.strip());
+            }
+            if (kept.length() > 0) appendBlock(out, kept.toString());
+        }
+        return out.toString();
+    }
+
+    private static void appendBlock(StringBuilder out, String block) {
+        if (out.length() > 0) out.append("\n\n");
+        out.append(block);
+    }
+
+    /**
+     * Sentence-ish segments: cut after {@code .!?} ONLY when followed by
+     * whitespace (or block end), so a ".)"-terminated literal stays whole and
+     * every character lands in exactly one segment. Imprecise on German dates
+     * ("am 24. Juli") — harmless: a fragment only ever repeats when its
+     * enclosing duplicated text repeats, and kept fragments are rejoined with
+     * single spaces.
+     */
+    private static List<String> splitSentenceish(String block) {
+        List<String> out = new ArrayList<>();
+        int start = 0;
+        for (int i = 0; i < block.length(); i++) {
+            char c = block.charAt(i);
+            if ((c == '.' || c == '!' || c == '?')
+                    && (i + 1 >= block.length() || Character.isWhitespace(block.charAt(i + 1)))) {
+                out.add(block.substring(start, i + 1));
+                int j = i + 1;
+                while (j < block.length() && Character.isWhitespace(block.charAt(j))) j++;
+                start = j;
+                i = j - 1;
+            }
+        }
+        if (start < block.length()) out.add(block.substring(start));
+        return out;
+    }
+
+    private static String normalizeForDedupe(String s) {
+        return s.strip().replaceAll("\\s+", " ");
+    }
+
+    /** The section literals may legitimately stand in several sections at once. */
+    private static boolean isExemptLiteral(String normalized) {
+        return normalized.equals("(Dieser Abschnitt folgt mit dem nächsten Materialpaket.)")
+                || normalized.equals("Hierzu liegen keine verifizierten Daten vor.")
+                || normalized.equals("No verified data is available for this section.");
+    }
+
     private static String scrubPlaceholders(String report) {
         StringBuilder out = new StringBuilder(report.length());
         for (String line : report.split("\n", -1)) {
@@ -1622,6 +1858,10 @@ public class DeepDiveService {
     }
 
     private static String fmt2(double v) {
-        return String.format(Locale.ROOT, Math.abs(v) >= 1000 ? "%,.0f" : "%.2f", v);
+        // Grouping SPACES, never commas: "36,800" in the material reads as 36.8
+        // in German prose, and the model copies literals verbatim (live-observed
+        // "Umsatz auf 36,800 Mio. EUR" — ambiguous). "36 800" is unambiguous.
+        return String.format(Locale.ROOT, Math.abs(v) >= 1000 ? "%,.0f" : "%.2f", v)
+                .replace(',', ' ');
     }
 }

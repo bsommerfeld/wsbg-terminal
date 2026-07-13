@@ -90,8 +90,8 @@ class DeepDiveMaterialTest {
         assertContains(brief, "EPS 55.00");
         assertContains(brief, "PEG 0.90");
         assertContains(brief, "BALANCE SHEET (verified");
-        assertContains(brief, "turnover 9,751,000");
-        assertContains(brief, "R&D 380,000");
+        assertContains(brief, "turnover 9 751 000");
+        assertContains(brief, "R&D 380 000");
         assertContains(brief, "BOARDS (verified) [4]: Armin Papperger (Vorstand)");
 
         // Street: analyst distribution, trend, target, revisions, events.
@@ -429,6 +429,32 @@ class DeepDiveMaterialTest {
         assertTrue(packets.get(packets.size() - 1).briefLabel().startsWith("The room"));
     }
 
+    /**
+     * The room speaks name AND ticker (user mandate 2026-07-13): roomBlocks
+     * draws from the UNION of every matching unit — a "name:outlook" unit's
+     * chatter belongs to the OTLK DD — with shared mentions riding only once.
+     */
+    @Test
+    void roomUnionMergesNameAndTickerUnits() {
+        SubjectUnit tickerUnit = new SubjectUnit("OTLK", "Outlook Therapeutics, Inc.");
+        SubjectUnit nameUnit = new SubjectUnit("name:outlook", "Outlook");
+        tickerUnit.addEvidence(new SubjectUnit.EvidenceRef("t1", "c1",
+                "Outlook läuft heiß, FDA kommt", "reddit", 1_700_000_000L));
+        nameUnit.addEvidence(new SubjectUnit.EvidenceRef("t1", "c1",
+                "Outlook läuft heiß, FDA kommt", "reddit", 1_700_000_000L)); // shared mention
+        nameUnit.addEvidence(new SubjectUnit.EvidenceRef("t1", "c2",
+                "bin long Outlook", "reddit", 1_700_000_100L));
+        tickerUnit.addHeadline("OTLK: Käfig wettet auf die FDA", "BULLISH");
+
+        String joined = String.join("", DeepDiveService.roomBlocks(
+                List.of(tickerUnit, nameUnit), java.util.Map.of("room", 9)));
+        assertTrue(joined.contains("bin long Outlook"), "the name unit's own mention is missing");
+        assertTrue(joined.indexOf("Outlook läuft heiß") == joined.lastIndexOf("Outlook läuft heiß"),
+                "a shared mention must ride exactly once");
+        assertTrue(joined.contains("OTLK: Käfig wettet auf die FDA"), "wire lines from the union");
+        assertTrue(joined.contains("[9]"), "the room's source marker");
+    }
+
     /** The material plan marks done / THIS PASS / pending — the model's map of the work. */
     @Test
     void materialPlanNamesEveryPacketWithItsStatus() {
@@ -440,6 +466,51 @@ class DeepDiveMaterialTest {
         assertTrue(plan.contains("2. Fundamentals [done]"), plan);
         assertTrue(plan.contains("3. Street and insiders [THIS PASS]"), plan);
         assertTrue(plan.contains("[pending]"), plan);
+    }
+
+    /**
+     * The deterministic repetition scrub (live-observed with SAP 2026-07-13:
+     * the edit protocol's INSERT drift planted the same sentence FOUR times and
+     * the model's own cleanup DELETEs missed their anchors): exact repeats are
+     * removed by the terminal — first occurrence wins, headings and the section
+     * literals survive, short sentences are never touched.
+     */
+    @Test
+    void dedupeRemovesRepeatedSentencesAndParagraphs() {
+        String longSentence = "Die Unternehmensstruktur wird durch einen Vorstand unter Vorsitz"
+                + " von Christian Klein und einen Aufsichtsrat unter Vorsitz von Pekka Juhani"
+                + " Ala-Pietilä repräsentiert [4].";
+        String report = "## Lage\n"
+                + "Der Kurs stieg. " + longSentence + " " + longSentence + " " + longSentence + "\n\n"
+                + "## Katalysatoren und Risiken\n"
+                + longSentence + "\n\n"
+                + "Der Bericht zum zweiten Quartal 2026 steht am 24. Juli 2026 an, und die"
+                + " Zahlen entscheiden über die weitere Richtung des Papiers [4].\n\n"
+                + "Der Bericht zum zweiten Quartal 2026 steht am 24. Juli 2026 an, und die"
+                + " Zahlen entscheiden über die weitere Richtung des Papiers [4].\n\n"
+                + "## Der Raum\n"
+                + "(Dieser Abschnitt folgt mit dem nächsten Materialpaket.)";
+        String deduped = DeepDiveService.dedupeRepeats(report);
+        assertTrue(occurrences(deduped, "Unternehmensstruktur") == 1,
+                "the quadrupled sentence must survive exactly once:\n" + deduped);
+        assertTrue(occurrences(deduped, "24. Juli 2026 an") == 1,
+                "the duplicated paragraph must survive exactly once:\n" + deduped);
+        assertTrue(deduped.contains("## Lage") && deduped.contains("## Katalysatoren und Risiken")
+                && deduped.contains("## Der Raum"), "headings must survive:\n" + deduped);
+        assertTrue(deduped.contains("Der Kurs stieg."), "short distinct sentences survive");
+        assertTrue(deduped.contains("(Dieser Abschnitt folgt mit dem nächsten Materialpaket.)"));
+
+        // The placeholder may legitimately stand in SEVERAL sections at once.
+        String twoPlaceholders = "## These\n(Dieser Abschnitt folgt mit dem nächsten Materialpaket.)\n\n"
+                + "## Lage\n(Dieser Abschnitt folgt mit dem nächsten Materialpaket.)";
+        assertTrue(occurrences(DeepDiveService.dedupeRepeats(twoPlaceholders),
+                "(Dieser Abschnitt folgt") == 2, "placeholder literal is exempt from dedupe");
+    }
+
+    private static int occurrences(String s, String needle) {
+        int n = 0;
+        for (int i = s.indexOf(needle); i >= 0; i = s.indexOf(needle, i + 1)) n++;
+        return n;
     }
 
     private static void assertContains(String brief, String needle) {
