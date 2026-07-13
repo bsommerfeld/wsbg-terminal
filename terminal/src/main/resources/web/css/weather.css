@@ -147,6 +147,30 @@
 .weather-text p { margin: 0 0 0.8em; }
 .weather-text p:last-child { margin-bottom: 0; }
 .weather-text strong { color: var(--txt); }
+.weather-text em { color: var(--txt-2); }
+
+/* Markdown structure inside the report prose: the model's ## subheadings
+   render in the same small-caps voice as the day-stats section titles, so
+   report structure and stats structure read as one system. */
+.weather-text h1, .weather-text h2, .weather-text h3, .weather-text h4 {
+  margin: 1.2em 0 0.5em;
+  font-size: 0.78em;
+  font-weight: 650;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.weather-text h1:first-child, .weather-text h2:first-child,
+.weather-text h3:first-child, .weather-text h4:first-child { margin-top: 0; }
+.weather-text hr {
+  border: 0;
+  border-top: 1px solid var(--line-soft);
+  margin: 1em 0;
+}
+/* Lists are forbidden by the prompt; if a draft slips one through anyway it
+   must still read cleanly instead of exploding the layout. */
+.weather-text ul, .weather-text ol { margin: 0 0 0.8em; padding-left: 1.3em; }
+.weather-text li { margin: 0.15em 0; }
 
 .weather-next-line {
   font-size: 0.82em;
@@ -172,6 +196,22 @@
   text-transform: uppercase;
   color: var(--mute);
 }
+
+/* The frozen market-mood line (CNN Fear & Greed) above the market tiles. */
+.weather-fg-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 0.88em;
+}
+.weather-fg-label { color: var(--mute); }
+.weather-fg-score { font-weight: 650; font-variant-numeric: tabular-nums; }
+.weather-fg-band { font-weight: 650; }
+.weather-fg-score.up, .weather-fg-band.up { color: var(--green); }
+.weather-fg-score.down, .weather-fg-band.down { color: var(--red); }
+.weather-fg-score.flat, .weather-fg-band.flat { color: var(--txt); }
+.weather-fg-prev { color: var(--mute); font-variant-numeric: tabular-nums; }
 
 /* Index tiles: name + change pill, house sparkline, points/volume line. */
 .weather-idx-grid {
@@ -275,11 +315,264 @@
   font-variant-numeric: tabular-nums;
 }
 .weather-tick-price { color: var(--txt); font-size: 0.9em; }
+.weather-tick-vol { color: var(--mute); font-size: 0.78em; }
 .weather-news-src {
   margin-left: 6px;
   font-size: 0.78em;
   color: var(--mute);
 }
+
+/* ---- the forecast strip: morgens / mittags / abends / morgen ----
+   The report built like an actual weather report — one tile per day part
+   with its deterministic weather symbol from that window's cage mood, the
+   TOMORROW tile docket-based (storm warning = a High-impact release). */
+.weather-forecast {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+}
+.weather-cast {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 10px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: var(--bg-1);
+  text-align: center;
+  min-width: 0;
+}
+.weather-cast.warn { border-color: color-mix(in oklch, var(--red) 45%, transparent); }
+.weather-cast-label {
+  font-size: 0.72em;
+  font-weight: 650;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.weather-cast-sub {
+  font-size: 0.78em;
+  color: var(--txt-2);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.weather-cast-red {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  font-size: 0.74em;
+  font-weight: 650;
+  color: var(--red);
+}
+.weather-wx {
+  width: 34px;
+  height: 34px;
+  fill: none;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.weather-wx .wx-sun { stroke: var(--amber); }
+.weather-wx .wx-cloud { stroke: var(--mute); }
+.weather-wx .wx-wet { stroke: var(--red); }
+.weather-thumb-cast { display: inline-flex; gap: 14px; margin-left: 22px; vertical-align: middle; }
+.weather-thumb-cast .weather-wx { width: 34px; height: 34px; }
+
+/* ---- report figures (the KI-DD white-paper pattern) ----
+   Colors ride the shared --ddc-* custom properties: DARK values here, the
+   SVG fallbacks are the light palette (same contract as .dd-figure). */
+.weather-figure {
+  margin: 14px 0 18px;
+  max-width: 70ch;
+  --ddc-ink: var(--txt);
+  --ddc-mute: var(--mute);
+  --ddc-grid: var(--line-soft);
+  --ddc-axis: var(--line);
+  --ddc-surface: var(--bg);
+  --ddc-pos: var(--green);
+  --ddc-neg: var(--red);
+  --ddc-s1: #3987e5;
+  --ddc-s2: #199e70;
+}
+html[data-theme="light"] .weather-figure {
+  --ddc-s1: #2a78d6;
+  --ddc-s2: #1baf7a;
+}
+.weather-figure svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.weather-figure figcaption {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.weather-figure-title {
+  flex-shrink: 0;
+  font-family: "Inter", sans-serif;
+  font-weight: 600;
+  font-size: .78em;
+  color: var(--txt-2);
+}
+.weather-figure-rule {
+  flex: 1;
+  border-top: 1px solid var(--line-soft);
+  transform: translateY(-.28em);
+}
+.weather-figure-note {
+  flex-shrink: 0;
+  font-size: .72em;
+  color: var(--mute);
+}
+
+/* ---- Abendausgabe world sections (2026-07-13) ---- */
+
+/* Generic separator dot between inline parts of a stat line. */
+.weather-dot { margin: 0 6px; color: var(--mute-2); }
+
+/* Käfig-Puls: one aggregate line, direction-tinted parts. */
+.weather-pulse {
+  font-size: 0.9em;
+  font-variant-numeric: tabular-nums;
+  color: var(--txt-2);
+}
+.weather-pulse-part.up { color: var(--green); }
+.weather-pulse-part.down { color: var(--red); }
+.weather-pulse-part b { color: var(--red); font-weight: 650; }
+
+/* Generic plain rows (ad-hocs, analysts, macro, rates, bets, outlook, colour). */
+.weather-plain-list { display: flex; flex-direction: column; }
+.weather-plain {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 2px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 0.92em;
+}
+.weather-plain:last-child { border-bottom: none; }
+.weather-plain-time {
+  flex: 0 0 auto;
+  min-width: 44px;
+  font-size: 0.82em;
+  color: var(--mute);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.weather-plain-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--txt-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.weather-plain-main.wrap { white-space: normal; }
+.weather-plain-trail {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.weather-plain-mute { color: var(--mute); font-size: 0.85em; }
+
+/* Gold chip: "this touches the cage" (ad-hocs, movers). */
+.weather-chip-cage {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 0.74em;
+  font-weight: 650;
+  letter-spacing: .04em;
+  color: var(--amber);
+  border: 1px solid color-mix(in oklch, var(--amber) 45%, transparent);
+  white-space: nowrap;
+}
+
+/* Impact chip on macro/outlook rows; High reads urgent. */
+.weather-chip-impact {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 0.74em;
+  color: var(--mute);
+  border: 1px solid var(--line);
+  white-space: nowrap;
+}
+.weather-chip-impact.high {
+  color: var(--red);
+  border-color: color-mix(in oklch, var(--red) 45%, transparent);
+}
+
+/* Sector rotation: name + scaled bar + move. */
+.weather-sector-list { display: flex; flex-direction: column; gap: 4px; }
+.weather-sector {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.88em;
+}
+.weather-sector-name {
+  flex: 0 0 110px;
+  color: var(--txt-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.weather-sector-track {
+  flex: 1 1 auto;
+  height: 6px;
+  border-radius: 3px;
+  background: color-mix(in oklch, var(--mute-2) 22%, transparent);
+  overflow: hidden;
+}
+.weather-sector-bar { display: block; height: 100%; border-radius: 3px; }
+.weather-sector-bar.up { background: var(--green); }
+.weather-sector-bar.down { background: var(--red); }
+.weather-sector-bar.flat { background: var(--mute); }
+.weather-sector .weather-pct { flex: 0 0 64px; text-align: right; }
+
+/* Mover chip lines (US movers, trending coins). */
+.weather-mover-line {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 2px;
+}
+.weather-mover-chips {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+.weather-mover {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 0.88em;
+  white-space: nowrap;
+}
+.weather-mover-name { color: var(--txt-2); }
+
+/* Street-depth line under a most-discussed ticker row. */
+.weather-tick-block { border-bottom: 1px solid var(--line-soft); }
+.weather-tick-block:last-child { border-bottom: none; }
+.weather-tick-block .weather-tick { border-bottom: none; }
+.weather-tick-depth {
+  padding: 0 2px 7px 44px;
+  font-size: 0.8em;
+  color: var(--mute);
+  line-height: 1.5;
+}
+.weather-tick-depth .weather-pct { font-size: 1em; }
 
 /* Time input in the rail popup. */
 .weather-time-input {
@@ -298,30 +591,91 @@
   border-color: var(--amber);
 }
 
-/* ---- grid card trim: the compact tile shows the hero only (countdown /
-   ghosts / report head + clamped text) — sections and history nav are
-   focus-view content (same treatment as the F&G/EUR-USD tiles). ---- */
-.main[data-view="grid"] > #widget-weather .weather-sections,
-.main[data-view="grid"] > #widget-weather .weather-nav-btn,
-.main[data-view="grid"] > #widget-weather .weather-next-line,
-.main > #widget-weather.exit-card .weather-sections,
-.main > #widget-weather.exit-card .weather-nav-btn,
-.main > #widget-weather.exit-card .weather-next-line { display: none; }
-.main[data-view="grid"] > #widget-weather .weather-detail,
-.main > #widget-weather.exit-card .weather-detail {
-  /* The tile (unlike the scrolling focus view) fills its card, so the hero
-     states (countdown/ghosts) stay vertically composed. */
-  height: 100%;
-  overflow: hidden;
-  padding: 12px 14px;
+/* ---- dedicated grid-card tile (.grid-thumb, see widget-grid.css) ----
+   Shown INSTEAD of the miniature view in the overview: the newest report's
+   date + prose excerpt + market chips, or the big countdown before the first
+   report. Laid out at NATURAL pane size (widget-grid.css zooms it with the
+   card), so the type here is deliberately large — it paints tile-sized.
+   Deliberately NO own background: the card behind it paints var(--bg) with
+   the card's rounding (see the wl-thumb note). ---- */
+.weather-thumb {
+  flex-direction: column;
+  padding: 64px 80px;
 }
-.main[data-view="grid"] > #widget-weather .weather-text,
-.main > #widget-weather.exit-card .weather-text {
+.weather-thumb-wait {
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 26px;
+  text-align: center;
+  width: 100%;
+}
+.weather-thumb-label {
+  font-family: "Inter", sans-serif;
+  font-size: 30px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.weather-thumb-count {
+  font-variant-numeric: tabular-nums;
+  font-family: "Inter", sans-serif;
+  font-size: 110px;
+  font-weight: 650;
+  letter-spacing: .02em;
+  color: var(--txt);
+}
+.weather-thumb-time {
+  font-size: 34px;
+  color: var(--amber);
+  font-variant-numeric: tabular-nums;
+}
+.weather-thumb-ghosts { width: 72%; }
+.weather-thumb-ghosts .weather-ghost { height: 22px; border-radius: 12px; filter: blur(6px); }
+.weather-thumb-report {
+  margin: auto 0;
+  display: flex;
+  flex-direction: column;
+  gap: 36px;
+  min-width: 0;
+}
+.weather-thumb-date {
+  font-family: "Inter", sans-serif;
+  font-size: 28px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.weather-thumb-text {
+  margin: 0;
+  font-family: "Inter", sans-serif;
+  font-size: 40px;
+  line-height: 1.5;
+  color: var(--txt);
   display: -webkit-box;
-  -webkit-line-clamp: 8;
+  -webkit-line-clamp: 5;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+.weather-thumb-markets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px 40px;
+}
+.weather-thumb-chip {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  white-space: nowrap;
+}
+.weather-thumb-chip-name {
+  font-family: "Inter", sans-serif;
+  font-weight: 600;
+  font-size: 30px;
+  color: var(--txt-2);
+}
+.weather-thumb-chip .weather-pct { font-size: 30px; }
 
 /* The cloud glyphs inherit the shared stroke style of .glyph/.rail-logo
    svgs; explicit here in case the shared rules key on specific classes. */

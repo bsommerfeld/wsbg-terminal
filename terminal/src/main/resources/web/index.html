@@ -510,8 +510,12 @@
          report, frozen together with the day's market stats. No dashboard
          slot — grid card + focus fullscreen only. Body is rendered by
          js/widgets/weather.js from the weather socket payload; the report
-         time goes back over the same socket type. -->
-    <section class="widget" id="widget-weather">
+         time goes back over the same socket type.
+         has-grid-thumb: the grid card shows the DEDICATED .grid-thumb tile
+         (report date + prose excerpt + market chips, or the big countdown)
+         instead of a miniature of the real view — nav arrows and the stats
+         sections read as noise at card scale. -->
+    <section class="widget has-grid-thumb" id="widget-weather">
       <header class="widget-head">
         <div class="ident"><span class="glyph glyph-weather" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M17.5 18.5H7a4 4 0 0 1-.4-7.98 5.5 5.5 0 0 1 10.8-1.02 4.25 4.25 0 0 1 .1 9z"/></svg></span><span data-i18n="widget.weather.title">Wetterbericht</span><button type="button" class="ki-badge js-ai-notice"
                   aria-haspopup="dialog"
@@ -523,6 +527,9 @@
       <div class="widget-body">
         <div id="weather-detail" class="weather-detail"></div>
       </div>
+      <!-- Dedicated grid-card tile (shown INSTEAD of .widget-body in the
+           overview): rendered by weather.js alongside the detail view. -->
+      <div class="grid-thumb weather-thumb" id="weather-thumb" aria-hidden="true"></div>
       <button class="grid-hit" type="button" aria-label="Wetterbericht öffnen"
               data-i18n-aria-label="grid.open.weather">
         <span class="grid-hit-tag">
@@ -545,9 +552,11 @@
           <div class="rail-pop" role="dialog" aria-label="Uhrzeit" data-i18n-aria-label="weather.time.label">
             <div class="rail-pop-body">
               <div class="rail-pop-head" data-i18n="weather.time.label">Uhrzeit</div>
-              <p class="rail-pop-text" data-i18n="weather.time.hint">Uhrzeit, zu der der tägliche Wetterbericht geschrieben wird.</p>
+              <p class="rail-pop-text" data-i18n="weather.time.hint">Uhrzeit, zu der der tägliche Wetterbericht geschrieben wird. Pro Tag entsteht genau ein Bericht - er fasst den Tag bis zu dieser Uhrzeit zusammen, ein zweiter Lauf am selben Tag ist ausgeschlossen.</p>
               <input type="time" id="weather-time-input" class="weather-time-input" value="20:00"
                      aria-label="Uhrzeit des Wetterberichts" data-i18n-aria-label="weather.time.aria">
+              <p class="rail-pop-text weather-time-note" id="weather-time-note" hidden
+                 data-i18n="weather.time.today-done">Der heutige Bericht ist bereits geschrieben - eine neue Uhrzeit greift ab morgen.</p>
             </div>
           </div>
         </div>
