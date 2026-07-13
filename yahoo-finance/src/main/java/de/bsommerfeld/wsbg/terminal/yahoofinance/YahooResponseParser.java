@@ -261,4 +261,64 @@ final class YahooResponseParser {
     private static String emptyToNull(String s) {
         return s == null || s.isBlank() ? null : s;
     }
+
+    /**
+     * Predefined-screener reply → quotes + uncapped total. Quote rows are
+     * v7-quote-shaped; numeric fields occasionally arrive as
+     * {@code {"raw": …, "fmt": "…"}} wrappers, so {@link #flexNum} accepts both.
+     */
+    static YahooFinanceClient.ScreenerResult parseScreener(String body) {
+        try {
+            JsonNode result = JSON.readTree(body).path("finance").path("result");
+            if (!result.isArray() || result.isEmpty()) {
+                return YahooFinanceClient.ScreenerResult.empty();
+            }
+            JsonNode first = result.get(0);
+            List<YahooFinanceClient.ScreenerQuote> quotes = new ArrayList<>();
+            for (JsonNode q : first.path("quotes")) {
+                String symbol = q.path("symbol").asText("");
+                if (symbol.isEmpty()) continue;
+                String name = text(q, "longName");
+                if (name.isEmpty()) name = text(q, "shortName");
+                double mcap = flexNum(q, "marketCap");
+                double volume = flexNum(q, "regularMarketVolume");
+                quotes.add(new YahooFinanceClient.ScreenerQuote(symbol,
+                        name.isEmpty() ? symbol : name,
+                        flexNum(q, "regularMarketPrice"),
+                        flexNum(q, "regularMarketChangePercent"),
+                        Double.isFinite(mcap) ? (long) mcap : -1L,
+                        Double.isFinite(volume) ? (long) volume : -1L));
+            }
+            return new YahooFinanceClient.ScreenerResult(quotes,
+                    first.path("total").isNumber() ? first.path("total").asInt() : -1);
+        } catch (Exception e) {
+            LOG.warn("Failed to parse Yahoo screener response: {}", e.getMessage());
+            return YahooFinanceClient.ScreenerResult.empty();
+        }
+    }
+
+    /** Trending reply → bare symbols. */
+    static List<String> parseTrending(String body) {
+        try {
+            JsonNode result = JSON.readTree(body).path("finance").path("result");
+            if (!result.isArray() || result.isEmpty()) return List.of();
+            List<String> out = new ArrayList<>();
+            for (JsonNode q : result.get(0).path("quotes")) {
+                String symbol = q.path("symbol").asText("");
+                if (!symbol.isEmpty()) out.add(symbol);
+            }
+            return out;
+        } catch (Exception e) {
+            LOG.warn("Failed to parse Yahoo trending response: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    /** A number that is either raw or a {@code {"raw": …}} wrapper; NaN when absent. */
+    private static double flexNum(JsonNode node, String field) {
+        JsonNode v = node.path(field);
+        if (v.isNumber()) return v.asDouble();
+        if (v.isObject() && v.path("raw").isNumber()) return v.path("raw").asDouble();
+        return Double.NaN;
+    }
 }

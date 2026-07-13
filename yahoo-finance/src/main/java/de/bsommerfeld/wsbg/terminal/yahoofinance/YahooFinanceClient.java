@@ -437,6 +437,73 @@ public class YahooFinanceClient implements NewsSource {
         return out;
     }
 
+    /**
+     * One of Yahoo's predefined screener lists ({@code day_gainers},
+     * {@code day_losers}, {@code most_actives}) — the day's US movers,
+     * quantitative and keyless (verified NOT crumb-locked 2026-07-13, unlike
+     * the {@code v7/quote} family). {@code total} is the uncapped hit count,
+     * which doubles as a crude market-breadth proxy (how many names moved
+     * hard enough to qualify at all).
+     */
+    public ScreenerResult fetchScreener(String scrIds, int count) {
+        if (scrIds == null || scrIds.isBlank()) return ScreenerResult.empty();
+        if (breakerOpen() || !online.isReachable()) return ScreenerResult.empty();
+        try {
+            String url = "https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved"
+                    + "?scrIds=" + URLEncoder.encode(scrIds.trim(), StandardCharsets.UTF_8)
+                    + "&count=" + Math.max(1, count);
+            WebResponse resp = httpGet(url, "application/json");
+            if (resp.status() != 200) {
+                if (isRateLimitStatus(resp.status())) tripBreaker("screener " + scrIds, resp.status());
+                else LOG.warn("Yahoo screener '{}' returned HTTP {}", scrIds, resp.status());
+                return ScreenerResult.empty();
+            }
+            return YahooResponseParser.parseScreener(resp.body());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return ScreenerResult.empty();
+        } catch (Exception e) {
+            LOG.warn("Yahoo screener '{}' failed: {}", scrIds, e.getMessage());
+            return ScreenerResult.empty();
+        }
+    }
+
+    /** Yahoo's trending-symbols list for a region ("US") — bare symbols, no quotes. */
+    public List<String> fetchTrending(String region, int count) {
+        if (breakerOpen() || !online.isReachable()) return List.of();
+        try {
+            String url = "https://query1.finance.yahoo.com/v1/finance/trending/"
+                    + URLEncoder.encode(region == null || region.isBlank() ? "US" : region.trim(),
+                            StandardCharsets.UTF_8)
+                    + "?count=" + Math.max(1, count);
+            WebResponse resp = httpGet(url, "application/json");
+            if (resp.status() != 200) {
+                if (isRateLimitStatus(resp.status())) tripBreaker("trending", resp.status());
+                else LOG.warn("Yahoo trending returned HTTP {}", resp.status());
+                return List.of();
+            }
+            return YahooResponseParser.parseTrending(resp.body());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return List.of();
+        } catch (Exception e) {
+            LOG.warn("Yahoo trending failed: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    /** One screener row; NaN/-1 where Yahoo omitted a field. */
+    public record ScreenerQuote(String symbol, String name, double price,
+            double changePercent, long marketCap, long volume) {
+    }
+
+    /** A screener page plus the uncapped total hit count (-1 unknown). */
+    public record ScreenerResult(List<ScreenerQuote> quotes, int total) {
+        public static ScreenerResult empty() {
+            return new ScreenerResult(List.of(), -1);
+        }
+    }
+
     // --- parsing delegators (package-private for tests) -------------------
 
     SearchResult parseSearch(String body) {
