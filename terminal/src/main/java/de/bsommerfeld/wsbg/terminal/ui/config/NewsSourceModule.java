@@ -25,5 +25,14 @@ final class NewsSourceModule extends AbstractModule {
         // newsForName() fan, not the symbol query.
         newsSources.addBinding().to(
                 de.bsommerfeld.wsbg.terminal.wallstreetonline.WsoNewsClient.class);
+        // Google News RSS: the German financial PRESS layer (WELT, WiWo, Börse
+        // Express, FinanzNachrichten …) — ~100 same-day items per name, keyless
+        // (probed 2026-07-13). Name-addressed like WSO; title-relevance
+        // filtered so a generic name never floods the pool. Rides the standard
+        // browser-first chain — Google captchas bare clients, and a captcha page
+        // is a 200 the chain would treat as definitive (user mandate 2026-07-13:
+        // JCEF is the standard for Google).
+        newsSources.addBinding().to(
+                de.bsommerfeld.wsbg.terminal.googlenews.GoogleNewsClient.class);
     }
 }

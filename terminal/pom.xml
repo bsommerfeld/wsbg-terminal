@@ -67,6 +67,10 @@
         </dependency>
         <dependency>
             <groupId>de.bsommerfeld</groupId>
+            <artifactId>google-news</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
             <artifactId>wallstreet-online</artifactId>
         </dependency>
         <!-- News source layer: source-api (NewsSource contract), the concrete
