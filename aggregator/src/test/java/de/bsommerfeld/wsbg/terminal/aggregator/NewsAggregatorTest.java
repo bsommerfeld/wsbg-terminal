@@ -47,6 +47,33 @@ class NewsAggregatorTest {
         assertTrue(out.stream().anyMatch(i -> i.uuid().equals("1") && i.title().equals("shared")));
     }
 
+    /**
+     * The IDENTICAL article often arrives twice under different links — the
+     * symbol query and the name query both hit it, and Google News mints a
+     * fresh redirect per query. Same normalized title + publisher = same
+     * story, first-seen wins (user mandate 2026-07-13 "identische News dedupen").
+     */
+    @Test
+    void identicalStoryUnderDifferentLinksDedupsByTitleAndPublisher() {
+        Instant t = Instant.parse("2026-07-13T10:00:00Z");
+        RawNewsItem viaSymbol = item("g-1", "Outlook Therapeutics Aktie: FDA-Entscheid am 29. Juli", t);
+        RawNewsItem viaName = item("g-2", "Outlook  Therapeutics Aktie: FDA-Entscheid am 29. Juli ", t);
+        NewsSource google = new NewsSource() {
+            @Override public String sourceName() { return "google"; }
+            @Override public List<RawNewsItem> newsFor(String symbol, int limit) {
+                return List.of(viaSymbol);
+            }
+            @Override public List<RawNewsItem> newsForName(String name, int limit) {
+                return List.of(viaName);
+            }
+        };
+
+        List<RawNewsItem> out = aggregator(google).newsFor("OTLK", "Outlook Therapeutics", 10);
+
+        assertEquals(1, out.size(), "identical story must ride once");
+        assertEquals("g-1", out.get(0).uuid(), "first-seen occurrence wins");
+    }
+
     @Test
     void ordersNewestFirstNullsLast() {
         RawNewsItem older = item("o", "older", Instant.parse("2026-06-01T00:00:00Z"));

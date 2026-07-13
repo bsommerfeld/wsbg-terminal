@@ -81,10 +81,11 @@ public class NewsAggregator {
     private Map<String, RawNewsItem> gather(boolean haveSymbol, boolean haveName,
                                             String symbol, String name, int limit) {
         Map<String, RawNewsItem> byId = new LinkedHashMap<>();
+        Set<String> seenStories = new java.util.HashSet<>();
         for (NewsSource src : sources) {
             try {
-                if (haveSymbol) collect(byId, src.newsFor(symbol, limit));
-                if (haveName) collect(byId, src.newsForName(name, limit));
+                if (haveSymbol) collect(byId, seenStories, src.newsFor(symbol, limit));
+                if (haveName) collect(byId, seenStories, src.newsForName(name, limit));
             } catch (Exception e) {
                 LOG.warn("news source {} failed for '{}'/'{}': {}",
                         safeName(src), symbol, name, e.getMessage());
@@ -93,12 +94,18 @@ public class NewsAggregator {
         return byId;
     }
 
-    private static void collect(Map<String, RawNewsItem> byId, List<RawNewsItem> items) {
+    private static void collect(Map<String, RawNewsItem> byId, Set<String> seenStories,
+                                List<RawNewsItem> items) {
         if (items == null) return;
         for (RawNewsItem it : items) {
-            if (it != null) {
-                byId.putIfAbsent(dedupKey(it), it);
-            }
+            if (it == null) continue;
+            // Second net beside the id: the IDENTICAL article often arrives
+            // under two different links (the symbol query and the name query
+            // both hit it, Google mints a fresh redirect per query) — same
+            // normalized title + publisher = same story, keep the first.
+            String story = storyKey(it);
+            if (story != null && !seenStories.add(story)) continue;
+            byId.putIfAbsent(dedupKey(it), it);
         }
     }
 
@@ -108,6 +115,16 @@ public class NewsAggregator {
             return it.uuid();
         }
         return it.link() == null ? "" : it.link();
+    }
+
+    /** Normalized title + publisher, or null when there is no usable title. */
+    private static String storyKey(RawNewsItem it) {
+        if (it.title() == null || it.title().isBlank()) return null;
+        String title = it.title().strip().toLowerCase(java.util.Locale.ROOT)
+                .replaceAll("\\s+", " ");
+        String publisher = it.publisher() == null ? ""
+                : it.publisher().strip().toLowerCase(java.util.Locale.ROOT);
+        return title + "|" + publisher;
     }
 
     private static String safeName(NewsSource src) {
