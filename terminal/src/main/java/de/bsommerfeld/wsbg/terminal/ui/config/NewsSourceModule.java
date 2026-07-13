@@ -34,5 +34,11 @@ final class NewsSourceModule extends AbstractModule {
         // JCEF is the standard for Google).
         newsSources.addBinding().to(
                 de.bsommerfeld.wsbg.terminal.googlenews.GoogleNewsClient.class);
+        // The Motley Fool: the US news/analysis leg — ticker-addressed via the
+        // news sitemap's <news:stock_tickers> tags (the symbol query Yahoo also
+        // answers, but with Fool's editorial angle) plus the foolwatch firehose
+        // with teasers; keyless, public feed key (probed 2026-07-13).
+        newsSources.addBinding().to(
+                de.bsommerfeld.wsbg.terminal.fool.FoolNewsClient.class);
     }
 }
