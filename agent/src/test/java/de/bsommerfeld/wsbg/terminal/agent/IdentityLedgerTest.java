@@ -61,6 +61,29 @@ class IdentityLedgerTest {
     }
 
     @Test
+    void preSemanticsFixVerdictIsReJudgedNotReplayed() throws Exception {
+        // A line written under the OLD decision rules (no/lower schema version) must
+        // not replay — the 2026-07-13 fix class: "trump"→DJT, "bitcoin"→ETP stamp.
+        long now = Instant.now().getEpochSecond();
+        Files.writeString(file(),
+                "{\"q\":\"trump\",\"symbol\":\"DJT\",\"canonical\":\"Trump Media & Technology Group Corp.\","
+                        + "\"isin\":\"US25400Q1058\",\"venueId\":3329230,\"category\":\"STK\","
+                        + "\"venueRuledOut\":false,\"decidedAt\":" + now + "}\n",
+                StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+
+        assertNull(new IdentityLedger(file()).get("trump"),
+                "an old-rules verdict must be re-judged, not replayed");
+    }
+
+    @Test
+    void currentVersionVerdictReplays() {
+        long now = Instant.now().getEpochSecond();
+        new IdentityLedger(file()).put("nvidia", entry("nvidia", "NVDA", now));
+        assertNotNull(new IdentityLedger(file()).get("nvidia"),
+                "a verdict written by the current code carries the schema version and replays");
+    }
+
+    @Test
     void tornLineIsSkippedOnLoad() throws Exception {
         long now = Instant.now().getEpochSecond();
         new IdentityLedger(file()).put("good", entry("good", "GOOD.DE", now));

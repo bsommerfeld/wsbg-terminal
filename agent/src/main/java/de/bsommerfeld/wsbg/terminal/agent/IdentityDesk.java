@@ -123,6 +123,21 @@ final class IdentityDesk {
 
         Gemma4Judge.DeskPick pick = judge == null ? null
                 : judge.pick(query, ctx.context(), yahooLines(quotes), lsLines(venue));
+        // The kind gate (2026-07-13, "Trump kriegt einen Preis"): the judge declares
+        // what the subject ITSELF is BEFORE any candidate counts. A person or theme
+        // never claims an instrument, no matter how exactly a stock ("trump"→DJT),
+        // a memecoin ("Donald Trump USD") or a theme-ETF ("Inflation"→IBCI.DE)
+        // spells the name — those are naming parasites, and the wrong stamp ships
+        // the right price for the wrong referent AND fans the news queries out on
+        // the wrong canonical name. A considered person/theme verdict stops the
+        // tower like any news-only claim; it is session-only (context-dependent),
+        // never persisted.
+        if (pick != null && pick.nonInstrument()) {
+            SubjectMatch verdict = SubjectMatch.newsOnly(query);
+            session.put(key, verdict);
+            LOG.info("[IDENTITY] '{}' → news-only ({})", query, pick.kind());
+            return Optional.of(verdict);
+        }
         if (pick == null) {
             // Model failure/absence: no considered verdict. Only the mechanical exact
             // fact may still claim; otherwise abstain to the legacy tower.
@@ -141,6 +156,17 @@ final class IdentityDesk {
         // Executing such a stamp priced ^DJI as the SPDR ETF in EUR instead of
         // index points (2026-07-10 live run) — indices price via Yahoo, in points.
         if (yq != null && yq.symbol() != null && yq.symbol().startsWith("^")) lc = null;
+        // A crypto subject's only venue paper is the currency notation (CUR): any
+        // ETF/STK candidate beside a CRYPTOCURRENCY pick is a wrapper (ETP/ETC,
+        // treasury company) or a same-named stock. Executing such a stamp priced
+        // BTC-USD as a 21Shares ETP at 18 EUR (2026-07-13 live run) — the coin
+        // prices via Yahoo instead.
+        if (yq != null && isCrypto(yq) && lc != null
+                && !"CUR".equalsIgnoreCase(lc.category())) {
+            LOG.info("[IDENTITY] crypto wrapper veto '{}': venue pick '{}' ({}) is not the "
+                    + "currency notation — dropped", query, lc.displayName(), lc.category());
+            lc = null;
+        }
         if (lc != null && priceImplausible(query, yq, lc)) lc = null;
 
         // The judge SAW venue candidates and (or the price veto) struck them all: a
@@ -248,9 +274,25 @@ final class IdentityDesk {
 
     private static int indexOfNameEquivalent(String query, List<YahooQuote> quotes) {
         for (int i = 0; i < quotes.size(); i++) {
-            if (NameMatching.nameEquivalent(query, quotes.get(i).displayName())) return i;
+            YahooQuote q = quotes.get(i);
+            // A crypto token is never an exact-name FACT: anyone mints a coin named
+            // after any person or thing ("Donald Trump USD" stamped a memecoin onto
+            // the person, 2026-07-13 live run). Legal company names prove identity;
+            // token names are naming parasites — crypto stays the judge's call.
+            if (isCrypto(q)) continue;
+            if (NameMatching.nameEquivalent(query, q.displayName())) return i;
         }
         return -1;
+    }
+
+    /** Yahoo's crypto shape: the CRYPTOCURRENCY quote type, or the -USD pair suffix. */
+    private static boolean isCrypto(YahooQuote q) {
+        if (q == null) return false;
+        if ("CRYPTOCURRENCY".equalsIgnoreCase(q.quoteType() == null ? "" : q.quoteType().trim())) {
+            return true;
+        }
+        String sym = q.symbol() == null ? "" : q.symbol().trim().toUpperCase(java.util.Locale.ROOT);
+        return sym.endsWith("-USD");
     }
 
     /** Yahoo fact lines: name — TYPE, exchange [symbol]. */

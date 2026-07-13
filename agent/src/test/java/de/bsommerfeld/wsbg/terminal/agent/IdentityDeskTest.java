@@ -117,6 +117,69 @@ class IdentityDeskTest {
     }
 
     @Test
+    void personKindNeverClaimsAnInstrument() {
+        // 2026-07-13 live run: the judge picked DJT for the person "Trump" — the
+        // kind gate makes the person/theme decision discrete and binding.
+        nextPick.set(new Gemma4Judge.DeskPick(1, 1, "person"));
+        SubjectMatch m = desk(List.of(
+                ls(1, "US25400Q1058", "", "TRUMP MEDIA & TECHNOLOGY", "STK", "Aktie")))
+                .decide(ctx("Trump", List.of(yq("DJT", "Trump Media & Technology Group Corp.", "EQUITY"))))
+                .orElseThrow();
+        assertNull(m.symbol(), "a person never claims a same-named instrument");
+        assertFalse(m.isStamped());
+    }
+
+    @Test
+    void themeKindNeverClaimsAnInstrument() {
+        // "Inflation" → IBCI.DE (a theme ETF) shipped live: a macro term names no instrument.
+        nextPick.set(new Gemma4Judge.DeskPick(1, 1, "theme"));
+        SubjectMatch m = desk(List.of(
+                ls(2, "LU0425308086", "", "ISHS € INFL.LINKED GOV.BD", "ETF", "ETF")))
+                .decide(ctx("Inflation", List.of(yq("IBCI.DE", "iShares € Inflation Linked Govt Bond UCITS ETF", "ETF"))))
+                .orElseThrow();
+        assertNull(m.symbol(), "a theme never claims a same-named instrument");
+    }
+
+    @Test
+    void personVerdictIsSessionOnlyNeverPersisted() {
+        Path file = dir.resolve("ledger.jsonl");
+        nextPick.set(new Gemma4Judge.DeskPick(1, 0, "person"));
+        IdentityDesk d = desk(List.of());
+        d.installLedger(new IdentityLedger(file));
+        d.decide(ctx("Trump", List.of(yq("DJT", "Trump Media & Technology Group Corp.", "EQUITY"))));
+
+        IdentityDesk second = desk(List.of());
+        IdentityLedger reloaded = new IdentityLedger(file);
+        second.installLedger(reloaded);
+        assertEquals(0, reloaded.size(), "a person/theme verdict is context-dependent — never in the book");
+    }
+
+    @Test
+    void memecoinIsNoExactNameFact() {
+        // "Donald Trump USD" is name-equivalent to the person (USD is a stop token) —
+        // but a crypto token's name proves nothing; the mechanical bypass must not fire.
+        nextPick.set(null); // model failure: only the bypass could claim
+        Optional<SubjectMatch> m = desk(List.of())
+                .decide(ctx("Donald Trump", List.of(
+                        yq("TRUMP31792-USD", "Donald Trump USD", "CRYPTOCURRENCY"))));
+        assertTrue(m.isEmpty(), "a crypto candidate is never an exact-name fact — abstain");
+    }
+
+    @Test
+    void cryptoWrapperVetoDropsANonCurrencyVenuePick() {
+        // 2026-07-13 live run: "bitcoin" stamped a 21Shares ETP (category ETF) —
+        // BTC-USD then priced at 18 EUR. A crypto's only venue paper is CUR.
+        nextPick.set(new Gemma4Judge.DeskPick(1, 1, "instrument"));
+        SubjectMatch m = desk(List.of(
+                ls(982480, "CH0454664001", "", "21SHARES BITCOIN ETP", "ETF", "ETF")))
+                .decide(ctx("Bitcoin", List.of(yq("BTC-USD", "Bitcoin USD", "CRYPTOCURRENCY"))))
+                .orElseThrow();
+        assertEquals("BTC-USD", m.symbol());
+        assertFalse(m.isStamped(), "a wrapper ETP never stamps a crypto verdict");
+        assertTrue(m.venueRuledOut(), "the struck wrapper stays shut for the price chain");
+    }
+
+    @Test
     void cryptoPickStampsTheCurrencyNotation() {
         nextPick.set(new Gemma4Judge.DeskPick(1, 2));
         SubjectMatch m = desk(List.of(

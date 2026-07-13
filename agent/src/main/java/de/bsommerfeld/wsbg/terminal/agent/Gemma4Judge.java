@@ -65,8 +65,27 @@ final class Gemma4Judge {
         }
     }
 
-    /** The identity desk's per-venue verdict: 1-based candidate picks, 0 = none. */
-    record DeskPick(int yahoo, int ls) {}
+    /**
+     * The identity desk's verdict: the subject's declared kind plus 1-based
+     * candidate picks per venue (0 = none). {@code kind} is the pick's discrete
+     * anchor (the trigger-before-highlight lesson): the model names what the
+     * subject ITSELF is BEFORE choosing a candidate, so a person or theme can
+     * never be talked into a same-named ticker by the candidate list. Legacy
+     * two-arg shape defaults to "instrument" (pre-kind behaviour).
+     */
+    record DeskPick(int yahoo, int ls, String kind) {
+
+        DeskPick(int yahoo, int ls) {
+            this(yahoo, ls, "instrument");
+        }
+
+        /** True when the subject itself is a person or theme — never an instrument pick. */
+        boolean nonInstrument() {
+            if (kind == null) return false;
+            String k = kind.trim().toLowerCase(java.util.Locale.ROOT);
+            return k.startsWith("person") || k.startsWith("them"); // theme / thema
+        }
+    }
 
     /**
      * The identity desk's judge call ({@link IdentityDesk.PickJudge}): ONE gemma4
@@ -104,7 +123,10 @@ final class Gemma4Judge {
             int l = obj.path("ls").asInt(0);
             if (yahooLines == null || y < 0 || y > yahooLines.size()) y = 0;
             if (lsLines == null || l < 0 || l > lsLines.size()) l = 0;
-            return new DeskPick(y, l);
+            // Absent/blank kind falls back to "instrument" — the pre-kind behaviour,
+            // never a spurious news-only strike on a parse hiccup.
+            String kind = obj.path("kind").asText("");
+            return new DeskPick(y, l, kind.isBlank() ? "instrument" : kind);
         } catch (Exception e) {
             LOG.debug("identity desk judge failed (abstain): {}", e.getMessage());
             return null;

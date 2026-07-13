@@ -42,15 +42,33 @@ final class IdentityLedger {
     private static final long MAX_AGE_DAYS = 30;
 
     /**
+     * The verdict semantics generation. Bumped when the desk's decision RULES
+     * change, so every verdict decided under the old rules is re-judged instead of
+     * replayed (and superseded by append on the next decide) — a semantics fix must
+     * not wait out {@link #MAX_AGE_DAYS} on a wrong stamp. History: 2 = the kind
+     * gate + crypto-wrapper veto (2026-07-13: "trump"→DJT, "bitcoin"→ETP stamp).
+     */
+    static final int SCHEMA_VERSION = 2;
+
+    /**
      * One stamped verdict. {@code symbol} is the unit/display identifier (a Yahoo
      * ticker, or the venue WKN for a listing Yahoo doesn't carry); {@code venueId} +
      * {@code isin} + {@code category} are the exact venue instrument the price chain
      * executes without any re-resolution. {@code venueRuledOut} persists the desk's
      * considered "no venue listing" so a replay keeps the price chain's fuzzy name
      * search shut across restarts (absent on pre-flag lines → {@code false}).
+     * {@code v} is the {@link #SCHEMA_VERSION} the verdict was decided under
+     * (absent on pre-version lines → {@code 0} → re-judged on load).
      */
     record Entry(String q, String symbol, String canonical, String isin,
-            long venueId, String category, boolean venueRuledOut, long decidedAt) {
+            long venueId, String category, boolean venueRuledOut, long decidedAt, int v) {
+
+        /** Pre-version shape (call sites/tests): stamped with the current semantics. */
+        Entry(String q, String symbol, String canonical, String isin,
+                long venueId, String category, boolean venueRuledOut, long decidedAt) {
+            this(q, symbol, canonical, isin, venueId, category, venueRuledOut, decidedAt,
+                    SCHEMA_VERSION);
+        }
 
         /** Pre-flag shape (older call sites/tests): no considered venue verdict. */
         Entry(String q, String symbol, String canonical, String isin,
@@ -106,9 +124,10 @@ final class IdentityLedger {
                 try {
                     Entry e = JSON.readValue(line, Entry.class);
                     if (e.q() == null || e.q().isBlank()) continue;
-                    if (e.decidedAt() < cutoff) {
-                        // Stale verdict: drop from the replay map (a NEWER line for the same
-                        // key may still re-add it — last-wins runs over the whole file).
+                    if (e.decidedAt() < cutoff || e.v() < SCHEMA_VERSION) {
+                        // Stale or pre-semantics-fix verdict: drop from the replay map (a
+                        // NEWER line for the same key may still re-add it — last-wins runs
+                        // over the whole file). An old-rules verdict is re-judged fresh.
                         loaded.remove(normalize(e.q()));
                         stale++;
                         continue;
