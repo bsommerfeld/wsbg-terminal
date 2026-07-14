@@ -90,5 +90,13 @@ final class AgentPipelineModule extends AbstractModule {
         bind(de.bsommerfeld.wsbg.terminal.core.price.InsiderDealingsSource.class)
                 .to(de.bsommerfeld.wsbg.terminal.bafin.InsiderDealingsClient.class)
                 .in(Singleton.class);
+
+        // The US listing view by bare ticker (FINRA short interest, Form-4
+        // insider trades, 13F ownership, analyst consensus, earnings surprises)
+        // — api.nasdaq.com, the American counterpart to the German-register
+        // legs above. Optionally injected into DeepDiveService for the KI-DD.
+        bind(de.bsommerfeld.wsbg.terminal.core.price.UsListingStatsSource.class)
+                .to(de.bsommerfeld.wsbg.terminal.nasdaq.NasdaqCompanyClient.class)
+                .in(Singleton.class);
     }
 }
