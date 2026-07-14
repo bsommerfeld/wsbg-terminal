@@ -95,16 +95,18 @@ public class GoogleNewsClient implements NewsSource {
     }
 
     /**
-     * Production: rides the shared standard {@link WebFetcher} chain
-     * (browser → direct). Deliberately NOT {@code @DirectFirst}: Google
-     * captchas bare clients at volume, and a captcha/consent page is an
-     * HTTP 200 the chain would treat as definitive — the direct path would
-     * silently starve this source instead of falling through to the joker.
-     * The browser's real fingerprint + cookies avoid the captcha in the
-     * first place (user mandate 2026-07-13: JCEF is the standard for Google).
+     * Production: {@code @DirectFirst} since 2026-07-14. The browser-first
+     * mandate of 2026-07-13 assumed the joker clears Google's walls, but the
+     * news.google.com anchor NEVER becomes session-ready (consent wall — the
+     * pending SOCS-cookie fix), so the browser leg only ever cost 25 s/3 s
+     * per query and fell through to direct anyway; the direct RSS path is
+     * what actually delivers. The old captcha concern stays covered by a
+     * tripwire instead: a 200 whose body is not RSS (consent/captcha page)
+     * logs a WARN loud enough to decide the source's removal on evidence.
      */
     @Inject
-    public GoogleNewsClient(WebFetcher fetcher) {
+    public GoogleNewsClient(
+            @de.bsommerfeld.wsbg.terminal.source.net.DirectFirst WebFetcher fetcher) {
         this.fetcher = fetcher;
     }
 
@@ -122,9 +124,25 @@ public class GoogleNewsClient implements NewsSource {
     @Override
     public List<RawNewsItem> newsForName(String companyName, int limit) {
         if (companyName == null || companyName.isBlank() || limit <= 0) return List.of();
-        String query = cleanName(companyName) + " Aktie";
-        String cacheKey = query.toLowerCase(Locale.ROOT);
+        return search(cleanName(companyName) + " Aktie", companyName, limit);
+    }
 
+    /**
+     * ISIN full-text search: regulatory disclosures (EQS ad-hocs, corporate
+     * releases) print the ISIN verbatim in their body, so this finds the
+     * disclosure-grade documents the name query drowns in daily price notes.
+     * NO title-relevance filter — the ISIN query is precise by construction
+     * (an ISIN never matches a wrong same-named twin), and disclosure titles
+     * rarely repeat the ISIN. Always used ADDITIVELY beside symbol/name.
+     */
+    @Override
+    public List<RawNewsItem> newsForIsin(String isin, int limit) {
+        if (isin == null || isin.isBlank() || limit <= 0) return List.of();
+        return search(isin.strip().toUpperCase(Locale.ROOT), null, limit);
+    }
+
+    private List<RawNewsItem> search(String query, String relevanceName, int limit) {
+        String cacheKey = query.toLowerCase(Locale.ROOT);
         CachedResult cached = cache.get(cacheKey);
         if (cached != null && cached.fetchedAt().plus(CACHE_TTL).isAfter(Instant.now())) {
             return cap(cached.items(), limit);
@@ -137,14 +155,22 @@ public class GoogleNewsClient implements NewsSource {
                             "Accept", "application/rss+xml, application/xml, text/xml"),
                     requestTimeout);
             if (resp != null && resp.status() == 200) {
-                List<RawNewsItem> items = parse(resp.body(), companyName);
+                String body = resp.body();
+                if (!looksLikeRss(body)) {
+                    // Consent/captcha pages arrive as HTTP 200 — without this
+                    // tripwire the source would starve silently.
+                    LOG.warn("Google News answered a 200 that is not RSS for '{}' — "
+                            + "consent/captcha wall on the direct client, source is starving", query);
+                    return List.of();
+                }
+                List<RawNewsItem> items = parse(body, relevanceName);
                 cache.put(cacheKey, new CachedResult(Instant.now(), items));
                 return cap(items, limit);
             }
             LOG.debug("Google News search for '{}' answered status {}",
-                    companyName, resp == null ? "null" : resp.status());
+                    query, resp == null ? "null" : resp.status());
         } catch (Exception e) {
-            LOG.debug("Google News search failed for '{}': {}", companyName, e.getMessage());
+            LOG.debug("Google News search failed for '{}': {}", query, e.getMessage());
         }
         return List.of();
     }
@@ -178,6 +204,15 @@ public class GoogleNewsClient implements NewsSource {
      * Garbage / HTML answers yield an empty list, never an exception.
      * Package-private for tests.
      */
+    /** A Google 200 is only a result when it is actually RSS/XML — consent and captcha shells are HTML. */
+    static boolean looksLikeRss(String body) {
+        if (body == null) return false;
+        String head = body.stripLeading();
+        if (head.length() > 512) head = head.substring(0, 512);
+        String lower = head.toLowerCase(Locale.ROOT);
+        return lower.startsWith("<?xml") || lower.startsWith("<rss");
+    }
+
     static List<RawNewsItem> parse(String xml, String companyName) {
         if (xml == null || xml.isBlank()) return List.of();
         Set<String> words = significantWords(companyName);
@@ -267,7 +302,9 @@ public class GoogleNewsClient implements NewsSource {
 
     /** True when the title carries at least one significant word of the queried name. */
     static boolean titleMatches(String title, Set<String> nameWords) {
-        if (nameWords.isEmpty()) return false;
+        // Empty = NO filter requested (the ISIN query is precise by
+        // construction and disclosure titles rarely repeat the ISIN).
+        if (nameWords.isEmpty()) return true;
         String t = normalize(title);
         for (String w : nameWords) {
             if (t.matches(".*\\b" + Pattern.quote(w) + "\\b.*")) return true;
@@ -277,6 +314,9 @@ public class GoogleNewsClient implements NewsSource {
 
     /** Significant (length ≥ 3, non-generic) words of the queried name, umlaut-normalised. */
     static Set<String> significantWords(String name) {
+        // No relevance name (the ISIN query) = no filter — precise by
+        // construction; the null used to NPE inside normalize (live 2026-07-14).
+        if (name == null || name.isBlank()) return Set.of();
         Set<String> out = new java.util.LinkedHashSet<>();
         for (String w : normalize(name).split("[^a-z0-9]+")) {
             if (w.length() >= 3 && !NAME_STOP.contains(w)) out.add(w);

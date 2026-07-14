@@ -95,6 +95,18 @@ class GoogleNewsClientTest {
     }
 
     @Test
+    void looksLikeRssAcceptsFeedsAndRejectsConsentShells() {
+        assertTrue(GoogleNewsClient.looksLikeRss(fixture()));
+        assertTrue(GoogleNewsClient.looksLikeRss("\n  <?xml version=\"1.0\"?><rss/>"));
+        assertTrue(GoogleNewsClient.looksLikeRss("<rss version=\"2.0\"><channel/></rss>"));
+        // Consent/captcha walls answer HTTP 200 with an HTML shell.
+        assertFalse(GoogleNewsClient.looksLikeRss("<!DOCTYPE html><html><body>Bevor Sie fortfahren</body></html>"));
+        assertFalse(GoogleNewsClient.looksLikeRss("<html><head><title>Sign in</title></head></html>"));
+        assertFalse(GoogleNewsClient.looksLikeRss(null));
+        assertFalse(GoogleNewsClient.looksLikeRss("   "));
+    }
+
+    @Test
     void cleanNameStripsLegalSuffixesForTheQuery() {
         assertEquals("NVIDIA", GoogleNewsClient.cleanName("NVIDIA Corporation"));
         assertEquals("Amazon.com", GoogleNewsClient.cleanName("Amazon.com, Inc."));
