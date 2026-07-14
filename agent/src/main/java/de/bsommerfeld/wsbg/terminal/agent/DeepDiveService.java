@@ -229,6 +229,7 @@ public class DeepDiveService {
     private volatile de.bsommerfeld.wsbg.terminal.briefing.EarningsWhispersClient earningsWhispers;
     private volatile CompanyPressScout pressScout;
     private volatile de.bsommerfeld.wsbg.terminal.websearch.BingWebSearchClient webSearch;
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.GlobalHazardsClient hazardsClient;
 
     private final AtomicBoolean busy = new AtomicBoolean(false);
     private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
@@ -347,6 +348,11 @@ public class DeepDiveService {
     @com.google.inject.Inject(optional = true)
     void setWebSearch(de.bsommerfeld.wsbg.terminal.websearch.BingWebSearchClient client) {
         this.webSearch = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setGlobalHazardsClient(de.bsommerfeld.wsbg.terminal.briefing.GlobalHazardsClient client) {
+        this.hazardsClient = client;
     }
 
     /** Browser UA for the first-party press scout's plain page fetches. */
@@ -1082,6 +1088,15 @@ public class DeepDiveService {
 
     private static final int JOURNAL_LINE_CHARS = 240;
 
+    /**
+     * The desk journal's display language - the journal is user-facing UI, so
+     * its composed notes follow {@code user.language} like the examiner texts
+     * (German when de, English otherwise).
+     */
+    private boolean journalGerman() {
+        return "de".equalsIgnoreCase(brain.getUserLanguage().code());
+    }
+
     private void journalNotes(String subject, List<String> notes) {
         List<de.bsommerfeld.wsbg.terminal.agent.event.DeepDiveJournalEvent.Line> lines =
                 notes.stream()
@@ -1389,8 +1404,9 @@ public class DeepDiveService {
             fetched++;
         }
         if (extra.length() == 0) return "";
-        journalNotes(subject, List.of("Digest nachgefordert — " + fetched
-                + " Volltext(e) für diese Story gelesen"));
+        journalNotes(subject, List.of(journalGerman()
+                ? "Digest nachgefordert — " + fetched + " Volltext(e) für diese Story gelesen"
+                : "Digest requested — " + fetched + " full text(s) read for this story"));
         LOG.info("[DEEPDIVE] '{}' re-knock: {} missing full text(s) fetched for a story group.",
                 subject, fetched);
         return "REQUESTED FULL-TEXT DIGESTS (the desk asked for the missing sources):\n" + extra;
@@ -2201,10 +2217,14 @@ public class DeepDiveService {
         HedgeFundPopularity hedgeFunds;
         /** The dated analyst-action history + US short stats (MarketBeat). */
         AnalystActions analystActions;
+        /** The months-spanning dated press timeline (MarketBeat news tab) — "Was war" context. */
+        de.bsommerfeld.wsbg.terminal.core.price.PressTimeline pressTimeline;
         /** The instrument's US sector proxy (XL* SPDR), day snapshot. Null = no mapping. */
         MarketSnapshot sectorEtf;
         String sectorEtfSymbol;
         String sectorDisplayName;
+        /** World hazards the SECTOR is exposed to (storm/quake/aviation) — empty when the gate says no. */
+        List<de.bsommerfeld.wsbg.terminal.briefing.GlobalHazardsClient.Hazard> sectorHazards = List.of();
         /** Today's high-impact macro ACTUALS (Ist vs Prognose vs zuvor — the weather pattern). */
         List<TradingViewCalendarClient.TvEvent> macroActualsToday = List.of();
         /** Upcoming high-impact macro events the sector trades on (Ausblick anchors). */
@@ -2410,6 +2430,18 @@ public class DeepDiveService {
         } catch (Exception e) {
             LOG.debug("[DEEPDIVE] analyst actions failed: {}", e.getMessage());
         }
+        // The dated press timeline (MarketBeat news tab, ticker as resolved):
+        // months of dated headlines — how the name got HERE, past the 30-day
+        // news window. Context material for the author, deliberately never
+        // triaged/digested/woven as sources.
+        checkCancelled();
+        try {
+            if (analystActionsSource != null && m.ticker != null) {
+                m.pressTimeline = analystActionsSource.pressTimelineFor(m.ticker).orElse(null);
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] press timeline failed: {}", e.getMessage());
+        }
         // Sector & macro context — the Abendausgabe arsenal scoped to THIS
         // instrument (user mandate 2026-07-14): what pressed or carried the
         // sector today (XL* proxy vs the instrument, house arithmetic), the
@@ -2433,6 +2465,19 @@ public class DeepDiveService {
             }
         } catch (Exception e) {
             LOG.debug("[DEEPDIVE] sector proxy failed: {}", e.getMessage());
+        }
+        // World context where it FITS (user mandate 2026-07-14): physical-world
+        // hazards reach the Lage shelf ONLY through the sector-exposure gate —
+        // an unexposed sector adds NOTHING (a wrong world signal is worse than
+        // none).
+        try {
+            de.bsommerfeld.wsbg.terminal.briefing.GlobalHazardsClient hazards = hazardsClient;
+            if (hazards != null && m.sectorEtfSymbol != null
+                    && SECTOR_HAZARD_EXPOSURE.containsKey(m.sectorEtfSymbol)) {
+                m.sectorHazards = exposedHazards(m.sectorEtfSymbol, hazards.hazards());
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] world hazards failed: {}", e.getMessage());
         }
         try {
             if (tvCalendar != null) {
@@ -2581,8 +2626,11 @@ public class DeepDiveService {
                 .limit(MAX_NEWS_CANDIDATES)
                 .toList();
         if (!m.news.isEmpty()) {
-            journalNotes(ticker, List.of("News-Pool — " + m.news.size()
-                    + " Kandidaten (Symbol + Name + ISIN + Websuche + Presse)"));
+            journalNotes(ticker, List.of(journalGerman()
+                    ? "News-Pool — " + m.news.size()
+                            + " Kandidaten (Symbol + Name + ISIN + Websuche + Presse)"
+                    : "News pool — " + m.news.size()
+                            + " candidates (symbol + name + ISIN + web search + press)"));
         }
         return m;
     }
@@ -2593,94 +2641,137 @@ public class DeepDiveService {
      * terse outcome only — what was fetched, never narration.
      */
     private void journalCollectedSources(String subject, Material m) {
+        boolean de = journalGerman();
         if (m.snapshot != null && m.snapshot.hasPrice()) {
             String venue = m.snapshot.exchangeName() == null || m.snapshot.exchangeName().isBlank()
-                    ? "Kursdaten" : m.snapshot.exchangeName();
-            journalNotes(subject, List.of(venue + " — Kurs " + fmt2(m.snapshot.price())
+                    ? (de ? "Kursdaten" : "Price data") : m.snapshot.exchangeName();
+            journalNotes(subject, List.of(venue + (de ? " — Kurs " : " — price ")
+                    + fmt2(m.snapshot.price())
                     + (m.snapshot.currency() == null ? "" : " " + m.snapshot.currency())));
         }
         if (m.venueStats != null) {
-            journalNotes(subject, List.of("Tradegate — Volumen "
-                    + groupedInt(m.venueStats.volumeShares()) + " Stück, "
-                    + groupedInt(m.venueStats.executions()) + " Trades"));
+            journalNotes(subject, List.of("Tradegate — "
+                    + (de ? "Volumen " : "volume ")
+                    + groupedInt(m.venueStats.volumeShares()) + (de ? " Stück, " : " shares, ")
+                    + groupedInt(m.venueStats.executions()) + (de ? " Trades" : " trades")));
         }
         if (m.facts != null) {
-            journalNotes(subject, List.of("onvista — Profil"
+            journalNotes(subject, List.of("onvista — " + (de ? "Profil" : "profile")
                     + (m.facts.sector() == null ? "" : ": " + m.facts.sector())));
         } else if (m.fundFacts != null) {
-            journalNotes(subject, List.of("onvista — Fondsprofil"));
+            journalNotes(subject, List.of("onvista — "
+                    + (de ? "Fondsprofil" : "fund profile")));
         }
         if (m.analystView != null && m.analystView.hasRatings()) {
             journalNotes(subject, List.of("Consorsbank — " + m.analystView.total()
-                    + " Analysten, " + m.analystView.events().size() + " Termine"));
+                    + (de ? " Analysten, " : " analysts, ")
+                    + m.analystView.events().size() + (de ? " Termine" : " events")));
         }
         if (m.deepDive != null) {
-            journalNotes(subject, List.of("Consorsbank — Kennzahlen: "
-                    + m.deepDive.keyFigures().size() + " Geschäftsjahre, Bilanz "
-                    + m.deepDive.balanceSheet().size() + " Jahre"
-                    + (m.deepDive.technicalView() != null ? ", Charttechnik" : "")));
+            journalNotes(subject, List.of("Consorsbank — "
+                    + (de ? "Kennzahlen: " : "key figures: ")
+                    + m.deepDive.keyFigures().size()
+                    + (de ? " Geschäftsjahre, Bilanz " : " fiscal years, balance sheet ")
+                    + m.deepDive.balanceSheet().size() + (de ? " Jahre" : " years")
+                    + (m.deepDive.technicalView() != null
+                            ? (de ? ", Charttechnik" : ", technical view") : "")));
         }
         if (m.shortInterest != null) {
             journalNotes(subject, List.of("Bundesanzeiger — "
-                    + (m.shortInterest.positions().isEmpty() ? "keine Shortpositionen ≥ 0,5 %"
-                    : m.shortInterest.positions().size() + " Shortposition(en), gesamt "
+                    + (m.shortInterest.positions().isEmpty()
+                    ? (de ? "keine Shortpositionen ≥ 0,5 %" : "no short positions ≥ 0.5%")
+                    : m.shortInterest.positions().size()
+                            + (de ? " Shortposition(en), gesamt " : " short position(s), total ")
                             + fmt2(m.shortInterest.totalDisclosedPercent()) + " %")));
         }
         if (m.insiderDealings != null) {
             journalNotes(subject, List.of("BaFin — " + m.insiderDealings.deals().size()
-                    + " Insider-Meldung(en)"));
+                    + (de ? " Insider-Meldung(en)" : " insider filing(s)")));
         }
         if (m.usStats != null) {
             List<String> bits = new ArrayList<>();
             if (!m.usStats.insiderTrades().isEmpty()) {
-                bits.add(m.usStats.insiderTrades().size() + " Insider-Trades");
+                bits.add(m.usStats.insiderTrades().size()
+                        + (de ? " Insider-Trades" : " insider trades"));
             }
             if (!m.usStats.shortInterest().isEmpty()) {
-                bits.add("Short Interest " + m.usStats.shortInterest().size() + " Stichtage");
+                bits.add((de ? "Short Interest " : "short interest ")
+                        + m.usStats.shortInterest().size()
+                        + (de ? " Stichtage" : " record dates"));
             }
-            if (m.usStats.analystRatings() != null) bits.add("Analysten-Konsens");
-            if (m.usStats.institutionalOwnership() != null) bits.add("13F-Halter");
+            if (m.usStats.analystRatings() != null) {
+                bits.add(de ? "Analysten-Konsens" : "analyst consensus");
+            }
+            if (m.usStats.institutionalOwnership() != null) {
+                bits.add(de ? "13F-Halter" : "13F holders");
+            }
             if (!m.usStats.earningsSurprises().isEmpty()) {
-                bits.add(m.usStats.earningsSurprises().size() + " Quartale");
+                bits.add(m.usStats.earningsSurprises().size()
+                        + (de ? " Quartale" : " quarters"));
             }
             journalNotes(subject, List.of("NASDAQ — "
-                    + (bits.isEmpty() ? "US-Listing" : String.join(", ", bits))));
+                    + (bits.isEmpty() ? (de ? "US-Listing" : "US listing")
+                    : String.join(", ", bits))));
         }
         if (m.hedgeFunds != null && !m.hedgeFunds.quarters().isEmpty()) {
             HedgeFundPopularity.QuarterPoint latest =
                     m.hedgeFunds.quarters().get(m.hedgeFunds.quarters().size() - 1);
             journalNotes(subject, List.of("Insider Monkey — " + latest.funds()
-                    + " Hedgefonds investiert (" + latest.quarterLabel() + ")"));
+                    + (de ? " Hedgefonds investiert (" : " hedge funds invested (")
+                    + latest.quarterLabel() + ")"));
         }
         if (m.analystActions != null) {
             List<String> bits = new ArrayList<>();
             if (!m.analystActions.actions().isEmpty()) {
-                bits.add(m.analystActions.actions().size() + " Analysten-Aktionen");
+                bits.add(m.analystActions.actions().size()
+                        + (de ? " Analysten-Aktionen" : " analyst actions"));
             }
-            if (m.analystActions.shortStats() != null) bits.add("Short-Quote");
+            if (m.analystActions.shortStats() != null) {
+                bits.add(de ? "Short-Quote" : "short ratio");
+            }
             journalNotes(subject, List.of("MarketBeat — "
-                    + (bits.isEmpty() ? "Street-Historie" : String.join(", ", bits))));
+                    + (bits.isEmpty() ? (de ? "Street-Historie" : "street history")
+                    : String.join(", ", bits))));
+        }
+        if (m.pressTimeline != null && !m.pressTimeline.entries().isEmpty()) {
+            journalNotes(subject, List.of("MarketBeat — "
+                    + (de ? "Presse-Zeitleiste, " : "press timeline, ")
+                    + m.pressTimeline.entries().size()
+                    + (de ? " Schlagzeilen" : " headlines")));
         }
         if (m.sectorEtf != null || !m.macroActualsToday.isEmpty() || !m.macroDocket.isEmpty()) {
             List<String> bits = new ArrayList<>();
             if (m.sectorEtf != null) {
-                bits.add("Sektor " + m.sectorDisplayName + " (" + m.sectorEtfSymbol + ")");
+                bits.add((de ? "Sektor " : "sector ")
+                        + m.sectorDisplayName + " (" + m.sectorEtfSymbol + ")");
             }
             if (!m.macroActualsToday.isEmpty()) {
-                bits.add(m.macroActualsToday.size() + " Makro-Ist-Zahl(en) heute");
+                bits.add(m.macroActualsToday.size()
+                        + (de ? " Makro-Ist-Zahl(en) heute" : " macro actual(s) today"));
             }
             if (!m.macroDocket.isEmpty() || !m.cbDecisions.isEmpty()) {
-                bits.add((m.macroDocket.size() + m.cbDecisions.size()) + " kommende Termine");
+                bits.add((m.macroDocket.size() + m.cbDecisions.size())
+                        + (de ? " kommende Termine" : " upcoming events"));
             }
-            journalNotes(subject, List.of("Sektor/Makro — " + String.join(", ", bits)));
+            journalNotes(subject, List.of((de ? "Sektor/Makro — " : "Sector/macro — ")
+                    + String.join(", ", bits)));
+        }
+        if (!m.sectorHazards.isEmpty()) {
+            journalNotes(subject, List.of((de ? "Welt-Lage — " : "World picture — ")
+                    + m.sectorHazards.size()
+                    + (de ? " Gefahrenmeldung(en) mit Sektor-Bezug"
+                            : " hazard note(s) with sector relevance")));
         }
         if (!m.wireHistory.isEmpty()) {
-            journalNotes(subject, List.of("Wire-Archiv — " + m.wireHistory.size()
-                    + " eigene Zeile(n) zu diesem Subjekt"));
+            journalNotes(subject, List.of((de ? "Wire-Archiv — " : "Wire archive — ")
+                    + m.wireHistory.size()
+                    + (de ? " eigene Zeile(n) zu diesem Subjekt"
+                            : " own line(s) on this subject")));
         }
         if (!m.roomUnits.isEmpty()) {
-            journalNotes(subject, List.of("Käfig — " + m.evidenceCount + " Erwähnung(en) über "
-                    + m.roomUnits.size() + " Subjekt-Einheit(en)"));
+            journalNotes(subject, List.of((de ? "Käfig — " : "The room — ")
+                    + m.evidenceCount + (de ? " Erwähnung(en) über " : " mention(s) across ")
+                    + m.roomUnits.size() + (de ? " Subjekt-Einheit(en)" : " subject unit(s)")));
         }
     }
 
@@ -2778,6 +2869,8 @@ public class DeepDiveService {
         appendMarket(sb, m.snapshot, nums);
         appendTrading(sb, m.venueStats, m.facts, nums);
         appendSectorContext(sb, m, nums);
+        appendWorldContext(sb, m, nums);
+        appendPressTimeline(sb, m.pressTimeline, nums);
         appendPerformance(sb, m.deepDive, nums);
         out[SEC_SITUATION] = new Shelf(take(sb), newsBlocksFor(m, "LAGE", nums));
 
@@ -2984,8 +3077,9 @@ public class DeepDiveService {
         if (m.insiderDealings != null) nums.put("insider", ++n);
         if (m.usStats != null) nums.put("nasdaq", ++n);
         if (m.hedgeFunds != null && !m.hedgeFunds.quarters().isEmpty()) nums.put("hedgefunds", ++n);
-        if (m.analystActions != null && (!m.analystActions.actions().isEmpty()
-                || m.analystActions.shortStats() != null)) {
+        if ((m.analystActions != null && (!m.analystActions.actions().isEmpty()
+                || m.analystActions.shortStats() != null))
+                || (m.pressTimeline != null && !m.pressTimeline.entries().isEmpty())) {
             nums.put("marketbeat", ++n);
         }
         if (m.sectorEtf != null || !m.macroActualsToday.isEmpty()
@@ -3738,6 +3832,37 @@ public class DeepDiveService {
         return false;
     }
 
+    /**
+     * Which hazard classes a sector proxy is EXPOSED to — the conservative
+     * gate for the world-context block, keyed on {@code GlobalHazardsClient}'s
+     * real kinds (STORM / QUAKE / AVIATION). Deliberately tight: energy trades
+     * on Gulf storms (platforms, refineries), insurers on storm AND quake
+     * claims, industrials (airlines, logistics) on aviation disruptions and
+     * storms, materials/staples (agri, supply chains) and utilities (grid) on
+     * storms — everything else has no mapping and gets NOTHING.
+     */
+    static final Map<String, Set<String>> SECTOR_HAZARD_EXPOSURE = Map.of(
+            "XLE", Set.of("STORM"),
+            "XLF", Set.of("STORM", "QUAKE"),
+            "XLI", Set.of("STORM", "AVIATION"),
+            "XLB", Set.of("STORM"),
+            "XLP", Set.of("STORM"),
+            "XLU", Set.of("STORM", "QUAKE"));
+
+    /** The hazards the sector is exposed to; empty for an unmapped sector. */
+    static List<de.bsommerfeld.wsbg.terminal.briefing.GlobalHazardsClient.Hazard> exposedHazards(
+            String sectorEtfSymbol,
+            List<de.bsommerfeld.wsbg.terminal.briefing.GlobalHazardsClient.Hazard> hazards) {
+        if (sectorEtfSymbol == null || hazards == null || hazards.isEmpty()) return List.of();
+        Set<String> exposed = SECTOR_HAZARD_EXPOSURE.get(sectorEtfSymbol);
+        if (exposed == null) return List.of();
+        List<de.bsommerfeld.wsbg.terminal.briefing.GlobalHazardsClient.Hazard> out = new ArrayList<>();
+        for (var h : hazards) {
+            if (h.kind() != null && exposed.contains(h.kind())) out.add(h);
+        }
+        return out;
+    }
+
     /** The weather docket rule: high impact anywhere, medium only for US/DE/EU. */
     private static boolean relevantMacro(int importance, String country) {
         if (importance >= 1) return true;
@@ -3787,6 +3912,73 @@ public class DeepDiveService {
             }
             sb.append('\n');
         }
+    }
+
+    /**
+     * The physical-world hazards the SECTOR is exposed to (Lage) — only what
+     * passed the {@link #SECTOR_HAZARD_EXPOSURE} gate; an unexposed sector
+     * never sees this block.
+     */
+    private static void appendWorldContext(StringBuilder sb, Material m, Map<String, Integer> nums) {
+        if (m.sectorHazards.isEmpty()) return;
+        sb.append("WORLD CONTEXT (verified — hazards the sector is exposed to)")
+                .append(mark(nums, "sector")).append(":\n");
+        for (var h : m.sectorHazards) {
+            String text = h.text() == null ? "" : h.text().strip();
+            if (text.length() > 160) text = text.substring(0, 160) + "…";
+            sb.append("  - ").append(h.kind()).append(" (").append(h.severity())
+                    .append("): ").append(text).append('\n');
+        }
+    }
+
+    /** Oldest entries kept verbatim at the timeline's start. */
+    private static final int PRESS_TIMELINE_HEAD = 4;
+    /** Newest entries kept verbatim at the timeline's end. */
+    private static final int PRESS_TIMELINE_TAIL = 6;
+
+    /**
+     * The dated press timeline (Lage) — "how the name got here". SAMPLED so
+     * months of coverage stay model-sized: the oldest {@value
+     * #PRESS_TIMELINE_HEAD} entries, then at most one entry per month in
+     * between (the arc), then the newest {@value #PRESS_TIMELINE_TAIL}; what
+     * the sampling skips is said honestly. Context for the author — these
+     * headlines are never triaged, digested or woven as sources.
+     */
+    static void appendPressTimeline(StringBuilder sb,
+            de.bsommerfeld.wsbg.terminal.core.price.PressTimeline t, Map<String, Integer> nums) {
+        if (t == null || t.entries().isEmpty()) return;
+        List<de.bsommerfeld.wsbg.terminal.core.price.PressTimeline.Entry> chrono =
+                new ArrayList<>(t.entries());
+        java.util.Collections.reverse(chrono); // delivered newest-first → chronological
+        int n = chrono.size();
+        int head = Math.min(PRESS_TIMELINE_HEAD, n);
+        int tailFrom = Math.max(head, n - PRESS_TIMELINE_TAIL);
+        sb.append("PRESS TIMELINE (dated coverage, MarketBeat — how the name got here)")
+                .append(mark(nums, "marketbeat")).append(":\n");
+        for (int i = 0; i < head; i++) appendTimelineLine(sb, chrono.get(i));
+        int skipped = 0;
+        Set<String> monthsSeen = new HashSet<>();
+        for (int i = head; i < tailFrom; i++) {
+            var e = chrono.get(i);
+            String month = e.dateIso() != null && e.dateIso().length() >= 7
+                    ? e.dateIso().substring(0, 7) : "";
+            if (monthsSeen.add(month)) appendTimelineLine(sb, e);
+            else skipped++;
+        }
+        if (skipped > 0) {
+            sb.append("  - (").append(skipped)
+                    .append(" further headline(s) elided — one per month kept)\n");
+        }
+        for (int i = tailFrom; i < n; i++) appendTimelineLine(sb, chrono.get(i));
+    }
+
+    private static void appendTimelineLine(StringBuilder sb,
+            de.bsommerfeld.wsbg.terminal.core.price.PressTimeline.Entry e) {
+        sb.append("  - [").append(e.dateIso()).append("] ").append(e.title());
+        if (e.publisher() != null && !e.publisher().isBlank()) {
+            sb.append(" (").append(e.publisher()).append(')');
+        }
+        sb.append('\n');
     }
 
     /** The dated macro docket the sector trades on — Ausblick anchors. */
@@ -4496,16 +4688,20 @@ public class DeepDiveService {
             case "insider":
                 return "BaFin" + (de ? " - Directors' Dealings (§ 19 MAR)"
                         : " - directors' dealings (art. 19 MAR)");
-            case "sector":
+            case "sector": {
+                boolean hazards = !m.sectorHazards.isEmpty();
                 return (de
                         ? "Sektor- und Makro-Kontext - Yahoo Sektor-ETFs, TradingView/ForexFactory-"
                                 + "Wirtschaftskalender, Notenbank-Termine"
+                                + (hazards ? ", Gefahrenlage (NOAA/USGS/FAA)" : "")
                         : "Sector and macro context - Yahoo sector ETFs, TradingView/ForexFactory "
-                                + "economic calendars, central-bank dates");
+                                + "economic calendars, central-bank dates"
+                                + (hazards ? ", hazard picture (NOAA/USGS/FAA)" : ""));
+            }
             case "marketbeat":
                 return "MarketBeat" + (de
-                        ? " - Analysten-Aktionshistorie und US-Short-Quote"
-                        : " - analyst action history and US short stats");
+                        ? " - Analysten-Aktionshistorie, US-Short-Quote und Presse-Zeitleiste"
+                        : " - analyst action history, US short stats and dated press timeline");
             case "hedgefunds":
                 return "Insider Monkey" + (de
                         ? " - Hedgefonds-Positionierung (13F-Quartalskurve)"

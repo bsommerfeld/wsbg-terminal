@@ -30,4 +30,14 @@ public interface AnalystActionsSource {
     default java.util.List<AnalystActions.Action> todaysActions(String country) {
         return java.util.List.of();
     }
+
+    /**
+     * The dated press timeline for this ticker ({@link PressTimeline}) — the
+     * months-spanning headline history behind the KI-DD's "Was war" narrative.
+     * Same symbol shapes as {@link #actionsFor}; sources without a news
+     * surface keep this default no-op.
+     */
+    default Optional<PressTimeline> pressTimelineFor(String symbol) {
+        return Optional.empty();
+    }
 }

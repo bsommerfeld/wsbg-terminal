@@ -6,7 +6,9 @@ import de.bsommerfeld.wsbg.terminal.briefing.CentralBankCalendarClient;
 import de.bsommerfeld.wsbg.terminal.briefing.EconCalendarClient;
 import de.bsommerfeld.wsbg.terminal.briefing.TradingViewCalendarClient;
 import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
+import de.bsommerfeld.wsbg.terminal.briefing.GlobalHazardsClient;
 import de.bsommerfeld.wsbg.terminal.core.price.AnalystActions;
+import de.bsommerfeld.wsbg.terminal.core.price.PressTimeline;
 import de.bsommerfeld.wsbg.terminal.db.HeadlineRecord;
 import de.bsommerfeld.wsbg.terminal.core.price.HedgeFundPopularity;
 import de.bsommerfeld.wsbg.terminal.core.price.InstrumentFacts;
@@ -54,9 +56,6 @@ class DeepDiveMaterialTest {
         m.facts = new InstrumentFacts("RHEINMETALL AG", "Deutschland", "Industrie",
                 "Maschinenbau", 4.6e10, 28_000, "2024", 41.4, "2025", 1.2, "2025",
                 310_000, Instant.now().getEpochSecond());
-        m.fundFacts = new FundFacts("iShares Core MSCI World", 0.20, 1.28e11,
-                "MSCI World NR USD", 4, "Beschreibung",
-                List.of(new FundFacts.Holding("Nvidia", 5.42)), Instant.now().getEpochSecond());
         m.news = List.of(new RawNewsItem("uuid-1", "Rheinmetall gewinnt Großauftrag",
                 "WELT", "https://example.org/a", Instant.now(), List.of(),
                 null, null, false, null));
@@ -90,12 +89,6 @@ class DeepDiveMaterialTest {
         assertContains(brief, "HQ Düsseldorf, Deutschland");
         assertContains(brief, "sector Industrie / Maschinenbau");
         assertContains(brief, "COMPANY PORTRAIT (verified) [4]: Portrait");
-
-        // Fund profile (ETF branch).
-        assertContains(brief, "FUND [3]: iShares Core MSCI World");
-        assertContains(brief, "TER 0.20%");
-        assertContains(brief, "benchmark MSCI World NR USD");
-        assertContains(brief, "Nvidia 5.4%");
 
         // Fundamentals: key-figure years incl. the estimate, balance sheet, boards.
         assertContains(brief, "KEY FIGURES BY FISCAL YEAR");
@@ -150,6 +143,25 @@ class DeepDiveMaterialTest {
         assertContains(brief, "Rheiner läuft, bin all-in");
         assertContains(brief, "WIRE LINES ALREADY PUBLISHED FOR THIS SUBJECT:");
         assertContains(brief, "Rheinmetall: Käfig feiert den Auftrag");
+    }
+
+    /**
+     * The ETF branch: prod fills EITHER the stock profile (facts) OR the fund
+     * profile (fundFacts), never both — the fund leg is asserted against a
+     * fund-only material, exactly the shape collect() produces for an ETF ISIN.
+     */
+    @Test
+    void fundLegReachesTheModelOnAFundMaterial() {
+        DeepDiveService.Material m = fullMaterial();
+        m.facts = null; // mutually exclusive with fundFacts in prod
+        m.fundFacts = new FundFacts("iShares Core MSCI World", 0.20, 1.28e11,
+                "MSCI World NR USD", 4, "Beschreibung",
+                List.of(new FundFacts.Holding("Nvidia", 5.42)), Instant.now().getEpochSecond());
+        String brief = DeepDiveService.buildMaterial("MSCI World", m);
+        assertContains(brief, "FUND [3]: iShares Core MSCI World");
+        assertContains(brief, "TER 0.20%");
+        assertContains(brief, "benchmark MSCI World NR USD");
+        assertContains(brief, "Nvidia 5.4%");
     }
 
     @Test
@@ -729,7 +741,121 @@ class DeepDiveMaterialTest {
         assertContains(table, "| 2026-06-20 | HC Wainwright | Boost Target | Buy | 4,00→8,00 USD |");
 
         String register = DeepDiveService.sourcesSection(m, true);
-        assertContains(register, "- [1] MarketBeat - Analysten-Aktionshistorie und US-Short-Quote");
+        assertContains(register,
+                "- [1] MarketBeat - Analysten-Aktionshistorie, US-Short-Quote und Presse-Zeitleiste");
+    }
+
+    /**
+     * The press timeline (the "Was war" leg): months of dated coverage reach
+     * the Lage shelf SAMPLED — the oldest four verbatim, at most one entry per
+     * month in between, the newest six verbatim, the skipped rest said
+     * honestly — and the timeline ALONE earns MarketBeat its source number.
+     */
+    @Test
+    void pressTimelineSamplesOldestMonthlyAndNewestWithElision() {
+        DeepDiveService.Material m = new DeepDiveService.Material();
+        m.canonicalName = "SAP SE";
+        m.ticker = "SAP.DE";
+        m.pressTimeline = new PressTimeline("SAP.DE", List.of(
+                // newest-first as the provider delivers
+                new PressTimeline.Entry("2026-07-14", "N1", "finance.yahoo.com"),
+                new PressTimeline.Entry("2026-07-14", "N2", null),
+                new PressTimeline.Entry("2026-07-13", "N3", "msn.com"),
+                new PressTimeline.Entry("2026-07-10", "N4", "msn.com"),
+                new PressTimeline.Entry("2026-07-08", "N5", "msn.com"),
+                new PressTimeline.Entry("2026-07-05", "N6", "msn.com"),
+                new PressTimeline.Entry("2026-06-28", "M1", "msn.com"),
+                new PressTimeline.Entry("2026-06-20", "M2", "msn.com"),
+                new PressTimeline.Entry("2026-06-05", "M3", "msn.com"),
+                new PressTimeline.Entry("2026-05-18", "M4", "msn.com"),
+                new PressTimeline.Entry("2026-05-02", "M5", "msn.com"),
+                new PressTimeline.Entry("2026-04-20", "O1", "msn.com"),
+                new PressTimeline.Entry("2026-04-10", "O2", "msn.com"),
+                new PressTimeline.Entry("2026-03-15", "O3", "msn.com"),
+                new PressTimeline.Entry("2026-03-01", "O4", "welt.de")));
+
+        String lage = DeepDiveService.sectionMaterials(m)[DeepDiveService.SEC_SITUATION];
+        assertContains(lage,
+                "PRESS TIMELINE (dated coverage, MarketBeat — how the name got here) [1]:");
+        // Oldest four verbatim, chronological, publisher in parens.
+        assertContains(lage, "  - [2026-03-01] O4 (welt.de)");
+        assertContains(lage, "  - [2026-03-15] O3");
+        assertContains(lage, "  - [2026-04-10] O2");
+        assertContains(lage, "  - [2026-04-20] O1");
+        // Middle: one entry per month, the rest elided honestly.
+        assertContains(lage, "  - [2026-05-02] M5");
+        assertFalse(lage.contains("M4"), "second May entry is sampled away");
+        assertContains(lage, "  - [2026-06-05] M3");
+        assertFalse(lage.contains("M2"), "further June entries are sampled away");
+        assertFalse(lage.contains("M1"), "further June entries are sampled away");
+        assertContains(lage, "  - (3 further headline(s) elided — one per month kept)");
+        // Newest six verbatim; a null publisher renders without parens.
+        assertContains(lage, "  - [2026-07-05] N6 (msn.com)");
+        assertContains(lage, "  - [2026-07-14] N2\n");
+        assertContains(lage, "  - [2026-07-14] N1 (finance.yahoo.com)");
+        // The timeline alone makes MarketBeat a source.
+        assertContains(DeepDiveService.sourcesSection(m, true),
+                "- [1] MarketBeat - Analysten-Aktionshistorie, US-Short-Quote und Presse-Zeitleiste");
+    }
+
+    /**
+     * The world-context gate (user mandate "Wetter/Gefahrenlage einbauen,
+     * falls es passt"): hazards reach the Lage shelf ONLY for a sector with a
+     * mapped exposure, filtered to the hazard classes that sector trades on.
+     */
+    @Test
+    void hazardGateFeedsOnlyExposedSectors() {
+        var storm = new GlobalHazardsClient.Hazard(
+                "STORM", "Hurrikan Delta, 120 kt (Atlantik)", "HIGH");
+        var quake = new GlobalHazardsClient.Hazard(
+                "QUAKE", "M6.2 near Tokyo — PAGER orange", "HIGH");
+        var aviation = new GlobalHazardsClient.Hazard(
+                "AVIATION", "EWR: Ground Stop bis 21:00 (Wetter)", "HIGH");
+        List<GlobalHazardsClient.Hazard> all = List.of(storm, quake, aviation);
+
+        assertEquals(List.of(storm), DeepDiveService.exposedHazards("XLE", all));
+        assertEquals(List.of(storm, quake), DeepDiveService.exposedHazards("XLF", all));
+        assertEquals(List.of(storm, aviation), DeepDiveService.exposedHazards("XLI", all));
+        // No exposure mapping = nothing, never a wrong world signal.
+        assertTrue(DeepDiveService.exposedHazards("XLK", all).isEmpty());
+        assertTrue(DeepDiveService.exposedHazards("XLV", all).isEmpty());
+        assertTrue(DeepDiveService.exposedHazards(null, all).isEmpty());
+
+        DeepDiveService.Material m = new DeepDiveService.Material();
+        m.canonicalName = "Exxon Mobil";
+        m.ticker = "XOM";
+        m.sectorEtf = new MarketSnapshot("XLE", 91.10, 92.20, -1.19, 92.5, 90.8,
+                0, Double.NaN, Double.NaN, "USD", "NYSEArca",
+                Instant.now().getEpochSecond(), List.of());
+        m.sectorEtfSymbol = "XLE";
+        m.sectorDisplayName = "Energie";
+        m.sectorHazards = DeepDiveService.exposedHazards("XLE", all);
+
+        String lage = DeepDiveService.sectionMaterials(m)[DeepDiveService.SEC_SITUATION];
+        assertContains(lage, "WORLD CONTEXT (verified — hazards the sector is exposed to) [1]:");
+        assertContains(lage, "  - STORM (HIGH): Hurrikan Delta, 120 kt (Atlantik)");
+        assertFalse(lage.contains("QUAKE"), "energy is not quake-exposed");
+        assertFalse(lage.contains("AVIATION"), "energy is not aviation-exposed");
+        assertContains(DeepDiveService.sourcesSection(m, true), "Gefahrenlage (NOAA/USGS/FAA)");
+    }
+
+    /** The negative side of the gate: an unexposed sector adds NOTHING. */
+    @Test
+    void unexposedSectorAddsNoWorldContext() {
+        DeepDiveService.Material m = new DeepDiveService.Material();
+        m.canonicalName = "SAP SE";
+        m.ticker = "SAP.DE";
+        m.sectorEtf = new MarketSnapshot("XLK", 231.10, 233.90, -1.20, 233.0, 229.0,
+                0, Double.NaN, Double.NaN, "USD", "NYSEArca",
+                Instant.now().getEpochSecond(), List.of());
+        m.sectorEtfSymbol = "XLK";
+        m.sectorDisplayName = "Tech";
+        // The collect gate never queries hazards for XLK — sectorHazards stays empty.
+        for (String shelf : DeepDiveService.sectionMaterials(m)) {
+            assertFalse(shelf != null && shelf.contains("WORLD CONTEXT"),
+                    "unexposed sector must not carry a world block");
+        }
+        assertFalse(DeepDiveService.sourcesSection(m, true).contains("Gefahrenlage"));
     }
 
     @Test

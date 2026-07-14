@@ -6,6 +6,7 @@ import de.bsommerfeld.wsbg.terminal.core.price.AnalystActions;
 import de.bsommerfeld.wsbg.terminal.core.price.AnalystActions.Action;
 import de.bsommerfeld.wsbg.terminal.core.price.AnalystActions.UsShortStats;
 import de.bsommerfeld.wsbg.terminal.core.price.AnalystActionsSource;
+import de.bsommerfeld.wsbg.terminal.core.price.PressTimeline;
 import de.bsommerfeld.wsbg.terminal.core.util.BrowserUserAgent;
 import de.bsommerfeld.wsbg.terminal.source.net.DirectWebFetcher;
 import de.bsommerfeld.wsbg.terminal.source.net.WebFetcher;
@@ -46,6 +47,10 @@ import java.util.regex.Pattern;
  * Targets arrive in the LISTING currency ("$315.00", "GBX 1,500"); a zero
  * target half is the provider's "no prior target" marker and maps to NaN.
  *
+ * <p>Beyond the ratings legs the client also reads the per-ticker news tab
+ * ({@code /news/}) into a dated {@link PressTimeline} — see
+ * {@link #pressTimelineFor}.
+ *
  * <p>Per-symbol cache 1 h, daily ratings table 30 min; a definite miss is
  * cached, a network failure never (an outage heals itself).
  */
@@ -59,6 +64,8 @@ public class MarketBeatClient implements AnalystActionsSource {
     private static final long DAILY_TTL_MS = 30 * 60 * 1000L;
     /** Newest actions kept per symbol — the history table can run to hundreds of rows. */
     private static final int MAX_ACTIONS = 25;
+    /** Newest timeline entries kept per symbol — the news page serves ~50. */
+    private static final int MAX_TIMELINE = 60;
 
     private final WebFetcher fetcher;
     private final String userAgent = BrowserUserAgent.random();
@@ -68,10 +75,14 @@ public class MarketBeatClient implements AnalystActionsSource {
 
     private record CachedDaily(List<Action> value, long atMs) {}
 
+    private record CachedTimeline(Optional<PressTimeline> value, long atMs) {}
+
     /** Symbol (UPPER) → actions or a cached definite miss. */
     private final Map<String, CachedActions> cache = new ConcurrentHashMap<>();
     /** Ratings path → the day's table. */
     private final Map<String, CachedDaily> dailyCache = new ConcurrentHashMap<>();
+    /** Symbol (UPPER) → press timeline or a cached definite miss. */
+    private final Map<String, CachedTimeline> timelineCache = new ConcurrentHashMap<>();
 
     /** Test/default: plain direct transport. */
     public MarketBeatClient() {
@@ -154,6 +165,45 @@ public class MarketBeatClient implements AnalystActionsSource {
             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
             LOG.warn("[marketbeat] daily ratings {} failed: {}", path, e.getMessage());
             return List.of();
+        }
+    }
+
+    /**
+     * The dated press timeline off the per-ticker news tab ({@code /news/}).
+     * The default "Most Recent" view serves ~50 dated headlines spanning
+     * MONTHS for a normal name (probed 2026-07-14: SAP back ~2.5 months; a
+     * firehose name like AAPL covers only days — the page's month filter is
+     * an ASP.NET postback, deliberately not chased). Entries newest-first as
+     * delivered; a covered page with no rows is a definite, cacheable miss.
+     */
+    @Override
+    public Optional<PressTimeline> pressTimelineFor(String symbol) {
+        String route = routePath(symbol);
+        if (route == null) return Optional.empty();
+        String key = symbol.trim().toUpperCase(Locale.ROOT);
+        CachedTimeline cached = timelineCache.get(key);
+        if (cached != null && System.currentTimeMillis() - cached.atMs() < SYMBOL_TTL_MS) {
+            return cached.value();
+        }
+        try {
+            Fetched page = get(BASE + "/stocks/" + route + "/news/");
+            if (!page.ok()) {
+                if (page.transient_()) return Optional.empty();
+                timelineCache.put(key, new CachedTimeline(Optional.empty(), System.currentTimeMillis()));
+                return Optional.empty();
+            }
+            List<PressTimeline.Entry> entries =
+                    parsePressTimeline(page.body(), LocalDate.now());
+            Optional<PressTimeline> result = entries.isEmpty()
+                    ? Optional.empty()
+                    : Optional.of(new PressTimeline(key, entries));
+            timelineCache.put(key, new CachedTimeline(result, System.currentTimeMillis()));
+            LOG.info("[marketbeat] {} → {} timeline headline(s)", key, entries.size());
+            return result;
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            LOG.warn("[marketbeat] press timeline for {} failed: {}", key, e.getMessage());
+            return Optional.empty();
         }
     }
 
@@ -331,6 +381,86 @@ public class MarketBeatClient implements AnalystActionsSource {
                     targetNew.currency() != null ? targetNew.currency() : targetOld.currency()));
         }
         return actions;
+    }
+
+    // ---- news page parsing ----
+
+    private static final String NEWS_ROW = "<div class=\"headline-row";
+    private static final Pattern NEWS_TITLE = Pattern.compile(
+            "<a class=\"c-black stretched-link[^\"]*\"[^>]*>(.*?)</a>", Pattern.DOTALL);
+    private static final Pattern NEWS_BYLINE = Pattern.compile(
+            "<div class=\"byline[^\"]*\"[^>]*>(.*?)</div>", Pattern.DOTALL);
+    private static final Pattern NEWS_TIME_ATTR = Pattern.compile(
+            "datetime=\"(\\d{4}-\\d{2}-\\d{2})");
+    private static final Pattern NEWS_MONTH_DAY_AT = Pattern.compile(
+            "([A-Za-z]+)\\.?\\s+(\\d{1,2})\\s+at\\b");
+
+    /**
+     * The news tab's {@code headline-row} blocks. Anchors (pinned live
+     * 2026-07-14): title = the {@code c-black stretched-link} anchor's text;
+     * date = the byline's {@code <time datetime="ISO">} where fresh, else the
+     * byline text in one of the three text forms — "July 10, 2026" (older,
+     * with year), "July 13 at 8:14 PM" (recent, year inferred), "2 hours ago"
+     * (today); publisher = the byline's host token after the {@code |}
+     * separator. Syndication double-posts (same date + title under a
+     * {@code ?utm_source} link variant) are deduped, first wins.
+     */
+    static List<PressTimeline.Entry> parsePressTimeline(String html, LocalDate today) {
+        List<PressTimeline.Entry> entries = new ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        int i = html.indexOf(NEWS_ROW);
+        while (i >= 0 && entries.size() < MAX_TIMELINE) {
+            int next = html.indexOf(NEWS_ROW, i + NEWS_ROW.length());
+            String row = html.substring(i, next < 0 ? html.length() : next);
+            i = next;
+            Matcher t = NEWS_TITLE.matcher(row);
+            if (!t.find()) continue;
+            String title = clean(stripTags(t.group(1)));
+            if (title.isEmpty()) continue;
+            Matcher b = NEWS_BYLINE.matcher(row);
+            if (!b.find()) continue;
+            String dateIso = timelineDate(b.group(1), today);
+            if (dateIso == null) continue; // undated injection, not a headline row
+            if (seen.add(dateIso + '|' + title)) {
+                entries.add(new PressTimeline.Entry(dateIso, title, timelinePublisher(b.group(1))));
+            }
+        }
+        return entries;
+    }
+
+    /** The byline's date in ISO, or null when no form matches. */
+    static String timelineDate(String bylineHtml, LocalDate today) {
+        Matcher attr = NEWS_TIME_ATTR.matcher(bylineHtml);
+        if (attr.find()) return attr.group(1);
+        String datePart = clean(stripTags(bylineHtml)).split("\\|", 2)[0];
+        String longDate = parseLongDate(datePart);
+        if (longDate != null) return longDate;
+        Matcher m = NEWS_MONTH_DAY_AT.matcher(datePart);
+        if (m.find()) {
+            String month = MONTHS.get(m.group(1).toLowerCase(Locale.ROOT));
+            if (month != null) {
+                try {
+                    LocalDate d = LocalDate.of(today.getYear(),
+                            Integer.parseInt(month), Integer.parseInt(m.group(2)));
+                    // Rows are recent — a "December 31" seen in January is last year's.
+                    return (d.isAfter(today) ? d.minusYears(1) : d).toString();
+                } catch (java.time.DateTimeException ignored) {
+                    return null;
+                }
+            }
+        }
+        // "40 minutes ago" without the datetime attr — today's row.
+        if (datePart.contains(" ago")) return today.toString();
+        return null;
+    }
+
+    /** The byline's host token after the {@code |} separator, or null. */
+    private static String timelinePublisher(String bylineHtml) {
+        String text = clean(stripTags(bylineHtml));
+        int bar = text.indexOf('|');
+        if (bar < 0) return null;
+        String pub = text.substring(bar + 1).trim();
+        return pub.isEmpty() ? null : pub;
     }
 
     // ---- short-interest page parsing ----

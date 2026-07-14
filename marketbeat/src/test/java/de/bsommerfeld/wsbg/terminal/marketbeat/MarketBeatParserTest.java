@@ -2,11 +2,13 @@ package de.bsommerfeld.wsbg.terminal.marketbeat;
 
 import de.bsommerfeld.wsbg.terminal.core.price.AnalystActions.Action;
 import de.bsommerfeld.wsbg.terminal.core.price.AnalystActions.UsShortStats;
+import de.bsommerfeld.wsbg.terminal.core.price.PressTimeline;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -18,7 +20,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Parser tests against trimmed LIVE fixtures (fetched 2026-07-14):
  * /stocks/NASDAQ/AAPL/forecast|short-interest/, /stocks/LON/RR/forecast/,
- * /ratings/, /ratings/uk/, and the redirected ETR/RHM overview (the miss shape).
+ * /ratings/, /ratings/uk/, the ETR/SAP + NASDAQ/AAPL news tabs (merged into
+ * news-sap.html), and the redirected ETR/RHM overview (the miss shape).
  */
 class MarketBeatParserTest {
 
@@ -211,6 +214,67 @@ class MarketBeatParserTest {
                 + "</tbody></table>";
         assertTrue(MarketBeatClient.parseDailyTable(table, "2026-07-14").isEmpty());
         assertTrue(MarketBeatClient.parseDailyTable("<html>no table</html>", "2026-07-14").isEmpty());
+    }
+
+    // ---- news timeline ----
+
+    private static final LocalDate NEWS_TODAY = LocalDate.of(2026, 7, 14);
+
+    @Test
+    void newsTimelineParsesAllThreeDateForms() {
+        List<PressTimeline.Entry> e = MarketBeatClient.parsePressTimeline(
+                fixture("news-sap.html"), NEWS_TODAY);
+        assertEquals(13, e.size(), "14 rows, one syndication double-post deduped");
+        // Fresh row: <time datetime="ISO"> attr.
+        assertEquals("2026-07-14", e.get(0).dateIso());
+        assertTrue(e.get(0).title().startsWith("SAP"));
+        assertEquals("finance.yahoo.com", e.get(0).publisher());
+        // "July 14 at 9:51 AM" text form — year inferred from today.
+        assertEquals("2026-07-14", e.get(1).dateIso());
+        assertTrue(e.get(1).title().startsWith("Stock market today"));
+        // "July 10, 2026" long form (older rows carry the year).
+        PressTimeline.Entry ec = e.get(4);
+        assertEquals("2026-07-10", ec.dateIso());
+        assertTrue(ec.title().startsWith("EC accepts SAP"));
+        assertEquals("finance.yahoo.com", ec.publisher());
+        assertEquals("americanbankingnews.com", e.get(5).publisher());
+        // Newest-first as delivered, spanning months.
+        assertEquals("2026-05-21", e.get(e.size() - 1).dateIso());
+    }
+
+    @Test
+    void newsTimelineDedupesSyndicationDoublePosts() {
+        List<PressTimeline.Entry> e = MarketBeatClient.parsePressTimeline(
+                fixture("news-sap.html"), NEWS_TODAY);
+        assertEquals(1, e.stream()
+                .filter(x -> x.title().startsWith("Nvidia Vs. Apple")).count(),
+                "the ?utm_source re-post of the identical headline is deduped");
+    }
+
+    @Test
+    void newsTimelineMissOnOverviewPage() {
+        assertTrue(MarketBeatClient.parsePressTimeline(
+                fixture("overview-miss.html"), NEWS_TODAY).isEmpty());
+    }
+
+    @Test
+    void timelineDateFormsAndYearInference() {
+        // "Month D at time" rolls back a year when the date would be in the future.
+        assertEquals("2025-12-31", MarketBeatClient.timelineDate(
+                "December 31  at  4:10 PM &nbsp;|&nbsp; example.com", LocalDate.of(2026, 1, 2)));
+        // Relative form without the datetime attr is today's row.
+        assertEquals("2026-07-14", MarketBeatClient.timelineDate(
+                "40 minutes ago &nbsp;|&nbsp; example.com", NEWS_TODAY));
+        // Garbage byline yields no date (row skipped, never fatal).
+        assertNull(MarketBeatClient.timelineDate("Sponsored", NEWS_TODAY));
+    }
+
+    @Test
+    void pressTimelineGatesUnRoutableShapesWithoutNetwork() {
+        MarketBeatClient client = new MarketBeatClient();
+        assertTrue(client.pressTimelineFor("^GDAXI").isEmpty());
+        assertTrue(client.pressTimelineFor("BTC-USD").isEmpty());
+        assertTrue(client.pressTimelineFor(null).isEmpty());
     }
 
     // ---- routing ----
