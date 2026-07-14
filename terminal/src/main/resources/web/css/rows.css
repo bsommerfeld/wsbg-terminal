@@ -5,6 +5,11 @@
 
 .widget { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 
+/* The hidden attribute must win everywhere: the UA's [hidden] rule loses to
+   any author display rule (the flex above, the grid view's absolute cards),
+   which let a held-back widget's card ghost into the grid overview. */
+.widget[hidden] { display: none !important; }
+
 .widget-head {
   display: flex; align-items: center; gap: 10px;
   /* Fixed height so the Reddit and FinancialJuice headers line up to the

@@ -199,6 +199,42 @@ class WeatherMaterialTest {
     }
 
     @Test
+    void pressReviewRoutesToItsWindowAndSectorsRideEveryDayShelf() {
+        WorldStats world = new WorldStats(
+                List.of(new de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.IndexStat(
+                                "Tech", "XLK", null, -1.8, null, "USD", List.of()),
+                        new de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.IndexStat(
+                                "Energie", "XLE", null, 2.0, null, "USD", List.of())),
+                null, null, null, List.of(), List.of(), null, null, null, null, null,
+                null, null, null, null, List.of(), null, null,
+                List.of(new OutlookStat("CPI", "USD", "High", "14:30", "ECON")),
+                null, null, null, null, List.of(), null, null, null, null, List.of(),
+                List.of(new de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.PressReviewStat(
+                                "NFIB optimism jumps", "Small business surveys hot",
+                                "CNBC", "US_ECONOMY", "12:04"),
+                        new de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.PressReviewStat(
+                                "Futures slip ahead of CPI", null,
+                                "MarketWatch", "US_MARKETS", "08:11")));
+        WeatherStatsCollector.Stats stats = new WeatherStatsCollector.Stats(
+                List.of(), List.of(), List.of(), null, world);
+        String[] shelves = WeatherMaterial.sectionShelves(stats, LocalDate.of(2026, 7, 14),
+                "", "", "");
+        // The 12:04 press item sits on the midday shelf, the 08:11 one on the
+        // morning shelf — never the other way round.
+        assertTrue(shelves[WeatherMaterial.SEC_MIDDAY].contains("NFIB optimism jumps"));
+        assertFalse(shelves[WeatherMaterial.SEC_MORNING].contains("NFIB optimism jumps"));
+        assertTrue(shelves[WeatherMaterial.SEC_MORNING].contains("Futures slip ahead of CPI"));
+        assertTrue(shelves[WeatherMaterial.SEC_MORNING].contains("[MarketWatch]"));
+        // The sector table rides every day shelf AND the outlook (the
+        // calendar→sector tie needs it beside the docket).
+        assertTrue(shelves[WeatherMaterial.SEC_PICTURE].contains("US SECTOR ROTATION"));
+        assertTrue(shelves[WeatherMaterial.SEC_MORNING].contains("US SECTOR ROTATION"));
+        assertTrue(shelves[WeatherMaterial.SEC_MIDDAY].contains("US SECTOR ROTATION"));
+        assertTrue(shelves[WeatherMaterial.SEC_EVENING].contains("US SECTOR ROTATION"));
+        assertTrue(shelves[WeatherMaterial.SEC_OUTLOOK].contains("US SECTOR ROTATION"));
+    }
+
+    @Test
     void untimedItemsAppearExactlyOnceInTheirHomeWindow() {
         WorldStats world = new WorldStats(null, null, null, null,
                 List.of(new AdhocStat("Zeitlose Adhoc", "DE0000000003", null, null)),

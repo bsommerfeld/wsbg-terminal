@@ -14,6 +14,7 @@ import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.MacroStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.MoverStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.NewsStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.OutlookStat;
+import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.PressReviewStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.RateStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.RoomPulse;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.SentimentStat;
@@ -84,6 +85,9 @@ final class WeatherMaterial {
         List<MacroStat> actuals = w == null ? List.of() : w.macroActuals();
         List<MacroStat> events = w == null ? List.of() : w.macroEvents();
         List<EconOutcomeStat> outcomes = w == null ? List.of() : w.econOutcomes();
+        List<PressReviewStat> press = w == null ? List.of() : w.pressReview();
+        List<de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.TickerNewsStat> tickerNews =
+                w == null ? List.of() : w.tickerNews();
 
         String[] shelves = new String[SECTION_COUNT];
 
@@ -97,8 +101,11 @@ final class WeatherMaterial {
         append(picture, pulseBlock(w == null ? null : w.pulse()));
         append(picture, worldEventsBlock(w == null ? List.of() : w.worldEvents()));
         append(picture, topNewsBlock(w == null ? List.of() : w.topNews()));
+        append(picture, hazardsBlock(w == null ? List.of() : w.hazards()));
+        append(picture, worldWeatherBlock(w == null ? List.of() : w.worldWeather()));
         append(picture, tickersBlock(stats.tickers()));
         append(picture, marketsBlock(stats.indices()));
+        append(picture, sectorsBlock(w == null ? List.of() : w.sectors()));
         append(picture, ratesBlock(w == null ? List.of() : w.rates()));
         append(picture, sentimentBlock(stats.sentiment(), w == null ? null : w.putCall()));
         shelves[SEC_PICTURE] = picture.toString();
@@ -106,7 +113,13 @@ final class WeatherMaterial {
         StringBuilder morning = new StringBuilder(date);
         append(morning, windowLine(daypart(dayparts, "MORNING"), "morning"));
         append(morning, wireBlock("this window (morning)", wireMorning));
+        append(morning, pressReviewBlock("this window (morning)",
+                inWindow(press, PressReviewStat::time, 0, true)));
+        append(morning, tickerNewsBlock("this window (morning)", inWindow(tickerNews,
+                de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.TickerNewsStat::time,
+                0, true)));
         append(morning, tickersBlock(stats.tickers()));
+        append(morning, sectorsBlock(w == null ? List.of() : w.sectors()));
         append(morning, adhocBlock(inWindow(adhocs, AdhocStat::time, 0, true)));
         append(morning, macroBlock(inWindow(actuals, MacroStat::time, 0, true),
                 inWindow(events, MacroStat::time, 0, true)));
@@ -117,7 +130,13 @@ final class WeatherMaterial {
         StringBuilder midday = new StringBuilder(date);
         append(midday, windowLine(daypart(dayparts, "MIDDAY"), "midday"));
         append(midday, wireBlock("this window (midday)", wireMidday));
+        append(midday, pressReviewBlock("this window (midday)",
+                inWindow(press, PressReviewStat::time, 1, false)));
+        append(midday, tickerNewsBlock("this window (midday)", inWindow(tickerNews,
+                de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.TickerNewsStat::time,
+                1, false)));
         append(midday, marketsBlock(stats.indices()));
+        append(midday, sectorsBlock(w == null ? List.of() : w.sectors()));
         append(midday, analystBlock(inWindow(analyst, AnalystActionStat::time, 1, true)));
         append(midday, adhocBlock(inWindow(adhocs, AdhocStat::time, 1, false)));
         append(midday, macroBlock(inWindow(actuals, MacroStat::time, 1, false),
@@ -129,6 +148,11 @@ final class WeatherMaterial {
         StringBuilder evening = new StringBuilder(date);
         append(evening, windowLine(daypart(dayparts, "EVENING"), "evening"));
         append(evening, wireBlock("this window (evening)", wireEvening));
+        append(evening, pressReviewBlock("this window (evening)",
+                inWindow(press, PressReviewStat::time, 2, false)));
+        append(evening, tickerNewsBlock("this window (evening)", inWindow(tickerNews,
+                de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.TickerNewsStat::time,
+                2, false)));
         append(evening, adhocBlock(inWindow(adhocs, AdhocStat::time, 2, false)));
         append(evening, macroBlock(inWindow(actuals, MacroStat::time, 2, false),
                 inWindow(events, MacroStat::time, 2, false)));
@@ -162,6 +186,13 @@ final class WeatherMaterial {
             LocalDate tomorrow = today.plusDays(1);
             append(outlook, "TOMORROW'S DATE: " + tomorrow + " (" + tomorrow.getDayOfWeek() + ")");
             append(outlook, outlookBlock);
+            append(outlook, hazardsBlock(w == null ? List.of() : w.hazards()));
+            append(outlook, worldWeatherBlock(w == null ? List.of() : w.worldWeather()));
+            // Today's sector table rides along so the docket can be tied to
+            // the sectors it measures ("CPI misst morgen die zinssensitiven
+            // Sektoren, die heute schon schwächelten") — the tie is the
+            // model's read, the numbers stay today's verified closes.
+            append(outlook, sectorsBlock(w == null ? List.of() : w.sectors()));
             append(outlook, colourBlock);
         }
         shelves[SEC_OUTLOOK] = outlook.toString();
@@ -224,6 +255,16 @@ final class WeatherMaterial {
         return out;
     }
 
+    /**
+     * The press items of ONE day-part window — the service's weave loop reads
+     * the same routing the shelves use (morning is the untimed items' home
+     * window, mirroring {@link #sectionShelves}).
+     */
+    static List<PressReviewStat> pressInWindow(List<PressReviewStat> press, int window) {
+        if (press == null || press.isEmpty()) return List.of();
+        return inWindow(press, PressReviewStat::time, window, window == 0);
+    }
+
     /** "HH:mm" → window ordinal, or -1 when absent/unparseable. */
     static int windowOf(String hhmm) {
         if (hhmm == null) return -1;
@@ -256,8 +297,12 @@ final class WeatherMaterial {
         append(sb, eventReviewsBlock(w == null ? List.of() : w.eventReviews()));
         append(sb, worldEventsBlock(w == null ? List.of() : w.worldEvents()));
         append(sb, topNewsBlock(w == null ? List.of() : w.topNews()));
+        append(sb, hazardsBlock(w == null ? List.of() : w.hazards()));
+        append(sb, worldWeatherBlock(w == null ? List.of() : w.worldWeather()));
         append(sb, adhocBlock(w == null ? List.of() : w.adhocs()));
         append(sb, analystBlock(w == null ? List.of() : w.analystActions()));
+        append(sb, pressReviewBlock("of the day", w == null ? List.of() : w.pressReview()));
+        append(sb, tickerNewsBlock("of the day", w == null ? List.of() : w.tickerNews()));
         append(sb, pressBlock(w == null ? null : w.pressDigest()));
         append(sb, moversBlock(w == null ? List.of() : w.movers()));
         append(sb, shortVolumeBlock(w == null ? List.of() : w.shortVolume()));
@@ -328,6 +373,112 @@ final class WeatherMaterial {
             } else {
                 sb.append(" (the cage was quiet)");
             }
+        }
+        return sb.toString();
+    }
+
+    /**
+     * The literal sky over the market-relevant places (Open-Meteo, verified)
+     * — the user's "viele handeln auf Wetter": each place carries its market
+     * role so the model knows WHY the sky matters there. Tying the sky to a
+     * price move stays an attributed desk reading, never a fact.
+     */
+    static String worldWeatherBlock(
+            List<de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.PlaceWeatherStat> places) {
+        if (places == null || places.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder(
+                "WORLD WEATHER over market-relevant places (verified, Open-Meteo):");
+        for (var p : places) {
+            sb.append("\n- ").append(p.place());
+            if (p.role() != null && !p.role().isBlank()) {
+                sb.append(" (").append(p.role()).append(')');
+            }
+            sb.append(':');
+            if (p.tempC() != null) sb.append(' ').append(num(p.tempC(), 1)).append(" °C");
+            if (p.word() != null && !p.word().isBlank()) sb.append(", ").append(p.word());
+            if (p.windKmh() != null && p.windKmh() >= 40) {
+                sb.append(", Wind ").append(num(p.windKmh(), 0)).append(" km/h");
+            }
+            if (p.tomorrowMaxC() != null) {
+                sb.append("; tomorrow up to ").append(num(p.tomorrowMaxC(), 0)).append(" °C");
+                if (p.tomorrowWord() != null && !p.tomorrowWord().isBlank()) {
+                    sb.append(" (").append(p.tomorrowWord()).append(')');
+                }
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Physical-world hazards with a market shadow (NHC storms / USGS quakes /
+     * FAA aviation, verified) — reported as events; any market consequence is
+     * the desk's attributed reading.
+     */
+    static String hazardsBlock(
+            List<de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.HazardStat> hazards) {
+        if (hazards == null || hazards.isEmpty()) return "";
+        // "CURRENT state, TODAY" is load-bearing: on the outlook shelf the
+        // TOMORROW date line otherwise re-dates these events to tomorrow
+        // (live smoke 2: "US-Luftverkehr meldet für den 15.07. ..." — an FAA
+        // ground delay is an Ist-Zustand, never a forecast).
+        StringBuilder sb = new StringBuilder(
+                "HAZARDS (verified CURRENT state as of TODAY — report as today's"
+                        + " situation, never as tomorrow's forecast; NHC tropical storms"
+                        + " / USGS quakes / FAA US aviation):");
+        for (var h : hazards) {
+            sb.append("\n- [").append(hazardKindWord(h.kind())).append("] ").append(h.text());
+        }
+        return sb.toString();
+    }
+
+    private static String hazardKindWord(String kind) {
+        if (kind == null) return "Ereignis";
+        return switch (kind) {
+            case "STORM" -> "Sturm";
+            case "QUAKE" -> "Beben";
+            case "AVIATION" -> "US-Luftverkehr";
+            default -> kind;
+        };
+    }
+
+    /**
+     * The general market press review of ONE day-part window (CNBC/
+     * MarketWatch/WSJ/Investing + n-tv/Spiegel/Handelsblatt/WiWo) — timed
+     * press headlines, attributed. This is the "why the tape moved" layer:
+     * the reported cause sits beside the window's market data, so the model
+     * links them instead of speculating.
+     */
+    static String pressReviewBlock(String scope, List<PressReviewStat> items) {
+        if (items == null || items.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder("MARKET PRESS ").append(scope)
+                .append(" (ATTRIBUTED — the press's reading, cite the outlet):");
+        for (PressReviewStat p : items) {
+            sb.append("\n- ");
+            if (p.time() != null) sb.append(p.time()).append(' ');
+            sb.append('[').append(p.source()).append("] ").append(p.title());
+            if (p.teaser() != null && !p.teaser().isBlank()) {
+                String t = p.teaser().strip();
+                sb.append(" — ").append(t.length() > 160 ? t.substring(0, 160) + "…" : t);
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Fresh triangulated press on the day's TOP tickers (the KI-DD's 7-source
+     * aggregator) — the per-paper catalyst feed beside the general market
+     * press, attributed to its outlet.
+     */
+    static String tickerNewsBlock(String scope,
+            List<de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.TickerNewsStat> items) {
+        if (items == null || items.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder("PRESS ON THE DAY'S TOP PAPERS ").append(scope)
+                .append(" (house news triangulation — ATTRIBUTED, cite the outlet):");
+        for (var n : items) {
+            sb.append("\n- ");
+            if (n.time() != null) sb.append(n.time()).append(' ');
+            sb.append('[').append(n.ticker()).append("] ").append(n.title());
+            if (n.publisher() != null) sb.append(" · ").append(n.publisher());
         }
         return sb.toString();
     }

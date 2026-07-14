@@ -73,6 +73,28 @@ class WeatherReportServiceTest {
         assertFalse(WeatherReportService.looksLikeReport(null));
     }
 
+    // --- the press weave's story grouping ------------------------------------
+
+    @Test
+    void storyGroupingBundlesSameStoryAcrossOutlets() {
+        var a = new de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.PressReviewStat(
+                "Consumer prices rose 3.5% annually in June, less than expected",
+                null, "CNBC", "US_ECONOMY", "15:45");
+        var b = new de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.PressReviewStat(
+                "Consumer prices rose less than expected in June", null,
+                "MarketWatch", "US_MARKETS", "15:50");
+        var c = new de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.PressReviewStat(
+                "Iran fires projectiles at two tankers in the Strait of Hormuz", null,
+                "WSJ", "US_MARKETS", "09:12");
+        var groups = WeatherReportService.groupStories(List.of(a, b, c));
+        org.junit.jupiter.api.Assertions.assertEquals(2, groups.size());
+        org.junit.jupiter.api.Assertions.assertEquals(2, groups.get(0).size());
+        String block = WeatherReportService.pressStoryBlock(groups.get(0));
+        assertTrue(block.contains("[CNBC]"));
+        assertTrue(block.contains("[MarketWatch]"));
+        assertTrue(block.contains("15:45"));
+    }
+
     // --- the Redaktion's typesetting ----------------------------------------
 
     @Test
@@ -91,7 +113,7 @@ class WeatherReportServiceTest {
             assertTrue(at > last, "heading missing or out of order: " + heading);
             last = at;
         }
-        assertTrue(report.contains("Der Käfig blieb in diesem Fenster still."), report);
+        assertTrue(report.contains("Für dieses Fenster erreichte den Desk kein Material."), report);
         assertTrue(report.contains("Für morgen liegt nichts auf dem Kalender."), report);
         assertTrue(WeatherReportService.looksLikeReport(report), report);
     }

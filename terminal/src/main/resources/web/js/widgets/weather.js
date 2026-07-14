@@ -142,6 +142,9 @@ function paintReport(host, p, reports, idx) {
       ${pulseHtml(w(r).pulse)}
       ${worldEventsHtml(w(r).worldEvents)}
       ${topNewsHtml(w(r).topNews)}
+      ${pressReviewHtml(w(r).pressReview)}
+      ${tickerNewsHtml(w(r).tickerNews)}
+      ${hazardsHtml(w(r).hazards)}
       ${indicesHtml(r.indices, r.sentiment, w(r).putCall)}
       ${sectorsHtml(w(r).sectors)}
       ${ratesHtml(w(r).rates)}
@@ -159,6 +162,7 @@ function paintReport(host, p, reports, idx) {
       ${newsHtml(r.news)}
       ${overnightHtml(w(r).overnight)}
       ${outlookHtml(w(r).outlook, w(r).cbDates)}
+      ${worldWeatherHtml(w(r).worldWeather)}
       ${colourHtml(w(r))}
     </div>`;
 
@@ -815,6 +819,62 @@ function topNewsHtml(news) {
       </span>
     </div>`).join('');
   return section('weather.stats.topnews', `<div class="weather-plain-list">${rows}</div>`);
+}
+
+// The general market press review — timed headlines, attributed to their outlet.
+function pressReviewHtml(press) {
+  if (!press || !press.length) return '';
+  const rows = press.map(p => `<div class="weather-plain">
+      <span class="weather-plain-main wrap">${p.time ? `<span class="weather-plain-mute">${escapeHtml(p.time)}</span> ` : ''}<span class="weather-plain-mute">[${escapeHtml(p.source || '')}]</span> ${escapeHtml(p.title || '')}
+        ${p.teaser ? `<span class="weather-plain-mute">${escapeHtml(p.teaser)}</span>` : ''}
+      </span>
+    </div>`).join('');
+  return section('weather.stats.pressreview', `<div class="weather-plain-list">${rows}</div>`);
+}
+
+// Fresh triangulated press on the day's top papers (the DD's 7-source aggregator).
+function tickerNewsHtml(news) {
+  if (!news || !news.length) return '';
+  const rows = news.map(n => `<div class="weather-plain">
+      <span class="weather-plain-time">${escapeHtml(n.time || '')} ${escapeHtml(n.ticker || '')}</span>
+      <span class="weather-plain-main wrap">${escapeHtml(n.title || '')}
+        ${n.publisher ? `<span class="weather-plain-mute">· ${escapeHtml(n.publisher)}</span>` : ''}
+      </span>
+    </div>`).join('');
+  return section('weather.stats.tickernews', `<div class="weather-plain-list">${rows}</div>`);
+}
+
+// The literal sky over the market-relevant places (Open-Meteo).
+function worldWeatherHtml(places) {
+  if (!places || !places.length) return '';
+  const rows = places.map(p => {
+    const now = [p.tempC != null ? `${fmtNum(p.tempC, 1)} °C` : '', p.word || '']
+        .filter(Boolean).join(', ');
+    const tm = p.tomorrowMaxC != null
+        ? `${t('weather.worldweather.tomorrow')} ${fmtNum(p.tomorrowMaxC, 0)} °C${p.tomorrowWord ? `, ${p.tomorrowWord}` : ''}` : '';
+    return `<div class="weather-plain">
+      <span class="weather-plain-main wrap"><b>${escapeHtml(p.place || '')}</b>${p.role ? ` <span class="weather-plain-mute">(${escapeHtml(p.role)})</span>` : ''}: ${escapeHtml(now)}
+        ${tm ? `<span class="weather-plain-mute">${escapeHtml(tm)}</span>` : ''}
+      </span>
+    </div>`;
+  }).join('');
+  return section('weather.stats.worldweather', `<div class="weather-plain-list">${rows}</div>`);
+}
+
+// Physical-world hazards: storms, quakes, US aviation disruptions.
+function hazardsHtml(hazards) {
+  if (!hazards || !hazards.length) return '';
+  const kindKey = k => k === 'STORM' ? 'weather.hazards.storm'
+      : k === 'QUAKE' ? 'weather.hazards.quake'
+      : k === 'AVIATION' ? 'weather.hazards.aviation' : null;
+  const rows = hazards.map(h => {
+    const key = kindKey(h.kind);
+    return `<div class="weather-plain">
+      <span class="weather-plain-time${h.severity === 'HIGH' ? ' weather-pct down' : ''}">${key ? escapeHtml(t(key)) : escapeHtml(h.kind || '')}</span>
+      <span class="weather-plain-main wrap">${escapeHtml(h.text || '')}</span>
+    </div>`;
+  }).join('');
+  return section('weather.stats.hazards', `<div class="weather-plain-list">${rows}</div>`);
 }
 
 // US movers, one wrapped chip line per kind; cage overlap marked gold.

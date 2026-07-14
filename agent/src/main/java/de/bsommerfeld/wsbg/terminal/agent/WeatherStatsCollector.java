@@ -13,7 +13,9 @@ import de.bsommerfeld.wsbg.terminal.briefing.EconCalendarClient;
 import de.bsommerfeld.wsbg.terminal.briefing.EqsEventsClient;
 import de.bsommerfeld.wsbg.terminal.briefing.FinraShortVolumeClient;
 import de.bsommerfeld.wsbg.terminal.briefing.FnRssClient;
+import de.bsommerfeld.wsbg.terminal.briefing.GlobalHazardsClient;
 import de.bsommerfeld.wsbg.terminal.briefing.MacroPressClient;
+import de.bsommerfeld.wsbg.terminal.briefing.MarketPressClient;
 import de.bsommerfeld.wsbg.terminal.briefing.MoonPhase;
 import de.bsommerfeld.wsbg.terminal.briefing.NasdaqCalendarClient;
 import de.bsommerfeld.wsbg.terminal.briefing.PolymarketClient;
@@ -21,6 +23,7 @@ import de.bsommerfeld.wsbg.terminal.briefing.RhinePegelClient;
 import de.bsommerfeld.wsbg.terminal.briefing.TagesschauClient;
 import de.bsommerfeld.wsbg.terminal.briefing.TradingViewCalendarClient;
 import de.bsommerfeld.wsbg.terminal.briefing.WikipediaCurrentEventsClient;
+import de.bsommerfeld.wsbg.terminal.briefing.WorldWeatherClient;
 import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
 import de.bsommerfeld.wsbg.terminal.core.price.AnalystView;
 import de.bsommerfeld.wsbg.terminal.core.price.AnalystViewSource;
@@ -54,6 +57,7 @@ import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.MoverStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.NewsStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.OutlookStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.PegelStat;
+import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.PressReviewStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.PutCallStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.RateStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.RoomPulse;
@@ -182,6 +186,11 @@ class WeatherStatsCollector {
     private static final int WORLD_EVENTS_PER_CATEGORY = 2;
     private static final int MAX_WORLD_EVENTS = 8;
     private static final int MAX_TOP_NEWS = 8;
+    /** Runaway backstop only (user mandate: no information lost to fixed caps). */
+    private static final int MAX_PRESS_REVIEW = 400;
+    private static final int MAX_HAZARDS = 10;
+    /** Fresh triangulated press per top ticker — a catalyst feed, not an archive. */
+    private static final int MAX_TICKER_NEWS_PER_TICKER = 4;
     private static final int MAX_EVENT_REVIEWS = 2;
     private static final int REVIEW_HEADLINES = 3;
     private static final int CB_LOOKAHEAD_DAYS = 90;
@@ -200,6 +209,17 @@ class WeatherStatsCollector {
     private volatile FnRssClient fnRssClient;
     private volatile EconCalendarClient econCalendarClient;
     private volatile MacroPressClient macroPressClient;
+    private volatile MarketPressClient marketPressClient;
+    private volatile WorldWeatherClient worldWeatherClient;
+    private volatile GlobalHazardsClient globalHazardsClient;
+    // The KI-DD's source park, ridden ERGÄNZEND (user mandate 2026-07-14
+    // "dieselben Quellen wie für DD"): the aggregator is the same @Singleton
+    // the DD and the wire query — its per-source politeness caches are shared,
+    // so a story pulled for the DD is never fetched twice for the evening.
+    private volatile de.bsommerfeld.wsbg.terminal.aggregator.NewsAggregator newsAggregator;
+    private volatile de.bsommerfeld.wsbg.terminal.core.price.AnalystActionsSource analystActionsSource;
+    private volatile de.bsommerfeld.wsbg.terminal.core.price.UsListingStatsSource usListingStatsSource;
+    private volatile de.bsommerfeld.wsbg.terminal.core.price.HedgeFundPopularitySource hedgeFundSource;
     private volatile BundYieldClient bundYieldClient;
     private volatile ApeWisdomClient apeWisdomClient;
     private volatile CoinGeckoClient coinGeckoClient;
@@ -262,6 +282,44 @@ class WeatherStatsCollector {
     @com.google.inject.Inject(optional = true)
     void setMacroPressClient(MacroPressClient client) {
         this.macroPressClient = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setMarketPressClient(MarketPressClient client) {
+        this.marketPressClient = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setWorldWeatherClient(WorldWeatherClient client) {
+        this.worldWeatherClient = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setGlobalHazardsClient(GlobalHazardsClient client) {
+        this.globalHazardsClient = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setNewsAggregator(de.bsommerfeld.wsbg.terminal.aggregator.NewsAggregator aggregator) {
+        this.newsAggregator = aggregator;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setAnalystActionsSource(
+            de.bsommerfeld.wsbg.terminal.core.price.AnalystActionsSource source) {
+        this.analystActionsSource = source;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setUsListingStatsSource(
+            de.bsommerfeld.wsbg.terminal.core.price.UsListingStatsSource source) {
+        this.usListingStatsSource = source;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setHedgeFundSource(
+            de.bsommerfeld.wsbg.terminal.core.price.HedgeFundPopularitySource source) {
+        this.hedgeFundSource = source;
     }
 
     @com.google.inject.Inject(optional = true)
@@ -415,7 +473,12 @@ class WeatherStatsCollector {
                 guarded("rates", List.of(), this::rates),
                 guarded("pulse", null, () -> pulse(todaysHeadlines, zone)),
                 guarded("adhocs", List.of(), () -> adhocs(dayStart, isinToTicker)),
-                guarded("analyst actions", List.of(), () -> analystActions(dayStart)),
+                guarded("analyst actions", List.of(), () -> {
+                    List<AnalystActionStat> merged = new ArrayList<>(analystActions(dayStart));
+                    merged.addAll(guarded("us analyst actions", List.of(),
+                            () -> usAnalystActions(wireTickers)));
+                    return merged;
+                }),
                 guarded("macro actuals", List.of(), () -> macroActuals(dayStart)),
                 guarded("macro events", List.of(), () -> macroEvents(today, zone)),
                 pressDigest == null || pressDigest.isBlank() ? null : pressDigest,
@@ -438,7 +501,12 @@ class WeatherStatsCollector {
                 guarded("world events", List.of(), () -> worldEvents(today)),
                 guarded("event reviews", List.of(), () -> eventReviews(econOutcomes)),
                 guarded("cb dates", List.of(), () -> cbDates(today)),
-                guarded("top news", List.of(), () -> topNews(dayStart)));
+                guarded("top news", List.of(), () -> topNews(dayStart)),
+                guarded("press review", List.of(), () -> pressReview(dayStart, zone)),
+                guarded("world weather", List.of(), this::worldWeather),
+                guarded("hazards", List.of(), this::hazards),
+                guarded("ticker news", List.of(),
+                        () -> tickerNews(tickers, todaysHeadlines, dayStart)));
 
         return new Stats(indices(), tickers, news(todaysHeadlines), sentiment(), world);
     }
@@ -669,14 +737,59 @@ class WeatherStatsCollector {
     }
 
     private List<AnalystActionStat> analystActions(Instant dayStart) {
-        FnRssClient client = fnRssClient;
-        if (client == null) return List.of();
         List<AnalystActionStat> out = new ArrayList<>();
-        for (FnRssClient.AnalystAction a : client.analystActions(30)) {
-            if (a.publishedAt() == null || a.publishedAt().isBefore(dayStart)) continue;
-            out.add(new AnalystActionStat(a.title(), localTime(a.publishedAt())));
+        FnRssClient client = fnRssClient;
+        if (client != null) {
+            for (FnRssClient.AnalystAction a : client.analystActions(30)) {
+                if (a.publishedAt() == null || a.publishedAt().isBefore(dayStart)) continue;
+                out.add(new AnalystActionStat(a.title(), localTime(a.publishedAt())));
+            }
         }
         return cap(out, MAX_ANALYST_ACTIONS);
+    }
+
+    /**
+     * The day's US analyst actions from the KI-DD's dated table (MarketBeat's
+     * daily ratings, ~490 rows), FILTERED to the papers the cage actually
+     * discussed today — the house angle, not a firehose. Complements the
+     * dpa-AFX titles (German houses on German/EU names) with the US street's
+     * moves incl. old→new targets. Untimed rows route to their home window.
+     */
+    private List<AnalystActionStat> usAnalystActions(Set<String> wireTickers) {
+        de.bsommerfeld.wsbg.terminal.core.price.AnalystActionsSource source = analystActionsSource;
+        if (source == null || wireTickers.isEmpty()) return List.of();
+        List<AnalystActionStat> out = new ArrayList<>();
+        for (de.bsommerfeld.wsbg.terminal.core.price.AnalystActions.Action a
+                : source.todaysActions("US")) {
+            if (a.symbol() == null
+                    || !wireTickers.contains(a.symbol().toUpperCase(Locale.ROOT))) {
+                continue;
+            }
+            StringBuilder sb = new StringBuilder();
+            if (a.brokerage() != null) sb.append(a.brokerage()).append(": ");
+            sb.append(a.companyName() == null || a.companyName().isBlank()
+                    ? a.symbol() : a.companyName());
+            if (a.actionType() != null) sb.append(" — ").append(a.actionType());
+            if (a.ratingNew() != null && !a.ratingNew().isBlank()) {
+                sb.append(" '").append(a.ratingNew()).append('\'');
+            }
+            if (Double.isFinite(a.targetNew())) {
+                sb.append(", Ziel ");
+                if (Double.isFinite(a.targetOld())) {
+                    sb.append(fmtTarget(a.targetOld())).append("→");
+                }
+                sb.append(fmtTarget(a.targetNew()));
+                if (a.targetCurrency() != null) sb.append(' ').append(a.targetCurrency());
+            }
+            sb.append(" [MarketBeat]");
+            out.add(new AnalystActionStat(sb.toString(), null));
+            if (out.size() >= MAX_ANALYST_ACTIONS) break;
+        }
+        return out;
+    }
+
+    private static String fmtTarget(double v) {
+        return String.format(Locale.GERMANY, v == Math.rint(v) ? "%,.0f" : "%,.2f", v);
     }
 
     // --- macro ------------------------------------------------------------------
@@ -935,7 +1048,94 @@ class WeatherStatsCollector {
             out.add(new DepthStat(ticker, target, targetCcy, upside, buy, hold, sell,
                     nextTitle, nextDate, shortPct, topHolder, insiderNote));
         }
+        // US parity (2026-07-14, user mandate "dieselben Quellen wie für DD"):
+        // top tickers WITHOUT an ISIN anchor but with a US shape get their
+        // street line from the KI-DD's US legs — NASDAQ (targets, rating
+        // panel, Form-4 aggregate), MarketBeat (float-short percent) and
+        // Insider Monkey (13F hedge-fund count). The German ISIN path above
+        // stays untouched; both together mirror the DD's Bewertung/
+        // Katalysatoren shelves in one dense line each.
+        for (TickerStat t : topTickers) {
+            if (out.size() >= MAX_DEPTH) break;
+            if (tickerToIsin.containsKey(t.ticker())) continue;
+            if (!US_DEPTH_SYMBOL.matcher(t.ticker()).matches()) continue;
+            DepthStat us = guarded("us depth " + t.ticker(), null, () -> usDepth(t.ticker()));
+            if (us != null) out.add(us);
+        }
         return out;
+    }
+
+    /** Bare US listing shapes only — suffixed/caret/future symbols never reach the US legs. */
+    private static final java.util.regex.Pattern US_DEPTH_SYMBOL =
+            java.util.regex.Pattern.compile("[A-Z]{1,5}(\\.[A-Z])?");
+
+    /** One US ticker's street line from the DD's US legs; null when every leg is empty. */
+    private DepthStat usDepth(String ticker) {
+        de.bsommerfeld.wsbg.terminal.core.price.UsListingStatsSource usStats = usListingStatsSource;
+        de.bsommerfeld.wsbg.terminal.core.price.AnalystActionsSource mb = analystActionsSource;
+        de.bsommerfeld.wsbg.terminal.core.price.HedgeFundPopularitySource hf = hedgeFundSource;
+        Double target = null, shortPct = null;
+        Integer buy = null, hold = null, sell = null;
+        StringBuilder insider = new StringBuilder();
+        if (usStats != null) {
+            var stats = guarded("us listing " + ticker,
+                    Optional.<de.bsommerfeld.wsbg.terminal.core.price.UsListingStats>empty(),
+                    () -> usStats.statsFor(ticker));
+            if (stats.isPresent()) {
+                var s = stats.get();
+                if (s.analystRatings() != null) {
+                    var r = s.analystRatings();
+                    if (Double.isFinite(r.meanPriceTargetUsd())) target = r.meanPriceTargetUsd();
+                    if (r.buy() >= 0) {
+                        buy = r.buy();
+                        hold = Math.max(r.hold(), 0);
+                        sell = Math.max(r.sell(), 0);
+                    }
+                }
+                if (s.insiderActivity() != null) {
+                    var ia = s.insiderActivity();
+                    if (ia.buys3m() >= 0 || ia.sells3m() >= 0) {
+                        insider.append("Form-4 3M: ").append(Math.max(ia.buys3m(), 0))
+                                .append(" Käufe / ").append(Math.max(ia.sells3m(), 0))
+                                .append(" Verkäufe");
+                    }
+                }
+            }
+        }
+        if (mb != null) {
+            var actions = guarded("marketbeat " + ticker,
+                    Optional.<de.bsommerfeld.wsbg.terminal.core.price.AnalystActions>empty(),
+                    () -> mb.actionsFor(ticker));
+            if (actions.isPresent() && actions.get().shortStats() != null
+                    && Double.isFinite(actions.get().shortStats().percentOfFloat())) {
+                shortPct = actions.get().shortStats().percentOfFloat();
+            }
+            if (target == null && actions.isPresent()
+                    && Double.isFinite(actions.get().consensusTarget())) {
+                target = actions.get().consensusTarget();
+            }
+        }
+        if (hf != null) {
+            var pop = guarded("hedge funds " + ticker,
+                    Optional.<de.bsommerfeld.wsbg.terminal.core.price.HedgeFundPopularity>empty(),
+                    () -> hf.popularityFor(ticker));
+            if (pop.isPresent() && !pop.get().quarters().isEmpty()) {
+                var latest = pop.get().quarters().get(pop.get().quarters().size() - 1);
+                if (latest.funds() >= 0) {
+                    if (insider.length() > 0) insider.append("; ");
+                    insider.append(latest.funds()).append(" Hedgefonds (13F, ")
+                            .append(latest.quarterLabel()).append(')');
+                }
+            }
+        }
+        if (target == null && buy == null && shortPct == null && insider.length() == 0) {
+            return null;
+        }
+        // shortPct here is the US percent-of-float (MarketBeat), semantically
+        // the same "disclosed shorts" slot the German register fills.
+        return new DepthStat(ticker, target, target == null ? null : "USD", null,
+                buy, hold, sell, null, null, shortPct, null,
+                insider.length() == 0 ? null : insider.toString());
     }
 
     /** "Kauf 1,2 Mio € (Vorstand Max Mustermann, 2026-07-08)" — or null when stale/empty. */
@@ -990,10 +1190,15 @@ class WeatherStatsCollector {
         DeepDiveArchive archive = deepDiveArchive;
         if (archive == null) return List.of();
         List<String> out = new ArrayList<>();
+        Set<String> seenSubjects = new HashSet<>();
         for (DeepDiveRecord r : archive.recent(10)) {
             if (r.createdAtEpoch() < dayStart.getEpochSecond()) continue;
             String name = r.canonicalName() != null && !r.canonicalName().isBlank()
                     ? r.canonicalName() : r.subject();
+            // Two runs over the same subject in one day (the live 14.07 report:
+            // "Outlook Therapeutics, Inc., Outlook Therapeutics, Inc.") are one
+            // house finding — the newest report speaks.
+            if (!seenSubjects.add(name.toLowerCase(Locale.ROOT))) continue;
             String thesis = thesisSentence(r.report());
             out.add(thesis == null ? name : name + ": " + thesis);
         }
@@ -1234,6 +1439,140 @@ class WeatherStatsCollector {
     }
 
     /**
+     * Common calendar country/currency codes spelled out for a search query;
+     * an unknown code is dropped rather than passed raw (a two-letter code
+     * matches everything from CNN to a Cuxhaven local paper).
+     */
+    static String countryName(String code) {
+        if (code == null || code.isBlank()) return null;
+        return switch (code.toUpperCase(Locale.ROOT)) {
+            case "US", "USD" -> "US";
+            case "CN", "CNY" -> "China";
+            case "DE" -> "Germany";
+            case "EU", "EUR" -> "Eurozone";
+            case "GB", "GBP", "UK" -> "UK";
+            case "JP", "JPY" -> "Japan";
+            case "CH", "CHF" -> "Switzerland";
+            case "CA", "CAD" -> "Canada";
+            case "AU", "AUD" -> "Australia";
+            case "NZ", "NZD" -> "New Zealand";
+            case "FR" -> "France";
+            case "IT" -> "Italy";
+            case "ES" -> "Spain";
+            default -> null;
+        };
+    }
+
+    /**
+     * Words a review headline must carry at least one of to count as press ON
+     * the event: the event title's significant words (calendar shorthand like
+     * YoY/MoM excluded) plus the spelled-out country.
+     */
+    static Set<String> reviewRelevanceWords(String eventTitle, String country) {
+        Set<String> out = new HashSet<>();
+        if (eventTitle != null) {
+            for (String w : eventTitle.toLowerCase(Locale.ROOT).split("[^a-z0-9]+")) {
+                if (w.length() >= 4 && !"rate".equals(w)) out.add(w);
+            }
+        }
+        if (country != null) out.add(country.toLowerCase(Locale.ROOT));
+        return out;
+    }
+
+    /** True when the headline names the event (or its country) at all. */
+    static boolean reviewTitleRelevant(String title, Set<String> eventWords) {
+        if (eventWords.isEmpty()) return true;
+        String t = title.toLowerCase(Locale.ROOT);
+        for (String w : eventWords) {
+            if (t.contains(w)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * The general market press review (CNBC/MarketWatch/WSJ/Investing +
+     * n-tv/Spiegel/Handelsblatt/WiWo): the day's timed press headlines, so a
+     * sector or index move can be attached to its reported cause inside the
+     * right day-part window — and so the report carries a day even when the
+     * cage was silent (the Wetterbericht's Reddit-independence leg).
+     */
+    private List<PressReviewStat> pressReview(Instant dayStart, ZoneId zone) {
+        MarketPressClient client = marketPressClient;
+        if (client == null) return List.of();
+        List<PressReviewStat> out = new ArrayList<>();
+        for (MarketPressClient.PressHeadline h : client.headlinesSince(dayStart, MAX_PRESS_REVIEW)) {
+            out.add(new PressReviewStat(h.title(), h.teaser(), h.source(), h.category(),
+                    localTime(h.publishedAt()), h.link()));
+        }
+        return out;
+    }
+
+    /**
+     * Fresh press on the day's TOP tickers through the house's FULL news
+     * triangulation — the same 7-source aggregator (Yahoo, wallstreet-online,
+     * Google News, Fool, PR Newswire, finanznachrichten, Nasdaq RSS) the KI-DD
+     * and the wire read, same singleton, same caches (a story pulled for the
+     * DD is never fetched twice). Today-only, timestamped items route into
+     * their day-part window.
+     */
+    private List<de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.TickerNewsStat> tickerNews(
+            List<TickerStat> topTickers, List<HeadlineRecord> headlines, Instant dayStart) {
+        de.bsommerfeld.wsbg.terminal.aggregator.NewsAggregator aggregator = newsAggregator;
+        if (aggregator == null) return List.of();
+        List<de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.TickerNewsStat> out =
+                new ArrayList<>();
+        Set<String> seenTitles = new HashSet<>();
+        for (TickerStat t : topTickers) {
+            String isin = isinForTicker(headlines, t.ticker());
+            List<de.bsommerfeld.wsbg.terminal.source.RawNewsItem> items =
+                    guarded("ticker news " + t.ticker(), List.of(),
+                            () -> aggregator.newsFor(t.ticker(), t.name(), isin,
+                                    MAX_TICKER_NEWS_PER_TICKER * 2));
+            int taken = 0;
+            for (var item : items) {
+                if (item.publishedAt() == null || item.publishedAt().isBefore(dayStart)) continue;
+                if (item.title() == null || item.title().isBlank()) continue;
+                if (!seenTitles.add(item.title().toLowerCase(Locale.ROOT).strip())) continue;
+                out.add(new de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.TickerNewsStat(
+                        t.ticker(), item.title(),
+                        item.publisher() == null || item.publisher().isBlank()
+                                ? null : item.publisher(),
+                        localTime(item.publishedAt())));
+                if (++taken >= MAX_TICKER_NEWS_PER_TICKER) break;
+            }
+        }
+        return out;
+    }
+
+    /** The literal sky over the market-relevant places (Open-Meteo, one call). */
+    private List<de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.PlaceWeatherStat> worldWeather() {
+        WorldWeatherClient client = worldWeatherClient;
+        if (client == null) return List.of();
+        List<de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.PlaceWeatherStat> out =
+                new ArrayList<>();
+        for (WorldWeatherClient.PlaceWeather w : client.worldWeather()) {
+            out.add(new de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.PlaceWeatherStat(
+                    w.place(), w.role(), w.tempC(), w.word(), w.windKmh(),
+                    w.tomorrowMaxC(), w.tomorrowMinC(), w.tomorrowWord()));
+        }
+        return out;
+    }
+
+    /** Tropical storms, significant quakes, US aviation disruptions (NHC/USGS/FAA). */
+    private List<de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.HazardStat> hazards() {
+        GlobalHazardsClient client = globalHazardsClient;
+        if (client == null) return List.of();
+        List<de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.HazardStat> out =
+                new ArrayList<>();
+        for (GlobalHazardsClient.Hazard h : client.hazards()) {
+            out.add(new de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.HazardStat(
+                    h.kind(), h.text(), h.severity()));
+            if (out.size() >= MAX_HAZARDS) break;
+        }
+        return out;
+    }
+
+    /**
      * The Ereignis-Nachlese loop: for the day's top released numbers, ask the
      * web how the press read them — headline titles only, attributed, never a
      * conclusion of our own. High-impact outcomes first; two events, one Bing
@@ -1247,15 +1586,21 @@ class WeatherStatsCollector {
         List<EventReviewStat> out = new ArrayList<>();
         for (EconOutcomeStat o : ranked) {
             if (out.size() >= MAX_EVENT_REVIEWS) break;
-            String query = (o.country() == null || o.country().isBlank()
-                    ? o.title() : o.country() + " " + o.title());
+            // The country code spelled OUT — the raw code poisoned the query
+            // (live 14.07: "CN Imports YoY" matched the CNN homepage and the
+            // Cuxhavener Nachrichten), and the search engine knows "China".
+            String country = countryName(o.country());
+            String query = (country == null ? "" : country + " ") + o.title();
+            Set<String> eventWords = reviewRelevanceWords(o.title(), country);
             List<String> headlines = new ArrayList<>();
             for (var item : guarded("event review " + o.title(),
                     List.<de.bsommerfeld.wsbg.terminal.source.RawNewsItem>of(),
-                    () -> search.newsForName(query, REVIEW_HEADLINES))) {
+                    () -> search.newsForName(query, REVIEW_HEADLINES * 2))) {
                 if (item.title() == null || item.title().isBlank()) continue;
+                if (!reviewTitleRelevant(item.title(), eventWords)) continue;
                 headlines.add(item.publisher() == null || item.publisher().isBlank()
                         ? item.title() : item.title() + " [" + item.publisher() + "]");
+                if (headlines.size() >= REVIEW_HEADLINES) break;
             }
             if (!headlines.isEmpty()) {
                 out.add(new EventReviewStat(o.title() + " (" + o.country() + ")", headlines));
@@ -1393,10 +1738,45 @@ class WeatherStatsCollector {
             out.sort(Comparator.comparingInt((Ranked r) -> r.stat().headlineCount()).reversed()
                     .thenComparing(Comparator.comparingInt((Ranked r) -> r.stat().importantCount()).reversed()));
             List<Ranked> top = out.size() > MAX_TICKERS ? out.subList(0, MAX_TICKERS) : out;
-            return top.stream().map(r -> enrichWithVenueStats(r.stat(), r.snap())).toList();
+            List<TickerStat> result = new ArrayList<>(top.size());
+            for (Ranked r : top) {
+                result.add(enrichWithVenueStats(
+                        refreshYahooShapedQuote(r.stat()), r.snap()));
+            }
+            return result;
         } catch (Exception e) {
             LOG.warn("Wetterbericht ticker stats failed: {}", e.getMessage());
             return List.of();
+        }
+    }
+
+    /**
+     * Refreshes a Yahoo-shaped symbol's quote (index {@code ^…}, future
+     * {@code =F}, FX {@code =X}, crypto {@code -USD}) at freeze time — the
+     * frozen wire snapshot can be hours old (the live 14.07 report showed
+     * "Gold −0,0 %" beside the market tile's "+1,59 %" because the wire's
+     * last Gold line was written at 03:00), and these shapes are exactly the
+     * ones the market tiles already re-quote via Yahoo, so the two views must
+     * agree. Equities deliberately keep the wire's own frozen quote (their
+     * price source is L&S, not reachable from here). Best-effort.
+     */
+    private TickerStat refreshYahooShapedQuote(TickerStat stat) {
+        String sym = stat.ticker();
+        boolean yahooShaped = sym != null && (sym.startsWith("^")
+                || sym.endsWith("=F") || sym.endsWith("=X") || sym.endsWith("-USD"));
+        if (!yahooShaped) return stat;
+        try {
+            Optional<MarketSnapshot> snap = yahoo.fetchChart(sym);
+            if (snap.isEmpty() || !snap.get().hasPrice()) return stat;
+            MarketSnapshot s = snap.get();
+            return new TickerStat(stat.ticker(), stat.name(), stat.headlineCount(),
+                    stat.importantCount(), finiteOrNull(s.price()),
+                    s.currency() == null || s.currency().isBlank() ? stat.currency() : s.currency(),
+                    finiteOrNull(s.dayChangePercent()),
+                    s.volume() < 0 ? stat.volume() : s.volume(), stat.turnoverEur());
+        } catch (Exception e) {
+            LOG.debug("Wetterbericht quote refresh for {} failed: {}", sym, e.getMessage());
+            return stat;
         }
     }
 

@@ -23,6 +23,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -109,6 +110,13 @@ public class WeatherReportService {
     static final int MAX_BOLD_SPANS = 4;
     /** Pure runaway guard — the challenge loop normally ends on STANDS/stalemate. */
     private static final int CHALLENGE_ROUNDS_BACKSTOP = 6;
+    /**
+     * Weave runaway guard, NOT a curation cap — hits are logged loudly. 40
+     * halved a real US evening (live smoke 2: 97 stories, 57 unwoven) against
+     * the uncap mandate; a full day's press peaks around ~100 stories per
+     * window, so anything beyond this is a malfunctioning feed, not news.
+     */
+    private static final int WEAVE_GROUPS_BACKSTOP = 150;
     /** Output reservation of the deep-dive model handle (its numPredict). */
     private static final int NUM_PREDICT_RESERVE = 3584;
     private static final double CHARS_PER_TOKEN = 3.0;
@@ -133,6 +141,14 @@ public class WeatherReportService {
                 t.setDaemon(true);
                 return t;
             });
+
+    /** The house's shared article digester (prod-wired, absent in unit tests/smoke). */
+    private volatile NewsDigester newsDigester;
+
+    @com.google.inject.Inject(optional = true)
+    void setNewsDigester(NewsDigester digester) {
+        this.newsDigester = digester;
+    }
 
     private final AtomicBoolean started = new AtomicBoolean(false);
     private ScheduledFuture<?> pending;
@@ -230,8 +246,12 @@ public class WeatherReportService {
                 .filter(r -> r.createdAt() >= dayStart)
                 .toList();
         if (headlines.isEmpty()) {
-            LOG.info("Wetterbericht {}: no headlines today — nothing to report.", date);
-            return;
+            // The edition exists independently of the room (user mandate
+            // 2026-07-14): a silent cage — Reddit outage, dead day — still
+            // yields a report from the world data (press review, calendar,
+            // sectors, markets); the room's silence is itself a finding.
+            LOG.info("Wetterbericht {}: no headlines today — writing from world data alone.",
+                    date);
         }
 
         generating = true;
@@ -305,6 +325,18 @@ public class WeatherReportService {
         String sectionSys = localized("weather-section", lang);
         String challengeSys = localized("weather-challenge", lang);
         String reviseSys = localized("weather-revise", lang);
+        String weaveSys = localized("weather-weave", lang);
+        // The DD's same-story arbiter prompt VERBATIM — it is desk-generic
+        // (woven source vs new candidate), so the weather weave reuses it
+        // instead of growing a twin pair.
+        String samestorySys = localized("deepdive-samestory", lang);
+
+        // The window's press stories for the weave loop — every item is
+        // considered INDIVIDUALLY by the model (user mandate 2026-07-14: no
+        // information lost to fixed caps; the DD's weave pattern), grouped by
+        // story so ten outlets' versions of one release cost one step.
+        List<de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.PressReviewStat> allPress =
+                stats.world() == null ? List.of() : stats.world().pressReview();
         String header = (de ? "ABENDAUSGABE (Wetterbericht) vom "
                 : "EVENING EDITION (Wetterbericht), ") + today + "\n\n";
 
@@ -313,10 +345,16 @@ public class WeatherReportService {
         int written = 0;
         for (int idx = 0; idx < bodies.length; idx++) {
             long t0 = System.currentTimeMillis();
+            // Window sections weave their window's press stories item by item;
+            // Großwetterlage and Ausblick author from their shelves alone.
+            int window = idx - WeatherMaterial.SEC_MORNING;
+            List<de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.PressReviewStat> press =
+                    window >= 0 && window <= 2
+                            ? WeatherMaterial.pressInWindow(allPress, window) : List.of();
             try {
                 bodies[idx] = writeSection(model, sectionSys, challengeSys, reviseSys,
-                        headerWithThought(header, previousThought), headings.get(idx),
-                        shelves[idx], de);
+                        weaveSys, samestorySys, headerWithThought(header, previousThought),
+                        headings.get(idx), shelves[idx], press, de);
             } catch (Exception e) {
                 LOG.warn("Wetterbericht section '{}' failed: {}", headings.get(idx),
                         e.getMessage());
@@ -372,7 +410,10 @@ public class WeatherReportService {
      * literal.
      */
     private String writeSection(ChatModel model, String sectionSys, String challengeSys,
-            String reviseSys, String header, String heading, String shelf, boolean de) {
+            String reviseSys, String weaveSys, String samestorySys, String header,
+            String heading, String shelf,
+            List<de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.PressReviewStat> press,
+            boolean de) {
         if (WeatherMaterial.shelfEmpty(shelf)) return null;
 
         String body = null;
@@ -387,7 +428,10 @@ public class WeatherReportService {
             }
         }
         if (body == null) return null;
-        body = examineAndRepair(model, reviseSys, header, heading, shelf, de, body);
+        body = examineAndRepair(model, reviseSys, header, heading, shelf, de, body).body();
+        body = weavePress(model, weaveSys, reviseSys, samestorySys, header, heading, shelf,
+                press, de, body);
+        body = enforceLength(model, reviseSys, header, heading, shelf, body);
 
         String previousObjections = null;
         for (int round = 1; round <= CHALLENGE_ROUNDS_BACKSTOP; round++) {
@@ -413,7 +457,7 @@ public class WeatherReportService {
             }
             String before = body.strip();
             body = examineAndRepair(model, reviseSys, header, heading, shelf, de,
-                    revised.strip());
+                    revised.strip()).body();
             if (body.strip().equals(before)) {
                 LOG.info("Wetterbericht section '{}': revision changed nothing — converged.",
                         heading);
@@ -430,15 +474,308 @@ public class WeatherReportService {
     }
 
     /**
+     * The press weave loop — the DD's weave pattern on the evening edition
+     * (user mandate 2026-07-14: nothing lost to fixed caps; the model
+     * considers every article INDIVIDUALLY and works it in iteratively, each
+     * step examined afterwards). Items are grouped by story first (ten
+     * outlets' versions of one release = ONE step — the DD wave-5 lesson
+     * against quadratic churn). A step that returns the standing text
+     * verbatim costs nothing further; a changed body goes through the
+     * deterministic examiner against the shelf PLUS the story (so the
+     * story's own figures reconcile).
+     */
+    private String weavePress(ChatModel model, String weaveSys, String reviseSys,
+            String samestorySys, String header, String heading, String shelf,
+            List<de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.PressReviewStat> press,
+            boolean de, String body) {
+        if (press == null || press.isEmpty() || body == null) return body;
+        List<List<de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.PressReviewStat>> groups =
+                groupStories(press);
+        LOG.info("Wetterbericht section '{}': weaving {} press stories ({} items).",
+                heading, groups.size(), press.size());
+        int step = 0;
+        int skipped = 0;
+        ChatModel arbiter = brain.getAgentModel();
+        List<String> wovenStories = new ArrayList<>();
+        for (var group : groups) {
+            step++;
+            if (step > WEAVE_GROUPS_BACKSTOP) {
+                LOG.warn("Wetterbericht section '{}': weave hit the {}-story runaway backstop"
+                        + " — {} stories not woven.", heading, WEAVE_GROUPS_BACKSTOP,
+                        groups.size() - WEAVE_GROUPS_BACKSTOP);
+                break;
+            }
+            String story = pressStoryBlock(group);
+            try {
+                // Same-story gate, the DD's arbiter pattern verbatim: token
+                // similarity to an ALREADY WOVEN story is only the SUSPICION —
+                // the arbiter reads both and rules re-spin vs own news value.
+                // A ruled re-spin is never read out individually (user mandate
+                // 2026-07-14, ported from the DD) — the weave step is saved.
+                String suspect = mostSimilarWoven(story, wovenStories);
+                if (suspect != null
+                        && sameStoryVerdict(arbiter, samestorySys, suspect, story)) {
+                    skipped++;
+                    LOG.info("Wetterbericht section '{}' weave step {}: arbiter ruled the "
+                            + "story ({} item(s)) a re-spin of an already woven one — skipped.",
+                            heading, step, group.size());
+                    continue;
+                }
+                String fixed = header + "SECTION: ## " + heading + "\n\nSTANDING TEXT:\n" + body
+                        + "\n\nPRESS STORY of this window (work in or return unchanged):\n";
+                String reply = clean(gateway.chat(model, weaveSys,
+                        fixed + budgeted(story, weaveSys.length() + fixed.length())));
+                if (reply == null || reply.isBlank()) continue;
+                wovenStories.add(story);
+                if (reply.strip().equals(body.strip())) continue;
+                Repair repaired = examineAndRepair(model, reviseSys, header, heading,
+                        shelf + "\n\n" + story, de, reply.strip());
+                body = repaired.body();
+                // RE-KNOCK (the DD's examiner-as-trigger, landed 2026-07-14
+                // late and ported same night): a HARD figure/date finding on a
+                // weave step whose story was only known by title+teaser means
+                // the figure may live in the article BODY the desk never read.
+                // Fetch the story's full-text digests NOW (the shared
+                // NewsDigester session cache makes repeats free — DD/wire/
+                // weather read the same instance) and weave the story ONCE
+                // more with the enriched material. One re-knock per story.
+                if (repaired.hadHard()) {
+                    String extra = reknockDigests(group);
+                    if (!extra.isEmpty()) {
+                        LOG.info("Wetterbericht section '{}' weave step {}: hard finding — "
+                                + "re-knock with full-text digests.", heading, step);
+                        String enriched = story + "\n" + extra;
+                        // Rebuilt with the CURRENT standing text — the first
+                        // weave's integration must survive the re-knock.
+                        String refixed = header + "SECTION: ## " + heading
+                                + "\n\nSTANDING TEXT:\n" + body
+                                + "\n\nPRESS STORY of this window (work in or return unchanged):\n";
+                        String rewoven = clean(gateway.chat(model, weaveSys,
+                                refixed + budgeted(enriched, weaveSys.length() + refixed.length())));
+                        if (rewoven != null && !rewoven.isBlank()) {
+                            body = examineAndRepair(model, reviseSys, header, heading,
+                                    shelf + "\n\n" + enriched, de, rewoven.strip()).body();
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                LOG.warn("Wetterbericht section '{}' weave step {} failed: {}",
+                        heading, step, e.getMessage());
+            }
+        }
+        if (skipped > 0) {
+            LOG.info("Wetterbericht section '{}': {} of {} stories ruled re-spins by the "
+                    + "arbiter.", heading, skipped, groups.size());
+        }
+        return body;
+    }
+
+    /** At most this many full-text reads per re-knocked story (the DD's bound). */
+    private static final int MAX_REKNOCK_DIGESTS = 3;
+
+    /**
+     * The re-knock's full-text fetch: the story members' article digests via
+     * the SHARED {@link NewsDigester} (same instance and session cache as the
+     * wire and the KI-DD — an article is only ever read once house-wide).
+     * Empty when no member carries a link, the digester is absent, or every
+     * read misses (paywall/consent shell).
+     */
+    private String reknockDigests(
+            List<de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.PressReviewStat> group) {
+        NewsDigester digester = newsDigester;
+        if (digester == null) return "";
+        StringBuilder extra = new StringBuilder(256);
+        int fetched = 0;
+        for (var item : group) {
+            if (fetched >= MAX_REKNOCK_DIGESTS) break;
+            if (item.link() == null || item.link().isBlank()) continue;
+            String digest = digester.digestNow(item.link());
+            if (digest == null || digest.isBlank()) continue;
+            extra.append("  - ").append(digest.replace('\n', ' ').strip()).append('\n');
+            fetched++;
+        }
+        if (extra.length() == 0) return "";
+        return "REQUESTED FULL-TEXT DIGESTS (the desk asked for the missing sources):\n" + extra;
+    }
+
+    /**
+     * The already-woven story most similar to the candidate — null when none
+     * crosses the suspicion threshold (then no arbiter call is spent). The
+     * DD's {@code mostSimilarWoven} verbatim, weather-typed.
+     */
+    private static String mostSimilarWoven(String candidate, List<String> wovenStories) {
+        Set<String> candidateWords = storyWords(candidate);
+        String best = null;
+        double bestScore = 0;
+        for (String prior : wovenStories) {
+            double s = jaccard(candidateWords, storyWords(prior));
+            if (s > bestScore) {
+                bestScore = s;
+                best = prior;
+            }
+        }
+        return bestScore >= WEAVE_SUSPICION_SIMILARITY ? best : null;
+    }
+
+    /**
+     * The arbiter's same-story verdict on a suspicious weave candidate — the
+     * DD's {@code sameStoryVerdict} verbatim (same prompt, same fail-open:
+     * a whiffed call weaves the story; losing coverage is the worse error).
+     */
+    private boolean sameStoryVerdict(ChatModel arbiter, String prompt, String woven,
+            String candidate) {
+        if (arbiter == null) return false;
+        try {
+            String reply = gateway.chat(arbiter, prompt,
+                    "WOVEN SOURCE:\n" + woven + "\n\nNEW CANDIDATE:\n" + candidate);
+            return reply != null && DUPLICATE_TRUE.matcher(reply).find();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static final Pattern DUPLICATE_TRUE =
+            Pattern.compile("\"duplicate\"\\s*:\\s*true");
+
+    /**
+     * A candidate this token-similar to an ALREADY WOVEN story is a SUSPICION,
+     * never a verdict (the DD's calibration: the mechanical check is the smoke
+     * detector, the AI the judge).
+     */
+    private static final double WEAVE_SUSPICION_SIMILARITY = 0.35;
+
+    /** One story group rendered as the weave step's material block. */
+    static String pressStoryBlock(
+            List<de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.PressReviewStat> group) {
+        StringBuilder sb = new StringBuilder("PRESS STORY (attributed — the press's reading):");
+        for (var p : group) {
+            sb.append("\n- ");
+            if (p.time() != null) sb.append(p.time()).append(' ');
+            sb.append('[').append(p.source()).append("] ").append(p.title());
+            if (p.teaser() != null && !p.teaser().isBlank()) {
+                sb.append(" — ").append(p.teaser().strip());
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Deterministic story grouping — the DD's {@code groupStoryBlocks}
+     * mechanics: greedy with TRANSITIVE chaining (a headline joins the first
+     * group where ANY member reaches the similarity, so a story chain A~B~C
+     * folds even when A and C differ), tokens diacritics-normalized, generic
+     * market words dropped (they would glue unrelated headlines together).
+     * Order kept — a group sits at its first member's position, no item is
+     * ever dropped.
+     */
+    static List<List<de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.PressReviewStat>>
+            groupStories(List<de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.PressReviewStat> press) {
+        List<List<de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.PressReviewStat>> groups =
+                new ArrayList<>();
+        List<List<Set<String>>> groupTokens = new ArrayList<>();
+        for (var item : press) {
+            Set<String> words = storyWords(item.title());
+            int home = -1;
+            outer:
+            for (int g = 0; g < groups.size(); g++) {
+                for (Set<String> member : groupTokens.get(g)) {
+                    if (jaccard(words, member) >= STORY_GROUP_SIMILARITY) {
+                        home = g;
+                        break outer;
+                    }
+                }
+            }
+            if (home < 0) {
+                groups.add(new ArrayList<>(List.of(item)));
+                groupTokens.add(new ArrayList<>(List.of(words)));
+            } else {
+                groups.get(home).add(item);
+                groupTokens.get(home).add(words);
+            }
+        }
+        return groups;
+    }
+
+    /** Title token-Jaccard at or above this = the same story re-reported (DD calibration). */
+    private static final double STORY_GROUP_SIMILARITY = 0.5;
+
+    /** Tokens every market headline carries — they say nothing about the story. */
+    private static final Set<String> GENERIC_PRESS_TOKENS = Set.of(
+            "stock", "stocks", "market", "markets", "shares", "aktie", "aktien",
+            "borse", "boerse", "wall", "street", "today", "heute");
+
+    private static Set<String> storyWords(String text) {
+        Set<String> out = new HashSet<>();
+        if (text == null) return out;
+        String normalized = java.text.Normalizer.normalize(
+                text.toLowerCase(Locale.ROOT), java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "");
+        for (String w : normalized.split("[^\\p{L}\\p{N}]+")) {
+            if (w.length() >= 3 && !GENERIC_PRESS_TOKENS.contains(w)) out.add(w);
+        }
+        return out;
+    }
+
+    private static double jaccard(Set<String> a, Set<String> b) {
+        if (a.isEmpty() || b.isEmpty()) return 0;
+        int inter = 0;
+        for (String w : a) {
+            if (b.contains(w)) inter++;
+        }
+        return (double) inter / (a.size() + b.size() - inter);
+    }
+
+    /**
+     * The length gate AFTER the weave loop, BEFORE the challenge: the weave
+     * grows the section faster than per-step revisions cut it (live smoke 2:
+     * 1105 → 1661 chars over the morning window, and the challenger then
+     * burned its rounds on the same length objection into the backstop). ONE
+     * focused revise call asks for the cut; if the model still won't, whole
+     * sentences are dropped from the END deterministically — the load-bearing
+     * story leads a forecast paragraph, the tail is the weakest material.
+     */
+    private String enforceLength(ChatModel model, String reviseSys, String header,
+            String heading, String shelf, String body) {
+        if (body == null || body.strip().length() <= MAX_SECTION_CHARS) return body;
+        String objection = "E: \"" + headOf(body) + "\" — section over the one-short-paragraph"
+                + " contract (" + body.strip().length()
+                + " chars) — keep only the load-bearing story, cut to under "
+                + MAX_SECTION_CHARS + " characters";
+        String revised = revise(model, reviseSys, header, heading, body, shelf, objection);
+        if (revised != null && !revised.isBlank()
+                && revised.strip().length() <= MAX_SECTION_CHARS) {
+            return revised.strip();
+        }
+        String base = revised != null && !revised.isBlank()
+                && revised.strip().length() < body.strip().length()
+                ? revised.strip() : body.strip();
+        StringBuilder cut = new StringBuilder();
+        for (String sentence : DeepDiveFactCheck.sentences(base)) {
+            if (cut.length() > 0 && cut.length() + sentence.length() + 1 > MAX_SECTION_CHARS) break;
+            if (cut.length() > 0) cut.append(' ');
+            cut.append(sentence.strip());
+        }
+        String out = cut.length() >= MIN_SECTION_CHARS ? cut.toString()
+                : base.substring(0, Math.min(base.length(), MAX_SECTION_CHARS)).strip();
+        LOG.info("Wetterbericht section '{}': deterministic length cut {} -> {} chars.",
+                heading, base.length(), out.length());
+        return out;
+    }
+
+    /**
      * The deterministic examiner cycle (the DD's {@code examineAndRepair}):
      * inspect against the shelf, let the author fix, re-inspect, and remove
      * the sentences of hard figure/date survivors — a lost sentence beats a
      * spliced figure in the evening edition.
      */
-    private String examineAndRepair(ChatModel model, String reviseSys, String header,
+    /** One examiner cycle's outcome: the repaired body plus whether HARD findings occurred. */
+    private record Repair(String body, boolean hadHard) {}
+
+    private Repair examineAndRepair(ChatModel model, String reviseSys, String header,
             String heading, String material, boolean de, String body) {
         List<DeepDiveFactCheck.Objection> objections = inspectSection(body, material, de);
-        if (objections.isEmpty()) return body;
+        if (objections.isEmpty()) return new Repair(body, false);
+        boolean anyHard = objections.stream().anyMatch(DeepDiveFactCheck.Objection::hard);
         LOG.info("Wetterbericht section '{}': examiner raised {} objection(s): {}",
                 heading, objections.size(),
                 objections.stream().map(o -> o.kind() + " " + o.problem()).toList());
@@ -448,12 +785,15 @@ public class WeatherReportService {
         List<DeepDiveFactCheck.Objection> hard = inspectSection(body, material, de).stream()
                 .filter(DeepDiveFactCheck.Objection::hard).toList();
         if (!hard.isEmpty()) {
+            anyHard = true;
             String cut = DeepDiveFactCheck.removeOffendingSentences(body, hard);
             LOG.info("Wetterbericht section '{}': {} unverifiable figure sentence(s) removed "
                     + "({} -> {} chars).", heading, hard.size(), body.length(), cut.length());
             body = cut;
         }
-        return DeepDiveFactCheck.scrubNonMarkerBrackets(DeepDiveFactCheck.scrubResidue(body));
+        return new Repair(
+                DeepDiveFactCheck.scrubNonMarkerBrackets(DeepDiveFactCheck.scrubResidue(body)),
+                anyHard);
     }
 
     /**
@@ -567,7 +907,12 @@ public class WeatherReportService {
         return out;
     }
 
-    /** What an empty window honestly reads like — never a model call. */
+    /**
+     * What an empty window honestly reads like — never a model call. Since the
+     * Reddit-independence cut a window shelf also carries press/calendar/
+     * sector material, so this literal only prints when EVERY source of the
+     * window came up empty — it must not blame the cage alone.
+     */
     static String honestLiteral(int section, boolean de) {
         if (section == WeatherMaterial.SEC_OUTLOOK) {
             return de ? "Für morgen liegt nichts auf dem Kalender."
@@ -577,8 +922,8 @@ public class WeatherReportService {
             return de ? "Der Tag trug nicht genug Material für eine Großwetterlage."
                     : "The day carried too little material for a big picture.";
         }
-        return de ? "Der Käfig blieb in diesem Fenster still."
-                : "The cage stayed quiet in this window.";
+        return de ? "Für dieses Fenster erreichte den Desk kein Material."
+                : "No material reached the desk in this window.";
     }
 
     /**

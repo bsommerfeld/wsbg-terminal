@@ -74,7 +74,9 @@ final class WeatherCharts {
         addIfPresent(out, depthFigure(w == null ? List.of() : w.depth()));
         addIfPresent(out, moversFigure(w == null ? List.of() : w.movers()));
         addIfPresent(out, socialFigure(w == null ? List.of() : w.social()));
+        addIfPresent(out, hazardsFigure(w == null ? List.of() : w.hazards()));
         addIfPresent(out, outlookFigure(w == null ? List.of() : w.outlook()));
+        addIfPresent(out, worldWeatherFigure(w == null ? List.of() : w.worldWeather()));
         addIfPresent(out, moonFigure(w == null ? null : w.moon()));
         return out;
     }
@@ -408,6 +410,149 @@ final class WeatherCharts {
         return new ChartStat(SEC_OUTLOOK,
                 de ? "Der morgige Kalender" : "Tomorrow's board",
                 "ForexFactory · NASDAQ", svg.toString());
+    }
+
+    // ---- 5b. the LITERAL world weather over the trading map — Ausblick ----------
+
+    /**
+     * The sky over the market-relevant places as a tile strip WITH drawn
+     * weather glyphs (user mandate 2026-07-14: "Wetter können wir PERFEKT in
+     * Diagrammen darstellen") — each tile: glyph, current temperature, place,
+     * role, tomorrow's range. Deterministic from the frozen Open-Meteo leg.
+     */
+    private ChartStat worldWeatherFigure(
+            List<de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.PlaceWeatherStat> places) {
+        List<de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.PlaceWeatherStat> rows =
+                places == null ? List.of()
+                        : places.stream().filter(p -> p.tempC() != null).toList();
+        if (rows.size() < 3) return null;
+        if (rows.size() > 8) rows = rows.subList(0, 8);
+
+        int cols = Math.min(rows.size(), 4);
+        int rowCount = (rows.size() + cols - 1) / cols;
+        int tileH = 72, padT = 6;
+        int h = padT + rowCount * tileH;
+        double colW = (double) W / cols;
+        StringBuilder svg = open(h);
+        for (int i = 0; i < rows.size(); i++) {
+            var p = rows.get(i);
+            double x = (i % cols) * colW + 6;
+            double y = padT + (i / cols) * tileH;
+            weatherGlyph(svg, x + 12, y + 22, p.word());
+            text(svg, x + 30, y + 28, "start", 16, INK,
+                    fmt(p.tempC(), 0) + " °C", true);
+            text(svg, x, y + 44, "start", 10, INK, truncate(p.place(), 16), true);
+            StringBuilder sub = new StringBuilder();
+            if (p.role() != null && !p.role().isBlank()) sub.append(p.role());
+            text(svg, x, y + 56, "start", 9, MUTE, truncate(sub.toString(), 22), false);
+            if (p.tomorrowMaxC() != null) {
+                String tm = (de ? "morgen bis " : "tomorrow to ") + fmt(p.tomorrowMaxC(), 0)
+                        + " °C" + (p.tomorrowWord() != null ? ", " + p.tomorrowWord() : "");
+                text(svg, x, y + 67, "start", 9, MUTE, truncate(tm, 24), false);
+            }
+        }
+        svg.append("</svg>");
+        return new ChartStat(SEC_OUTLOOK,
+                de ? "Weltwetter über den Handelsplätzen" : "World weather over the trading map",
+                "Open-Meteo", svg.toString());
+    }
+
+    /** A small drawn condition glyph centered at (cx, cy) — sun, cloud, rain, snow, fog, bolt. */
+    private static void weatherGlyph(StringBuilder svg, double cx, double cy, String word) {
+        String w = word == null ? "" : word;
+        String sun = "var(--ddc-sun,#c99a1e)";
+        switch (w) {
+            case "klar", "heiter" -> {
+                svg.append("<circle cx=\"").append(r1(cx)).append("\" cy=\"").append(r1(cy))
+                        .append("\" r=\"6\" fill=\"").append(sun).append("\"/>");
+                for (int a = 0; a < 360; a += 45) {
+                    double rad = Math.toRadians(a);
+                    line(svg, cx + Math.cos(rad) * 8.5, cy + Math.sin(rad) * 8.5,
+                            cx + Math.cos(rad) * 11.5, cy + Math.sin(rad) * 11.5, sun, 2);
+                }
+                if ("heiter".equals(w)) cloudShape(svg, cx + 4, cy + 4, MUTE, 0.8);
+            }
+            case "Nebel" -> {
+                for (int i = 0; i < 3; i++) {
+                    line(svg, cx - 9, cy - 4 + i * 5, cx + 9, cy - 4 + i * 5, MUTE, 2);
+                }
+            }
+            case "Regen", "Niesel", "Schauer" -> {
+                cloudShape(svg, cx, cy - 2, MUTE, 1);
+                for (int i = -1; i <= 1; i++) {
+                    line(svg, cx + i * 5.5, cy + 6, cx + i * 5.5 - 2, cy + 11, S1, 2);
+                }
+            }
+            case "Schnee", "Schneeschauer" -> {
+                cloudShape(svg, cx, cy - 2, MUTE, 1);
+                for (int i = -1; i <= 1; i++) {
+                    text(svg, cx + i * 6, cy + 12, "middle", 8, S1, "✳", false);
+                }
+            }
+            case "Gewitter" -> {
+                cloudShape(svg, cx, cy - 2, MUTE, 1);
+                svg.append("<path d=\"M ").append(r1(cx + 1)).append(' ').append(r1(cy + 4))
+                        .append(" L ").append(r1(cx - 3)).append(' ').append(r1(cy + 10))
+                        .append(" L ").append(r1(cx)).append(' ').append(r1(cy + 10))
+                        .append(" L ").append(r1(cx - 2)).append(' ').append(r1(cy + 15))
+                        .append(" L ").append(r1(cx + 4)).append(' ').append(r1(cy + 8))
+                        .append(" L ").append(r1(cx + 1)).append(' ').append(r1(cy + 8))
+                        .append(" Z\" fill=\"").append(NEG).append("\"/>");
+            }
+            default -> cloudShape(svg, cx, cy, MUTE, 1);
+        }
+    }
+
+    /** A simple two-lobe cloud, filled. */
+    private static void cloudShape(StringBuilder svg, double cx, double cy, String fill,
+            double scale) {
+        double s = scale;
+        svg.append("<circle cx=\"").append(r1(cx - 4 * s)).append("\" cy=\"").append(r1(cy + 1))
+                .append("\" r=\"").append(r1(4.5 * s)).append("\" fill=\"").append(fill).append("\"/>")
+                .append("<circle cx=\"").append(r1(cx + 2 * s)).append("\" cy=\"").append(r1(cy - 2 * s))
+                .append("\" r=\"").append(r1(5.5 * s)).append("\" fill=\"").append(fill).append("\"/>")
+                .append("<rect x=\"").append(r1(cx - 7 * s)).append("\" y=\"").append(r1(cy))
+                .append("\" width=\"").append(r1(15 * s)).append("\" height=\"").append(r1(5 * s))
+                .append("\" rx=\"2.5\" fill=\"").append(fill).append("\"/>");
+    }
+
+    // ---- 4c. the hazards board (storms / quakes / US aviation) — Abend -----------
+
+    /**
+     * The physical world's disruption board: severity dot, kind chip, event
+     * text — NHC storms, significant quakes, FAA ground stops/delays. The
+     * user's "Luftverkehr in Bildern": the airline-sector disruption state at
+     * a glance.
+     */
+    private ChartStat hazardsFigure(
+            List<de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.HazardStat> hazards) {
+        if (hazards == null || hazards.isEmpty()) return null;
+        List<de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.HazardStat> rows =
+                hazards.size() > 8 ? hazards.subList(0, 8) : hazards;
+
+        int rowH = 24, padT = 10;
+        int h = padT + rows.size() * rowH;
+        StringBuilder svg = open(h);
+        for (int i = 0; i < rows.size(); i++) {
+            var hz = rows.get(i);
+            double y = padT + i * rowH + 14;
+            String tone = "HIGH".equalsIgnoreCase(hz.severity()) ? NEG : MUTE;
+            svg.append("<circle cx=\"10\" cy=\"").append(r1(y - 4))
+                    .append("\" r=\"4\" fill=\"").append(tone).append("\"/>");
+            String kind = switch (hz.kind() == null ? "" : hz.kind()) {
+                case "STORM" -> de ? "Sturm" : "storm";
+                case "QUAKE" -> de ? "Beben" : "quake";
+                case "AVIATION" -> de ? "Luftverkehr" : "aviation";
+                default -> hz.kind() == null ? "" : hz.kind().toLowerCase(Locale.ROOT);
+            };
+            text(svg, 22, y, "start", 10, MUTE, kind.toUpperCase(Locale.ROOT), true);
+            text(svg, 110, y, "start", 11, INK, truncate(hz.text(), 66), false);
+        }
+        svg.append("</svg>");
+        return new ChartStat(SEC_EVENING,
+                de ? "Gefahrenlage (Stürme · Beben · US-Luftverkehr)"
+                        : "Hazards (storms · quakes · US aviation)",
+                "NHC · USGS · FAA", svg.toString());
     }
 
     // ---- 6. the moon — Randnotizen ----------------------------------------------

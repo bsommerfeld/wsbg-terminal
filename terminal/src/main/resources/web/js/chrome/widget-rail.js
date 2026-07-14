@@ -67,17 +67,4 @@ export function initWidgetRail(socket) {
     syncLines();
   }
 
-  // ---- Reddit: Schlagzeilen settings (config-backed, mirrors settings view) ----
-  const images = document.querySelector('.js-rail-analyze-images');
-  if (images) {
-    images.addEventListener('change',
-      () => socket.send('settings', { command: 'set', key: 'analyzeImages', value: images.checked }));
-    // settings.js re-broadcasts every settings snapshot it receives on the
-    // socket; the backend echoes after each change, so both checkboxes
-    // (settings view + rail) stay in lock-step.
-    window.addEventListener('wsbg:settings', e => {
-      const p = e.detail;
-      if (p && typeof p.analyzeImages === 'boolean') images.checked = p.analyzeImages;
-    });
-  }
 }

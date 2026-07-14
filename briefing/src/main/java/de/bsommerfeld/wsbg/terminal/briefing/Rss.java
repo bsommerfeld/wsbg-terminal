@@ -102,8 +102,18 @@ final class Rss {
             return java.time.OffsetDateTime.parse(t).toInstant();
         } catch (Exception ignored) {
         }
+        try {
+            // investing.com emits a zone-less "2026-07-14 17:54:56" — GMT in
+            // practice (matches the feed's lastBuildDate against wall clock).
+            return java.time.LocalDateTime.parse(t, ZONELESS)
+                    .atZone(java.time.ZoneOffset.UTC).toInstant();
+        } catch (Exception ignored) {
+        }
         return null;
     }
+
+    private static final DateTimeFormatter ZONELESS =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     /** Feeds embed teaser HTML in descriptions; the briefing wants plain text. */
     static String stripHtml(String s) {

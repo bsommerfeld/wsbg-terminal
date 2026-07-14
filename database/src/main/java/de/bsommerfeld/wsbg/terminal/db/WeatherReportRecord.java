@@ -180,7 +180,11 @@ public record WeatherReportRecord(
             List<WorldEventStat> worldEvents,
             List<EventReviewStat> eventReviews,
             List<CbDateStat> cbDates,
-            List<TopNewsStat> topNews) {
+            List<TopNewsStat> topNews,
+            List<PressReviewStat> pressReview,
+            List<PlaceWeatherStat> worldWeather,
+            List<HazardStat> hazards,
+            List<TickerNewsStat> tickerNews) {
 
         public WorldStats {
             sectors = sectors == null ? List.of() : List.copyOf(sectors);
@@ -204,6 +208,73 @@ public record WeatherReportRecord(
             eventReviews = eventReviews == null ? List.of() : List.copyOf(eventReviews);
             cbDates = cbDates == null ? List.of() : List.copyOf(cbDates);
             topNews = topNews == null ? List.of() : List.copyOf(topNews);
+            pressReview = pressReview == null ? List.of() : List.copyOf(pressReview);
+            worldWeather = worldWeather == null ? List.of() : List.copyOf(worldWeather);
+            hazards = hazards == null ? List.of() : List.copyOf(hazards);
+            tickerNews = tickerNews == null ? List.of() : List.copyOf(tickerNews);
+        }
+
+        /** Pre-ticker-news shape (2026-07-14 late) — kept for tests/old lines. */
+        public WorldStats(List<IndexStat> sectors, List<IndexStat> overnight,
+                List<RateStat> rates, RoomPulse pulse, List<AdhocStat> adhocs,
+                List<AnalystActionStat> analystActions, List<MacroStat> macroActuals,
+                List<MacroStat> macroEvents, String pressDigest, List<MoverStat> movers,
+                PutCallStat putCall, List<SocialStat> social, CryptoStat crypto,
+                List<BetStat> bets, List<ShortVolStat> shortVolume, List<DepthStat> depth,
+                List<WatchlistStat> watchlist, List<String> deepDives,
+                List<OutlookStat> outlook, PegelStat pegel, Double usDebtUsd,
+                ExchangeWeatherStat exchangeWeather, MoonStat moon,
+                List<DaypartStat> dayparts, List<EconOutcomeStat> econOutcomes,
+                List<WorldEventStat> worldEvents, List<EventReviewStat> eventReviews,
+                List<CbDateStat> cbDates, List<TopNewsStat> topNews,
+                List<PressReviewStat> pressReview, List<PlaceWeatherStat> worldWeather,
+                List<HazardStat> hazards) {
+            this(sectors, overnight, rates, pulse, adhocs, analystActions, macroActuals,
+                    macroEvents, pressDigest, movers, putCall, social, crypto, bets,
+                    shortVolume, depth, watchlist, deepDives, outlook, pegel, usDebtUsd,
+                    exchangeWeather, moon, dayparts, econOutcomes, worldEvents,
+                    eventReviews, cbDates, topNews, pressReview, worldWeather, hazards, null);
+        }
+
+        /** Pre-world-weather shape (2026-07-14 intra-day) — kept for tests/old lines. */
+        public WorldStats(List<IndexStat> sectors, List<IndexStat> overnight,
+                List<RateStat> rates, RoomPulse pulse, List<AdhocStat> adhocs,
+                List<AnalystActionStat> analystActions, List<MacroStat> macroActuals,
+                List<MacroStat> macroEvents, String pressDigest, List<MoverStat> movers,
+                PutCallStat putCall, List<SocialStat> social, CryptoStat crypto,
+                List<BetStat> bets, List<ShortVolStat> shortVolume, List<DepthStat> depth,
+                List<WatchlistStat> watchlist, List<String> deepDives,
+                List<OutlookStat> outlook, PegelStat pegel, Double usDebtUsd,
+                ExchangeWeatherStat exchangeWeather, MoonStat moon,
+                List<DaypartStat> dayparts, List<EconOutcomeStat> econOutcomes,
+                List<WorldEventStat> worldEvents, List<EventReviewStat> eventReviews,
+                List<CbDateStat> cbDates, List<TopNewsStat> topNews,
+                List<PressReviewStat> pressReview) {
+            this(sectors, overnight, rates, pulse, adhocs, analystActions, macroActuals,
+                    macroEvents, pressDigest, movers, putCall, social, crypto, bets,
+                    shortVolume, depth, watchlist, deepDives, outlook, pegel, usDebtUsd,
+                    exchangeWeather, moon, dayparts, econOutcomes, worldEvents,
+                    eventReviews, cbDates, topNews, pressReview, null, null);
+        }
+
+        /** Pre-press-review shape (2026-07-14 intra-day) — kept for tests/old lines. */
+        public WorldStats(List<IndexStat> sectors, List<IndexStat> overnight,
+                List<RateStat> rates, RoomPulse pulse, List<AdhocStat> adhocs,
+                List<AnalystActionStat> analystActions, List<MacroStat> macroActuals,
+                List<MacroStat> macroEvents, String pressDigest, List<MoverStat> movers,
+                PutCallStat putCall, List<SocialStat> social, CryptoStat crypto,
+                List<BetStat> bets, List<ShortVolStat> shortVolume, List<DepthStat> depth,
+                List<WatchlistStat> watchlist, List<String> deepDives,
+                List<OutlookStat> outlook, PegelStat pegel, Double usDebtUsd,
+                ExchangeWeatherStat exchangeWeather, MoonStat moon,
+                List<DaypartStat> dayparts, List<EconOutcomeStat> econOutcomes,
+                List<WorldEventStat> worldEvents, List<EventReviewStat> eventReviews,
+                List<CbDateStat> cbDates, List<TopNewsStat> topNews) {
+            this(sectors, overnight, rates, pulse, adhocs, analystActions, macroActuals,
+                    macroEvents, pressDigest, movers, putCall, social, crypto, bets,
+                    shortVolume, depth, watchlist, deepDives, outlook, pegel, usDebtUsd,
+                    exchangeWeather, moon, dayparts, econOutcomes, worldEvents,
+                    eventReviews, cbDates, topNews, null);
         }
 
         /** Pre-calendar-expansion shape (2026-07-13 intra-day) — kept for tests. */
@@ -370,6 +441,50 @@ public record WeatherReportRecord(
      * Press headlines found for one of the day's top data events (web search
      * at freeze time) — how the press read the number, attributed titles only.
      */
+    /**
+     * One timed general-press headline of the day (the market press review —
+     * CNBC, MarketWatch, WSJ, Investing.com, n-tv, Spiegel, Handelsblatt,
+     * WiWo): {@code time} is the local {@code HH:mm} it broke, so the report
+     * can attach a market move to its reported cause inside the right
+     * day-part window; {@code category} groups the desk
+     * (US_MARKETS/US_ECONOMY/US_TECH/DE).
+     */
+    public record PressReviewStat(String title, String teaser, String source,
+            String category, String time, String link) {
+
+        /** Pre-re-knock shape (no article link) — kept for old lines/tests. */
+        public PressReviewStat(String title, String teaser, String source,
+                String category, String time) {
+            this(title, teaser, source, category, time, null);
+        }
+    }
+
+    /**
+     * The literal sky over one market-relevant place (Open-Meteo — Houston is
+     * the oil coast, Chicago the grain belt, Rotterdam the TTF port):
+     * current temperature + condition word, wind, and tomorrow's range.
+     */
+    public record PlaceWeatherStat(String place, String role, Double tempC, String word,
+            Double windKmh, Double tomorrowMaxC, Double tomorrowMinC, String tomorrowWord) {
+    }
+
+    /**
+     * One physical-world hazard with a market shadow: {@code kind} STORM
+     * (NHC tropical systems), QUAKE (USGS M5.5+/PAGER), AVIATION (FAA ground
+     * stops/delays); {@code severity} HIGH/MEDIUM.
+     */
+    public record HazardStat(String kind, String text, String severity) {
+    }
+
+    /**
+     * One fresh press headline on one of the day's TOP tickers, pulled through
+     * the house's full news triangulation (the same 7-source aggregator the
+     * KI-DD reads): {@code time} local {@code HH:mm} when the item carries a
+     * timestamp, so it routes into its day-part window.
+     */
+    public record TickerNewsStat(String ticker, String title, String publisher, String time) {
+    }
+
     public record EventReviewStat(String event, List<String> headlines) {
 
         public EventReviewStat {

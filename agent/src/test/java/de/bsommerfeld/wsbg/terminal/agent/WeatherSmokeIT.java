@@ -62,6 +62,15 @@ class WeatherSmokeIT {
         // must carry real ARD top news, not just aggregates.
         collector.setTagesschauClient(
                 new de.bsommerfeld.wsbg.terminal.briefing.TagesschauClient());
+        // The 2026-07-14 legs ride the smoke live: the market press review is
+        // what the weave loop chews through (the uncap mandate's core), the
+        // world-weather/hazards legs feed the new shelves and figures.
+        collector.setMarketPressClient(
+                new de.bsommerfeld.wsbg.terminal.briefing.MarketPressClient());
+        collector.setWorldWeatherClient(
+                new de.bsommerfeld.wsbg.terminal.briefing.WorldWeatherClient());
+        collector.setGlobalHazardsClient(
+                new de.bsommerfeld.wsbg.terminal.briefing.GlobalHazardsClient());
 
         WeatherReportService svc = new WeatherReportService(brain, gate,
                 headlines, reports, collector, config, bus);

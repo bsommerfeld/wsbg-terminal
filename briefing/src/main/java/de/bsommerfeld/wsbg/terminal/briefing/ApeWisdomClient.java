@@ -83,7 +83,10 @@ public class ApeWisdomClient {
             for (JsonNode n : results) {
                 String ticker = text(n, "ticker");
                 if (ticker.isEmpty()) continue;
-                out.add(new SocialTicker(ticker, text(n, "name"),
+                // Names arrive HTML-escaped ("SPDR S&amp;P 500 ETF Trust" —
+                // live 14.07 report leak) — decoded here so no consumer
+                // ever prints an entity.
+                out.add(new SocialTicker(ticker, decodeEntities(text(n, "name")),
                         intOf(n, "mentions"), intOf(n, "upvotes"),
                         intOf(n, "rank"), intOf(n, "rank_24h_ago"), intOf(n, "mentions_24h_ago")));
             }
@@ -91,6 +94,18 @@ public class ApeWisdomClient {
             return List.of();
         }
         return out;
+    }
+
+    /** The handful of entities ApeWisdom actually emits; double-escapes unwind too. */
+    static String decodeEntities(String s) {
+        if (s == null || s.indexOf('&') < 0) return s;
+        String prev;
+        do {
+            prev = s;
+            s = s.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+                    .replace("&quot;", "\"").replace("&#39;", "'").replace("&nbsp;", " ");
+        } while (!s.equals(prev) && s.indexOf('&') >= 0);
+        return s;
     }
 
     private static String text(JsonNode n, String field) {

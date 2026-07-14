@@ -281,6 +281,17 @@ public class WeatherReportBridge {
                 "title", n.title(), "firstSentence", n.firstSentence(),
                 "time", n.time(), "ressort", n.ressort(),
                 "breaking", n.breaking() ? Boolean.TRUE : null));
+        putList(out, "pressReview", w.pressReview(), p -> map("title", p.title(),
+                "teaser", p.teaser(), "source", p.source(), "category", p.category(),
+                "time", p.time()));
+        putList(out, "worldWeather", w.worldWeather(), p -> map("place", p.place(),
+                "role", p.role(), "tempC", p.tempC(), "word", p.word(),
+                "windKmh", p.windKmh(), "tomorrowMaxC", p.tomorrowMaxC(),
+                "tomorrowMinC", p.tomorrowMinC(), "tomorrowWord", p.tomorrowWord()));
+        putList(out, "hazards", w.hazards(), h -> map("kind", h.kind(),
+                "text", h.text(), "severity", h.severity()));
+        putList(out, "tickerNews", w.tickerNews(), n -> map("ticker", n.ticker(),
+                "title", n.title(), "publisher", n.publisher(), "time", n.time()));
         return out;
     }
 
