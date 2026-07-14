@@ -20,11 +20,14 @@
         <module>lang-schwarz</module>
         <module>tradegate</module>
         <module>onvista</module>
+        <module>nasdaq</module>
         <module>consorsbank</module>
         <module>bundesanzeiger</module>
         <module>bafin</module>
         <module>google-news</module>
         <module>fool</module>
+        <module>fn-news</module>
+        <module>websearch</module>
         <module>briefing</module>
         <module>wallstreet-online</module>
         <module>source-api</module>
@@ -118,6 +121,11 @@
             </dependency>
             <dependency>
                 <groupId>de.bsommerfeld</groupId>
+                <artifactId>nasdaq</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
                 <artifactId>consorsbank</artifactId>
                 <version>${project.version}</version>
             </dependency>
@@ -139,6 +147,16 @@
             <dependency>
                 <groupId>de.bsommerfeld</groupId>
                 <artifactId>fool</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>fn-news</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>websearch</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
