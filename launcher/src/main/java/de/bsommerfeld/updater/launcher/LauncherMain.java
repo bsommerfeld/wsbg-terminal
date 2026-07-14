@@ -90,6 +90,13 @@ public final class LauncherMain {
         LauncherWindow window = new LauncherWindow();
         EnvironmentSetup envSetup = new EnvironmentSetup(appDir);
 
+        // Hardware check + model choice (backend only, no UI yet): probes the
+        // machine, logs + persists the recommendation for a future model-choice
+        // UI, and resolves the tag the setup script installs — the user's
+        // config.toml choice (agent.model-tag) or the managed default.
+        ModelSelection.Result modelChoice = ModelSelection.resolve(appDir, log);
+        envSetup.setReasoningModelTag(modelChoice.effectiveTag());
+
         // Ensures child processes (winget, ollama pull) are killed when the
         // launcher exits — not just on timeout. Without this, closing the
         // window leaves orphaned downloads consuming resources indefinitely.

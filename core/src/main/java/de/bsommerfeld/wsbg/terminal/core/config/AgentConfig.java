@@ -15,6 +15,16 @@ public class AgentConfig {
             + "The model choice is managed centrally; this stays fixed.")
     private String editorialModel = "REASONING_POWER";
 
+    @Key("agent.model-tag")
+    @Comment("Ollama model tag override for the one resident gemma4 model (gemma4:e2b..31b, "
+            + "-mlx twins on Apple Silicon). Empty = the managed default tier: gemma4:e4b, "
+            + "as gemma4:e4b-mlx on Apple Silicon. The launcher reads this key too and "
+            + "installs the matching model on the next start, so runtime and installed model "
+            + "stay in sync. Only gemma4-family tags are honored; anything else degrades to "
+            + "the default. Written by the future model-choice UI — the hardware "
+            + "recommendation lives in the launcher's hardware-recommendation.json.")
+    private String modelTag = "";
+
     @Key("agent.context-tokens")
     @Comment("Context window (num_ctx) in tokens for the editorial-agent + vision model. "
             + "Ollama silently defaults to 4096, which is tight for the agent's multi-cluster "
@@ -66,5 +76,38 @@ public class AgentConfig {
      */
     public Model resolveEditorialModel() {
         return Model.REASONING_POWER;
+    }
+
+    public String getModelTag() {
+        return modelTag;
+    }
+
+    public void setModelTag(String modelTag) {
+        this.modelTag = modelTag;
+    }
+
+    /**
+     * Resolves the concrete Ollama tag the one resident model runs as: the
+     * user's {@code agent.model-tag} choice when it names a gemma4-family tag,
+     * else the managed default — {@link Model#REASONING_POWER}, with the MLX
+     * build as the standard on Apple Silicon (mirrors the launcher's
+     * {@code ModelSelection}, so runtime and installed model agree without any
+     * handshake). Family-gated so a typo or foreign model name can never reach
+     * the model factory — the factory's own family fallback then still guards
+     * against a chosen tag that is not actually installed yet.
+     */
+    public String resolveModelTag() {
+        String tag = modelTag == null ? "" : modelTag.strip().toLowerCase();
+        if (tag.startsWith(Model.REASONING_POWER.getFamilyPrefix() + ":")) {
+            return tag;
+        }
+        String base = Model.REASONING_POWER.getModelName();
+        return isAppleSilicon() ? base + "-mlx" : base;
+    }
+
+    private static boolean isAppleSilicon() {
+        String os = System.getProperty("os.name", "").toLowerCase();
+        String arch = System.getProperty("os.arch", "").toLowerCase();
+        return os.contains("mac") && (arch.contains("aarch64") || arch.contains("arm64"));
     }
 }

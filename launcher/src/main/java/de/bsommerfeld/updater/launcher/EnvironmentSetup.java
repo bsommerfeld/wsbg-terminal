@@ -50,6 +50,13 @@ final class EnvironmentSetup {
     private final Duration idleTimeout;
     private final AtomicReference<Process> activeProcess = new AtomicReference<>();
 
+    /**
+     * Resolved model tag ({@link ModelSelection}) handed to the setup script via
+     * the {@code WSBG_REASONING_MODEL} env var. Null/blank = the script's own
+     * default (standalone script runs keep working without the launcher).
+     */
+    private String reasoningModelTag;
+
     EnvironmentSetup(Path appDirectory) {
         this(appDirectory, DEFAULT_IDLE_TIMEOUT);
     }
@@ -65,6 +72,11 @@ final class EnvironmentSetup {
      * shutdown hook to prevent orphaned child processes (e.g. winget, ollama
      * pull) from running indefinitely after the user closes the window.
      */
+    /** Sets the model tag the setup script should install (see {@link ModelSelection}). */
+    void setReasoningModelTag(String tag) {
+        this.reasoningModelTag = tag;
+    }
+
     void killActiveProcess() {
         Process p = activeProcess.getAndSet(null);
         if (p != null && p.isAlive()) {
@@ -94,6 +106,9 @@ final class EnvironmentSetup {
         outputConsumer.accept("Running environment setup", script.getFileName().toString());
 
         ProcessBuilder pb = scriptLocator.createProcessBuilder(script);
+        if (reasoningModelTag != null && !reasoningModelTag.isBlank()) {
+            pb.environment().put(ModelSelection.MODEL_ENV, reasoningModelTag);
+        }
         Process process = pb.start();
         activeProcess.set(process);
 

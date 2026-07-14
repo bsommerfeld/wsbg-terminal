@@ -21,7 +21,7 @@ import java.util.regex.Pattern;
 /**
  * Builds the three Ollama {@link ChatModel} instances the {@link AgentBrain} runs
  * on (extracted from {@code AgentBrain.initialize}). All three are the same resident
- * gemma4:e4b (same model name + num_ctx, so ONE loaded runner): the agent model
+ * gemma4 (same model name + num_ctx, so ONE loaded runner): the agent model
  * (subject extraction + judge calls), the schema-constrained compose model, and the
  * multimodal vision model. Also resolves the model name against the live Ollama tag
  * list, falling back to any installed model of the same family.
@@ -47,19 +47,19 @@ final class OllamaModelFactory {
     }
 
     /**
-     * Stands up all three model instances, all gemma4:e4b. One multimodal model
-     * serves both the editorial agent and vision; we do NOT use the gemma4:e4b-mlx
-     * build — its published Ollama tag is text-only (the vision encoder is stripped),
-     * so it would return "Please provide the image" placeholders that poison the
-     * report context. Sharing the same model name AND the same num_ctx means Ollama
+     * Stands up all model instances on the ONE resident gemma4. The concrete tag
+     * comes from {@link AgentConfig#resolveModelTag()} — the user's hardware-based
+     * choice (gemma4:e2b..31b, -mlx twins on Apple Silicon) or the managed default
+     * gemma4:e4b — and the same multimodal model serves both the editorial agent
+     * and vision. Sharing the same model name AND the same num_ctx means Ollama
      * keeps a single runner resident instead of two.
      */
     Models build(AgentConfig config) {
         Model agentModelEnum = config.resolveEditorialModel();
-        String agentName = resolveModel(agentModelEnum);
+        String agentName = resolveModel(config.resolveModelTag(), agentModelEnum.getFamilyPrefix());
 
-        Model visionModelEnum = Model.REASONING_POWER;
-        String visionName = resolveModel(visionModelEnum);
+        // One multimodal model serves vision too — never a second tag.
+        String visionName = agentName;
 
         // All non-streaming — the full response is returned as String.
         // Generous timeouts: the agent + tool-use can take a minute per round
@@ -235,9 +235,7 @@ final class OllamaModelFactory {
      * Verifies the target model exists in Ollama, falling back to any installed
      * model from the same family to prevent crashes.
      */
-    private String resolveModel(Model model) {
-        String target = model.getModelName();
-        String familyPrefix = model.getFamilyPrefix();
+    private String resolveModel(String target, String familyPrefix) {
         try {
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(baseUrl + "/api/tags")).GET().build();

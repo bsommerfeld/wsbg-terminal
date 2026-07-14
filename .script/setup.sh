@@ -27,10 +27,16 @@ OLLAMA_VERSION="0.24.0"
 
 # Models reconciled into our ISOLATED store (<appData>/ollama/models): section 3
 # installs/updates these to the latest registry build and removes anything else.
-# One multimodal gemma4:e4b serves agent + vision -- the single deployed model.
-# (The gemma4:e4b-mlx build is text-only -- no vision encoder -- so we avoid it.)
-REASONING_MODEL="gemma4:e4b"          # editorial agent + vision (multimodal)
-VISION_MODEL="gemma4:e4b"             # same model serves vision
+# ONE multimodal gemma4 tag serves agent + vision -- the single deployed model.
+# The launcher passes the resolved tag via WSBG_REASONING_MODEL (hardware check
+# + the user's config.toml choice live in ModelSelection there; valid tiers are
+# gemma4:e2b..31b, with the -mlx twins as the STANDARD on Apple Silicon). The
+# fallback below only applies to standalone script runs without the launcher
+# and mirrors that platform split.
+DEFAULT_MODEL="gemma4:e4b"
+[ "$(uname -s)" = "Darwin" ] && [ "$(uname -m)" = "arm64" ] && DEFAULT_MODEL="gemma4:e4b-mlx"
+REASONING_MODEL="${WSBG_REASONING_MODEL:-$DEFAULT_MODEL}"   # editorial agent + vision (multimodal)
+VISION_MODEL="$REASONING_MODEL"                             # same model serves vision
 
 # Private endpoint -- our instance binds here, NEVER the user's default 11434.
 OLLAMA_PORT="11500"
@@ -199,7 +205,7 @@ fi
 # checked against local state is the whole design; models are just the first
 # thing wired into it.
 DESIRED_MODELS=("$REASONING_MODEL")
-# Agent and vision share the one gemma4:e4b -- only add a distinct vision model
+# Agent and vision share the one gemma4 tag -- only add a distinct vision model
 # if a future config ever diverges them.
 [ "$VISION_MODEL" != "$REASONING_MODEL" ] && DESIRED_MODELS+=("$VISION_MODEL")
 
@@ -435,9 +441,13 @@ debug-mode = false
 ui-reddit-visible = true
 
 [agent]
-# Editorial agent reasoning model. REASONING_POWER (gemma4:e4b) - one
+# Editorial agent reasoning model. REASONING_POWER (gemma4) - one
 # multimodal model serving agent + vision. Managed centrally; leave as-is.
 agent.editorial-model = "REASONING_POWER"
+# Ollama model tag override (gemma4:e2b..31b, -mlx twins on Apple Silicon).
+# Empty = managed default. Set by the future model-choice UI; the launcher
+# reads it and installs the matching model on the next start.
+agent.model-tag = ""
 
 [reddit]
 # Add reddit settings here if needed
