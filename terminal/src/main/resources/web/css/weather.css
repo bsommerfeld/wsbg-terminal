@@ -727,13 +727,166 @@ html[data-theme="light"] .weather-figure {
 }
 .weather-thumb-chip .weather-pct { font-size: 30px; }
 
-/* The cloud glyphs inherit the shared stroke style of .glyph/.rail-logo
-   svgs; explicit here in case the shared rules key on specific classes. */
-.glyph-weather svg, .rail-logo-weather, .grid-hit-icon-weather {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.6;
-  stroke-linejoin: round;
-  stroke-linecap: round;
+/* The weather mark is a self-coloured SVG (golden sun peeking behind the
+   blue-white cloud — the EUR-USD/F&G inline-SVG pattern): fills and strokes
+   live as presentation attributes IN the markup, so CSS only sizes it.
+   Never force stroke/fill here — a CSS rule beats the attributes and greys
+   the mark out. */
+.glyph-weather svg { width: 22px; height: 22px; }
+.rail-logo-weather { width: 24px; height: 24px; }
+.grid-hit-icon-weather {
+  width: 34px; height: 34px;
+  filter: drop-shadow(0 2px 6px oklch(0 0 0 / .45));
 }
-.grid-hit-icon-weather { width: 34px; height: 34px; }
+
+/* ---- interactivity layer (2026-07-13): the whole report view answers the
+   cursor. Every animation here is ONE-SHOT and event-driven (OSR paint rule
+   — nothing loops while the user reads); hovers are plain state-driven
+   transitions. ---- */
+
+/* Forecast tiles double as section navigation. */
+.weather-cast[data-goto] { cursor: pointer; transition: transform .15s ease, border-color .15s ease, background .15s ease; }
+.weather-cast[data-goto]:hover {
+  transform: translateY(-2px);
+  border-color: var(--line);
+  background: var(--bg-hover);
+}
+.weather-cast[data-goto]:focus-visible { outline: 1px solid var(--amber); outline-offset: 2px; }
+
+/* One-shot pulse on a jump target (heading or section title). */
+@keyframes weather-flash-kf {
+  0% { color: var(--amber); }
+  100% { color: var(--mute); }
+}
+.weather-flash { animation: weather-flash-kf 1.2s ease-out 1; }
+
+/* Jump targets clear the sticky navigator when scrolled to. */
+.weather-text h2, .weather-section { scroll-margin-top: 44px; }
+
+/* The sticky section navigator above the day stats. */
+.weather-statnav {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 0;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line-soft);
+}
+.weather-statchip {
+  appearance: none;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  background: var(--bg-1);
+  color: var(--txt-2);
+  font: inherit;
+  font-size: 0.72em;
+  letter-spacing: .06em;
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: color .15s ease, border-color .15s ease, background .15s ease;
+}
+.weather-statchip:hover { color: var(--txt); border-color: var(--line); background: var(--bg-hover); }
+.weather-statchip.toggle { color: var(--mute); font-style: normal; margin-left: auto; }
+
+/* Collapsible stat sections: the title is the handle, the chevron the state. */
+.weather-section[data-key] > .weather-section-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  user-select: none;
+  transition: color .15s ease;
+}
+.weather-section[data-key] > .weather-section-title:hover { color: var(--txt); }
+.weather-section[data-key] > .weather-section-title:focus-visible { outline: 1px solid var(--amber); outline-offset: 2px; }
+.weather-sec-chev {
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg) translateY(-1px);
+  transition: transform .15s ease;
+  flex: none;
+}
+.weather-section.collapsed .weather-sec-chev { transform: rotate(-45deg); }
+.weather-section.collapsed .weather-section-body { display: none; }
+
+/* Sparkline hover: the value under the cursor, as a bubble on the tile. */
+.weather-idx { position: relative; }
+.weather-idx[data-spark] .weather-spark { cursor: crosshair; }
+.weather-spark-bubble {
+  position: absolute;
+  top: 30px;
+  transform: translateX(-50%);
+  padding: 2px 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--txt);
+  font-size: 0.72em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 3;
+  box-shadow: 0 2px 8px color-mix(in oklch, var(--mute-2) 25%, transparent);
+}
+
+/* Figures zoom into a lightbox. */
+.weather-figure { cursor: zoom-in; transition: border-color .15s ease; }
+.weather-figure:hover { border-color: var(--line); }
+@keyframes weather-lightbox-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.weather-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4vh 4vw;
+  background: color-mix(in oklch, var(--bg) 78%, transparent);
+  backdrop-filter: blur(3px);
+  cursor: zoom-out;
+  animation: weather-lightbox-in .18s ease-out 1;
+}
+.weather-lightbox-inner {
+  width: min(860px, 100%);
+  max-height: 100%;
+  overflow: auto;
+}
+.weather-lightbox-inner .weather-figure {
+  cursor: zoom-out;
+  margin: 0;
+  background: var(--bg);
+  box-shadow: 0 14px 44px color-mix(in oklch, var(--mute-2) 40%, transparent);
+}
+.weather-lightbox-inner .weather-figure svg { width: 100%; height: auto; }
+.weather-lightbox-hint {
+  margin-top: 8px;
+  text-align: center;
+  font-size: 0.74em;
+  color: var(--mute);
+}
+
+/* The moon row launches — once per click, then the DOM node is gone. */
+.js-weather-moon { cursor: pointer; }
+.js-weather-moon:hover .weather-plain-main { color: var(--txt); }
+.js-weather-moon:focus-visible { outline: 1px solid var(--amber); outline-offset: 2px; }
+@keyframes weather-rocket-kf {
+  0% { transform: translate(0, 0) rotate(-45deg); opacity: 1; }
+  70% { opacity: 1; }
+  100% { transform: translate(90px, -140px) rotate(-45deg); opacity: 0; }
+}
+.weather-rocket {
+  position: absolute;
+  display: inline-block;
+  margin-left: 8px;
+  animation: weather-rocket-kf .9s ease-in 1 forwards;
+  pointer-events: none;
+}
+.weather-plain.js-weather-moon { position: relative; }

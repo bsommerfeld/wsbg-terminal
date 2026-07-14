@@ -4,8 +4,11 @@ import de.bsommerfeld.wsbg.terminal.briefing.FnRssClient;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.AdhocStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.AnalystActionStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.BetStat;
+import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.CbDateStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.CryptoStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.DepthStat;
+import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.EconOutcomeStat;
+import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.EventReviewStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.IndexStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.MacroStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.MoverStat;
@@ -17,12 +20,17 @@ import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.SentimentStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.ShortVolStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.SocialStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.TickerStat;
+import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.TopNewsStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.TrendingCoin;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.WatchlistStat;
+import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.WorldEventStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.WorldStats;
 
+import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.function.Function;
 
 /**
  * Deterministic formatting of the frozen day stats into the labelled material
@@ -41,7 +49,194 @@ final class WeatherMaterial {
     /** Ceiling for the assembled stat blocks — the wire digest gets the rest of the budget. */
     static final int MAX_BLOCK_CHARS = 5500;
 
+    // Section ordinals of the forecast skeleton (must match WeatherCharts'
+    // anchors and the service's heading literals).
+    static final int SEC_PICTURE = 0;
+    static final int SEC_MORNING = 1;
+    static final int SEC_MIDDAY = 2;
+    static final int SEC_EVENING = 3;
+    static final int SEC_OUTLOOK = 4;
+    static final int SECTION_COUNT = 5;
+
     private WeatherMaterial() {
+    }
+
+    /**
+     * The Redaktion's section shelves (the KI-DD workspace pattern): each of
+     * the five forecast sections gets ONLY the material it may draw from —
+     * the window sections their own wire digest plus the disclosures, macro
+     * lines and analyst actions that fell into THAT window (by timestamp),
+     * the big picture the whole condensed day plus the day aggregates, the
+     * outlook strictly tomorrow's schedule plus the colour. Duplication
+     * across shelves is deliberate and free — every author call is
+     * independent. The DATE line gives the examiner today's ISO date so a
+     * written-out date in the prose can reconcile.
+     */
+    static String[] sectionShelves(WeatherStatsCollector.Stats stats, LocalDate today,
+            String wireMorning, String wireMidday, String wireEvening) {
+        WorldStats w = stats.world();
+        List<de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.DaypartStat> dayparts =
+                w == null ? List.of() : w.dayparts();
+        String date = "DATE: " + today + " (" + today.getDayOfWeek() + ")";
+
+        List<AdhocStat> adhocs = w == null ? List.of() : w.adhocs();
+        List<AnalystActionStat> analyst = w == null ? List.of() : w.analystActions();
+        List<MacroStat> actuals = w == null ? List.of() : w.macroActuals();
+        List<MacroStat> events = w == null ? List.of() : w.macroEvents();
+        List<EconOutcomeStat> outcomes = w == null ? List.of() : w.econOutcomes();
+
+        String[] shelves = new String[SECTION_COUNT];
+
+        // The big picture gets the day's AGGREGATES, deliberately NOT the wire
+        // digests — with the full day on its shelf the first live run recapped
+        // every story and the window sections then repeated it near-verbatim.
+        // The timeline's lead subjects + most-discussed carry the arc; the
+        // detail lives in the window sections.
+        StringBuilder picture = new StringBuilder(date);
+        append(picture, timelineBlock(dayparts));
+        append(picture, pulseBlock(w == null ? null : w.pulse()));
+        append(picture, worldEventsBlock(w == null ? List.of() : w.worldEvents()));
+        append(picture, topNewsBlock(w == null ? List.of() : w.topNews()));
+        append(picture, tickersBlock(stats.tickers()));
+        append(picture, marketsBlock(stats.indices()));
+        append(picture, ratesBlock(w == null ? List.of() : w.rates()));
+        append(picture, sentimentBlock(stats.sentiment(), w == null ? null : w.putCall()));
+        shelves[SEC_PICTURE] = picture.toString();
+
+        StringBuilder morning = new StringBuilder(date);
+        append(morning, windowLine(daypart(dayparts, "MORNING"), "morning"));
+        append(morning, wireBlock("this window (morning)", wireMorning));
+        append(morning, tickersBlock(stats.tickers()));
+        append(morning, adhocBlock(inWindow(adhocs, AdhocStat::time, 0, true)));
+        append(morning, macroBlock(inWindow(actuals, MacroStat::time, 0, true),
+                inWindow(events, MacroStat::time, 0, true)));
+        append(morning, econOutcomesBlock(inWindow(outcomes, EconOutcomeStat::time, 0, true)));
+        append(morning, analystBlock(inWindow(analyst, AnalystActionStat::time, 0, false)));
+        shelves[SEC_MORNING] = morning.toString();
+
+        StringBuilder midday = new StringBuilder(date);
+        append(midday, windowLine(daypart(dayparts, "MIDDAY"), "midday"));
+        append(midday, wireBlock("this window (midday)", wireMidday));
+        append(midday, marketsBlock(stats.indices()));
+        append(midday, analystBlock(inWindow(analyst, AnalystActionStat::time, 1, true)));
+        append(midday, adhocBlock(inWindow(adhocs, AdhocStat::time, 1, false)));
+        append(midday, macroBlock(inWindow(actuals, MacroStat::time, 1, false),
+                inWindow(events, MacroStat::time, 1, false)));
+        append(midday, econOutcomesBlock(inWindow(outcomes, EconOutcomeStat::time, 1, false)));
+        append(midday, depthBlock(w == null ? List.of() : w.depth()));
+        shelves[SEC_MIDDAY] = midday.toString();
+
+        StringBuilder evening = new StringBuilder(date);
+        append(evening, windowLine(daypart(dayparts, "EVENING"), "evening"));
+        append(evening, wireBlock("this window (evening)", wireEvening));
+        append(evening, adhocBlock(inWindow(adhocs, AdhocStat::time, 2, false)));
+        append(evening, macroBlock(inWindow(actuals, MacroStat::time, 2, false),
+                inWindow(events, MacroStat::time, 2, false)));
+        append(evening, econOutcomesBlock(inWindow(outcomes, EconOutcomeStat::time, 2, false)));
+        append(evening, eventReviewsBlock(w == null ? List.of() : w.eventReviews()));
+        append(evening, analystBlock(inWindow(analyst, AnalystActionStat::time, 2, false)));
+        append(evening, moversBlock(w == null ? List.of() : w.movers()));
+        append(evening, sectorsBlock(w == null ? List.of() : w.sectors()));
+        append(evening, shortVolumeBlock(w == null ? List.of() : w.shortVolume()));
+        append(evening, socialBlock(w == null ? List.of() : w.social()));
+        append(evening, cryptoBlock(w == null ? null : w.crypto()));
+        append(evening, betsBlock(w == null ? List.of() : w.bets()));
+        append(evening, sentimentBlock(stats.sentiment(), w == null ? null : w.putCall()));
+        append(evening, overnightBlock(w == null ? List.of() : w.overnight()));
+        append(evening, pressBlock(w == null ? null : w.pressDigest()));
+        append(evening, houseBlock(w == null ? List.of() : w.watchlist(),
+                w == null ? List.of() : w.deepDives()));
+        shelves[SEC_EVENING] = evening.toString();
+
+        StringBuilder outlook = new StringBuilder(date);
+        String outlookBlock = outlookBlock(w == null ? List.of() : w.outlook());
+        String cbBlock = cbDatesBlock(w == null ? List.of() : w.cbDates());
+        if (!cbBlock.isEmpty()) {
+            outlookBlock = outlookBlock.isEmpty() ? cbBlock : outlookBlock + "\n\n" + cbBlock;
+        }
+        String colourBlock = colourBlock(w);
+        if (!outlookBlock.isEmpty() || !colourBlock.isEmpty()) {
+            // Tomorrow's ISO date, so a written-out "am 14. Juli 2026" can
+            // reconcile — the first live run's outlook died on a DATE
+            // objection because only TODAY's date was on the shelf.
+            LocalDate tomorrow = today.plusDays(1);
+            append(outlook, "TOMORROW'S DATE: " + tomorrow + " (" + tomorrow.getDayOfWeek() + ")");
+            append(outlook, outlookBlock);
+            append(outlook, colourBlock);
+        }
+        shelves[SEC_OUTLOOK] = outlook.toString();
+
+        return shelves;
+    }
+
+    /** A shelf whose only content is the DATE line carries nothing to write from. */
+    static boolean shelfEmpty(String shelf) {
+        return shelf == null || shelf.isBlank() || !shelf.strip().contains("\n\n");
+    }
+
+    private static String wireBlock(String scope, String wire) {
+        if (wire == null || wire.isBlank()) return "";
+        return "WIRE STORIES " + scope + " (the cage, condensed):\n" + wire.strip();
+    }
+
+    private static de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.DaypartStat daypart(
+            List<de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.DaypartStat> dayparts,
+            String key) {
+        for (var d : dayparts) {
+            if (key.equals(d.key())) return d;
+        }
+        return null;
+    }
+
+    /** The window section's own deterministic lead line — its mood and protagonist. */
+    static String windowLine(de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.DaypartStat d,
+            String label) {
+        if (d == null) return "";
+        StringBuilder sb = new StringBuilder("THIS WINDOW (").append(label)
+                .append(", deterministic): ").append(d.lines()).append(" lines");
+        if (d.lines() > 0) {
+            sb.append(" (").append(d.bullish()).append(" bullish-leaning / ")
+                    .append(d.bearish()).append(" bearish-leaning");
+            if (d.red() > 0) sb.append(", ").append(d.red()).append(" red-flagged");
+            sb.append(')');
+            if (d.note() != null && !d.note().isBlank()) {
+                sb.append("; lead subject ").append(d.note());
+            }
+        } else {
+            sb.append(" (the cage was quiet)");
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Items whose {@code HH:mm} timestamp falls into the given window
+     * (0 = morning &lt;12h, 1 = midday 12-16h, 2 = evening ≥16h);
+     * {@code untimedToo} routes timestamp-less items here (each list has ONE
+     * home window so an untimed item appears exactly once across the shelves).
+     */
+    private static <T> List<T> inWindow(List<T> items, Function<T, String> time,
+            int window, boolean untimedToo) {
+        List<T> out = new ArrayList<>();
+        for (T item : items) {
+            int w = windowOf(time.apply(item));
+            if (w == window || (w < 0 && untimedToo)) out.add(item);
+        }
+        return out;
+    }
+
+    /** "HH:mm" → window ordinal, or -1 when absent/unparseable. */
+    static int windowOf(String hhmm) {
+        if (hhmm == null) return -1;
+        int colon = hhmm.indexOf(':');
+        if (colon <= 0) return -1;
+        try {
+            int hour = Integer.parseInt(hhmm.substring(0, colon).strip());
+            if (hour < 0 || hour > 23) return -1;
+            if (hour < 12) return 0;
+            return hour < 16 ? 1 : 2;
+        } catch (NumberFormatException e) {
+            return -1;
+        }
     }
 
     /** All stat blocks in reading order, empty sections skipped, hard-capped. */
@@ -57,6 +252,10 @@ final class WeatherMaterial {
         append(sb, sentimentBlock(stats.sentiment(), w == null ? null : w.putCall()));
         append(sb, macroBlock(w == null ? List.of() : w.macroActuals(),
                 w == null ? List.of() : w.macroEvents()));
+        append(sb, econOutcomesBlock(w == null ? List.of() : w.econOutcomes()));
+        append(sb, eventReviewsBlock(w == null ? List.of() : w.eventReviews()));
+        append(sb, worldEventsBlock(w == null ? List.of() : w.worldEvents()));
+        append(sb, topNewsBlock(w == null ? List.of() : w.topNews()));
         append(sb, adhocBlock(w == null ? List.of() : w.adhocs()));
         append(sb, analystBlock(w == null ? List.of() : w.analystActions()));
         append(sb, pressBlock(w == null ? null : w.pressDigest()));
@@ -71,6 +270,7 @@ final class WeatherMaterial {
         append(sb, newsBlock(stats.news()));
         append(sb, overnightBlock(w == null ? List.of() : w.overnight()));
         append(sb, outlookBlock(w == null ? List.of() : w.outlook()));
+        append(sb, cbDatesBlock(w == null ? List.of() : w.cbDates()));
         append(sb, colourBlock(w));
         String out = sb.toString().strip();
         return out.length() > MAX_BLOCK_CHARS ? out.substring(0, MAX_BLOCK_CHARS) : out;
@@ -219,6 +419,14 @@ final class WeatherMaterial {
             if (s.previousClose() != null) sb.append(", prior day ").append(s.previousClose());
             any = true;
         }
+        if (s != null && s.score() != null && !s.components().isEmpty()) {
+            sb.append("; components:");
+            for (var c : s.components()) {
+                sb.append(' ').append(c.key().replace('_', ' ')).append(' ')
+                        .append(c.score()).append(',');
+            }
+            sb.setLength(sb.length() - 1);
+        }
         if (s != null && s.cryptoScore() != null) {
             if (any) sb.append(" · ");
             sb.append("Crypto Fear & Greed ").append(s.cryptoScore());
@@ -258,6 +466,121 @@ final class WeatherMaterial {
             if (e.impact() != null && !e.impact().isBlank()) sb.append(')');
         }
         return sb.toString();
+    }
+
+    /**
+     * The released numbers themselves — actual vs forecast vs previous, with a
+     * deterministic direction word so the model never computes the surprise.
+     */
+    static String econOutcomesBlock(List<EconOutcomeStat> outcomes) {
+        if (outcomes == null || outcomes.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder(
+                "MACRO OUTCOMES (verified, released figures — actual vs forecast):");
+        for (EconOutcomeStat o : outcomes) {
+            sb.append("\n- ");
+            if (o.time() != null) sb.append(o.time()).append(' ');
+            sb.append('[').append(o.country()).append("] ").append(o.title()).append(": actual ")
+                    .append(figure(o.actual(), o.unit()));
+            if (o.forecast() != null) {
+                sb.append(" (forecast ").append(figure(o.forecast(), o.unit()));
+                if (o.previous() != null) {
+                    sb.append(", previous ").append(figure(o.previous(), o.unit()));
+                }
+                sb.append(") — ").append(surpriseWord(o.actual(), o.forecast()));
+            } else if (o.previous() != null) {
+                sb.append(" (previous ").append(figure(o.previous(), o.unit())).append(')');
+            }
+        }
+        return sb.toString();
+    }
+
+    /** Deterministic surprise direction; the reading (good/bad) stays with the model's material. */
+    static String surpriseWord(double actual, double forecast) {
+        double tolerance = Math.max(Math.abs(forecast) * 0.005, 1e-9);
+        if (actual > forecast + tolerance) return "above forecast";
+        if (actual < forecast - tolerance) return "below forecast";
+        return "in line with forecast";
+    }
+
+    /** How the press read the day's numbers — search-found titles, attributed. */
+    static String eventReviewsBlock(List<EventReviewStat> reviews) {
+        if (reviews == null || reviews.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder(
+                "PRESS ON TODAY'S DATA (web-search titles — ATTRIBUTED, the press's reading):");
+        for (EventReviewStat r : reviews) {
+            sb.append("\n- ").append(r.event()).append(':');
+            for (String headline : r.headlines()) {
+                sb.append("\n  · ").append(headline);
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
+     * The world outside the tape (Wikipedia Current Events, EN, attributed) —
+     * background for the Großwetterlage; tied to markets only where the
+     * market material itself does.
+     */
+    /**
+     * The ARD desk's top news of the day (Tagesschau api2u) — the press's
+     * account of what mattered in the world and the German economy today,
+     * strictly attributed. Homepage-ranked stories lead.
+     */
+    static String topNewsBlock(List<TopNewsStat> news) {
+        if (news == null || news.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder(
+                "TOP NEWS of the day (Tagesschau/ARD — ATTRIBUTED press, cite as the press's account):");
+        for (TopNewsStat n : news) {
+            sb.append("\n- ");
+            if (n.time() != null) sb.append(n.time()).append(' ');
+            if (n.breaking()) sb.append("(breaking) ");
+            if (n.topline() != null && !n.topline().isBlank()) {
+                sb.append(n.topline()).append(": ");
+            }
+            sb.append(n.title());
+            if (n.firstSentence() != null && !n.firstSentence().isBlank()) {
+                String t = n.firstSentence().strip();
+                sb.append(" — ").append(t.length() > 160 ? t.substring(0, 160) + "…" : t);
+            }
+        }
+        return sb.toString();
+    }
+
+    static String worldEventsBlock(List<WorldEventStat> events) {
+        if (events == null || events.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder(
+                "WORLD TODAY (Wikipedia Current Events, attributed background):");
+        for (WorldEventStat e : events) {
+            sb.append("\n- [").append(e.category()).append("] ").append(e.text());
+            if (e.source() != null && !e.source().isBlank()) {
+                sb.append(" (").append(e.source()).append(')');
+            }
+        }
+        return sb.toString();
+    }
+
+    /** The hard forward anchors: the next rate decisions on both sides of the Atlantic. */
+    static String cbDatesBlock(List<CbDateStat> cbDates) {
+        if (cbDates == null || cbDates.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder("NEXT RATE DECISIONS (verified): ");
+        boolean first = true;
+        for (CbDateStat c : cbDates) {
+            if (!first) sb.append(" · ");
+            first = false;
+            sb.append(c.title()).append(' ').append(c.dateIso());
+        }
+        return sb.toString();
+    }
+
+    /** "0,3 %" / "2,44" / "23,7 Mrd" — unit-aware, German grouping like every other block. */
+    static String figure(double v, String unit) {
+        double abs = Math.abs(v);
+        String n;
+        if (abs >= 1e9) n = num(v / 1e9, 1) + " Mrd";
+        else if (abs >= 1e6) n = num(v / 1e6, 1) + " Mio";
+        else n = num(v, abs >= 100 ? 0 : 2);
+        if (unit == null || unit.isBlank()) return n;
+        return "%".equals(unit) ? n + " %" : n + " " + unit;
     }
 
     static String adhocBlock(List<AdhocStat> adhocs) {
@@ -450,6 +773,12 @@ final class WeatherMaterial {
                 first = false;
                 sb.append(w.name());
                 if (w.changePercent() != null) sb.append(' ').append(pct(w.changePercent()));
+                if (w.tldr() != null && !w.tldr().isBlank()) {
+                    String t = w.tldr().strip();
+                    sb.append(" (house read: ")
+                            .append(t.length() > 120 ? t.substring(0, 117) + "…" : t)
+                            .append(')');
+                }
             }
         }
         if (!deepDives.isEmpty()) {
@@ -484,6 +813,13 @@ final class WeatherMaterial {
                 if (o.detail() != null && !o.detail().isBlank()) sb.append(" (").append(o.detail());
                 if (o.time() != null) sb.append(", ").append(o.time());
                 if (o.detail() != null && !o.detail().isBlank()) sb.append(')');
+            } else if ("CORP".equals(o.kind())) {
+                sb.append("corporate (Germany): ").append(o.title());
+                if (o.detail() != null && !o.detail().isBlank()) {
+                    sb.append(" [discussed in the room today: ").append(o.detail()).append(']');
+                }
+            } else if ("CB".equals(o.kind())) {
+                sb.append("rate decision: ").append(o.title()).append(" (High)");
             } else {
                 if (o.time() != null) sb.append(o.time()).append(' ');
                 if (o.detail() != null && !o.detail().isBlank()) sb.append(o.detail()).append(' ');

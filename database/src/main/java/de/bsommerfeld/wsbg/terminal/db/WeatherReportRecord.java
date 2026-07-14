@@ -175,7 +175,12 @@ public record WeatherReportRecord(
             Double usDebtUsd,
             ExchangeWeatherStat exchangeWeather,
             MoonStat moon,
-            List<DaypartStat> dayparts) {
+            List<DaypartStat> dayparts,
+            List<EconOutcomeStat> econOutcomes,
+            List<WorldEventStat> worldEvents,
+            List<EventReviewStat> eventReviews,
+            List<CbDateStat> cbDates,
+            List<TopNewsStat> topNews) {
 
         public WorldStats {
             sectors = sectors == null ? List.of() : List.copyOf(sectors);
@@ -194,6 +199,28 @@ public record WeatherReportRecord(
             deepDives = deepDives == null ? List.of() : List.copyOf(deepDives);
             outlook = outlook == null ? List.of() : List.copyOf(outlook);
             dayparts = dayparts == null ? List.of() : List.copyOf(dayparts);
+            econOutcomes = econOutcomes == null ? List.of() : List.copyOf(econOutcomes);
+            worldEvents = worldEvents == null ? List.of() : List.copyOf(worldEvents);
+            eventReviews = eventReviews == null ? List.of() : List.copyOf(eventReviews);
+            cbDates = cbDates == null ? List.of() : List.copyOf(cbDates);
+            topNews = topNews == null ? List.of() : List.copyOf(topNews);
+        }
+
+        /** Pre-calendar-expansion shape (2026-07-13 intra-day) — kept for tests. */
+        public WorldStats(List<IndexStat> sectors, List<IndexStat> overnight,
+                List<RateStat> rates, RoomPulse pulse, List<AdhocStat> adhocs,
+                List<AnalystActionStat> analystActions, List<MacroStat> macroActuals,
+                List<MacroStat> macroEvents, String pressDigest, List<MoverStat> movers,
+                PutCallStat putCall, List<SocialStat> social, CryptoStat crypto,
+                List<BetStat> bets, List<ShortVolStat> shortVolume, List<DepthStat> depth,
+                List<WatchlistStat> watchlist, List<String> deepDives,
+                List<OutlookStat> outlook, PegelStat pegel, Double usDebtUsd,
+                ExchangeWeatherStat exchangeWeather, MoonStat moon,
+                List<DaypartStat> dayparts) {
+            this(sectors, overnight, rates, pulse, adhocs, analystActions, macroActuals,
+                    macroEvents, pressDigest, movers, putCall, social, crypto, bets,
+                    shortVolume, depth, watchlist, deepDives, outlook, pegel, usDebtUsd,
+                    exchangeWeather, moon, dayparts, null, null, null, null, null);
         }
     }
 
@@ -294,7 +321,13 @@ public record WeatherReportRecord(
 
     /** One watchlist entry's day, frozen beside the report. */
     public record WatchlistStat(String name, String ticker, Double changePercent,
-            Double price, String currency) {
+            Double price, String currency, String tldr) {
+
+        /** Pre-TLDR shape (2026-07-13 intra-day) — kept for old JSONL lines/tests. */
+        public WatchlistStat(String name, String ticker, Double changePercent,
+                Double price, String currency) {
+            this(name, ticker, changePercent, price, currency, null);
+        }
     }
 
     /**
@@ -303,6 +336,49 @@ public record WeatherReportRecord(
      */
     public record OutlookStat(String title, String detail, String impact, String time,
             String kind) {
+    }
+
+    /**
+     * One macro release of the day WITH its outcome (TradingView calendar):
+     * numeric actual/forecast/previous in {@code unit}, {@code impact}
+     * High/Medium/Low, {@code time} local HH:mm. The "wie ist es ausgegangen"
+     * line the forecast-only docket cannot carry.
+     */
+    public record EconOutcomeStat(String title, String country, String time, String impact,
+            Double actual, Double forecast, Double previous, String unit) {
+    }
+
+    /**
+     * One world event of the day (Wikipedia Current Events portal, EN):
+     * portal category, plain-text sentence, the cited outlet — attributed
+     * background for the Großwetterlage.
+     */
+    public record WorldEventStat(String category, String text, String source) {
+    }
+
+    /**
+     * One ARD top story of the day (Tagesschau api2u, attributed press):
+     * kicker ({@code topline}), headline, teaser sentence, local {@code HH:mm}
+     * publish time, ressort (nullable), and whether the desk flagged it
+     * breaking. Homepage stories are the ARD desk's own day ranking.
+     */
+    public record TopNewsStat(String topline, String title, String firstSentence,
+            String time, String ressort, boolean breaking) {
+    }
+
+    /**
+     * Press headlines found for one of the day's top data events (web search
+     * at freeze time) — how the press read the number, attributed titles only.
+     */
+    public record EventReviewStat(String event, List<String> headlines) {
+
+        public EventReviewStat {
+            headlines = headlines == null ? List.of() : List.copyOf(headlines);
+        }
+    }
+
+    /** The next rate decisions on the calendar; {@code bank} = "EZB" / "Fed". */
+    public record CbDateStat(String bank, String title, String dateIso) {
     }
 
     /** The Rhine gauge at Kaub: level in cm plus PEGELONLINE's own state token. */

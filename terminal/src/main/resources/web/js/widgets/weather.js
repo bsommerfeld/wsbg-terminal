@@ -27,6 +27,27 @@ import { isNum, fmtVol } from '../format/numbers.js';
 let lastPayload = null;
 let viewIndex = 0;         // 0 = newest archived report
 let ticker = null;         // the 1 Hz countdown interval, alive only while a countdown is on screen
+let keysWired = false;     // ← / → browse archived editions (registered once)
+let host_ = null;          // the detail host, for the keyboard handler's re-render
+
+// Collapsed stat sections, persisted client-side (keys = the section's i18n
+// key, so the state survives re-renders, day switches AND language changes).
+const COLLAPSE_STORE = 'wsbg.weather.sec-collapsed';
+const collapsedSections = loadCollapsed();
+
+function loadCollapsed() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(COLLAPSE_STORE) || '[]'));
+  } catch {
+    return new Set();
+  }
+}
+
+function saveCollapsed() {
+  try {
+    localStorage.setItem(COLLAPSE_STORE, JSON.stringify([...collapsedSections]));
+  } catch { /* private mode etc. — the toggle still works for the session */ }
+}
 
 export function initWeather(socket) {
   const input = document.getElementById('weather-time-input');
@@ -106,19 +127,21 @@ function paintReport(host, p, reports, idx) {
   host.innerHTML = `
     <div class="weather-nav">
       <button class="weather-nav-btn js-weather-prev" type="button" ${older ? '' : 'disabled'}
-              title="${escapeHtml(t('weather.prev'))}" aria-label="${escapeHtml(t('weather.prev'))}">‹</button>
+              title="${escapeHtml(t('weather.prev'))} (←)" aria-label="${escapeHtml(t('weather.prev'))}">‹</button>
       <div class="weather-nav-title">
         <span class="weather-nav-date">${escapeHtml(t('weather.report.from'))} ${escapeHtml(dateLabel)}</span>
         <span class="weather-nav-meta">${escapeHtml(genClock)} · ${r.headlineCount} ${escapeHtml(t('weather.stats.headlines'))}${r.importantCount > 0 ? ` · <b>${r.importantCount}</b> ${escapeHtml(t('weather.stats.important'))}` : ''}</span>
       </div>
       <button class="weather-nav-btn js-weather-next" type="button" ${newer ? '' : 'disabled'}
-              title="${escapeHtml(t('weather.next'))}" aria-label="${escapeHtml(t('weather.next'))}">›</button>
+              title="${escapeHtml(t('weather.next'))} (→)" aria-label="${escapeHtml(t('weather.next'))}">›</button>
     </div>
     ${forecastStripHtml(w(r).dayparts)}
     <div class="weather-text">${reportWithFigures(r)}</div>
     ${idx === 0 && !p.generating ? `<div class="weather-next-line">${escapeHtml(t('weather.countdown.label'))} <span class="js-weather-count">--:--</span></div>` : ''}
     <div class="weather-sections">
       ${pulseHtml(w(r).pulse)}
+      ${worldEventsHtml(w(r).worldEvents)}
+      ${topNewsHtml(w(r).topNews)}
       ${indicesHtml(r.indices, r.sentiment, w(r).putCall)}
       ${sectorsHtml(w(r).sectors)}
       ${ratesHtml(w(r).rates)}
@@ -126,6 +149,8 @@ function paintReport(host, p, reports, idx) {
       ${adhocsHtml(w(r).adhocs)}
       ${analystsHtml(w(r).analystActions)}
       ${macroHtml(w(r).macroActuals, w(r).macroEvents)}
+      ${econOutcomesHtml(w(r).econOutcomes)}
+      ${eventReviewsHtml(w(r).eventReviews)}
       ${moversHtml(w(r).movers)}
       ${socialHtml(w(r).social)}
       ${cryptoHtml(w(r).crypto)}
@@ -133,7 +158,7 @@ function paintReport(host, p, reports, idx) {
       ${watchlistHtml(w(r).watchlist, w(r).deepDives)}
       ${newsHtml(r.news)}
       ${overnightHtml(w(r).overnight)}
-      ${outlookHtml(w(r).outlook)}
+      ${outlookHtml(w(r).outlook, w(r).cbDates)}
       ${colourHtml(w(r))}
     </div>`;
 
@@ -141,6 +166,245 @@ function paintReport(host, p, reports, idx) {
   const next = host.querySelector('.js-weather-next');
   if (prev) prev.addEventListener('click', () => { viewIndex++; renderWeather(host, lastPayload); });
   if (next) next.addEventListener('click', () => { viewIndex--; renderWeather(host, lastPayload); });
+
+  host_ = host;
+  wireInteractions(host);
+  ensureKeys();
+}
+
+// ---- interactivity ----------------------------------------------------------
+//
+// The whole report view is clickable: forecast tiles jump to their prose
+// section, a sticky navigator hops between (and collapses) the stat sections,
+// market sparklines answer the cursor with the value under it, every figure
+// zooms into a lightbox, ← / → browse the archived editions — and the moon
+// does what a moon in THIS terminal must do. All animations are one-shot and
+// event-driven (the OSR paint rule): nothing loops while the user reads.
+
+function wireInteractions(host) {
+  // Prose anchors: tag the report's ## headings so tiles and chips can jump.
+  const headings = host.querySelectorAll('.weather-text h2');
+  headings.forEach((h, i) => { h.dataset.sec = i; });
+
+  // Forecast tiles → their day-part's prose section (strip order mirrors the
+  // report skeleton: Großwetterlage, Morgens, Mittags, Abends, Ausblick).
+  host.querySelectorAll('.weather-cast[data-goto]').forEach(tile => {
+    const jump = () => {
+      const n = Number(tile.dataset.goto);
+      const target = headings[n] || host.querySelector('.weather-text');
+      if (!target) return;
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      flash(target);
+    };
+    tile.addEventListener('click', jump);
+    tile.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); jump(); }
+    });
+  });
+
+  wireStatNav(host);
+  wireSectionCollapse(host);
+  wireSparkHover(host);
+  wireLightbox(host);
+  wireMoon(host);
+}
+
+/** One-shot highlight pulse on a jump target; removes itself. */
+function flash(el) {
+  el.classList.remove('weather-flash');
+  void el.offsetWidth; // restart the finite animation
+  el.classList.add('weather-flash');
+  el.addEventListener('animationend', () => el.classList.remove('weather-flash'),
+      { once: true });
+}
+
+/** The sticky section navigator above the day stats, built from what actually rendered. */
+function wireStatNav(host) {
+  const sections = [...host.querySelectorAll('.weather-section[data-key]')];
+  const wrap = host.querySelector('.weather-sections');
+  if (!wrap || sections.length < 3) return; // a thin edition needs no navigator
+
+  const nav = document.createElement('nav');
+  nav.className = 'weather-statnav';
+  nav.innerHTML = sections.map(sec => `<button type="button" class="weather-statchip"
+      data-for="${escapeHtml(sec.dataset.key)}">${escapeHtml(t(sec.dataset.key))}</button>`)
+    .join('')
+    + `<button type="button" class="weather-statchip toggle js-weather-toggleall"></button>`;
+  wrap.parentNode.insertBefore(nav, wrap);
+
+  nav.querySelectorAll('.weather-statchip[data-for]').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const sec = host.querySelector(`.weather-section[data-key="${chip.dataset.for}"]`);
+      if (!sec) return;
+      if (sec.classList.contains('collapsed')) toggleSection(sec, false);
+      sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      flash(sec.querySelector('.weather-section-title') || sec);
+    });
+  });
+
+  const all = nav.querySelector('.js-weather-toggleall');
+  const syncAllLabel = () => {
+    const anyOpen = sections.some(s => !s.classList.contains('collapsed'));
+    all.textContent = anyOpen ? t('weather.sec.collapseAll') : t('weather.sec.expandAll');
+  };
+  all.addEventListener('click', () => {
+    const anyOpen = sections.some(s => !s.classList.contains('collapsed'));
+    sections.forEach(s => toggleSection(s, anyOpen));
+    saveCollapsed();
+    syncAllLabel();
+  });
+  syncAllLabel();
+  nav.addEventListener('click', syncAllLabel);
+}
+
+function wireSectionCollapse(host) {
+  host.querySelectorAll('.weather-section[data-key] > .weather-section-title')
+    .forEach(title => {
+      title.addEventListener('click', () => {
+        const sec = title.parentElement;
+        toggleSection(sec, !sec.classList.contains('collapsed'));
+        saveCollapsed();
+      });
+      title.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); title.click(); }
+      });
+    });
+}
+
+function toggleSection(sec, collapse) {
+  sec.classList.toggle('collapsed', collapse);
+  const title = sec.querySelector('.weather-section-title');
+  if (title) title.setAttribute('aria-expanded', String(!collapse));
+  if (collapse) collapsedSections.add(sec.dataset.key);
+  else collapsedSections.delete(sec.dataset.key);
+}
+
+/** The value under the cursor on a market tile's sparkline — a bubble, no loop. */
+function wireSparkHover(host) {
+  host.querySelectorAll('.weather-idx[data-spark]').forEach(tile => {
+    let spark;
+    try {
+      spark = JSON.parse(tile.dataset.spark);
+    } catch {
+      return;
+    }
+    if (!Array.isArray(spark) || spark.length < 2) return;
+    const svg = tile.querySelector('.weather-spark');
+    if (!svg) return;
+    let bubble = null;
+    tile.addEventListener('mousemove', e => {
+      const rect = svg.getBoundingClientRect();
+      if (rect.width <= 0) return;
+      const frac = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+      const i = Math.round(frac * (spark.length - 1));
+      if (!bubble) {
+        bubble = document.createElement('div');
+        bubble.className = 'weather-spark-bubble';
+        tile.appendChild(bubble);
+      }
+      const v = spark[i];
+      const delta = spark[0] !== 0 ? (v - spark[0]) / Math.abs(spark[0]) * 100 : null;
+      bubble.textContent = fmtMarket(v, tile.dataset.ccy || null)
+          + (delta === null ? '' : ` (${delta > 0 ? '+' : ''}${fmtNum(delta, 2)} %)`);
+      const x = Math.min(Math.max(frac * 100, 12), 88);
+      bubble.style.left = `${x}%`;
+      bubble.hidden = false;
+    });
+    tile.addEventListener('mouseleave', () => { if (bubble) bubble.hidden = true; });
+  });
+}
+
+/** Click a figure → the same SVG large, in a dismissable overlay. */
+function wireLightbox(host) {
+  host.querySelectorAll('.weather-figure').forEach(fig => {
+    fig.title = t('weather.figure.zoom');
+    fig.addEventListener('click', () => openLightbox(fig));
+  });
+}
+
+let lightboxEsc = null; // capture-phase Esc handler, alive only while the box is open
+
+function openLightbox(fig) {
+  closeLightbox();
+  const box = document.createElement('div');
+  box.className = 'weather-lightbox';
+  box.id = 'weather-lightbox';
+  const inner = document.createElement('div');
+  inner.className = 'weather-lightbox-inner';
+  inner.appendChild(fig.cloneNode(true));
+  const hint = document.createElement('div');
+  hint.className = 'weather-lightbox-hint';
+  hint.textContent = t('weather.lightbox.close');
+  inner.appendChild(hint);
+  box.appendChild(inner);
+  box.addEventListener('click', closeLightbox);
+  document.body.appendChild(box);
+  // Capture phase, so Esc closes ONLY the lightbox — never also the focus
+  // view behind it (its own Esc handler sits in the bubble phase).
+  lightboxEsc = e => {
+    if (e.key !== 'Escape') return;
+    e.stopPropagation();
+    e.preventDefault();
+    closeLightbox();
+  };
+  document.addEventListener('keydown', lightboxEsc, true);
+}
+
+function closeLightbox() {
+  const box = document.getElementById('weather-lightbox');
+  if (box) box.remove();
+  if (lightboxEsc) {
+    document.removeEventListener('keydown', lightboxEsc, true);
+    lightboxEsc = null;
+  }
+}
+
+/** The moon row does what a moon in this terminal must do: 🚀, once, on click. */
+function wireMoon(host) {
+  const row = host.querySelector('.js-weather-moon');
+  if (!row) return;
+  row.title = t('weather.moon.title');
+  const launch = () => {
+    if (row.querySelector('.weather-rocket')) return; // one launch at a time
+    const rocket = document.createElement('span');
+    rocket.className = 'weather-rocket';
+    rocket.textContent = '🚀';
+    rocket.setAttribute('aria-hidden', 'true');
+    row.appendChild(rocket);
+    rocket.addEventListener('animationend', () => rocket.remove(), { once: true });
+  };
+  row.addEventListener('click', launch);
+  row.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); launch(); }
+  });
+}
+
+/** ← / → browse the archived editions while the report view is on screen. */
+function ensureKeys() {
+  if (keysWired) return;
+  keysWired = true;
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    const el = document.activeElement;
+    if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA'
+        || el.tagName === 'SELECT' || el.isContentEditable)) {
+      return;
+    }
+    const host = host_;
+    if (!host || !host.isConnected || host.offsetParent === null) return;
+    const reports = lastPayload && Array.isArray(lastPayload.reports)
+        ? lastPayload.reports : [];
+    if (!reports.length || !host.querySelector('.weather-nav')) return;
+    if (e.key === 'ArrowLeft' && viewIndex < reports.length - 1) {
+      viewIndex++;
+    } else if (e.key === 'ArrowRight' && viewIndex > 0) {
+      viewIndex--;
+    } else {
+      return;
+    }
+    e.preventDefault();
+    renderWeather(host, lastPayload);
+  });
 }
 
 // ---- sections ---------------------------------------------------------------
@@ -157,6 +421,10 @@ function w(r) {
 const PART_LABELS = { MORNING: 'weather.part.morning', MIDDAY: 'weather.part.midday',
   EVENING: 'weather.part.evening', TOMORROW: 'weather.part.tomorrow' };
 
+// Strip tile → the prose section it narrates (## ordinal in the report
+// skeleton: 0 Großwetterlage, 1 Morgens, 2 Mittags, 3 Abends, 4 Ausblick).
+const PART_SECTION = { MORNING: 1, MIDDAY: 2, EVENING: 3, TOMORROW: 4 };
+
 function forecastStripHtml(dayparts) {
   if (!Array.isArray(dayparts) || !dayparts.length) return '';
   const labels = PART_LABELS;
@@ -170,7 +438,9 @@ function forecastStripHtml(dayparts) {
     } else {
       sub = escapeHtml(t('weather.part.quiet'));
     }
-    return `<div class="weather-cast${warn ? ' warn' : ''}">
+    const goto = PART_SECTION[d.key];
+    return `<div class="weather-cast${warn ? ' warn' : ''}"${goto === undefined ? '' : `
+      data-goto="${goto}" role="button" tabindex="0" title="${escapeHtml(t('weather.cast.jump'))}"`}>
       <span class="weather-cast-label">${escapeHtml(t(labels[d.key] || d.key))}</span>
       ${wxIcon(d.icon)}
       <span class="weather-cast-sub">${sub}</span>
@@ -275,14 +545,14 @@ function pulseHtml(pulse) {
   if (isNum(pulse.busiestHour)) {
     parts.push(`<span class="weather-pulse-part">${escapeHtml(t('weather.pulse.hour'))} ${pulse.busiestHour}:00</span>`);
   }
-  return section(t('weather.stats.pulse'), `<div class="weather-pulse">${parts.join('<span class="weather-dot">·</span>')}</div>`);
+  return section('weather.stats.pulse', `<div class="weather-pulse">${parts.join('<span class="weather-dot">·</span>')}</div>`);
 }
 
 function indicesHtml(indices, sentiment, putCall) {
   const hasIndices = Array.isArray(indices) && indices.length > 0;
   if (!hasIndices && !sentiment && !putCall) return '';
   const body = `${sentimentHtml(sentiment, putCall)}${hasIndices ? indexGridHtml(indices) : ''}`;
-  return section(t('weather.stats.indices'), body);
+  return section('weather.stats.indices', body);
 }
 
 // The day's frozen market mood (CNN Fear & Greed) above the tiles — since the
@@ -319,7 +589,13 @@ function bandCls(band) {
 function indexGridHtml(indices) {
   const cards = indices.map(ix => {
     const dir = dirOf(ix.changePercent);
-    return `<div class="weather-idx">
+    // The intraday series rides along as data so the hover bubble can answer
+    // "what stood here" without re-fetching anything.
+    const hoverData = Array.isArray(ix.spark) && ix.spark.length > 1
+      ? ` data-spark="${escapeHtml(JSON.stringify(ix.spark.map(v => +Number(v).toPrecision(6))))}"
+          data-ccy="${escapeHtml(ix.currency || '')}"`
+      : '';
+    return `<div class="weather-idx"${hoverData}>
       <div class="weather-idx-head">
         <span class="weather-idx-name">${escapeHtml(ix.name || ix.symbol || '')}</span>
         ${pct(ix.changePercent)}
@@ -355,7 +631,7 @@ function tickersHtml(tickers, depth, shortVolume) {
     </div>
     ${depthLineHtml(depthBy[tk.ticker], shortBy[tk.ticker])}
   </div>`).join('');
-  return section(t('weather.stats.tickers'), `<div class="weather-tick-list">${rows}</div>`);
+  return section('weather.stats.tickers', `<div class="weather-tick-list">${rows}</div>`);
 }
 
 // Street depth under a ticker row: consensus target, rating split, next
@@ -405,7 +681,7 @@ function sectorsHtml(sectors) {
       ${pct(s.changePercent)}
     </div>`;
   }).join('');
-  return section(t('weather.stats.sectors'), `<div class="weather-sector-list">${rows}</div>`);
+  return section('weather.stats.sectors', `<div class="weather-sector-list">${rows}</div>`);
 }
 
 // The two yield lines every professional briefing carries.
@@ -419,7 +695,7 @@ function ratesHtml(rates) {
         ${r.dateIso ? `<span class="weather-plain-mute">${escapeHtml(fmtDate(r.dateIso))}</span>` : ''}
       </span>
     </div>`).join('');
-  return rows ? section(t('weather.stats.rates'), `<div class="weather-plain-list">${rows}</div>`) : '';
+  return rows ? section('weather.stats.rates', `<div class="weather-plain-list">${rows}</div>`) : '';
 }
 
 // The day's EQS ad-hoc disclosures; one on a cage paper carries a gold chip.
@@ -431,7 +707,7 @@ function adhocsHtml(adhocs) {
         ${a.kaefigTicker ? `<span class="weather-chip-cage">${escapeHtml(t('weather.adhoc.inkaefig'))} ${escapeHtml(a.kaefigTicker)}</span>` : ''}
       </span>
     </div>`).join('');
-  return section(t('weather.stats.adhocs'), `<div class="weather-plain-list">${rows}</div>`);
+  return section('weather.stats.adhocs', `<div class="weather-plain-list">${rows}</div>`);
 }
 
 function analystsHtml(actions) {
@@ -440,7 +716,7 @@ function analystsHtml(actions) {
       ${a.time ? `<span class="weather-plain-time">${escapeHtml(a.time)}</span>` : ''}
       <span class="weather-plain-main wrap">${escapeHtml(a.title || '')}</span>
     </div>`).join('');
-  return section(t('weather.stats.analysts'), `<div class="weather-plain-list">${rows}</div>`);
+  return section('weather.stats.analysts', `<div class="weather-plain-list">${rows}</div>`);
 }
 
 // Macro: released figures (the number sits in the title) + today's docket.
@@ -463,8 +739,82 @@ function macroHtml(actuals, events) {
       </span>
     </div>`;
   }).join('');
-  return section(t('weather.stats.macro'),
+  return section('weather.stats.macro',
       `<div class="weather-plain-list">${actualRows}${eventRows}</div>`);
+}
+
+// The day's released figures: actual vs forecast vs previous, with the
+// deterministic direction word — the "wie ist es ausgegangen" line.
+function econOutcomesHtml(outcomes) {
+  if (!outcomes || !outcomes.length) return '';
+  const rows = outcomes.map(o => {
+    const extras = [];
+    if (isNum(o.forecast)) extras.push(`${escapeHtml(t('weather.macro.forecast'))} ${fmtFigure(o.forecast, o.unit)}`);
+    if (isNum(o.previous)) extras.push(`${escapeHtml(t('weather.macro.previous'))} ${fmtFigure(o.previous, o.unit)}`);
+    const verdict = isNum(o.actual) && isNum(o.forecast) ? surpriseChip(o.actual, o.forecast) : '';
+    return `<div class="weather-plain">
+      <span class="weather-plain-time">${escapeHtml(o.time || '')} ${escapeHtml(o.country || '')}</span>
+      <span class="weather-plain-main wrap">${escapeHtml(o.title || '')}
+        ${o.impact ? `<span class="weather-chip-impact ${o.impact === 'High' ? 'high' : ''}">${escapeHtml(o.impact)}</span>` : ''}
+        ${isNum(o.actual) ? `<span class="weather-tick-price">${escapeHtml(t('weather.outcomes.actual'))} ${fmtFigure(o.actual, o.unit)}</span>` : ''}
+        ${verdict}
+        ${extras.length ? `<span class="weather-plain-mute">${extras.join(' · ')}</span>` : ''}
+      </span>
+    </div>`;
+  }).join('');
+  return section('weather.stats.outcomes', `<div class="weather-plain-list">${rows}</div>`);
+}
+
+// Direction only — whether higher is good depends on the figure, so the chip
+// stays neutral ink.
+function surpriseChip(actual, forecast) {
+  const tolerance = Math.max(Math.abs(forecast) * 0.005, 1e-9);
+  const key = actual > forecast + tolerance ? 'weather.outcomes.above'
+    : actual < forecast - tolerance ? 'weather.outcomes.below' : 'weather.outcomes.inline';
+  return `<span class="weather-plain-mute">${escapeHtml(t(key))}</span>`;
+}
+
+function fmtFigure(v, unit) {
+  const abs = Math.abs(v);
+  let s;
+  if (abs >= 1e9) s = `${fmtNum(v / 1e9, 1)} ${t('weather.big.bil')}`;
+  else if (abs >= 1e6) s = `${fmtNum(v / 1e6, 1)} ${t('weather.big.mil')}`;
+  else s = fmtNum(v, abs >= 100 ? 0 : 2);
+  if (!unit) return s;
+  return unit === '%' ? `${s} %` : `${s} ${escapeHtml(unit)}`;
+}
+
+// How the press read today's numbers — search-found titles, attributed.
+function eventReviewsHtml(reviews) {
+  if (!reviews || !reviews.length) return '';
+  const rows = reviews.map(r => `<div class="weather-plain">
+      <span class="weather-plain-main wrap">${escapeHtml(r.event || '')}
+        ${(r.headlines || []).map(h => `<span class="weather-plain-mute">${escapeHtml(h)}</span>`).join('')}
+      </span>
+    </div>`).join('');
+  return section('weather.stats.reviews', `<div class="weather-plain-list">${rows}</div>`);
+}
+
+// The world outside the tape (Wikipedia Current Events, attributed).
+function worldEventsHtml(events) {
+  if (!events || !events.length) return '';
+  const rows = events.map(e => `<div class="weather-plain">
+      <span class="weather-plain-main wrap">${escapeHtml(e.text || '')}
+        ${e.source ? `<span class="weather-plain-mute">(${escapeHtml(e.source)})</span>` : ''}
+      </span>
+    </div>`).join('');
+  return section('weather.stats.worldevents', `<div class="weather-plain-list">${rows}</div>`);
+}
+
+// The ARD desk's top stories of the day (Tagesschau api2u, attributed).
+function topNewsHtml(news) {
+  if (!news || !news.length) return '';
+  const rows = news.map(n => `<div class="weather-plain">
+      <span class="weather-plain-main wrap">${n.time ? `<span class="weather-plain-mute">${escapeHtml(n.time)}</span> ` : ''}${n.topline ? `${escapeHtml(n.topline)} · ` : ''}${escapeHtml(n.title || '')}
+        ${n.firstSentence ? `<span class="weather-plain-mute">${escapeHtml(n.firstSentence)}</span>` : ''}
+      </span>
+    </div>`).join('');
+  return section('weather.stats.topnews', `<div class="weather-plain-list">${rows}</div>`);
 }
 
 // US movers, one wrapped chip line per kind; cage overlap marked gold.
@@ -485,7 +835,7 @@ function moversHtml(movers) {
       <span class="weather-mover-chips">${chips}</span>
     </div>`;
   }).join('');
-  return lines ? section(t('weather.stats.movers'), lines) : '';
+  return lines ? section('weather.stats.movers', lines) : '';
 }
 
 // The neighbour boards' pulse; big rank climbs are the signal.
@@ -501,7 +851,7 @@ function socialHtml(social) {
         ${isNum(s.rankClimb) && s.rankClimb > 0 ? `<span class="weather-pct up">▲${s.rankClimb} ${escapeHtml(t('weather.social.ranks'))}</span>` : ''}
       </span>
     </div>`).join('');
-  return section(t('weather.stats.social'), `<div class="weather-plain-list">${rows}</div>`);
+  return section('weather.stats.social', `<div class="weather-plain-list">${rows}</div>`);
 }
 
 // Crypto: the market line plus derivatives temperature plus trending chips.
@@ -529,7 +879,7 @@ function cryptoHtml(c) {
         </span>`).join('')}</span>
       </div>` : '';
   if (!line && !trending) return '';
-  return section(t('weather.stats.crypto'), line + trending);
+  return section('weather.stats.crypto', line + trending);
 }
 
 // Prediction markets: real-money odds on the questions of the day.
@@ -542,7 +892,7 @@ function betsHtml(bets) {
         ${isNum(b.volume24hUsd) ? `<span class="weather-plain-mute">${fmtBigUsd(b.volume24hUsd)}</span>` : ''}
       </span>
     </div>`).join('');
-  return section(t('weather.stats.bets'), `<div class="weather-plain-list">${rows}</div>`);
+  return section('weather.stats.bets', `<div class="weather-plain-list">${rows}</div>`);
 }
 
 // The house desk: watchlist day moves + the deep dives written today.
@@ -560,25 +910,45 @@ function watchlistHtml(watchlist, deepDives) {
     </div>`).join('');
   const ddLine = dd.length
     ? `<div class="weather-plain"><span class="weather-plain-main wrap">${escapeHtml(t('weather.watchlist.dd'))} ${escapeHtml(dd.join(', '))}</span></div>` : '';
-  return section(t('weather.stats.watchlist'), `<div class="weather-plain-list">${rows}${ddLine}</div>`);
+  return section('weather.stats.watchlist', `<div class="weather-plain-list">${rows}${ddLine}</div>`);
 }
 
 // Futures + Asia — the night after the report.
 function overnightHtml(overnight) {
   if (!overnight || !overnight.length) return '';
-  return section(t('weather.stats.overnight'), indexGridHtml(overnight));
+  return section('weather.stats.overnight', indexGridHtml(overnight));
 }
 
-// Tomorrow's docket — the reason to read the edition in the evening.
-function outlookHtml(outlook) {
-  if (!outlook || !outlook.length) return '';
-  const rows = outlook.map(o => {
+// Tomorrow's docket — the reason to read the edition in the evening. A rate
+// decision tomorrow and German corporate dates on cage papers ride beside the
+// macro/earnings lines; the next rate decisions close the section as a footer.
+function outlookHtml(outlook, cbDates) {
+  const items = outlook || [];
+  const cb = cbDates || [];
+  if (!items.length && !cb.length) return '';
+  const rows = items.map(o => {
     if (o.kind === 'EARNINGS') {
       return `<div class="weather-plain">
         <span class="weather-plain-time">${escapeHtml(t('weather.outlook.earnings'))}</span>
         <span class="weather-plain-main wrap">${escapeHtml(o.title || '')}
           ${o.detail ? `<span class="weather-plain-mute">${escapeHtml(o.detail)}</span>` : ''}
           ${o.time ? `<span class="weather-plain-mute">${escapeHtml(o.time)}</span>` : ''}
+        </span>
+      </div>`;
+    }
+    if (o.kind === 'CORP') {
+      return `<div class="weather-plain">
+        <span class="weather-plain-time">${escapeHtml(t('weather.outlook.corp'))}</span>
+        <span class="weather-plain-main wrap">${escapeHtml(o.title || '')}
+          ${o.detail ? `<span class="weather-chip-cage">${escapeHtml(t('weather.adhoc.inkaefig'))} ${escapeHtml(o.detail)}</span>` : ''}
+        </span>
+      </div>`;
+    }
+    if (o.kind === 'CB') {
+      return `<div class="weather-plain">
+        <span class="weather-plain-time">${escapeHtml(t('weather.outlook.cb'))}</span>
+        <span class="weather-plain-main wrap">${escapeHtml(o.title || '')}
+          <span class="weather-chip-impact high">High</span>
         </span>
       </div>`;
     }
@@ -589,7 +959,11 @@ function outlookHtml(outlook) {
       </span>
     </div>`;
   }).join('');
-  return section(t('weather.stats.outlook'), `<div class="weather-plain-list">${rows}</div>`);
+  const cbLine = cb.length
+    ? `<div class="weather-plain"><span class="weather-plain-main wrap">${escapeHtml(t('weather.outlook.next-cb'))}
+        ${cb.map(c => `<span class="weather-plain-mute">${escapeHtml(c.title || '')} ${escapeHtml(fmtDate(c.dateIso))}</span>`).join('')}
+      </span></div>` : '';
+  return section('weather.stats.outlook', `<div class="weather-plain-list">${rows}${cbLine}</div>`);
 }
 
 // The colour footer: the river, the debt clock, the literal exchange
@@ -625,7 +999,7 @@ function colourHtml(world) {
     const moonText = world.moon.daysToFull === 0
       ? t('weather.colour.moon.full')
       : `${t('weather.colour.moon.in')} ${world.moon.daysToFull} ${t('weather.colour.moon.days')}`;
-    rows.push(`<div class="weather-plain">
+    rows.push(`<div class="weather-plain js-weather-moon" role="button" tabindex="0">
       <span class="weather-plain-main">${escapeHtml(t('weather.colour.moon'))}
         <span class="weather-tick-price">${world.moon.illuminationPercent} %</span>
         <span class="weather-plain-mute">${escapeHtml(moonText)}</span>
@@ -633,7 +1007,7 @@ function colourHtml(world) {
     </div>`);
   }
   if (!rows.length) return '';
-  return section(t('weather.stats.colour'), `<div class="weather-plain-list">${rows.join('')}</div>`);
+  return section('weather.stats.colour', `<div class="weather-plain-list">${rows.join('')}</div>`);
 }
 
 // BrightSky icon token → a short localized word.
@@ -668,13 +1042,19 @@ function newsHtml(news) {
         ${n.source ? `<span class="weather-news-src">${escapeHtml(n.source)}</span>` : ''}
       </span>
     </div>`).join('');
-  return section(t('weather.stats.news'), `<div class="weather-news-list">${rows}</div>`);
+  return section('weather.stats.news', `<div class="weather-news-list">${rows}</div>`);
 }
 
-function section(title, body) {
-  return `<section class="weather-section">
-    <h3 class="weather-section-title">${escapeHtml(title)}</h3>
-    ${body}
+// One collapsible day-stats section; `key` is the title's i18n key and doubles
+// as the stable identity for the persisted collapse state and the navigator.
+function section(key, body) {
+  const collapsed = collapsedSections.has(key);
+  return `<section class="weather-section${collapsed ? ' collapsed' : ''}" data-key="${escapeHtml(key)}">
+    <h3 class="weather-section-title" role="button" tabindex="0" aria-expanded="${!collapsed}"
+        title="${escapeHtml(t('weather.sec.toggle'))}">
+      <span class="weather-sec-chev" aria-hidden="true"></span>${escapeHtml(t(key))}
+    </h3>
+    <div class="weather-section-body">${body}</div>
   </section>`;
 }
 

@@ -4,10 +4,13 @@ import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.briefing.ApeWisdomClient;
 import de.bsommerfeld.wsbg.terminal.briefing.BundYieldClient;
 import de.bsommerfeld.wsbg.terminal.briefing.CboePutCallClient;
+import de.bsommerfeld.wsbg.terminal.briefing.CentralBankCalendarClient;
 import de.bsommerfeld.wsbg.terminal.briefing.CoinGeckoClient;
 import de.bsommerfeld.wsbg.terminal.briefing.CryptoDerivsClient;
 import de.bsommerfeld.wsbg.terminal.briefing.CuriositiesClient;
+import de.bsommerfeld.wsbg.terminal.briefing.EarningsWhispersClient;
 import de.bsommerfeld.wsbg.terminal.briefing.EconCalendarClient;
+import de.bsommerfeld.wsbg.terminal.briefing.EqsEventsClient;
 import de.bsommerfeld.wsbg.terminal.briefing.FinraShortVolumeClient;
 import de.bsommerfeld.wsbg.terminal.briefing.FnRssClient;
 import de.bsommerfeld.wsbg.terminal.briefing.MacroPressClient;
@@ -15,6 +18,9 @@ import de.bsommerfeld.wsbg.terminal.briefing.MoonPhase;
 import de.bsommerfeld.wsbg.terminal.briefing.NasdaqCalendarClient;
 import de.bsommerfeld.wsbg.terminal.briefing.PolymarketClient;
 import de.bsommerfeld.wsbg.terminal.briefing.RhinePegelClient;
+import de.bsommerfeld.wsbg.terminal.briefing.TagesschauClient;
+import de.bsommerfeld.wsbg.terminal.briefing.TradingViewCalendarClient;
+import de.bsommerfeld.wsbg.terminal.briefing.WikipediaCurrentEventsClient;
 import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
 import de.bsommerfeld.wsbg.terminal.core.price.AnalystView;
 import de.bsommerfeld.wsbg.terminal.core.price.AnalystViewSource;
@@ -34,8 +40,11 @@ import de.bsommerfeld.wsbg.terminal.db.HeadlineSubject;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.AdhocStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.AnalystActionStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.BetStat;
+import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.CbDateStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.CryptoStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.DaypartStat;
+import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.EconOutcomeStat;
+import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.EventReviewStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.DepthStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.ExchangeWeatherStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.IndexStat;
@@ -53,8 +62,10 @@ import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.SentimentStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.ShortVolStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.SocialStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.TickerStat;
+import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.TopNewsStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.TrendingCoin;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.WatchlistStat;
+import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.WorldEventStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.WorldStats;
 import de.bsommerfeld.wsbg.terminal.feargreed.CryptoFearGreedClient;
 import de.bsommerfeld.wsbg.terminal.feargreed.FearGreedClient;
@@ -121,6 +132,7 @@ class WeatherStatsCollector {
             new MarketDef("^NDX", "Nasdaq 100", "PTS"),
             new MarketDef("^VIX", "VIX", "PTS"),
             new MarketDef("EURUSD=X", "EUR/USD", "FX"),
+            new MarketDef("DX-Y.NYB", "US-Dollar-Index", "PTS"),
             new MarketDef("GC=F", "Gold", "USD"),
             new MarketDef("SI=F", "Silber", "USD"),
             new MarketDef("HG=F", "Kupfer", "USD"),
@@ -165,6 +177,14 @@ class WeatherStatsCollector {
     private static final int MAX_WATCHLIST = 8;
     private static final int MAX_OUTLOOK_ECON = 6;
     private static final int MAX_OUTLOOK_EARNINGS = 6;
+    private static final int MAX_OUTLOOK_CORP = 4;
+    private static final int MAX_ECON_OUTCOMES = 8;
+    private static final int WORLD_EVENTS_PER_CATEGORY = 2;
+    private static final int MAX_WORLD_EVENTS = 8;
+    private static final int MAX_TOP_NEWS = 8;
+    private static final int MAX_EVENT_REVIEWS = 2;
+    private static final int REVIEW_HEADLINES = 3;
+    private static final int CB_LOOKAHEAD_DAYS = 90;
     /** A rank jump on the neighbour boards only counts as a shooter above this. */
     private static final int MIN_RANK_CLIMB = 50;
 
@@ -188,6 +208,13 @@ class WeatherStatsCollector {
     private volatile FinraShortVolumeClient finraClient;
     private volatile NasdaqCalendarClient nasdaqCalendarClient;
     private volatile RhinePegelClient rhinePegelClient;
+    private volatile TradingViewCalendarClient tradingViewClient;
+    private volatile EqsEventsClient eqsEventsClient;
+    private volatile EarningsWhispersClient earningsWhispersClient;
+    private volatile CentralBankCalendarClient centralBankCalendarClient;
+    private volatile WikipediaCurrentEventsClient wikipediaClient;
+    private volatile TagesschauClient tagesschauClient;
+    private volatile de.bsommerfeld.wsbg.terminal.websearch.BingWebSearchClient webSearchClient;
     private volatile CryptoDerivsClient cryptoDerivsClient;
     private volatile CuriositiesClient curiositiesClient;
     private volatile AnalystViewSource analystViewSource;
@@ -278,6 +305,41 @@ class WeatherStatsCollector {
     }
 
     @com.google.inject.Inject(optional = true)
+    void setTradingViewClient(TradingViewCalendarClient client) {
+        this.tradingViewClient = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setEqsEventsClient(EqsEventsClient client) {
+        this.eqsEventsClient = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setEarningsWhispersClient(EarningsWhispersClient client) {
+        this.earningsWhispersClient = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setCentralBankCalendarClient(CentralBankCalendarClient client) {
+        this.centralBankCalendarClient = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setWikipediaClient(WikipediaCurrentEventsClient client) {
+        this.wikipediaClient = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setTagesschauClient(TagesschauClient client) {
+        this.tagesschauClient = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setWebSearchClient(de.bsommerfeld.wsbg.terminal.websearch.BingWebSearchClient client) {
+        this.webSearchClient = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
     void setCryptoDerivsClient(CryptoDerivsClient client) {
         this.cryptoDerivsClient = client;
     }
@@ -337,8 +399,15 @@ class WeatherStatsCollector {
         List<TickerStat> tickers = tickers(todaysHeadlines);
         Set<String> wireTickers = wireTickerSymbols(todaysHeadlines);
         Map<String, String> isinToTicker = isinToTicker(todaysHeadlines);
+        // One TradingView fetch spans today AND tomorrow — the outcomes leg and
+        // the outlook fallback read the same response.
+        List<TradingViewCalendarClient.TvEvent> tvEvents =
+                guarded("tv calendar", List.of(), () -> tvEvents(today, zone));
+        List<EconOutcomeStat> econOutcomes =
+                guarded("econ outcomes", List.of(), () -> econOutcomes(tvEvents, today, zone));
         List<de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.OutlookStat> outlook =
-                guarded("outlook", List.of(), () -> outlook(today, zone));
+                guarded("outlook", List.of(),
+                        () -> outlook(today, zone, tvEvents, isinToTicker));
 
         WorldStats world = new WorldStats(
                 guarded("sectors", List.of(), () -> tiles(SECTORS)),
@@ -364,7 +433,12 @@ class WeatherStatsCollector {
                 guarded("US debt", null, this::usDebt),
                 guarded("exchange weather", null, this::exchangeWeather),
                 guarded("moon", null, () -> moon(Instant.now())),
-                guarded("dayparts", List.of(), () -> dayparts(todaysHeadlines, zone, outlook)));
+                guarded("dayparts", List.of(), () -> dayparts(todaysHeadlines, zone, outlook)),
+                econOutcomes,
+                guarded("world events", List.of(), () -> worldEvents(today)),
+                guarded("event reviews", List.of(), () -> eventReviews(econOutcomes)),
+                guarded("cb dates", List.of(), () -> cbDates(today)),
+                guarded("top news", List.of(), () -> topNews(dayStart)));
 
         return new Stats(indices(), tickers, news(todaysHeadlines), sentiment(), world);
     }
@@ -404,9 +478,12 @@ class WeatherStatsCollector {
 
     /**
      * The two yield lines every professional briefing carries. {@code ^TNX}
-     * quotes the 10y Treasury yield ×10 (a CBOE index quirk), so the level is
-     * divided back; the Bund side comes from the Bundesbank's daily Svensson
-     * curve (T+1 — the latest available fixing, dated).
+     * is DEFINED as the 10y Treasury yield ×10 (a CBOE quirk), but Yahoo's
+     * chart feed has been observed serving the plain yield instead
+     * (live 2026-07-13: raw 4.61 → the old unconditional ÷10 froze "0,46 %"
+     * into the record) — {@link #normalizeTnx} handles both encodings. The
+     * Bund side comes from the Bundesbank's daily Svensson curve (T+1 — the
+     * latest available fixing, dated).
      */
     private List<RateStat> rates() {
         List<RateStat> out = new ArrayList<>();
@@ -418,10 +495,21 @@ class WeatherStatsCollector {
         Optional<MarketSnapshot> tnx = yahoo.fetchChart("^TNX");
         if (tnx.isPresent() && tnx.get().hasPrice()) {
             MarketSnapshot s = tnx.get();
-            Double prev = Double.isFinite(s.previousClose()) ? s.previousClose() / 10.0 : null;
-            out.add(new RateStat("10J US-Treasury", s.price() / 10.0, prev, null));
+            Double prev = Double.isFinite(s.previousClose())
+                    ? normalizeTnx(s.previousClose()) : null;
+            out.add(new RateStat("10J US-Treasury", normalizeTnx(s.price()), prev, null));
         }
         return out;
+    }
+
+    /**
+     * {@code ^TNX} raw level → yield percent, whichever encoding Yahoo serves:
+     * a yield×10 reading (≥ 20 — any 2%+ world reads 20+) is divided back, a
+     * plain-yield reading (single digits) passes through. Package-private for
+     * tests.
+     */
+    static double normalizeTnx(double raw) {
+        return raw >= 20 ? raw / 10.0 : raw;
     }
 
     // --- the cage's own aggregate --------------------------------------------
@@ -519,7 +607,8 @@ class WeatherStatsCollector {
         int earnings = 0;
         String note = null;
         for (var o : outlook == null ? List.<de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.OutlookStat>of() : outlook) {
-            if ("ECON".equals(o.kind()) && "High".equalsIgnoreCase(o.impact())) {
+            if (("ECON".equals(o.kind()) || "CB".equals(o.kind()))
+                    && "High".equalsIgnoreCase(o.impact())) {
                 highImpact = true;
                 if (note == null) note = o.title();
             } else if ("EARNINGS".equals(o.kind())) {
@@ -546,11 +635,20 @@ class WeatherStatsCollector {
         return "RAIN";
     }
 
+    /**
+     * A human-readable protagonist for the forecast tiles — never an internal
+     * key: a {@code name:<norm>} unit key loses its prefix, a bare cluster id
+     * (digits) yields no note at all (live-observed 2026-07-13: the evening
+     * tile read "name:donald trump").
+     */
     private static String subjectDisplay(HeadlineRecord r, String fallback) {
         for (HeadlineSubject s : r.subjects()) {
             if (s.name() != null && !s.name().isBlank()) return s.name();
         }
-        return fallback;
+        if (fallback == null) return null;
+        String f = fallback.strip();
+        if (f.regionMatches(true, 0, "name:", 0, 5)) return f.substring(5).strip();
+        return f.chars().allMatch(Character::isDigit) ? null : f;
     }
 
     // --- Germany: ad-hocs + analyst actions -----------------------------------
@@ -879,7 +977,8 @@ class WeatherStatsCollector {
             MarketSnapshot s = e.snapshot();
             if (s == null || !s.hasPrice()) continue;
             out.add(new WatchlistStat(e.name(), e.ticker(),
-                    finiteOrNull(s.dayChangePercent()), finiteOrNull(s.price()), s.currency()));
+                    finiteOrNull(s.dayChangePercent()), finiteOrNull(s.price()), s.currency(),
+                    e.tldr() == null || e.tldr().isBlank() ? null : e.tldr().strip()));
         }
         out.sort(Comparator.comparing(WatchlistStat::changePercent,
                 Comparator.nullsLast(
@@ -893,24 +992,51 @@ class WeatherStatsCollector {
         List<String> out = new ArrayList<>();
         for (DeepDiveRecord r : archive.recent(10)) {
             if (r.createdAtEpoch() < dayStart.getEpochSecond()) continue;
-            out.add(r.canonicalName() != null && !r.canonicalName().isBlank()
-                    ? r.canonicalName() : r.subject());
+            String name = r.canonicalName() != null && !r.canonicalName().isBlank()
+                    ? r.canonicalName() : r.subject();
+            String thesis = thesisSentence(r.report());
+            out.add(thesis == null ? name : name + ": " + thesis);
         }
         return out;
     }
 
+    /**
+     * The first sentence of a deep-dive report's "These"/"Thesis" section —
+     * the house's page-1 read, so the evening edition can say WHAT the desk
+     * concluded today, not merely that a report exists. Null when the report
+     * carries no recognizable thesis section.
+     */
+    static String thesisSentence(String report) {
+        if (report == null || report.isBlank()) return null;
+        for (String heading : List.of("## These", "## Thesis")) {
+            int at = report.indexOf(heading + "\n");
+            if (at < 0) continue;
+            int from = at + heading.length() + 1;
+            int end = report.indexOf("\n## ", from);
+            String body = (end < 0 ? report.substring(from) : report.substring(from, end)).strip();
+            if (body.isEmpty()) continue;
+            List<String> sentences = DeepDiveFactCheck.sentences(body.split("\n")[0]);
+            if (sentences.isEmpty()) continue;
+            String s = sentences.get(0).strip();
+            if (s.length() < 20) continue;
+            return s.length() > 220 ? s.substring(0, 217) + "…" : s;
+        }
+        return null;
+    }
+
     // --- outlook -------------------------------------------------------------------------
 
-    private List<OutlookStat> outlook(LocalDate today, ZoneId zone) {
+    private List<OutlookStat> outlook(LocalDate today, ZoneId zone,
+            List<TradingViewCalendarClient.TvEvent> tvEvents,
+            Map<String, String> isinToTicker) {
         LocalDate tomorrow = today.plusDays(1);
         List<OutlookStat> out = new ArrayList<>();
+        int econ = 0;
         EconCalendarClient calendar = econCalendarClient;
         if (calendar != null) {
-            List<EconCalendarClient.EconEvent> week = new ArrayList<>();
-            week.addAll(guarded("ff this week", List.of(), calendar::thisWeek));
-            week.addAll(guarded("ff next week", List.of(), calendar::nextWeek));
-            int econ = 0;
-            for (EconCalendarClient.EconEvent e : week) {
+            for (EconCalendarClient.EconEvent e
+                    : guarded("ff this week",
+                            List.<EconCalendarClient.EconEvent>of(), calendar::thisWeek)) {
                 LocalDate day = Instant.ofEpochSecond(e.whenEpochSeconds())
                         .atZone(zone).toLocalDate();
                 if (!day.equals(tomorrow) || !relevantEvent(e) || econ >= MAX_OUTLOOK_ECON) {
@@ -922,15 +1048,81 @@ class WeatherStatsCollector {
                 econ++;
             }
         }
+        // Only ForexFactory's this-week file still exists (_nextweek 404s since
+        // mid-2026), so a Saturday evening sees an empty FF docket for tomorrow —
+        // TradingView (already fetched, spans tomorrow) fills that hole.
+        if (econ == 0) {
+            for (TradingViewCalendarClient.TvEvent e : tvEvents) {
+                if (!e.when().atZone(zone).toLocalDate().equals(tomorrow)
+                        || !relevantTvEvent(e) || econ >= MAX_OUTLOOK_ECON) {
+                    continue;
+                }
+                out.add(new OutlookStat(e.title(), e.country(), impactWord(e.importance()),
+                        LocalTime.ofInstant(e.when(), zone).format(HOUR_MINUTE), "ECON"));
+                econ++;
+            }
+        }
+        // The street's numbers for tomorrow's reports (EarningsWhispers, US) —
+        // joined by symbol onto the NASDAQ rows so the docket line carries the
+        // revenue consensus beside NASDAQ's EPS figure.
+        Map<String, EarningsWhispersClient.EarningsEstimate> estimates = new HashMap<>();
+        EarningsWhispersClient whispers = earningsWhispersClient;
+        if (whispers != null) {
+            for (EarningsWhispersClient.EarningsEstimate est : guarded("earnings whispers",
+                    List.<EarningsWhispersClient.EarningsEstimate>of(),
+                    () -> whispers.estimatesOn(tomorrow))) {
+                estimates.putIfAbsent(est.ticker().toUpperCase(Locale.ROOT), est);
+            }
+        }
         NasdaqCalendarClient nasdaq = nasdaqCalendarClient;
         if (nasdaq != null) {
             for (NasdaqCalendarClient.EarningsEntry e : guarded("nasdaq earnings",
                     List.<NasdaqCalendarClient.EarningsEntry>of(),
                     () -> nasdaq.earningsOn(tomorrow, MAX_OUTLOOK_EARNINGS))) {
-                String detail = e.epsForecast() == null || e.epsForecast().isBlank()
-                        ? e.symbol() : e.symbol() + ", erw. EPS " + e.epsForecast();
+                StringBuilder detail = new StringBuilder(e.symbol());
+                if (e.epsForecast() != null && !e.epsForecast().isBlank()) {
+                    detail.append(", erw. EPS ").append(e.epsForecast());
+                }
+                EarningsWhispersClient.EarningsEstimate est =
+                        estimates.get(e.symbol().toUpperCase(Locale.ROOT));
+                if (est != null && est.revenueEstimate() != null) {
+                    detail.append(", erw. Umsatz ")
+                            .append(WeatherMaterial.compact(Math.round(est.revenueEstimate())))
+                            .append(" $");
+                }
                 out.add(new OutlookStat(e.name() == null || e.name().isBlank()
-                        ? e.symbol() : e.name(), detail, null, slotLabel(e.slot()), "EARNINGS"));
+                        ? e.symbol() : e.name(), detail.toString(), null,
+                        slotLabel(e.slot()), "EARNINGS"));
+            }
+        }
+        // German corporate dates (EQS register), only where the ISIN joins a
+        // paper the room actually discussed today — the register itself is 600+
+        // events deep and would drown the docket.
+        EqsEventsClient eqs = eqsEventsClient;
+        if (eqs != null && !isinToTicker.isEmpty()) {
+            int corp = 0;
+            for (EqsEventsClient.CorporateEvent e : guarded("eqs events",
+                    List.<EqsEventsClient.CorporateEvent>of(), eqs::upcoming)) {
+                if (corp >= MAX_OUTLOOK_CORP) break;
+                if (e.isin() == null
+                        || !e.startDate().atZone(zone).toLocalDate().equals(tomorrow)) {
+                    continue;
+                }
+                String kaefigTicker = isinToTicker.get(e.isin());
+                if (kaefigTicker == null) continue;
+                out.add(new OutlookStat(e.companyName() + ": " + e.headline(),
+                        kaefigTicker, null, null, "CORP"));
+                corp++;
+            }
+        }
+        // A rate decision tomorrow outranks everything on the docket.
+        CentralBankCalendarClient cb = centralBankCalendarClient;
+        if (cb != null) {
+            for (CentralBankCalendarClient.CbMeeting m : guarded("cb tomorrow",
+                    List.<CentralBankCalendarClient.CbMeeting>of(),
+                    () -> cb.upcomingDecisions(tomorrow, 1))) {
+                if (!m.date().equals(tomorrow)) continue;
+                out.add(new OutlookStat(m.title(), m.bank(), "High", null, "CB"));
             }
         }
         return out;
@@ -944,6 +1136,144 @@ class WeatherStatsCollector {
             case "time-after-hours" -> "after-hours";
             default -> null;
         };
+    }
+
+    // --- the calendar's outcome side (TradingView) + world events -------------------------
+
+    /** ONE TradingView fetch spanning today and tomorrow (local calendar days). */
+    private List<TradingViewCalendarClient.TvEvent> tvEvents(LocalDate today, ZoneId zone) {
+        TradingViewCalendarClient client = tradingViewClient;
+        if (client == null) return List.of();
+        return client.events(today.atStartOfDay(zone).toInstant(),
+                today.plusDays(2).atStartOfDay(zone).toInstant());
+    }
+
+    /**
+     * Today's macro releases WITH their outcome — the "wie ist es ausgegangen"
+     * the forecast-only docket can't answer. Only events that actually carry
+     * an actual value; relevance mirrors the docket rule (high anywhere,
+     * medium for the rooms the cage trades).
+     */
+    private List<EconOutcomeStat> econOutcomes(List<TradingViewCalendarClient.TvEvent> tvEvents,
+            LocalDate today, ZoneId zone) {
+        List<EconOutcomeStat> out = new ArrayList<>();
+        for (TradingViewCalendarClient.TvEvent e : tvEvents) {
+            if (e.actual() == null || !relevantTvEvent(e)) continue;
+            if (!e.when().atZone(zone).toLocalDate().equals(today)) continue;
+            out.add(new EconOutcomeStat(e.title(), e.country(),
+                    LocalTime.ofInstant(e.when(), zone).format(HOUR_MINUTE),
+                    impactWord(e.importance()), e.actual(), e.forecast(), e.previous(),
+                    e.unit()));
+            if (out.size() >= MAX_ECON_OUTCOMES) break;
+        }
+        return out;
+    }
+
+    /** The docket rule on the TradingView scale: high anywhere, medium for USD/EUR rooms. */
+    private static boolean relevantTvEvent(TradingViewCalendarClient.TvEvent e) {
+        if (e.importance() >= 1) return true;
+        return e.importance() == 0 && ("US".equals(e.country()) || "DE".equals(e.country())
+                || "EU".equals(e.country()));
+    }
+
+    /** TradingView's -1/0/1 → the ForexFactory impact words the record already speaks. */
+    private static String impactWord(int importance) {
+        if (importance >= 1) return "High";
+        return importance == 0 ? "Medium" : "Low";
+    }
+
+    /**
+     * The day's world log (Wikipedia Current Events, EN — attributed): what
+     * happened outside the tape, categorized with a press citation each. The
+     * portal's TODAY page fills through the day; when it is still empty at
+     * freeze time, yesterday's completed page carries the block.
+     */
+    private List<WorldEventStat> worldEvents(LocalDate today) {
+        WikipediaCurrentEventsClient client = wikipediaClient;
+        if (client == null) return List.of();
+        List<WikipediaCurrentEventsClient.WorldEvent> events =
+                client.eventsOn(today, WORLD_EVENTS_PER_CATEGORY);
+        if (events.isEmpty()) {
+            events = client.eventsOn(today.minusDays(1), WORLD_EVENTS_PER_CATEGORY);
+        }
+        List<WorldEventStat> out = new ArrayList<>();
+        for (WikipediaCurrentEventsClient.WorldEvent e : events) {
+            out.add(new WorldEventStat(e.category(), e.text(), e.source()));
+            if (out.size() >= MAX_WORLD_EVENTS) break;
+        }
+        return out;
+    }
+
+    /**
+     * The ARD desk's top news of the day (Tagesschau api2u, attributed press):
+     * the homepage ranking leads — that IS the "Top News des Tages" — then the
+     * Wirtschaft ressort tops the list up. Today's stories only, deduped by
+     * title (a Wirtschaft story often sits on the homepage too).
+     */
+    private List<TopNewsStat> topNews(Instant dayStart) {
+        TagesschauClient client = tagesschauClient;
+        if (client == null) return List.of();
+        Map<String, TopNewsStat> out = new LinkedHashMap<>();
+        for (TagesschauClient.Article a : client.topNews(10)) {
+            addTopNews(out, a, dayStart);
+        }
+        for (TagesschauClient.Article a : client.wirtschaft(20)) {
+            if (out.size() >= MAX_TOP_NEWS) break;
+            addTopNews(out, a, dayStart);
+        }
+        return cap(new ArrayList<>(out.values()), MAX_TOP_NEWS);
+    }
+
+    private static void addTopNews(Map<String, TopNewsStat> out, TagesschauClient.Article a,
+            Instant dayStart) {
+        if (a.publishedAt() == null || a.publishedAt().isBefore(dayStart)) return;
+        if (a.title() == null || a.title().isBlank()) return;
+        out.putIfAbsent(a.title().toLowerCase(Locale.ROOT).strip(),
+                new TopNewsStat(a.topline(), a.title(), a.firstSentence(),
+                        localTime(a.publishedAt()), a.ressort(), a.breaking()));
+    }
+
+    /**
+     * The Ereignis-Nachlese loop: for the day's top released numbers, ask the
+     * web how the press read them — headline titles only, attributed, never a
+     * conclusion of our own. High-impact outcomes first; two events, one Bing
+     * query each (the 15-min client cache absorbs re-runs).
+     */
+    private List<EventReviewStat> eventReviews(List<EconOutcomeStat> outcomes) {
+        de.bsommerfeld.wsbg.terminal.websearch.BingWebSearchClient search = webSearchClient;
+        if (search == null || outcomes.isEmpty()) return List.of();
+        List<EconOutcomeStat> ranked = new ArrayList<>(outcomes);
+        ranked.sort(Comparator.comparing((EconOutcomeStat o) -> !"High".equals(o.impact())));
+        List<EventReviewStat> out = new ArrayList<>();
+        for (EconOutcomeStat o : ranked) {
+            if (out.size() >= MAX_EVENT_REVIEWS) break;
+            String query = (o.country() == null || o.country().isBlank()
+                    ? o.title() : o.country() + " " + o.title());
+            List<String> headlines = new ArrayList<>();
+            for (var item : guarded("event review " + o.title(),
+                    List.<de.bsommerfeld.wsbg.terminal.source.RawNewsItem>of(),
+                    () -> search.newsForName(query, REVIEW_HEADLINES))) {
+                if (item.title() == null || item.title().isBlank()) continue;
+                headlines.add(item.publisher() == null || item.publisher().isBlank()
+                        ? item.title() : item.title() + " [" + item.publisher() + "]");
+            }
+            if (!headlines.isEmpty()) {
+                out.add(new EventReviewStat(o.title() + " (" + o.country() + ")", headlines));
+            }
+        }
+        return out;
+    }
+
+    /** The next rate decisions (EZB + Fed) inside the lookahead — the Ausblick's hard anchors. */
+    private List<CbDateStat> cbDates(LocalDate today) {
+        CentralBankCalendarClient client = centralBankCalendarClient;
+        if (client == null) return List.of();
+        List<CbDateStat> out = new ArrayList<>();
+        for (CentralBankCalendarClient.CbMeeting m : client.upcomingDecisions(today, 1)) {
+            if (m.date().isAfter(today.plusDays(CB_LOOKAHEAD_DAYS))) continue;
+            out.add(new CbDateStat(m.bank(), m.title(), m.date().toString()));
+        }
+        return out;
     }
 
     // --- colour ---------------------------------------------------------------------------

@@ -246,7 +246,8 @@ public class WeatherReportBridge {
                 "nextEventDate", d.nextEventDate(), "shortPercent", d.shortPercent(),
                 "topShortHolder", d.topShortHolder(), "insiderNote", d.insiderNote()));
         putList(out, "watchlist", w.watchlist(), e -> map("name", e.name(), "ticker", e.ticker(),
-                "changePercent", e.changePercent(), "price", e.price(), "currency", e.currency()));
+                "changePercent", e.changePercent(), "price", e.price(), "currency", e.currency(),
+                "tldr", e.tldr()));
         if (!w.deepDives().isEmpty()) out.put("deepDives", w.deepDives());
         putList(out, "outlook", w.outlook(), o -> map("title", o.title(), "detail", o.detail(),
                 "impact", o.impact(), "time", o.time(), "kind", o.kind()));
@@ -266,6 +267,20 @@ public class WeatherReportBridge {
         putList(out, "dayparts", w.dayparts(), d -> map("key", d.key(), "icon", d.icon(),
                 "lines", d.lines(), "bullish", d.bullish(), "bearish", d.bearish(),
                 "red", d.red(), "note", d.note()));
+        putList(out, "econOutcomes", w.econOutcomes(), o -> map("title", o.title(),
+                "country", o.country(), "time", o.time(), "impact", o.impact(),
+                "actual", o.actual(), "forecast", o.forecast(), "previous", o.previous(),
+                "unit", o.unit()));
+        putList(out, "worldEvents", w.worldEvents(), e -> map("category", e.category(),
+                "text", e.text(), "source", e.source()));
+        putList(out, "eventReviews", w.eventReviews(), r -> map("event", r.event(),
+                "headlines", r.headlines().isEmpty() ? null : r.headlines()));
+        putList(out, "cbDates", w.cbDates(), c -> map("bank", c.bank(), "title", c.title(),
+                "dateIso", c.dateIso()));
+        putList(out, "topNews", w.topNews(), n -> map("topline", n.topline(),
+                "title", n.title(), "firstSentence", n.firstSentence(),
+                "time", n.time(), "ressort", n.ressort(),
+                "breaking", n.breaking() ? Boolean.TRUE : null));
         return out;
     }
 

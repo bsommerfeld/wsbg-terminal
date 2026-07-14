@@ -29,4 +29,28 @@ class WeatherStatsCollectorTest {
         assertFalse(WeatherStatsCollector.looksLikeIsin(null));
         assertFalse(WeatherStatsCollector.looksLikeIsin("US67066G104X")); // check digit must be a digit
     }
+
+    @org.junit.jupiter.api.Test
+    void thesisSentenceReadsTheFirstSentenceOfTheThesisSection() {
+        String report = "## Worum es geht\nEin Konzern.\n\n## These\nSAP bleibt der defensive"
+                + " Anker des Käfigs, weil die Cloud-Erlöse zweistellig wachsen. Zweiter Satz.\n"
+                + "\n## Lage\nText.";
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "SAP bleibt der defensive Anker des Käfigs, weil die Cloud-Erlöse zweistellig"
+                        + " wachsen.",
+                WeatherStatsCollector.thesisSentence(report));
+        org.junit.jupiter.api.Assertions.assertNull(
+                WeatherStatsCollector.thesisSentence("## Lage\nKein These-Abschnitt."));
+        org.junit.jupiter.api.Assertions.assertNull(WeatherStatsCollector.thesisSentence(null));
+    }
+
+    @org.junit.jupiter.api.Test
+    void tnxNormalizationHandlesBothYahooEncodings() {
+        // The CBOE definition: yield ×10 ("46.09" → 4.609 %).
+        org.junit.jupiter.api.Assertions.assertEquals(4.609,
+                WeatherStatsCollector.normalizeTnx(46.09), 1e-9);
+        // The plain-yield encoding Yahoo served live 2026-07-13 ("4.61" → 4.61 %).
+        org.junit.jupiter.api.Assertions.assertEquals(4.61,
+                WeatherStatsCollector.normalizeTnx(4.61), 1e-9);
+    }
 }
