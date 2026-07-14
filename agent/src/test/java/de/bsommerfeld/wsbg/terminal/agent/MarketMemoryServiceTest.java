@@ -141,6 +141,30 @@ class MarketMemoryServiceTest {
         assertEquals("^GDAXI", MarketMemoryService.benchmarkFor("RHM.DE"));
         assertEquals("^GSPC", MarketMemoryService.benchmarkFor("AAPL"));
         assertEquals("^GSPC", MarketMemoryService.benchmarkFor(null));
+        // An index measures itself RAW — subtracting it from itself would be zero.
+        assertNull(MarketMemoryService.benchmarkFor("^GSPC"));
+        assertNull(MarketMemoryService.benchmarkFor("^GDAXI"));
+    }
+
+    @Test
+    void macroSurpriseClassNeedsGroupAndSign() {
+        assertEquals("INFLATION_UEBER_PROGNOSE",
+                MarketMemoryService.macroSurpriseClass("INFLATION", 0.4, 0.3));
+        assertEquals("ARBEITSMARKT_UNTER_PROGNOSE",
+                MarketMemoryService.macroSurpriseClass("ARBEITSMARKT", 150.0, 180.0));
+        assertNull(MarketMemoryService.macroSurpriseClass("INFLATION", 0.3, 0.3)); // in line
+        assertNull(MarketMemoryService.macroSurpriseClass("SONSTIGES", 1.0, 0.5));
+        assertNull(MarketMemoryService.macroSurpriseClass(null, 1.0, 0.5));
+        assertNull(MarketMemoryService.macroSurpriseClass("INFLATION", null, 0.5));
+    }
+
+    @Test
+    void macroIndexCoversUsAndEuroZoneOnly() {
+        assertEquals("^GSPC", MarketMemoryService.macroIndexFor("US"));
+        assertEquals("^GDAXI", MarketMemoryService.macroIndexFor("DE"));
+        assertEquals("^GDAXI", MarketMemoryService.macroIndexFor("EU"));
+        assertNull(MarketMemoryService.macroIndexFor("JP"));
+        assertNull(MarketMemoryService.macroIndexFor(null));
     }
 
     @Test

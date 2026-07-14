@@ -78,7 +78,30 @@ final class LiteraturePriors {
             Map.entry("INSOLVENZ",
                     "Bankruptcy filing: severe negative reaction; measured means UNDERSTATE the "
                             + "damage because delisted names drop out of price series "
-                            + "(survivorship floor, recherche 2026-07-14)."));
+                            + "(survivorship floor, recherche 2026-07-14)."),
+            Map.entry("ZINSENTSCHEID_UEBER_PROGNOSE",
+                    "Tighter-than-expected rate decision: an unexpected +25 bp historically cost "
+                            + "broad US equities roughly 1 % on the day "
+                            + "(Bernanke/Kuttner 2005, US, 1989-2002)."),
+            Map.entry("ZINSENTSCHEID_UNTER_PROGNOSE",
+                    "Easier-than-expected rate decision: the mirror image, roughly +1 % per "
+                            + "unexpected -25 bp (Bernanke/Kuttner 2005, US, 1989-2002)."),
+            Map.entry("INFLATION_UEBER_PROGNOSE",
+                    "Inflation above consensus reads as tightening risk - equities historically "
+                            + "negative on the announcement day, magnitude regime-dependent "
+                            + "(macro-announcement literature; Savor/Wilson 2013)."),
+            Map.entry("INFLATION_UNTER_PROGNOSE",
+                    "Inflation below consensus reads as easing relief - equities historically "
+                            + "positive on the announcement day, magnitude regime-dependent "
+                            + "(macro-announcement literature; Savor/Wilson 2013)."),
+            Map.entry("ARBEITSMARKT_UEBER_PROGNOSE",
+                    "Labour-market surprises FLIP SIGN with the regime: strong data is rate fear "
+                            + "in tightening phases and growth relief in easing phases - no stable "
+                            + "unconditional direction (McQueen/Roley 1993, US)."),
+            Map.entry("ARBEITSMARKT_UNTER_PROGNOSE",
+                    "Labour-market surprises FLIP SIGN with the regime: weak data is easing hope "
+                            + "in tightening phases and recession fear in easing phases - no stable "
+                            + "unconditional direction (McQueen/Roley 1993, US)."));
 
     /** The attributed prior line for a class, when the literature carries one. */
     static Optional<String> priorFor(String eventClass) {

@@ -118,6 +118,13 @@ public class MarketMemoryService {
     static final int CLASSIFY_BATCH = 8;
     static final int MAX_CLASSIFY_ATTEMPTS = 3;
 
+    private static final long MACRO_INITIAL_DELAY_SECONDS = 360;
+    /** High-impact actuals land a handful of times per day — 2 h catches all. */
+    private static final long MACRO_INTERVAL_SECONDS = 2 * 3600;
+    /** Calendar look-back per sweep; idempotent appends make overlap free. */
+    private static final int MACRO_LOOKBACK_DAYS = 3;
+    static final int MACRO_CLASSIFY_BATCH = 8;
+
     private static final long ENRICH_INITIAL_DELAY_SECONDS = 300;
     private static final long ENRICH_INTERVAL_SECONDS = 3600;
     /** CAR(0,+5) needs t+5 TRADING days — 10 calendar days settles any week. */
@@ -152,6 +159,8 @@ public class MarketMemoryService {
     private volatile YahooFinanceClient yahooClient;
     private volatile HeadlineArchive headlineArchive;
     private volatile AdhocClassifier adhocClassifier;
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.TradingViewCalendarClient tvCalendar;
+    private volatile MacroClassifier macroClassifier;
 
     private final AtomicBoolean started = new AtomicBoolean();
     private ScheduledExecutorService scheduler;
@@ -234,6 +243,17 @@ public class MarketMemoryService {
         this.adhocClassifier = classifier;
     }
 
+    @com.google.inject.Inject(optional = true)
+    void setTradingViewCalendarClient(
+            de.bsommerfeld.wsbg.terminal.briefing.TradingViewCalendarClient client) {
+        this.tvCalendar = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setMacroClassifier(MacroClassifier classifier) {
+        this.macroClassifier = classifier;
+    }
+
     /** Arms all harvest loops. Idempotent. */
     public void start() {
         if (!started.compareAndSet(false, true)) return;
@@ -253,6 +273,7 @@ public class MarketMemoryService {
         schedule(this::harvestAnalystActions, ACTIONS_INITIAL_DELAY_SECONDS, ACTIONS_INTERVAL_SECONDS);
         schedule(this::harvestUsLegs, US_LEGS_INITIAL_DELAY_SECONDS, US_LEGS_INTERVAL_SECONDS);
         schedule(this::classifyAdhocs, CLASSIFY_INITIAL_DELAY_SECONDS, CLASSIFY_INTERVAL_SECONDS);
+        schedule(this::harvestMacroSurprises, MACRO_INITIAL_DELAY_SECONDS, MACRO_INTERVAL_SECONDS);
         schedule(this::enrichEvents, ENRICH_INITIAL_DELAY_SECONDS, ENRICH_INTERVAL_SECONDS);
     }
 
@@ -554,6 +575,112 @@ public class MarketMemoryService {
     }
 
     // ------------------------------------------------------------------
+    // Harvest: macro surprises (world news the register CAN measure)
+    // ------------------------------------------------------------------
+
+    /** Indicator title → macro group (titles recur monthly; judged ~once, ever). */
+    private final Map<String, String> macroGroupCache = new ConcurrentHashMap<>();
+    private final Map<String, Integer> macroClassifyAttempts = new ConcurrentHashMap<>();
+
+    /**
+     * One calendar sweep: every settled high-impact actual with a consensus
+     * becomes a dated event of class {@code <GROUP>_UEBER/UNTER_PROGNOSE},
+     * measured RAW on the country's index — the ONE kind of world news the
+     * register can honestly measure (recurring, dated, signed). Singular
+     * world events (geopolitics, elections, disasters) deliberately never
+     * land here: their treatment is the transmission-channel doctrine in the
+     * section prompts, not statistics.
+     */
+    void harvestMacroSurprises() {
+        de.bsommerfeld.wsbg.terminal.briefing.TradingViewCalendarClient calendar = tvCalendar;
+        if (calendar == null) return;
+        try {
+            Instant now = Instant.now();
+            List<de.bsommerfeld.wsbg.terminal.briefing.TradingViewCalendarClient.TvEvent> actuals =
+                    new ArrayList<>();
+            for (var e : calendar.events(now.minus(Duration.ofDays(MACRO_LOOKBACK_DAYS)), now)) {
+                if (e.importance() < 1 || e.actual() == null || e.forecast() == null) continue;
+                if (macroIndexFor(e.country()) == null) continue;
+                actuals.add(e);
+            }
+            if (actuals.isEmpty()) return;
+            resolveMacroGroups(actuals);
+
+            int fresh = 0;
+            for (var e : actuals) {
+                String group = macroGroupCache.get(e.title());
+                String eventClass = macroSurpriseClass(group, e.actual(), e.forecast());
+                if (eventClass == null) continue;
+                String detail = String.format(Locale.ROOT, "%s (%s): actual %.2f vs forecast %.2f",
+                        e.title(), e.country(), e.actual(), e.forecast());
+                String date = e.when().atZone(ZoneOffset.UTC).toLocalDate().toString();
+                if (eventArchive.append(MarketEventRecord.bare(date,
+                        macroIndexFor(e.country()), null, eventClass, "TV-Kalender", detail))) {
+                    fresh++;
+                }
+            }
+            if (fresh > 0) {
+                LOG.info("Event register: {} new macro surprise(s) ({} events total).",
+                        fresh, eventArchive.size());
+            }
+        } catch (Exception e) {
+            LOG.warn("Macro-surprise harvest failed: {}", e.getMessage());
+        }
+    }
+
+    /** Judges the not-yet-cached titles in small batches; 3 whiffs = SONSTIGES. */
+    private void resolveMacroGroups(
+            List<de.bsommerfeld.wsbg.terminal.briefing.TradingViewCalendarClient.TvEvent> actuals) {
+        MacroClassifier classifier = macroClassifier;
+        if (classifier == null) return;
+        List<String> unknown = new ArrayList<>();
+        for (var e : actuals) {
+            if (!macroGroupCache.containsKey(e.title()) && !unknown.contains(e.title())) {
+                unknown.add(e.title());
+                if (unknown.size() >= MACRO_CLASSIFY_BATCH) break;
+            }
+        }
+        if (unknown.isEmpty()) return;
+        Map<Integer, String> verdicts = classifier.classify(unknown);
+        for (int i = 0; i < unknown.size(); i++) {
+            String title = unknown.get(i);
+            String verdict = verdicts.get(i + 1);
+            if (verdict != null) {
+                macroGroupCache.put(title, verdict);
+                macroClassifyAttempts.remove(title);
+            } else if (macroClassifyAttempts.merge(title, 1, Integer::sum) >= MAX_CLASSIFY_ATTEMPTS) {
+                macroGroupCache.put(title, "SONSTIGES");
+                macroClassifyAttempts.remove(title);
+            }
+        }
+    }
+
+    /**
+     * Package-private for tests: group + surprise sign → event class. In-line
+     * prints and the SONSTIGES bucket carry no measurable class; the sign is
+     * relative to CONSENSUS, the economic reading (good/bad) stays with the
+     * group — which is exactly why the group matters (an above-consensus CPI
+     * and an above-consensus GDP are opposite stories).
+     */
+    static String macroSurpriseClass(String group, Double actual, Double forecast) {
+        if (group == null || "SONSTIGES".equals(group)
+                || actual == null || forecast == null || actual.equals(forecast)) {
+            return null;
+        }
+        return group + (actual > forecast ? "_UEBER_PROGNOSE" : "_UNTER_PROGNOSE");
+    }
+
+    /** The index a country's macro surprise is measured on; null = not covered. */
+    static String macroIndexFor(String country) {
+        if (country == null) return null;
+        return switch (country) {
+            case "US" -> "^GSPC";
+            case "DE", "EU" -> "^GDAXI";
+            default -> null;
+        };
+    }
+
+    // ------------------------------------------------------------------
     // Enrichment: CARs + regime stamp + confounded flag
     // ------------------------------------------------------------------
 
@@ -583,7 +710,8 @@ public class MarketMemoryService {
                 }
                 eventDates.put(e.identity(), d);
                 earliest.merge(e.symbol(), d, (a, b) -> a.isBefore(b) ? a : b);
-                earliest.merge(benchmarkFor(e.symbol()), d, (a, b) -> a.isBefore(b) ? a : b);
+                String bench = benchmarkFor(e.symbol());
+                if (bench != null) earliest.merge(bench, d, (a, b) -> a.isBefore(b) ? a : b);
             }
             for (Map.Entry<String, LocalDate> entry : earliest.entrySet()) {
                 barsBySymbol.put(entry.getKey(),
@@ -598,7 +726,8 @@ public class MarketMemoryService {
                     String bench = benchmarkFor(event.symbol());
                     Optional<EventStudy.Reaction> reaction = EventStudy.compute(
                             barsBySymbol.getOrDefault(event.symbol(), List.of()),
-                            barsBySymbol.getOrDefault(bench, List.of()), date);
+                            bench == null ? null : barsBySymbol.getOrDefault(bench, List.of()),
+                            date);
                     if (reaction.isEmpty()) {
                         noteEnrichFailure(event);
                         continue;
@@ -610,7 +739,7 @@ public class MarketMemoryService {
                             regime == null ? null : bandOf(regime.score()),
                             regime == null ? null : regime.score(),
                             reaction.get().carEventPct(), reaction.get().carShortPct(),
-                            bench, confounded))) {
+                            bench == null ? "RAW" : bench, confounded))) {
                         enrichAttempts.remove(event.identity());
                         enriched++;
                     }
@@ -638,8 +767,14 @@ public class MarketMemoryService {
         }
     }
 
-    /** Benchmark index by listing shape: German venue → DAX, everything else → S&P 500. */
+    /**
+     * Benchmark index by listing shape: German venue → DAX, everything else →
+     * S&P 500 — and {@code null} for an index symbol itself (macro events are
+     * measured RAW on the index: subtracting the market from itself would
+     * measure zero by construction).
+     */
     static String benchmarkFor(String symbol) {
+        if (symbol != null && symbol.startsWith("^")) return null;
         return symbol != null && symbol.toUpperCase().endsWith(".DE") ? "^GDAXI" : "^GSPC";
     }
 

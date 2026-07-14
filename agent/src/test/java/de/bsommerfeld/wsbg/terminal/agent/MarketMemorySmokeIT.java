@@ -220,4 +220,99 @@ class MarketMemorySmokeIT {
         assertTrue(leansOnMemory,
                 "the section ignored the market-memory block entirely:\n" + body);
     }
+
+    /**
+     * The macro-surprise leg live end to end: real TradingView actuals of the
+     * last days, groups judged by the REAL model (title-cached), signed
+     * classes registered on the country's index — the ONE kind of world news
+     * the register can honestly measure.
+     */
+    @Test
+    void macroSurprisesRegisterOnTheIndex() {
+        OllamaAvailability.ensureOllama();
+        GlobalConfig config = new GlobalConfig();
+        LlmGate gate = new LlmGate();
+        AgentBrain brain = new AgentBrain(config, new ApplicationEventBus(),
+                new OllamaServerManager(), gate);
+
+        MarketEventArchive events = new MarketEventArchive(dir.resolve("macro.jsonl"));
+        MarketMemoryService svc = new MarketMemoryService(
+                new AdhocEventArchive(dir.resolve("a.jsonl")),
+                new FearGreedHistoryArchive(dir.resolve("f.jsonl")), events, null);
+        svc.setTradingViewCalendarClient(
+                new de.bsommerfeld.wsbg.terminal.briefing.TradingViewCalendarClient());
+        svc.setMacroClassifier(new MacroClassifier(brain, gate));
+
+        svc.harvestMacroSurprises();
+        svc.harvestMacroSurprises(); // second sweep classifies what batch 1 didn't reach
+
+        List<MarketEventRecord> registered = events.all();
+        assertFalse(registered.isEmpty(),
+                "no macro surprise registered from the last days' high-impact actuals");
+        for (MarketEventRecord e : registered) {
+            assertTrue(e.eventClass().matches(
+                            "(INFLATION|ARBEITSMARKT|WACHSTUM|ZINSENTSCHEID|STIMMUNG)_(UEBER|UNTER)_PROGNOSE"),
+                    "unexpected macro class: " + e.eventClass());
+            assertTrue(e.symbol().startsWith("^"), "macro event must sit on an index");
+            assertEquals("TV-Kalender", e.source());
+        }
+        System.out.println("[MACRO] registered=" + registered.size()
+                + " first=" + registered.get(0).eventClass() + " / " + registered.get(0).detail());
+    }
+
+    /**
+     * The TRANSMISSION-CHANNEL doctrine for singular world events (user
+     * mandate 2026-07-15: no statistics, no symptom — describe what the event
+     * touches and what that CAN lead to): a hazard on the shelf, no base
+     * rate, and the section must read the channel without inventing a single
+     * figure (the examiner guards that mechanically).
+     */
+    @Test
+    void deskReadsTheChannelForASingularWorldEvent() {
+        OllamaAvailability.ensureOllama();
+        GlobalConfig config = new GlobalConfig();
+        LlmGate gate = new LlmGate();
+        AgentBrain brain = new AgentBrain(config, new ApplicationEventBus(),
+                new OllamaServerManager(), gate);
+        ChatGateway gateway = new ChatGateway(brain, gate);
+        LocalDate today = LocalDate.now();
+
+        String shelf = "DATE: " + today + "\n"
+                + "WIRE (Abend, kondensiert):\n"
+                + "- [18:10] Energie-Werte legen zu, der Sektor gewinnt 1,4 %.\n"
+                + "WORLD CONTEXT (verified - hazards):\n"
+                + "- STORM (hurricane): Hurrikan Delia, Kategorie 3, zieht auf die "
+                + "US-Golfküste zu; Förderplattformen im Golf von Mexiko werden evakuiert "
+                + "(NOAA NHC, Stand heute).\n";
+        String system = PromptLoader.loadLocalized("weather-section", "de")
+                .replace("{{LANGUAGE}}", "Deutsch");
+        String user = "ABENDAUSGABE (Wetterbericht) vom " + today
+                + "\n\nSECTION TO WRITE: ## Der Abend"
+                + "\n\nMATERIAL (verified blocks — the only admissible evidence):\n" + shelf;
+
+        String body = gateway.chat(brain.getDeepDiveModel(), system, user);
+        assertNotNull(body);
+        System.out.println("[CHANNEL] ---\n" + body + "\n---");
+
+        // No invented figure survives (there is only ONE number on the shelf).
+        List<DeepDiveFactCheck.Objection> hard = DeepDiveFactCheck
+                .inspect(body, shelf, java.util.Set.of(), true, true).stream()
+                .filter(DeepDiveFactCheck.Objection::hard).toList();
+        assertTrue(hard.isEmpty(), "invented figures in the channel reading: " + hard);
+
+        // The channel reading happened: the event reached the prose either as
+        // possibility ("kann … führen") or as causal attribution of TODAY's
+        // observed move ("wirkt als Treiber" — Ursache-vor-Band) — both are
+        // channel language; a bare symptom claim ("Sektor wird steigen") is
+        // neither, and an invented figure died at the examiner above.
+        String lower = body.toLowerCase(java.util.Locale.ROOT);
+        assertTrue(lower.contains("hurrikan") || lower.contains("golf") || lower.contains("sturm"),
+                "the world event never reached the section:\n" + body);
+        boolean channelLanguage = lower.contains("kann") || lower.contains("könnte")
+                || lower.contains("droht") || lower.contains("risiko") || lower.contains("dürfte")
+                || lower.contains("treiber") || lower.contains("wirkt") || lower.contains("stützt")
+                || lower.contains("belast") || lower.contains("führt") || lower.contains("evaku");
+        assertTrue(channelLanguage,
+                "no transmission-channel language in the reading:\n" + body);
+    }
 }

@@ -91,6 +91,18 @@ class EventStudyTest {
     }
 
     @Test
+    void nullBenchmarkMeansRawStudy() {
+        // A macro event measured on the index itself: the raw move IS the
+        // reaction, even while a benchmark subtraction would measure zero.
+        LocalDate start = LocalDate.of(2026, 6, 1);
+        List<Bar> index = series(start, 100, 100, 100, 100, 98, 98, 98, 98, 98, 98, 98);
+        EventStudy.Reaction r = EventStudy.compute(index, null, LocalDate.of(2026, 6, 5))
+                .orElseThrow();
+        assertEquals(-2.0, r.carEventPct(), 1e-9);
+        assertEquals(-2.0, r.carShortPct(), 1e-9);
+    }
+
+    @Test
     void benchmarkHolidayFallsBackToTheLastCloseBefore() {
         LocalDate start = LocalDate.of(2026, 6, 1);
         List<Bar> stock = series(start, 100, 100, 100, 100, 90, 90, 90, 90, 90, 90, 90);

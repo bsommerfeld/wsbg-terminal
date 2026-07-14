@@ -39,12 +39,15 @@ final class EventStudy {
 
     /**
      * @param instrument daily bars of the event's instrument, oldest first
-     * @param benchmark  daily bars of the benchmark index, oldest first
+     * @param benchmark  daily bars of the benchmark index, oldest first;
+     *                   {@code null} for a RAW study (macro events measured on
+     *                   the index itself — subtracting the market from itself
+     *                   would measure zero by construction)
      * @param eventDate  the event's calendar date
      */
     static Optional<Reaction> compute(List<Bar> instrument, List<Bar> benchmark,
             LocalDate eventDate) {
-        if (instrument == null || benchmark == null || eventDate == null) return Optional.empty();
+        if (instrument == null || eventDate == null) return Optional.empty();
         int t0 = firstTradingIndexOnOrAfter(instrument, eventDate);
         if (t0 < 2 || t0 + 5 >= instrument.size()) return Optional.empty();
 
@@ -58,7 +61,8 @@ final class EventStudy {
      * Market-adjusted return over close(from) → close(to), in percent — the
      * instrument's span return minus the benchmark's over the same DATES
      * (nearest benchmark close on or before each anchor date, so venue
-     * holidays don't tear the match). Null when either side is unusable.
+     * holidays don't tear the match). A {@code null} benchmark means RAW:
+     * the span return stands alone. Null when either side is unusable.
      */
     private static Double adjustedSpanReturn(List<Bar> instrument, List<Bar> benchmark,
             int from, int to) {
@@ -66,6 +70,7 @@ final class EventStudy {
         double pTo = instrument.get(to).close();
         if (!(pFrom > 0) || !(pTo > 0)) return null;
         double own = pTo / pFrom - 1.0;
+        if (benchmark == null) return own * 100.0;
 
         Double bFrom = closeOnOrBefore(benchmark, instrument.get(from).date());
         Double bTo = closeOnOrBefore(benchmark, instrument.get(to).date());
