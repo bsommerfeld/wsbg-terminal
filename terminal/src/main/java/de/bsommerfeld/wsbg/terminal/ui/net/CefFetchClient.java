@@ -85,13 +85,29 @@ public final class CefFetchClient {
      * hits this budget, at which point the source layer's fallback (RSS) has long
      * since taken over and demoted this path.
      */
-    private static final long WARMUP_BUDGET_MS = 5 * 60_000;
+    /**
+     * 2 min since 2026-07-14 (was 5): a healthy anchor verifies in ≤20 s; the
+     * budget only ever runs out on never-ready shells (news.google.com), and
+     * every minute of it costs callers the full READY_WAIT per query before
+     * the fail-fast latch arms.
+     */
+    private static final long WARMUP_BUDGET_MS = 2 * 60_000;
     private static final Duration WARMUP_FETCH_TIMEOUT = Duration.ofSeconds(15);
 
     private final AtomicBoolean started = new AtomicBoolean(false);
     /** Router handler + load listener registered exactly once — a failed browser
      *  creation must NOT re-register them on retry (they'd accumulate, audit C5). */
     private final AtomicBoolean handlersRegistered = new AtomicBoolean(false);
+    /** Kept so {@link #dispose()} can unhook them from the shared CefHost plumbing. */
+    private volatile CefMessageRouterHandlerAdapter routerHandler;
+    private volatile java.util.function.BiConsumer<CefBrowser, Integer> loadEndListener;
+    /** Set once by {@link #dispose()}; a closed client accepts no new fetches. */
+    private final AtomicBoolean closed = new AtomicBoolean(false);
+    /** Fetches currently in flight — a client is only evictable at zero. */
+    private final java.util.concurrent.atomic.AtomicInteger inFlight =
+            new java.util.concurrent.atomic.AtomicInteger();
+    /** Wall-clock of the last fetch begin — the LRU/idle-TTL eviction signal. */
+    private volatile long lastUsedAt = System.currentTimeMillis();
     private final AtomicBoolean warmupRunning = new AtomicBoolean(false);
     private volatile CountDownLatch readyLatch = new CountDownLatch(1);
     private volatile boolean ready = false;
@@ -105,8 +121,15 @@ public final class CefFetchClient {
     private volatile CefBrowser browser;
     private volatile long lastReloadAt = 0L;
 
-    /** How long a caller may wait on a HEALTHY (first-use/reloading) session. */
-    private static final Duration READY_WAIT = Duration.ofSeconds(45);
+    /**
+     * How long a caller may wait on a HEALTHY (first-use/reloading) session.
+     * 25 s since 2026-07-14: every live host verifies within ~20 s (2 probes),
+     * and the old 45 s only ever mattered for never-ready anchors
+     * (news.google.com's consent shell) — where each query burned the full
+     * wait until the warmup budget expired. The direct fallback catches the
+     * rare host that would have made it at second 30.
+     */
+    private static final Duration READY_WAIT = Duration.ofSeconds(25);
     /** How long a caller may wait when the last full warmup already failed. */
     private static final Duration READY_WAIT_EXHAUSTED = Duration.ofSeconds(3);
 
@@ -163,6 +186,67 @@ public final class CefFetchClient {
         // but we recover automatically instead of silently dropping to RSS.
         if (isRestricted(result.status())) reloadAnchor();
         return result;
+    }
+
+    // ---- eviction seam (CefWebFetcher) -------------------------------------
+
+    /**
+     * Marks one fetch as in flight and refreshes the LRU stamp; {@code false}
+     * when this client is already disposed — the caller drops its map entry and
+     * builds a fresh client instead. The double-check closes the race with a
+     * concurrent {@link #dispose()}: whichever side loses backs out cleanly.
+     */
+    boolean tryBeginFetch() {
+        if (closed.get()) return false;
+        inFlight.incrementAndGet();
+        if (closed.get()) {
+            inFlight.decrementAndGet();
+            return false;
+        }
+        lastUsedAt = System.currentTimeMillis();
+        return true;
+    }
+
+    void endFetch() {
+        inFlight.decrementAndGet();
+    }
+
+    /** No fetch in flight — only then may the eviction sweep dispose this client. */
+    boolean isIdle() {
+        return inFlight.get() == 0;
+    }
+
+    long lastUsedAt() {
+        return lastUsedAt;
+    }
+
+    /**
+     * Tears the hidden browser down and unhooks this client from the shared
+     * router/load-end plumbing (a leaked handler per evicted tab would
+     * accumulate forever). Idempotent. Callers evict only idle clients; the
+     * one remaining race — a fetch that passed {@link #tryBeginFetch} before
+     * {@code closed} flipped — at worst errors out and the caller's chain
+     * falls through to its direct leg. Browser close runs on the EDT with the
+     * {@code setCloseAllowed() → close(true)} handshake (the
+     * BrowserWindow.gracefulShutdown pattern — without the pre-approval CEF's
+     * doClose vetoes and stalls ~100 s).
+     */
+    void dispose() {
+        if (!closed.compareAndSet(false, true)) return;
+        CefMessageRouterHandlerAdapter h = routerHandler;
+        if (h != null) cefHost.removeFetchQueryHandler(h);
+        java.util.function.BiConsumer<CefBrowser, Integer> l = loadEndListener;
+        if (l != null) cefHost.removeLoadEndListener(l);
+        CefBrowser b = browser;
+        browser = null;
+        ready = false;
+        if (b != null) {
+            SwingUtilities.invokeLater(() -> {
+                try { b.setCloseAllowed(); } catch (Throwable ignored) {}
+                try { b.close(true); } catch (Throwable ignored) {}
+            });
+        }
+        LOG.info("CEF fetch '{}' disposed (tab eviction).", label);
     }
 
     /**
@@ -256,7 +340,9 @@ public final class CefFetchClient {
             try {
                 long deadline = System.currentTimeMillis() + WARMUP_BUDGET_MS;
                 long delay = WARMUP_POLL_MS;
-                for (int attempt = 1; !ready && System.currentTimeMillis() < deadline; attempt++) {
+                for (int attempt = 1;
+                        !ready && !closed.get() && System.currentTimeMillis() < deadline;
+                        attempt++) {
                     int status = -1;
                     long retryAfterMs = 0L;
                     try {
@@ -286,7 +372,7 @@ public final class CefFetchClient {
                     }
                     Thread.sleep(delay);
                 }
-                if (!ready) {
+                if (!ready && !closed.get()) {
                     warmupExhaustedAt = System.currentTimeMillis();
                     LOG.info("CEF fetch '{}' warmup gave up after {} — callers fail fast, "
                             + "fallback handles it.", label, java.time.Duration.ofMillis(WARMUP_BUDGET_MS));
@@ -307,11 +393,12 @@ public final class CefFetchClient {
         createBrowserOnEdt();
     }
 
-    /** One-shot registration — survives a failed browser creation without duplicating (audit C5). */
+    /** One-shot registration — survives a failed browser creation without duplicating (audit C5).
+     *  Both hooks are kept in fields so {@link #dispose()} can unhook them again. */
     private void registerHandlersOnce() {
         if (!handlersRegistered.compareAndSet(false, true)) return;
 
-        cefHost.addFetchQueryHandler(new CefMessageRouterHandlerAdapter() {
+        routerHandler = new CefMessageRouterHandlerAdapter() {
             @Override
             public boolean onQuery(CefBrowser b, CefFrame f, long queryId, String request,
                     boolean persistent, CefQueryCallback callback) {
@@ -326,17 +413,19 @@ public final class CefFetchClient {
                 callback.success("");
                 return true;
             }
-        });
+        };
+        cefHost.addFetchQueryHandler(routerHandler);
 
         // A page finished loading (the anchor, or an interstitial on it).
         // Don't trust this as "ready" — start the warmup poller, which confirms the
         // session is usable by fetching real data.
-        cefHost.addLoadEndListener((b, status) -> {
+        loadEndListener = (b, status) -> {
             if (b == browser && !ready) {
                 LOG.info("CEF fetch '{}' anchor page loaded (status {}); verifying session…", label, status);
                 kickWarmup();
             }
-        });
+        };
+        cefHost.addLoadEndListener(loadEndListener);
     }
 
     /**

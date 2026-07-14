@@ -174,11 +174,12 @@ public class EditorialAgent {
     void setArticleFetcher(
             @de.bsommerfeld.wsbg.terminal.source.net.DirectFirst
             de.bsommerfeld.wsbg.terminal.source.net.WebFetcher webFetcher) {
-        // Direct-first, deliberately: article links fan across ARBITRARY publisher
-        // domains — on the browser-first chain every new origin would anchor its
-        // own hidden Chromium tab (the origin map has no eviction), while
-        // publisher pages answer a bare client fine. The joker stays the
-        // per-request fallback should a page turn out walled.
+        // Since 2026-07-14 the @DirectFirst binding is an alias of the
+        // browser-first chain (user mandate: every third-party outreach rides
+        // the joker, plain HTTP only as the per-request fallback). Article
+        // links fan across ARBITRARY publisher domains — each anchors its own
+        // hidden Chromium tab, which the joker's idle-TTL/LRU eviction
+        // (CefWebFetcher.evictIdle) now disposes again after use.
         newsDigester.setFetcher(webFetcher,
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) "
                         + "Chrome/126.0.0.0 Safari/537.36");

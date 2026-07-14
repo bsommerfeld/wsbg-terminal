@@ -317,6 +317,13 @@ public final class CefHost {
         fetchRouter.addHandler(handler, true);
     }
 
+    /** Removes a fetch-query handler again — a disposed hidden fetch browser
+     *  (tab eviction) must not leave its handler accumulating on the shared router. */
+    public void removeFetchQueryHandler(CefMessageRouterHandler handler) {
+        CefMessageRouter router = fetchRouter;
+        if (router != null) router.removeHandler(handler);
+    }
+
     /**
      * Subscribes to main-frame load-end events. The listener receives the
      * browser that finished loading and the HTTP status of its main resource;

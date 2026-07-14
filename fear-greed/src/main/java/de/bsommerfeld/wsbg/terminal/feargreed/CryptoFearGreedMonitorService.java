@@ -39,8 +39,8 @@ public class CryptoFearGreedMonitorService extends PollingMonitor<CryptoFearGree
     @Inject
     public CryptoFearGreedMonitorService(CryptoFearGreedClient client, GlobalConfig config) {
         // Production (Guice) path: build WITHOUT auto-starting — uniform with the
-        // other monitors (AppMain starts them all after the window brought CEF up),
-        // even though this client's direct transport never touches JCEF.
+        // other monitors (AppMain starts them all after the window brought CEF up);
+        // the client rides the shared browser-first chain, so that ordering matters.
         this(client, false,
                 config == null || config.getNet() == null
                         ? new NetConfig().getPollJitterPercent()

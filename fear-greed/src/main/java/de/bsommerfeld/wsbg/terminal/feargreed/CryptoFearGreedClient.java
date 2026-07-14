@@ -2,6 +2,7 @@ package de.bsommerfeld.wsbg.terminal.feargreed;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.core.util.BrowserUserAgent;
 import de.bsommerfeld.wsbg.terminal.source.net.DirectWebFetcher;
@@ -19,10 +20,11 @@ import java.util.Optional;
 /**
  * Fetches the crypto Fear &amp; Greed Index from alternative.me's free JSON API
  * ({@code https://api.alternative.me/fng/}) — keyless, documented, no bot wall
- * (verified live 2026-07-10 with a bare client), so this deliberately rides the
- * plain {@link DirectWebFetcher} instead of the shared browser-joker chain:
- * anchoring a hidden Chromium tab at an API host that answers bare HTTP anyway
- * would be pure overhead.
+ * (verified live 2026-07-10 with a bare client). Rides the shared injected
+ * {@link WebFetcher} chain (browser joker first, plain HTTP as the per-request
+ * fallback — the 2026-07-14 joker-first mandate for all third-party outreach);
+ * the no-arg ctor keeps a {@link DirectWebFetcher} for tests/CLI where no
+ * embedded browser exists.
  *
  * <p>{@code limit=45} returns the newest ~6 weeks (newest first, values as JSON
  * strings) — enough for the widget's mini trend without bloating the socket.
@@ -41,8 +43,18 @@ public class CryptoFearGreedClient {
     private static final ObjectMapper JSON = new ObjectMapper();
 
     private final String userAgent = BrowserUserAgent.random();
-    private final WebFetcher fetcher = new DirectWebFetcher();
+    private final WebFetcher fetcher;
     private final java.time.Duration requestTimeout = java.time.Duration.ofSeconds(10);
+
+    /** Direct-HTTP variant for tests/CLI (no embedded browser available). */
+    public CryptoFearGreedClient() {
+        this(new DirectWebFetcher());
+    }
+
+    @Inject
+    public CryptoFearGreedClient(WebFetcher fetcher) {
+        this.fetcher = fetcher;
+    }
 
     /** Fetches the current crypto index + its recent daily series, or empty on any failure. */
     public Optional<CryptoFearGreedIndex> fetch() {

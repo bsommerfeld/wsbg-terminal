@@ -64,7 +64,7 @@ public class OnvistaClient implements InstrumentFactsSource {
         this(new DirectWebFetcher());
     }
 
-    /** Production: rides the direct-first chain (onvista has no bot wall; the joker stays reserve). */
+    /** Production: the shared {@code @DirectFirst} seam - browser-first since the 2026-07-14 joker mandate. */
     @Inject
     public OnvistaClient(@de.bsommerfeld.wsbg.terminal.source.net.DirectFirst WebFetcher fetcher) {
         this.fetcher = fetcher;

@@ -1,9 +1,13 @@
 package de.bsommerfeld.wsbg.terminal.bundesanzeiger;
 
+import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.core.price.ShortInterest;
 import de.bsommerfeld.wsbg.terminal.core.price.ShortInterestSource;
 import de.bsommerfeld.wsbg.terminal.core.util.BrowserUserAgent;
+import de.bsommerfeld.wsbg.terminal.source.net.DirectFirst;
+import de.bsommerfeld.wsbg.terminal.source.net.WebFetcher;
+import de.bsommerfeld.wsbg.terminal.source.net.WebResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,11 +38,17 @@ import java.util.Optional;
  * and sets the {@code jsessionid} cookie, then GET the {@code ...~resource~link}
  * URL with that cookie answers {@code text/csv} — {@code "Positionsinhaber",
  * "Emittent","ISIN","Position","Datum"}, quoted fields (holder names carry
- * commas), German decimal comma in the position, BOM up front. The cookie flow
- * needs a STATEFUL client, so this module deliberately runs its own JDK
- * {@link HttpClient} with a {@link CookieManager} instead of the shared
- * stateless {@code WebFetcher} seam (it still sends a browser User-Agent via
- * {@link BrowserUserAgent} like the sibling venue modules).
+ * commas), German decimal comma in the position, BOM up front.
+ *
+ * <p><b>Transport (2026-07-14 joker-first mandate):</b> the injected shared
+ * {@link WebFetcher} chain leads — the
+ * hidden browser holds the Wicket session cookie natively, so the same
+ * two-request flow works through its anchored tab. Because the seam itself is
+ * stateless, the plain-HTTP leg of that chain cannot carry the cookie between
+ * the two requests; the own stateful JDK {@link HttpClient} with a
+ * {@link CookieManager} therefore stays as the working DIRECT fallback whenever
+ * the seam attempt yields no readable CSV (it still sends a browser User-Agent
+ * via {@link BrowserUserAgent} like the sibling venue modules).
  *
  * <p>The whole register is fetched at most once per hour (it updates daily) and
  * served from the parsed in-memory table; a failed or non-CSV fetch answers
@@ -59,6 +69,7 @@ public class ShortInterestClient implements ShortInterestSource {
     private static final Duration CACHE_TTL = Duration.ofHours(1);
 
     private final HttpClient http;
+    private final WebFetcher fetcher;
     private final String userAgent = BrowserUserAgent.random();
     private final Duration requestTimeout = Duration.ofSeconds(20);
 
@@ -69,7 +80,14 @@ public class ShortInterestClient implements ShortInterestSource {
     private final Object refreshLock = new Object();
     private volatile Register register;
 
+    /** Cookie-flow-only variant for tests/CLI (no embedded browser available). */
     public ShortInterestClient() {
+        this(null);
+    }
+
+    @Inject
+    public ShortInterestClient(@DirectFirst WebFetcher fetcher) {
+        this.fetcher = fetcher;
         this.http = HttpClient.newBuilder()
                 .cookieHandler(new CookieManager(null, CookiePolicy.ACCEPT_ALL))
                 .followRedirects(HttpClient.Redirect.NORMAL)
@@ -105,8 +123,51 @@ public class ShortInterestClient implements ShortInterestSource {
         }
     }
 
-    /** The two-request cookie flow: entry page for the session, then the CSV. */
+    /** Seam (browser joker) attempt first, then the own stateful cookie flow. */
     private Register fetchRegister() {
+        Register viaSeam = fetchViaSeam();
+        return viaSeam != null ? viaSeam : fetchViaCookieFlow();
+    }
+
+    /**
+     * The same two-request flow over the shared {@link WebFetcher} chain. On the
+     * chain's browser leg the hidden tab keeps the Wicket session cookie between
+     * the two requests; on its stateless plain-HTTP leg the CSV request arrives
+     * without the session and answers HTML, which {@link #parseRegister} rejects
+     * — the caller then falls back to the stateful JDK cookie flow.
+     */
+    private Register fetchViaSeam() {
+        WebFetcher f = fetcher;
+        if (f == null) return null;
+        try {
+            f.fetch(ENTRY_URL,
+                    Map.of("User-Agent", userAgent, "Accept", "text/html,application/xhtml+xml"),
+                    requestTimeout);
+            WebResponse csv = f.fetch(CSV_URL,
+                    Map.of("User-Agent", userAgent, "Accept", "text/csv,text/plain"),
+                    requestTimeout);
+            if (csv.status() != 200) {
+                LOG.info("[Bundesanzeiger] seam answered HTTP {} for the register CSV — trying cookie flow",
+                        csv.status());
+                return null;
+            }
+            Optional<Map<String, List<ShortInterest.ShortPosition>>> table = parseRegister(csv.body());
+            if (table.isEmpty()) return null;
+            long now = System.currentTimeMillis() / 1000;
+            LOG.info("[Bundesanzeiger] register read via {}: {} issuers, {} positions",
+                    f.name(), table.get().size(),
+                    table.get().values().stream().mapToInt(List::size).sum());
+            return new Register(table.get(), now);
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            LOG.info("[Bundesanzeiger] seam register fetch failed ({}) — trying cookie flow",
+                    e.getMessage());
+            return null;
+        }
+    }
+
+    /** The two-request cookie flow: entry page for the session, then the CSV. */
+    private Register fetchViaCookieFlow() {
         try {
             // Step 1: establishes the Wicket jsessionid in the cookie jar; the
             // 302 target (the search page) is irrelevant, only the cookie counts.

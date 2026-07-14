@@ -90,16 +90,16 @@ final class NetModule extends AbstractModule {
     }
 
     /**
-     * The {@link DirectFirst} variant for keyless APIs WITHOUT a bot wall
-     * (Consorsbank, onvista, Tradegate, BaFin, Bundesanzeiger, Google News):
-     * plain HTTP leads — these hosts answer a bare client with 200 every time,
-     * so the hidden Chromium is never touched and its per-origin tabs never
-     * spawn — with the browser joker only as the per-request FALLBACK should
-     * such a host ever grow a wall. Keeps the joker's capacity reserved for
-     * the hosts that genuinely need a real browser fingerprint (the
-     * unannotated browser-first chain above). Load-bearing prerequisite: a 304
-     * counts as DEFINITIVE in {@code WebResponse.isDefinitive} — otherwise every
-     * conditional revalidation would "fall through" into the joker (audit C1).
+     * The {@link DirectFirst} binding: a GENUINE direct→browser chain again
+     * since 2026-07-14 late (user mandate "collect Tempo ist mir wichtiger —
+     * Fallback dann gerne wieder auf Browser"): keyless no-wall APIs
+     * (Consorsbank, onvista, Tradegate, BaFin, FN, publisher articles …)
+     * answer plain HTTP in milliseconds, and the earlier every-outreach-
+     * rides-the-joker alias made each of them pay a 15-25 s hidden-browser
+     * warmup — the KI-DD collect took 5+ minutes on warmups alone. The
+     * browser joker stays as the per-request rescue for a host that grows a
+     * wall, and it is the SAME shared {@link CefWebFetcher} instance as the
+     * browser-first chain (one hidden tab per origin, 2026-07-13 audit C4).
      */
     @Provides
     @Singleton
@@ -123,8 +123,15 @@ final class NetModule extends AbstractModule {
      * ISIN memory. Persisted under {@code <app-data>/instruments/} and refreshed
      * asynchronously when stale. Grounds the resolver's identity judge in live
      * feed facts instead of training-time memory; consumed by
-     * {@code EditorialAgent} via its optional setter. The direct fetcher suffices —
-     * neither sec.gov nor xetra.com has a bot wall.
+     * {@code EditorialAgent} via its optional setter.
+     *
+     * <p>Deliberate carve-out from the joker-first mandate (2026-07-14): the
+     * corpus refresh can fire on its background thread AT INJECTOR TIME, before
+     * the window has initialized CEF on the EDT — a joker attempt there would
+     * trigger CEF init off the EDT, which hangs on macOS (the same trap as the
+     * reverted eager prewarm in {@code provideWebFetcher}). These are bulk file
+     * downloads from wall-less official hosts (sec.gov, xetra.com); they stay
+     * on the direct fetcher until a post-CEF-init hook exists.
      */
     @Provides
     @Singleton

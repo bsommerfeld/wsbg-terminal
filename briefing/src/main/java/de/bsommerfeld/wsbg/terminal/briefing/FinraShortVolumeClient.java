@@ -50,7 +50,7 @@ public class FinraShortVolumeClient {
         this(new DirectWebFetcher());
     }
 
-    /** Production: direct-first chain (a public CDN, no wall). */
+    /** Production: the shared {@code @DirectFirst} seam - browser-first since the 2026-07-14 joker mandate. */
     @Inject
     public FinraShortVolumeClient(@de.bsommerfeld.wsbg.terminal.source.net.DirectFirst WebFetcher fetcher) {
         this.fetcher = fetcher;
