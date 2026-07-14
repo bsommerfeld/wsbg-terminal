@@ -127,6 +127,177 @@
 .dd-step.done { background: var(--amber); }
 .dd-step.live { background: color-mix(in oklch, var(--amber) 45%, transparent); }
 
+/* The desk journal: the run's work as a PURE diff below the pass bars —
+   editor look (mono, line tints), green added / red removed / orange
+   annotated. The toggle sits right of the bars; the pane is a bounded inner
+   scroller (an explicitly wanted exception — capped height, wheel-local). */
+.dd-progress-subject .dd-cancel {
+  float: right;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--mute);
+  cursor: pointer;
+}
+.dd-progress-subject .dd-cancel:hover {
+  color: var(--red);
+  background: color-mix(in oklch, var(--red) 10%, transparent);
+}
+.dd-progress-subject .dd-cancel svg {
+  width: 11px;
+  height: 11px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+
+.dd-progress-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+.dd-progress-foot .dd-progress-steps { flex: 1; margin-top: 0; }
+.dd-journal-toggle {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--mute);
+  cursor: pointer;
+}
+.dd-journal-toggle:hover { color: var(--txt); background: color-mix(in oklch, var(--txt) 8%, transparent); }
+.dd-journal-toggle svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 0.18s ease;
+}
+.dd-progress.journal-open .dd-journal-toggle svg { transform: rotate(180deg); }
+
+/* The scroll viewport: capped height, the reader owns the scroll position
+   (anchored-at-bottom readers stay anchored; nobody gets yanked). */
+.dd-journal {
+  margin-top: 6px;
+  margin-bottom: 2px;
+  max-height: 240px;
+  overflow-y: auto;
+  border-top: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
+  padding: 8px 0 8px 0;
+}
+
+/* The track carries the Reddit-thread rail on the left; every hunk anchors
+   to it with a short connector tick. */
+.dd-journal-track {
+  position: relative;
+  padding-left: 14px;
+}
+.dd-journal-track::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 2px;
+  bottom: 2px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--line);
+}
+
+/* One hunk = one pipeline step, GitHub-style container. */
+.dd-hunk {
+  position: relative;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  overflow: hidden;
+  background: color-mix(in oklch, var(--txt) 2%, transparent);
+}
+.dd-hunk + .dd-hunk {
+  margin-top: 10px;
+}
+.dd-hunk + .dd-hunk::after {
+  content: '';
+  position: absolute;
+  left: -14px;
+  right: -0px;
+  top: -6px;
+  height: 1px;
+  background: var(--line-soft);
+}
+.dd-hunk::before {
+  content: '';
+  position: absolute;
+  left: -10px;
+  top: 12px;
+  width: 10px;
+  height: 2px;
+  background: var(--line);
+}
+
+/* Diff rows: dual line-number gutter, change glyph, text. */
+.dd-j {
+  display: grid;
+  grid-template-columns: 22px 22px 14px 1fr;
+  align-items: baseline;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.6;
+  padding: 1px 8px 1px 0;
+}
+.dd-j-no {
+  text-align: right;
+  padding-right: 6px;
+  font-size: 10px;
+  color: var(--mute);
+  opacity: 0.75;
+  user-select: none;
+}
+.dd-j-glyph {
+  text-align: center;
+  user-select: none;
+  opacity: 0.8;
+}
+.dd-j-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.dd-j-ctx { color: var(--mute); }
+.dd-j-gap { color: var(--mute); opacity: 0.6; }
+.dd-j-add {
+  color: color-mix(in oklch, var(--green) 75%, var(--txt));
+  background: color-mix(in oklch, var(--green) 10%, transparent);
+}
+.dd-j-add .dd-j-no { background: color-mix(in oklch, var(--green) 8%, transparent); }
+.dd-j-del {
+  color: color-mix(in oklch, var(--red) 75%, var(--txt));
+  background: color-mix(in oklch, var(--red) 9%, transparent);
+}
+.dd-j-del .dd-j-text {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  text-decoration-color: color-mix(in oklch, var(--red) 45%, transparent);
+}
+.dd-j-del .dd-j-no { background: color-mix(in oklch, var(--red) 8%, transparent); }
+.dd-j-note {
+  color: color-mix(in oklch, var(--amber) 70%, var(--txt));
+  background: color-mix(in oklch, var(--amber) 9%, transparent);
+}
+
 /* ---- the report cards (newest first, armed two-tap delete) ---- */
 
 .dd-cards {
@@ -243,6 +414,12 @@
   display: flex;
   align-items: center;
   gap: 12px;
+  /* Header and report share ONE centered reading column — the text must not
+     sit pushed to the left edge while the pane is wide (user finding
+     2026-07-13). */
+  width: 100%;
+  max-width: 70ch;
+  margin-inline: auto;
 }
 .dd-back {
   flex-shrink: 0;
@@ -318,7 +495,9 @@
    paragraph under the first crosshead, calm paragraph rhythm, tabular
    figures so inline values align. */
 .dd-report {
+  width: 100%;
   max-width: 70ch;
+  margin-inline: auto;
   font-variant-numeric: tabular-nums;
 }
 .dd-report p {
@@ -450,25 +629,19 @@ html[data-theme="light"] .dd-figure {
   color: var(--mute);
 }
 
-/* ---- header glyph + grid/rail icons (amber ident like the siblings) ---- */
+/* ---- header glyph + grid/rail icons ----
+   The DD mark is a self-coloured SVG (report sheet + green/amber/red bars
+   under the amber loupe — the EUR-USD/F&G inline-SVG pattern): fills and
+   strokes live as presentation attributes IN the markup, so CSS only sizes
+   it. Never force stroke/fill here — a CSS rule beats the attributes and
+   greys the mark out. */
 
-.glyph-dd svg {
-  width: 22px; height: 22px;
-  stroke: var(--amber); stroke-width: 1.8; fill: none;
-  stroke-linecap: round; stroke-linejoin: round;
-}
+.glyph-dd svg { width: 22px; height: 22px; }
 .grid-hit-icon-dd {
   width: 34px; height: 34px;
-  color: var(--txt);
-  stroke: currentColor; stroke-width: 1.8; fill: none;
-  stroke-linecap: round; stroke-linejoin: round;
   filter: drop-shadow(0 2px 6px oklch(0 0 0 / .45));
 }
-.rail-logo-dd {
-  width: 24px; height: 24px;
-  stroke: currentColor; stroke-width: 1.8; fill: none;
-  stroke-linecap: round; stroke-linejoin: round;
-}
+.rail-logo-dd { width: 24px; height: 24px; }
 
 /* ---- dedicated grid-card tile (.grid-thumb, see widget-grid.css) ----
    Shown INSTEAD of the miniature view in the overview: the newest report as

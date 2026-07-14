@@ -37,6 +37,13 @@ let listScrollTop = 0;
 let pdfNote = null;
 /** The report id whose delete button is armed (two-tap confirm). */
 let armedDelete = null;
+/**
+ * The desk journal: one GROUP per pipeline step (one diff hunk / one note
+ * batch), each an array of lines {k: add|del|ctx|gap|note, t, o?, n?}.
+ */
+let journal = [];
+/** Whether the journal pane below the progress bars is expanded. */
+let journalOpen = false;
 
 export function initDeepDive(socket) {
   sock = socket;
@@ -91,6 +98,10 @@ export function renderDeepDive(payload) {
     subject: payload.subject || null,
     reports: Array.isArray(payload.reports) ? payload.reports : [],
   };
+  // The full journal rides state pushes (late joiners); appends ride their
+  // own topic (renderDeepDiveJournal).
+  if (Array.isArray(payload.journal)) journal = payload.journal;
+  else if (!state.busy) journal = [];
   // A finished run pushes the fresh report alongside the state — open it as
   // its own page, but never yank a report the user is currently reading.
   if (payload.item) {
@@ -117,6 +128,23 @@ export function renderDeepDiveSuggestions(payload) {
   dl.innerHTML = items.filter(s => s.ticker)
     .map(s => `<option value="${escapeHtml(s.ticker)}"${
       s.name ? ` label="${escapeHtml(s.name)}"` : ''}></option>`).join('');
+}
+
+/**
+ * `deepdive-journal` payload → append one hunk group to the review pane.
+ * DOM is appended in place; the scroll position is the reader's — only a
+ * reader ALREADY at the bottom stays anchored there when new hunks land.
+ */
+export function renderDeepDiveJournal(payload) {
+  const group = payload && Array.isArray(payload.group) ? payload.group : null;
+  if (!group || !group.length) return;
+  journal.push(group);
+  const pane = hostEl ? hostEl.querySelector('.dd-journal') : null;
+  if (!pane) return;
+  const anchored = pane.scrollTop + pane.clientHeight >= pane.scrollHeight - 8;
+  const track = pane.querySelector('.dd-journal-track');
+  if (track) track.insertAdjacentHTML('beforeend', journalGroupHtml(group));
+  if (anchored) pane.scrollTop = pane.scrollHeight;
 }
 
 /** `deepdive-report` payload → open that report's own page. */
@@ -155,6 +183,16 @@ function closeView(restoreScroll) {
 /* ---- events ---- */
 
 function onHomeClick(e) {
+  const jt = e.target.closest('.dd-journal-toggle');
+  if (jt) {
+    journalOpen = !journalOpen;
+    render();
+    return;
+  }
+  if (e.target.closest('.dd-cancel')) {
+    sock.send('deepdive', { command: 'cancel' });
+    return;
+  }
   const del = e.target.closest('.dd-del');
   if (del) {
     const id = del.dataset.id;
@@ -253,7 +291,16 @@ function renderThumb() {
 function renderHome() {
   const btn = hostEl.querySelector('.dd-btn');
   if (btn) btn.disabled = state.busy;
+  // A state push rebuilds the progress card — the journal pane's scroll
+  // position is the reader's and must survive the rebuild (anchored readers
+  // stay anchored at the bottom, everyone else keeps their spot).
+  const oldPane = progressEl.querySelector('.dd-journal');
+  const savedScroll = oldPane ? oldPane.scrollTop : 0;
+  const wasAnchored = oldPane
+    ? oldPane.scrollTop + oldPane.clientHeight >= oldPane.scrollHeight - 8 : true;
   progressEl.innerHTML = state.busy ? progressHtml() : '';
+  const pane = progressEl.querySelector('.dd-journal');
+  if (pane) pane.scrollTop = wasAnchored ? pane.scrollHeight : savedScroll;
 
   if (!state.reports.length) {
     listEl.innerHTML = state.busy ? ''
@@ -293,7 +340,7 @@ function cardHtml(r) {
 
 /* ---- progress: which pass is running ---- */
 
-const STAGES = ['collect', 'draft', 'integrate', 'qa', 'final'];
+const STAGES = ['collect', 'triage', 'sections', 'these', 'finish'];
 
 function progressHtml() {
   const idx = Math.max(0, STAGES.indexOf(state.stage));
@@ -301,10 +348,53 @@ function progressHtml() {
     `<span class="dd-step${i < idx ? ' done' : i === idx ? ' live' : ''}"></span>`).join('');
   const label = t('dd.stage.' + (state.stage || 'collect'))
     + (state.stageDetail ? ` (${state.stageDetail})` : '');
-  return `<div class="dd-progress">
-    <span class="dd-progress-subject">${escapeHtml(state.subject || '')}</span>
+  // The journal pane: the run's work as GitHub-style diff hunks (one
+  // container per pipeline step, context around each edit, dual line-number
+  // gutter), chronological with the NEWEST at the bottom, joined by the left
+  // rail. It sits BETWEEN the status line and the footer; the card never
+  // grows past the cap — beyond that the pane scrolls. The pass bars live in
+  // the FOOTER together with the collapse arrow.
+  const journalPane = journalOpen
+    ? `<div class="dd-journal"><div class="dd-journal-track">${
+        journal.map(journalGroupHtml).join('')}</div></div>` : '';
+  return `<div class="dd-progress${journalOpen ? ' journal-open' : ''}">
+    <span class="dd-progress-subject">${escapeHtml(state.subject || '')}
+      <button class="dd-cancel" type="button" title="${escapeHtml(t('dd.cancel'))}"
+              aria-label="${escapeHtml(t('dd.cancel'))}">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+      </button>
+    </span>
     <span class="dd-progress-stage">${escapeHtml(label)}</span>
-    <div class="dd-progress-steps">${steps}</div>
+    ${journalPane}
+    <div class="dd-progress-foot">
+      <div class="dd-progress-steps">${steps}</div>
+      <button class="dd-journal-toggle" type="button"
+              title="${escapeHtml(t('dd.journal'))}" aria-label="${escapeHtml(t('dd.journal'))}"
+              aria-expanded="${journalOpen}">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+    </div>
+  </div>`;
+}
+
+const JOURNAL_GLYPH = { add: '+', del: '−', ctx: ' ', gap: '', note: '~' };
+
+function journalGroupHtml(group) {
+  return `<div class="dd-hunk">${group.map(journalLineHtml).join('')}</div>`;
+}
+
+function journalLineHtml(l) {
+  const kind = ['add', 'del', 'ctx', 'gap', 'note'].includes(l.k) ? l.k : 'note';
+  if (kind === 'gap') {
+    return '<div class="dd-j dd-j-gap"><span class="dd-j-no"></span>'
+      + '<span class="dd-j-no"></span><span class="dd-j-glyph"></span>'
+      + '<span class="dd-j-text">⋯</span></div>';
+  }
+  return `<div class="dd-j dd-j-${kind}">
+    <span class="dd-j-no">${l.o ? l.o : ''}</span>
+    <span class="dd-j-no">${l.n ? l.n : ''}</span>
+    <span class="dd-j-glyph">${JOURNAL_GLYPH[kind]}</span>
+    <span class="dd-j-text">${escapeHtml(l.t || '')}</span>
   </div>`;
 }
 

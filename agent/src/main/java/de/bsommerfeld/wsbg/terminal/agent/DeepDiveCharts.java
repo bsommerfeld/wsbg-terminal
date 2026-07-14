@@ -45,19 +45,20 @@ final class DeepDiveCharts {
     private static final String AXIS = "var(--ddc-axis,#c3c2b7)";
     private static final String SURFACE = "var(--ddc-surface,#ffffff)";
 
-    // Report section ordinals (must match the prompt's fixed SEVEN-section
-    // order: Worum es geht / These / Lage / Fundamentale Entwicklung /
-    // Bewertung und Wettbewerb / Katalysatoren und Risiken / Der Raum — see
+    // Report section ordinals (must match the fixed EIGHT-section skeleton:
+    // Worum es geht / These / Lage / Fundamentale Entwicklung / Bewertung und
+    // Wettbewerb / Katalysatoren und Risiken / Ausblick / Der Raum — see
     // DeepDiveService.SECTIONS_DE). The prose stays narrative; the figures
     // carry the number series — profile strip up top, price and performance
     // under the situation, the fiscal-year series under the fundamentals, the
-    // analyst votes under the valuation, and everything forward-looking
-    // (events, insiders, shorts, chart levels) under catalysts.
+    // analyst votes under the valuation, insiders/shorts/chart levels under
+    // catalysts, and the dated event board under the ANCHORED outlook.
     private static final int SEC_ABOUT = 0;
     private static final int SEC_SITUATION = 2;
     private static final int SEC_FUNDAMENTALS = 3;
     private static final int SEC_VALUATION = 4;
     private static final int SEC_CATALYSTS = 5;
+    private static final int SEC_OUTLOOK = 6;
 
     private final boolean de;
 
@@ -68,17 +69,22 @@ final class DeepDiveCharts {
     /** Builds every figure the material supports, report-section-anchored. */
     List<ChartFigure> build(MarketSnapshot snapshot, CompanyDeepDive deepDive,
             AnalystView analystView, ShortInterest shortInterest,
-            InsiderDealings insiderDealings) {
+            InsiderDealings insiderDealings,
+            de.bsommerfeld.wsbg.terminal.core.price.VenueStats venueStats) {
         List<ChartFigure> out = new ArrayList<>();
         addIfPresent(out, factsFigure(snapshot, deepDive, analystView));
         if (deepDive != null) {
             addIfPresent(out, epsDividendFigure(deepDive.keyFigures()));
             addIfPresent(out, revenueProfitFigure(deepDive.balanceSheet()));
+            addIfPresent(out, marginFigure(deepDive.keyFigures()));
+            addIfPresent(out, cashflowFigure(deepDive.balanceSheet()));
         }
         addIfPresent(out, analystFigure(analystView));
         addIfPresent(out, priceFigure(snapshot));
+        addIfPresent(out, venueFigure(venueStats));
         if (deepDive != null) {
             addIfPresent(out, performanceFigure(deepDive.performance()));
+            addIfPresent(out, rangeFigure(deepDive.performance(), snapshot));
         }
         addIfPresent(out, eventsFigure(analystView));
         addIfPresent(out, insiderFigure(insiderDealings));
@@ -197,7 +203,7 @@ final class DeepDiveCharts {
         }
         svg.append("</svg>");
         String title = de ? "Anstehende Termine" : "Upcoming dates";
-        return new ChartFigure(SEC_CATALYSTS, title, "Consorsbank", svg.toString());
+        return new ChartFigure(SEC_OUTLOOK, title, "Consorsbank", svg.toString());
     }
 
     private String isoToDe(java.time.Instant instant) {
@@ -463,8 +469,41 @@ final class DeepDiveCharts {
 
     private record Level(String name, double value, boolean isPrice, boolean isPivot) {}
 
+    /**
+     * Level plausibility: supports ascending (S3 &lt; S2 &lt; S1), resistances
+     * ascending (R1 &lt; R2 &lt; R3), every support below every resistance.
+     * Violations are DATA damage: no figure, no material line. The pivot is
+     * deliberately NOT required to be distinct — TradingCentral routinely sets
+     * it EQUAL to one of the levels (live: Rheinmetall and SAP both answer
+     * pivot == S2); the ladder merges coincident marks into one label instead
+     * of nudging them apart as two seemingly different levels.
+     */
+    static boolean plausibleLevels(CompanyDeepDive.TechnicalView t) {
+        if (t == null) return false;
+        double[] supports = {t.support3(), t.support2(), t.support1()};
+        double[] resistances = {t.resistance1(), t.resistance2(), t.resistance3()};
+        double prev = Double.NEGATIVE_INFINITY;
+        double maxSupport = Double.NEGATIVE_INFINITY;
+        for (double v : supports) {
+            if (!Double.isFinite(v)) continue;
+            if (v <= prev) return false;
+            prev = v;
+            maxSupport = v;
+        }
+        prev = Double.NEGATIVE_INFINITY;
+        double minResistance = Double.POSITIVE_INFINITY;
+        for (double v : resistances) {
+            if (!Double.isFinite(v)) continue;
+            if (v <= prev) return false;
+            prev = v;
+            if (v < minResistance) minResistance = v;
+        }
+        return !Double.isFinite(maxSupport) || !Double.isFinite(minResistance)
+                || maxSupport < minResistance;
+    }
+
     private ChartFigure srFigure(CompanyDeepDive.TechnicalView t, MarketSnapshot s) {
-        if (t == null) return null;
+        if (t == null || !plausibleLevels(t)) return null;
         List<Level> levels = new ArrayList<>();
         String[] names = {"R3", "R2", "R1", "S1", "S2", "S3"};
         double[] values = {t.resistance3(), t.resistance2(), t.resistance1(),
@@ -472,7 +511,26 @@ final class DeepDiveCharts {
         for (int i = 0; i < names.length; i++) {
             if (Double.isFinite(values[i])) levels.add(new Level(names[i], values[i], false, false));
         }
-        if (Double.isFinite(t.pivot())) levels.add(new Level("Pivot", t.pivot(), false, true));
+        if (Double.isFinite(t.pivot())) {
+            // TradingCentral routinely sets the pivot EQUAL to one of the S/R
+            // levels (live: SAP/Rheinmetall pivot == S2) — a coincident pivot
+            // merges into that mark's label instead of standing beside it as a
+            // seemingly different level (the old collision nudge did exactly
+            // that with the SAP ladder).
+            int coincident = -1;
+            for (int i = 0; i < levels.size(); i++) {
+                if (Math.abs(levels.get(i).value() - t.pivot()) < 0.005) {
+                    coincident = i;
+                    break;
+                }
+            }
+            if (coincident >= 0) {
+                Level l = levels.get(coincident);
+                levels.set(coincident, new Level(l.name() + " · Pivot", l.value(), false, true));
+            } else {
+                levels.add(new Level("Pivot", t.pivot(), false, true));
+            }
+        }
         double price = s != null && s.hasPrice() ? s.price() : Double.NaN;
         if (Double.isFinite(price)) levels.add(new Level(de ? "Kurs" : "Price", price, true, false));
         if (levels.size() < 3) return null;
@@ -563,6 +621,177 @@ final class DeepDiveCharts {
         svg.append("</svg>");
         String title = de ? "Kursperformance über Zeiträume" : "Price performance by window";
         return new ChartFigure(SEC_SITUATION, title, "Consorsbank", svg.toString());
+    }
+
+    // ---- 9. EBIT margin + equity ratio per fiscal year — Fundamentaldaten ----
+
+    /**
+     * The profitability series the prose used to recite: margin and equity
+     * ratio per fiscal year as grouped columns, estimates de-emphasized.
+     */
+    private ChartFigure marginFigure(List<CompanyDeepDive.KeyFigureYear> years) {
+        List<CompanyDeepDive.KeyFigureYear> rows = years == null ? List.of() : years.stream()
+                .filter(y -> Double.isFinite(y.ebitMarginPercent())
+                        || Double.isFinite(y.equityRatioPercent()))
+                .toList();
+        if (rows.size() < 2) return null;
+        if (rows.size() > 6) rows = rows.subList(rows.size() - 6, rows.size());
+
+        String legend = de ? "EBIT-Marge|Eigenkapitalquote" : "EBIT margin|Equity ratio";
+        StringBuilder svg = groupedColumns(rows.stream().map(y -> new Group(
+                        y.label(),
+                        new double[]{fin(y.ebitMarginPercent()), fin(y.equityRatioPercent())},
+                        y.estimate())).toList(),
+                new String[]{S1, S2}, legend.split("\\|"), 1);
+        String title = de
+                ? "EBIT-Marge und Eigenkapitalquote nach Geschäftsjahr (%, e = Schätzung)"
+                : "EBIT margin and equity ratio by fiscal year (%, e = estimate)";
+        return svg == null ? null : new ChartFigure(SEC_FUNDAMENTALS, title, "Consorsbank", svg.toString());
+    }
+
+    // ---- 10. cash flow + R&D per fiscal year — Fundamentaldaten ----
+
+    private ChartFigure cashflowFigure(List<CompanyDeepDive.BalanceSheetYear> years) {
+        List<CompanyDeepDive.BalanceSheetYear> rows = years == null ? List.of() : years.stream()
+                .filter(y -> Double.isFinite(y.cashflowNet()) || Double.isFinite(y.researchExpenses()))
+                .toList();
+        if (rows.size() < 2) return null;
+
+        String legend = de ? "Cashflow|F&E-Aufwand" : "Cash flow|R&D expenses";
+        StringBuilder svg = groupedColumns(rows.stream().map(y -> new Group(
+                        y.label(),
+                        new double[]{fin(y.cashflowNet()), fin(y.researchExpenses())},
+                        false)).toList(),
+                new String[]{S1, S2}, legend.split("\\|"), 0);
+        String title = de ? "Cashflow und F&E-Aufwand nach Geschäftsjahr"
+                : "Cash flow and R&D expenses by fiscal year";
+        return svg == null ? null : new ChartFigure(SEC_FUNDAMENTALS, title, "Consorsbank", svg.toString());
+    }
+
+    // ---- 11. 52-week range bar — Bewertung ----
+
+    /**
+     * The 52-week standing the prose quoted in three sections at once: low and
+     * high with their dates on a horizontal track, the current price marked
+     * between them, the house-computed distances direct-labeled.
+     */
+    private ChartFigure rangeFigure(CompanyDeepDive.PerformanceStats p, MarketSnapshot s) {
+        if (p == null || !Double.isFinite(p.high52w()) || !Double.isFinite(p.low52w())
+                || p.high52w() <= p.low52w()) {
+            return null;
+        }
+        // The Consorsbank range marks are EUR — a USD/foreign-venue snapshot
+        // must not be plotted against them (live run 9: a USD price mark on
+        // an EUR track put the distance off by ~9 points). The bar itself
+        // (low/high with dates) stays; only the price mark needs the match.
+        double price = s != null && s.hasPrice() && "EUR".equals(s.currency())
+                ? s.price() : Double.NaN;
+
+        int h = 96, xL = 24, xR = W - 24;
+        double trackY = 56, trackW = xR - xL;
+        StringBuilder svg = open(h);
+        // Track with rounded caps; end marks carry value + date.
+        svg.append("<line x1=\"").append(xL).append("\" y1=\"").append(r1(trackY))
+                .append("\" x2=\"").append(xR).append("\" y2=\"").append(r1(trackY))
+                .append("\" stroke=\"").append(GRID).append("\" stroke-width=\"6\" stroke-linecap=\"round\"/>");
+        line(svg, xL, trackY - 7, xL, trackY + 7, AXIS, 1);
+        line(svg, xR, trackY - 7, xR, trackY + 7, AXIS, 1);
+        text(svg, xL, trackY + 22, "start", 11, INK,
+                (de ? "Tief " : "Low ") + fmt(p.low52w(), 2), true);
+        if (p.low52wDateIso() != null) {
+            text(svg, xL, trackY + 36, "start", 10, MUTE, isoDate(p.low52wDateIso()), false);
+        }
+        text(svg, xR, trackY + 22, "end", 11, INK,
+                (de ? "Hoch " : "High ") + fmt(p.high52w(), 2), true);
+        if (p.high52wDateIso() != null) {
+            text(svg, xR, trackY + 36, "end", 10, MUTE, isoDate(p.high52wDateIso()), false);
+        }
+        if (Double.isFinite(price)) {
+            double frac = clamp((price - p.low52w()) / (p.high52w() - p.low52w()), 0, 1);
+            double px = xL + frac * trackW;
+            svg.append("<circle cx=\"").append(r1(px)).append("\" cy=\"").append(r1(trackY))
+                    .append("\" r=\"6\" fill=\"").append(S1).append("\" stroke=\"").append(SURFACE)
+                    .append("\" stroke-width=\"2\"/>");
+            String anchor = frac < 0.12 ? "start" : frac > 0.88 ? "end" : "middle";
+            text(svg, px, trackY - 26, anchor, 12, INK, fmt(price, 2), true);
+            double fromHigh = (price - p.high52w()) / p.high52w() * 100;
+            double aboveLow = (price - p.low52w()) / p.low52w() * 100;
+            text(svg, px, trackY - 12, anchor, 10, MUTE,
+                    pct(fromHigh) + (de ? " vom Hoch · " : " from high · ")
+                            + pct(aboveLow) + (de ? " über Tief" : " above low"), false);
+        }
+        svg.append("</svg>");
+        String title = de ? "52-Wochen-Spanne und aktueller Stand"
+                : "52-week range and current standing";
+        return new ChartFigure(SEC_VALUATION, title, "Consorsbank · L&S", svg.toString());
+    }
+
+    // ---- 12. the trading picture (venue stat tiles) — Lage ----
+
+    /**
+     * The order-book numbers the prose used to recite: bid/ask with the
+     * spread, traded volume in shares and EUR, executions, day range — as a
+     * deterministic tile strip from the venue leg.
+     */
+    private ChartFigure venueFigure(de.bsommerfeld.wsbg.terminal.core.price.VenueStats v) {
+        if (v == null) return null;
+        record Tile(String label, String value, String sub) {}
+        List<Tile> tiles = new ArrayList<>();
+        if (Double.isFinite(v.bid()) && Double.isFinite(v.ask()) && v.ask() > 0) {
+            double mid = (v.bid() + v.ask()) / 2;
+            double spreadPct = mid > 0 ? (v.ask() - v.bid()) / mid * 100 : Double.NaN;
+            tiles.add(new Tile(de ? "GELD / BRIEF" : "BID / ASK",
+                    fmt(v.bid(), 2) + " / " + fmt(v.ask(), 2),
+                    Double.isFinite(spreadPct) ? "Spread " + fmt(spreadPct, 2) + " %" : null));
+        }
+        if (v.turnoverEur() > 0 || v.volumeShares() > 0) {
+            String value = v.turnoverEur() > 0 ? compactEur(v.turnoverEur())
+                    : fmt(v.volumeShares(), 0) + (de ? " Stück" : " shares");
+            String sub = v.turnoverEur() > 0 && v.volumeShares() > 0
+                    ? fmt(v.volumeShares(), 0) + (de ? " Stück" : " shares") : null;
+            tiles.add(new Tile(de ? "TAGESUMSATZ" : "DAY TURNOVER", value, sub));
+        }
+        if (v.executions() > 0) {
+            tiles.add(new Tile("TRADES", fmt(v.executions(), 0),
+                    de ? "Ausführungen" : "executions"));
+        }
+        if (Double.isFinite(v.dayLow()) && Double.isFinite(v.dayHigh()) && v.dayHigh() > 0) {
+            tiles.add(new Tile(de ? "TAGESSPANNE" : "DAY RANGE",
+                    fmt(v.dayLow(), 2) + " – " + fmt(v.dayHigh(), 2), null));
+        }
+        if (tiles.size() < 2) return null;
+
+        int cols = Math.min(tiles.size(), 4);
+        int tileH = 52, padT = 8;
+        int h = padT + tileH;
+        double colW = (double) W / cols;
+        StringBuilder svg = open(h);
+        for (int i = 0; i < tiles.size() && i < cols; i++) {
+            Tile tile = tiles.get(i);
+            double x = (i % cols) * colW + 4;
+            double y = padT;
+            text(svg, x, y + 12, "start", 10, MUTE, tile.label(), false);
+            text(svg, x, y + 32, "start", 15, INK, tile.value(), true);
+            if (tile.sub() != null) text(svg, x, y + 46, "start", 10, MUTE, tile.sub(), false);
+        }
+        svg.append("</svg>");
+        String title = de ? "Handelsbild" : "Trading picture";
+        return new ChartFigure(SEC_SITUATION, title,
+                v.venue() != null && !v.venue().isBlank() ? v.venue() : "Tradegate",
+                svg.toString());
+    }
+
+    /** An ISO date string rendered in the report language (dotted German). */
+    private String isoDate(String iso) {
+        try {
+            java.time.LocalDate d = java.time.LocalDate.parse(iso);
+            return de
+                    ? String.format(Locale.ROOT, "%02d.%02d.%d",
+                            d.getDayOfMonth(), d.getMonthValue(), d.getYear())
+                    : iso;
+        } catch (Exception e) {
+            return iso;
+        }
     }
 
     // ---- grouped-column engine (two series, direct-labeled caps, legend) ----

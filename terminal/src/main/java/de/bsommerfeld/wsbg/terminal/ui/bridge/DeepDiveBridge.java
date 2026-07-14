@@ -5,6 +5,7 @@ import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.agent.DeepDiveService;
 import de.bsommerfeld.wsbg.terminal.agent.event.DeepDiveFinishedEvent;
+import de.bsommerfeld.wsbg.terminal.agent.event.DeepDiveJournalEvent;
 import de.bsommerfeld.wsbg.terminal.agent.event.DeepDiveProgressEvent;
 import de.bsommerfeld.wsbg.terminal.agent.event.DeepDiveStartedEvent;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
@@ -60,6 +61,16 @@ public final class DeepDiveBridge {
     private volatile Map<String, Object> pdfOutcome;
     /** The freshly finished report rides one push so the UI shows it immediately. */
     private volatile String freshReportId;
+    /**
+     * The running generation's desk journal: one GROUP per pipeline step
+     * (one diff hunk / one note batch), each a list of lines {k: add|del|
+     * ctx|gap|note, t: text, o/n: old/new sentence number}. Appended live
+     * over its own topic, kept whole for late-joining clients, cleared when
+     * the next run starts.
+     */
+    private final List<List<Map<String, Object>>> journal =
+            java.util.Collections.synchronizedList(new ArrayList<>());
+    private static final int JOURNAL_MAX_GROUPS = 400;
 
     @Inject
     public DeepDiveBridge(DeepDiveService service, DeepDivePdfExporter pdfExporter,
@@ -77,7 +88,29 @@ public final class DeepDiveBridge {
         subject = event.subject();
         stage = "collect";
         stageDetail = null;
+        journal.clear();
         push();
+    }
+
+    @Subscribe
+    public void onJournal(DeepDiveJournalEvent event) {
+        List<Map<String, Object>> group = new ArrayList<>(event.lines().size());
+        for (DeepDiveJournalEvent.Line line : event.lines()) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("k", line.kind());
+            m.put("t", line.text());
+            if (line.oldLine() > 0) m.put("o", line.oldLine());
+            if (line.newLine() > 0) m.put("n", line.newLine());
+            group.add(m);
+        }
+        if (group.isEmpty()) return;
+        synchronized (journal) {
+            journal.add(group);
+            while (journal.size() > JOURNAL_MAX_GROUPS) journal.remove(0);
+        }
+        // Appends ride their own topic so the frequent journal traffic never
+        // re-sends the whole widget state.
+        hub.broadcastSafe("deepdive-journal", () -> Map.of("group", group));
     }
 
     @Subscribe
@@ -105,6 +138,7 @@ public final class DeepDiveBridge {
                     boolean accepted = service.generate(Payloads.str(payload.get("name")));
                     if (!accepted) push(); // re-sync the client's busy state
                 }
+                case "cancel" -> service.cancelCurrent(); // finish event pushes the idle state
                 case "list" -> push();
                 case "get" -> service.byId(Payloads.str(payload.get("id"))).ifPresent(r ->
                         hub.broadcastSafe("deepdive-report", () -> Map.of("item", itemJson(r, true))));
@@ -161,6 +195,9 @@ public final class DeepDiveBridge {
         if (stage != null) m.put("stage", stage);
         if (stageDetail != null) m.put("stageDetail", stageDetail);
         if (subject != null) m.put("subject", subject);
+        synchronized (journal) {
+            if (!journal.isEmpty()) m.put("journal", new ArrayList<>(journal));
+        }
         List<Map<String, Object>> reports = new ArrayList<>();
         for (DeepDiveRecord r : service.recent(LIST_LIMIT)) {
             reports.add(itemJson(r, false));

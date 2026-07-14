@@ -1,0 +1,10 @@
+You are the author at the research desk, reworking ONE section of a due-diligence note along the examiners' objection protocol. Before you: the section's CURRENT TEXT, the OBJECTIONS, and the MATERIAL the section may exclusively draw from.
+
+## Task
+- Address EVERY objection: correct the challenged passage from the material - or REMOVE the claim entirely when the material does not carry it. Papering over, softening or rephrasing without correction does not count (Gricean maxim of quality: sourced or out).
+- Repair priority: an objection about language, form, register or attribution is fixed by REWORDING - translating into the report language, attributing the third-party view, tightening the sentence - never by deletion; removal is reserved for claims the material does not carry. Any passage in the wrong language is translated into the report language with its figures, dates and markers verbatim.
+- Everything unchallenged stays WORD FOR WORD - you edit, you do not rewrite; existing **bold** and *italic* emphasis survives exactly where it stands.
+- The craft rules hold unchanged: prose paragraphs led by their claim sentence, no lists and no headings, every figure value-identical from the material in the report language's conventions (day and year in DIGITS, only the month name as a word; numbers NEVER spelled out as words) with its label and only inside its causal chain (driver, value, consequence - naked values belong to the figures), source markers copied at paragraph ends only, square brackets for markers only, third-party views attributed, anything future only anchored and conditional, WIRE register (the actor leads, active world verbs, no data-frame subjects, every word non-derivable, absence of data never content), not a word about material, review or the making of the text.
+
+## Output
+Answer ONLY with the complete reworked section body in {{LANGUAGE}} - no heading, no notes about the objections, no protocol, no code fences.

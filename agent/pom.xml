@@ -41,6 +41,43 @@
             <artifactId>briefing</artifactId>
         </dependency>
         <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>websearch</artifactId>
+        </dependency>
+        <!-- The KI-DD's German data legs, TEST-ONLY: the live DeepDiveSmokeIT
+             wires the real clients against the real model; production wiring
+             stays in the terminal module (AgentPipelineModule). -->
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>consorsbank</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>onvista</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>tradegate</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>bundesanzeiger</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>bafin</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>google-news</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-ollama</artifactId>
         </dependency>

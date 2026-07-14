@@ -3,21 +3,27 @@ package de.bsommerfeld.wsbg.terminal.agent;
 import de.bsommerfeld.wsbg.terminal.core.price.AnalystView;
 import de.bsommerfeld.wsbg.terminal.core.price.FundFacts;
 import de.bsommerfeld.wsbg.terminal.core.price.InstrumentFacts;
+import de.bsommerfeld.wsbg.terminal.core.price.UsListingStats;
 import de.bsommerfeld.wsbg.terminal.core.price.VenueStats;
 import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * The KI-DD's completeness guarantee: EVERY data leg the collect step gathers
  * must actually reach the model — this test fills a {@link DeepDiveService.Material}
  * with every block and asserts each one's label AND a distinctive value in the
- * brief. A leg that silently falls out of {@code buildMaterial} fails here
- * (user mandate 2026-07-13: "validiere, ob die KI wirklich alle Daten sieht").
+ * material (user mandate 2026-07-13: "validiere, ob die KI wirklich alle Daten
+ * sieht"). Since the section-workspace rebuild it also pins the SHELF MAPPING
+ * (which leg feeds which section) and the deterministic assembly.
  */
 class DeepDiveMaterialTest {
 
@@ -89,12 +95,14 @@ class DeepDiveMaterialTest {
         assertContains(brief, "2026e:");
         assertContains(brief, "EPS 55.00");
         assertContains(brief, "PEG 0.90");
+        // Human units, never the upstream thousands-EUR raw values (a copied
+        // "30 871 000" misstated SAP's revenue by three orders of magnitude).
         assertContains(brief, "BALANCE SHEET (verified");
-        assertContains(brief, "turnover 9 751 000");
-        assertContains(brief, "R&D 380 000");
+        assertContains(brief, "turnover 9.75B EUR");
+        assertContains(brief, "R&D 380.0M EUR");
         assertContains(brief, "BOARDS (verified) [4]: Armin Papperger (Vorstand)");
 
-        // Street: analyst distribution, trend, target, revisions, events.
+        // Street: analyst distribution, trend, target, revisions, events, estimate path.
         assertContains(brief, "ANALYSTS (verified) [4]: 27 covering");
         assertContains(brief, "19 buy / 3 overweight / 5 hold");
         assertContains(brief, "(3 months ago: 16/3/6/0/0)");
@@ -102,6 +110,7 @@ class DeepDiveMaterialTest {
         assertContains(brief, "recent revisions 4 up / 3 down");
         assertContains(brief, "UPCOMING EVENTS (verified) [4]:");
         assertContains(brief, "Bericht 2. Quartal 2026");
+        assertContains(brief, "CONSENSUS ESTIMATE PATH");
 
         // Insiders and shorts, with names and figures.
         assertContains(brief, "INSIDER DEALINGS (verified, BaFin");
@@ -147,59 +156,191 @@ class DeepDiveMaterialTest {
     }
 
     /**
-     * The sequential feed (user mandate 2026-07-13 "nacheinander reinreichen,
-     * statt cappen"): the material splits into thematic packets along the
-     * report skeleton, each block lands in ITS packet, and no single packet
-     * approaches the context window.
+     * The shelf mapping (the workspace rebuild 2026-07-13): every leg lands on
+     * ITS section's shelf — profile on "Worum es geht", market/trading on
+     * "Lage", figures on "Fundamentale Entwicklung", street on "Bewertung",
+     * insiders/shorts/technicals on "Katalysatoren", the dated events and the
+     * estimate path on "Ausblick", the room last — and no shelf approaches the
+     * context window.
      */
     @Test
-    void materialSplitsIntoThreadOrderedPackets() {
-        List<DeepDiveService.Packet> packets =
-                DeepDiveService.buildPackets("Rheinmetall", fullMaterial(), false);
-        assertTrue(packets.size() == 6, "expected 6 packets, got " + packets.size());
+    void everyLegLandsOnItsSectionShelf() {
+        String[] shelves = DeepDiveService.sectionMaterials(fullMaterial());
+        assertEquals(DeepDiveService.SECTION_COUNT, shelves.length);
 
-        assertTrue(packets.get(0).briefLabel().equals("Company and market"));
-        assertTrue(packets.get(0).text().contains("MARKET (verified) [1]:"));
-        assertTrue(packets.get(0).text().contains("official website https://www.rheinmetall.com"));
-        assertTrue(packets.get(0).text().contains("Armin Papperger"));
+        assertTrue(shelves[DeepDiveService.SEC_ABOUT].contains("PROFILE (verified)"));
+        assertTrue(shelves[DeepDiveService.SEC_ABOUT].contains("COMPANY PORTRAIT"));
+        assertTrue(shelves[DeepDiveService.SEC_ABOUT].contains("BOARDS (verified)"));
 
-        assertTrue(packets.get(1).briefLabel().equals("Fundamentals"));
-        assertTrue(packets.get(1).text().contains("KEY FIGURES BY FISCAL YEAR"));
-        assertTrue(packets.get(1).text().contains("BALANCE SHEET"));
-        assertTrue(packets.get(1).text().contains("PEERS (verified)"));
+        assertNull(shelves[DeepDiveService.SEC_THESIS],
+                "the thesis shelf is filled LAST, from the standing sections");
 
-        assertTrue(packets.get(2).briefLabel().equals("Street and insiders"));
-        assertTrue(packets.get(2).text().contains("ANALYSTS (verified)"));
-        assertTrue(packets.get(2).text().contains("INSIDER DEALINGS"));
-        assertTrue(packets.get(2).text().contains("SHORT POSITIONS"));
+        assertTrue(shelves[DeepDiveService.SEC_SITUATION].contains("MARKET (verified)"));
+        assertTrue(shelves[DeepDiveService.SEC_SITUATION].contains("TRADING (Tradegate"));
+        assertTrue(shelves[DeepDiveService.SEC_SITUATION].contains("PERFORMANCE (verified)"));
+        assertTrue(shelves[DeepDiveService.SEC_SITUATION].contains("Rheinmetall gewinnt Großauftrag"),
+                "untriaged news defaults to the LAGE shelf");
 
-        assertTrue(packets.get(3).briefLabel().equals("Chart and trading"));
-        assertTrue(packets.get(3).text().contains("CHART-TECHNICAL READ"));
-        assertTrue(packets.get(3).text().contains("PERFORMANCE (verified)"));
-        assertTrue(packets.get(3).text().contains("TRADING (Tradegate"));
+        assertTrue(shelves[DeepDiveService.SEC_FUNDAMENTALS].contains("KEY FIGURES BY FISCAL YEAR"));
+        assertTrue(shelves[DeepDiveService.SEC_FUNDAMENTALS].contains("BALANCE SHEET"));
 
-        assertTrue(packets.get(4).briefLabel().equals("News"));
-        assertTrue(packets.get(4).text().contains("Rheinmetall gewinnt Großauftrag"));
+        assertTrue(shelves[DeepDiveService.SEC_VALUATION].contains("ANALYSTS (verified)"));
+        assertTrue(shelves[DeepDiveService.SEC_VALUATION].contains("PEERS (verified)"));
+        // House arithmetic: the target as a multiple of the estimate path plus
+        // the price located in its 52w range — 1720/55 EPS 2026e = 31.3x,
+        // 992.10 vs high 2008.50 / low 845.00.
+        assertTrue(shelves[DeepDiveService.SEC_VALUATION].contains(
+                "VALUATION CONTEXT (house arithmetic on the verified figures)"));
+        assertTrue(shelves[DeepDiveService.SEC_VALUATION].contains("31.3x the 2026e consensus EPS"));
+        assertTrue(shelves[DeepDiveService.SEC_VALUATION].contains("50.6% below its 52w high"));
 
-        // The room comes LAST — the divergence read needs the fact layers first.
-        assertTrue(packets.get(5).briefLabel().equals("The room"));
-        assertTrue(packets.get(5).text().contains("ROOM EVIDENCE"));
-        assertTrue(packets.get(5).text().contains("WIRE LINES ALREADY PUBLISHED"));
+        assertTrue(shelves[DeepDiveService.SEC_CATALYSTS].contains("INSIDER DEALINGS"));
+        assertTrue(shelves[DeepDiveService.SEC_CATALYSTS].contains("SHORT POSITIONS"));
+        assertTrue(shelves[DeepDiveService.SEC_CATALYSTS].contains("CHART-TECHNICAL READ"));
 
-        for (DeepDiveService.Packet p : packets) {
-            assertTrue(p.text().length() < 7100,
-                    "packet '" + p.briefLabel() + "' too large: " + p.text().length());
+        assertTrue(shelves[DeepDiveService.SEC_OUTLOOK].contains("UPCOMING EVENTS"));
+        assertTrue(shelves[DeepDiveService.SEC_OUTLOOK].contains("CONSENSUS ESTIMATE PATH"));
+        assertTrue(shelves[DeepDiveService.SEC_OUTLOOK].contains("consensus target 1720.00"));
+
+        assertTrue(shelves[DeepDiveService.SEC_ROOM].contains("ROOM EVIDENCE"));
+        assertTrue(shelves[DeepDiveService.SEC_ROOM].contains("WIRE LINES ALREADY PUBLISHED"));
+
+        for (String shelf : shelves) {
+            assertTrue(shelf == null || shelf.length() <= 6400,
+                    "shelf too large: " + (shelf == null ? 0 : shelf.length()));
         }
     }
 
-    /** An unresolvable subject still grounds the draft on an honest identity stub. */
+    /** Triage routing: a KATALYSATOR-judged item leaves the LAGE shelf. */
     @Test
-    void emptyMaterialStillYieldsADraftPacket() {
-        List<DeepDiveService.Packet> packets =
-                DeepDiveService.buildPackets("Nirvana", new DeepDiveService.Material(), false);
-        assertTrue(!packets.isEmpty());
-        assertTrue(packets.get(0).briefLabel().equals("Company and market"));
-        assertTrue(packets.get(0).text().contains("no verified company/market material"));
+    void triagedNewsLandsOnItsRoutedShelf() {
+        DeepDiveService.Material m = fullMaterial();
+        m.newsTargets = Map.of("uuid-1", "KATALYSATOR");
+        String[] shelves = DeepDiveService.sectionMaterials(m);
+        assertFalse(shelves[DeepDiveService.SEC_SITUATION].contains("Großauftrag"));
+        assertTrue(shelves[DeepDiveService.SEC_CATALYSTS].contains("Großauftrag"));
+    }
+
+    /**
+     * An empty room yields NO shelf — the section then gets its honest literal
+     * without any model call, so an empty room can never be hallucinated into
+     * a dated discussion (live-observed SAP 2026-07-13: evidenceCount 0, yet
+     * the report claimed a debate "begann am 12. Juli").
+     */
+    @Test
+    void emptyRoomYieldsNoShelfAndAnHonestLiteral() {
+        DeepDiveService.Material m = fullMaterial();
+        m.unit = new SubjectUnit("RHM", "Rheinmetall AG"); // exists, but silent
+        m.roomUnits = List.of(m.unit);
+        m.evidenceCount = 0;
+        assertNull(DeepDiveService.sectionMaterials(m)[DeepDiveService.SEC_ROOM]);
+
+        String[] bodies = new String[DeepDiveService.SECTION_COUNT];
+        String report = DeepDiveService.assemble(DeepDiveService.SECTIONS_DE, bodies, true);
+        assertContains(report, "## Der Raum");
+        assertContains(report, "Der Käfig hat dieses Subjekt bisher nicht aufgegriffen.");
+        assertContains(report, "Hierzu liegen keine verifizierten Daten vor.");
+    }
+
+    /**
+     * The deterministic typesetter: all eight canonical headings in order,
+     * bodies under their headings, cross-section duplicate paragraphs dropped
+     * (first occurrence wins) — assembly is the one place that sees every
+     * section at once.
+     */
+    @Test
+    void assemblySetsHeadingsAndDropsCrossSectionDuplicates() {
+        String[] bodies = new String[DeepDiveService.SECTION_COUNT];
+        bodies[DeepDiveService.SEC_ABOUT] = "Der Konzern baut Panzer [4].";
+        String dup = "Der Bericht zum 2. Quartal steht am 24. Juli 2026 an und ist die"
+                + " nächste harte Messlatte für das Papier [4].";
+        bodies[DeepDiveService.SEC_CATALYSTS] = dup;
+        bodies[DeepDiveService.SEC_OUTLOOK] = dup + "\n\nDie Street ruft 1720 EUR auf [4].";
+        String report = DeepDiveService.assemble(DeepDiveService.SECTIONS_DE, bodies, true);
+
+        int at = -1;
+        for (String heading : DeepDiveService.SECTIONS_DE) {
+            int next = report.indexOf("## " + heading);
+            assertTrue(next > at, "heading out of order or missing: " + heading);
+            at = next;
+        }
+        assertEquals(1, occurrences(report, "24. Juli 2026"),
+                "the duplicated paragraph must survive exactly once:\n" + report);
+        // Markers live on the heading now, not in the prose.
+        assertContains(report, "Die Street ruft 1720 EUR auf.");
+        assertContains(report, "## Ausblick [4]");
+        assertTrue(DeepDiveService.looksLikeReport(report, DeepDiveService.SECTIONS_DE));
+    }
+
+    /**
+     * The typesetter's polish belts (live-observed smoke findings): a long
+     * verbatim sentence repeating across sections drops (first wins), leftover
+     * ISO dates render as German dotted dates, and pseudo-citation brackets
+     * vanish while their sentence stays.
+     */
+    @Test
+    void assemblyPolishesSentencesDatesAndBrackets() {
+        String longSentence = "Die Entwicklung wird anhand der kommenden Berichte gemessen,"
+                + " allen voran des Berichts zum zweiten Quartal 2026 am 24. Juli 2026 [4].";
+        String[] bodies = new String[DeepDiveService.SECTION_COUNT];
+        // The thesis may ECHO the body (page-1 summary convention) — exempt.
+        bodies[DeepDiveService.SEC_THESIS] = "Das Bild lehnt bullish [4]. " + longSentence;
+        // Two BODY sections carrying the identical sentence: first wins.
+        bodies[DeepDiveService.SEC_CATALYSTS] = longSentence + " Das Risiko bleibt benannt [7].";
+        bodies[DeepDiveService.SEC_OUTLOOK] = longSentence
+                + " Der nächste Bericht folgt am 2026-10-22 [4].";
+        bodies[DeepDiveService.SEC_ROOM] = "Der Käfig stritt am Nachmittag [2026-07-13 18:51]."
+                + " Ein Beitrag hielt dagegen [19].";
+        String report = DeepDiveService.assemble(DeepDiveService.SECTIONS_DE, bodies, true);
+
+        assertEquals(2, occurrences(report, "am 24. Juli 2026"),
+                "once in the exempt thesis + once among the body sections:\n" + report);
+        int thesisAt = report.indexOf("## These");
+        int catalystsAt = report.indexOf("## Katalysatoren");
+        int outlookAt = report.indexOf("## Ausblick");
+        int roomAt = report.indexOf("## Der Raum");
+        String catalystsSec = report.substring(catalystsAt, outlookAt);
+        String outlookSec = report.substring(outlookAt, roomAt);
+        assertTrue(catalystsSec.contains("am 24. Juli 2026"), "first body occurrence wins");
+        assertTrue(!outlookSec.contains("am 24. Juli 2026"), "the later body duplicate drops");
+        assertTrue(report.substring(thesisAt, catalystsAt).contains("am 24. Juli 2026"),
+                "the thesis keeps its echo");
+        assertContains(report, "am 22.10.2026");
+        assertTrue(!report.contains("2026-10-22"), report);
+        assertContains(report, "Der Käfig stritt am Nachmittag.");
+        assertTrue(!report.contains("[2026-07-13"), report);
+        assertContains(report, "[19]");
+    }
+
+    /** Wikipedia discipline: an uncited NEWS article stays out of the register; legs stay. */
+    @Test
+    void registerListsOnlyCitedNews() {
+        DeepDiveService.Material m = fullMaterial();
+        // news:0 carries number 8 (see the numbering test) — report never cites it.
+        String register = DeepDiveService.sourcesSection(m, true, java.util.Set.of(1, 4, 9));
+        assertTrue(register.contains("- [1] LSX"), register);
+        assertTrue(register.contains("- [4] Consorsbank"), register);
+        assertTrue(register.contains("- [2] Tradegate"), "uncited LEGS stay listed");
+        assertTrue(!register.contains("- [8]"), "uncited news must leave the register:\n" + register);
+        assertTrue(register.contains("- [9] r/wallstreetbetsGER"), register);
+        // The citation-less overload lists everything (test/material view).
+        assertTrue(DeepDiveService.sourcesSection(m, true).contains("- [8]"));
+    }
+
+    /** The claim sentence extraction feeding the editor's thesis shelf. */
+    @Test
+    void thesisMaterialCarriesKeyDataAndClaimSentences() {
+        DeepDiveService.Material m = fullMaterial();
+        String[] bodies = new String[DeepDiveService.SECTION_COUNT];
+        bodies[DeepDiveService.SEC_ABOUT] = "Der Konzern ist der größte deutsche Rüstungsbauer [4]."
+                + " Ein zweiter Satz mit Details.";
+        bodies[DeepDiveService.SEC_SITUATION] = "Der Kurs notiert bei 992,10 EUR [1].";
+        String shelf = DeepDiveService.thesisMaterial(DeepDiveService.SECTIONS_DE, bodies, m);
+        assertContains(shelf, "KEY DATA (verified):");
+        assertContains(shelf, "consensus target 1720.00 EUR");
+        assertContains(shelf, "Worum es geht: Der Konzern ist der größte deutsche Rüstungsbauer [4].");
+        assertContains(shelf, "Lage: Der Kurs notiert bei 992,10 EUR [1].");
+        assertFalse(shelf.contains("Ein zweiter Satz"), "only the CLAIM sentence rides");
     }
 
     @Test
@@ -207,8 +348,7 @@ class DeepDiveMaterialTest {
         DeepDiveService.Material m = fullMaterial();
         m.unit = null;
         m.evidenceCount = 0;
-        String brief = DeepDiveService.buildMaterial("Rheinmetall", m);
-        assertContains(brief, "(the room has not taken this subject up)");
+        assertNull(DeepDiveService.sectionMaterials(m)[DeepDiveService.SEC_ROOM]);
     }
 
     /**
@@ -230,7 +370,7 @@ class DeepDiveMaterialTest {
         assertTrue(register.startsWith("## Quellen\n"), register);
         assertTrue(register.contains("- [1] LSX - Kurs- und Handelsdaten"), register);
         assertTrue(register.contains("- [6] Bundesanzeiger"), register);
-        assertTrue(register.contains("- [8] WELT - \u201ERheinmetall gewinnt Großauftrag\u201C"), register);
+        assertTrue(register.contains("- [8] WELT - „Rheinmetall gewinnt Großauftrag“"), register);
         assertTrue(register.contains("- [9] r/wallstreetbetsGER"), register);
 
         String scrubbed = DeepDiveService.scrubUnknownSourceMarkers(
@@ -240,193 +380,6 @@ class DeepDiveMaterialTest {
         assertTrue(scrubbed.contains("feiert [9]."), scrubbed);
         assertTrue(!scrubbed.contains("[12]"), scrubbed);
         assertTrue(scrubbed.contains("Fantasie, aber"), scrubbed);
-    }
-
-    /**
-     * The author's one-article-at-a-time read (user mandate 2026-07-13): articles
-     * carry their full-text digests, and a digest-fat pool splits into SEVERAL
-     * small news packets — each its own integrate pass, none anywhere near the
-     * context window.
-     */
-    @Test
-    void digestFatNewsSplitIntoSeveralSmallPackets() {
-        DeepDiveService.Material m = fullMaterial();
-        java.util.List<RawNewsItem> news = new java.util.ArrayList<>();
-        java.util.Map<String, String> digests = new java.util.LinkedHashMap<>();
-        for (int i = 0; i < 6; i++) {
-            String link = "https://example.org/artikel-" + i;
-            news.add(new RawNewsItem("uuid-" + i, "Meldung Nummer " + i, "WELT",
-                    link, Instant.now(), List.of(), null, null, false, null));
-            digests.put(link, ("Kernfakt " + i + ": ").repeat(40)); // ~500 chars each
-        }
-        m.news = List.copyOf(news);
-        m.digests = digests;
-
-        List<DeepDiveService.Packet> packets = DeepDiveService.buildPackets("Rheinmetall", m, false);
-        long newsPackets = packets.stream().filter(p -> p.briefLabel().startsWith("News")).count();
-        assertTrue(newsPackets >= 2, "expected several news packets, got " + newsPackets);
-        assertTrue(packets.stream().anyMatch(p -> p.briefLabel().equals("News (1/" + newsPackets + ")")),
-                "part labels missing");
-        // Every article (with its digest) still lands somewhere, in order.
-        String joined = packets.stream().filter(p -> p.briefLabel().startsWith("News"))
-                .map(DeepDiveService.Packet::text).reduce("", String::concat);
-        for (int i = 0; i < 6; i++) {
-            assertTrue(joined.contains("Meldung Nummer " + i), "article " + i + " missing");
-            assertTrue(joined.contains("Kernfakt " + i + ":"), "digest " + i + " missing");
-        }
-        for (DeepDiveService.Packet p : packets) {
-            assertTrue(p.text().length() < 4000 || !p.briefLabel().startsWith("News"),
-                    "news packet too large: " + p.text().length());
-        }
-        // The room still comes last, after every news packet.
-        assertTrue(packets.get(packets.size() - 1).briefLabel().equals("The room"));
-    }
-
-    /**
-     * The routing hints must literally match the report's headings (a 4B must
-     * not translate to route): German report -> German hints, and every hint
-     * names only canonical section literals.
-     */
-    @Test
-    void sectionHintsMatchTheReportHeadingsLiterally() {
-        List<DeepDiveService.Packet> de =
-                DeepDiveService.buildPackets("Rheinmetall", fullMaterial(), true);
-        for (DeepDiveService.Packet p : de) {
-            for (String hint : p.sectionsHint().split(", ")) {
-                assertTrue(DeepDiveService.SECTIONS_DE.contains(hint),
-                        "hint '" + hint + "' is not a German heading literal");
-            }
-        }
-        List<DeepDiveService.Packet> en =
-                DeepDiveService.buildPackets("Rheinmetall", fullMaterial(), false);
-        for (DeepDiveService.Packet p : en) {
-            for (String hint : p.sectionsHint().split(", ")) {
-                assertTrue(DeepDiveService.SECTIONS_EN.contains(hint),
-                        "hint '" + hint + "' is not an English heading literal");
-            }
-        }
-    }
-
-    /**
-     * The structural gate (loss guard 2026-07-13): all seven canonical headings
-     * must appear line-leading and in order — a renamed, reordered or truncated
-     * pass is rejected and must never replace the standing report.
-     */
-    @Test
-    void looksLikeReportEnforcesTheCanonicalHeadings() {
-        String pad = "x".repeat(80) + "\n";
-        StringBuilder good = new StringBuilder();
-        for (String h : DeepDiveService.SECTIONS_DE) good.append("## ").append(h).append('\n').append(pad);
-        assertTrue(DeepDiveService.looksLikeReport(good.toString(), DeepDiveService.SECTIONS_DE));
-
-        // A missing tail section (the live-observed truncation) fails.
-        StringBuilder truncated = new StringBuilder();
-        for (String h : DeepDiveService.SECTIONS_DE.subList(0, 6)) {
-            truncated.append("## ").append(h).append('\n').append(pad);
-        }
-        assertTrue(!DeepDiveService.looksLikeReport(truncated.toString(), DeepDiveService.SECTIONS_DE));
-
-        // A renamed section fails even though the count is right.
-        String renamed = good.toString().replace("## Der Raum", "## Fazit");
-        assertTrue(!DeepDiveService.looksLikeReport(renamed, DeepDiveService.SECTIONS_DE));
-
-        // Inline "## " occurrences do not count as headings (count fallback).
-        String inline = ("prose ## not-a-heading " + pad).repeat(12);
-        assertTrue(!DeepDiveService.looksLikeReport(inline, null));
-    }
-
-    /**
-     * The marker gates (loss guards 2026-07-13): retention = every prior [n]
-     * survives the revision; arrival = a marker-carrying packet leaves at least
-     * one of its markers in the revised report.
-     */
-    @Test
-    void markerGatesCatchDroppedMaterial() {
-        assertTrue(DeepDiveService.retainsMarkers("a [1] b [2]", "b [2] c [1] d [3]"));
-        assertTrue(!DeepDiveService.retainsMarkers("a [1] b [2]", "only [1] left"));
-
-        DeepDiveService.Packet p = new DeepDiveService.Packet("News", "News", "Lage",
-                "  - [8] Meldung\n");
-        java.util.Set<Integer> valid = java.util.Set.of(1, 8);
-        assertTrue(DeepDiveService.packetArrived(p, "der Bericht zitiert [8].", valid));
-        assertTrue(!DeepDiveService.packetArrived(p, "der Bericht vergisst die Quelle.", valid));
-        // A markerless packet (identity stub) has nothing to verify.
-        DeepDiveService.Packet stub = new DeepDiveService.Packet("Company and market",
-                "Profil & Markt", "Worum es geht", "(no verified company/market material)\n");
-        assertTrue(DeepDiveService.packetArrived(stub, "irgendein Text", valid));
-
-        // Anti-compression: a clearly shorter revision is a compressed pass.
-        String prior = "y".repeat(4000);
-        assertTrue(DeepDiveService.notShrunk(prior, "y".repeat(3900)));
-        assertTrue(!DeepDiveService.notShrunk(prior, "y".repeat(3000)));
-    }
-
-    /** An over-budget packet splits at line boundaries, parts labeled and ordered. */
-    @Test
-    void oversizedPacketSplitsAtLineBoundaries() {
-        StringBuilder text = new StringBuilder();
-        for (int i = 0; i < 60; i++) text.append("Zeile ").append(i).append(" ").append("z".repeat(90)).append('\n');
-        DeepDiveService.Packet p = new DeepDiveService.Packet("News", "News", "Lage", text.toString());
-        List<DeepDiveService.Packet> parts = DeepDiveService.splitPacket(p, 2000);
-        assertTrue(parts.size() >= 3, "expected several parts, got " + parts.size());
-        StringBuilder joined = new StringBuilder();
-        for (int i = 0; i < parts.size(); i++) {
-            DeepDiveService.Packet part = parts.get(i);
-            assertTrue(part.text().length() <= 2100, "part too large: " + part.text().length());
-            assertTrue(part.briefLabel().equals("News (" + (i + 1) + "/" + parts.size() + ")"));
-            joined.append(part.text());
-        }
-        assertTrue(joined.toString().equals(text.toString()), "split lost content");
-        // A packet under budget returns untouched.
-        assertTrue(DeepDiveService.splitPacket(p, 20_000).get(0) == p);
-    }
-
-    /**
-     * The QA fact sheet carries every verifiable figure but none of the prose
-     * legs — it exists so the adversarial pass can check the report's numbers.
-     */
-    @Test
-    void factSheetCarriesFiguresButNoProse() {
-        String sheet = DeepDiveService.factSheet(fullMaterial());
-        assertTrue(sheet.contains("MARKET (verified) [1]:"), sheet);
-        assertTrue(sheet.contains("KEY FIGURES BY FISCAL YEAR"), sheet);
-        assertTrue(sheet.contains("consensus target 1720.00 EUR"), sheet);
-        assertTrue(sheet.contains("SHORT POSITIONS"), sheet);
-        assertTrue(sheet.contains("Rheinmetall gewinnt Großauftrag"), sheet);
-        assertTrue(!sheet.contains("COMPANY PORTRAIT"), "portrait prose leaked into the sheet");
-        assertTrue(!sheet.contains("Its comment:"), "TradingCentral prose leaked into the sheet");
-        assertTrue(!sheet.contains("ROOM EVIDENCE"), "room prose leaked into the sheet");
-        assertTrue(sheet.length() <= 3600, "sheet over its cap: " + sheet.length());
-    }
-
-    /** A talkative room yields SEVERAL chronological packets — the retelling needs the history. */
-    @Test
-    void talkativeRoomSplitsIntoSeveralPackets() {
-        DeepDiveService.Material m = fullMaterial();
-        SubjectUnit unit = new SubjectUnit("RHM", "Rheinmetall AG");
-        for (int i = 0; i < 60; i++) {
-            unit.addEvidence(new SubjectUnit.EvidenceRef("t" + i, "c" + i,
-                    "Kommentar Nummer " + i + " " + "w".repeat(80), "reddit",
-                    1_700_000_000L + i));
-        }
-        unit.addHeadline("Rheinmetall: Käfig feiert", "BULLISH");
-        m.unit = unit;
-        List<DeepDiveService.Packet> packets =
-                DeepDiveService.buildPackets("Rheinmetall", m, false);
-        List<DeepDiveService.Packet> room = packets.stream()
-                .filter(p -> p.briefLabel().startsWith("The room")).toList();
-        assertTrue(room.size() >= 2, "expected several room packets, got " + room.size());
-        assertTrue(room.get(0).briefLabel().equals("The room (1/" + room.size() + ")"));
-        // Chronology: an early comment sits in an earlier packet than a late one.
-        String first = room.get(0).text();
-        String last = room.get(room.size() - 1).text();
-        assertTrue(first.contains("(continued)") == false && last.contains("(continued)"));
-        assertTrue(last.contains("WIRE LINES ALREADY PUBLISHED"), "wire lines belong to the last chunk");
-        for (DeepDiveService.Packet p : room) {
-            assertTrue(p.text().length() < 2800, "room packet too large: " + p.text().length());
-        }
-        // The room still comes last overall.
-        assertTrue(packets.get(packets.size() - 1).briefLabel().startsWith("The room"));
     }
 
     /**
@@ -455,56 +408,267 @@ class DeepDiveMaterialTest {
         assertTrue(joined.contains("[9]"), "the room's source marker");
     }
 
-    /** The material plan marks done / THIS PASS / pending — the model's map of the work. */
+    /**
+     * The skeleton gate: all eight canonical headings must appear line-leading
+     * and in order — the final belt before the archive.
+     */
     @Test
-    void materialPlanNamesEveryPacketWithItsStatus() {
-        List<DeepDiveService.Packet> packets =
-                DeepDiveService.buildPackets("Rheinmetall", fullMaterial(), false);
-        String plan = DeepDiveService.materialPlan(packets, 2, java.util.Set.of(0, 1));
-        assertTrue(plan.startsWith("MATERIAL PLAN"), plan);
-        assertTrue(plan.contains("1. Company and market [done]"), plan);
-        assertTrue(plan.contains("2. Fundamentals [done]"), plan);
-        assertTrue(plan.contains("3. Street and insiders [THIS PASS]"), plan);
-        assertTrue(plan.contains("[pending]"), plan);
+    void looksLikeReportEnforcesTheCanonicalHeadings() {
+        String pad = "x".repeat(80) + "\n";
+        StringBuilder good = new StringBuilder();
+        for (String h : DeepDiveService.SECTIONS_DE) good.append("## ").append(h).append('\n').append(pad);
+        assertTrue(DeepDiveService.looksLikeReport(good.toString(), DeepDiveService.SECTIONS_DE));
+
+        StringBuilder truncated = new StringBuilder();
+        for (String h : DeepDiveService.SECTIONS_DE.subList(0, 7)) {
+            truncated.append("## ").append(h).append('\n').append(pad);
+        }
+        assertTrue(!DeepDiveService.looksLikeReport(truncated.toString(), DeepDiveService.SECTIONS_DE));
+
+        String renamed = good.toString().replace("## Der Raum", "## Fazit");
+        assertTrue(!DeepDiveService.looksLikeReport(renamed, DeepDiveService.SECTIONS_DE));
+
+        // Inline "## " occurrences do not count as headings (count fallback).
+        String inline = ("prose ## not-a-heading " + pad).repeat(12);
+        assertTrue(!DeepDiveService.looksLikeReport(inline, null));
     }
 
     /**
-     * The deterministic repetition scrub (live-observed with SAP 2026-07-13:
-     * the edit protocol's INSERT drift planted the same sentence FOUR times and
-     * the model's own cleanup DELETEs missed their anchors): exact repeats are
-     * removed by the terminal — first occurrence wins, headings and the section
-     * literals survive, short sentences are never touched.
+     * The copy editor's untouchability gate: wording may change and a recited
+     * figure may be CUT (the density licence — never altered, never invented),
+     * markers must survive, and gutting or bloating the section is a rejection.
      */
     @Test
-    void dedupeRemovesRepeatedSentencesAndParagraphs() {
-        String longSentence = "Die Unternehmensstruktur wird durch einen Vorstand unter Vorsitz"
-                + " von Christian Klein und einen Aufsichtsrat unter Vorsitz von Pekka Juhani"
-                + " Ala-Pietilä repräsentiert [4].";
-        String report = "## Lage\n"
-                + "Der Kurs stieg. " + longSentence + " " + longSentence + " " + longSentence + "\n\n"
-                + "## Katalysatoren und Risiken\n"
-                + longSentence + "\n\n"
-                + "Der Bericht zum zweiten Quartal 2026 steht am 24. Juli 2026 an, und die"
-                + " Zahlen entscheiden über die weitere Richtung des Papiers [4].\n\n"
-                + "Der Bericht zum zweiten Quartal 2026 steht am 24. Juli 2026 an, und die"
-                + " Zahlen entscheiden über die weitere Richtung des Papiers [4].\n\n"
-                + "## Der Raum\n"
-                + "(Dieser Abschnitt folgt mit dem nächsten Materialpaket.)";
-        String deduped = DeepDiveService.dedupeRepeats(report);
-        assertTrue(occurrences(deduped, "Unternehmensstruktur") == 1,
-                "the quadrupled sentence must survive exactly once:\n" + deduped);
-        assertTrue(occurrences(deduped, "24. Juli 2026 an") == 1,
-                "the duplicated paragraph must survive exactly once:\n" + deduped);
-        assertTrue(deduped.contains("## Lage") && deduped.contains("## Katalysatoren und Risiken")
-                && deduped.contains("## Der Raum"), "headings must survive:\n" + deduped);
-        assertTrue(deduped.contains("Der Kurs stieg."), "short distinct sentences survive");
-        assertTrue(deduped.contains("(Dieser Abschnitt folgt mit dem nächsten Materialpaket.)"));
+    void polishGateFreezesFiguresAndMarkers() {
+        String before = "Der Konzern steigert den Umsatz auf 36,8 Mrd. EUR und die Marge "
+                + "auf 28,79 % [4]. Die Analysten rufen 202,50 EUR auf [4].";
+        String reworded = "**36,8 Mrd. EUR Umsatz** bei 28,79 % Marge - der Konzern skaliert [4]. "
+                + "Die Street hält dagegen: *202,50 EUR Konsensziel* [4].";
+        assertTrue(DeepDiveService.polishAcceptable(before, reworded, true));
+        // A changed figure is content drift.
+        assertFalse(DeepDiveService.polishAcceptable(before,
+                reworded.replace("36,8", "38,6"), true));
+        // An invented figure is content drift.
+        assertFalse(DeepDiveService.polishAcceptable(before,
+                reworded + " Das KGV liegt bei 41,2 [4].", true));
+        // A CUT figure is the density licence — surviving values verbatim.
+        assertTrue(DeepDiveService.polishAcceptable(before,
+                "Der Konzern skaliert, die Marge liegt bei 28,79 % [4]. "
+                        + "Die Street ruft 202,50 EUR auf [4].", true));
+        // A dropped marker is content drift.
+        assertFalse(DeepDiveService.polishAcceptable(before,
+                reworded.replace(" [4]", ""), true));
+        // Gutting is a rejection even with identical figures.
+        assertFalse(DeepDiveService.polishAcceptable(before,
+                "36,8 28,79 202,50 [4]", true));
+    }
 
-        // The placeholder may legitimately stand in SEVERAL sections at once.
-        String twoPlaceholders = "## These\n(Dieser Abschnitt folgt mit dem nächsten Materialpaket.)\n\n"
-                + "## Lage\n(Dieser Abschnitt folgt mit dem nächsten Materialpaket.)";
-        assertTrue(occurrences(DeepDiveService.dedupeRepeats(twoPlaceholders),
-                "(Dieser Abschnitt folgt") == 2, "placeholder literal is exempt from dedupe");
+    /**
+     * The typesetter's locale belt: a ROOT-formatted material money token the
+     * model copied verbatim renders German; values stay untouched.
+     */
+    @Test
+    void germanizeMoneyUnitsRendersCopiedTokens() {
+        assertEquals("einem Marktwert von 160,6 Mrd. EUR und",
+                DeepDiveService.germanizeMoneyUnits("einem Marktwert von 160.6B EUR und"));
+        assertEquals("Umsatz von 17,3 Mio. EUR im",
+                DeepDiveService.germanizeMoneyUnits("Umsatz von 17.3M EUR im"));
+        // Already-German prose passes untouched.
+        assertEquals("bei 36,8 Mrd. EUR.",
+                DeepDiveService.germanizeMoneyUnits("bei 36,8 Mrd. EUR."));
+    }
+
+    /**
+     * The stalemate detector compares the PROBLEM half of a challenge line —
+     * the quote half changes with every revision by construction, so two
+     * rounds raising the same problem against fresh wording must still match.
+     */
+    @Test
+    void objectionProblemStripsTheQuoteHalf() {
+        assertEquals("die Zahl fehlt im Material",
+                DeepDiveService.objectionProblem(
+                        "E: \"Der Umsatz steigt auf 36,8 Mrd. EUR\" — die Zahl fehlt im Material"));
+        assertEquals("Attribution fehlt",
+                DeepDiveService.objectionProblem(
+                        "E: \"Analysten sehen Potenzial\" - Attribution fehlt"));
+        // Loose format falls back to the whole line.
+        assertEquals("kein Zitat, nur Prosa",
+                DeepDiveService.objectionProblem("kein Zitat, nur Prosa"));
+    }
+
+    /**
+     * The desk journal's sentence diff, GitHub-hunk-shaped: del/add lines
+     * carry the change with 1-based old/new sentence numbers, the ONE
+     * unchanged neighbour sentence rides as ctx, longer unchanged runs elide
+     * to a gap marker, an unchanged text yields nothing.
+     */
+    @Test
+    void sentenceDiffBuildsAHunkWithContextAndLineNumbers() {
+        String before = "Der Kurs steigt auf 140,31 EUR. Die UBS senkt ihr Ziel auf 164 Euro. "
+                + "Der Konzern bleibt profitabel. Die Marge hält. Der Vorstand kauft zu.";
+        String after = "Der Kurs steigt auf 140,31 EUR. Die UBS senkt ihr Ziel auf 164 Euro "
+                + "und bleibt bei Kaufen. Der Konzern bleibt profitabel. Die Marge hält. "
+                + "Der Vorstand kauft zu.";
+        var lines = DeepDiveService.sentenceDiff(before, after);
+        assertEquals("ctx", lines.get(0).kind());
+        assertEquals(1, lines.get(0).oldLine());
+        assertEquals(1, lines.get(0).newLine());
+        assertEquals("del", lines.get(1).kind());
+        assertEquals(2, lines.get(1).oldLine());
+        assertEquals(0, lines.get(1).newLine());
+        assertEquals("add", lines.get(2).kind());
+        assertEquals(2, lines.get(2).newLine());
+        assertTrue(lines.get(2).text().contains("bleibt bei Kaufen"));
+        assertEquals("ctx", lines.get(3).kind());
+        // The far tail is elided to one gap marker.
+        assertEquals("gap", lines.get(4).kind());
+        assertEquals(5, lines.size());
+        // A fresh draft is pure adds; identical texts are silent.
+        assertTrue(DeepDiveService.sentenceDiff(null, before).stream()
+                .allMatch(l -> l.kind().equals("add")));
+        assertEquals(0, DeepDiveService.sentenceDiff(before, before).size());
+    }
+
+    /**
+     * The cross-section review routes an objection to the section that
+     * carries the quoted claim — whitespace-tolerant, short quotes rejected.
+     */
+    @Test
+    void consistencyObjectionsMapToTheirOwningSection() {
+        String[] bodies = new String[DeepDiveService.SECTION_COUNT];
+        bodies[4] = "Die jüngsten Revisionen zeigen weder Anhebungen noch Senkungen. "
+                + "Der Konsens bleibt bei Kaufen.";
+        bodies[6] = "Die jüngsten Analystenrevisionen zeigen 0 Aufwärtsbewegungen und "
+                + "1 Herabstufung.";
+        String line = "E: \"Die jüngsten Revisionen zeigen weder Anhebungen noch "
+                + "Senkungen.\" — Ausblick trägt 0/1";
+        assertEquals("Die jüngsten Revisionen zeigen weder Anhebungen noch Senkungen.",
+                DeepDiveService.quotedSpan(line));
+        assertEquals(4, DeepDiveService.owningSection(bodies,
+                DeepDiveService.quotedSpan(line)));
+        assertEquals(-1, DeepDiveService.owningSection(bodies, "zu kurz"));
+    }
+
+    /**
+     * The dilution series is house arithmetic on legs already delivered:
+     * equity (thousands EUR) ÷ book value per share = shares outstanding per
+     * fiscal year, YoY change attached (user finding 2026-07-14).
+     */
+    @Test
+    void shareCountSeriesComesFromEquityAndBookValue() {
+        StringBuilder sb = new StringBuilder();
+        DeepDiveService.appendShareCount(sb, DeepDiveChartsTest.deepDive(),
+                new java.util.HashMap<>(java.util.Map.of("consors", 4)));
+        String line = sb.toString();
+        // 2024: equity 3 800 000 thousand EUR / book value 80.0 = 47.5M shares.
+        assertTrue(line.contains("SHARES OUTSTANDING"), line);
+        assertTrue(line.contains("2024: 47 500 000 shares"), line);
+        assertTrue(line.contains("dilution"), line);
+    }
+
+    /** Venue codes read as names in prose; bare cryptic codes stay out. */
+    @Test
+    void venueNamesAreReadable() {
+        assertEquals("NASDAQ", DeepDiveService.venueName("NMS"));
+        assertEquals("XETRA", DeepDiveService.venueName("GER"));
+        assertEquals("L&S Exchange", DeepDiveService.venueName("LSX"));
+        assertEquals(null, DeepDiveService.venueName("XX"));
+    }
+
+    /**
+     * The weave-churn brake (live OTLK run: 50 routed sources on one section,
+     * most re-spins of the same FDA story): routed news blocks group by
+     * normalized-title similarity BEFORE the weave loop — re-spins bundle into
+     * ONE story step, distinct stories stay their own, order is preserved and
+     * NO member is ever dropped (every marker must ride into its step; user
+     * mandate "every source contributes"). The subject's own name words and
+     * generic tokens ("Aktie") are dropped so they never glue distinct
+     * stories together.
+     */
+    @Test
+    void storyGroupingBundlesReSpinsAndNeverDropsAMember() {
+        String a = "  - [16] [2026-07-12 09:26] Outlook Therapeutics Aktie: "
+                + "FDA-Entscheidung zu ONS-5010 am 29. Juli · Börse Express\n";
+        String b = "  - [17] [2026-07-13 14:24] Outlook Therapeutics Aktie: "
+                + "FDA-Entscheidung zu ONS-5010 rückt näher · sharedeals\n";
+        String c = "  - [18] [2026-07-13 08:00] Outlook Therapeutics: "
+                + "Kapitalerhöhung über 25 Millionen Dollar · Börse Express\n";
+        var dropWords = DeepDiveService.storyDropWords("Outlook Therapeutics, Inc.", "OTLK");
+        assertTrue(dropWords.contains("outlook") && dropWords.contains("therapeutics")
+                && dropWords.contains("otlk") && dropWords.contains("aktie"),
+                String.valueOf(dropWords));
+
+        var groups = DeepDiveService.groupStoryBlocks(List.of(a, b, c), dropWords);
+        assertEquals(2, groups.size(), String.valueOf(groups));
+        assertEquals(List.of(a, b), groups.get(0), "the FDA re-spins bundle, oldest first");
+        assertEquals(List.of(c), groups.get(1), "the capital raise is its own story");
+        assertEquals(3, groups.stream().mapToInt(List::size).sum(),
+                "no member may ever be dropped");
+        // Umlauts normalize: a re-spin differing only in diacritics still groups.
+        var umlaut = DeepDiveService.groupStoryBlocks(List.of(
+                "  - [1] Kapitalerhöhung über 25 Millionen Dollar geplant · A\n",
+                "  - [2] Kapitalerhohung: uber 25 Millionen Dollar geplant · B\n"), dropWords);
+        assertEquals(1, umlaut.size(), String.valueOf(umlaut));
+    }
+
+    /** Weave splice residue ",." is tidied at assembly; decimals survive. */
+    @Test
+    void nasdaqLegReachesItsShelvesAndTheRegister() {
+        DeepDiveService.Material m = new DeepDiveService.Material();
+        m.canonicalName = "Outlook Therapeutics, Inc.";
+        m.ticker = "OTLK";
+        m.usStats = new UsListingStats("OTLK", "Outlook Therapeutics, Inc. Common Stock",
+                "NASDAQ-CM", "Health Care", "Biotechnology", 2.4e8, 16_625_884, Double.NaN,
+                List.of(new UsListingStats.ShortInterestPoint("2026-06-30", 12_345_678,
+                        9_000_000, 1.4)),
+                new UsListingStats.InsiderActivity(3, 1, 5, 4, 250_000, -1_200_000),
+                List.of(new UsListingStats.InsiderTrade("2026-06-25", "SMITH JOHN",
+                        "Director", "Buy", "buy", 100_000, 0.83, 450_000)),
+                new UsListingStats.InstitutionalOwnership(7.63, 24, 12_000_000, 19.0,
+                        List.of(new UsListingStats.InstitutionalOwnership.Holder(
+                                "Vanguard Group Inc", 1_234_567, 6544.0, "2026-03-31"))),
+                new UsListingStats.AnalystRatings("Buy", 8, 1, 1, 0, 5.50, 12.00, 4.50),
+                List.of(new UsListingStats.EarningsSurprise("Mar 2026", "2026-05-15",
+                        -0.19, -0.25, 24.0)),
+                Instant.now().getEpochSecond());
+
+        String[] shelves = DeepDiveService.sectionMaterials(m);
+        assertContains(shelves[DeepDiveService.SEC_ABOUT],
+                "US LISTING (NASDAQ data) [1]: NASDAQ-CM, sector Health Care / Biotechnology");
+        assertContains(shelves[DeepDiveService.SEC_FUNDAMENTALS],
+                "US EARNINGS SURPRISES");
+        assertContains(shelves[DeepDiveService.SEC_FUNDAMENTALS],
+                "Mar 2026 [2026-05-15]: actual -0.19 USD vs consensus -0.25 USD (surprise +24.0%)");
+        assertContains(shelves[DeepDiveService.SEC_VALUATION],
+                "US STREET VIEW (NASDAQ consensus) [1]: mean rating 'Buy' (8 analysts); "
+                        + "price target mean 5.50 USD (high 12.00, low 4.50) "
+                        + "from a target panel of buy 1 / hold 1 / sell 0");
+        assertContains(shelves[DeepDiveService.SEC_VALUATION],
+                "US INSTITUTIONAL OWNERSHIP (13F filings, NASDAQ) [1]: "
+                        + "7.63% of shares held institutionally by 24 holders (value 19.0M USD)");
+        assertContains(shelves[DeepDiveService.SEC_VALUATION], "Vanguard Group Inc");
+        assertContains(shelves[DeepDiveService.SEC_VALUATION], "(6.5M USD), as of 2026-03-31");
+        assertContains(shelves[DeepDiveService.SEC_CATALYSTS], "US INSIDER TRADES (SEC Form 4");
+        assertContains(shelves[DeepDiveService.SEC_CATALYSTS],
+                "last 3 months: 3 buys / 1 sells (net 250 000 shares)");
+        assertContains(shelves[DeepDiveService.SEC_CATALYSTS],
+                "[2026-06-25] SMITH JOHN (Director): Buy 100 000 shares @ 0.83 USD");
+        assertContains(shelves[DeepDiveService.SEC_CATALYSTS],
+                "[2026-06-30] 12 345 678 shares short, days to cover 1.4");
+        // Outlook reuses the street view like the Consorsbank consensus.
+        assertContains(shelves[DeepDiveService.SEC_OUTLOOK], "US STREET VIEW");
+
+        String register = DeepDiveService.sourcesSection(m, true);
+        assertContains(register, "- [1] NASDAQ - US-Listing: Insider-Trades (Form 4)");
+    }
+
+    @Test
+    void assemblyTidiesPunctuationSplices() {
+        String[] bodies = new String[DeepDiveService.SECTION_COUNT];
+        bodies[2] = "Die UBS behielt die Einstufung bei,. Der Kurs steigt um 2,5 %.";
+        String report = DeepDiveService.assemble(DeepDiveService.SECTIONS_DE, bodies, true);
+        assertTrue(report.contains("bei. Der Kurs steigt um 2,5 %."));
+        assertTrue(!report.contains(",."));
     }
 
     private static int occurrences(String s, String needle) {
@@ -515,6 +679,6 @@ class DeepDiveMaterialTest {
 
     private static void assertContains(String brief, String needle) {
         assertTrue(brief.contains(needle),
-                "brief is missing: \"" + needle + "\"\n---\n" + brief);
+                "missing: \"" + needle + "\"\n---\n" + brief);
     }
 }
