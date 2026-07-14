@@ -348,9 +348,16 @@ public final class DeepDivePdfExporter {
         para.setLength(0);
     }
 
-    /** Inline markdown on ESCAPED text: only **bold** — the report subset. */
+    /**
+     * Inline markdown on ESCAPED text: **bold** and *italics* (attributed
+     * views ride italics throughout the report prose) — the report subset,
+     * mirroring the web renderer's rules (bold consumed first; italics only
+     * after a start/space/paren so mid-word asterisks stay literal).
+     */
     private static String inline(String escaped) {
-        return escaped.replaceAll("\\*\\*(.+?)\\*\\*", "<strong>$1</strong>");
+        return escaped
+                .replaceAll("\\*\\*([^*]+)\\*\\*", "<strong>$1</strong>")
+                .replaceAll("(^|[\\s(])\\*([^*\\n]+)\\*", "$1<em>$2</em>");
     }
 
     private static String escape(String s) {

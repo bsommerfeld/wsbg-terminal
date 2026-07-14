@@ -393,6 +393,9 @@ final class DeepDiveFactCheck {
     /** A spelled decimal: a numeral word, "Komma", a numeral word. */
     private static final Pattern SPELLED_DECIMAL = Pattern.compile(
             "(?iu)\\b(\\p{L}+)\\s+Komma\\s+(\\p{L}+)\\b");
+    /** Scale/currency words that turn a preceding spelled count into a FIGURE. */
+    private static final String SCALE_WORDS =
+            "Million(?:en)?|Milliarden?|Mrd\\.?|Mio\\.?|Tausend|Prozent|Dollar|Euro|EUR|USD";
     /**
      * A spelled decimal via COMMA SPLICE: numeral word, comma, numeral word,
      * then a scale/currency/unit word right after (live run: "8,5 Millionen"
@@ -401,8 +404,24 @@ final class DeepDiveFactCheck {
      * ("acht, fünf und drei Punkte") never carries one there.
      */
     private static final Pattern SPELLED_COMMA_DECIMAL = Pattern.compile(
-            "(?iu)\\b(\\p{L}+),\\s*(\\p{L}+)\\s+(Million(?:en)?|Milliarden?|Mrd\\.?|Mio\\.?|"
-                    + "Tausend|Prozent|Dollar|Euro|EUR|USD)\\b");
+            "(?iu)\\b(\\p{L}+),\\s*(\\p{L}+)\\s+(" + SCALE_WORDS + ")\\b");
+    /**
+     * A spelled count directly before a scale/currency word ("acht Millionen",
+     * "dreizehn Prozent"): the standalone small-word exemption must not cover
+     * it — with the scale word it IS a value, exactly the class the figure
+     * check exists for. Same disambiguation gate as the comma-splice check;
+     * enumerations without a scale word ("acht Punkte", "drei Analysten")
+     * stay legitimate prose.
+     */
+    private static final Pattern SPELLED_SCALED = Pattern.compile(
+            "(?iu)\\b(\\p{L}+)\\s+(" + SCALE_WORDS + ")\\b");
+    /**
+     * Atoms that alone never ASSERT a count before a scale word: "und" is a
+     * connective ("Forschung und Euro-Stärke"), "ein" the article ("ein
+     * Dollar-Kurs") — both decompose as numerals but flagging them would
+     * object to ordinary German.
+     */
+    private static final Set<String> NON_COUNT_TOKENS = Set.of("und", "ein");
     /** A spelled date day: a numeral word (opt. dot) directly before a month name. */
     private static final Pattern SPELLED_DATE = Pattern.compile(
             "(?iu)\\b(\\p{L}+)\\.?\\s+(Januar|Februar|März|April|Mai|Juni|Juli|"
@@ -452,6 +471,16 @@ final class DeepDiveFactCheck {
         while (comma.find()) {
             if (decomposeNumeral(comma.group(1)) != null
                     && decomposeNumeral(comma.group(2)) != null) {
+                return true;
+            }
+        }
+        // "acht Millionen": a single small count word is exempt on its own
+        // ("acht Punkte"), but directly before a scale/currency word it IS
+        // the figure — close the run-8 evasion for teens/small counts too.
+        Matcher scaled = SPELLED_SCALED.matcher(sentence);
+        while (scaled.find()) {
+            String token = scaled.group(1).toLowerCase(Locale.ROOT);
+            if (!NON_COUNT_TOKENS.contains(token) && decomposeNumeral(token) != null) {
                 return true;
             }
         }

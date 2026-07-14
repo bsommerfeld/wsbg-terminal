@@ -38,6 +38,12 @@ let pdfNote = null;
 /** The report id whose delete button is armed (two-tap confirm). */
 let armedDelete = null;
 /**
+ * Whether the live run's cancel was already sent. MODULE state, not DOM state:
+ * every progress push re-renders the card, so a `btn.disabled` set on the node
+ * would be resurrected enabled by the next render.
+ */
+let cancelSent = false;
+/**
  * The desk journal: one GROUP per pipeline step (one diff hunk / one note
  * batch), each an array of lines {k: add|del|ctx|gap|note, t, o?, n?}.
  */
@@ -91,6 +97,7 @@ export function initDeepDive(socket) {
 /** `deepdive` payload → list/progress state. */
 export function renderDeepDive(payload) {
   if (!payload) return;
+  const wasBusy = state.busy;
   state = {
     busy: !!payload.busy,
     stage: payload.stage || null,
@@ -98,6 +105,9 @@ export function renderDeepDive(payload) {
     subject: payload.subject || null,
     reports: Array.isArray(payload.reports) ? payload.reports : [],
   };
+  // The one-shot cancel resets on any busy edge: a NEW run gets a fresh
+  // button, and a finished/cancelled run drops the pending state.
+  if (wasBusy !== state.busy) cancelSent = false;
   // The full journal rides state pushes (late joiners); appends ride their
   // own topic (renderDeepDiveJournal).
   if (Array.isArray(payload.journal)) journal = payload.journal;
@@ -192,12 +202,12 @@ function onHomeClick(e) {
   if (e.target.closest('.dd-cancel')) {
     // One shot: the service cancels at the next step boundary, which can take
     // a model call's length — the disabled button says "heard you" instead of
-    // inviting a click storm (live: 20 repeat sends).
-    const btn = e.target.closest('.dd-cancel');
-    if (btn.disabled) return;
-    btn.disabled = true;
-    btn.classList.add('is-cancelling');
+    // inviting a click storm (live: 20 repeat sends). State lives in the
+    // module (cancelSent), NOT on the node — progress pushes re-render.
+    if (cancelSent) return;
+    cancelSent = true;
     sock.send('deepdive', { command: 'cancel' });
+    render();
     return;
   }
   const del = e.target.closest('.dd-del');
@@ -366,7 +376,8 @@ function progressHtml() {
         journal.map(journalGroupHtml).join('')}</div></div>` : '';
   return `<div class="dd-progress${journalOpen ? ' journal-open' : ''}">
     <span class="dd-progress-subject">${escapeHtml(state.subject || '')}
-      <button class="dd-cancel" type="button" title="${escapeHtml(t('dd.cancel'))}"
+      <button class="dd-cancel${cancelSent ? ' is-cancelling' : ''}" type="button"
+              ${cancelSent ? 'disabled ' : ''}title="${escapeHtml(t('dd.cancel'))}"
               aria-label="${escapeHtml(t('dd.cancel'))}">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
       </button>

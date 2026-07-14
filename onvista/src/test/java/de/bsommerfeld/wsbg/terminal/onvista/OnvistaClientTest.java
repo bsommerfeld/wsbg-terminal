@@ -102,4 +102,47 @@ class OnvistaClientTest {
         assertTrue(client.parseSnapshot(
                 "{\"company\":{\"name\":\"X\"},\"stocksCnFundamentalList\":{\"list\":[]}}").isPresent());
     }
+
+    /**
+     * The miss cache must only ever hold STRUCTURED misses (the documented
+     * FUND/absent-entity shape). A garbled 200 body is a transient failure,
+     * never a cacheable verdict — an outage heals itself.
+     */
+    @Test
+    void garbledBodyIsNotAStructuredMiss() {
+        assertFalse(client.lookupEntity("not json", "DE0007030009", "STOCK").structuredMiss());
+        assertFalse(client.lookupEntity("{\"error\":\"oops\"}", "DE0007030009", "STOCK")
+                .structuredMiss());
+        // The documented shapes stay structured misses / hits:
+        assertTrue(client.lookupEntity(QUERY_FUND, "IE00B4L5Y983", "STOCK").structuredMiss());
+        assertTrue(client.lookupEntity(QUERY_STOCK, "US0000000000", "STOCK").structuredMiss());
+        assertEquals("82811",
+                client.lookupEntity(QUERY_STOCK, "DE0007030009", "STOCK").entityValue());
+    }
+
+    /** End-to-end: a garbled query reply must not poison the session cache. */
+    @Test
+    void garbledQueryReplyIsNotCached() throws Exception {
+        var bodies = new java.util.ArrayDeque<>(java.util.List.of(
+                "not json at all",                              // call 1: garbled query
+                QUERY_STOCK,                                    // call 2: healed query
+                SNAPSHOT_WITH_ACTUALS));                        // call 2: snapshot
+        OnvistaClient c = new OnvistaClient(new de.bsommerfeld.wsbg.terminal.source.net.WebFetcher() {
+            @Override
+            public String name() {
+                return "test";
+            }
+
+            @Override
+            public de.bsommerfeld.wsbg.terminal.source.net.WebResponse fetch(
+                    String url, java.util.Map<String, String> headers,
+                    java.time.Duration timeout) {
+                return new de.bsommerfeld.wsbg.terminal.source.net.WebResponse(
+                        200, bodies.poll(), java.util.Map.of());
+            }
+        });
+        assertFalse(c.factsByIsin("DE0007030009").isPresent());
+        // Second call must go back to the network (nothing cached) and succeed.
+        assertTrue(c.factsByIsin("DE0007030009").isPresent());
+    }
 }

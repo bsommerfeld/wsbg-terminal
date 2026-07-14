@@ -186,9 +186,10 @@ final class NewsDigester {
             String sys = PromptLoader.loadLocalized("article-extract", brain.getUserLanguage().code());
             String reply = chatGateway.chat(model, sys, text);
             String digest = reply == null ? "" : reply.strip();
-            // The prompt's declared "nothing here" verdict — and any fragment too
-            // short to be a real fact extract — caches as a miss (title fallback).
-            if (digest.equalsIgnoreCase("EMPTY") || digest.length() < MIN_DIGEST_CHARS) digest = "";
+            // Anything shorter than a real fact extract caches as a miss (title
+            // fallback) — this subsumes the prompt's declared "EMPTY" verdict
+            // (5 chars, far under MIN_DIGEST_CHARS).
+            if (digest.length() < MIN_DIGEST_CHARS) digest = "";
             byLink.put(link, digest);
             if (!digest.isEmpty()) {
                 // A real article from this host — the wall strikes were noise.

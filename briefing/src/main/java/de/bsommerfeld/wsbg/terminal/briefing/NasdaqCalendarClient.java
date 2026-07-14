@@ -62,7 +62,9 @@ public class NasdaqCalendarClient {
         try {
             WebResponse resp = fetcher.fetch(EARNINGS_URL + date,
                     Map.of("User-Agent", userAgent,
-                            "Accept", "application/json",
+                            // The probed-robust recipe (NasdaqCompanyClient):
+                            // the browser-shaped Accept keeps Akamai answering.
+                            "Accept", "application/json, text/plain, */*",
                             "Origin", "https://www.nasdaq.com",
                             "Referer", "https://www.nasdaq.com/"),
                     requestTimeout);

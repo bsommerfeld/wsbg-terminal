@@ -11,7 +11,7 @@ export const DICT = {
     'common.donate': 'WSBG unterstützen',
 
     // --- titlebar ---
-    'titlebar.update.title': 'Update verfügbar – jetzt installieren',
+    'titlebar.update.title': 'Update verfügbar - jetzt installieren',
     'titlebar.update.aria': 'Update installieren',
     'titlebar.settings.title': 'Einstellungen',
     'titlebar.settings.aria': 'Einstellungen öffnen',
@@ -58,7 +58,7 @@ export const DICT = {
     'settings.updates.auto.more': 'Wenn aus, meldet ein Hinweis in der Titelleiste neue Versionen.',
     'settings.data.title': 'Daten',
     'settings.data.logs.name': 'Zu den Logs',
-    'settings.data.logs.hint': 'Öffnet den wsbg-terminal Ordner im Dateimanager — dort liegen unter anderem die Logs.',
+    'settings.data.logs.hint': 'Öffnet den wsbg-terminal Ordner im Dateimanager - dort liegen unter anderem die Logs.',
     'settings.data.logs.btn': 'Ordner öffnen',
     'settings.data.clear.name': 'Daten löschen',
     'settings.data.clear.hint': 'Setzt das Terminal komplett zurück - Threads, Cluster, Schlagzeilen und Archiv.',
@@ -85,7 +85,7 @@ export const DICT = {
     'quote.points': 'Pkt',
     'quote.day': 'Tag',
     'quote.source': 'Kurs:',
-    'quote.stale': 'außerhalb der Handelszeit — letzter Kurs',
+    'quote.stale': 'außerhalb der Handelszeit - letzter Kurs',
 
     // --- headline filter ---
     'filter.open': 'Schlagzeilen filtern',
@@ -253,6 +253,8 @@ export const DICT = {
     'weather.stats.adhocs': 'Ad-hocs des Tages',
     'weather.adhoc.inkaefig': 'im Käfig:',
     'weather.stats.analysts': 'Analysten-Aktionen',
+    'weather.stats.street': 'Street-Aktionen des Tages',
+    'weather.street.target': 'Ziel',
     'weather.stats.macro': 'Makro des Tages',
     'weather.macro.forecast': 'Prognose',
     'weather.macro.previous': 'zuvor',
@@ -609,6 +611,8 @@ export const DICT = {
     'weather.stats.adhocs': 'Ad-hoc disclosures of the day',
     'weather.adhoc.inkaefig': 'in the cage:',
     'weather.stats.analysts': 'Analyst actions',
+    'weather.stats.street': 'Street actions of the day',
+    'weather.street.target': 'target',
     'weather.stats.macro': 'Macro of the day',
     'weather.macro.forecast': 'forecast',
     'weather.macro.previous': 'previous',

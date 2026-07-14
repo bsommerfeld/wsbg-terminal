@@ -79,14 +79,19 @@ public class OnvistaClient implements InstrumentFactsSource {
         try {
             WebResponse queryResp = get(QUERY_URL + URLEncoder.encode(key, StandardCharsets.UTF_8));
             if (queryResp == null) return Optional.empty();
-            String entityValue = parseStockEntity(queryResp.body(), key);
-            if (entityValue == null) {
-                // Definite non-stock / unknown — cache the miss for the session.
-                cache.put(key, Optional.empty());
-                LOG.info("[onvista] {} → no STOCK entity (fund/crypto/unknown)", key);
+            EntityLookup lookup = lookupEntity(queryResp.body(), key, "STOCK");
+            if (!lookup.isHit()) {
+                if (lookup.structuredMiss()) {
+                    // Definite non-stock / unknown — cache the miss for the session.
+                    cache.put(key, Optional.empty());
+                    LOG.info("[onvista] {} → no STOCK entity (fund/crypto/unknown)", key);
+                } else {
+                    // Garbled 200 body — NOT a miss; a later call may heal.
+                    LOG.warn("[onvista] {} → unparseable query reply, not cached", key);
+                }
                 return Optional.empty();
             }
-            WebResponse snapResp = get(String.format(SNAPSHOT_URL_FMT, entityValue));
+            WebResponse snapResp = get(String.format(SNAPSHOT_URL_FMT, lookup.entityValue()));
             if (snapResp == null) return Optional.empty();
             Optional<InstrumentFacts> facts = parseSnapshot(snapResp.body());
             facts.ifPresentOrElse(
@@ -125,13 +130,17 @@ public class OnvistaClient implements InstrumentFactsSource {
         try {
             WebResponse queryResp = get(QUERY_URL + URLEncoder.encode(key, StandardCharsets.UTF_8));
             if (queryResp == null) return Optional.empty();
-            String entityValue = parseEntity(queryResp.body(), key, "FUND");
-            if (entityValue == null) {
-                fundCache.put(key, Optional.empty());
-                LOG.info("[onvista] {} → no FUND entity (stock/crypto/unknown)", key);
+            EntityLookup lookup = lookupEntity(queryResp.body(), key, "FUND");
+            if (!lookup.isHit()) {
+                if (lookup.structuredMiss()) {
+                    fundCache.put(key, Optional.empty());
+                    LOG.info("[onvista] {} → no FUND entity (stock/crypto/unknown)", key);
+                } else {
+                    LOG.warn("[onvista] {} → unparseable query reply, not cached", key);
+                }
                 return Optional.empty();
             }
-            WebResponse snapResp = get(String.format(FUND_SNAPSHOT_URL_FMT, entityValue));
+            WebResponse snapResp = get(String.format(FUND_SNAPSHOT_URL_FMT, lookup.entityValue()));
             if (snapResp == null) return Optional.empty();
             var facts = parseFundSnapshot(snapResp.body());
             facts.ifPresentOrElse(
@@ -193,29 +202,45 @@ public class OnvistaClient implements InstrumentFactsSource {
     }
 
     /**
+     * Tri-state entity lookup result: a hit carries the {@code entityValue};
+     * a STRUCTURED miss (the documented shape — the reply parses and its
+     * {@code list} simply lacks a matching entity of the wanted type) is
+     * cacheable for the session; a garbled/malformed body is NOT a miss and
+     * must never be cached (an outage or a changed response shape heals).
+     */
+    record EntityLookup(String entityValue, boolean structuredMiss) {
+        static EntityLookup hit(String v) { return new EntityLookup(v, false); }
+        static EntityLookup miss() { return new EntityLookup(null, true); }
+        static EntityLookup garbled() { return new EntityLookup(null, false); }
+        boolean isHit() { return entityValue != null; }
+    }
+
+    /**
      * Picks the query hit whose ISIN matches AND whose entityType is STOCK,
-     * returning its entityValue — or null (a definite miss). Package-private,
-     * network-free.
+     * returning its entityValue — or null (miss/garbled). Package-private,
+     * network-free convenience over {@link #lookupEntity}.
      */
     String parseStockEntity(String body, String isin) {
-        return parseEntity(body, isin, "STOCK");
+        return lookupEntity(body, isin, "STOCK").entityValue();
     }
 
     /** Same pick with a caller-chosen entity type ("STOCK" / "FUND"). */
-    String parseEntity(String body, String isin, String entityType) {
+    EntityLookup lookupEntity(String body, String isin, String entityType) {
         try {
             JsonNode list = JSON.readTree(body).path("list");
-            if (!list.isArray()) return null;
+            // A parseable body WITHOUT the documented list array is a changed
+            // or error shape, not a documented miss — don't cache it.
+            if (!list.isArray()) return EntityLookup.garbled();
             for (JsonNode n : list) {
                 if (!isin.equalsIgnoreCase(n.path("isin").asText(""))) continue;
                 if (!entityType.equalsIgnoreCase(n.path("entityType").asText(""))) continue;
                 String v = n.path("entityValue").asText("");
-                if (!v.isBlank()) return v;
+                if (!v.isBlank()) return EntityLookup.hit(v);
             }
-            return null;
+            return EntityLookup.miss();
         } catch (Exception e) {
             LOG.warn("[onvista] query parse failure: {}", e.getMessage());
-            return null;
+            return EntityLookup.garbled();
         }
     }
 

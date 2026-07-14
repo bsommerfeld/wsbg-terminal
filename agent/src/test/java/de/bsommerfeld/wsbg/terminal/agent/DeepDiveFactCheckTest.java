@@ -230,6 +230,45 @@ class DeepDiveFactCheckTest {
         assertFalse(has(inspect(draft), DeepDiveFactCheck.Objection.Kind.NUMBER_WORDS));
     }
 
+    /**
+     * The last spelled-number escape hatch: a SINGLE small count word directly
+     * before a scale/currency word ("acht Millionen") used to slip through the
+     * small-word exemption — with the scale word it IS a value and a HARD
+     * finding. Teens ("dreizehn Prozent") are single atoms too and must close
+     * with the same gate.
+     */
+    @Test
+    void smallCountWordBeforeScaleWordIsAFinding() {
+        for (String draft : List.of(
+                "Der Konzern verkaufte acht Millionen Aktien im Quartal." + PAD,
+                "Die Marge sank um dreizehn Prozent gegenüber dem Vorjahr." + PAD,
+                "Das Programm kostet zwölf Milliarden Euro über die Laufzeit." + PAD)) {
+            List<DeepDiveFactCheck.Objection> objections = inspect(draft);
+            assertTrue(has(objections, DeepDiveFactCheck.Objection.Kind.NUMBER_WORDS), draft);
+            assertTrue(objections.stream()
+                    .filter(o -> o.kind() == DeepDiveFactCheck.Objection.Kind.NUMBER_WORDS)
+                    .allMatch(DeepDiveFactCheck.Objection::hard), draft);
+        }
+    }
+
+    /**
+     * The scale-word gate must not over-reach: enumerations without a scale
+     * word stay prose, and the connective/article lookalikes ("und", "ein")
+     * before a currency word are ordinary German, not counts.
+     */
+    @Test
+    void countWordsWithoutScaleWordAndConnectivesStayProse() {
+        assertFalse(has(inspect("Es meldeten sich acht Analysten und drei Vorstände "
+                        + "zu den Aussichten des Konzerns." + PAD),
+                DeepDiveFactCheck.Objection.Kind.NUMBER_WORDS));
+        assertFalse(has(inspect("Die Debatte um Forschung und Euro bleibt für den "
+                        + "Konzern ohne Folgen." + PAD),
+                DeepDiveFactCheck.Objection.Kind.NUMBER_WORDS));
+        assertFalse(has(inspect("Der Bericht nennt ein Prozent-Ziel, aber keine Frist "
+                        + "für dessen Umsetzung." + PAD),
+                DeepDiveFactCheck.Objection.Kind.NUMBER_WORDS));
+    }
+
     /** A word truncated into an ellipsis is a torn source snippet (run 8: "ändern mu…."). */
     @Test
     void truncatedWordEllipsisIsAFinding() {

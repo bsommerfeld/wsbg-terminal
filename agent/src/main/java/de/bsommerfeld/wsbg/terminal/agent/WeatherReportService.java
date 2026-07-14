@@ -810,7 +810,10 @@ public class WeatherReportService {
         out.removeIf(o -> o.kind() == DeepDiveFactCheck.Objection.Kind.LENGTH);
         if (body != null && body.strip().length() > MAX_SECTION_CHARS) {
             out.add(new DeepDiveFactCheck.Objection(headOf(body),
-                    "section over the one-short-paragraph contract ("
+                    de ? "Sektion über dem Ein-kurzer-Absatz-Kontrakt ("
+                            + body.strip().length()
+                            + " Zeichen) - auf die tragende Geschichte kürzen"
+                    : "section over the one-short-paragraph contract ("
                             + body.strip().length() + " chars) — cut to the load-bearing story",
                     DeepDiveFactCheck.Objection.Kind.LENGTH));
         }
