@@ -14,12 +14,10 @@ public class HeadlineConfig {
     private boolean enabled = true;
 
     @Key("analyze-images")
-    @Comment("When true, the editorial pipeline runs image/vision analysis on Reddit threads and "
-            + "comment images, feeding the descriptions into clustering and headlines. Default "
-            + "FALSE (2026-06-30): vision is the HEAVIEST prep load on the shared 2-slot gemma4 "
-            + "budget, so skipping it frees slots for extraction + compose → noticeably faster "
-            + "headlines. Turn it on in Settings for richer image-aware coverage at the cost of "
-            + "throughput (no image cache-warming, no gallery transcription when off).")
+    @Comment("DEAD KEY (2026-07-14): image/vision analysis is hard-disabled in the pipeline "
+            + "(VisionPrefetcher ignores this value) and the UI toggle was removed - images are "
+            + "ignored wire-wide regardless of this setting. The key survives only so old "
+            + "config.toml files keep loading and a future re-activation has its slot.")
     private boolean analyzeImages = false;
 
     @Key("news-coverage-enabled")

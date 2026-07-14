@@ -18,7 +18,7 @@ class SettingsBridgeTest {
     void snapshotReflectsDefaults() {
         GlobalConfig c = new GlobalConfig();
         var snap = SettingsBridge.snapshot(c);
-        assertEquals(false, snap.get("analyzeImages"), "image analysis OFF by default (throughput)");
+        assertFalse(snap.containsKey("analyzeImages"), "image analysis is no user setting anymore");
         assertEquals("de", snap.get("language"));
         assertEquals(true, snap.get("autoUpdate"));
     }
@@ -31,11 +31,13 @@ class SettingsBridgeTest {
         assertFalse(c.getUser().isAutoUpdate());
         assertTrue(SettingsBridge.apply(c, "autoUpdate", "true"));
         assertTrue(c.getUser().isAutoUpdate());
+    }
 
-        assertTrue(SettingsBridge.apply(c, "analyzeImages", false));
-        assertFalse(c.getHeadlines().isAnalyzeImages());
-        assertTrue(SettingsBridge.apply(c, "analyzeImages", "true"));
-        assertTrue(c.getHeadlines().isAnalyzeImages());
+    @Test
+    void analyzeImagesIsNoSettingAnymore() {
+        GlobalConfig c = new GlobalConfig();
+        assertFalse(SettingsBridge.apply(c, "analyzeImages", true), "removed key is ignored");
+        assertFalse(c.getHeadlines().isAnalyzeImages(), "config stays untouched");
     }
 
     @Test

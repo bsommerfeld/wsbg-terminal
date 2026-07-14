@@ -17,7 +17,9 @@ import java.util.concurrent.Executors;
  * {@link PassiveMonitorService}). Vision is the slowest step in the pipeline
  * (~5-25 s per call on gemma4); a single background worker warms the per-URL cache
  * on {@link AgentBrain} so the editorial reports read cache-only and never block on
- * cold images. Vision is opt-out via {@code headlines.analyze-images} (read live).
+ * cold images. Vision is currently HARD-DISABLED ({@link #analyzeImages()} always
+ * answers {@code false}, regardless of {@code headlines.analyze-images}) — images
+ * are ignored wire-wide until the feature returns.
  */
 final class VisionPrefetcher {
 
@@ -163,12 +165,12 @@ final class VisionPrefetcher {
     }
 
     /**
-     * Live read of the {@code headlines.analyze-images} opt-out (default true). Read
-     * per call, never cached, because {@code SettingsBridge} mutates the in-memory
-     * {@link GlobalConfig} — so toggling it off takes effect on the next scan with no
-     * restart.
+     * The vision gate. HARD-DISABLED: always {@code false}, deliberately ignoring
+     * {@code headlines.analyze-images} — the UI toggle was removed and images stay
+     * out of the pipeline no matter what an old {@code config.toml} says. The config
+     * key survives only for a possible future re-activation.
      */
     private boolean analyzeImages() {
-        return config.getHeadlines().isAnalyzeImages();
+        return false;
     }
 }

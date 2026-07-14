@@ -63,8 +63,6 @@ export function initSettings(socket) {
   });
 
   // ---- Config-backed settings (over the socket) ----
-  // (analyzeImages has no control here anymore — it lives in the Schlagzeilen
-  // widget's rail settings, wired in widget-rail.js off the same snapshot.)
   const lang = view.querySelector('.js-language');
   const auto = view.querySelector('.js-auto-update');
 

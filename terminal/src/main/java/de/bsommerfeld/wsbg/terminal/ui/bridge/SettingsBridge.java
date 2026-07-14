@@ -22,8 +22,6 @@ import java.util.Map;
  * <p>Inbound: {@code {type:"settings", payload:{command:"get"|"set", key?, value?}}}.
  * Keys (all optional on the wire, ignored if unknown):
  * <ul>
- *   <li>{@code analyzeImages} — boolean (default true) → {@code headlines.analyze-images}
- *       (off = skip all vision for fast text-only headlines);</li>
  *   <li>{@code language} — {@code "de"}/{@code "en"} → {@code user.language};</li>
  *   <li>{@code autoUpdate} — boolean → {@code user.auto-update}.</li>
  * </ul>
@@ -87,10 +85,6 @@ public final class SettingsBridge {
                 config.getUser().setAutoUpdate(Payloads.asBool(value));
                 return true;
             }
-            case "analyzeImages" -> {
-                config.getHeadlines().setAnalyzeImages(Payloads.asBool(value));
-                return true;
-            }
             default -> {
                 LOG.debug("settings: ignoring unknown key '{}'", key);
                 return false;
@@ -105,7 +99,6 @@ public final class SettingsBridge {
     /** The full settings payload the page reads. Package-private for testing. */
     static Map<String, Object> snapshot(GlobalConfig config) {
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("analyzeImages", config.getHeadlines().isAnalyzeImages());
         out.put("language", config.getUser().getLanguage());
         out.put("autoUpdate", config.getUser().isAutoUpdate());
         return out;
