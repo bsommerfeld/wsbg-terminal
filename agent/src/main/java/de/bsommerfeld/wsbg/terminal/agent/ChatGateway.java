@@ -26,6 +26,16 @@ import java.util.List;
  */
 final class ChatGateway {
 
+    /**
+     * Marks the CURRENT THREAD's calls as interactive (a human visibly waits):
+     * the on-demand KI-DD sets it on its worker for the run's duration, so
+     * every call it makes — sections, weaves, judges, inline digests — rides
+     * the gate's interactive lane. Background lanes (wire, digest worker,
+     * weather, watchlist) never touch it.
+     */
+    static final ThreadLocal<Boolean> INTERACTIVE = ThreadLocal.withInitial(() -> Boolean.FALSE);
+
+
     private static final Logger LOG = LoggerFactory.getLogger(ChatGateway.class);
 
     private final AgentBrain brain;
@@ -54,24 +64,62 @@ final class ChatGateway {
         // extraction + worker composition + vision together never exceed Ollama's
         // NUM_PARALLEL=2. Uninterruptible: a daemon worker shut down mid-acquire would
         // otherwise abandon a permit it never took.
-        long t0 = System.nanoTime();
-        llmGate.acquire();
-        long tAcq = System.nanoTime();
-        try {
-            ChatResponse response = model.chat(ChatRequest.builder().messages(messages).build());
-            long t1 = System.nanoTime();
-            AiMessage ai = response.aiMessage();
-            // PROFILING: gate-wait (semaphore contention) vs gen (the model itself); in/out
-            // token counts expose a JSON-mode whitespace-loop (out ≫ the ~80 a headline needs)
-            // and a heavy prefill (in). Thread name (editorial-worker vs editorial-prep) tells
-            // compose from extraction.
-            var tu = response.tokenUsage();
-            LOG.info("[LLM] gate-wait={}ms gen={}ms in={} out={}",
-                    (tAcq - t0) / 1_000_000, (t1 - tAcq) / 1_000_000,
-                    tu == null ? -1 : tu.inputTokenCount(), tu == null ? -1 : tu.outputTokenCount());
-            return ai == null || ai.text() == null ? "" : ai.text();
-        } finally {
-            llmGate.release();
+        // A briefly unreachable Ollama (the macOS app restarting its runner —
+        // live-observed 2026-07-14: ConnectException killed four of five
+        // Wetterbericht sections in six seconds) is a transient, not a verdict:
+        // retry with backoff, sleeping OUTSIDE the gate so a waiting worker
+        // isn't blocked by a held permit.
+        RuntimeException lastConnectFailure = null;
+        for (int attempt = 0; attempt <= CONNECT_RETRY_BACKOFF_MS.length; attempt++) {
+            if (attempt > 0) {
+                long backoff = CONNECT_RETRY_BACKOFF_MS[attempt - 1];
+                LOG.warn("[LLM] Ollama unreachable — retry {}/{} in {} ms",
+                        attempt, CONNECT_RETRY_BACKOFF_MS.length, backoff);
+                try {
+                    Thread.sleep(backoff);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw lastConnectFailure;
+                }
+            }
+            long t0 = System.nanoTime();
+            if (INTERACTIVE.get()) llmGate.acquireInteractive();
+            else llmGate.acquire();
+            long tAcq = System.nanoTime();
+            try {
+                ChatResponse response = model.chat(ChatRequest.builder().messages(messages).build());
+                long t1 = System.nanoTime();
+                AiMessage ai = response.aiMessage();
+                // PROFILING: gate-wait (semaphore contention) vs gen (the model itself); in/out
+                // token counts expose a JSON-mode whitespace-loop (out ≫ the ~80 a headline needs)
+                // and a heavy prefill (in). Thread name (editorial-worker vs editorial-prep) tells
+                // compose from extraction.
+                var tu = response.tokenUsage();
+                LOG.info("[LLM] gate-wait={}ms gen={}ms in={} out={}",
+                        (tAcq - t0) / 1_000_000, (t1 - tAcq) / 1_000_000,
+                        tu == null ? -1 : tu.inputTokenCount(), tu == null ? -1 : tu.outputTokenCount());
+                return ai == null || ai.text() == null ? "" : ai.text();
+            } catch (RuntimeException e) {
+                if (!isConnectFailure(e)) throw e;
+                lastConnectFailure = e;
+            } finally {
+                llmGate.release();
+            }
         }
+        throw lastConnectFailure;
+    }
+
+    /** Backoff ladder for a transiently unreachable server — ~45 s total patience. */
+    private static final long[] CONNECT_RETRY_BACKOFF_MS = {3_000, 12_000, 30_000};
+
+    /** True when the failure is connection-level (server down/restarting), not a model error. */
+    private static boolean isConnectFailure(Throwable t) {
+        for (Throwable c = t; c != null; c = c.getCause() == c ? null : c.getCause()) {
+            if (c instanceof java.net.ConnectException
+                    || c instanceof java.net.http.HttpConnectTimeoutException) {
+                return true;
+            }
+        }
+        return false;
     }
 }
