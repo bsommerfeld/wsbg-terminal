@@ -153,6 +153,17 @@ public class WatchlistService {
     /** Refresh at most this many instruments per 15 s tick — spreads a long list. */
     private static final int MAX_PRICE_REFRESH_PER_TICK = 4;
 
+    /**
+     * Feature held back for a later release (2026-07-14): the widget is hidden from the
+     * grid, and the background loop must not run — no ticks, no price/news refreshes,
+     * no research resolves, no LLM revisions. The service stays constructible because
+     * the KI-DD borrows the subject suggestions through the watchlist bridge and the
+     * weather report optional-injects it (an inert service answers snapshot-less
+     * entries, which {@code watchlistMoves} already filters out). Flip to false to
+     * re-arm the loop when the watchlist ships.
+     */
+    private static final boolean HELD_BACK = true;
+
     private final Map<String, Entry> entries = new LinkedHashMap<>();
 
     private final SubjectRegistry subjectRegistry;
@@ -194,9 +205,14 @@ public class WatchlistService {
             entries.put(p.id(), new Entry(p.id(), p.name(), p.tldr(), p.report(),
                     p.createdAtEpoch(), p.updatedAtEpoch()));
         }
-        scheduler.scheduleWithFixedDelay(this::tick, TICK_MS, TICK_MS, TimeUnit.MILLISECONDS);
-        LOG.info("WatchlistService started: {} persisted entrie(s), tick every {}s.",
-                entries.size(), TICK_MS / 1000);
+        if (HELD_BACK) {
+            LOG.info("WatchlistService held back: {} persisted entrie(s), background loop disabled.",
+                    entries.size());
+        } else {
+            scheduler.scheduleWithFixedDelay(this::tick, TICK_MS, TICK_MS, TimeUnit.MILLISECONDS);
+            LOG.info("WatchlistService started: {} persisted entrie(s), tick every {}s.",
+                    entries.size(), TICK_MS / 1000);
+        }
     }
 
     /**
@@ -268,7 +284,7 @@ public class WatchlistService {
             persist();
             LOG.info("[WATCHLIST] added '{}' ({})", canonical, e.id);
             eventBus.post(new WatchlistChangedEvent());
-            scheduler.execute(this::tick); // map + first report without waiting a full tick
+            if (!HELD_BACK) scheduler.execute(this::tick); // map + first report without waiting a full tick
             return view(e);
         }
     }
