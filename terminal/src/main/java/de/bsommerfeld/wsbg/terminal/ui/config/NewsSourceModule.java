@@ -40,5 +40,15 @@ final class NewsSourceModule extends AbstractModule {
         // with teasers; keyless, public feed key (probed 2026-07-13).
         newsSources.addBinding().to(
                 de.bsommerfeld.wsbg.terminal.fool.FoolNewsClient.class);
+        // (StockTitan was removed 2026-07-14 — its per-ticker RSS rate-limits
+        // so aggressively that the wire's per-unit fan 429-locked the host
+        // permanently; user verdict "useless". Recover from git history.)
+        // finanznachrichten per-instrument feed: the ISIN-addressed German news
+        // leg — the densest per-stock DE aggregate (dpa-AFX/EQS/IT-Times), URL
+        // keys on the ISIN alone (dummy slug; probed 2026-07-13, no wall).
+        // Answers the aggregator's newsForIsin fan, so it never chases a
+        // same-named twin.
+        newsSources.addBinding().to(
+                de.bsommerfeld.wsbg.terminal.fnnews.FnInstrumentNewsClient.class);
     }
 }

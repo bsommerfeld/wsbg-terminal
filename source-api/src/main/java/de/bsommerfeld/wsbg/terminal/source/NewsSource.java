@@ -38,4 +38,20 @@ public interface NewsSource {
     default List<RawNewsItem> newsForName(String companyName, int limit) {
         return List.of();
     }
+
+    /**
+     * News referencing the given ISIN, most-relevant first. The ISIN is the
+     * one identity a listed instrument MUST have, so an ISIN-addressed query
+     * never chases a wrong same-named twin — and regulatory disclosures (EQS
+     * ad-hocs) carry it verbatim, so a full-text source finds the
+     * disclosure-grade documents the name query drowns in daily price notes.
+     * ALWAYS additive beside the symbol/name queries (an article that names
+     * the company without printing the ISIN must never be lost to ISIN-only
+     * querying); sources without an ISIN surface keep this default no-op.
+     *
+     * @return matching items, or an empty list — never {@code null}
+     */
+    default List<RawNewsItem> newsForIsin(String isin, int limit) {
+        return List.of();
+    }
 }

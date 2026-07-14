@@ -60,12 +60,24 @@ public class NewsAggregator {
      * @return matching items, or an empty list — never {@code null}
      */
     public List<RawNewsItem> newsFor(String symbol, String name, int limit) {
+        return newsFor(symbol, name, null, limit);
+    }
+
+    /**
+     * The full triangulation: symbol AND name AND ISIN fanned per source,
+     * union-merged — the ISIN is ADDITIVE, never replacing (an article naming
+     * the company without printing the ISIN must not be lost), and it is the
+     * one key that never chases a wrong same-named twin.
+     */
+    public List<RawNewsItem> newsFor(String symbol, String name, String isin, int limit) {
         boolean haveSymbol = symbol != null && !symbol.isBlank();
         boolean haveName = name != null && !name.isBlank();
-        if ((!haveSymbol && !haveName) || limit <= 0) {
+        boolean haveIsin = isin != null && !isin.isBlank();
+        if ((!haveSymbol && !haveName && !haveIsin) || limit <= 0) {
             return List.of();
         }
-        Map<String, RawNewsItem> byId = gather(haveSymbol, haveName, symbol, name, limit);
+        Map<String, RawNewsItem> byId =
+                gather(haveSymbol, haveName, haveIsin, symbol, name, isin, limit);
         return byId.values().stream()
                 .sorted(NewsRelevanceRanker.forName(name))
                 .limit(limit)
@@ -73,19 +85,21 @@ public class NewsAggregator {
     }
 
     /**
-     * Fans the symbol and/or name query across every source with per-source
+     * Fans the symbol/name/ISIN queries across every source with per-source
      * error isolation, merging into an id-keyed map. {@code putIfAbsent} keeps
      * the first occurrence of a given id; iteration order of the source set is
      * the tie-break (load-bearing dedup semantics — first-seen id wins).
      */
     private Map<String, RawNewsItem> gather(boolean haveSymbol, boolean haveName,
-                                            String symbol, String name, int limit) {
+                                            boolean haveIsin, String symbol, String name,
+                                            String isin, int limit) {
         Map<String, RawNewsItem> byId = new LinkedHashMap<>();
         Set<String> seenStories = new java.util.HashSet<>();
         for (NewsSource src : sources) {
             try {
                 if (haveSymbol) collect(byId, seenStories, src.newsFor(symbol, limit));
                 if (haveName) collect(byId, seenStories, src.newsForName(name, limit));
+                if (haveIsin) collect(byId, seenStories, src.newsForIsin(isin, limit));
             } catch (Exception e) {
                 LOG.warn("news source {} failed for '{}'/'{}': {}",
                         safeName(src), symbol, name, e.getMessage());
