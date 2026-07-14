@@ -60,6 +60,21 @@ final class NewsDigester {
     private final Map<Integer, String> bodySeen = new ConcurrentHashMap<>();
 
     /**
+     * Host wall detection: this many consecutive shell pages from one host mark
+     * the HOST as consent-walled for the session — every further link there is a
+     * fast miss without a network fetch (live 2026-07-14: finance.yahoo.com
+     * answered its EU consent shell for EVERY article URL; hundreds of links per
+     * hour burned a GET + an INFO line each, yield zero).
+     */
+    private static final int HOST_WALL_STRIKES = 3;
+
+    /** Host → consecutive shell strikes; a successful digest resets the host. */
+    private final Map<String, Integer> shellStrikes = new ConcurrentHashMap<>();
+
+    /** Hosts declared consent-walled for this session (announced once at WARN). */
+    private final Map<String, Boolean> walledHosts = new ConcurrentHashMap<>();
+
+    /**
      * Single background worker, mirroring the vision pool's sizing rationale: the
      * digest shares the one gemma4 model with extraction + compose, so one worker
      * leaves the latency-sensitive editorial calls their slots — digesting is
@@ -132,6 +147,13 @@ final class NewsDigester {
     /** Fetch + distill one article; every outcome (including failure) is cached. */
     private void digest(String link) {
         if (byLink.containsKey(link) || !readArticles()) return;
+        String host = hostOf(link);
+        if (host != null && walledHosts.containsKey(host)) {
+            // The whole host is consent-walled this session — fast miss, no GET.
+            byLink.put(link, "");
+            LOG.debug("[NEWS] skipping consent-walled host {}: {}", host, link);
+            return;
+        }
         String text = articleReader == null ? ""
                 : articleReader.fetchArticleText(link).orElse("");
         if (text.length() < MIN_ARTICLE_CHARS) {
@@ -145,7 +167,17 @@ final class NewsDigester {
         if (firstLink != null && !firstLink.equals(link)) {
             byLink.put(link, "");
             byLink.put(firstLink, "");
-            LOG.info("[NEWS] shell page detected (identical body as {}) — no article: {}", firstLink, link);
+            if (host != null) {
+                int strikes = shellStrikes.merge(host, 1, Integer::sum);
+                if (strikes >= HOST_WALL_STRIKES && walledHosts.putIfAbsent(host, Boolean.TRUE) == null) {
+                    LOG.warn("[NEWS] host {} answers a consent/interstitial shell for every "
+                            + "article ({} in a row) — article reads there are OFF for this "
+                            + "session, items fall back to their titles.", host, strikes);
+                    return;
+                }
+            }
+            LOG.debug("[NEWS] shell page detected (identical body as {}) — no article: {}",
+                    firstLink, link);
             return;
         }
         var model = brain.getAgentModel();
@@ -159,6 +191,8 @@ final class NewsDigester {
             if (digest.equalsIgnoreCase("EMPTY") || digest.length() < MIN_DIGEST_CHARS) digest = "";
             byLink.put(link, digest);
             if (!digest.isEmpty()) {
+                // A real article from this host — the wall strikes were noise.
+                if (host != null) shellStrikes.remove(host);
                 LOG.info("[NEWS] digested article ({} chars → {} chars): {}",
                         text.length(), digest.length(), link);
             }
@@ -175,5 +209,15 @@ final class NewsDigester {
      */
     private boolean readArticles() {
         return config.getHeadlines().isReadArticles();
+    }
+
+    /** Lowercased host of a link, or null when it doesn't parse as a URL. */
+    private static String hostOf(String link) {
+        try {
+            String host = java.net.URI.create(link).getHost();
+            return host == null ? null : host.toLowerCase(java.util.Locale.ROOT);
+        } catch (Exception e) {
+            return null;
+        }
     }
 }
