@@ -59,6 +59,14 @@
         </dependency>
         <dependency>
             <groupId>de.bsommerfeld</groupId>
+            <artifactId>insidermonkey</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>marketbeat</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
             <artifactId>consorsbank</artifactId>
         </dependency>
         <dependency>
@@ -72,6 +80,10 @@
         <dependency>
             <groupId>de.bsommerfeld</groupId>
             <artifactId>google-news</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>prnewswire</artifactId>
         </dependency>
         <dependency>
             <groupId>de.bsommerfeld</groupId>

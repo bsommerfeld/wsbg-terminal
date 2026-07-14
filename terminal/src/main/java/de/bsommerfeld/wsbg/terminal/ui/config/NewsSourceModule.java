@@ -40,6 +40,12 @@ final class NewsSourceModule extends AbstractModule {
         // with teasers; keyless, public feed key (probed 2026-07-13).
         newsSources.addBinding().to(
                 de.bsommerfeld.wsbg.terminal.fool.FoolNewsClient.class);
+        // PR Newswire UK: the EMEA press-release desk — one keyless all-news
+        // RSS firehose (minutes-fresh, probed 2026-07-14), name-addressed via
+        // the google-news precision filter; links are direct release URLs the
+        // digester reads. No ticker/ISIN tagging, so only newsForName answers.
+        newsSources.addBinding().to(
+                de.bsommerfeld.wsbg.terminal.prnewswire.PrNewswireUkClient.class);
         // (StockTitan was removed 2026-07-14 — its per-ticker RSS rate-limits
         // so aggressively that the wire's per-unit fan 429-locked the host
         // permanently; user verdict "useless". Recover from git history.)
@@ -50,5 +56,11 @@ final class NewsSourceModule extends AbstractModule {
         // same-named twin.
         newsSources.addBinding().to(
                 de.bsommerfeld.wsbg.terminal.fnnews.FnInstrumentNewsClient.class);
+        // NASDAQ outbound RSS: the per-ticker US aggregation leg (Motley Fool,
+        // Zacks, MarketBeat … pooled under one symbol query with a dedicated
+        // <nasdaq:tickers> element) — keyless, answers a PLAIN client (unlike
+        // api.nasdaq.com; probed 2026-07-14). Symbol-addressed, US shapes only.
+        newsSources.addBinding().to(
+                de.bsommerfeld.wsbg.terminal.nasdaq.NasdaqNewsRssClient.class);
     }
 }

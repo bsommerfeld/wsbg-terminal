@@ -98,5 +98,19 @@ final class AgentPipelineModule extends AbstractModule {
         bind(de.bsommerfeld.wsbg.terminal.core.price.UsListingStatsSource.class)
                 .to(de.bsommerfeld.wsbg.terminal.nasdaq.NasdaqCompanyClient.class)
                 .in(Singleton.class);
+
+        // The hedge-fund positioning curve by bare US ticker (Insider Monkey's
+        // quarterly 13F fund count, CIK-addressed via SEC's ticker map).
+        // Optionally injected into DeepDiveService for the KI-DD.
+        bind(de.bsommerfeld.wsbg.terminal.core.price.HedgeFundPopularitySource.class)
+                .to(de.bsommerfeld.wsbg.terminal.insidermonkey.InsiderMonkeyClient.class)
+                .in(Singleton.class);
+
+        // The dated analyst-ACTION history + US short stats incl. percent of
+        // float (MarketBeat; exchange-guess addressing with 301 self-healing).
+        // Optionally injected into DeepDiveService for the KI-DD.
+        bind(de.bsommerfeld.wsbg.terminal.core.price.AnalystActionsSource.class)
+                .to(de.bsommerfeld.wsbg.terminal.marketbeat.MarketBeatClient.class)
+                .in(Singleton.class);
     }
 }

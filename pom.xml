@@ -21,10 +21,13 @@
         <module>tradegate</module>
         <module>onvista</module>
         <module>nasdaq</module>
+        <module>insidermonkey</module>
+        <module>marketbeat</module>
         <module>consorsbank</module>
         <module>bundesanzeiger</module>
         <module>bafin</module>
         <module>google-news</module>
+        <module>prnewswire</module>
         <module>fool</module>
         <module>fn-news</module>
         <module>websearch</module>
@@ -126,6 +129,16 @@
             </dependency>
             <dependency>
                 <groupId>de.bsommerfeld</groupId>
+                <artifactId>insidermonkey</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>marketbeat</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
                 <artifactId>consorsbank</artifactId>
                 <version>${project.version}</version>
             </dependency>
@@ -142,6 +155,11 @@
             <dependency>
                 <groupId>de.bsommerfeld</groupId>
                 <artifactId>google-news</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>prnewswire</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
