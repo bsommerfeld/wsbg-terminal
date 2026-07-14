@@ -147,4 +147,77 @@ class MarketMemorySmokeIT {
         assertEquals("KAPITALERHOEHUNG", verdicts.get(2));
         assertEquals("GROSSAUFTRAG", verdicts.get(3));
     }
+
+    /**
+     * THE INTERPRETIVE loop end to end — the point of the whole module: the
+     * desk gets TODAY's event beside the class's measured history on one
+     * shelf and must write the weighing ("historically this class cost X —
+     * against today's picture") — through the REAL weather-section prompt on
+     * the REAL model, graded by the REAL deterministic examiner: every figure
+     * the prose carries must exist on the shelf, and the text must actually
+     * lean on the memory instead of ignoring the block.
+     */
+    @Test
+    void deskWeighsTodaysEventAgainstTheMeasuredHistory() {
+        OllamaAvailability.ensureOllama();
+        GlobalConfig config = new GlobalConfig();
+        LlmGate gate = new LlmGate();
+        AgentBrain brain = new AgentBrain(config, new ApplicationEventBus(),
+                new OllamaServerManager(), gate);
+        ChatGateway gateway = new ChatGateway(brain, gate);
+
+        // A register with a well-filled DOWNGRADE cell: 40 measured events,
+        // skewed negative (median lands at -4.9 %, ~85 % negative).
+        MarketEventArchive events = new MarketEventArchive(dir.resolve("interpret.jsonl"));
+        LocalDate today = LocalDate.now();
+        for (int i = 0; i < 40; i++) {
+            double car = i < 34 ? -2.5 - (i % 8) * 0.8 : 1.0 + (i % 3);
+            events.append(new MarketEventRecord(today.minusMonths(6).plusDays(i).toString(),
+                    "SYM" + i, null, "DOWNGRADE", "MarketBeat", null,
+                    null, null, car, car * 1.2, "^GSPC", false));
+        }
+        events.append(MarketEventRecord.bare(today.toString(), "SAP.DE", "DE0007164600",
+                "DOWNGRADE", "MarketBeat", "J.P. Morgan Overweight -> Neutral"));
+
+        String memoryBlock = MarketMemoryBriefing.dayBlock(events, today, true);
+        assertNotNull(memoryBlock);
+        assertTrue(memoryBlock.contains("N=40"), "house cell must be licensed: " + memoryBlock);
+
+        // The Abend shelf exactly as production assembles it: wire lines plus
+        // the appended memory block.
+        String shelf = "DATE: " + today + "\n"
+                + "WIRE (Abend, kondensiert):\n"
+                + "- [17:42] J.P. Morgan stuft SAP von Overweight auf Neutral herab - die Aktie "
+                + "verliert 3,1 % auf 132,40 EUR, der Käfig reagiert gereizt.\n"
+                + "- [18:05] Software-Werte europaweit schwächer, der Sektor gibt 1,2 % ab.\n"
+                + memoryBlock;
+        String system = PromptLoader.loadLocalized("weather-section", "de")
+                .replace("{{LANGUAGE}}", "Deutsch");
+        String user = "ABENDAUSGABE (Wetterbericht) vom " + today
+                + "\n\nSECTION TO WRITE: ## Der Abend"
+                + "\n\nMATERIAL (verified blocks — the only admissible evidence):\n" + shelf;
+
+        String body = gateway.chat(brain.getDeepDiveModel(), system, user);
+        assertNotNull(body);
+        assertFalse(body.isBlank(), "the desk wrote nothing");
+        System.out.println("[INTERPRET] ---\n" + body + "\n---");
+
+        // Grade 1 (deterministic): no HARD examiner finding — every figure and
+        // date the prose carries exists on the shelf (mixed-locale variant).
+        List<DeepDiveFactCheck.Objection> hard = DeepDiveFactCheck
+                .inspect(body, shelf, java.util.Set.of(), true, true).stream()
+                .filter(DeepDiveFactCheck.Objection::hard).toList();
+        assertTrue(hard.isEmpty(), "ungrounded figures/dates in the weighing: " + hard);
+
+        // Grade 2: the weighing actually happened — today's subject AND a
+        // historical anchor from the memory block both reached the prose.
+        String lower = body.toLowerCase(java.util.Locale.ROOT);
+        assertTrue(lower.contains("sap"), "today's event subject missing from the section");
+        boolean leansOnMemory = lower.contains("historisch") || lower.contains("basisrate")
+                || lower.contains("erfahrung") || lower.contains("median")
+                || lower.contains("klasse") || body.contains("N=40")
+                || lower.contains("solche") && lower.contains("herabstufung");
+        assertTrue(leansOnMemory,
+                "the section ignored the market-memory block entirely:\n" + body);
+    }
 }
