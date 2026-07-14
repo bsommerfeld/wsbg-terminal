@@ -150,6 +150,26 @@ class WeatherReportArchiveTest {
     }
 
     @Test
+    void streetActionsSurviveTheDiskRoundTrip() {
+        WeatherReportRecord.WorldStats world = new WeatherReportRecord.WorldStats(
+                null, null, null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null,
+                List.of(new WeatherReportRecord.StreetActionStat("NVDA", "NVIDIA",
+                        "Upgraded by", "Melius Research", "Hold", "Buy",
+                        120.0, 200.0, "USD", true)));
+        WeatherReportRecord in = new WeatherReportRecord("2026-07-14", 1_700_000_000L,
+                "Text.", "de", 1, 0, List.of(), List.of(), List.of(), null, world, List.of());
+        new WeatherReportArchive(file()).append(in);
+
+        WeatherReportRecord out = new WeatherReportArchive(file())
+                .byDate("2026-07-14").orElseThrow();
+        assertEquals(world.streetActions(), out.world().streetActions());
+        // The pre-street world above defaults every other list empty, not null.
+        assertEquals(List.of(), out.world().tickerNews());
+    }
+
+    @Test
     void tornLineFromACrashIsSkippedOnLoad() throws Exception {
         new WeatherReportArchive(file()).append(rec("2026-07-09", "intakt"));
         Files.writeString(file(), "{\"date\":\"2026-07-10\",\"generatedAt\":17", StandardCharsets.UTF_8,

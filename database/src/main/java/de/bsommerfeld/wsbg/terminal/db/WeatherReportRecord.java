@@ -135,7 +135,16 @@ public record WeatherReportRecord(
             String currency,
             Double changePercent,
             Long volume,
-            Long turnoverEur) {
+            Long turnoverEur,
+            String sector) {
+
+        /** Pre-sector shape (2026-07-14 night) — kept for old lines/tests. */
+        public TickerStat(String ticker, String name, int headlineCount, int importantCount,
+                Double price, String currency, Double changePercent, Long volume,
+                Long turnoverEur) {
+            this(ticker, name, headlineCount, importantCount, price, currency, changePercent,
+                    volume, turnoverEur, null);
+        }
     }
 
     /** A news item the day's headlines actually leaned on, ranked by citations. */
@@ -184,7 +193,8 @@ public record WeatherReportRecord(
             List<PressReviewStat> pressReview,
             List<PlaceWeatherStat> worldWeather,
             List<HazardStat> hazards,
-            List<TickerNewsStat> tickerNews) {
+            List<TickerNewsStat> tickerNews,
+            List<StreetActionStat> streetActions) {
 
         public WorldStats {
             sectors = sectors == null ? List.of() : List.copyOf(sectors);
@@ -212,6 +222,30 @@ public record WeatherReportRecord(
             worldWeather = worldWeather == null ? List.of() : List.copyOf(worldWeather);
             hazards = hazards == null ? List.of() : List.copyOf(hazards);
             tickerNews = tickerNews == null ? List.of() : List.copyOf(tickerNews);
+            streetActions = streetActions == null ? List.of() : List.copyOf(streetActions);
+        }
+
+        /** Pre-street-actions shape (2026-07-14 late) — kept for tests/old lines. */
+        public WorldStats(List<IndexStat> sectors, List<IndexStat> overnight,
+                List<RateStat> rates, RoomPulse pulse, List<AdhocStat> adhocs,
+                List<AnalystActionStat> analystActions, List<MacroStat> macroActuals,
+                List<MacroStat> macroEvents, String pressDigest, List<MoverStat> movers,
+                PutCallStat putCall, List<SocialStat> social, CryptoStat crypto,
+                List<BetStat> bets, List<ShortVolStat> shortVolume, List<DepthStat> depth,
+                List<WatchlistStat> watchlist, List<String> deepDives,
+                List<OutlookStat> outlook, PegelStat pegel, Double usDebtUsd,
+                ExchangeWeatherStat exchangeWeather, MoonStat moon,
+                List<DaypartStat> dayparts, List<EconOutcomeStat> econOutcomes,
+                List<WorldEventStat> worldEvents, List<EventReviewStat> eventReviews,
+                List<CbDateStat> cbDates, List<TopNewsStat> topNews,
+                List<PressReviewStat> pressReview, List<PlaceWeatherStat> worldWeather,
+                List<HazardStat> hazards, List<TickerNewsStat> tickerNews) {
+            this(sectors, overnight, rates, pulse, adhocs, analystActions, macroActuals,
+                    macroEvents, pressDigest, movers, putCall, social, crypto, bets,
+                    shortVolume, depth, watchlist, deepDives, outlook, pegel, usDebtUsd,
+                    exchangeWeather, moon, dayparts, econOutcomes, worldEvents,
+                    eventReviews, cbDates, topNews, pressReview, worldWeather, hazards,
+                    tickerNews, null);
         }
 
         /** Pre-ticker-news shape (2026-07-14 late) — kept for tests/old lines. */
@@ -233,7 +267,8 @@ public record WeatherReportRecord(
                     macroEvents, pressDigest, movers, putCall, social, crypto, bets,
                     shortVolume, depth, watchlist, deepDives, outlook, pegel, usDebtUsd,
                     exchangeWeather, moon, dayparts, econOutcomes, worldEvents,
-                    eventReviews, cbDates, topNews, pressReview, worldWeather, hazards, null);
+                    eventReviews, cbDates, topNews, pressReview, worldWeather, hazards,
+                    null, null);
         }
 
         /** Pre-world-weather shape (2026-07-14 intra-day) — kept for tests/old lines. */
@@ -331,6 +366,19 @@ public record WeatherReportRecord(
 
     /** One analyst action of the day — house, name and rating live in the title. */
     public record AnalystActionStat(String title, String time) {
+    }
+
+    /**
+     * One US street action of the day (MarketBeat's daily ratings table,
+     * substantive rows only — up-/downgrades, initiations, and target moves
+     * that carry both halves): {@code action} is the provider's label verbatim
+     * ("Upgraded by", "Target Set by", …), targets in {@code targetCurrency}
+     * (USD on the US table), {@code inKaefig} when the wire discussed the
+     * paper today. Rows carry no time — the source page is strictly today.
+     */
+    public record StreetActionStat(String symbol, String company, String action,
+            String brokerage, String ratingOld, String ratingNew,
+            Double targetOld, Double targetNew, String targetCurrency, boolean inKaefig) {
     }
 
     /**
@@ -437,10 +485,6 @@ public record WeatherReportRecord(
             String time, String ressort, boolean breaking) {
     }
 
-    /**
-     * Press headlines found for one of the day's top data events (web search
-     * at freeze time) — how the press read the number, attributed titles only.
-     */
     /**
      * One timed general-press headline of the day (the market press review —
      * CNBC, MarketWatch, WSJ, Investing.com, n-tv, Spiegel, Handelsblatt,

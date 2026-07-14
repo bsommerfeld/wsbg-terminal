@@ -151,6 +151,7 @@ function paintReport(host, p, reports, idx) {
       ${tickersHtml(r.tickers, w(r).depth, w(r).shortVolume)}
       ${adhocsHtml(w(r).adhocs)}
       ${analystsHtml(w(r).analystActions)}
+      ${streetActionsHtml(w(r).streetActions)}
       ${macroHtml(w(r).macroActuals, w(r).macroEvents)}
       ${econOutcomesHtml(w(r).econOutcomes)}
       ${eventReviewsHtml(w(r).eventReviews)}
@@ -625,6 +626,7 @@ function tickersHtml(tickers, depth, shortVolume) {
       <span class="weather-tick-count">${tk.headlineCount}×</span>
       <span class="weather-tick-name">${escapeHtml(tk.name || tk.ticker || '')}
         <span class="weather-tick-sym">${escapeHtml(tk.ticker || '')}</span>
+        ${tk.sector ? `<span class="weather-plain-mute">· ${escapeHtml(tk.sector)}</span>` : ''}
         ${tk.importantCount > 0 ? `<span class="weather-tick-red" title="${escapeHtml(t('weather.stats.important'))}">${tk.importantCount}!</span>` : ''}
       </span>
       <span class="weather-tick-quote">
@@ -721,6 +723,38 @@ function analystsHtml(actions) {
       <span class="weather-plain-main wrap">${escapeHtml(a.title || '')}</span>
     </div>`).join('');
   return section('weather.stats.analysts', `<div class="weather-plain-list">${rows}</div>`);
+}
+
+// The day's US street actions (MarketBeat daily ratings table): brokerage,
+// action verbatim, rating and target old→new; cage papers carry the gold chip.
+function streetActionsHtml(actions) {
+  if (!actions || !actions.length) return '';
+  const rows = actions.map(a => {
+    const rating = a.ratingNew
+      ? `${a.ratingOld && a.ratingOld.toLowerCase() !== a.ratingNew.toLowerCase()
+          ? `${escapeHtml(a.ratingOld)} → ` : ''}${escapeHtml(a.ratingNew)}`
+      : '';
+    const target = isNum(a.targetNew)
+      ? `${escapeHtml(t('weather.street.target'))} ${isNum(a.targetOld)
+          ? `${fmtTarget(a.targetOld)} → ` : ''}${fmtTarget(a.targetNew)}${a.targetCurrency
+          ? ` ${escapeHtml(a.targetCurrency)}` : ''}`
+      : '';
+    return `<div class="weather-plain">
+      <span class="weather-plain-time">${escapeHtml(a.symbol || '')}</span>
+      <span class="weather-plain-main wrap">${escapeHtml(a.company || a.symbol || '')}${a.action ? ` — ${escapeHtml(a.action)}` : ''}
+        ${a.brokerage ? `<span class="weather-plain-mute">${escapeHtml(a.brokerage)}</span>` : ''}
+        ${rating ? `<span class="weather-plain-mute">${rating}</span>` : ''}
+        ${target ? `<span class="weather-plain-mute">${target}</span>` : ''}
+        ${a.inKaefig ? `<span class="weather-chip-cage">${escapeHtml(t('weather.movers.inkaefig'))}</span>` : ''}
+      </span>
+    </div>`;
+  }).join('');
+  return section('weather.stats.street', `<div class="weather-plain-list">${rows}</div>`);
+}
+
+// Whole street targets stay whole ("150"), broken ones keep cents ("12,50").
+function fmtTarget(v) {
+  return fmtNum(v, Number.isInteger(v) ? 0 : 2);
 }
 
 // Macro: released figures (the number sits in the title) + today's docket.

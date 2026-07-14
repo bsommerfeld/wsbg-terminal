@@ -20,6 +20,7 @@ import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.RoomPulse;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.SentimentStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.ShortVolStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.SocialStat;
+import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.StreetActionStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.TickerStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.TopNewsStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.TrendingCoin;
@@ -117,7 +118,7 @@ final class WeatherMaterial {
                 inWindow(press, PressReviewStat::time, 0, true)));
         append(morning, tickerNewsBlock("this window (morning)", inWindow(tickerNews,
                 de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.TickerNewsStat::time,
-                0, true)));
+                0, false)));
         append(morning, tickersBlock(stats.tickers()));
         append(morning, sectorsBlock(w == null ? List.of() : w.sectors()));
         append(morning, adhocBlock(inWindow(adhocs, AdhocStat::time, 0, true)));
@@ -150,15 +151,20 @@ final class WeatherMaterial {
         append(evening, wireBlock("this window (evening)", wireEvening));
         append(evening, pressReviewBlock("this window (evening)",
                 inWindow(press, PressReviewStat::time, 2, false)));
+        // Untimed ticker news (the Bing web sweep — crawl-dated) homes in the
+        // evening wrap-up, where the day's instruments are summed up anyway.
         append(evening, tickerNewsBlock("this window (evening)", inWindow(tickerNews,
                 de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.TickerNewsStat::time,
-                2, false)));
+                2, true)));
         append(evening, adhocBlock(inWindow(adhocs, AdhocStat::time, 2, false)));
         append(evening, macroBlock(inWindow(actuals, MacroStat::time, 2, false),
                 inWindow(events, MacroStat::time, 2, false)));
         append(evening, econOutcomesBlock(inWindow(outcomes, EconOutcomeStat::time, 2, false)));
         append(evening, eventReviewsBlock(w == null ? List.of() : w.eventReviews()));
         append(evening, analystBlock(inWindow(analyst, AnalystActionStat::time, 2, false)));
+        // The US street's day table is untimed (the page is strictly today) —
+        // its home is the evening wrap-up, beside the movers it explains.
+        append(evening, streetActionsBlock(w == null ? List.of() : w.streetActions()));
         append(evening, moversBlock(w == null ? List.of() : w.movers()));
         append(evening, sectorsBlock(w == null ? List.of() : w.sectors()));
         append(evening, shortVolumeBlock(w == null ? List.of() : w.shortVolume()));
@@ -301,6 +307,7 @@ final class WeatherMaterial {
         append(sb, worldWeatherBlock(w == null ? List.of() : w.worldWeather()));
         append(sb, adhocBlock(w == null ? List.of() : w.adhocs()));
         append(sb, analystBlock(w == null ? List.of() : w.analystActions()));
+        append(sb, streetActionsBlock(w == null ? List.of() : w.streetActions()));
         append(sb, pressReviewBlock("of the day", w == null ? List.of() : w.pressReview()));
         append(sb, tickerNewsBlock("of the day", w == null ? List.of() : w.tickerNews()));
         append(sb, pressBlock(w == null ? null : w.pressDigest()));
@@ -504,6 +511,11 @@ final class WeatherMaterial {
         for (TickerStat t : tickers) {
             sb.append("\n- ").append(t.name());
             if (!t.name().equalsIgnoreCase(t.ticker())) sb.append(" (").append(t.ticker()).append(')');
+            // The instrument→sector bridge (onvista): lets the prose tie the
+            // room's papers to the sector table deterministically.
+            if (t.sector() != null && !t.sector().isBlank()) {
+                sb.append(" [Sektor: ").append(t.sector()).append(']');
+            }
             sb.append(": ").append(t.headlineCount()).append(" lines");
             if (t.importantCount() > 0) sb.append(" (").append(t.importantCount()).append(" red)");
             if (t.price() != null) {
@@ -758,6 +770,52 @@ final class WeatherMaterial {
             sb.append(a.title());
         }
         return sb.toString();
+    }
+
+    /**
+     * The day's US street actions (MarketBeat daily ratings table, substantive
+     * rows only) — the street's view, attributed like the dpa-AFX titles; a
+     * cage-discussed paper carries the room marker the other blocks use.
+     */
+    static String streetActionsBlock(List<StreetActionStat> actions) {
+        if (actions == null || actions.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder(
+                "US STREET ACTIONS of the day (verified, MarketBeat daily ratings"
+                        + " — the street's view, attribute):");
+        for (StreetActionStat a : actions) {
+            sb.append("\n- ");
+            if (a.brokerage() != null && !a.brokerage().isBlank()) {
+                sb.append(a.brokerage()).append(": ");
+            }
+            sb.append(a.company() == null || a.company().isBlank() ? a.symbol() : a.company());
+            if (a.company() != null && !a.company().equalsIgnoreCase(a.symbol())) {
+                sb.append(" (").append(a.symbol()).append(')');
+            }
+            if (a.action() != null && !a.action().isBlank()) {
+                sb.append(" — ").append(a.action());
+            }
+            if (a.ratingNew() != null && !a.ratingNew().isBlank()) {
+                sb.append(' ');
+                if (a.ratingOld() != null && !a.ratingOld().isBlank()
+                        && !a.ratingOld().equalsIgnoreCase(a.ratingNew())) {
+                    sb.append('\'').append(a.ratingOld()).append("' → ");
+                }
+                sb.append('\'').append(a.ratingNew()).append('\'');
+            }
+            if (a.targetNew() != null) {
+                sb.append(", target ");
+                if (a.targetOld() != null) sb.append(targetNum(a.targetOld())).append(" → ");
+                sb.append(targetNum(a.targetNew()));
+                if (a.targetCurrency() != null) sb.append(' ').append(a.targetCurrency());
+            }
+            if (a.inKaefig()) sb.append(" [also discussed in the room]");
+        }
+        return sb.toString();
+    }
+
+    /** "150" / "12,50" — whole targets stay whole, German grouping like every block. */
+    private static String targetNum(double v) {
+        return num(v, v == Math.rint(v) ? 0 : 2);
     }
 
     static String pressBlock(String pressDigest) {

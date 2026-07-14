@@ -65,6 +65,7 @@ import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.SentimentComponent;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.SentimentStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.ShortVolStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.SocialStat;
+import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.StreetActionStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.TickerStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.TopNewsStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.TrendingCoin;
@@ -170,6 +171,7 @@ class WeatherStatsCollector {
     private static final int MAX_NEWS = 8;
     private static final int MAX_ADHOCS = 8;
     private static final int MAX_ANALYST_ACTIONS = 8;
+    private static final int MAX_STREET_ACTIONS = 15;
     private static final int MAX_MACRO_ACTUALS = 6;
     private static final int MAX_MACRO_EVENTS = 6;
     private static final int MAX_MOVERS_PER_KIND = 5;
@@ -191,6 +193,8 @@ class WeatherStatsCollector {
     private static final int MAX_HAZARDS = 10;
     /** Fresh triangulated press per top ticker — a catalyst feed, not an archive. */
     private static final int MAX_TICKER_NEWS_PER_TICKER = 4;
+    /** General web-sweep results per top ticker (Bing, crawl-dated → untimed). */
+    private static final int MAX_TICKER_WEB_NEWS = 2;
     private static final int MAX_EVENT_REVIEWS = 2;
     private static final int REVIEW_HEADLINES = 3;
     private static final int CB_LOOKAHEAD_DAYS = 90;
@@ -220,6 +224,7 @@ class WeatherStatsCollector {
     private volatile de.bsommerfeld.wsbg.terminal.core.price.AnalystActionsSource analystActionsSource;
     private volatile de.bsommerfeld.wsbg.terminal.core.price.UsListingStatsSource usListingStatsSource;
     private volatile de.bsommerfeld.wsbg.terminal.core.price.HedgeFundPopularitySource hedgeFundSource;
+    private volatile de.bsommerfeld.wsbg.terminal.core.price.InstrumentFactsSource instrumentFactsSource;
     private volatile BundYieldClient bundYieldClient;
     private volatile ApeWisdomClient apeWisdomClient;
     private volatile CoinGeckoClient coinGeckoClient;
@@ -320,6 +325,12 @@ class WeatherStatsCollector {
     void setHedgeFundSource(
             de.bsommerfeld.wsbg.terminal.core.price.HedgeFundPopularitySource source) {
         this.hedgeFundSource = source;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setInstrumentFactsSource(
+            de.bsommerfeld.wsbg.terminal.core.price.InstrumentFactsSource source) {
+        this.instrumentFactsSource = source;
     }
 
     @com.google.inject.Inject(optional = true)
@@ -474,10 +485,21 @@ class WeatherStatsCollector {
                 guarded("pulse", null, () -> pulse(todaysHeadlines, zone)),
                 guarded("adhocs", List.of(), () -> adhocs(dayStart, isinToTicker)),
                 guarded("analyst actions", List.of(), () -> {
-                    List<AnalystActionStat> merged = new ArrayList<>(analystActions(dayStart));
-                    merged.addAll(guarded("us analyst actions", List.of(),
+                    // Each half is capped alone, so the union could reach 2×
+                    // the cap — re-cap the MERGED list, cage-joined US actions
+                    // first (they are wire-ticker-filtered by construction),
+                    // and log what the cap cuts (no silent caps).
+                    List<AnalystActionStat> merged = new ArrayList<>(guarded(
+                            "us analyst actions", List.of(),
                             () -> usAnalystActions(wireTickers)));
-                    return merged;
+                    merged.addAll(analystActions(dayStart));
+                    if (merged.size() > MAX_ANALYST_ACTIONS) {
+                        LOG.info("[WEATHER] analyst actions: merged {} over cap {}, "
+                                        + "dropping {} FN tail line(s)",
+                                merged.size(), MAX_ANALYST_ACTIONS,
+                                merged.size() - MAX_ANALYST_ACTIONS);
+                    }
+                    return cap(merged, MAX_ANALYST_ACTIONS);
                 }),
                 guarded("macro actuals", List.of(), () -> macroActuals(dayStart)),
                 guarded("macro events", List.of(), () -> macroEvents(today, zone)),
@@ -506,7 +528,8 @@ class WeatherStatsCollector {
                 guarded("world weather", List.of(), this::worldWeather),
                 guarded("hazards", List.of(), this::hazards),
                 guarded("ticker news", List.of(),
-                        () -> tickerNews(tickers, todaysHeadlines, dayStart)));
+                        () -> tickerNews(tickers, todaysHeadlines, dayStart)),
+                guarded("street actions", List.of(), () -> streetActions(wireTickers)));
 
         return new Stats(indices(), tickers, news(todaysHeadlines), sentiment(), world);
     }
@@ -790,6 +813,86 @@ class WeatherStatsCollector {
 
     private static String fmtTarget(double v) {
         return String.format(Locale.GERMANY, v == Math.rint(v) ? "%,.0f" : "%,.2f", v);
+    }
+
+    /**
+     * The day's US street actions, WHOLE-table view (MarketBeat's daily
+     * ratings, ~350-490 rows) — unlike {@link #usAnalystActions} (which folds
+     * the cage-joined rows into the analyst TEXT lines) this freezes a
+     * structured list of the SUBSTANTIVE moves for the record/UI and the
+     * evening shelf: up-/downgrades and initiations always, pure target moves
+     * only when both halves are present (a target-only row without the prior
+     * is noise). Rows carry no time — the page is strictly today.
+     */
+    private List<StreetActionStat> streetActions(Set<String> wireTickers) {
+        de.bsommerfeld.wsbg.terminal.core.price.AnalystActionsSource source = analystActionsSource;
+        if (source == null) return List.of();
+        return streetActions(source.todaysActions("US"), wireTickers);
+    }
+
+    /**
+     * Filter + join + priority cap over the raw daily table. Package-private
+     * for tests. Priority: cage-discussed papers first, then rating moves
+     * (up-/downgrades), then the rest — stable within each tier; capped at
+     * {@link #MAX_STREET_ACTIONS} with the drop logged (no silent caps).
+     */
+    static List<StreetActionStat> streetActions(
+            List<de.bsommerfeld.wsbg.terminal.core.price.AnalystActions.Action> rows,
+            Set<String> wireTickers) {
+        List<StreetActionStat> substantive = new ArrayList<>();
+        int skipped = 0;
+        for (de.bsommerfeld.wsbg.terminal.core.price.AnalystActions.Action a : rows) {
+            if (a.symbol() == null || a.symbol().isBlank() || !substantiveAction(a)) {
+                skipped++;
+                continue;
+            }
+            String symbol = a.symbol().toUpperCase(Locale.ROOT);
+            substantive.add(new StreetActionStat(symbol,
+                    a.companyName() == null || a.companyName().isBlank() ? null : a.companyName(),
+                    a.actionType(), a.brokerage(), a.ratingOld(), a.ratingNew(),
+                    Double.isFinite(a.targetOld()) ? a.targetOld() : null,
+                    Double.isFinite(a.targetNew()) ? a.targetNew() : null,
+                    a.targetCurrency(), wireTickers.contains(symbol)));
+        }
+        // Stable two-tier sort: the cage's papers lead, rating moves outrank
+        // target moves; original (provider) order survives within a tier.
+        substantive.sort(Comparator
+                .comparing((StreetActionStat s) -> !s.inKaefig())
+                .thenComparing(s -> !isRatingMove(s.action())));
+        if (substantive.size() > MAX_STREET_ACTIONS) {
+            List<StreetActionStat> dropped =
+                    substantive.subList(MAX_STREET_ACTIONS, substantive.size());
+            LOG.info("Wetterbericht street actions: {} substantive of {} rows"
+                            + " ({} filtered), kept {}, dropped beyond cap: {}",
+                    substantive.size(), rows.size(), skipped, MAX_STREET_ACTIONS,
+                    dropped.stream().map(StreetActionStat::symbol).toList());
+        } else if (skipped > 0) {
+            LOG.debug("Wetterbericht street actions: {} substantive of {} rows"
+                    + " ({} filtered as non-substantive)", substantive.size(), rows.size(),
+                    skipped);
+        }
+        return cap(substantive, MAX_STREET_ACTIONS);
+    }
+
+    /**
+     * Up-/downgrades and initiations count regardless of targets; anything
+     * else (reiterations, target sets) only when BOTH target halves arrived —
+     * an old→new target is a statement, a lone number is noise.
+     */
+    static boolean substantiveAction(
+            de.bsommerfeld.wsbg.terminal.core.price.AnalystActions.Action a) {
+        String type = a.actionType() == null ? "" : a.actionType().toLowerCase(Locale.ROOT);
+        if (type.contains("upgrad") || type.contains("downgrad") || type.contains("initiat")) {
+            return true;
+        }
+        return Double.isFinite(a.targetOld()) && Double.isFinite(a.targetNew());
+    }
+
+    /** The provider's verbatim label names the rating move itself. */
+    private static boolean isRatingMove(String actionType) {
+        if (actionType == null) return false;
+        String type = actionType.toLowerCase(Locale.ROOT);
+        return type.contains("upgrad") || type.contains("downgrad");
     }
 
     // --- macro ------------------------------------------------------------------
@@ -1540,6 +1643,26 @@ class WeatherStatsCollector {
                         localTime(item.publishedAt())));
                 if (++taken >= MAX_TICKER_NEWS_PER_TICKER) break;
             }
+            // The GENERAL web sweep per highlighted instrument (the KI-DD's
+            // Bing leg, '<Name> News'): what the feed-shaped sources miss —
+            // blog posts, regional outlets, direct article URLs. Bing's
+            // pubDate is the crawl date and deliberately null, so these ride
+            // UNTIMED (home window: the evening wrap-up).
+            de.bsommerfeld.wsbg.terminal.websearch.BingWebSearchClient web = webSearchClient;
+            if (web != null && t.name() != null && !t.name().isBlank()
+                    && !t.name().equalsIgnoreCase(t.ticker())) {
+                for (var item : guarded("web news " + t.ticker(),
+                        List.<de.bsommerfeld.wsbg.terminal.source.RawNewsItem>of(),
+                        () -> web.newsForName(t.name(), MAX_TICKER_WEB_NEWS))) {
+                    if (item.title() == null || item.title().isBlank()) continue;
+                    if (!seenTitles.add(item.title().toLowerCase(Locale.ROOT).strip())) continue;
+                    out.add(new de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.TickerNewsStat(
+                            t.ticker(), item.title(),
+                            item.publisher() == null || item.publisher().isBlank()
+                                    ? null : item.publisher(),
+                            null));
+                }
+            }
         }
         return out;
     }
@@ -1740,8 +1863,8 @@ class WeatherStatsCollector {
             List<Ranked> top = out.size() > MAX_TICKERS ? out.subList(0, MAX_TICKERS) : out;
             List<TickerStat> result = new ArrayList<>(top.size());
             for (Ranked r : top) {
-                result.add(enrichWithVenueStats(
-                        refreshYahooShapedQuote(r.stat()), r.snap()));
+                result.add(enrichWithSector(enrichWithVenueStats(
+                        refreshYahooShapedQuote(r.stat()), r.snap()), r.snap()));
             }
             return result;
         } catch (Exception e) {
@@ -1801,6 +1924,38 @@ class WeatherStatsCollector {
                     stat.volume() != null ? stat.volume() : shares, turnover);
         } catch (Exception e) {
             LOG.debug("Wetterbericht venue stats for {} failed: {}", stat.ticker(), e.getMessage());
+            return stat;
+        }
+    }
+
+    /**
+     * Tags a top ticker with its SECTOR/BRANCH (onvista, the KI-DD's
+     * instrument-facts leg — session-cached, ISIN-addressed): the bridge
+     * between the day's instruments and the sector table, so the report can
+     * say deterministically WHERE in the rotation the room's papers sit.
+     * ISIN-anchored papers only; a fund/crypto/index keeps null.
+     */
+    private TickerStat enrichWithSector(TickerStat stat, MarketSnapshot snap) {
+        de.bsommerfeld.wsbg.terminal.core.price.InstrumentFactsSource facts =
+                instrumentFactsSource;
+        if (facts == null || snap == null || !looksLikeIsin(snap.symbol())
+                || stat.sector() != null) {
+            return stat;
+        }
+        try {
+            var f = facts.factsByIsin(snap.symbol());
+            if (f.isEmpty()) return stat;
+            String sector = f.get().sector();
+            String branch = f.get().branch();
+            String tag = sector == null || sector.isBlank() ? branch
+                    : (branch == null || branch.isBlank() || branch.equalsIgnoreCase(sector)
+                            ? sector : sector + "/" + branch);
+            if (tag == null || tag.isBlank()) return stat;
+            return new TickerStat(stat.ticker(), stat.name(), stat.headlineCount(),
+                    stat.importantCount(), stat.price(), stat.currency(),
+                    stat.changePercent(), stat.volume(), stat.turnoverEur(), tag);
+        } catch (Exception e) {
+            LOG.debug("Wetterbericht sector tag for {} failed: {}", stat.ticker(), e.getMessage());
             return stat;
         }
     }

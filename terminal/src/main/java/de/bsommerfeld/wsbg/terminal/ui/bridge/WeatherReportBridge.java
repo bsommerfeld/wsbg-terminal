@@ -142,6 +142,7 @@ public class WeatherReportBridge {
             m.put("changePercent", s.changePercent());
             m.put("volume", s.volume());
             m.put("turnoverEur", s.turnoverEur());
+            if (s.sector() != null) m.put("sector", s.sector());
             tickers.add(m);
         }
         out.put("tickers", tickers);
@@ -283,7 +284,7 @@ public class WeatherReportBridge {
                 "breaking", n.breaking() ? Boolean.TRUE : null));
         putList(out, "pressReview", w.pressReview(), p -> map("title", p.title(),
                 "teaser", p.teaser(), "source", p.source(), "category", p.category(),
-                "time", p.time()));
+                "time", p.time(), "link", p.link()));
         putList(out, "worldWeather", w.worldWeather(), p -> map("place", p.place(),
                 "role", p.role(), "tempC", p.tempC(), "word", p.word(),
                 "windKmh", p.windKmh(), "tomorrowMaxC", p.tomorrowMaxC(),
@@ -292,6 +293,12 @@ public class WeatherReportBridge {
                 "text", h.text(), "severity", h.severity()));
         putList(out, "tickerNews", w.tickerNews(), n -> map("ticker", n.ticker(),
                 "title", n.title(), "publisher", n.publisher(), "time", n.time()));
+        putList(out, "streetActions", w.streetActions(), a -> map("symbol", a.symbol(),
+                "company", a.company(), "action", a.action(), "brokerage", a.brokerage(),
+                "ratingOld", a.ratingOld(), "ratingNew", a.ratingNew(),
+                "targetOld", a.targetOld(), "targetNew", a.targetNew(),
+                "targetCurrency", a.targetCurrency(),
+                "inKaefig", a.inKaefig() ? Boolean.TRUE : null));
         return out;
     }
 

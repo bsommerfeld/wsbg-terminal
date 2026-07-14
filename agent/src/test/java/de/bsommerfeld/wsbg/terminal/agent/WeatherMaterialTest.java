@@ -372,6 +372,45 @@ class WeatherMaterialTest {
     }
 
     @Test
+    void streetActionsBlockRendersAndLandsOnTheEveningShelf() {
+        List<de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.StreetActionStat> actions =
+                List.of(
+                        new de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.StreetActionStat(
+                                "NVDA", "NVIDIA", "Upgraded by", "Melius Research",
+                                "Hold", "Buy", 120.0, 200.0, "USD", true),
+                        new de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.StreetActionStat(
+                                "WMT", "Walmart", "Boost Target", "UBS",
+                                null, null, 95.0, 110.5, "USD", false));
+        String block = WeatherMaterial.streetActionsBlock(actions);
+        assertTrue(block.startsWith("US STREET ACTIONS of the day"), block);
+        assertTrue(block.contains(
+                "Melius Research: NVIDIA (NVDA) — Upgraded by 'Hold' → 'Buy',"
+                        + " target 120 → 200 USD [also discussed in the room]"), block);
+        assertTrue(block.contains("UBS: Walmart (WMT) — Boost Target, target 95 → 110,50 USD"),
+                block);
+        assertFalse(block.contains("Walmart (WMT) — Boost Target,"
+                + " target 95 → 110,50 USD [also"), block);
+        assertEquals("", WeatherMaterial.streetActionsBlock(List.of()));
+        assertEquals("", WeatherMaterial.streetActionsBlock(null));
+
+        // Untimed by nature (the source page is strictly today) — the street
+        // table homes on the evening shelf, nowhere else.
+        WorldStats world = new WorldStats(null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null, null, null, null,
+                null, actions);
+        WeatherStatsCollector.Stats stats = new WeatherStatsCollector.Stats(
+                List.of(), List.of(), List.of(), null, world);
+        String[] shelves = WeatherMaterial.sectionShelves(stats, LocalDate.of(2026, 7, 14),
+                "", "", "");
+        assertTrue(shelves[WeatherMaterial.SEC_EVENING].contains("US STREET ACTIONS"));
+        assertFalse(shelves[WeatherMaterial.SEC_MORNING].contains("US STREET ACTIONS"));
+        assertFalse(shelves[WeatherMaterial.SEC_MIDDAY].contains("US STREET ACTIONS"));
+        assertFalse(shelves[WeatherMaterial.SEC_PICTURE].contains("US STREET ACTIONS"));
+        assertFalse(shelves[WeatherMaterial.SEC_OUTLOOK].contains("US STREET ACTIONS"));
+    }
+
+    @Test
     void shelfEmptyDetectsTheDateOnlyShelf() {
         WeatherStatsCollector.Stats stats = new WeatherStatsCollector.Stats(
                 List.of(), List.of(), List.of(), null, null);
