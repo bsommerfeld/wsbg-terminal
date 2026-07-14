@@ -18,12 +18,16 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Macro calendar via ForexFactory's keyless week files (live-verified
- * 2026-07-13): {@code nfs.faireconomy.media/ff_calendar_thisweek.json} +
- * {@code _nextweek.json} — title, currency, ISO date, impact rating,
- * forecast/previous. Deliberately consumed as "what was/is scheduled" (the
- * files carry NO actuals — Destatis/ifo RSS deliver the German actuals);
- * for the evening report that means today's docket and tomorrow's outlook.
+ * Macro calendar via ForexFactory's keyless week file (live-verified
+ * 2026-07-13): {@code nfs.faireconomy.media/ff_calendar_thisweek.json} —
+ * title, currency, ISO date, impact rating, forecast/previous. Deliberately
+ * consumed as "what was/is scheduled" (the file carries NO actuals —
+ * Destatis/ifo RSS deliver the German actuals, TradingView the numeric
+ * outcomes); for the evening report that means today's docket and tomorrow's
+ * outlook. ONLY the this-week file exists: {@code _nextweek}/{@code _today}/
+ * {@code _tomorrow} answer 404 since mid-2026 (re-probed 2026-07-13), so the
+ * former {@code nextWeek()} leg was removed — the cross-week tomorrow gap is
+ * TradingView's job now.
  */
 @Singleton
 public class EconCalendarClient {
@@ -31,7 +35,6 @@ public class EconCalendarClient {
     private static final Logger LOG = LoggerFactory.getLogger(EconCalendarClient.class);
 
     private static final String THIS_WEEK = "https://nfs.faireconomy.media/ff_calendar_thisweek.json";
-    private static final String NEXT_WEEK = "https://nfs.faireconomy.media/ff_calendar_nextweek.json";
     private static final ObjectMapper JSON = new ObjectMapper();
 
     /**
@@ -52,7 +55,7 @@ public class EconCalendarClient {
         this(new DirectWebFetcher());
     }
 
-    /** Production: direct-first chain (no wall observed; the joker stays reserve). */
+    /** Production: the shared {@code @DirectFirst} seam - browser-first since the 2026-07-14 joker mandate. */
     @Inject
     public EconCalendarClient(@de.bsommerfeld.wsbg.terminal.source.net.DirectFirst WebFetcher fetcher) {
         this.fetcher = fetcher;
@@ -61,11 +64,6 @@ public class EconCalendarClient {
     /** This week's scheduled events, chronological. Empty on any failure. */
     public List<EconEvent> thisWeek() {
         return fetchWeek(THIS_WEEK);
-    }
-
-    /** Next week's scheduled events, chronological. Empty on any failure. */
-    public List<EconEvent> nextWeek() {
-        return fetchWeek(NEXT_WEEK);
     }
 
     private List<EconEvent> fetchWeek(String url) {

@@ -267,4 +267,162 @@ class BriefingParsersTest {
         assertTrue(Math.abs(aWeekBefore.daysToFull() - 7) <= 1,
                 "a week before full moon should read ~7 days, was " + aWeekBefore.daysToFull());
     }
+
+    // ---- TradingView economic calendar ---------------------------------------------------
+
+    @Test
+    void tradingViewParsesNumericActualsAndSkipsGarbage() {
+        String body = """
+                {"status":"ok","result":[
+                {"id":"417520","title":"6-Month Bubill Auction","country":"DE",
+                 "indicator":"6 Month Bill Yield","period":"","referenceDate":null,
+                 "source":"","actual":2.436,"previous":2.331,"forecast":null,
+                 "actualRaw":2.436,"previousRaw":2.331,"forecastRaw":null,
+                 "currency":"EUR","unit":"%","importance":-1,"date":"2026-07-13T09:30:00.000Z"},
+                {"id":"420846","title":"Fed Bowman Speech","country":"US",
+                 "indicator":"Interest Rate","source":"Federal Reserve",
+                 "actualRaw":null,"forecastRaw":null,"previousRaw":null,
+                 "currency":"USD","importance":0,"date":"2026-07-13T09:25:00.000Z"},
+                {"id":"999","title":"broken date","country":"US","date":"not-a-date"}]}""";
+        List<TradingViewCalendarClient.TvEvent> events = TradingViewCalendarClient.parse(body);
+        assertEquals(2, events.size());
+        TradingViewCalendarClient.TvEvent auction = events.get(0);
+        assertEquals(2.436, auction.actual());
+        assertEquals(2.331, auction.previous());
+        assertNull(auction.forecast());
+        assertEquals("%", auction.unit());
+        assertEquals(-1, auction.importance());
+        assertEquals(Instant.parse("2026-07-13T09:30:00Z"), auction.when());
+        // A speech carries no figures — nulls, never zeros.
+        assertNull(events.get(1).actual());
+        assertTrue(TradingViewCalendarClient.parse("{\"status\":\"error\"}").isEmpty());
+        assertTrue(TradingViewCalendarClient.parse(null).isEmpty());
+    }
+
+    // ---- EQS corporate events --------------------------------------------------------------
+
+    @Test
+    void eqsEventsCarryIsinAndDropDatelessRecords() {
+        String body = """
+                {"status":200,"records":[
+                {"id":"a","exactDateUnknown":0,"eventType":"future",
+                 "startDate":"2026-07-14T00:00:00+00:00","endDate":"2026-07-14 21:59:59",
+                 "companyName":"JDC Group AG","isin":"DE000A0B9N37","headline":"Hauptversammlung"},
+                {"id":"b","exactDateUnknown":1,"eventType":"future",
+                 "startDate":"2026-07-15T00:00:00+00:00","companyName":"X AG",
+                 "isin":"DE000X","headline":"Quartalsbericht"},
+                {"id":"c","exactDateUnknown":0,"eventType":"future",
+                 "startDate":"2026-07-16T00:00:00+00:00","companyName":"Y AG",
+                 "isin":"","headline":"Roadshow"}],"error":[]}""";
+        List<EqsEventsClient.CorporateEvent> events = EqsEventsClient.parse(body);
+        assertEquals(2, events.size());
+        assertEquals("DE000A0B9N37", events.get(0).isin());
+        assertEquals("Hauptversammlung", events.get(0).headline());
+        assertEquals(Instant.parse("2026-07-14T00:00:00Z"), events.get(0).startDate());
+        assertNull(events.get(1).isin()); // blank ISIN normalizes to null
+        assertTrue(EqsEventsClient.parse("<html>shell</html>").isEmpty());
+    }
+
+    // ---- EarningsWhispers --------------------------------------------------------------------
+
+    @Test
+    void earningsWhispersParsesEstimatesAndSlots() {
+        String body = """
+                [{"ticker":"JPM","company":"JPMorgan Chase & Co.","total":56,
+                  "nextEPSDate":"2026-07-14T00:00:00","releaseTime":1,"qDate":"6/2026",
+                  "q1RevEst":48710000000.0,"q1EstEPS":5.52,
+                  "confirmDate":"2026-07-03T05:49:32.43"},
+                 {"ticker":"XYZ","company":"No Numbers Inc","releaseTime":2,
+                  "q1RevEst":null,"q1EstEPS":null,"confirmDate":""}]""";
+        List<EarningsWhispersClient.EarningsEstimate> estimates =
+                EarningsWhispersClient.parse(body);
+        assertEquals(2, estimates.size());
+        assertEquals(5.52, estimates.get(0).epsEstimate());
+        assertEquals(4.871E10, estimates.get(0).revenueEstimate());
+        assertEquals("pre-market", estimates.get(0).slot());
+        assertTrue(estimates.get(0).confirmed());
+        assertNull(estimates.get(1).epsEstimate());
+        assertEquals("after-hours", estimates.get(1).slot());
+        assertTrue(!estimates.get(1).confirmed());
+    }
+
+    // ---- central-bank calendars ------------------------------------------------------------
+
+    @Test
+    void ecbCalendarKeepsOnlyMonetaryDecisionDays() {
+        String html = """
+                <dl class="definition-list -zebra">
+                <dt>22/07/2026</dt><dd>Governing Council of the ECB: monetary policy meeting\
+                 in Frankfurt (Day 1)</dd>
+                <dt>23/07/2026</dt><dd>Governing Council of the ECB: monetary policy meeting\
+                 in Frankfurt (Day 2), followed by press conference</dd>
+                <dt>23/07/2026</dt><dd>Press conference following the Governing Council\
+                 meeting of the ECB in Frankfurt</dd>
+                <dt>30/09/2026</dt><dd>Governing Council of the ECB: non-monetary policy\
+                 meeting (virtual)</dd>
+                </dl>""";
+        List<CentralBankCalendarClient.CbMeeting> meetings =
+                CentralBankCalendarClient.parseEcb(html);
+        assertEquals(1, meetings.size());
+        assertEquals(LocalDate.of(2026, 7, 23), meetings.get(0).date());
+        assertEquals("EZB", meetings.get(0).bank());
+    }
+
+    @Test
+    void fedCalendarReadsDecisionDaysBomTolerant() {
+        String body = "\uFEFF" + """
+                {"events":[
+                {"title":"FOMC Meeting","time":"2:00 p.m.","month":"2026-09","days":"16",
+                 "type":"FOMC","description":"&lt;p&gt;Two-day meeting&lt;/p&gt;"},
+                {"title":"FOMC Minutes","time":"2:00 p.m.","month":"2026-10","days":"7",
+                 "type":"FOMC"},
+                {"title":"Speech by Governor X","month":"2026-09","days":"2","type":"Speeches"}]}""";
+        List<CentralBankCalendarClient.CbMeeting> meetings =
+                CentralBankCalendarClient.parseFed(body);
+        assertEquals(1, meetings.size());
+        assertEquals(LocalDate.of(2026, 9, 16), meetings.get(0).date());
+        assertEquals("Fed", meetings.get(0).bank());
+        // A "days" range picks the LAST day — the decision lands on day 2.
+        assertEquals(LocalDate.of(2026, 9, 16),
+                CentralBankCalendarClient.fedDate("2026-09", "15-16"));
+    }
+
+    // ---- Wikipedia current events ------------------------------------------------------------
+
+    @Test
+    void wikipediaKeepsCitedLeafBulletsInRelevantCategories() {
+        String wikitext = """
+                {{Current events|year=2026|month=07|day=12|content=
+                '''Armed conflicts and attacks'''
+                *[[Middle Eastern crisis (2023-present)|Middle Eastern crisis]]
+                **[[2026 Hormuz crisis]]
+                ***The [[IRGC Navy|IRGC Navy]] declares the [[Strait of Hormuz]] closed \
+                until further notice, halting tanker traffic. \
+                [https://example.org/a (''France 24'')]
+                '''Business and economy'''
+                *[[Brent Crude|Brent]] jumps twelve percent after the strait closure, \
+                the largest one-day move since 2022. [https://example.org/b (''Reuters'')]
+                '''Sports'''
+                *Somebody wins a [[trophy]] final. [https://example.org/c (''ESPN'')]
+                }}""";
+        List<WikipediaCurrentEventsClient.WorldEvent> events =
+                WikipediaCurrentEventsClient.parse(wikitext, 3);
+        assertEquals(2, events.size()); // sports filtered, breadcrumb bullets dropped
+        assertEquals("Armed conflicts and attacks", events.get(0).category());
+        assertEquals("France 24", events.get(0).source());
+        assertTrue(events.get(0).text().startsWith("The IRGC Navy declares the Strait of Hormuz"));
+        assertEquals("Reuters", events.get(1).source());
+        assertTrue(events.get(1).text().contains("Brent jumps twelve percent"));
+    }
+
+    @Test
+    void wikipediaPerCategoryCapHolds() {
+        String wikitext = """
+                '''Business and economy'''
+                *First event sentence long enough to count as prose here. [https://e.org/1 (''A'')]
+                *Second event sentence long enough to count as prose here. [https://e.org/2 (''B'')]
+                *Third event sentence long enough to count as prose here. [https://e.org/3 (''C'')]
+                """;
+        assertEquals(2, WikipediaCurrentEventsClient.parse(wikitext, 2).size());
+    }
 }
