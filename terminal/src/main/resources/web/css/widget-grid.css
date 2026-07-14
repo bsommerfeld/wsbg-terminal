@@ -81,6 +81,18 @@ html[data-theme="light"] .main > .widget.exit-card {
   pointer-events: none;
 }
 
+/* The F&G and EUR/USD cards show a single compact hero (gauge / rate + spark)
+   that is deliberately small even at natural pane size — at the shared
+   miniature zoom it reads lost on the card. Boost THEIR zoom so the hero
+   fills the tile; the factor multiplies the shared var, so the hero still
+   scales 1:1 with the card on every window resize. */
+.main[data-view="grid"] > #widget-fg > .widget-body,
+.main > #widget-fg.exit-card > .widget-body,
+.main[data-view="grid"] > #widget-eurusd > .widget-body,
+.main > #widget-eurusd.exit-card > .widget-body {
+  zoom: calc(var(--grid-zoom, 0.58) * 1.6);
+}
+
 /* ---- dedicated grid thumbnails ----
    A widget whose real view doesn't miniaturise well (form chrome, dense row
    furniture) opts in with .has-grid-thumb on its <section> and a .grid-thumb
@@ -342,7 +354,12 @@ html[data-theme="light"] .rail-btn { box-shadow: 0 10px 28px oklch(0 0 0 / .12);
 }
 html[data-theme="light"] .rail-pop { box-shadow: 0 24px 70px oklch(0 0 0 / .16); }
 .rail-item.open .rail-pop {
-  clip-path: circle(135% at -14px 50%);
+  /* The radius must outgrow the panel's far corner from the off-panel anchor.
+     circle()'s %-basis is diagonal/√2, and for a FLAT panel (the search pop:
+     head + input only) the needed/basis ratio approaches √2·(w+14)/w ≈ 1.5 —
+     135% left the right edge permanently clipped there. 175% covers every
+     panel aspect with margin. */
+  clip-path: circle(175% at -14px 50%);
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
@@ -353,6 +370,20 @@ html[data-theme="light"] .rail-pop { box-shadow: 0 24px 70px oklch(0 0 0 / .16);
 /* Settings popup runs wider so each row reads horizontally: label + hint
    left, control right, nothing stacked. */
 .rail-pop.rail-pop-wide { width: min(440px, 56vw); }
+
+/* Growing popup (the search panel: suggestions appear while typing): TOP-
+   anchored to the button instead of centred, so extra content extends the
+   panel DOWNWARD only — the input never moves under the cursor. The reveal
+   circle keeps pouring out of the button's centre (22px = half the 44px
+   button below the panel top). */
+.rail-pop.rail-pop-anchored {
+  top: 0;
+  transform: none;
+  clip-path: circle(0px at -14px 22px);
+}
+.rail-item.open .rail-pop.rail-pop-anchored {
+  clip-path: circle(175% at -14px 22px);
+}
 
 .rail-pop-body { padding: 14px 16px; }
 .rail-pop-head {

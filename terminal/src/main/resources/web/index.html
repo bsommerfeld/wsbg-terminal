@@ -193,7 +193,7 @@
                   data-i18n-title="search.open" data-i18n-aria-label="search.open">
             <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="16.4" y1="16.4" x2="21" y2="21"/></svg>
           </button>
-          <div class="rail-pop" role="dialog" aria-label="Suche" data-i18n-aria-label="search.title">
+          <div class="rail-pop rail-pop-anchored" role="dialog" aria-label="Suche" data-i18n-aria-label="search.title">
             <div class="rail-pop-body js-headline-search"></div>
           </div>
         </div>
@@ -420,7 +420,7 @@
          form reads as noise at card scale. -->
     <section class="widget has-grid-thumb" id="widget-deepdive">
       <header class="widget-head">
-        <div class="ident"><span class="glyph glyph-dd" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><circle cx="11.5" cy="14.5" r="2.5"/><path d="m13.3 16.3 2.2 2.2"/></svg></span><span data-i18n="widget.deepdive.title">KI-DD</span><button type="button" class="ki-badge js-ai-notice"
+        <div class="ident"><span class="glyph glyph-dd" aria-hidden="true"><svg viewBox="0 0 24 24"><defs><linearGradient id="ddh-paper" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f4f8fc"/><stop offset="1" stop-color="#c6d4e2"/></linearGradient></defs><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" fill="url(#ddh-paper)" stroke="#8ba3ba" stroke-width="1.1" stroke-linejoin="round"/><path d="M14 2v6h6z" fill="#a7bbcf" stroke="#8ba3ba" stroke-width="1.1" stroke-linejoin="round"/><rect x="6.7" y="5.7" width="4.8" height="1.4" rx=".7" fill="#9db1c5"/><rect x="6.7" y="8.7" width="7.6" height="1.4" rx=".7" fill="#b7c7d7"/><rect x="6.7" y="14.6" width="2" height="3.6" rx=".5" fill="#3fb950"/><rect x="9.5" y="12.6" width="2" height="5.6" rx=".5" fill="#e0b000"/><rect x="12.3" y="15.6" width="2" height="2.6" rx=".5" fill="#e2504a"/><circle cx="15.7" cy="14.9" r="3.4" fill="#7fb2e5" fill-opacity=".3" stroke="#e9b83d" stroke-width="1.7"/><line x1="18.2" y1="17.4" x2="21" y2="20.2" stroke="#e9b83d" stroke-width="2.2" stroke-linecap="round"/></svg></span><span data-i18n="widget.deepdive.title">KI-DD</span><button type="button" class="ki-badge js-ai-notice"
                   aria-haspopup="dialog"
                   data-i18n="widget.reddit.ai"
                   title="Automatisch von KI erstellt, nicht redaktionell geprüft - kann Fehler enthalten. Für Details klicken."
@@ -436,13 +436,13 @@
       <button class="grid-hit" type="button" aria-label="KI-DD öffnen"
               data-i18n-aria-label="grid.open.deepdive">
         <span class="grid-hit-tag">
-          <svg class="grid-hit-icon-dd" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><circle cx="11.5" cy="14.5" r="2.5"/><path d="m13.3 16.3 2.2 2.2"/></svg>
+          <svg class="grid-hit-icon-dd" viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="ddg-paper" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f4f8fc"/><stop offset="1" stop-color="#c6d4e2"/></linearGradient></defs><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" fill="url(#ddg-paper)" stroke="#8ba3ba" stroke-width="1.1" stroke-linejoin="round"/><path d="M14 2v6h6z" fill="#a7bbcf" stroke="#8ba3ba" stroke-width="1.1" stroke-linejoin="round"/><rect x="6.7" y="5.7" width="4.8" height="1.4" rx=".7" fill="#9db1c5"/><rect x="6.7" y="8.7" width="7.6" height="1.4" rx=".7" fill="#b7c7d7"/><rect x="6.7" y="14.6" width="2" height="3.6" rx=".5" fill="#3fb950"/><rect x="9.5" y="12.6" width="2" height="5.6" rx=".5" fill="#e0b000"/><rect x="12.3" y="15.6" width="2" height="2.6" rx=".5" fill="#e2504a"/><circle cx="15.7" cy="14.9" r="3.4" fill="#7fb2e5" fill-opacity=".3" stroke="#e9b83d" stroke-width="1.7"/><line x1="18.2" y1="17.4" x2="21" y2="20.2" stroke="#e9b83d" stroke-width="2.2" stroke-linecap="round"/></svg>
           <span class="grid-hit-label" data-i18n="widget.deepdive.title">KI-DD</span>
         </span>
       </button>
       <nav class="widget-rail" aria-label="Widget-Werkzeuge" data-i18n-aria-label="rail.tools">
         <span class="rail-logo" aria-hidden="true">
-          <svg class="rail-logo-dd" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><circle cx="11.5" cy="14.5" r="2.5"/><path d="m13.3 16.3 2.2 2.2"/></svg>
+          <svg class="rail-logo-dd" viewBox="0 0 24 24"><defs><linearGradient id="ddr-paper" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f4f8fc"/><stop offset="1" stop-color="#c6d4e2"/></linearGradient></defs><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" fill="url(#ddr-paper)" stroke="#8ba3ba" stroke-width="1.1" stroke-linejoin="round"/><path d="M14 2v6h6z" fill="#a7bbcf" stroke="#8ba3ba" stroke-width="1.1" stroke-linejoin="round"/><rect x="6.7" y="5.7" width="4.8" height="1.4" rx=".7" fill="#9db1c5"/><rect x="6.7" y="8.7" width="7.6" height="1.4" rx=".7" fill="#b7c7d7"/><rect x="6.7" y="14.6" width="2" height="3.6" rx=".5" fill="#3fb950"/><rect x="9.5" y="12.6" width="2" height="5.6" rx=".5" fill="#e0b000"/><rect x="12.3" y="15.6" width="2" height="2.6" rx=".5" fill="#e2504a"/><circle cx="15.7" cy="14.9" r="3.4" fill="#7fb2e5" fill-opacity=".3" stroke="#e9b83d" stroke-width="1.7"/><line x1="18.2" y1="17.4" x2="21" y2="20.2" stroke="#e9b83d" stroke-width="2.2" stroke-linecap="round"/></svg>
         </span>
         <span class="rail-sep" aria-hidden="true"></span>
         <div class="rail-item">
@@ -469,7 +469,12 @@
       </nav>
     </section>
 
-    <section class="widget has-grid-thumb" id="widget-watchlist">
+    <!-- HELD BACK for a later release (2026-07-14): hidden suppresses the card
+         everywhere (the grid CSS sets no display on .widget, so the UA rule
+         wins); the widget is also out of grid-layout.js' ORDER and the
+         WatchlistService background loop is disabled. Remove the attribute +
+         re-add the ORDER slot + flip WatchlistService.HELD_BACK to ship it. -->
+    <section class="widget has-grid-thumb" id="widget-watchlist" hidden>
       <header class="widget-head">
         <div class="ident"><span class="glyph glyph-wl" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg></span><span data-i18n="widget.watchlist.title">KI-Watchliste</span><button type="button" class="ki-badge js-ai-notice"
                   aria-haspopup="dialog"
@@ -538,7 +543,7 @@
          sections read as noise at card scale. -->
     <section class="widget has-grid-thumb" id="widget-weather">
       <header class="widget-head">
-        <div class="ident"><span class="glyph glyph-weather" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M17.5 18.5H7a4 4 0 0 1-.4-7.98 5.5 5.5 0 0 1 10.8-1.02 4.25 4.25 0 0 1 .1 9z"/></svg></span><span data-i18n="widget.weather.title">Wetterbericht</span><button type="button" class="ki-badge js-ai-notice"
+        <div class="ident"><span class="glyph glyph-weather" aria-hidden="true"><svg viewBox="0 0 24 24"><defs><linearGradient id="wxh-sun" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffd75e"/><stop offset="1" stop-color="#eda21f"/></linearGradient><linearGradient id="wxh-cloud" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f3f8fd"/><stop offset="1" stop-color="#b4c8dc"/></linearGradient></defs><g stroke="#f0b23c" stroke-width="1.7" stroke-linecap="round"><line x1="17.2" y1="0.9" x2="17.2" y2="2.6"/><line x1="22.8" y1="6.4" x2="21.1" y2="6.4"/><line x1="21.2" y1="2.5" x2="20" y2="3.7"/><line x1="13.2" y1="2.5" x2="14.4" y2="3.7"/></g><circle cx="17.2" cy="6.4" r="3.3" fill="url(#wxh-sun)"/><path d="M17.5 18.5H7a4 4 0 0 1-.4-7.98 5.5 5.5 0 0 1 10.8-1.02 4.25 4.25 0 0 1 .1 9z" transform="translate(-1.9 3.9) scale(.92)" fill="url(#wxh-cloud)" stroke="#8ba3ba" stroke-width="1.1" stroke-linejoin="round" stroke-linecap="round"/></svg></span><span data-i18n="widget.weather.title">Wetterbericht</span><button type="button" class="ki-badge js-ai-notice"
                   aria-haspopup="dialog"
                   data-i18n="widget.reddit.ai"
                   title="Automatisch von KI erstellt, nicht redaktionell geprüft - kann Fehler enthalten. Für Details klicken."
@@ -554,14 +559,14 @@
       <button class="grid-hit" type="button" aria-label="Wetterbericht öffnen"
               data-i18n-aria-label="grid.open.weather">
         <span class="grid-hit-tag">
-          <svg class="grid-hit-icon-weather" viewBox="0 0 24 24" aria-hidden="true"><path d="M17.5 18.5H7a4 4 0 0 1-.4-7.98 5.5 5.5 0 0 1 10.8-1.02 4.25 4.25 0 0 1 .1 9z"/></svg>
+          <svg class="grid-hit-icon-weather" viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="wxg-sun" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffd75e"/><stop offset="1" stop-color="#eda21f"/></linearGradient><linearGradient id="wxg-cloud" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f3f8fd"/><stop offset="1" stop-color="#b4c8dc"/></linearGradient></defs><g stroke="#f0b23c" stroke-width="1.7" stroke-linecap="round"><line x1="17.2" y1="0.9" x2="17.2" y2="2.6"/><line x1="22.8" y1="6.4" x2="21.1" y2="6.4"/><line x1="21.2" y1="2.5" x2="20" y2="3.7"/><line x1="13.2" y1="2.5" x2="14.4" y2="3.7"/></g><circle cx="17.2" cy="6.4" r="3.3" fill="url(#wxg-sun)"/><path d="M17.5 18.5H7a4 4 0 0 1-.4-7.98 5.5 5.5 0 0 1 10.8-1.02 4.25 4.25 0 0 1 .1 9z" transform="translate(-1.9 3.9) scale(.92)" fill="url(#wxg-cloud)" stroke="#8ba3ba" stroke-width="1.1" stroke-linejoin="round" stroke-linecap="round"/></svg>
           <span class="grid-hit-label" data-i18n="widget.weather.title">Wetterbericht</span>
         </span>
       </button>
       <nav class="widget-rail" aria-label="Widget-Werkzeuge" data-i18n-aria-label="rail.tools">
         <!-- No external platform — the widget's own cloud glyph is the logo. -->
         <span class="rail-logo" aria-hidden="true">
-          <svg class="rail-logo-weather" viewBox="0 0 24 24"><path d="M17.5 18.5H7a4 4 0 0 1-.4-7.98 5.5 5.5 0 0 1 10.8-1.02 4.25 4.25 0 0 1 .1 9z"/></svg>
+          <svg class="rail-logo-weather" viewBox="0 0 24 24"><defs><linearGradient id="wxr-sun" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffd75e"/><stop offset="1" stop-color="#eda21f"/></linearGradient><linearGradient id="wxr-cloud" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f3f8fd"/><stop offset="1" stop-color="#b4c8dc"/></linearGradient></defs><g stroke="#f0b23c" stroke-width="1.7" stroke-linecap="round"><line x1="17.2" y1="0.9" x2="17.2" y2="2.6"/><line x1="22.8" y1="6.4" x2="21.1" y2="6.4"/><line x1="21.2" y1="2.5" x2="20" y2="3.7"/><line x1="13.2" y1="2.5" x2="14.4" y2="3.7"/></g><circle cx="17.2" cy="6.4" r="3.3" fill="url(#wxr-sun)"/><path d="M17.5 18.5H7a4 4 0 0 1-.4-7.98 5.5 5.5 0 0 1 10.8-1.02 4.25 4.25 0 0 1 .1 9z" transform="translate(-1.9 3.9) scale(.92)" fill="url(#wxr-cloud)" stroke="#8ba3ba" stroke-width="1.1" stroke-linejoin="round" stroke-linecap="round"/></svg>
         </span>
         <span class="rail-sep" aria-hidden="true"></span>
         <div class="rail-item">

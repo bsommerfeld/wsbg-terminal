@@ -22,11 +22,11 @@
   pointer-events: none;
 }
 .changelog-overlay::before {
-  box-shadow: 0 0 14px 1px oklch(0.82 0.14 75 / .28);
+  box-shadow: 0 0 14px 1px oklch(from var(--amber) l c h / .28);
   animation: changelog-aura-breathe 7s ease-in-out infinite;
 }
 .changelog-overlay::after {
-  box-shadow: 0 0 30px 2px oklch(0.82 0.14 75 / .12);
+  box-shadow: 0 0 30px 2px oklch(from var(--amber) l c h / .12);
   animation: changelog-aura-drift 11s ease-in-out infinite;
 }
 @keyframes changelog-aura-breathe {

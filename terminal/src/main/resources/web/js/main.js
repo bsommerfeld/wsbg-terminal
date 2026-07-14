@@ -26,7 +26,7 @@ import { renderFearGreed } from './widgets/fear-greed.js';
 import { renderFearGreedDetail } from './widgets/fg-detail.js';
 import { initWatchlist, renderWatchlist, renderWatchlistSubjects } from './widgets/watchlist.js';
 import { initWeather, renderWeather } from './widgets/weather.js';
-import { initDeepDive, renderDeepDive, renderDeepDiveReport, renderDeepDiveSuggestions } from './widgets/deepdive.js';
+import { initDeepDive, renderDeepDive, renderDeepDiveJournal, renderDeepDiveReport, renderDeepDiveSuggestions } from './widgets/deepdive.js';
 import { setMarketCalendar } from './markets/state.js';
 import { t } from './i18n/i18n.js';
 
@@ -109,6 +109,9 @@ socket.on('watchlist-subjects', p => { renderWatchlistSubjects(p); renderDeepDiv
 
 // One full KI-DD report, requested from the history list.
 socket.on('deepdive-report', renderDeepDiveReport);
+
+// The KI-DD's live desk journal: diff-line appends for the review pane.
+socket.on('deepdive-journal', renderDeepDiveJournal);
 
 // Live language switch: setLang() has already rewritten the static markup;
 // re-render the language-sensitive widgets from their last payload so their

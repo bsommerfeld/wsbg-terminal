@@ -171,7 +171,7 @@ a.glyph:hover { opacity: .7; }
    plays here as the card materialises. The class is auto-removed after
    the animation by JS so re-renders don't re-play it. */
 @keyframes new-row-flash {
-  0%   { background-color: oklch(0.82 0.14 75 / .14); }
+  0%   { background-color: oklch(from var(--amber) l c h / .14); }
   100% { background-color: transparent; }
 }
 .row.new-row {
@@ -185,7 +185,7 @@ a.glyph:hover { opacity: .7; }
    keyframe that ends on --red-soft keeps the red visible from the first
    paint. */
 @keyframes new-row-flash-important {
-  0%   { background-color: oklch(0.82 0.14 75 / .14); }
+  0%   { background-color: oklch(from var(--amber) l c h / .14); }
   100% { background-color: var(--red-soft); }
 }
 .row.mover.new-row,

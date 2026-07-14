@@ -155,7 +155,7 @@ html[data-platform="other"] .footer-settings { display: inline-flex; }
 .ad-inner .skull { color: var(--mute); }
 .ad-inner a {
   color: var(--amber); text-decoration: none;
-  border-bottom: 1px dashed oklch(0.82 0.14 75 / .45);
+  border-bottom: 1px dashed oklch(from var(--amber) l c h / .45);
   padding-bottom: 1px;
 }
 .ad-inner a:hover { border-bottom-color: var(--amber); }
@@ -177,7 +177,7 @@ html[data-platform="other"] .footer-settings { display: inline-flex; }
   background: linear-gradient(
       90deg,
       transparent 35%,
-      oklch(0.82 0.14 75 / .08) 50%,
+      oklch(from var(--amber) l c h / .08) 50%,
       transparent 65%);
   animation: shimmer 5s linear infinite;
 }

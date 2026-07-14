@@ -21,11 +21,15 @@ const COLS = 4;                 // slots per row; the last row centres its remai
 const ASPECT = 1.12;            // card width / height — near-square, slightly landscape
 const MIN_W = 96;               // degenerate-sliver floor for absurdly small windows
 const TAG_REF_W = 430;          // card width at which the icon + name pill render at design size
+const TAG_MIN_SCALE = 0.68;     // readability floor: the pill never shrinks below this
 
 // Fixed slot order: the two live panes lead, the AI tools complete the top
 // row, the compact market/report tiles fill the second row.
+// 'widget-watchlist' is held back for a later release (its section is hidden
+// in index.html and its backend loop is disabled) — re-add it here to restore
+// the card.
 const ORDER = [
-  'widget-reddit', 'widget-fj', 'widget-watchlist', 'widget-deepdive',
+  'widget-reddit', 'widget-fj', 'widget-deepdive',
   'widget-fg', 'widget-eurusd', 'widget-weather',
 ];
 
@@ -81,10 +85,13 @@ export function applyGridLayout() {
   // its natural screen-pane size, painted at whatever the card measures —
   // widget-grid.css consumes the var. Stays set after leaving the grid so
   // exiting cards keep their scale mid-flight. The icon + name pill live
-  // OUTSIDE the zoomed body at fixed design sizes; scale them by the same
-  // ratio the cards shrink (capped at 1 — they never grow past design).
+  // OUTSIDE the zoomed body at fixed design sizes; they shrink with the
+  // cards but SUBLINEARLY (sqrt) and floored — on a small window the labels
+  // stay readable instead of vanishing proportionally (capped at 1 — they
+  // never grow past design).
   main.style.setProperty('--grid-zoom', (w / naturalPaneW(W)).toFixed(4));
-  main.style.setProperty('--grid-tag-scale', Math.min(1, w / TAG_REF_W).toFixed(4));
+  const tagScale = Math.max(TAG_MIN_SCALE, Math.min(1, Math.sqrt(w / TAG_REF_W)));
+  main.style.setProperty('--grid-tag-scale', tagScale.toFixed(4));
 
   const blockH = rows.length * (h + LABEL_H) + (rows.length - 1) * ROW_GAP;
   const y0 = Math.max(EDGE, (H - blockH) / 2);
