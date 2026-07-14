@@ -389,7 +389,11 @@ public final class CefFetchClient {
 
     private void start() {
         if (!started.compareAndSet(false, true)) return;
-        registerHandlersOnce();
+        registerHandlersOnce(); // forces CEF init — must precede the cookie seed
+        // Consent pre-seed BEFORE the anchor loads: a fresh profile otherwise
+        // gets the EU consent shell instead of the real page (news.google.com
+        // never verified — the standing "warmup gave up" blocker, 2026-07-14).
+        ConsentCookieSeeder.seedFor(anchorUrl);
         createBrowserOnEdt();
     }
 
