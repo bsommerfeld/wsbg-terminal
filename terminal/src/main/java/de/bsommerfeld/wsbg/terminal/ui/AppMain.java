@@ -2,6 +2,7 @@ package de.bsommerfeld.wsbg.terminal.ui;
 
 import com.google.inject.Guice;
 import com.google.inject.Injector;
+import de.bsommerfeld.wsbg.terminal.agent.MarketMemoryService;
 import de.bsommerfeld.wsbg.terminal.agent.WeatherReportService;
 import de.bsommerfeld.wsbg.terminal.currency.EurUsdMonitorService;
 import de.bsommerfeld.wsbg.terminal.feargreed.CryptoFearGreedMonitorService;
@@ -100,6 +101,9 @@ public final class AppMain {
             // Daily Wetterbericht: arms the wall-clock schedule (and the boot
             // catch-up when today's report time already passed).
             injector.getInstance(WeatherReportService.class).start();
+            // Market memory: the ad-hoc register + Fear&Greed history harvests
+            // also ride the browser-joker fetch chain, so they start here too.
+            injector.getInstance(MarketMemoryService.class).start();
         });
     }
 

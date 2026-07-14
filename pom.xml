@@ -20,6 +20,8 @@
         <module>lang-schwarz</module>
         <module>tradegate</module>
         <module>onvista</module>
+        <module>boerse-frankfurt</module>
+        <module>edgar</module>
         <module>nasdaq</module>
         <module>insidermonkey</module>
         <module>marketbeat</module>
@@ -120,6 +122,16 @@
             <dependency>
                 <groupId>de.bsommerfeld</groupId>
                 <artifactId>onvista</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>boerse-frankfurt</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>edgar</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

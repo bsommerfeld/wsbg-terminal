@@ -71,6 +71,69 @@ public class FearGreedClient {
         }
     }
 
+    /** One trading day of the historical series ({@link #historySince}). */
+    public record DailyScore(java.time.LocalDate date, double score, String rating) {
+    }
+
+    /**
+     * The full DAILY history from {@code since} to today, oldest first —
+     * the same graphdata endpoint takes a date suffix and answers the whole
+     * series from that day (live-probed 2026-07-14; the series floor is
+     * {@code 2020-09-21}, earlier dates answer HTTP 500). One reading per UTC
+     * trading day (the last point of a day wins, so today's still-moving
+     * intraday value never shadows a settled close). Empty on any failure.
+     */
+    public java.util.List<DailyScore> historySince(java.time.LocalDate since) {
+        try {
+            // UA + Referer TOGETHER clear CNN's 418 wall even on a bare direct
+            // client (live-pinned 2026-07-14) — the history back-fill must not
+            // depend on the browser joker being up.
+            WebResponse resp = fetcher.fetch(URL + "/" + since,
+                    Map.of("User-Agent", userAgent, "Accept", "application/json",
+                            "Referer", "https://edition.cnn.com/"),
+                    java.time.Duration.ofSeconds(25));
+            if (resp.status() != 200) {
+                LOG.warn("Fear&Greed history returned HTTP {}", resp.status());
+                return java.util.List.of();
+            }
+            return parseDailyHistory(resp.body());
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            LOG.warn("Fear&Greed history request failed: {}", e.getMessage());
+            return java.util.List.of();
+        }
+    }
+
+    /**
+     * Package-private for tests: {@code fear_and_greed_historical.data[]}
+     * ({@code {x: epochMs, y: score, rating}}) → one reading per UTC date,
+     * oldest first. Malformed or out-of-band points are skipped.
+     */
+    static java.util.List<DailyScore> parseDailyHistory(String body) {
+        try {
+            JsonNode data = JSON.readTree(body).path("fear_and_greed_historical").path("data");
+            if (!data.isArray()) return java.util.List.of();
+            java.util.TreeMap<java.time.LocalDate, DailyScore> byDate = new java.util.TreeMap<>();
+            java.util.Map<java.time.LocalDate, Long> latestMs = new java.util.HashMap<>();
+            for (JsonNode n : data) {
+                if (!n.path("x").isNumber() || !n.path("y").isNumber()) continue;
+                double y = n.path("y").asDouble();
+                if (!Double.isFinite(y) || y < 0 || y > 100) continue;
+                long ms = n.path("x").asLong();
+                java.time.LocalDate date = Instant.ofEpochMilli(ms)
+                        .atZone(java.time.ZoneOffset.UTC).toLocalDate();
+                Long prev = latestMs.get(date);
+                if (prev != null && prev >= ms) continue;
+                latestMs.put(date, ms);
+                byDate.put(date, new DailyScore(date, y, n.path("rating").asText("")));
+            }
+            return java.util.List.copyOf(byDate.values());
+        } catch (Exception e) {
+            LOG.warn("Fear&Greed history parse failure: {}", e.getMessage());
+            return java.util.List.of();
+        }
+    }
+
     /**
      * The seven sub-indicator blocks CNN folds into the composite, in CNN's own
      * display order. The response also carries {@code market_momentum_sp125} and

@@ -314,6 +314,49 @@ final class YahooResponseParser {
         }
     }
 
+    /**
+     * Parses a {@code v8/chart} response into OHLCV {@link Bar}s (daily or
+     * intraday — same shape). Column-oriented: {@code timestamp[]} aligns with
+     * {@code indicators.quote[0].{open,high,low,close,volume}[]}; an index
+     * whose close is null (venue holiday padding, the running bar of a closed
+     * session) is skipped, missing open/high/low become NaN, missing volume 0.
+     */
+    static List<Bar> parseBars(String body) {
+        try {
+            JsonNode result = JSON.readTree(body).path("chart").path("result");
+            if (!result.isArray() || result.isEmpty()) return List.of();
+            JsonNode r0 = result.get(0);
+            JsonNode ts = r0.path("timestamp");
+            JsonNode quote = r0.path("indicators").path("quote");
+            if (!ts.isArray() || !quote.isArray() || quote.isEmpty()) return List.of();
+            JsonNode q0 = quote.get(0);
+            JsonNode open = q0.path("open");
+            JsonNode high = q0.path("high");
+            JsonNode low = q0.path("low");
+            JsonNode close = q0.path("close");
+            JsonNode volume = q0.path("volume");
+            List<Bar> out = new ArrayList<>(ts.size());
+            for (int i = 0; i < ts.size(); i++) {
+                if (!ts.get(i).isNumber()) continue;
+                JsonNode c = close.path(i);
+                if (!c.isNumber() || !Double.isFinite(c.asDouble())) continue;
+                out.add(new Bar(ts.get(i).asLong(),
+                        barNum(open, i), barNum(high, i), barNum(low, i),
+                        c.asDouble(),
+                        volume.path(i).isNumber() ? volume.path(i).asLong() : 0L));
+            }
+            return out;
+        } catch (Exception e) {
+            LOG.warn("Failed to parse Yahoo bars response: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    private static double barNum(JsonNode column, int i) {
+        JsonNode v = column.path(i);
+        return v.isNumber() ? v.asDouble() : Double.NaN;
+    }
+
     /** A number that is either raw or a {@code {"raw": …}} wrapper; NaN when absent. */
     private static double flexNum(JsonNode node, String field) {
         JsonNode v = node.path(field);

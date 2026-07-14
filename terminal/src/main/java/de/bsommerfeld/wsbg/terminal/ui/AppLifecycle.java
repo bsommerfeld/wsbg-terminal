@@ -3,6 +3,7 @@ package de.bsommerfeld.wsbg.terminal.ui;
 import com.google.inject.Injector;
 import de.bsommerfeld.wsbg.terminal.agent.AgentCoordinator;
 import de.bsommerfeld.wsbg.terminal.agent.EditorialPipeline;
+import de.bsommerfeld.wsbg.terminal.agent.MarketMemoryService;
 import de.bsommerfeld.wsbg.terminal.agent.OllamaServerManager;
 import de.bsommerfeld.wsbg.terminal.agent.PassiveMonitorService;
 import de.bsommerfeld.wsbg.terminal.agent.WeatherReportService;
@@ -146,6 +147,7 @@ final class AppLifecycle {
         // submitted while the services it depends on are torn down below.
         safeStop(() -> injector.getInstance(PassiveMonitorService.class).shutdown(), "PassiveMonitorService");
         safeStop(() -> injector.getInstance(WeatherReportService.class).shutdown(), "WeatherReportService");
+        safeStop(() -> injector.getInstance(MarketMemoryService.class).shutdown(), "MarketMemoryService");
         safeStop(() -> injector.getInstance(EditorialPipeline.class).shutdown(), "EditorialPipeline");
         safeStop(() -> injector.getInstance(AgentCoordinator.class).shutdown(), "AgentCoordinator");
         safeStop(() -> injector.getInstance(RedditRepository.class).shutdown(), "RedditRepository");

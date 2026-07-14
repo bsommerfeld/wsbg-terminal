@@ -356,6 +356,59 @@ public class YahooFinanceClient implements NewsSource {
     }
 
     /**
+     * The full DAILY history of one symbol from {@code from} to today, oldest
+     * first — the market memory's price axis. Deliberately NOT {@code
+     * range=max}: that reply is capped/thinned (live-probed 2026-07-14 — IBM
+     * answered 260 points), and {@code period1=0} cuts at the Unix epoch. An
+     * explicit — possibly NEGATIVE — {@code period1} unlocks the real floor
+     * (^GSPC daily back to 1927, US names to 1962, German names to the Xetra
+     * era). Uncached (one-shot per enrichment sweep; callers batch per run);
+     * breaker/offline gates as everywhere. Empty on any failure.
+     */
+    public List<Bar> fetchDailyBars(String symbol, java.time.LocalDate from) {
+        return fetchBars(symbol, "interval=1d&period1="
+                + from.atStartOfDay(java.time.ZoneOffset.UTC).toEpochSecond()
+                + "&period2=" + Instant.now().getEpochSecond());
+    }
+
+    /**
+     * Hourly bars over the trailing {@code rangeDays} (Yahoo serves 60m up to
+     * ~730 days) — the volume profile's input. Empty on any failure.
+     */
+    public List<Bar> fetchHourlyBars(String symbol, int rangeDays) {
+        return fetchBars(symbol, "interval=60m&range=" + Math.max(1, rangeDays) + "d");
+    }
+
+    private List<Bar> fetchBars(String symbol, String query) {
+        if (symbol == null || symbol.isBlank()) return List.of();
+        String sym = symbol.trim().toUpperCase();
+        if (breakerOpen()) return List.of();
+        if (!online.isReachable()) {
+            LOG.debug("Offline — skipping Yahoo bars '{}'", sym);
+            return List.of();
+        }
+        try {
+            String url = CHART_URL + URLEncoder.encode(sym, StandardCharsets.UTF_8) + "?" + query;
+            WebResponse resp = httpGet(url, "application/json");
+            if (resp.status() != 200) {
+                if (isRateLimitStatus(resp.status())) {
+                    tripBreaker("bars '" + sym + "'", resp.status());
+                } else {
+                    LOG.warn("Yahoo bars '{}' returned HTTP {}", sym, resp.status());
+                }
+                return List.of();
+            }
+            return YahooResponseParser.parseBars(resp.body());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return List.of();
+        } catch (Exception e) {
+            LOG.warn("Yahoo bars '{}' failed: {}", sym, e.getMessage());
+            return List.of();
+        }
+    }
+
+    /**
      * Fetches snapshots for MANY symbols at once via the spark endpoint — one
      * HTTP request instead of one per symbol. Returns a symbol → snapshot map
      * for every symbol that resolved (cache hits + this batch). Symbols already

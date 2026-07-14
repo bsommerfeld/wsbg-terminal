@@ -112,5 +112,13 @@ final class AgentPipelineModule extends AbstractModule {
         bind(de.bsommerfeld.wsbg.terminal.core.price.AnalystActionsSource.class)
                 .to(de.bsommerfeld.wsbg.terminal.marketbeat.MarketBeatClient.class)
                 .in(Singleton.class);
+
+        // The multi-level order book by ISIN (Börse Frankfurt floor book, 10
+        // levels with order counts + units per level, SSE first-frame read —
+        // trading hours only). Optionally injected into DeepDiveService for
+        // the market memory's structure block.
+        bind(de.bsommerfeld.wsbg.terminal.core.price.OrderBookSource.class)
+                .to(de.bsommerfeld.wsbg.terminal.boersefrankfurt.OrderBookClient.class)
+                .in(Singleton.class);
     }
 }

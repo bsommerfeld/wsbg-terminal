@@ -127,4 +127,32 @@ class FearGreedClientTest {
     private static FearGreedIndex.Band band(double score) {
         return new FearGreedIndex(score, "", score, java.time.Instant.EPOCH).band();
     }
+
+    @Test
+    void parsesDailyHistoryOneReadingPerDateLastPointWins() {
+        // One settled day, an intraday pair on the next (the later epoch must
+        // win), plus an out-of-band and a malformed point (both skipped).
+        String body = """
+            {"fear_and_greed":{"score":50,"rating":"neutral"},
+             "fear_and_greed_historical":{"data":[
+               {"x":1600732800000,"y":45.2,"rating":"fear"},
+               {"x":1600819200000,"y":40.0,"rating":"fear"},
+               {"x":1600855200000,"y":38.5,"rating":"fear"},
+               {"x":1600941600000,"y":250.0,"rating":"broken"},
+               {"y":12.0,"rating":"no-x"}]}}
+            """;
+        var days = FearGreedClient.parseDailyHistory(body);
+        assertEquals(2, days.size());
+        assertEquals(java.time.LocalDate.of(2020, 9, 22), days.get(0).date());
+        assertEquals(45.2, days.get(0).score(), 1e-9);
+        assertEquals("fear", days.get(0).rating());
+        assertEquals(java.time.LocalDate.of(2020, 9, 23), days.get(1).date());
+        assertEquals(38.5, days.get(1).score(), 1e-9);
+    }
+
+    @Test
+    void dailyHistoryEmptyOnMissingOrBrokenBody() {
+        assertTrue(FearGreedClient.parseDailyHistory("{\"fear_and_greed\":{\"score\":50}}").isEmpty());
+        assertTrue(FearGreedClient.parseDailyHistory("not json").isEmpty());
+    }
 }
