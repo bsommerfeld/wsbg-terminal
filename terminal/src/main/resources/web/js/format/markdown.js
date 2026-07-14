@@ -84,9 +84,46 @@ export function renderMarkdown(md) {
   let quote = [];       // collected blockquote lines
   let para = [];        // collected paragraph lines
   let code = null;      // collected fenced-code lines, or null
+  let table = [];       // collected pipe-table lines
 
   const span = s => inline(s, codes);
   const closeList = () => { if (list) { out.push(`</${list}>`); list = null; } };
+  // ---- pipe tables (GFM subset: header row, separator row, data rows) ----
+  const isTableRow = s => {
+    const t = s.trim();
+    return t.length > 1 && t.startsWith('|') && t.indexOf('|', 1) > 0;
+  };
+  const splitRow = s => {
+    let r = s.trim();
+    if (r.startsWith('|')) r = r.slice(1);
+    if (r.endsWith('|')) r = r.slice(0, -1);
+    return r.split('|').map(c => c.trim());
+  };
+  const isSepRow = s => {
+    const cells = splitRow(s);
+    return cells.length > 0 && cells.every(c => /^:?-+:?$/.test(c));
+  };
+  const flushTable = () => {
+    if (!table.length) return;
+    const rows = table;
+    table = [];
+    if (rows.length >= 2 && isSepRow(rows[1])) {
+      const aligns = splitRow(rows[1]).map(c => c.startsWith(':') && c.endsWith(':')
+          ? 'center' : c.endsWith(':') ? 'right' : c.startsWith(':') ? 'left' : '');
+      const cell = (c, i, tag) =>
+          `<${tag}${aligns[i] ? ` class="md-align-${aligns[i]}"` : ''}>${span(c)}</${tag}>`;
+      const head = splitRow(rows[0]).map((c, i) => cell(c, i, 'th')).join('');
+      const body = rows.slice(2)
+          .map(r => `<tr>${splitRow(r).map((c, i) => cell(c, i, 'td')).join('')}</tr>`)
+          .join('');
+      // The wrapper div owns horizontal overflow so the page never scrolls sideways.
+      out.push(`<div class="md-table"><table><thead><tr>${head}</tr></thead>` +
+          `<tbody>${body}</tbody></table></div>`);
+    } else {
+      // Not a real pipe table (no separator row) — keep the lines as a paragraph.
+      out.push(`<p>${rows.map(span).join('<br>')}</p>`);
+    }
+  };
   const flushQuote = () => {
     if (quote.length) {
       out.push(`<blockquote>${quote.map(span).join('<br>')}</blockquote>`);
@@ -100,7 +137,7 @@ export function renderMarkdown(md) {
       para = [];
     }
   };
-  const flushAll = () => { flushPara(); flushQuote(); closeList(); };
+  const flushAll = () => { flushTable(); flushPara(); flushQuote(); closeList(); };
 
   for (const line of lines) {
     if (code !== null) {
@@ -108,6 +145,7 @@ export function renderMarkdown(md) {
       else code.push(line);
       continue;
     }
+    if (table.length && !isTableRow(line)) flushTable();
     let m;
     if (/^```/.test(line)) { flushAll(); code = []; }
     else if ((m = /^(#{1,6})\s+(.*)$/.exec(line))) {
@@ -128,6 +166,9 @@ export function renderMarkdown(md) {
       flushPara(); flushQuote();
       if (list !== 'ol') { closeList(); out.push('<ol>'); list = 'ol'; }
       out.push(`<li>${span(m[1])}</li>`);
+    } else if (isTableRow(line)) {
+      flushPara(); flushQuote(); closeList();
+      table.push(line.trim());
     } else if (!line.trim()) {
       flushAll();
     } else if (/^(\u0000R\d+\u0000\s*)+$/.test(line.trim())) {

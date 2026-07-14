@@ -2,6 +2,13 @@ package de.bsommerfeld.wsbg.terminal.agent;
 
 import de.bsommerfeld.wsbg.terminal.core.price.AnalystView;
 import de.bsommerfeld.wsbg.terminal.core.price.FundFacts;
+import de.bsommerfeld.wsbg.terminal.briefing.CentralBankCalendarClient;
+import de.bsommerfeld.wsbg.terminal.briefing.EconCalendarClient;
+import de.bsommerfeld.wsbg.terminal.briefing.TradingViewCalendarClient;
+import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
+import de.bsommerfeld.wsbg.terminal.core.price.AnalystActions;
+import de.bsommerfeld.wsbg.terminal.db.HeadlineRecord;
+import de.bsommerfeld.wsbg.terminal.core.price.HedgeFundPopularity;
 import de.bsommerfeld.wsbg.terminal.core.price.InstrumentFacts;
 import de.bsommerfeld.wsbg.terminal.core.price.UsListingStats;
 import de.bsommerfeld.wsbg.terminal.core.price.VenueStats;
@@ -338,7 +345,11 @@ class DeepDiveMaterialTest {
         String shelf = DeepDiveService.thesisMaterial(DeepDiveService.SECTIONS_DE, bodies, m);
         assertContains(shelf, "KEY DATA (verified):");
         assertContains(shelf, "consensus target 1720.00 EUR");
-        assertContains(shelf, "Worum es geht: Der Konzern ist der größte deutsche Rüstungsbauer [4].");
+        // The profile section's claim is the company's self-description — with
+        // primacy it became the thesis opener verbatim (live SAP 2026-07-14),
+        // so it deliberately stays OFF the thesis shelf.
+        assertFalse(shelf.contains("Der Konzern ist der größte deutsche Rüstungsbauer"),
+                "the About claim must not feed the thesis");
         assertContains(shelf, "Lage: Der Kurs notiert bei 992,10 EUR [1].");
         assertFalse(shelf.contains("Ein zweiter Satz"), "only the CLAIM sentence rides");
     }
@@ -660,6 +671,212 @@ class DeepDiveMaterialTest {
 
         String register = DeepDiveService.sourcesSection(m, true);
         assertContains(register, "- [1] NASDAQ - US-Listing: Insider-Trades (Form 4)");
+    }
+
+    @Test
+    void hedgeFundLegReachesTheValuationShelfAndTheRegister() {
+        DeepDiveService.Material m = new DeepDiveService.Material();
+        m.canonicalName = "Outlook Therapeutics, Inc.";
+        m.ticker = "OTLK";
+        m.hedgeFunds = new HedgeFundPopularity("OTLK", 1649989L,
+                List.of(new HedgeFundPopularity.QuarterPoint("2026-03-31", "Q1 2026",
+                                9, 30845L, 3, 1, 1.22, false),
+                        new HedgeFundPopularity.QuarterPoint("2026-06-30", "Q2 2026",
+                                12, 41000L, 4, 1, 1.37, true)),
+                List.of());
+
+        String[] shelves = DeepDiveService.sectionMaterials(m);
+        assertContains(shelves[DeepDiveService.SEC_VALUATION],
+                "HEDGE-FUND POSITIONING (13F filings, Insider Monkey, quarterly) [1]:");
+        assertContains(shelves[DeepDiveService.SEC_VALUATION],
+                "Q1 2026: 9 funds (3 new / 1 closed), quarter-end price 1.22 USD");
+        assertContains(shelves[DeepDiveService.SEC_VALUATION],
+                "Q2 2026: 12 funds (4 new / 1 closed), quarter-end price 1.37 USD [quarter still filing]");
+
+        String register = DeepDiveService.sourcesSection(m, true);
+        assertContains(register, "- [1] Insider Monkey - Hedgefonds-Positionierung (13F-Quartalskurve)");
+    }
+
+    @Test
+    void marketBeatLegFeedsShelvesRegisterAndActionsTable() {
+        DeepDiveService.Material m = new DeepDiveService.Material();
+        m.canonicalName = "Outlook Therapeutics, Inc.";
+        m.ticker = "OTLK";
+        m.analystActions = new AnalystActions("Moderate Buy", 5.50, "USD",
+                List.of(new AnalystActions.Action(null, null, "2026-07-10", "Oppenheimer",
+                                "T. Analyst", "Initiated Coverage", null, "Outperform",
+                                Double.NaN, 12.00, "USD"),
+                        new AnalystActions.Action(null, null, "2026-06-20", "HC Wainwright",
+                                null, "Boost Target", "Buy", "Buy", 4.00, 8.00, "USD")),
+                new AnalystActions.UsShortStats(3_500_000, 3_100_000, 4_800_000,
+                        1.4, 9.60, "2026-06-30"),
+                0);
+
+        String[] shelves = DeepDiveService.sectionMaterials(m);
+        assertContains(shelves[DeepDiveService.SEC_VALUATION],
+                "ANALYST ACTIONS (dated history, MarketBeat, newest first) [1]:");
+        assertContains(shelves[DeepDiveService.SEC_VALUATION],
+                "[2026-07-10] Oppenheimer: Initiated Coverage, rating Outperform, target 12.00 USD");
+        assertContains(shelves[DeepDiveService.SEC_VALUATION],
+                "[2026-06-20] HC Wainwright: Boost Target, rating Buy, target 4.00→8.00 USD");
+        assertContains(shelves[DeepDiveService.SEC_CATALYSTS],
+                "US SHORT STATS (MarketBeat) [1]: 9.60% of float short, 3 500 000 shares short "
+                        + "(prior 3 100 000), days to cover 1.4, record date 2026-06-30");
+
+        String table = DeepDiveService.actionsTable(m, DeepDiveService.sourceNumbers(m), true);
+        assertContains(table, "| Datum | Haus | Aktion | Rating | Kursziel [1] |");
+        assertContains(table, "| 2026-07-10 | Oppenheimer | Initiated Coverage | Outperform | 12,00 USD |");
+        assertContains(table, "| 2026-06-20 | HC Wainwright | Boost Target | Buy | 4,00→8,00 USD |");
+
+        String register = DeepDiveService.sourcesSection(m, true);
+        assertContains(register, "- [1] MarketBeat - Analysten-Aktionshistorie und US-Short-Quote");
+    }
+
+    @Test
+    void sectorEtfMappingIsPriorityOrderedAndConservative() {
+        // Health outranks chemicals: onvista's combined label is a health label.
+        assertEquals("XLV", DeepDiveService.sectorEtfFor("Chemie / Pharma / Gesundheit").symbol());
+        assertEquals("XLK", DeepDiveService.sectorEtfFor("Informationstechnologie", "Software").symbol());
+        assertEquals("XLI", DeepDiveService.sectorEtfFor("Industrie / Maschinenbau").symbol());
+        assertEquals("XLK", DeepDiveService.sectorEtfFor(null, null, "Technology", "Semiconductors").symbol());
+        // No mapping = no sector block, never a wrong proxy.
+        assertNull(DeepDiveService.sectorEtfFor("Konglomerat"));
+        assertNull(DeepDiveService.sectorEtfFor((String) null));
+    }
+
+    @Test
+    void sectorMacroContextExplainsEveryNumberAndFeedsBothShelves() {
+        DeepDiveService.Material m = new DeepDiveService.Material();
+        m.canonicalName = "SAP SE";
+        m.ticker = "SAP.DE";
+        m.snapshot = DeepDiveChartsTest.snapshot(); // day -1.77%
+        m.sectorEtf = new MarketSnapshot("XLK", 231.10, 233.90, -1.20, 233.0, 229.0,
+                0, Double.NaN, Double.NaN, "USD", "NYSEArca",
+                java.time.Instant.now().getEpochSecond(), List.of());
+        m.sectorEtfSymbol = "XLK";
+        m.sectorDisplayName = "Tech";
+        m.macroActualsToday = List.of(new TradingViewCalendarClient.TvEvent(
+                "Core CPI", "CPI", "US", "USD", java.time.Instant.now(), 1,
+                3.50, 3.30, 3.40, "%", "Jun", "tv"));
+        m.macroDocket = List.of(new EconCalendarClient.EconEvent(
+                "Core PPI", "US", java.time.Instant.now().getEpochSecond() + 3 * 86400,
+                "High", "2.4%", "2.6%"));
+        m.cbDecisions = List.of(new CentralBankCalendarClient.CbMeeting(
+                "EZB", "Zinsentscheid", java.time.LocalDate.of(2026, 7, 23)));
+
+        String[] shelves = DeepDiveService.sectionMaterials(m);
+        String lage = shelves[DeepDiveService.SEC_SITUATION];
+        assertContains(lage, "SECTOR & MACRO CONTEXT (verified) [2]:");
+        // The sector move never stands naked: instrument move + gap + house arithmetic.
+        assertContains(lage, "US sector proxy Tech (XLK): -1.20% today — the instrument moved "
+                + "-1.77%, 0.6 points behind its sector (house arithmetic)");
+        // The actual never stands naked: forecast + prior + house comparison.
+        assertContains(lage, "Core CPI (US): actual 3.50% vs forecast 3.30 (prior 3.40) "
+                + "— above forecast (house comparison)");
+        String outlook = shelves[DeepDiveService.SEC_OUTLOOK];
+        assertContains(outlook, "UPCOMING MACRO DOCKET");
+        assertContains(outlook, "[2026-07-23] EZB: Zinsentscheid");
+        assertContains(outlook, "Core PPI (US), high impact, forecast 2.4%");
+        assertContains(DeepDiveService.sourcesSection(m, true),
+                "Sektor- und Makro-Kontext - Yahoo Sektor-ETFs");
+    }
+
+    @Test
+    void wireArchiveCarriesWasWarOntoTheRoomShelf() {
+        DeepDiveService.Material m = new DeepDiveService.Material();
+        m.canonicalName = "SAP SE";
+        m.ticker = "SAP.DE";
+        java.util.List<HeadlineRecord> history = new java.util.ArrayList<>();
+        long day = 86400L;
+        long start = java.time.Instant.now().getEpochSecond() - 120 * day;
+        for (int i = 0; i < 12; i++) {
+            history.add(new HeadlineRecord("c" + i, "Zeile " + i, null, start + i * 10 * day,
+                    List.of(), List.of(), null, "SAP.DE", List.of(), null, List.of(),
+                    null, null, null, false, List.of()));
+        }
+        m.wireHistory = history;
+
+        String room = DeepDiveService.sectionMaterials(m)[DeepDiveService.SEC_ROOM];
+        assertContains(room, "WIRE ARCHIVE (the house's own published lines about this subject, dated) [1]:");
+        assertContains(room, "Zeile 0");
+        assertContains(room, "Zeile 1");
+        assertContains(room, "(4 further line(s) elided)");
+        assertContains(room, "Zeile 11");
+        assertFalse(room.contains("Zeile 3"), "elided middle stays out");
+        // The archive alone earns the room its source number (no honest literal).
+        assertContains(DeepDiveService.sourcesSection(m, true), "r/wallstreetbetsGER");
+    }
+
+    @Test
+    void groupDigestReadsOnlyTheStoryRepresentative() {
+        java.util.Set<String> drop = DeepDiveService.storyDropWords("Outlook Therapeutics, Inc.", "OTLK");
+        RawNewsItem original = new RawNewsItem("u1",
+                "FDA akzeptiert Zulassungsantrag für Lytenava",
+                "GlobeNewswire", "https://example.org/original",
+                Instant.now().minusSeconds(7200), List.of(), null, null, false, null);
+        RawNewsItem respin = new RawNewsItem("u2",
+                "Outlook Therapeutics Aktie: FDA akzeptiert Lytenava-Zulassungsantrag",
+                "Börse Express", "https://example.org/respin",
+                Instant.now().minusSeconds(600), List.of(), null, null, false, null);
+        RawNewsItem other = new RawNewsItem("u3",
+                "600-Millionen-Aktien-Plan zur Abstimmung gestellt",
+                "Börse Global", "https://example.org/dilution",
+                Instant.now().minusSeconds(300), List.of(), null, null, false, null);
+
+        var groups = DeepDiveService.groupStories(List.of(respin, original, other), drop);
+        assertEquals(2, groups.size(), "re-spins group, distinct stories do not: " + groups);
+        // The representative is the EARLIEST publication — the original release.
+        var fdaGroup = groups.stream().filter(g -> g.size() == 2).findFirst().orElseThrow();
+        assertEquals("https://example.org/original",
+                DeepDiveService.representativeOf(fdaGroup).link());
+        // An undated member loses to a dated one.
+        RawNewsItem undated = new RawNewsItem("u4", "FDA akzeptiert Lytenava Antrag",
+                "web", "https://example.org/undated", null, List.of(), null, null, false, null);
+        assertEquals("https://example.org/original", DeepDiveService.representativeOf(
+                List.of(undated, original)).link());
+    }
+
+    @Test
+    void typesetterTablesBuildFromVerifiedLegsOnly() {
+        DeepDiveService.Material m = fullMaterial();
+        var nums = DeepDiveService.sourceNumbers(m);
+
+        String peers = DeepDiveService.peerTable(m, nums, true);
+        assertContains(peers, "| Unternehmen | Marktkap. | KGV | Dividendenrendite [4] |");
+        assertContains(peers, "| KSB Vz | 1,5 Mrd. EUR | 11,9 |");
+
+        // No US street band → no scenario table (never invented anchors).
+        assertNull(DeepDiveService.scenarioTable(m, nums, true));
+
+        m.usStats = new UsListingStats("RHM", null, null, null, null, Double.NaN, -1,
+                Double.NaN, List.of(), null, List.of(), null,
+                new UsListingStats.AnalystRatings("Buy", 8, 1, 1, 0, 5.50, 12.00, 4.50),
+                List.of(), 0);
+        var nums2 = DeepDiveService.sourceNumbers(m);
+        String scenario = DeepDiveService.scenarioTable(m, nums2, true);
+        assertContains(scenario, "| Szenario | Anker | Kursziel [8] |");
+        assertContains(scenario, "| Bull | Street-Hoch | 12,00 USD |");
+        assertContains(scenario, "| Basis | Konsens | 5,50 USD |");
+        assertContains(scenario, "| Bear | Street-Tief | 4,50 USD |");
+        // EUR price vs USD targets: the distance column must NOT appear.
+        assertFalse(scenario.contains("Abstand"));
+    }
+
+    @Test
+    void assemblyKeepsTableBlocksAtomicAndLiftsTheirMarkers() {
+        String[] bodies = new String[DeepDiveService.SECTION_COUNT];
+        bodies[4] = "Die Peers zahlen weniger für denselben Umsatz [4].\n\n"
+                + "| Unternehmen | KGV [4] |\n"
+                + "|---|---|\n"
+                + "| KSB Vz | 11,9 |";
+        String report = DeepDiveService.assemble(DeepDiveService.SECTIONS_DE, bodies, true);
+        // Rows survive as their own lines, cell content intact.
+        assertContains(report, "| Unternehmen | KGV |");
+        assertContains(report, "|---|---|");
+        assertContains(report, "| KSB Vz | 11,9 |");
+        // The marker left the table and sits on the heading.
+        assertContains(report, "## Bewertung und Wettbewerb [4]");
+        assertFalse(report.contains("KGV [4]"));
     }
 
     @Test

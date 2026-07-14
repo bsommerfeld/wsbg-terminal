@@ -41,6 +41,12 @@ import java.util.regex.Pattern;
  *       (torn splices fail here).</li>
  *   <li><b>Repetition</b> — a long sentence may not appear twice.</li>
  * </ul>
+ *
+ * <p><b>Markdown tables are licensed report content (2026-07-14):</b> a pipe
+ * row is TYPESETTING, not a sentence — the shape checks (integrity, repeats,
+ * paragraph reflow, source-list scrub) leave table lines alone, while the
+ * FIDELITY checks (figures, dates, markers) still scan every cell. Surgery on
+ * a table removes the offending ROW, never sentence-joins the block.
  */
 final class DeepDiveFactCheck {
 
@@ -182,6 +188,41 @@ final class DeepDiveFactCheck {
         return out;
     }
 
+    // -- markdown table awareness (tables are licensed report content, 2026-07-14) --
+
+    /**
+     * A markdown pipe-table line (header, separator or data row): after trim it
+     * opens with '|' and carries at least one more pipe. Table rows legitimately
+     * end without sentence punctuation and may carry markers and "·"-joined cell
+     * text — the SHAPE checks must leave them alone, while the FIDELITY checks
+     * (figures, dates, markers) still see every cell.
+     */
+    static boolean isTableLine(String line) {
+        if (line == null) return false;
+        String s = line.strip();
+        return s.length() >= 2 && s.charAt(0) == '|' && s.indexOf('|', 1) > 0;
+    }
+
+    private static boolean containsTableLine(String block) {
+        if (block == null || block.indexOf('|') < 0) return false;
+        for (String line : block.split("\n")) {
+            if (isTableLine(line)) return true;
+        }
+        return false;
+    }
+
+    /** The text with every table line removed — input for the sentence-shaped checks. */
+    private static String withoutTableLines(String text) {
+        if (text == null || text.indexOf('|') < 0) return text;
+        StringBuilder out = new StringBuilder(text.length());
+        for (String line : text.split("\n", -1)) {
+            if (isTableLine(line)) continue;
+            if (out.length() > 0) out.append('\n');
+            out.append(line);
+        }
+        return out.toString();
+    }
+
     // -- paragraph typesetting --
 
     /** More sentences than this in ONE paragraph is a wall of text. */
@@ -204,6 +245,12 @@ final class DeepDiveFactCheck {
         for (String rawPara : body.split("\n\\s*\n")) {
             String para = rawPara.strip();
             if (para.isEmpty()) continue;
+            // A table block is ATOMIC typesetting: never split inside it, and
+            // its rows are no sentences to count.
+            if (containsTableLine(para)) {
+                outParas.add(para);
+                continue;
+            }
             List<String> ss = sentences(para);
             if (ss.size() <= MAX_SENTENCES_PER_PARAGRAPH) {
                 outParas.add(para);
@@ -287,6 +334,13 @@ final class DeepDiveFactCheck {
         for (String rawPara : text.split("\n\\s*\n")) {
             String para = rawPara.strip();
             if (para.isEmpty()) continue;
+            // Table blocks are typesetting, not sentences — a pipe row
+            // legitimately ends on '|'; the end-like-a-sentence check runs
+            // over the paragraph's prose lines only.
+            if (containsTableLine(para)) {
+                para = withoutTableLines(para).strip();
+                if (para.isEmpty()) continue;
+            }
             // Trailing source markers are legitimate after the closing punctuation.
             String stripped = para.replaceAll("(\\s*\\[\\d{1,2}])+\\s*$", "").stripTrailing();
             if (stripped.isEmpty()) continue;
@@ -456,6 +510,11 @@ final class DeepDiveFactCheck {
     // -- repetition --
 
     private static void repeatObjections(String text, boolean de, List<Objection> out) {
+        // Table rows are exempt from the sentence pairing: a licensed table
+        // legitimately shares its tokens with the introducing prose around it
+        // (and a periodless row block would otherwise lump into one giant
+        // "sentence" and near-match its neighbours).
+        text = withoutTableLines(text);
         List<String> normed = new ArrayList<>();
         for (String sentence : sentences(text)) {
             String norm = sentence.strip().replaceAll("\\s+", " ");
@@ -529,10 +588,8 @@ final class DeepDiveFactCheck {
         }
         // Markers are citations, not figures.
         remaining = MARKER.matcher(remaining).replaceAll(" ");
-        int figures = 0;
         for (NumberHit hit : textNumbers(remaining, germanText)) {
             if (exempt(hit)) continue;
-            figures++;
             if (!matches(hit.value(), materialNumbers)) {
                 out.add(new Objection(sentenceAround(text, hit.raw()), germanText
                         ? "Zahl '" + hit.raw() + "' ist im verifizierten Material "
@@ -543,7 +600,10 @@ final class DeepDiveFactCheck {
         }
         // The number wall: the charts carry the series, the prose keeps the
         // load-bearing few — a section reciting a dozen values reads like a
-        // data dump, not a note.
+        // data dump, not a note. A licensed table is the values' sanctioned
+        // home: its cells never count toward the PROSE number wall
+        // (figureCount strips table lines).
+        int figures = figureCount(text, germanText);
         if (figures > MAX_FIGURES_PER_SECTION) {
             out.add(new Objection(head(text), germanText
                     ? "Zahlenwand: " + figures + " Zahlen in einem Abschnitt - pro Absatz "
@@ -557,12 +617,14 @@ final class DeepDiveFactCheck {
 
     /**
      * The section's figure count under the density rules — dates and markers
-     * are not figures, small ints and years are exempt. The copy-editor pass
-     * uses this to decide whether a number-wall note rides along.
+     * are not figures, small ints and years are exempt, and TABLE cells never
+     * count (a licensed table is the values' sanctioned home; the density rule
+     * governs the prose). The copy-editor pass uses this to decide whether a
+     * number-wall note rides along.
      */
     static int figureCount(String text, boolean german) {
         if (text == null || text.isBlank()) return 0;
-        String remaining = text;
+        String remaining = withoutTableLines(text);
         for (DateHit hit : textDates(text)) {
             remaining = remaining.replace(hit.raw(), " ");
         }
@@ -756,22 +818,25 @@ final class DeepDiveFactCheck {
         for (String rawPara : text.split("\n\\s*\n")) {
             String para = rawPara.strip();
             if (para.isEmpty()) continue;
+            // Surgery on a table block works ROW-wise: the offending line
+            // falls, the block's line structure (its typesetting) survives —
+            // never sentence-join pipe rows into one line.
+            if (containsTableLine(para)) {
+                StringBuilder keptLines = new StringBuilder(para.length());
+                for (String line : para.split("\n")) {
+                    if (offends(line, needles)) continue;
+                    if (keptLines.length() > 0) keptLines.append('\n');
+                    keptLines.append(line);
+                }
+                if (keptLines.length() > 0) {
+                    if (out.length() > 0) out.append("\n\n");
+                    out.append(keptLines);
+                }
+                continue;
+            }
             StringBuilder kept = new StringBuilder(para.length());
             for (String sentence : sentences(para)) {
-                boolean offending = false;
-                String norm = sentence.replaceAll("\\s+", " ");
-                for (String needle : needles) {
-                    // Objection quotes may be head()-truncated with a trailing
-                    // ellipsis — strip it so the prefix still matches.
-                    String needleNorm = needle.replaceAll("\\s+", " ")
-                            .replaceAll("…$", "").replaceAll("^…", "");
-                    if (needleNorm.isBlank()) continue;
-                    if (norm.contains(needleNorm) || needleNorm.contains(norm)) {
-                        offending = true;
-                        break;
-                    }
-                }
-                if (!offending) {
+                if (!offends(sentence, needles)) {
                     if (kept.length() > 0) kept.append(' ');
                     kept.append(sentence.strip());
                 }
@@ -782,6 +847,20 @@ final class DeepDiveFactCheck {
             }
         }
         return out.toString();
+    }
+
+    /** Whether one sentence/row matches any objection quote (both ways, ellipsis-tolerant). */
+    private static boolean offends(String segment, List<String> needles) {
+        String norm = segment.replaceAll("\\s+", " ");
+        for (String needle : needles) {
+            // Objection quotes may be head()-truncated with a trailing
+            // ellipsis — strip it so the prefix still matches.
+            String needleNorm = needle.replaceAll("\\s+", " ")
+                    .replaceAll("…$", "").replaceAll("^…", "");
+            if (needleNorm.isBlank()) continue;
+            if (norm.contains(needleNorm) || needleNorm.contains(norm)) return true;
+        }
+        return false;
     }
 
     /**
@@ -860,6 +939,12 @@ final class DeepDiveFactCheck {
         StringBuilder out = new StringBuilder(text.length());
         boolean dirty = false;
         for (String line : text.split("\n", -1)) {
+            // A table row legitimately carries markers and "·"-joined cell text
+            // without sentence-final punctuation — NEVER a source-list line.
+            if (isTableLine(line)) {
+                out.append(line).append('\n');
+                continue;
+            }
             if (isSourceListLine(line)) {
                 dirty = true;
                 continue;
@@ -931,6 +1016,7 @@ final class DeepDiveFactCheck {
                 // too (Juli) — treat a SHORT all-digit token before the period as an
                 // ordinal and keep going.
                 if (sentenceStart && isOrdinalBefore(block, i)) continue;
+                if (sentenceStart && isAbbreviationBefore(block, i)) continue;
                 if (!sentenceStart) continue;
             }
             out.add(block.substring(start, j));
@@ -941,6 +1027,28 @@ final class DeepDiveFactCheck {
             out.add(block.substring(start));
         }
         return out;
+    }
+
+    /**
+     * Unit/abbreviation periods are never sentence ends: "3,15 Mrd. EUR" split
+     * after "Mrd." tore a figure (and its bold span) across the deterministic
+     * paragraph break (live SAP run 2026-07-14). Kept to a tight, unambiguous
+     * set — a real sentence ending on one of these words is vanishingly rare
+     * in the report register.
+     */
+    private static final java.util.Set<String> ABBREVIATIONS = java.util.Set.of(
+            "mrd", "mio", "tsd", "bzw", "ca", "inkl", "zzgl", "ggf", "evtl",
+            "nr", "co", "inc", "ltd", "dr", "prof", "vs");
+
+    /** True when the period at {@code idx} terminates a known abbreviation. */
+    private static boolean isAbbreviationBefore(String s, int idx) {
+        int i = idx - 1;
+        while (i >= 0 && Character.isLetter(s.charAt(i))) i--;
+        if (i == idx - 1) return false;
+        // Must be a standalone token, not a word tail ("…Reviews." stays an end).
+        String word = s.substring(i + 1, idx).toLowerCase(Locale.ROOT);
+        if (!ABBREVIATIONS.contains(word)) return false;
+        return i < 0 || !Character.isLetterOrDigit(s.charAt(i));
     }
 
     /** True when the period at {@code idx} terminates a 1-2 digit ordinal ("2.", "24."). */
@@ -973,6 +1081,12 @@ final class DeepDiveFactCheck {
 
     /** The sentence of {@code text} containing {@code needle} (for objection quotes). */
     private static String sentenceAround(String text, String needle) {
+        // In a table the quotable unit is the ROW — a periodless block would
+        // otherwise read as one giant "sentence" and drag innocent rows into
+        // the objection quote (and later into the surgery).
+        for (String line : text.split("\n")) {
+            if (isTableLine(line) && line.contains(needle)) return head(line.strip());
+        }
         for (String rawPara : text.split("\n\\s*\n")) {
             for (String sentence : sentences(rawPara)) {
                 if (sentence.contains(needle)) return head(sentence);

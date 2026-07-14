@@ -18,6 +18,8 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
@@ -155,6 +157,13 @@ public final class DeepDivePdfExporter {
                 + "text-transform:uppercase;margin:20px 0 6px;padding-left:8px;"
                 + "border-left:3px solid #b8860b;}"
                 + "p{margin:0 0 9px;text-align:justify;font-variant-numeric:tabular-nums;}"
+                + "table{width:100%;border-collapse:collapse;margin:10px 0 14px;"
+                + "font-size:11px;page-break-inside:avoid;}"
+                + "th{font-family:Helvetica,Arial,sans-serif;font-size:9.5px;"
+                + "letter-spacing:.06em;text-transform:uppercase;text-align:left;"
+                + "padding:4px 8px;border-bottom:1.5px solid #b8860b;background:#faf3e3;}"
+                + "td{padding:4px 8px;border-bottom:1px solid #ddd;"
+                + "font-variant-numeric:tabular-nums;}"
                 + "h2:first-of-type+p{font-size:13.5px;line-height:1.7;}"
                 + "strong{color:#000;}"
                 + "figure.dd-figure{margin:14px 0 18px;page-break-inside:avoid;}"
@@ -223,13 +232,23 @@ public final class DeepDivePdfExporter {
                 + "</figcaption>" + fig.svg() + "</figure>";
     }
 
-    /** Escape-first markdown subset: ## headings, **bold**, blank-line paragraphs. */
+    /**
+     * Escape-first markdown subset: ## headings, **bold**, blank-line
+     * paragraphs, compact pipe tables (model-licensed 2026-07-14).
+     */
     static String markdownToHtml(String markdown) {
         if (markdown == null) return "";
         StringBuilder out = new StringBuilder(markdown.length() + 512);
         StringBuilder para = new StringBuilder();
+        List<String> table = new ArrayList<>();
         for (String line : markdown.split("\n", -1)) {
             String stripped = line.strip();
+            if (isTableRow(stripped)) {
+                flushPara(out, para);
+                table.add(stripped);
+                continue;
+            }
+            flushTable(out, table);
             if (stripped.startsWith("## ")) {
                 flushPara(out, para);
                 out.append("<h2>").append(inline(escape(stripped.substring(3)))).append("</h2>");
@@ -246,8 +265,81 @@ public final class DeepDivePdfExporter {
                 para.append(stripped);
             }
         }
+        flushTable(out, table);
         flushPara(out, para);
         return out.toString();
+    }
+
+    // ---- pipe tables (GFM subset: header row, separator row, data rows) ----
+
+    private static boolean isTableRow(String stripped) {
+        return stripped.length() > 1 && stripped.startsWith("|")
+                && stripped.indexOf('|', 1) > 0;
+    }
+
+    /**
+     * Renders a collected pipe-table block as a real table (header +
+     * separator + data rows); a pipe run without a separator row falls back
+     * to plain paragraphs. Cells are escaped first, then the inline subset.
+     */
+    private static void flushTable(StringBuilder out, List<String> table) {
+        if (table.isEmpty()) return;
+        List<String> rows = List.copyOf(table);
+        table.clear();
+        if (rows.size() < 2 || !isSeparatorRow(rows.get(1))) {
+            for (String r : rows) {
+                out.append("<p>").append(inline(escape(r))).append("</p>");
+            }
+            return;
+        }
+        List<String> aligns = new ArrayList<>();
+        for (String c : splitRow(rows.get(1))) {
+            boolean left = c.startsWith(":");
+            boolean right = c.endsWith(":");
+            aligns.add(left && right ? "center" : right ? "right" : "");
+        }
+        out.append("<table><thead><tr>");
+        List<String> head = splitRow(rows.get(0));
+        for (int i = 0; i < head.size(); i++) {
+            out.append(cellHtml("th", head.get(i), align(aligns, i)));
+        }
+        out.append("</tr></thead><tbody>");
+        for (int r = 2; r < rows.size(); r++) {
+            out.append("<tr>");
+            List<String> cells = splitRow(rows.get(r));
+            for (int i = 0; i < cells.size(); i++) {
+                out.append(cellHtml("td", cells.get(i), align(aligns, i)));
+            }
+            out.append("</tr>");
+        }
+        out.append("</tbody></table>");
+    }
+
+    private static String align(List<String> aligns, int i) {
+        return i < aligns.size() ? aligns.get(i) : "";
+    }
+
+    private static String cellHtml(String tag, String cell, String align) {
+        return "<" + tag + (align.isEmpty() ? "" : " style=\"text-align:" + align + "\"")
+                + ">" + inline(escape(cell)) + "</" + tag + ">";
+    }
+
+    private static List<String> splitRow(String row) {
+        String r = row.strip();
+        if (r.startsWith("|")) r = r.substring(1);
+        if (r.endsWith("|")) r = r.substring(0, r.length() - 1);
+        List<String> cells = new ArrayList<>();
+        for (String c : r.split("\\|", -1)) cells.add(c.strip());
+        return cells;
+    }
+
+    private static boolean isSeparatorRow(String row) {
+        List<String> cells = splitRow(row);
+        if (cells.isEmpty()) return false;
+        for (String c : cells) {
+            if (!c.matches(":?-+:?")) return false;
+        }
+        return true;
     }
 
     private static void flushPara(StringBuilder out, StringBuilder para) {

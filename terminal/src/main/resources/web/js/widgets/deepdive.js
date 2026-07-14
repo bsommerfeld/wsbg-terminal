@@ -190,6 +190,13 @@ function onHomeClick(e) {
     return;
   }
   if (e.target.closest('.dd-cancel')) {
+    // One shot: the service cancels at the next step boundary, which can take
+    // a model call's length — the disabled button says "heard you" instead of
+    // inviting a click storm (live: 20 repeat sends).
+    const btn = e.target.closest('.dd-cancel');
+    if (btn.disabled) return;
+    btn.disabled = true;
+    btn.classList.add('is-cancelling');
     sock.send('deepdive', { command: 'cancel' });
     return;
   }

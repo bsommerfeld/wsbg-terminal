@@ -3,6 +3,12 @@ package de.bsommerfeld.wsbg.terminal.agent;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.agent.event.DeepDiveFinishedEvent;
+import de.bsommerfeld.wsbg.terminal.briefing.CentralBankCalendarClient;
+import de.bsommerfeld.wsbg.terminal.briefing.EconCalendarClient;
+import de.bsommerfeld.wsbg.terminal.briefing.TradingViewCalendarClient;
+import de.bsommerfeld.wsbg.terminal.db.HeadlineArchive;
+import de.bsommerfeld.wsbg.terminal.db.HeadlineRecord;
+import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooFinanceClient;
 import de.bsommerfeld.wsbg.terminal.agent.event.DeepDiveProgressEvent;
 import de.bsommerfeld.wsbg.terminal.agent.event.DeepDiveStartedEvent;
 import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
@@ -11,6 +17,8 @@ import de.bsommerfeld.wsbg.terminal.core.price.AnalystView;
 import de.bsommerfeld.wsbg.terminal.core.price.CompanyDeepDive;
 import de.bsommerfeld.wsbg.terminal.core.price.InsiderDealings;
 import de.bsommerfeld.wsbg.terminal.core.price.ShortInterest;
+import de.bsommerfeld.wsbg.terminal.core.price.AnalystActions;
+import de.bsommerfeld.wsbg.terminal.core.price.HedgeFundPopularity;
 import de.bsommerfeld.wsbg.terminal.core.price.UsListingStats;
 import de.bsommerfeld.wsbg.terminal.db.DeepDiveArchive;
 import de.bsommerfeld.wsbg.terminal.db.DeepDiveRecord;
@@ -137,6 +145,13 @@ public class DeepDiveService {
     private static final int MAX_US_SHORT_POINTS = 6;
     private static final int MAX_US_HOLDERS = 5;
     private static final int MAX_US_SURPRISES = 4;
+    private static final int MAX_ANALYST_ACTIONS = 10;
+    private static final int MAX_ACTION_TABLE_ROWS = 8;
+    private static final int MAX_MACRO_ACTUALS = 4;
+    private static final int MAX_MACRO_DOCKET = 4;
+    /** Wire-archive lines fed to the room shelf: the first N + the newest M. */
+    private static final int WIRE_HISTORY_HEAD = 2;
+    private static final int WIRE_HISTORY_TAIL = 6;
     private static final int MAX_KEY_FIGURE_YEARS = 6;
     private static final int MAX_BALANCE_YEARS = 4;
     private static final int MAX_EVENTS = 4;
@@ -202,6 +217,13 @@ public class DeepDiveService {
     private volatile de.bsommerfeld.wsbg.terminal.core.price.ShortInterestSource shortInterestSource;
     private volatile de.bsommerfeld.wsbg.terminal.core.price.InsiderDealingsSource insiderSource;
     private volatile de.bsommerfeld.wsbg.terminal.core.price.UsListingStatsSource usStatsSource;
+    private volatile de.bsommerfeld.wsbg.terminal.core.price.HedgeFundPopularitySource hedgeFundSource;
+    private volatile de.bsommerfeld.wsbg.terminal.core.price.AnalystActionsSource analystActionsSource;
+    private volatile YahooFinanceClient yahooClient;
+    private volatile TradingViewCalendarClient tvCalendar;
+    private volatile EconCalendarClient econCalendar;
+    private volatile CentralBankCalendarClient cbCalendar;
+    private volatile HeadlineArchive headlineArchive;
     private volatile de.bsommerfeld.wsbg.terminal.aggregator.NewsAggregator newsAggregator;
     private volatile de.bsommerfeld.wsbg.terminal.briefing.FnRssClient fnRssClient;
     private volatile de.bsommerfeld.wsbg.terminal.briefing.EarningsWhispersClient earningsWhispers;
@@ -268,6 +290,43 @@ public class DeepDiveService {
     @com.google.inject.Inject(optional = true)
     void setUsListingStatsSource(de.bsommerfeld.wsbg.terminal.core.price.UsListingStatsSource source) {
         this.usStatsSource = source;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setHedgeFundPopularitySource(
+            de.bsommerfeld.wsbg.terminal.core.price.HedgeFundPopularitySource source) {
+        this.hedgeFundSource = source;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setAnalystActionsSource(
+            de.bsommerfeld.wsbg.terminal.core.price.AnalystActionsSource source) {
+        this.analystActionsSource = source;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setYahooFinanceClient(YahooFinanceClient client) {
+        this.yahooClient = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setTradingViewCalendar(TradingViewCalendarClient client) {
+        this.tvCalendar = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setEconCalendar(EconCalendarClient client) {
+        this.econCalendar = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setCentralBankCalendar(CentralBankCalendarClient client) {
+        this.cbCalendar = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setHeadlineArchive(HeadlineArchive archive) {
+        this.headlineArchive = archive;
     }
 
     @com.google.inject.Inject(optional = true)
@@ -463,6 +522,20 @@ public class DeepDiveService {
 
     private void run(String subject) {
         long t0 = System.currentTimeMillis();
+        // The whole run rides the gate's INTERACTIVE lane: a human visibly
+        // waits on this generation, so its calls overtake the background wire
+        // at the next free permit (the gate's anti-starvation quota keeps the
+        // wire publishing). Measured: Abendausgabe-hour contention queued
+        // every DD call ~16 s and roughly doubled the SAP run.
+        ChatGateway.INTERACTIVE.set(Boolean.TRUE);
+        try {
+            runInteractive(subject, t0);
+        } finally {
+            ChatGateway.INTERACTIVE.remove();
+        }
+    }
+
+    private void runInteractive(String subject, long t0) {
         eventBus.post(new DeepDiveStartedEvent(subject));
         eventBus.post(new DeepDiveProgressEvent(subject, "collect"));
 
@@ -541,7 +614,7 @@ public class DeepDiveService {
             long tSec = System.currentTimeMillis();
             bodies[idx] = writeSection(model, prompts, subject,
                     headerWithThought(header, previousThought), headings.get(idx),
-                    shelves[idx], de, label, dropWords);
+                    shelves[idx], de, label, dropWords, m);
             LOG.info("[DEEPDIVE] '{}' section '{}' {} in {} s.", subject, headings.get(idx),
                     bodies[idx] != null ? "stands" : "empty (honest literal)",
                     (System.currentTimeMillis() - tSec) / 1000);
@@ -565,7 +638,7 @@ public class DeepDiveService {
                 subject, header,
                 headings.get(SEC_THESIS), new Shelf(thesisMaterial(headings, bodies, m), List.of()),
                 de, (SEC_THESIS + 1) + "/" + SECTION_COUNT + " · " + headings.get(SEC_THESIS),
-                dropWords);
+                dropWords, m);
         if (bodies[SEC_THESIS] != null) written++;
 
         // -- cross-section consistency: the ONE review that sees the whole
@@ -587,6 +660,13 @@ public class DeepDiveService {
 
         // -- typesetting: deterministic assembly, scrub, register, figures --
         eventBus.post(new DeepDiveProgressEvent(subject, "finish"));
+        // Typesetter tables (BestStocks doctrine: prose-table-chart oscillation):
+        // built deterministically from the verified legs AFTER every model pass
+        // — the model never writes these, so they need no examination.
+        Map<String, Integer> tableNums = sourceNumbers(m);
+        appendTypesetTable(bodies, SEC_VALUATION, actionsTable(m, tableNums, de));
+        appendTypesetTable(bodies, SEC_VALUATION, peerTable(m, tableNums, de));
+        appendTypesetTable(bodies, SEC_OUTLOOK, scenarioTable(m, tableNums, de));
         String report = assemble(headings, bodies, de);
         report = scrubUnknownSourceMarkers(report, validNums);
         if (!looksLikeReport(report, headings)) {
@@ -655,7 +735,7 @@ public class DeepDiveService {
      */
     private String writeSection(ChatModel model, Prompts prompts, String subject, String header,
             String heading, Shelf shelf, boolean de, String progressLabel,
-            Set<String> storyDropWords) {
+            Set<String> storyDropWords, Material m) {
         if (shelf == null || shelf.isEmpty()) return null;
         String newsHeader = "NEWS (verified, last " + NEWS_MAX_AGE_DAYS + " days):\n";
 
@@ -697,7 +777,7 @@ public class DeepDiveService {
         }
         if (body == null) return null;
         body = examineAndRepair(model, prompts, subject, header, heading, fed,
-                markersIn(fed), de, body);
+                markersIn(fed), de, body).body();
         // The desk journal shows every mutation as a sentence diff against
         // what the pane last showed — pure effect, never narration.
         String shown = "";
@@ -743,8 +823,29 @@ public class DeepDiveService {
                         subject, heading, step);
                 continue;
             }
-            body = examineAndRepair(model, prompts, subject, header, heading, fed,
+            RepairOutcome out = examineAndRepair(model, prompts, subject, header, heading, fed,
                     markersIn(fed), de, woven.strip());
+            body = out.body();
+            // RE-KNOCK (user mandate 2026-07-14): a HARD finding on a group
+            // step whose members were never full-text-read means the desk may
+            // be missing exactly the source that carries the figure — the
+            // group digest only read the representative. Fetch the missing
+            // digests NOW (session cache makes repeats free) and weave the
+            // story ONCE more with the enriched material. Bounded: one
+            // re-knock per group, at most MAX_REKNOCK_DIGESTS reads.
+            if (out.hadHard()) {
+                String extra = reknockDigests(subject, group, m);
+                if (!extra.isEmpty()) {
+                    fed = fed + "\n" + extra;
+                    String rewoven = cleanReport(chatGateway.chat(model, prompts.weave(),
+                            weaveMessage(header, heading, body, block + extra,
+                                    prompts.weave().length(), group.size())));
+                    if (!isBlank(rewoven)) {
+                        body = examineAndRepair(model, prompts, subject, header, heading,
+                                fed, markersIn(fed), de, rewoven.strip()).body();
+                    }
+                }
+            }
             wovenBlocks.add(block);
             journalDiff(subject, shown, body);
             shown = body;
@@ -798,7 +899,7 @@ public class DeepDiveService {
             }
             String before = body.strip();
             body = examineAndRepair(model, prompts, subject, header, heading, material,
-                    allowedMarkers, de, revised.strip());
+                    allowedMarkers, de, revised.strip()).body();
             journalDiff(subject, shown, body);
             shown = body;
             if (body.strip().equals(before)) {
@@ -1257,7 +1358,45 @@ public class DeepDiveService {
      * fact-checking end state is "every claim sourced or out", never "archived
      * anyway". Residue lines (protocol tokens) are scrubbed mechanically.
      */
-    private String examineAndRepair(ChatModel model, Prompts prompts, String subject,
+    /** The examiner pass's outcome: the repaired body plus whether HARD findings fell. */
+    private record RepairOutcome(String body, boolean hadHard) {
+    }
+
+    /** At most this many full texts are fetched when the desk re-knocks on a group. */
+    private static final int MAX_REKNOCK_DIGESTS = 3;
+
+    /**
+     * The desk knocks again (user mandate 2026-07-14): fetches the full-text
+     * digests of a story group's members that were NOT read by the group
+     * digest (only the representative was). Returns a material block with the
+     * new digests, or {@code ""} when nothing was missing or readable.
+     */
+    private String reknockDigests(String subject, List<String> group, Material m) {
+        EditorialAgent agent = editorialAgent;
+        if (agent == null || m == null || m.newsLinksByBlock.isEmpty()) return "";
+        StringBuilder extra = new StringBuilder(256);
+        int fetched = 0;
+        for (String memberBlock : group) {
+            if (fetched >= MAX_REKNOCK_DIGESTS) break;
+            String link = m.newsLinksByBlock.get(memberBlock);
+            if (link == null || !isBlank(m.digests.get(link))) continue;
+            checkCancelled();
+            String digest = agent.newsDigester().digestNow(link);
+            if (isBlank(digest)) continue;
+            if (!(m.digests instanceof LinkedHashMap)) m.digests = new LinkedHashMap<>(m.digests);
+            m.digests.put(link.trim(), digest);
+            extra.append("  - ").append(digest.replace('\n', ' ').strip()).append('\n');
+            fetched++;
+        }
+        if (extra.length() == 0) return "";
+        journalNotes(subject, List.of("Digest nachgefordert — " + fetched
+                + " Volltext(e) für diese Story gelesen"));
+        LOG.info("[DEEPDIVE] '{}' re-knock: {} missing full text(s) fetched for a story group.",
+                subject, fetched);
+        return "REQUESTED FULL-TEXT DIGESTS (the desk asked for the missing sources):\n" + extra;
+    }
+
+    private RepairOutcome examineAndRepair(ChatModel model, Prompts prompts, String subject,
             String header, String heading, String material, Set<Integer> allowedMarkers,
             boolean de, String body) {
         // Raw source-list lines ("- [19] [2026-07-12 09:26] Titel · Börse
@@ -1282,7 +1421,8 @@ public class DeepDiveService {
                 DeepDiveFactCheck.inspect(body, material, allowedMarkers, de).stream()
                         .filter(o -> o.kind() != DeepDiveFactCheck.Objection.Kind.DENSITY)
                         .toList();
-        if (objections.isEmpty()) return body;
+        if (objections.isEmpty()) return new RepairOutcome(body, false);
+        boolean hadHard = objections.stream().anyMatch(DeepDiveFactCheck.Objection::hard);
         LOG.info("[DEEPDIVE] '{}' section '{}': examiner raised {} objection(s): {}",
                 subject, heading, objections.size(),
                 objections.stream().map(o -> o.kind() + " " + o.problem()).toList());
@@ -1299,6 +1439,7 @@ public class DeepDiveService {
                     DeepDiveFactCheck.inspect(body, material, allowedMarkers, de).stream()
                             .filter(DeepDiveFactCheck.Objection::hard).toList();
             if (hard.isEmpty()) break;
+            hadHard = true;
             String cut = DeepDiveFactCheck.removeOffendingSentences(body, hard);
             LOG.info("[DEEPDIVE] '{}' section '{}': {} unverifiable figure sentence(s) "
                             + "removed after revision ({} -> {} chars).",
@@ -1310,7 +1451,9 @@ public class DeepDiveService {
         // objection never converged — every weave re-emission flattened the
         // breaks again): walls of text split deterministically at sentence
         // boundaries.
-        return DeepDiveFactCheck.splitLongParagraphs(DeepDiveFactCheck.scrubResidue(body));
+        return new RepairOutcome(
+                DeepDiveFactCheck.splitLongParagraphs(DeepDiveFactCheck.scrubResidue(body)),
+                hadHard);
     }
 
     /** The author's user message, material hard-budgeted against the window. */
@@ -1376,7 +1519,7 @@ public class DeepDiveService {
                     material, String.join("\n", entry.getValue()));
             if (isBlank(revised)) continue;
             String repaired = examineAndRepair(model, prompts, subject, header,
-                    headings.get(idx), material, markersIn(material), de, revised.strip());
+                    headings.get(idx), material, markersIn(material), de, revised.strip()).body();
             journalDiff(subject, bodies[idx], repaired);
             bodies[idx] = repaired;
         }
@@ -1553,6 +1696,8 @@ public class DeepDiveService {
     private void judgeBatches(List<RawNewsItem> items, String about, String prompt,
             ChatModel judge, Map<String, String> out) {
         for (int from = 0; from < items.size(); from += TRIAGE_BATCH) {
+            // An uncapped pool means up to ~50 judge batches — cancel bites here too.
+            checkCancelled();
             List<RawNewsItem> batch = items.subList(from, Math.min(items.size(), from + TRIAGE_BATCH));
             StringBuilder list = new StringBuilder(1024);
             for (int i = 0; i < batch.size(); i++) {
@@ -1946,24 +2091,94 @@ public class DeepDiveService {
     private void digestArticles(String subject, Material m) {
         EditorialAgent digestAgent = editorialAgent;
         if (digestAgent == null || m.news.isEmpty()) return;
+        // GROUP DIGEST (user mandate 2026-07-14 "alles umsetzen"): the weave
+        // already works per STORY — the digest now does too. Ten re-spins of
+        // one event used to cost ten full-text reads (live SAP run: 133
+        // digests, the run\'s largest single cost); now only each story\'s
+        // REPRESENTATIVE is read (the earliest publication — usually the
+        // original release), the other members keep title + marker and still
+        // get cited by the weave. The safety net is the RE-KNOCK: a hard
+        // examiner finding on a group whose members went unread fetches the
+        // missing digests on demand and re-weaves once.
         Map<String, String> digests = new LinkedHashMap<>();
-        int total = Math.min(m.news.size(), MAX_DIGESTED_ARTICLES);
+        List<List<RawNewsItem>> groups = groupStories(m.news,
+                storyDropWords(m.canonicalName, m.ticker));
+        if (groups.size() < m.news.size()) {
+            LOG.info("[DEEPDIVE] '{}' group digest: {} article(s) → {} story "
+                    + "representative(s) to read.", subject, m.news.size(), groups.size());
+        }
+        int total = Math.min(groups.size(), MAX_DIGESTED_ARTICLES);
         int done = 0;
-        for (RawNewsItem item : m.news) {
+        for (List<RawNewsItem> group : groups) {
             if (done >= MAX_DIGESTED_ARTICLES) break;
-            if (item.link() == null || item.link().isBlank()) continue;
+            RawNewsItem rep = representativeOf(group);
+            if (rep == null) continue;
+            // Cancel must bite BETWEEN articles: with the uncapped pool this
+            // loop runs for many minutes, and without the check the UI's X
+            // waited out the whole digest phase (live 2026-07-14: 20 cancel
+            // clicks, the generation kept running).
+            checkCancelled();
             done++;
             eventBus.post(new DeepDiveProgressEvent(subject, "triage",
                     "Artikel " + done + "/" + total));
             try {
-                String digest = digestAgent.newsDigester().digestNow(item.link());
-                if (!digest.isBlank()) digests.put(item.link().trim(), digest);
+                String digest = digestAgent.newsDigester().digestNow(rep.link());
+                if (!digest.isBlank()) digests.put(rep.link().trim(), digest);
             } catch (Exception e) {
                 LOG.debug("[DEEPDIVE] article digest failed for {}: {}",
-                        item.link(), e.getMessage());
+                        rep.link(), e.getMessage());
             }
         }
         m.digests = digests;
+    }
+
+    /**
+     * Groups the triaged pool into stories with the SAME similarity rule the
+     * weave uses — one mechanism, two consumers. Greedy with transitive
+     * chaining; order preserved; no item is ever dropped.
+     */
+    static List<List<RawNewsItem>> groupStories(List<RawNewsItem> items, Set<String> dropWords) {
+        List<List<RawNewsItem>> groups = new ArrayList<>();
+        List<Set<String>> groupTokens = new ArrayList<>();
+        for (RawNewsItem item : items) {
+            Set<String> tokens = storyTokens(item.title() == null ? "" : item.title(), dropWords);
+            boolean joined = false;
+            for (int g = 0; g < groups.size() && !joined; g++) {
+                if (setJaccard(tokens, groupTokens.get(g)) >= STORY_GROUP_SIMILARITY) {
+                    groups.get(g).add(item);
+                    groupTokens.get(g).addAll(tokens);
+                    joined = true;
+                }
+            }
+            if (!joined) {
+                List<RawNewsItem> fresh = new ArrayList<>();
+                fresh.add(item);
+                groups.add(fresh);
+                groupTokens.add(new HashSet<>(tokens));
+            }
+        }
+        return groups;
+    }
+
+    /**
+     * The story\'s representative to full-text-read: the EARLIEST publication
+     * with a link — re-spins come later than the original release. Undated
+     * members lose to dated ones; an all-undated group takes its first.
+     */
+    static RawNewsItem representativeOf(List<RawNewsItem> group) {
+        RawNewsItem best = null;
+        for (RawNewsItem item : group) {
+            if (item.link() == null || item.link().isBlank()) continue;
+            if (best == null) {
+                best = item;
+                continue;
+            }
+            if (item.publishedAt() != null
+                    && (best.publishedAt() == null || item.publishedAt().isBefore(best.publishedAt()))) {
+                best = item;
+            }
+        }
+        return best;
     }
 
     /** Everything the collect step gathered — nulls/empties where a leg had nothing. */
@@ -1982,6 +2197,22 @@ public class DeepDiveService {
         InsiderDealings insiderDealings;
         /** The US listing view (NASDAQ tabs: Form-4 insiders, FINRA shorts, 13F, street). */
         UsListingStats usStats;
+        /** The quarterly hedge-fund positioning curve (Insider Monkey, 13F cadence). */
+        HedgeFundPopularity hedgeFunds;
+        /** The dated analyst-action history + US short stats (MarketBeat). */
+        AnalystActions analystActions;
+        /** The instrument's US sector proxy (XL* SPDR), day snapshot. Null = no mapping. */
+        MarketSnapshot sectorEtf;
+        String sectorEtfSymbol;
+        String sectorDisplayName;
+        /** Today's high-impact macro ACTUALS (Ist vs Prognose vs zuvor — the weather pattern). */
+        List<TradingViewCalendarClient.TvEvent> macroActualsToday = List.of();
+        /** Upcoming high-impact macro events the sector trades on (Ausblick anchors). */
+        List<EconCalendarClient.EconEvent> macroDocket = List.of();
+        /** The next central-bank rate decisions (EZB/Fed). */
+        List<CentralBankCalendarClient.CbMeeting> cbDecisions = List.of();
+        /** The house's OWN published wire lines about this subject — the permanent archive ("Was war"). */
+        List<HeadlineRecord> wireHistory = List.of();
         /** The street's consensus for the next report (EarningsWhispers, US names). */
         de.bsommerfeld.wsbg.terminal.briefing.EarningsWhispersClient.EarningsEstimate earningsEstimate;
         /** ISO date the estimate belongs to (the report day the calendar answered for). */
@@ -1991,6 +2222,8 @@ public class DeepDiveService {
         Map<String, String> newsTargets = Map.of();
         /** link -> key-fact digest of the FULL article, read after triage. */
         Map<String, String> digests = Map.of();
+        /** exact news-block text -> article link (the re-knock's way back to the URL). */
+        Map<String, String> newsLinksByBlock = new HashMap<>();
         SubjectUnit unit;
         /**
          * EVERY registry unit that belongs to this subject — the room speaks
@@ -2154,6 +2387,100 @@ public class DeepDiveService {
             }
         } catch (Exception e) {
             LOG.debug("[DEEPDIVE] US listing stats failed: {}", e.getMessage());
+        }
+        // The hedge-fund positioning curve (Insider Monkey, CIK-addressed via
+        // SEC's ticker map) — same ticker-as-resolved rule as the NASDAQ leg;
+        // the client's US-shape gate rejects suffixed symbols without network.
+        checkCancelled();
+        try {
+            if (hedgeFundSource != null && m.ticker != null) {
+                m.hedgeFunds = hedgeFundSource.popularityFor(m.ticker).orElse(null);
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] hedge-fund popularity failed: {}", e.getMessage());
+        }
+        // The dated analyst-action history + percent-of-float shorts
+        // (MarketBeat) — ticker as resolved; the client routes venue suffixes
+        // itself (.DE→ETR, .L→LON, bare US shape) and gates the rest.
+        checkCancelled();
+        try {
+            if (analystActionsSource != null && m.ticker != null) {
+                m.analystActions = analystActionsSource.actionsFor(m.ticker).orElse(null);
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] analyst actions failed: {}", e.getMessage());
+        }
+        // Sector & macro context — the Abendausgabe arsenal scoped to THIS
+        // instrument (user mandate 2026-07-14): what pressed or carried the
+        // sector today (XL* proxy vs the instrument, house arithmetic), the
+        // day's high-impact macro ACTUALS in the weather pattern (Ist vs
+        // Prognose vs zuvor, comparison computed by us), and the dated macro
+        // docket the sector trades on as Ausblick anchors. Woven, never a
+        // section of its own — context attaches to the stories.
+        checkCancelled();
+        try {
+            SectorEtf etf = sectorEtfFor(
+                    m.facts != null ? m.facts.sector() : null,
+                    m.facts != null ? m.facts.branch() : null,
+                    m.usStats != null ? m.usStats.sector() : null,
+                    m.usStats != null ? m.usStats.industry() : null);
+            if (etf != null && yahooClient != null) {
+                m.sectorEtf = yahooClient.fetchChart(etf.symbol()).orElse(null);
+                if (m.sectorEtf != null) {
+                    m.sectorEtfSymbol = etf.symbol();
+                    m.sectorDisplayName = etf.name();
+                }
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] sector proxy failed: {}", e.getMessage());
+        }
+        try {
+            if (tvCalendar != null) {
+                java.time.ZoneId zone = java.time.ZoneId.systemDefault();
+                Instant dayStart = java.time.LocalDate.now(zone).atStartOfDay(zone).toInstant();
+                List<TradingViewCalendarClient.TvEvent> actuals = new ArrayList<>();
+                for (TradingViewCalendarClient.TvEvent e : tvCalendar.events(dayStart, Instant.now())) {
+                    if (e.actual() == null || !relevantMacro(e.importance(), e.country())) continue;
+                    actuals.add(e);
+                    if (actuals.size() >= MAX_MACRO_ACTUALS) break;
+                }
+                m.macroActualsToday = actuals;
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] macro actuals failed: {}", e.getMessage());
+        }
+        try {
+            if (econCalendar != null) {
+                long now = Instant.now().getEpochSecond();
+                List<EconCalendarClient.EconEvent> docket = new ArrayList<>();
+                for (EconCalendarClient.EconEvent e : econCalendar.thisWeek()) {
+                    if (e.whenEpochSeconds() <= now) continue;
+                    if (e.impact() == null || !e.impact().toLowerCase(Locale.ROOT).contains("high")) continue;
+                    docket.add(e);
+                    if (docket.size() >= MAX_MACRO_DOCKET) break;
+                }
+                m.macroDocket = docket;
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] macro docket failed: {}", e.getMessage());
+        }
+        try {
+            if (cbCalendar != null) {
+                m.cbDecisions = cbCalendar.upcomingDecisions(java.time.LocalDate.now(), 1);
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] central-bank calendar failed: {}", e.getMessage());
+        }
+        // "Was war" from the house's own permanent memory: the wire archive
+        // holds every line ever published about this ticker — beyond the
+        // 30-day news window, with dates. First lines + newest lines carry
+        // the story arc; the middle is elided honestly.
+        try {
+            if (headlineArchive != null && m.ticker != null) {
+                m.wireHistory = headlineArchive.byTicker(m.ticker);
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] wire archive failed: {}", e.getMessage());
         }
         journalCollectedSources(ticker, m);
 
@@ -2319,6 +2646,38 @@ public class DeepDiveService {
             journalNotes(subject, List.of("NASDAQ — "
                     + (bits.isEmpty() ? "US-Listing" : String.join(", ", bits))));
         }
+        if (m.hedgeFunds != null && !m.hedgeFunds.quarters().isEmpty()) {
+            HedgeFundPopularity.QuarterPoint latest =
+                    m.hedgeFunds.quarters().get(m.hedgeFunds.quarters().size() - 1);
+            journalNotes(subject, List.of("Insider Monkey — " + latest.funds()
+                    + " Hedgefonds investiert (" + latest.quarterLabel() + ")"));
+        }
+        if (m.analystActions != null) {
+            List<String> bits = new ArrayList<>();
+            if (!m.analystActions.actions().isEmpty()) {
+                bits.add(m.analystActions.actions().size() + " Analysten-Aktionen");
+            }
+            if (m.analystActions.shortStats() != null) bits.add("Short-Quote");
+            journalNotes(subject, List.of("MarketBeat — "
+                    + (bits.isEmpty() ? "Street-Historie" : String.join(", ", bits))));
+        }
+        if (m.sectorEtf != null || !m.macroActualsToday.isEmpty() || !m.macroDocket.isEmpty()) {
+            List<String> bits = new ArrayList<>();
+            if (m.sectorEtf != null) {
+                bits.add("Sektor " + m.sectorDisplayName + " (" + m.sectorEtfSymbol + ")");
+            }
+            if (!m.macroActualsToday.isEmpty()) {
+                bits.add(m.macroActualsToday.size() + " Makro-Ist-Zahl(en) heute");
+            }
+            if (!m.macroDocket.isEmpty() || !m.cbDecisions.isEmpty()) {
+                bits.add((m.macroDocket.size() + m.cbDecisions.size()) + " kommende Termine");
+            }
+            journalNotes(subject, List.of("Sektor/Makro — " + String.join(", ", bits)));
+        }
+        if (!m.wireHistory.isEmpty()) {
+            journalNotes(subject, List.of("Wire-Archiv — " + m.wireHistory.size()
+                    + " eigene Zeile(n) zu diesem Subjekt"));
+        }
         if (!m.roomUnits.isEmpty()) {
             journalNotes(subject, List.of("Käfig — " + m.evidenceCount + " Erwähnung(en) über "
                     + m.roomUnits.size() + " Subjekt-Einheit(en)"));
@@ -2418,6 +2777,7 @@ public class DeepDiveService {
 
         appendMarket(sb, m.snapshot, nums);
         appendTrading(sb, m.venueStats, m.facts, nums);
+        appendSectorContext(sb, m, nums);
         appendPerformance(sb, m.deepDive, nums);
         out[SEC_SITUATION] = new Shelf(take(sb), newsBlocksFor(m, "LAGE", nums));
 
@@ -2429,8 +2789,10 @@ public class DeepDiveService {
 
         appendAnalystRatings(sb, m.analystView, nums);
         appendUsAnalysts(sb, m.usStats, nums);
+        appendAnalystActions(sb, m.analystActions, nums);
         appendValuationContext(sb, m, nums);
         appendUsInstitutional(sb, m.usStats, nums);
+        appendHedgeFunds(sb, m.hedgeFunds, nums);
         appendPeers(sb, m.deepDive, nums);
         out[SEC_VALUATION] = new Shelf(take(sb), List.of());
 
@@ -2438,11 +2800,13 @@ public class DeepDiveService {
         appendUsInsiders(sb, m.usStats, nums);
         appendShorts(sb, m.shortInterest, nums);
         appendUsShortInterest(sb, m.usStats, nums);
+        appendUsShortQuote(sb, m.analystActions, nums);
         appendShareCount(sb, m.deepDive, nums);
         appendTechnical(sb, m.deepDive, nums);
         out[SEC_CATALYSTS] = new Shelf(take(sb), newsBlocksFor(m, "KATALYSATOR", nums));
 
         appendUpcomingEvents(sb, m.analystView, nums);
+        appendMacroDocket(sb, m, nums);
         appendEarningsConsensus(sb, m, nums);
         appendEstimatePath(sb, m.deepDive, nums);
         appendAnalystRatings(sb, m.analystView, nums);
@@ -2450,7 +2814,13 @@ public class DeepDiveService {
         appendValuationContext(sb, m, nums);
         out[SEC_OUTLOOK] = new Shelf(take(sb), newsBlocksFor(m, "AUSBLICK", nums));
 
-        out[SEC_ROOM] = new Shelf(roomText(m, nums), List.of());
+        StringBuilder roomSb = new StringBuilder(256);
+        appendWireHistory(roomSb, m, nums);
+        String room = roomText(m, nums);
+        String roomShelf = room == null || room.isBlank()
+                ? (roomSb.length() == 0 ? null : roomSb.toString())
+                : (roomSb.length() == 0 ? room : room + "\n" + roomSb);
+        out[SEC_ROOM] = new Shelf(roomShelf, List.of());
         out[SEC_THESIS] = new Shelf(null, List.of());
         return out;
     }
@@ -2463,7 +2833,11 @@ public class DeepDiveService {
             RawNewsItem item = m.news.get(i);
             String route = m.newsTargets.getOrDefault(newsKey(item), "LAGE");
             if (!route.equals(target)) continue;
-            out.add(newsItemBlock(item, m.digests, mark(nums, "news:" + i)));
+            String block = newsItemBlock(item, m.digests, mark(nums, "news:" + i));
+            if (item.link() != null && !item.link().isBlank()) {
+                m.newsLinksByBlock.put(block, item.link().trim());
+            }
+            out.add(block);
         }
         return out;
     }
@@ -2495,6 +2869,12 @@ public class DeepDiveService {
         sb.append("CLAIM SENTENCES OF THE STANDING SECTIONS:\n");
         for (int i = 0; i < SECTION_COUNT; i++) {
             if (i == SEC_THESIS || bodies[i] == null) continue;
+            // The profile section's claim is the company's SELF-DESCRIPTION
+            // ("bezeichnet sich als weltweit führend …") — with primacy it
+            // became the thesis opener verbatim (live SAP run 2026-07-14).
+            // A stance draws from Lage/Bewertung/Katalysatoren/Ausblick/Raum;
+            // what the company does is context the thesis reader already has.
+            if (i == SEC_ABOUT) continue;
             String claim = firstSentence(bodies[i]);
             if (claim.isEmpty()) continue;
             sb.append("  - ").append(headings.get(i)).append(": ").append(claim).append('\n');
@@ -2603,6 +2983,15 @@ public class DeepDiveService {
         if (m.shortInterest != null) nums.put("shorts", ++n);
         if (m.insiderDealings != null) nums.put("insider", ++n);
         if (m.usStats != null) nums.put("nasdaq", ++n);
+        if (m.hedgeFunds != null && !m.hedgeFunds.quarters().isEmpty()) nums.put("hedgefunds", ++n);
+        if (m.analystActions != null && (!m.analystActions.actions().isEmpty()
+                || m.analystActions.shortStats() != null)) {
+            nums.put("marketbeat", ++n);
+        }
+        if (m.sectorEtf != null || !m.macroActualsToday.isEmpty()
+                || !m.macroDocket.isEmpty() || !m.cbDecisions.isEmpty()) {
+            nums.put("sector", ++n);
+        }
         if (m.earningsEstimate != null) nums.put("whispers", ++n);
         for (int i = 0; i < m.news.size(); i++) nums.put("news:" + i, ++n);
         if (roomHasContent(m)) nums.put("room", ++n);
@@ -2611,6 +3000,7 @@ public class DeepDiveService {
 
     /** A silent room (no mention, no wire line) earns no source number either. */
     private static boolean roomHasContent(Material m) {
+        if (!m.wireHistory.isEmpty()) return true;
         List<SubjectUnit> units = !m.roomUnits.isEmpty() ? m.roomUnits
                 : m.unit != null ? List.of(m.unit) : List.of();
         for (SubjectUnit u : units) {
@@ -3203,6 +3593,278 @@ public class DeepDiveService {
         }
     }
 
+    /**
+     * The dated analyst-action history (MarketBeat) — who upgraded, downgraded,
+     * initiated or moved a target WHEN; the action history the consensus
+     * snapshots (Consorsbank/NASDAQ) structurally do not carry.
+     */
+    private static void appendAnalystActions(StringBuilder sb, AnalystActions aa,
+            Map<String, Integer> nums) {
+        if (aa == null || aa.actions().isEmpty()) return;
+        sb.append("ANALYST ACTIONS (dated history, MarketBeat, newest first)")
+                .append(mark(nums, "marketbeat")).append(":\n");
+        int n = 0;
+        for (AnalystActions.Action a : aa.actions()) {
+            if (++n > MAX_ANALYST_ACTIONS) break;
+            sb.append("  - ");
+            if (a.dateIso() != null) sb.append('[').append(a.dateIso()).append("] ");
+            sb.append(a.brokerage()).append(": ").append(a.actionType());
+            String rating = joinOldNew(a.ratingOld(), a.ratingNew());
+            if (rating != null) sb.append(", rating ").append(rating);
+            String target = joinTargets(a.targetOld(), a.targetNew(), a.targetCurrency());
+            if (target != null) sb.append(", target ").append(target);
+            sb.append('\n');
+        }
+    }
+
+    /** "Old→New" for rating halves; single half alone; null when both missing. */
+    private static String joinOldNew(String oldV, String newV) {
+        boolean hasOld = oldV != null && !oldV.isBlank();
+        boolean hasNew = newV != null && !newV.isBlank();
+        if (hasOld && hasNew) return oldV.equals(newV) ? newV : oldV + "→" + newV;
+        return hasNew ? newV : hasOld ? oldV : null;
+    }
+
+    /** "8.00→12.00 USD" for target halves; single value alone; null when none. */
+    private static String joinTargets(double oldV, double newV, String currency) {
+        boolean hasOld = Double.isFinite(oldV);
+        boolean hasNew = Double.isFinite(newV);
+        if (!hasOld && !hasNew) return null;
+        String cur = currency == null ? "" : " " + currency;
+        if (hasOld && hasNew && oldV != newV) {
+            return String.format(Locale.ROOT, "%.2f→%.2f%s", oldV, newV, cur);
+        }
+        return String.format(Locale.ROOT, "%.2f%s", hasNew ? newV : oldV, cur);
+    }
+
+    /** MarketBeat's US short stats — the percent-of-float figure (Katalysatoren). */
+    private static void appendUsShortQuote(StringBuilder sb, AnalystActions aa,
+            Map<String, Integer> nums) {
+        AnalystActions.UsShortStats st = aa == null ? null : aa.shortStats();
+        if (st == null) return;
+        sb.append("US SHORT STATS (MarketBeat)").append(mark(nums, "marketbeat")).append(": ");
+        boolean any = false;
+        if (Double.isFinite(st.percentOfFloat())) {
+            sb.append(String.format(Locale.ROOT, "%.2f%% of float short", st.percentOfFloat()));
+            any = true;
+        }
+        if (st.currentShares() >= 0) {
+            if (any) sb.append(", ");
+            sb.append(groupedInt(st.currentShares())).append(" shares short");
+            if (st.priorShares() >= 0) {
+                sb.append(" (prior ").append(groupedInt(st.priorShares())).append(')');
+            }
+            any = true;
+        }
+        if (Double.isFinite(st.daysToCover())) {
+            if (any) sb.append(", ");
+            sb.append(String.format(Locale.ROOT, "days to cover %.1f", st.daysToCover()));
+            any = true;
+        }
+        if (st.settlementDateIso() != null) {
+            if (any) sb.append(", ");
+            sb.append("record date ").append(st.settlementDateIso());
+            any = true;
+        }
+        if (any) sb.append('\n');
+        else sb.setLength(sb.length() - ("US SHORT STATS (MarketBeat)"
+                + mark(nums, "marketbeat") + ": ").length());
+    }
+
+    /** One US sector SPDR as the instrument's sector proxy. */
+    record SectorEtf(String symbol, String name) {
+    }
+
+    /**
+     * Maps the instrument's sector/industry labels (onvista German, NASDAQ
+     * English) to its US sector SPDR. Keyword-based, PRIORITY-ORDERED: health
+     * before chemicals ("Chemie / Pharma / Gesundheit" is a health label),
+     * tech before industrials. No match = no sector block — a wrong proxy is
+     * worse than none.
+     */
+    static SectorEtf sectorEtfFor(String... labels) {
+        StringBuilder hay = new StringBuilder(128);
+        for (String l : labels) {
+            if (l != null) hay.append(l.toLowerCase(Locale.ROOT)).append(' ');
+        }
+        String h = hay.toString();
+        if (h.isBlank()) return null;
+        if (containsAny(h, "gesundheit", "pharma", "biotech", "medizin", "health", "drug")) {
+            return new SectorEtf("XLV", "Gesundheit");
+        }
+        if (containsAny(h, "software", "halbleiter", "semiconductor", "technolog", "computer",
+                "hardware", "it-dienst", "informations")) {
+            return new SectorEtf("XLK", "Tech");
+        }
+        if (containsAny(h, "kommunikation", "telekom", "telecom", "medien", "media",
+                "entertainment", "communication")) {
+            return new SectorEtf("XLC", "Kommunikation");
+        }
+        if (containsAny(h, "bank", "finanz", "versicher", "financ", "insur", "asset manag")) {
+            return new SectorEtf("XLF", "Finanzen");
+        }
+        if (containsAny(h, "immobilien", "real estate", "reit")) {
+            return new SectorEtf("XLRE", "Immobilien");
+        }
+        if (containsAny(h, "versorger", "utilit")) {
+            return new SectorEtf("XLU", "Versorger");
+        }
+        if (containsAny(h, "energie", "energy", "oil", "erdöl", "erdgas")) {
+            return new SectorEtf("XLE", "Energie");
+        }
+        if (containsAny(h, "nahrung", "lebensmittel", "getränke", "staples", "beverage",
+                "food", "tabak", "haushalts")) {
+            return new SectorEtf("XLP", "Basiskonsum");
+        }
+        if (containsAny(h, "auto", "einzelhandel", "retail", "discretionary", "zykl",
+                "luxus", "reise", "travel", "freizeit", "apparel")) {
+            return new SectorEtf("XLY", "Zykl. Konsum");
+        }
+        if (containsAny(h, "chemie", "grundstoff", "rohstoff", "material", "bergbau",
+                "mining", "stahl", "metall", "papier")) {
+            return new SectorEtf("XLB", "Grundstoffe");
+        }
+        if (containsAny(h, "industrie", "maschinen", "industrial", "rüstung", "defense",
+                "verteidigung", "luftfahrt", "aerospace", "transport", "logistik", "bau")) {
+            return new SectorEtf("XLI", "Industrie");
+        }
+        return null;
+    }
+
+    private static boolean containsAny(String haystack, String... needles) {
+        for (String n : needles) {
+            if (haystack.contains(n)) return true;
+        }
+        return false;
+    }
+
+    /** The weather docket rule: high impact anywhere, medium only for US/DE/EU. */
+    private static boolean relevantMacro(int importance, String country) {
+        if (importance >= 1) return true;
+        return importance == 0 && ("US".equals(country) || "DE".equals(country)
+                || "EU".equals(country));
+    }
+
+    /**
+     * Sector proxy + today's macro actuals (Lage). Every number arrives
+     * EXPLAINED, never naked (user mandate 2026-07-14, the weather pattern):
+     * the sector move is paired with the instrument's move and the relative
+     * gap (house arithmetic), an actual is paired with its forecast and prior
+     * plus the house comparison word.
+     */
+    private static void appendSectorContext(StringBuilder sb, Material m, Map<String, Integer> nums) {
+        boolean hasSector = m.sectorEtf != null && Double.isFinite(m.sectorEtf.dayChangePercent());
+        if (!hasSector && m.macroActualsToday.isEmpty()) return;
+        sb.append("SECTOR & MACRO CONTEXT (verified)").append(mark(nums, "sector")).append(":\n");
+        if (hasSector) {
+            sb.append(String.format(Locale.ROOT, "  - US sector proxy %s (%s): %+.2f%% today",
+                    m.sectorDisplayName, m.sectorEtfSymbol, m.sectorEtf.dayChangePercent()));
+            if (m.snapshot != null && Double.isFinite(m.snapshot.dayChangePercent())) {
+                double gap = m.snapshot.dayChangePercent() - m.sectorEtf.dayChangePercent();
+                sb.append(String.format(Locale.ROOT,
+                        " — the instrument moved %+.2f%%, %.1f points %s its sector "
+                                + "(house arithmetic)",
+                        m.snapshot.dayChangePercent(), Math.abs(gap),
+                        gap >= 0 ? "ahead of" : "behind"));
+            }
+            sb.append('\n');
+        }
+        for (TradingViewCalendarClient.TvEvent e : m.macroActualsToday) {
+            sb.append("  - ").append(e.title());
+            if (e.country() != null) sb.append(" (").append(e.country()).append(')');
+            sb.append(String.format(Locale.ROOT, ": actual %.2f%s", e.actual(),
+                    e.unit() == null ? "" : e.unit()));
+            if (e.forecast() != null) {
+                sb.append(String.format(Locale.ROOT, " vs forecast %.2f", e.forecast()));
+            }
+            if (e.previous() != null) {
+                sb.append(String.format(Locale.ROOT, " (prior %.2f)", e.previous()));
+            }
+            if (e.forecast() != null) {
+                double diff = e.actual() - e.forecast();
+                sb.append(" — ").append(Math.abs(diff) < 1e-9 ? "in line with"
+                        : diff > 0 ? "above" : "below").append(" forecast (house comparison)");
+            }
+            sb.append('\n');
+        }
+    }
+
+    /** The dated macro docket the sector trades on — Ausblick anchors. */
+    private static void appendMacroDocket(StringBuilder sb, Material m, Map<String, Integer> nums) {
+        if (m.macroDocket.isEmpty() && m.cbDecisions.isEmpty()) return;
+        sb.append("UPCOMING MACRO DOCKET (verified — dated events the sector trades on)")
+                .append(mark(nums, "sector")).append(":\n");
+        for (CentralBankCalendarClient.CbMeeting cb : m.cbDecisions) {
+            sb.append("  - [").append(cb.date()).append("] ").append(cb.bank())
+                    .append(": ").append(cb.title()).append('\n');
+        }
+        for (EconCalendarClient.EconEvent e : m.macroDocket) {
+            java.time.LocalDate day = java.time.LocalDate.ofInstant(
+                    Instant.ofEpochSecond(e.whenEpochSeconds()), java.time.ZoneId.systemDefault());
+            sb.append("  - [").append(day).append("] ").append(e.title());
+            if (e.country() != null) sb.append(" (").append(e.country()).append(')');
+            sb.append(", high impact");
+            if (e.forecast() != null && !e.forecast().isBlank()) {
+                sb.append(", forecast ").append(e.forecast());
+            }
+            sb.append('\n');
+        }
+    }
+
+    /**
+     * "Was war" from the house's own archive: every wire line ever published
+     * about this ticker, dated — the first lines and the newest lines carry
+     * the story arc, the elided middle is said honestly.
+     */
+    private static void appendWireHistory(StringBuilder sb, Material m, Map<String, Integer> nums) {
+        if (m.wireHistory.isEmpty()) return;
+        sb.append("WIRE ARCHIVE (the house's own published lines about this subject, dated)")
+                .append(mark(nums, "room")).append(":\n");
+        List<HeadlineRecord> all = m.wireHistory;
+        int head = Math.min(WIRE_HISTORY_HEAD, all.size());
+        int tailFrom = Math.max(head, all.size() - WIRE_HISTORY_TAIL);
+        for (int i = 0; i < head; i++) appendWireLine(sb, all.get(i));
+        if (tailFrom > head) {
+            sb.append("  - (").append(tailFrom - head).append(" further line(s) elided)\n");
+        }
+        for (int i = tailFrom; i < all.size(); i++) appendWireLine(sb, all.get(i));
+    }
+
+    private static void appendWireLine(StringBuilder sb, HeadlineRecord r) {
+        sb.append("  - [").append(java.time.LocalDate.ofInstant(
+                Instant.ofEpochSecond(r.createdAt()), java.time.ZoneId.systemDefault()))
+                .append("] ").append(r.headline()).append('\n');
+    }
+
+    /**
+     * The hedge-fund positioning curve (Insider Monkey, 13F cadence) — how many
+     * funds hold the name per quarter, with the quarter-end price beside it.
+     * Positioning context for Bewertung; the last ~6 quarters carry the trend.
+     */
+    private static void appendHedgeFunds(StringBuilder sb, HedgeFundPopularity hf,
+            Map<String, Integer> nums) {
+        if (hf == null || hf.quarters().isEmpty()) return;
+        sb.append("HEDGE-FUND POSITIONING (13F filings, Insider Monkey, quarterly)")
+                .append(mark(nums, "hedgefunds")).append(":\n");
+        List<HedgeFundPopularity.QuarterPoint> qs = hf.quarters();
+        int from = Math.max(0, qs.size() - 6);
+        for (int i = from; i < qs.size(); i++) {
+            HedgeFundPopularity.QuarterPoint q = qs.get(i);
+            sb.append("  - ").append(q.quarterLabel()).append(": ").append(q.funds())
+                    .append(" funds");
+            if (q.newPositions() > 0 || q.closedPositions() > 0) {
+                sb.append(" (").append(q.newPositions()).append(" new / ")
+                        .append(q.closedPositions()).append(" closed)");
+            }
+            if (Double.isFinite(q.quarterEndPriceUsd())) {
+                sb.append(String.format(Locale.ROOT, ", quarter-end price %.2f USD",
+                        q.quarterEndPriceUsd()));
+            }
+            if (q.ongoing()) sb.append(" [quarter still filing]");
+            sb.append('\n');
+        }
+    }
+
     /** The quarterly beat/miss track record vs consensus — Fundamentale Entwicklung. */
     private static void appendUsSurprises(StringBuilder sb, UsListingStats us, Map<String, Integer> nums) {
         if (us == null || us.earningsSurprises().isEmpty()) return;
@@ -3510,6 +4172,131 @@ public class DeepDiveService {
         return sb.toString().strip();
     }
 
+    /** Appends a typesetter table to a section body (a table alone is honest content). */
+    private static void appendTypesetTable(String[] bodies, int sec, String table) {
+        if (table == null) return;
+        bodies[sec] = bodies[sec] == null || bodies[sec].isBlank()
+                ? table
+                : bodies[sec].strip() + "\n\n" + table;
+    }
+
+    /**
+     * The peer-comparison table (Bewertung und Wettbewerb) — deterministic
+     * typesetting from the Consorsbank peers leg; the source marker rides in
+     * the header row and lifts to the heading at assembly.
+     */
+    static String peerTable(Material m, Map<String, Integer> nums, boolean de) {
+        if (m.deepDive == null || m.deepDive.peers() == null || m.deepDive.peers().isEmpty()) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder(320);
+        sb.append(de ? "| Unternehmen | Marktkap. | KGV | Dividendenrendite"
+                : "| Company | Market cap | P/E | Dividend yield")
+                .append(mark(nums, "consors")).append(" |\n");
+        sb.append("|---|---|---|---|\n");
+        int n = 0;
+        for (CompanyDeepDive.Peer p : m.deepDive.peers()) {
+            if (p.name() == null || p.name().isBlank()) continue;
+            if (++n > 5) break;
+            sb.append("| ").append(p.name()).append(" | ")
+                    .append(fmtMoneyCompact(p.marketCapEur(), "EUR", de)).append(" | ")
+                    .append(fmtCell(p.peRatio(), 1, de)).append(" | ")
+                    .append(Double.isFinite(p.dividendYieldPercent())
+                            ? fmtCell(p.dividendYieldPercent(), 1, de) + " %" : "-")
+                    .append(" |\n");
+        }
+        return n == 0 ? null : sb.toString().stripTrailing();
+    }
+
+    /**
+     * The analyst-action table (Bewertung) — the dated street history as
+     * deterministic typesetting from the MarketBeat leg (BestStocks pattern:
+     * firm, date, action, rating and target old→new).
+     */
+    static String actionsTable(Material m, Map<String, Integer> nums, boolean de) {
+        if (m.analystActions == null || m.analystActions.actions().isEmpty()) return null;
+        StringBuilder sb = new StringBuilder(512);
+        sb.append(de ? "| Datum | Haus | Aktion | Rating | Kursziel"
+                : "| Date | Firm | Action | Rating | Price target")
+                .append(mark(nums, "marketbeat")).append(" |\n");
+        sb.append("|---|---|---|---|---|\n");
+        int n = 0;
+        for (AnalystActions.Action a : m.analystActions.actions()) {
+            if (++n > MAX_ACTION_TABLE_ROWS) break;
+            String rating = joinOldNew(a.ratingOld(), a.ratingNew());
+            String target = joinTargets(a.targetOld(), a.targetNew(), a.targetCurrency());
+            if (de && target != null) target = target.replace('.', ',');
+            sb.append("| ").append(a.dateIso() == null ? "-" : a.dateIso())
+                    .append(" | ").append(a.brokerage())
+                    .append(" | ").append(a.actionType())
+                    .append(" | ").append(rating == null ? "-" : rating)
+                    .append(" | ").append(target == null ? "-" : target)
+                    .append(" |\n");
+        }
+        return sb.toString().stripTrailing();
+    }
+
+    /**
+     * The scenario-anchor table (Ausblick) — Bull/Base/Bear anchored STRICTLY
+     * on the street's own target band (high/mean/low), never on invented
+     * probabilities (doctrine 2026-07-14). The distance column appears only
+     * when the live price shares the targets' currency — a cross-currency
+     * percentage is the figure-corruption class the EUR guards killed.
+     */
+    static String scenarioTable(Material m, Map<String, Integer> nums, boolean de) {
+        UsListingStats.AnalystRatings r = m.usStats == null ? null : m.usStats.analystRatings();
+        if (r == null || !Double.isFinite(r.meanPriceTargetUsd())
+                || !Double.isFinite(r.highPriceTargetUsd())
+                || !Double.isFinite(r.lowPriceTargetUsd())) {
+            return null;
+        }
+        boolean distance = m.snapshot != null && m.snapshot.hasPrice()
+                && "USD".equals(m.snapshot.currency()) && m.snapshot.price() > 0;
+        StringBuilder sb = new StringBuilder(320);
+        sb.append(de ? "| Szenario | Anker | Kursziel" : "| Scenario | Anchor | Price target");
+        if (distance) sb.append(de ? " | Abstand" : " | Distance");
+        sb.append(mark(nums, "nasdaq")).append(" |\n");
+        sb.append(distance ? "|---|---|---|---|\n" : "|---|---|---|\n");
+        appendScenarioRow(sb, de ? "Bull" : "Bull", de ? "Street-Hoch" : "street high",
+                r.highPriceTargetUsd(), m, distance, de);
+        appendScenarioRow(sb, de ? "Basis" : "Base", de ? "Konsens" : "consensus",
+                r.meanPriceTargetUsd(), m, distance, de);
+        appendScenarioRow(sb, de ? "Bear" : "Bear", de ? "Street-Tief" : "street low",
+                r.lowPriceTargetUsd(), m, distance, de);
+        return sb.toString().stripTrailing();
+    }
+
+    private static void appendScenarioRow(StringBuilder sb, String scenario, String anchor,
+            double target, Material m, boolean distance, boolean de) {
+        sb.append("| ").append(scenario).append(" | ").append(anchor).append(" | ")
+                .append(fmtCell(target, 2, de)).append(" USD");
+        if (distance) {
+            double pct = (target / m.snapshot.price() - 1) * 100;
+            sb.append(" | ").append(String.format(de ? Locale.GERMANY : Locale.ROOT,
+                    "%+.1f %%", pct));
+        }
+        sb.append(" |\n");
+    }
+
+    /** A table cell number in display locale; "-" for unknown. */
+    private static String fmtCell(double v, int decimals, boolean de) {
+        if (!Double.isFinite(v)) return "-";
+        return String.format(de ? Locale.GERMANY : Locale.ROOT, "%." + decimals + "f", v);
+    }
+
+    /** Money in display units for table cells: "1,5 Mrd. EUR" / "380,0 Mio. EUR". */
+    private static String fmtMoneyCompact(double v, String currency, boolean de) {
+        if (!Double.isFinite(v) || v <= 0) return "-";
+        Locale loc = de ? Locale.GERMANY : Locale.ROOT;
+        if (v >= 1e9) {
+            return String.format(loc, "%.1f", v / 1e9) + (de ? " Mrd. " : "B ") + currency;
+        }
+        if (v >= 1e6) {
+            return String.format(loc, "%.1f", v / 1e6) + (de ? " Mio. " : "M ") + currency;
+        }
+        return String.format(loc, "%.0f %s", v, currency);
+    }
+
     /**
      * A paragraph block is a markdown pipe table when every non-blank line is
      * a pipe row and there are at least two of them (header + separator or
@@ -3709,6 +4496,20 @@ public class DeepDiveService {
             case "insider":
                 return "BaFin" + (de ? " - Directors' Dealings (§ 19 MAR)"
                         : " - directors' dealings (art. 19 MAR)");
+            case "sector":
+                return (de
+                        ? "Sektor- und Makro-Kontext - Yahoo Sektor-ETFs, TradingView/ForexFactory-"
+                                + "Wirtschaftskalender, Notenbank-Termine"
+                        : "Sector and macro context - Yahoo sector ETFs, TradingView/ForexFactory "
+                                + "economic calendars, central-bank dates");
+            case "marketbeat":
+                return "MarketBeat" + (de
+                        ? " - Analysten-Aktionshistorie und US-Short-Quote"
+                        : " - analyst action history and US short stats");
+            case "hedgefunds":
+                return "Insider Monkey" + (de
+                        ? " - Hedgefonds-Positionierung (13F-Quartalskurve)"
+                        : " - hedge-fund positioning (quarterly 13F curve)");
             case "nasdaq":
                 return "NASDAQ" + (de
                         ? " - US-Listing: Insider-Trades (Form 4), FINRA Short Interest, "

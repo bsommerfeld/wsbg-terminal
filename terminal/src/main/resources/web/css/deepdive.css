@@ -144,6 +144,12 @@
   color: var(--mute);
   cursor: pointer;
 }
+.dd-progress-subject .dd-cancel.is-cancelling,
+.dd-progress-subject .dd-cancel:disabled {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
 .dd-progress-subject .dd-cancel:hover {
   color: var(--red);
   background: color-mix(in oklch, var(--red) 10%, transparent);
@@ -545,6 +551,42 @@
   padding-left: 14px;
   text-indent: -14px;
 }
+/* Compact markdown tables (model-licensed 2026-07-14): report typography —
+   amber-ticked header like the crossheads, hairline row rules, tabular
+   figures. The wrapper owns horizontal overflow so the .widget-body never
+   scrolls sideways. */
+.dd-report .md-table {
+  max-width: 70ch;
+  margin: 12px 0 14px;
+  overflow-x: auto;
+}
+.dd-report table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .88em;
+  line-height: 1.55;
+}
+.dd-report th {
+  font-family: "Inter", sans-serif;
+  font-weight: 650;
+  font-size: .82em;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--txt);
+  text-align: left;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--amber);
+  background: var(--amber-soft);
+}
+.dd-report td {
+  color: var(--txt-2);
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  font-variant-numeric: tabular-nums;
+}
+.dd-report .md-align-right { text-align: right; }
+.dd-report .md-align-center { text-align: center; }
+.dd-report .md-align-left { text-align: left; }
 
 /* ---- figures (server-rendered SVG, white-paper style) ----
    Colors ride --ddc-* custom properties: DARK values here (the app is

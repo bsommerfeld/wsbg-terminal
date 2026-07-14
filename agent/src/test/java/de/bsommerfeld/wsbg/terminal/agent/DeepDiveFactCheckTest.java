@@ -18,6 +18,21 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class DeepDiveFactCheckTest {
 
+    @Test
+    void unitAbbreviationPeriodsAreNotSentenceEnds() {
+        // Live SAP run 2026-07-14: the split after "Mrd." tore "3,15 Mrd. EUR"
+        // (and its bold span) across the deterministic paragraph break.
+        List<String> s = DeepDiveFactCheck.sentences(
+                "Der Nettogewinn stieg von **3,15 Mrd. EUR (2024) auf 7,33 Mrd. EUR** (2025e). "
+                        + "Die F&E-Ausgaben erreichten ca. 6,63 Mrd. EUR. Das trägt die These.");
+        assertEquals(3, s.size(), s.toString());
+        assertTrue(s.get(0).contains("3,15 Mrd. EUR (2024) auf 7,33 Mrd. EUR"), s.toString());
+        // A word merely ENDING in an abbreviation's letters stays a sentence end.
+        List<String> t = DeepDiveFactCheck.sentences(
+                "Das zeigt der Bericht des Reviews. Danach folgt mehr.");
+        assertEquals(2, t.size(), t.toString());
+    }
+
     /** ROOT-formatted material, the way our block renderers emit it. */
     private static final String MATERIAL = """
             MARKET (verified) [1]: 138.28 EUR, day +0.50%, day range 137.10-139.00
@@ -355,5 +370,105 @@ class DeepDiveFactCheckTest {
                 "Der Bericht zum 2. Quartal steht am 24. Juli 2026 an. Danach folgt der 22. Oktober 2026.");
         assertEquals(2, sentences.size(), String.valueOf(sentences));
         assertTrue(sentences.get(0).contains("24. Juli 2026"), sentences.get(0));
+    }
+
+    /* ---- markdown tables (licensed report content since 2026-07-14) ---- */
+
+    private static final String TABLE_INTRO = "Die kommenden Termine bündeln, woran der "
+            + "Markt das Papier als Nächstes misst [4].";
+    private static final String TABLE = "| Termin | Ereignis |\n"
+            + "|---|---|\n"
+            + "| 24. Juli 2026 | Bericht 2. Quartal [4] |\n"
+            + "| Konsensziel | 202,50 EUR mit +45,9 % Potenzial [4] |";
+
+    /**
+     * (a) A pipe row legitimately ends on '|' — a table block is typesetting,
+     * never torn text; a material-faithful table draws no objection at all.
+     */
+    @Test
+    void tableBlocksAreNotTornText() {
+        String draft = TABLE_INTRO + "\n\n" + TABLE + "\n\nDanach folgt die Einordnung "
+                + "der Termine im Gesamtbild." + PAD;
+        assertEquals(List.of(), inspect(draft));
+    }
+
+    /** (b) splitLongParagraphs never splits inside a table and counts no row as a sentence. */
+    @Test
+    void splitLongParagraphsKeepsTableBlocksAtomic() {
+        String table = "| Reihe | Wert |\n|---|---|\n| a | eins |\n| b | zwei |\n"
+                + "| c | drei |\n| d | vier |\n| e | fünf |";
+        String wall = "Der Kurs steigt deutlich an. Die Analysten bleiben gespalten. "
+                + "Der Konzern investiert weiter kräftig. Die Presse nennt keinen Anlass. "
+                + "Die Marge verbessert sich strukturell.";
+        String out = DeepDiveFactCheck.splitLongParagraphs(wall + "\n\n" + table);
+        assertTrue(out.contains(table), out); // table verbatim, all seven lines intact
+        assertTrue(out.split("\n\\s*\n").length >= 3, out); // the prose wall still reflows
+    }
+
+    /**
+     * (c) scrubSourceListLines never removes a table row — a row legitimately
+     * carries markers and "·"-joined cell text without sentence-final
+     * punctuation (exactly the shape the list scrub hunts in prose).
+     */
+    @Test
+    void scrubSourceListLinesKeepsTableRows() {
+        String text = "Der Konzern wartet auf die Zahlen [4].\n"
+                + "| 2026-07-24 | Bericht Q2 · Consorsbank [4] |\n"
+                + "[17] [17] Direktoren kauften vor der Entscheidung.";
+        String out = DeepDiveFactCheck.scrubSourceListLines(text);
+        assertTrue(out.contains("| 2026-07-24 | Bericht Q2 · Consorsbank [4] |"), out);
+        assertFalse(out.contains("Direktoren kauften"), out);
+    }
+
+    /**
+     * (d) The fidelity checks still SEE table cells: an off-material figure
+     * inside a cell is a HARD finding, and surgery removes only that ROW.
+     */
+    @Test
+    void offMaterialFigureInsideTableCellIsAFinding() {
+        String draft = TABLE_INTRO + "\n\n"
+                + "| Jahr | KGV |\n|---|---|\n| 2024 | 33,93 [4] |\n| 2025e | 21,55 [4] |"
+                + "\n\n" + PAD.strip();
+        List<DeepDiveFactCheck.Objection> objections = inspect(draft);
+        assertTrue(has(objections, DeepDiveFactCheck.Objection.Kind.FIGURE),
+                String.valueOf(objections));
+        assertTrue(objections.stream().anyMatch(o -> o.quote().contains("21,55")),
+                "objection must quote the offending row: " + objections);
+        String cut = DeepDiveFactCheck.removeOffendingSentences(draft,
+                objections.stream().filter(DeepDiveFactCheck.Objection::hard).toList());
+        assertFalse(cut.contains("21,55"), cut);
+        assertTrue(cut.contains("| 2024 | 33,93 [4] |"), cut); // innocent row survives
+        // The true value passes cleanly.
+        assertFalse(has(inspect(TABLE_INTRO + "\n\n"
+                        + "| Jahr | KGV |\n|---|---|\n| 2024 | 33,93 [4] |\n| 2025e | 19,80 [4] |"
+                        + "\n\n" + PAD.strip()),
+                DeepDiveFactCheck.Objection.Kind.FIGURE));
+    }
+
+    /** (d, cont.) Off-material dates and off-section markers in cells are findings too. */
+    @Test
+    void offMaterialDateAndMarkerInsideTableCellsAreFindings() {
+        String badDate = TABLE_INTRO + "\n\n| Termin | Ereignis |\n|---|---|\n"
+                + "| 23. Juli 2026 | Bericht 2. Quartal [4] |\n\n" + PAD.strip();
+        assertTrue(has(inspect(badDate), DeepDiveFactCheck.Objection.Kind.DATE));
+        String badMarker = TABLE_INTRO + "\n\n| Termin | Ereignis |\n|---|---|\n"
+                + "| 24. Juli 2026 | Bericht 2. Quartal [6] |\n\n" + PAD.strip();
+        assertTrue(has(inspect(badMarker), DeepDiveFactCheck.Objection.Kind.MARKER));
+    }
+
+    /**
+     * (e) A table row never pairs with a prose sentence in the repeat check —
+     * a licensed table legitimately shares its tokens with the introducing
+     * prose around it.
+     */
+    @Test
+    void tableRowsAreExemptFromRepeatPairing() {
+        String s = "Die Analysten rufen im Konsens ein Kursziel von 202,50 EUR mit "
+                + "+45,9 % Potenzial auf [4].";
+        String row = "| Analysten | Die Analysten rufen im Konsens ein Kursziel von "
+                + "202,50 EUR mit +45,9 % Potenzial auf [4] |";
+        String draft = s + "\n\n| Quelle | Aussage |\n|---|---|\n" + row + "\n\n" + PAD.strip();
+        assertFalse(has(inspect(draft), DeepDiveFactCheck.Objection.Kind.REPEAT),
+                String.valueOf(inspect(draft)));
     }
 }
