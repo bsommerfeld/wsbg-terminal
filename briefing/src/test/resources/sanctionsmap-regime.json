@@ -1,0 +1,1098 @@
+{
+ "data": [
+  {
+   "id": 1,
+   "type": 0,
+   "specification": "Restrictive measures imposed with respect to the Taliban",
+   "acronym": null,
+   "notes": "The measures were initially imposed on 15 October 1999. On 17 June 2011, the United Nations' Security Council adopted resolutions 1988 (2011) and 1989 (2011) and decided that the list of individuals a",
+   "special": 0,
+   "expiration": null,
+   "amendment": 1726178400,
+   "programme": [
+    "AFG"
+   ],
+   "has_lists": true,
+   "has_members": false,
+   "has_fsd_members": true,
+   "under_construction": false,
+   "adopted_by": {
+    "data": {
+     "id": 2,
+     "title": "UN"
+    }
+   },
+   "country": {
+    "data": {
+     "code": "AF",
+     "title": "Afghanistan"
+    }
+   },
+   "category": {
+    "data": []
+   },
+   "court_rulings": {
+    "data": []
+   },
+   "legal_acts": {
+    "data": [
+     {
+      "id": 1,
+      "title": "Council Decision concerning restrictive measures directed against certain individuals, groups, undertakings and entities in view of the situation in Afghanistan",
+      "number": "05.02.2022 consolidated basic legal act - 2011/486/CFSP",
+      "url": "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX%3A02011D0486-20220205",
+      "type": {
+       "data": {
+        "id": 1,
+        "title": "EU Council Decision"
+       }
+      }
+     },
+     {
+      "id": 2,
+      "title": "Council Regulation concerning restrictive measures directed against certain individuals, groups, undertakings and entities in view of the situation in Afghanistan",
+      "number": "13.09.2024 consolidated basic legal act - (EU) No 753/2011",
+      "url": "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX%3A02011R0753-20240913&qid=1751294529505",
+      "type": {
+       "data": {
+        "id": 2,
+        "title": "EU Council Regulation"
+       }
+      }
+     }
+    ]
+   },
+   "measures": {
+    "data": [
+     {
+      "id": 28,
+      "description": "It is prohibited to export arms and related materiel to the listed individuals. Related technical advice, training and a",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 4,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/hYvAur5S3ZQHtBfAo6ElESAS5xl8CMUEyPrNHyMf.svg",
+        "title": "Arms export",
+        "parent_id": 2
+       }
+      }
+     },
+     {
+      "id": 8,
+      "description": "All assets of the listed persons and entities should be frozen. It is also prohibited to make any funds or assets direct",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 6,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/bGumIzNvSWyfmf5BJSuJGPJXR1xeGz2xrzvane19.svg",
+        "title": "Asset freeze and prohibition to make funds available"
+       }
+      }
+     },
+     {
+      "id": 29,
+      "description": "Member States shall enforce travel restrictions on persons listed in the Annex of Council Decision 2011/486/CFSP.",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 18,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/LUMa1Twbs3PWRgFNLhFdMcQO4ZuU9VYMHb8jrxUK.svg",
+        "title": "Restrictions on admission"
+       }
+      }
+     }
+    ]
+   },
+   "guidances": {
+    "data": []
+   },
+   "general_guidances": {
+    "data": []
+   }
+  },
+  {
+   "id": 46,
+   "type": 1,
+   "specification": "Restrictive measures against the proliferation and use of chemical weapons",
+   "acronym": null,
+   "notes": "At the European Council on 28 June 2018, Member States called for the prompt adoption of a new EU regime of restrictive measures to address the use and proliferation of chemical weapons. This is part ",
+   "special": 0,
+   "expiration": 1792101600,
+   "amendment": 1783029600,
+   "programme": [
+    "CHEM"
+   ],
+   "has_lists": true,
+   "has_members": false,
+   "has_fsd_members": true,
+   "under_construction": false,
+   "adopted_by": {
+    "data": {
+     "id": 1,
+     "title": "EU"
+    }
+   },
+   "country": {
+    "data": []
+   },
+   "category": {
+    "data": {
+     "id": 2,
+     "title": "Chemical weapons"
+    }
+   },
+   "court_rulings": {
+    "data": []
+   },
+   "legal_acts": {
+    "data": [
+     {
+      "id": 336,
+      "title": "Council Decision concerning restrictive measures against the proliferation and use of chemical weapons",
+      "number": "15.10.2025 consolidated basic legal act - (CFSP) 2018/1544",
+      "url": "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX%3A02018D1544-20251015",
+      "type": {
+       "data": {
+        "id": 1,
+        "title": "EU Council Decision"
+       }
+      }
+     },
+     {
+      "id": 337,
+      "title": "Council Regulation concerning restrictive measures against the proliferation and use of chemical weapons",
+      "number": "20.05.2025 consolidated basic legal act - (EU) 2018/1542",
+      "url": "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX%3A02018R1542-20250520",
+      "type": {
+       "data": {
+        "id": 2,
+        "title": "EU Council Regulation"
+       }
+      }
+     }
+    ]
+   },
+   "measures": {
+    "data": [
+     {
+      "id": 263,
+      "description": "All assets of the listed persons and entities listed in the Annex of Council Decision (CFSP) 2018/1544 should be frozen.",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 6,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/bGumIzNvSWyfmf5BJSuJGPJXR1xeGz2xrzvane19.svg",
+        "title": "Asset freeze and prohibition to make funds available"
+       }
+      }
+     },
+     {
+      "id": 264,
+      "description": "Member States shall enforce travel restrictions on persons listed in the Annex of Council Decision (CFSP) 2018/1544.",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 18,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/LUMa1Twbs3PWRgFNLhFdMcQO4ZuU9VYMHb8jrxUK.svg",
+        "title": "Restrictions on admission"
+       }
+      }
+     }
+    ]
+   },
+   "guidances": {
+    "data": []
+   },
+   "general_guidances": {
+    "data": []
+   }
+  },
+  {
+   "id": 26,
+   "type": 0,
+   "specification": "Restrictive measures in view of Russia's actions destabilising the situation in Ukraine (sectoral restrictive measures)",
+   "acronym": "Economic",
+   "notes": "Since March 2014, the EU has progressively imposed restrictive measures (sanctions) against Russia targeting specific economic sectors in response to the illegal annexation of Crimea and Sevastopol an",
+   "special": 0,
+   "expiration": 1785448800,
+   "amendment": 1776895200,
+   "programme": [],
+   "has_lists": true,
+   "has_members": true,
+   "has_fsd_members": false,
+   "under_construction": false,
+   "adopted_by": {
+    "data": {
+     "id": 1,
+     "title": "EU"
+    }
+   },
+   "country": {
+    "data": {
+     "code": "RU",
+     "title": "Russia"
+    }
+   },
+   "category": {
+    "data": []
+   },
+   "court_rulings": {
+    "data": []
+   },
+   "legal_acts": {
+    "data": [
+     {
+      "id": 48,
+      "title": "Council Decision concerning restrictive measures in view of Russia's actions destabilising the situation in Ukraine",
+      "number": "27.06.2026 consolidated basic legal act - (CFSP) 2014/512",
+      "url": "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX%3A02014D0512-20260627",
+      "type": {
+       "data": {
+        "id": 1,
+        "title": "EU Council Decision"
+       }
+      }
+     },
+     {
+      "id": 49,
+      "title": "Council Regulation concerning restrictive measures in view of Russia's actions destabilising the situation in Ukraine",
+      "number": "24.04.2026 consolidated basic legal act - (EU) No 833/2014",
+      "url": "http://data.europa.eu/eli/reg/2014/833/2026-04-24",
+      "type": {
+       "data": {
+        "id": 2,
+        "title": "EU Council Regulation"
+       }
+      }
+     }
+    ]
+   },
+   "measures": {
+    "data": [
+     {
+      "id": 64,
+      "description": "It is prohibited to export arms and related materiel to Russia. Related technical or financial assistance and brokering ",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 4,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/hYvAur5S3ZQHtBfAo6ElESAS5xl8CMUEyPrNHyMf.svg",
+        "title": "Arms export",
+        "parent_id": 2
+       }
+      }
+     },
+     {
+      "id": 65,
+      "description": "It is prohibited to import, purchase or transport arms and related materiel from Russia.",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 3,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/KsA0vSG1tdrndaH9aeACaj97Yc1yMKPcNEMfF7ut.svg",
+        "title": "Arms import",
+        "parent_id": 2
+       }
+      }
+     },
+     {
+      "id": 67,
+      "description": "It is prohibited to sell, supply, transfer or export dual-use goods and technology to any person or entity in Russia or ",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 8,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/bFCodmnwIv5KrTcEjjp6R4dxVqrNEwpRVTe5Cn0g.svg",
+        "title": "Dual-use goods export",
+        "parent_id": 7
+       }
+      }
+     },
+     {
+      "id": 319,
+      "description": "It is prohibited to purchase, sell, provide investment services for or assistance in the issuance of, or otherwise deal ",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 11,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/SjOq3dnPTsdaEe21axKm4KkUTw2TjaeevBxaBEkh.svg",
+        "title": "Financial measures"
+       }
+      }
+     },
+     {
+      "id": 337,
+      "description": "It is prohibited for any Russian nationals or entities established in Russia to participate in procurement contracts in ",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 11,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/SjOq3dnPTsdaEe21axKm4KkUTw2TjaeevBxaBEkh.svg",
+        "title": "Financial measures"
+       }
+      }
+     },
+     {
+      "id": 390,
+      "description": "It is prohibited to engage, directly or indirectly, in any transaction with a legal person, entity or body established o",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 11,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/SjOq3dnPTsdaEe21axKm4KkUTw2TjaeevBxaBEkh.svg",
+        "title": "Financial measures"
+       }
+      }
+     },
+     {
+      "id": 330,
+      "description": "It is prohibited to provide credit rating services and access to any subscription services in relation to credit rating ",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 11,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/SjOq3dnPTsdaEe21axKm4KkUTw2TjaeevBxaBEkh.svg",
+        "title": "Financial measures"
+       }
+      }
+     },
+     {
+      "id": 329,
+      "description": "It is prohibited to sell, supply, transfer or export banknotes denominated in any official currency of a Member State to",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 11,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/SjOq3dnPTsdaEe21axKm4KkUTw2TjaeevBxaBEkh.svg",
+        "title": "Financial measures"
+       }
+      }
+     },
+     {
+      "id": 328,
+      "description": "It is prohibited to engage, directly or indirectly, in any transaction with person and entities listed in Annex XIV or w",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 11,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/SjOq3dnPTsdaEe21axKm4KkUTw2TjaeevBxaBEkh.svg",
+        "title": "Financial measures"
+       }
+      }
+     },
+     {
+      "id": 327,
+      "description": "It is prohibited to sell transferable securities denominated in any official currency of a Member State issued after 12.",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 11,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/SjOq3dnPTsdaEe21axKm4KkUTw2TjaeevBxaBEkh.svg",
+        "title": "Financial measures"
+       }
+      }
+     },
+     {
+      "id": 326,
+      "description": "It is prohibited for Union central securities depositories to provide any services as defined in the Annex of Regulation",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 11,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/SjOq3dnPTsdaEe21axKm4KkUTw2TjaeevBxaBEkh.svg",
+        "title": "Financial measures"
+       }
+      }
+     },
+     {
+      "id": 325,
+      "description": "It is prohibited to accept any deposits from Russian nationals or persons residing in Russia or entities established in ",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 11,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/SjOq3dnPTsdaEe21axKm4KkUTw2TjaeevBxaBEkh.svg",
+        "title": "Financial measures"
+       }
+      }
+     },
+     {
+      "id": 324,
+      "description": "It is prohibited to engage in any transaction with an entity established in Russia, which is publically controlled or wi",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 11,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/SjOq3dnPTsdaEe21axKm4KkUTw2TjaeevBxaBEkh.svg",
+        "title": "Financial measures"
+       }
+      }
+     },
+     {
+      "id": 323,
+      "description": "Transactions related to the management of reserves as well as of assets of the Central Bank of Russia are prohibited.",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 11,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/SjOq3dnPTsdaEe21axKm4KkUTw2TjaeevBxaBEkh.svg",
+        "title": "Financial measures"
+       }
+      }
+     },
+     {
+      "id": 321,
+      "description": "It is prohibited to purchase, sell, provide investment services for or assistance in the issuance of, or otherwise deal ",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 11,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/SjOq3dnPTsdaEe21axKm4KkUTw2TjaeevBxaBEkh.svg",
+        "title": "Financial measures"
+       }
+      }
+     },
+     {
+      "id": 320,
+      "description": "It is prohibited to list and provide services for, as of 12.4.2022, and to admit to trading as of 29.01.2023, on trading",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 11,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/SjOq3dnPTsdaEe21axKm4KkUTw2TjaeevBxaBEkh.svg",
+        "title": "Financial measures"
+       }
+      }
+     },
+     {
+      "id": 318,
+      "description": "It is prohibited to purchase, sell, provide investment services for or assistance in the issuance of, or otherwise deal ",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 11,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/SjOq3dnPTsdaEe21axKm4KkUTw2TjaeevBxaBEkh.svg",
+        "title": "Financial measures"
+       }
+      }
+     },
+     {
+      "id": 339,
+      "description": "It is prohibited to provide trust services to Russian nationals or persons residing in Russia and entities established i",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 11,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/SjOq3dnPTsdaEe21axKm4KkUTw2TjaeevBxaBEkh.svg",
+        "title": "Financial measures"
+       }
+      }
+     },
+     {
+      "id": 317,
+      "description": "It is prohibited to purchase, sell, provide investment services for or assistance in the issuance of, or otherwise deal ",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 11,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/SjOq3dnPTsdaEe21axKm4KkUTw2TjaeevBxaBEkh.svg",
+        "title": "Financial measures"
+       }
+      }
+     },
+     {
+      "id": 66,
+      "description": "It is prohibited to make or be part of any arrangement to make new loans or credit with a maturity exceeding 30 days to ",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 11,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/SjOq3dnPTsdaEe21axKm4KkUTw2TjaeevBxaBEkh.svg",
+        "title": "Financial measures"
+       }
+      }
+     },
+     {
+      "id": 411,
+      "description": "It shall be prohibited to engage, directly or indirectly, in any transaction involving the crypto-assets listed in Annex",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 11,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/SjOq3dnPTsdaEe21axKm4KkUTw2TjaeevBxaBEkh.svg",
+        "title": "Financial measures"
+       }
+      }
+     },
+     {
+      "id": 409,
+      "description": "It shall be prohibited, during the five years following the sale or any form of lease arrangement of vessels or aircraft",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 11,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/SjOq3dnPTsdaEe21axKm4KkUTw2TjaeevBxaBEkh.svg",
+        "title": "Financial measures"
+       }
+      }
+     },
+     {
+      "id": 306,
+      "description": "It is prohibited to provide public financing or financial assistance for trade with, or investment in, Russia. It is als",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 11,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/SjOq3dnPTsdaEe21axKm4KkUTw2TjaeevBxaBEkh.svg",
+        "title": "Financial measures"
+       }
+      }
+     },
+     {
+      "id": 405,
+      "description": "Financial measures are very different in nature accross restrictive measures regimes. Insert the specific description of",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 11,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/SjOq3dnPTsdaEe21axKm4KkUTw2TjaeevBxaBEkh.svg",
+        "title": "Financial measures"
+       }
+      }
+     },
+     {
+      "id": 396,
+      "description": "It is prohibited to accept donations, economic benefits or support, including financial assistance, from the Government ",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 11,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/SjOq3dnPTsdaEe21axKm4KkUTw2TjaeevBxaBEkh.svg",
+        "title": "Financial measures"
+       }
+      }
+     },
+     {
+      "id": 394,
+      "description": "It is prohibited to engage in any transaction with entities as listed in Annex XLIII of Regulation (EU) 833/2014 to obta",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 11,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/SjOq3dnPTsdaEe21axKm4KkUTw2TjaeevBxaBEkh.svg",
+        "title": "Financial measures"
+       }
+      }
+     },
+     {
+      "id": 392,
+      "description": "It is prohibited to provide EU funding or Member State national programme funding to any entity established in Russia or",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 11,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/SjOq3dnPTsdaEe21axKm4KkUTw2TjaeevBxaBEkh.svg",
+        "title": "Financial measures"
+       }
+      }
+     },
+     {
+      "id": 314,
+      "description": "It is prohibited to acquire new or extend existing participation in any entity operating in the energy sector or in the ",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 11,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/SjOq3dnPTsdaEe21axKm4KkUTw2TjaeevBxaBEkh.svg",
+        "title": "Financial measures"
+       }
+      }
+     },
+     {
+      "id": 391,
+      "description": "It is prohibited for EU operators to engage in any transaction with credit or financial institutions and crypto assets p",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 11,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/SjOq3dnPTsdaEe21axKm4KkUTw2TjaeevBxaBEkh.svg",
+        "title": "Financial measures"
+       }
+      }
+     },
+     {
+      "id": 316,
+      "description": "It is prohibited to purchase, sell, provide investment services for or assistance in the issuance of, or otherwise deal ",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 11,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/SjOq3dnPTsdaEe21axKm4KkUTw2TjaeevBxaBEkh.svg",
+        "title": "Financial measures"
+       }
+      }
+     },
+     {
+      "id": 310,
+      "description": "It is prohibited for any aircraft operated by Russian air carriers or for any non-Russian-registered aircraft which is o",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 12,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/iXRw8R3LINl1dwuwke3mYsZjMAWDdbXRybBuxsG2.svg",
+        "title": "Flights, airports, aircrafts"
+       }
+      }
+     },
+     {
+      "id": 395,
+      "description": "Intellectual property offices and other competent institutions constituted under the law of a Member State or the Union ",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 64,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/c8TDMI16P3gUmTiHi2CX0MD50olHWzWl6iwnZjz7.svg",
+        "title": "Intellectual Property Rights"
+       }
+      }
+     },
+     {
+      "id": 387,
+      "description": "It is prohibited to purchase, import or transfer liquified natural gas falling under CN code 2711 11 00, originating in ",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 63,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/EARVLK9Xb4eHlHe8ElizqFk5JNP2JHmNdY2g4s4Q.svg",
+        "title": "Liquified Natural Gas"
+       }
+      }
+     },
+     {
+      "id": 386,
+      "description": "It is prohibited to sell, supply, transfer, or export, goods and technology and to provide services to any person or ent",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 63,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/EARVLK9Xb4eHlHe8ElizqFk5JNP2JHmNdY2g4s4Q.svg",
+        "title": "Liquified Natural Gas"
+       }
+      }
+     },
+     {
+      "id": 385,
+      "description": "It is prohibited to provide reloading services in the territory of the Union for the purposes of transshipment operation",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 63,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/EARVLK9Xb4eHlHe8ElizqFk5JNP2JHmNdY2g4s4Q.svg",
+        "title": "Liquified Natural Gas"
+       }
+      }
+     },
+     {
+      "id": 413,
+      "description": "It shall be prohibited, as of 25 April 2026, to purchase, import or transfer, directly or indirectly, liquified natural ",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 63,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/EARVLK9Xb4eHlHe8ElizqFk5JNP2JHmNdY2g4s4Q.svg",
+        "title": "Liquified Natural Gas"
+       }
+      }
+     },
+     {
+      "id": 348,
+      "description": "It is prohibited as of 27.03.2023 to allow Russian nationals or persons residing in Russia to hold any posts in the gove",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 57,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/FDmRBPez3dgizyQFdrLCMKBr53KpqsjAAjQbnssS.svg",
+        "title": "Critical infrastructure",
+        "parent_id": 15
+       }
+      }
+     },
+     {
+      "id": 307,
+      "description": "It is prohibited for operators to broadcast or to enable, facilitate or otherwise contribute to broadcast, any content b",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 59,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/CTheAJdOAoDE94Y5nap0ZCF15xrPMpCYv7tBoH5B.svg",
+        "title": "Media ban",
+        "parent_id": 15
+       }
+      }
+     },
+     {
+      "id": 389,
+      "description": "It is prohibited for any entity established in the Union which is owned for 25 % or more by a Russian person or entity t",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 53,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/xtlLynBM5vo060gQm7zZuEhIpJ15SCBdRZufNeGz.svg",
+        "title": "Road transport",
+        "parent_id": 15
+       }
+      }
+     },
+     {
+      "id": 335,
+      "description": "It is prohibited for any road transport undertaking established in Russia to transport goods by road within the Union, i",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 53,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/xtlLynBM5vo060gQm7zZuEhIpJ15SCBdRZufNeGz.svg",
+        "title": "Road transport",
+        "parent_id": 15
+       }
+      }
+     },
+     {
+      "id": 349,
+      "description": "It is prohibited to provide storage capacity as defined in Article 2(1), point 28 of Regulation (EC) No 715/2009, except",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 58,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/eji0ZGxRMaNVk216FwlUStZZ18PZM0Jl8ItvC20q.svg",
+        "title": "Storage capacity",
+        "parent_id": 15
+       }
+      }
+     },
+     {
+      "id": 388,
+      "description": "It is prohibited to provide access to ports and other maritime services to vessels listed in Annex XLII of Regulation (E",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 16,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/wCZICOXTLNaClm0GrB94SRqzs85dzxVehJv74t9V.svg",
+        "title": "Ports and vessels"
+       }
+      }
+     },
+     {
+      "id": 353,
+      "description": "It is prohibited, as of 24.07.2023, to provide access to EU ports and locks by any vessel performing ship-to-ship transf",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 16,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/wCZICOXTLNaClm0GrB94SRqzs85dzxVehJv74t9V.svg",
+        "title": "Ports and vessels"
+       }
+      }
+     },
+     {
+      "id": 333,
+      "description": "Member States shall prohibit the entry into their ports and to locks of any Russian registered vessels.",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 16,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/wCZICOXTLNaClm0GrB94SRqzs85dzxVehJv74t9V.svg",
+        "title": "Ports and vessels"
+       }
+      }
+     },
+     {
+      "id": 352,
+      "description": "It is prohibited, as of 24.07.2023, to provide access to EU ports and locks by any vessel performing ship-to-ship transf",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 16,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/wCZICOXTLNaClm0GrB94SRqzs85dzxVehJv74t9V.svg",
+        "title": "Ports and vessels"
+       }
+      }
+     },
+     {
+      "id": 406,
+      "description": "It shall be prohibited to engage in any transaction, directly or indirectly, with ports and locks listed in Part A of An",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 16,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/wCZICOXTLNaClm0GrB94SRqzs85dzxVehJv74t9V.svg",
+        "title": "Ports and vessels"
+       }
+      }
+     },
+     {
+      "id": 206,
+      "description": "It is prohibited to satisfy claims in connection with any contract or transaction the performance of which has been affe",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 17,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/noJmTx9twA9pKGnG9uXIBMImLfD1g0aeFJQqDpm7.svg",
+        "title": "Prohibition to satisfy claims"
+       }
+      }
+     },
+     {
+      "id": 408,
+      "description": "Russian nationals, who are members of the diplomatic or consular personnel of Russia, or members of the administrative a",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 18,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/LUMa1Twbs3PWRgFNLhFdMcQO4ZuU9VYMHb8jrxUK.svg",
+        "title": "Restrictions on admission"
+       }
+      }
+     },
+     {
+      "id": 338,
+      "description": "It is prohibited to purchase, import or transfer goods which generate significant revenues for Russia thereby enabling i",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 20,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/RGCvgsyVOHTJq61uBOjVuSSOmGSS4VrGFFofCvg1.svg",
+        "title": "Restrictions on goods"
+       }
+      }
+     },
+     {
+      "id": 336,
+      "description": "it is prohibited to sell, supply, transfer or export goods which could contribute to the enhancement of Russian industri",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 20,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/RGCvgsyVOHTJq61uBOjVuSSOmGSS4VrGFFofCvg1.svg",
+        "title": "Restrictions on goods"
+       }
+      }
+     },
+     {
+      "id": 309,
+      "description": "It is prohibited to sell, supply, transfer or export goods and technology suited for use in aviation or the space indust",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 50,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/KSEzEV9cuxY0loBC5oxExbC3GWGSatZHSeW1EC5T.svg",
+        "title": "Aviation or the space industry",
+        "parent_id": 20
+       }
+      }
+     },
+     {
+      "id": 340,
+      "description": "It is prohibited to purchase, import or transfer crude oil or petroleum products, as listed in Annex XXV of Regulation (",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 41,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/2cYj9GToRuGO2u4ZrWeKqgbcUTpdH77FMp6zAh73.png",
+        "title": "Crude oil",
+        "parent_id": 20
+       }
+      }
+     },
+     {
+      "id": 393,
+      "description": "It is prohibited to purchase, import, transfer, sell, supply or export, Ukrainian cultural property goods and other good",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 22,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/xrA8vV9qeOyXt9YgE4uRMGJ6M53nr34jj9suPx61.svg",
+        "title": "Cultural property",
+        "parent_id": 20
+       }
+      }
+     },
+     {
+      "id": 368,
+      "description": "It is prohibited, as of 1.1.2024, to purchase, import, or transfer diamonds and products incorporating diamonds, as list",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 61,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/LRIChi4T0JBOlM8H9El9ZeasuTCnwxzZ5E3vRENu.svg",
+        "title": "Diamonds",
+        "parent_id": 20
+       }
+      }
+     },
+     {
+      "id": 344,
+      "description": "It is prohibited to sell, supply, transfer or export firearms, their parts and essential components and ammunition, as l",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 56,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/pqGMdJ49nb0jKmxsEQoknB7mRGqNGGh4pSqcnrTo.svg",
+        "title": "Firearms, their parts and essential components and ammunition",
+        "parent_id": 20
+       }
+      }
+     },
+     {
+      "id": 342,
+      "description": "It is prohibited to purchase, import or transfer gold, as listed in Annex XXVI and Annex XXVII of Regulation (EU) No 833",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 55,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/BsvXjbVIo7cAFS17ZOlCyTtceCDs8HNT5yA4qHew.svg",
+        "title": "Gold",
+        "parent_id": 20
+       }
+      }
+     },
+     {
+      "id": 311,
+      "description": "It is prohibited to import, purchase or transfer iron and steel products, as listed in Annex XVII of Regulation (EU) 833",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 48,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/ThbOkVI1BbVJrtcUMG4i80aPSGn8GJcB68OFfZyr.svg",
+        "title": "Iron and steel",
+        "parent_id": 20
+       }
+      }
+     },
+     {
+      "id": 312,
+      "description": "It is prohibited to sell, supply, transfer or export luxury goods, as listed in Annex XVIII of Regulation (EU) 833/2014,",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 24,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/mtqexpvgdd8rpd3eGnXM2uqqsqYxZZcnKKtmAAwi.svg",
+        "title": "Luxury goods",
+        "parent_id": 20
+       }
+      }
+     },
+     {
+      "id": 315,
+      "description": "It is prohibited to sell, supply, transfer or export maritime navigation goods and technology, as listed in Annex XVI of",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 52,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/2t6YlInjx564w2XYnm59xlNy0hWQgQL0lnQ4tAk8.svg",
+        "title": "Maritime navigation",
+        "parent_id": 20
+       }
+      }
+     },
+     {
+      "id": 308,
+      "description": "It is prohibited to sell, supply, transfer or export goods and technology suited for use in oil refining and liquefactio",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 51,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/IYhUeSMkzttq78ydYTezW9q3i8EVB5Xi3qqEiRft.svg",
+        "title": "Oil refining",
+        "parent_id": 20
+       }
+      }
+     },
+     {
+      "id": 68,
+      "description": "It is prohibited to sell, supply, transfer or export goods or technology, as listed in Annex II of Regulation (EU) 833/2",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 25,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/V41VdVkx0yIRC17cM7ddZEiKAuQg1x6Hj5qpUKXu.svg",
+        "title": "Other items",
+        "parent_id": 20
+       }
+      }
+     },
+     {
+      "id": 407,
+      "description": "It is prohibited, as of 21 January 2026, to purchase, import or transfer, directly of indirectly, petroleum producsts fa",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 26,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/kBgduvs857tAvVvA6IOCr9a638PKIZA3ZYKSfKuw.svg",
+        "title": "Petrol products",
+        "parent_id": 20
+       }
+      }
+     },
+     {
+      "id": 374,
+      "description": "This list includes natural or legal persons, entities or bodies which are military end-users, form part of Russia’s mili",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 62,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/Hi6QwnG7G2UnNYCnAHxc1hjBqhYeYYwpQTE5xnNj.svg",
+        "title": "Restrictions for the export of dual-use and advanced technology items to entities",
+        "parent_id": 20
+       }
+      }
+     },
+     {
+      "id": 410,
+      "description": "Prohibits: Acquiring ownership, creating joint ventures, or entering contracts with entities in specified Russian econom",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 28,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/K1MZt5sDCHWfhjMIyXI8PJ6kjCZq19M3AMqf4rXi.svg",
+        "title": "Restrictions on services"
+       }
+      }
+     },
+     {
+      "id": 412,
+      "description": "The provision of certain services to the Russian government shall be prohibited.",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 28,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/K1MZt5sDCHWfhjMIyXI8PJ6kjCZq19M3AMqf4rXi.svg",
+        "title": "Restrictions on services"
+       }
+      }
+     },
+     {
+      "id": 341,
+      "description": "It is prohibited to provide accounting, auditing, bookkeeping or tax consulting services, business and management consul",
+      "suspend": false,
+      "type": {
+       "data": {
+        "id": 28,
+        "icon": "https://www.sanctionsmap.eu/storage/icons/K1MZt5sDCHWfhjMIyXI8PJ6kjCZq19M3AMqf4rXi.svg",
+        "title": "Restrictions on services"
+       }
+      }
+     }
+    ]
+   },
+   "guidances": {
+    "data": []
+   },
+   "general_guidances": {
+    "data": []
+   }
+  }
+ ],
+ "meta": {
+  "version": 1
+ }
+}

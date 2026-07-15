@@ -1,0 +1,19 @@
+{
+ "@odata.context": "x",
+ "value": [
+  {
+   "Title": "Ebola disease caused by Bundibugyo virus, Democratic Republic of the Congo & Uganda",
+   "PublicationDateAndTime": "2026-07-03T15:13:57Z",
+   "Summary": "The Bundibugyo virus disease (BVD) outbreak in the Democratic Republic of the Congo continues to evolve rapidly, with sustained transmission and increasing numbers of reported cases. As of 1 July, a c",
+   "DonId": "2026-DON612",
+   "ItemDefaultUrl": "/2026-DON612"
+  },
+  {
+   "Title": "Hantavirus outbreak linked to cruise ship travel, Multi-locations",
+   "PublicationDateAndTime": "2026-07-02T18:00:00Z",
+   "Summary": "This is the fifth Disease Outbreak News posting on the Andes hantavirus (ANDV) outbreak linked to the cruise ship M/V Hondius. The outbreak identification followed the notification to the World Health",
+   "DonId": "2026-DON611",
+   "ItemDefaultUrl": "/2026-DON611"
+  }
+ ]
+}

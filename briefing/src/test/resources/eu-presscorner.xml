@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Press releases - RSS</title>
+    <link>https://ec.europa.eu/commission/presscorner/api/rss?language=en</link>
+    <description>Search={format=RSS,size=10}</description>
+    <language>en</language>
+    <copyright>Copyright European Commission DG COMM</copyright>
+    <item>
+      <title>Commissioner's Roswall speech at the United Nations High-Level Meeting on Critical Energy Transition Minerals, New York</title>
+      <link>https://ec.europa.eu/commission/presscorner/detail/en/speech_26_1620</link>
+      <description>European Commission Speech New York, 14 Jul 2026 Thank you, Madam Deputy Secretary-General, Excellencies, ladies and gentlemen.
+Let me begin by thanking the United Nations for convening this important meeting ...</description>
+      <category>POLICY_AREA=ENVIRO</category>
+      <pubDate>Tue, 14 Jul 2026 17:25:55 GMT</pubDate>
+      <guid>https://ec.europa.eu/commission/presscorner/detail/en/speech_26_1620</guid>
+    </item>
+<item>
+      <title>Closing speech by Commissioner Šuica at the Launch of the 3rd Demography Report</title>
+      <link>https://ec.europa.eu/commission/presscorner/detail/en/speech_26_1618</link>
+      <description>European Commission Speech Brussels, 14 Jul 2026 Ladies and gentlemen,
+Let me thank all of you for the excellent event today.
+We couldn't have done it without all of you, contributing with your insight and exp...</description>
+      <category>POLICY_AREA=DEMOGRAPHY</category>
+      <pubDate>Tue, 14 Jul 2026 12:18:00 GMT</pubDate>
+      <guid>https://ec.europa.eu/commission/presscorner/detail/en/speech_26_1618</guid>
+    </item>
+<item>
+      <title>Opening speech by Commissioner Šuica at the Launch of the 3rd Demography Report</title>
+      <link>https://ec.europa.eu/commission/presscorner/detail/en/speech_26_1617</link>
+      <description>European Commission Speech Brussels, 14 Jul 2026 Ladies and gentlemen,
+It is my pleasure to welcome you to the launch of the third edition of our Demography Report: understanding change and adapting to its con...</description>
+      <category>POLICY_AREA=DEMOGRAPHY</category>
+      <pubDate>Tue, 14 Jul 2026 12:14:54 GMT</pubDate>
+      <guid>https://ec.europa.eu/commission/presscorner/detail/en/speech_26_1617</guid>
+    </item>
+  </channel>
+</rss>

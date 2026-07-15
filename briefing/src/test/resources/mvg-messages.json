@@ -1,0 +1,99 @@
+[
+ {
+  "title": "Zeitweise Unregelmäßigkeiten wegen eines Fahrzeugausfalls",
+  "description": "Liebe Fahrgäste,<br>wegen eines Fahrzeugausfalls kommt es auf den Linien 173 und 177 derzeit zu zeitweisen Unregelmäßigkeiten.<br>Wir sind bemüht, so schnell wie möglich wieder einen fahrplanmäßigen Betrieb herzustellen.<br>Ihre MVG",
+  "publication": 1784058060000,
+  "publicationDuration": {
+   "from": 1784058060000,
+   "to": 1784071200000
+  },
+  "incidentDurations": [
+   {
+    "from": 1784058060000,
+    "to": 1784071200000
+   }
+  ],
+  "validFrom": 1784058060000,
+  "validTo": 1784071200000,
+  "type": "INCIDENT",
+  "provider": "MVG",
+  "links": [],
+  "lines": [
+   {
+    "label": "173",
+    "transportType": "BUS",
+    "network": "swm",
+    "divaId": "03173",
+    "sev": false
+   },
+   {
+    "label": "173",
+    "transportType": "BUS",
+    "network": "swm",
+    "divaId": "03173",
+    "sev": false
+   },
+   {
+    "label": "177",
+    "transportType": "BUS",
+    "network": "swm",
+    "divaId": "03177",
+    "sev": false
+   },
+   {
+    "label": "177",
+    "transportType": "BUS",
+    "network": "swm",
+    "divaId": "03177",
+    "sev": false
+   }
+  ],
+  "stationGlobalIds": [],
+  "eventTypes": []
+ },
+ {
+  "title": "Zeitweise Unregelmäßigkeiten wegen eines Fahrzeugausfalls",
+  "description": "Liebe Fahrgäste,<br>wegen eines Fahrzeugausfalls kommt es auf den Linien 162 und 169 derzeit zu zeitweisen Unregelmäßigkeiten.<br>Wir sind bemüht, so schnell wie möglich wieder einen fahrplanmäßigen Betrieb herzustellen.<br>Ihre MVG",
+  "publication": 1784058300000,
+  "publicationDuration": {
+   "from": 1784058300000,
+   "to": 1784070000000
+  },
+  "incidentDurations": [
+   {
+    "from": 1784058300000,
+    "to": 1784070000000
+   }
+  ],
+  "validFrom": 1784058300000,
+  "validTo": 1784070000000,
+  "type": "INCIDENT",
+  "provider": "MVG",
+  "links": [],
+  "lines": [
+   {
+    "label": "162",
+    "transportType": "BUS",
+    "network": "swm",
+    "divaId": "03162",
+    "sev": false
+   },
+   {
+    "label": "162",
+    "transportType": "BUS",
+    "network": "swm",
+    "divaId": "03162",
+    "sev": false
+   },
+   {
+    "label": "169",
+    "transportType": "BUS",
+    "network": "swm",
+    "divaId": "03169",
+    "sev": false
+   }
+  ],
+  "stationGlobalIds": [],
+  "eventTypes": []
+ }
+]

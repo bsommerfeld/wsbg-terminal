@@ -1,0 +1,47 @@
+{
+ "rowCount": 3,
+ "data": [
+  {
+   "bundesland_name": "SCHLESWIG_HOLSTEIN",
+   "faelle_covid_aktuell": 0,
+   "intensivbetten_belegt": 397,
+   "intensivbetten_frei": 86,
+   "intensivbetten_frei_pro_standort": 4.777777777777778,
+   "intensivbetten_gesamt": 483,
+   "intensivbetten_7_tage_notfallreserve": 269,
+   "anzahl_standorte": 18
+  },
+  {
+   "bundesland_name": "HAMBURG",
+   "faelle_covid_aktuell": 0,
+   "intensivbetten_belegt": 260,
+   "intensivbetten_frei": 59,
+   "intensivbetten_frei_pro_standort": 4.538461538461538,
+   "intensivbetten_gesamt": 319,
+   "intensivbetten_7_tage_notfallreserve": 153,
+   "anzahl_standorte": 13
+  },
+  {
+   "bundesland_name": "NIEDERSACHSEN",
+   "faelle_covid_aktuell": 0,
+   "intensivbetten_belegt": 607,
+   "intensivbetten_frei": 226,
+   "intensivbetten_frei_pro_standort": 4.035714285714286,
+   "intensivbetten_gesamt": 833,
+   "intensivbetten_7_tage_notfallreserve": 386,
+   "anzahl_standorte": 56
+  }
+ ],
+ "overallSum": {
+  "bundesland_name": null,
+  "faelle_covid_aktuell": 5,
+  "intensivbetten_belegt": 11448,
+  "intensivbetten_frei": 2873,
+  "intensivbetten_frei_pro_standort": 3.780263157894737,
+  "intensivbetten_gesamt": 14321,
+  "intensivbetten_7_tage_notfallreserve": 4658,
+  "anzahl_standorte": 760
+ },
+ "creationTimestamp": "2026-07-14T21:05:14Z",
+ "meldebereichAnz": 1016
+}

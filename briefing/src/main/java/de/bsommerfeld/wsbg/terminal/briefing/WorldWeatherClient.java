@@ -55,9 +55,14 @@ public class WorldWeatherClient {
             new Place("Shanghai", "Fabrik & Hafen", 31.23, 121.47),
             new Place("Riad", "Öl", 24.71, 46.68));
 
-    /** One place's sky, current + tomorrow. Words are stable tokens from {@link #codeWord}. */
+    /**
+     * One place's sky, current + tomorrow. Words are stable tokens from
+     * {@link #codeWord}; {@code lat}/{@code lon} carry the place's position
+     * through to the world map (2026-07-15).
+     */
     public record PlaceWeather(String place, String role, Double tempC, String word,
-            Double windKmh, Double tomorrowMaxC, Double tomorrowMinC, String tomorrowWord) {}
+            Double windKmh, Double tomorrowMaxC, Double tomorrowMinC, String tomorrowWord,
+            double lat, double lon) {}
 
     private final WebFetcher fetcher;
     private final String userAgent = BrowserUserAgent.random();
@@ -129,7 +134,8 @@ public class WorldWeatherClient {
                 if (temp == null && tMax == null) continue;
                 out.add(new PlaceWeather(place.name(), place.role(), temp,
                         code == null ? null : codeWord(code), wind, tMax, tMin,
-                        tCode == null ? null : codeWord((int) (double) tCode)));
+                        tCode == null ? null : codeWord((int) (double) tCode),
+                        place.lat(), place.lon()));
             }
         } catch (Exception e) {
             return List.of();

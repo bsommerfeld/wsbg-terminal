@@ -1,0 +1,36 @@
+{
+ "warning": [
+  {
+   "identifier": "NLR_2026_002291--vi-unf.2026-07-14_21-39-00-457.de0",
+   "icon": "101",
+   "isBlocked": "false",
+   "future": false,
+   "extent": "51.027420228564615,6.948553524559796,51.024215586931376,6.9426638210494644",
+   "point": "51.027420228564615,6.948553524559796",
+   "startLcPosition": "77",
+   "display_type": "WARNING",
+   "subtitle": " Dortmund -> Köln",
+   "title": "A1 | Leverkusener Brücke - Köln-Niehl",
+   "startTimestamp": "2026-07-13T10:06:00+02:00",
+   "coordinate": {
+    "lat": 51.027420228564615,
+    "long": 6.948553524559796
+   },
+   "description": [
+    "Beginn: 13.07.26 um 10:06 Uhr",
+    "",
+    "Ereignismeldung:",
+    "- Unfall",
+    "1 Fahrstreifen gesperrt",
+    "",
+    "A1: Dortmund -> Köln, zwischen 1.1 km hinter Leverkusener Brücke und AS Köln-Niehl",
+    " ",
+    "Ereignisnummer: NLR_2026_002291"
+   ],
+   "routeRecommendation": [],
+   "footer": [],
+   "lorryParkingFeatureIcons": [],
+   "source": "eva"
+  }
+ ]
+}

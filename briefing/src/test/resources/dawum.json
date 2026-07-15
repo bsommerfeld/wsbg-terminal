@@ -1,0 +1,190 @@
+{
+ "Database": {
+  "License": {
+   "Name": "ODC Open Database License",
+   "Shortcut": "ODC-ODbL",
+   "Link": "https://opendatacommons.org/licenses/odbl/1-0/"
+  },
+  "Publisher": "dawum.de",
+  "Author": "Dipl.-Jur. Philipp Guttmann",
+  "Last_Update": "2026-07-14T18:39:10+02:00"
+ },
+ "Parliaments": {
+  "15": {
+   "Shortcut": "Schleswig-Holstein",
+   "Name": "Landtag von Schleswig-Holstein",
+   "Election": "Landtagswahl in Schleswig-Holstein"
+  },
+  "0": {
+   "Shortcut": "Bundestag",
+   "Name": "Bundestag",
+   "Election": "Bundestagswahl"
+  }
+ },
+ "Institutes": {
+  "5": {
+   "Name": "INSA"
+  },
+  "2": {
+   "Name": "Forsa"
+  },
+  "13": {
+   "Name": "YouGov"
+  }
+ },
+ "Taskers": {},
+ "Methods": {},
+ "Parties": {
+  "7": {
+   "Shortcut": "AfD",
+   "Name": "Alternative für Deutschland"
+  },
+  "4": {
+   "Shortcut": "Grüne",
+   "Name": "Bündnis 90/Die Grünen"
+  },
+  "23": {
+   "Shortcut": "BSW",
+   "Name": "Bündnis Sahra Wagenknecht"
+  },
+  "1": {
+   "Shortcut": "CDU/CSU",
+   "Name": "Christlich Demokratische Union / Christlich-Soziale Union"
+  },
+  "101": {
+   "Shortcut": "CDU",
+   "Name": "Christlich Demokratische Union"
+  },
+  "5": {
+   "Shortcut": "Linke",
+   "Name": "Die Linke"
+  },
+  "3": {
+   "Shortcut": "FDP",
+   "Name": "Freie Demokratische Partei"
+  },
+  "2": {
+   "Shortcut": "SPD",
+   "Name": "Sozialdemokratische Partei Deutschlands"
+  },
+  "10": {
+   "Shortcut": "SSW",
+   "Name": "Südschleswigscher Wählerverband"
+  },
+  "0": {
+   "Shortcut": "Sonstige",
+   "Name": "sonstige Parteien"
+  }
+ },
+ "Surveys": {
+  "4237": {
+   "Date": "2026-07-14",
+   "Survey_Period": {
+    "Date_Start": "2026-07-07",
+    "Date_End": "2026-07-14"
+   },
+   "Surveyed_Persons": "1000",
+   "Parliament_ID": "15",
+   "Institute_ID": "5",
+   "Tasker_ID": "4",
+   "Method_ID": "3",
+   "Results": {
+    "101": 27,
+    "7": 18,
+    "4": 17,
+    "2": 15,
+    "5": 7,
+    "3": 6,
+    "10": 6,
+    "0": 4
+   }
+  },
+  "4236": {
+   "Date": "2026-07-14",
+   "Survey_Period": {
+    "Date_Start": "2026-07-10",
+    "Date_End": "2026-07-13"
+   },
+   "Surveyed_Persons": "2006",
+   "Parliament_ID": "0",
+   "Institute_ID": "5",
+   "Tasker_ID": "4",
+   "Method_ID": "3",
+   "Results": {
+    "7": 28.5,
+    "1": 21.5,
+    "4": 13,
+    "2": 12.5,
+    "5": 10.5,
+    "0": 6,
+    "3": 4,
+    "23": 4
+   }
+  },
+  "4235": {
+   "Date": "2026-07-14",
+   "Survey_Period": {
+    "Date_Start": "2026-07-07",
+    "Date_End": "2026-07-13"
+   },
+   "Surveyed_Persons": "2503",
+   "Parliament_ID": "0",
+   "Institute_ID": "2",
+   "Tasker_ID": "63",
+   "Method_ID": "1",
+   "Results": {
+    "7": 26,
+    "1": 22,
+    "4": 16,
+    "2": 12,
+    "5": 12,
+    "0": 8,
+    "3": 4
+   }
+  },
+  "4234": {
+   "Date": "2026-07-14",
+   "Survey_Period": {
+    "Date_Start": "2026-07-10",
+    "Date_End": "2026-07-13"
+   },
+   "Surveyed_Persons": "1827",
+   "Parliament_ID": "0",
+   "Institute_ID": "13",
+   "Tasker_ID": "43",
+   "Method_ID": "3",
+   "Results": {
+    "7": 27,
+    "1": 20,
+    "4": 14,
+    "2": 12,
+    "5": 12,
+    "0": 6,
+    "3": 5,
+    "23": 4
+   }
+  },
+  "4233": {
+   "Date": "2026-07-11",
+   "Survey_Period": {
+    "Date_Start": "2026-07-06",
+    "Date_End": "2026-07-10"
+   },
+   "Surveyed_Persons": "1204",
+   "Parliament_ID": "0",
+   "Institute_ID": "5",
+   "Tasker_ID": "3",
+   "Method_ID": "4",
+   "Results": {
+    "7": 28,
+    "1": 22,
+    "2": 12,
+    "4": 12,
+    "5": 11,
+    "0": 7,
+    "3": 4,
+    "23": 4
+   }
+  }
+ }
+}

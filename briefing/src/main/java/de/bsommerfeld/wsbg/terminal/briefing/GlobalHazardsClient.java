@@ -55,8 +55,19 @@ public class GlobalHazardsClient {
     /** Quakes below this stay out unless PAGER/tsunami flags them. */
     static final double QUAKE_MIN_MAGNITUDE = 5.5;
 
-    /** One hazard line. {@code kind}: STORM / QUAKE / AVIATION; {@code severity} a stable token. */
-    public record Hazard(String kind, String text, String severity) {}
+    /**
+     * One hazard line. {@code kind}: STORM / QUAKE / AVIATION; {@code severity}
+     * a stable token; {@code lat}/{@code lon} the event position where the
+     * source carries one (NHC storm center, USGS epicenter — null for FAA
+     * lines, whose airports are geocoded downstream).
+     */
+    public record Hazard(String kind, String text, String severity, Double lat, Double lon) {
+
+        /** Pre-map shape (2026-07-15) — kept for tests. */
+        public Hazard(String kind, String text, String severity) {
+            this(kind, text, severity, null, null);
+        }
+    }
 
     private final WebFetcher fetcher;
     private final String userAgent = BrowserUserAgent.random();
@@ -126,8 +137,12 @@ public class GlobalHazardsClient {
                     sb.append(" (").append(basin.startsWith("EP") ? "Pazifik" : "Atlantik")
                             .append(')');
                 }
+                Double lat = s.hasNonNull("latitudeNumeric")
+                        ? s.get("latitudeNumeric").asDouble() : null;
+                Double lon = s.hasNonNull("longitudeNumeric")
+                        ? s.get("longitudeNumeric").asDouble() : null;
                 out.add(new Hazard("STORM", sb.toString(),
-                        "HU".equalsIgnoreCase(classification) ? "HIGH" : "MEDIUM"));
+                        "HU".equalsIgnoreCase(classification) ? "HIGH" : "MEDIUM", lat, lon));
             }
         } catch (Exception e) {
             return List.of();
@@ -173,9 +188,17 @@ public class GlobalHazardsClient {
                 if (!place.isEmpty()) sb.append(' ').append(place);
                 if (tsunami) sb.append(" — Tsunami-Warnung");
                 if (alerted) sb.append(" — PAGER ").append(alert);
+                Double lat = null;
+                Double lon = null;
+                JsonNode coords = f.path("geometry").path("coordinates");
+                if (coords.isArray() && coords.size() >= 2) {
+                    lon = coords.get(0).asDouble();
+                    lat = coords.get(1).asDouble();
+                }
                 out.add(new Hazard("QUAKE", sb.toString(),
                         tsunami || "red".equalsIgnoreCase(alert)
-                                || "orange".equalsIgnoreCase(alert) ? "HIGH" : "MEDIUM"));
+                                || "orange".equalsIgnoreCase(alert) ? "HIGH" : "MEDIUM",
+                        lat, lon));
             }
         } catch (Exception e) {
             return List.of();

@@ -1,0 +1,84 @@
+{
+ "closure": [
+  {
+   "identifier": "2026-035099--vi-fbm.2026-07-16_21-45-00-000.devi-fbm.2026-07-16_21-45-00-000.de0",
+   "icon": "250",
+   "isBlocked": "false",
+   "future": true,
+   "extent": "49.6148366735437,6.954769249290579,49.619420876102836,6.943035274025667",
+   "point": "49.6148366735437,6.954769249290579",
+   "startLcPosition": "22",
+   "impact": {
+    "lower": "Steinerwald",
+    "upper": "Nonnweiler-Bierfeld",
+    "symbols": [
+     "SEPARATE",
+     "CLOSED",
+     "CLOSED"
+    ]
+   },
+   "display_type": "CLOSURE",
+   "subtitle": " Saarbrücken -> Trier",
+   "title": "A1 | Nonnweiler-Bierfeld - Steinerwald",
+   "coordinate": {
+    "lat": 49.6148366735437,
+    "long": 6.954769249290579
+   },
+   "description": [
+    "Die Baustelle ist zu folgenden Zeiträumen gültig:",
+    "16.07.26 von 21:45 bis 24:00 Uhr",
+    "(Ende der Gesamtmaßnahme: 17.07.26)",
+    "",
+    "A1: Saarbrücken -> Trier, zwischen 1.0 km hinter AS Nonnweiler-Bierfeld und 2.9 km vor Steinerwald",
+    "",
+    "Länge: konnte nicht ermittelt werden",
+    "",
+    "A1 von Nonnweiler-Bierfeld (AS) nach Steinerwald (Parkplatz) Sperrung Richtungsfahrbahn"
+   ],
+   "routeRecommendation": [],
+   "footer": [],
+   "lorryParkingFeatureIcons": []
+  },
+  {
+   "identifier": "2025-045882--vi-fbm.2026-07-12_19-00-00-000.devi-zus.2025-11-23_00-00-00-000.de69",
+   "icon": "250",
+   "isBlocked": "false",
+   "future": false,
+   "extent": "52.898910713746545,8.334586284449099,52.85241191611669,8.22693329625187",
+   "point": "52.898910713746545,8.334586284449099",
+   "startLcPosition": "172",
+   "impact": {
+    "lower": "Garterfeld",
+    "upper": "Wildeshausen-West",
+    "symbols": [
+     "SEPARATE",
+     "CLOSED",
+     "CLOSED",
+     "BORDER_RIGHT",
+     "CLOSED"
+    ]
+   },
+   "display_type": "CLOSURE",
+   "subtitle": " Bremen -> Osnabrück",
+   "title": "A1 | Wildeshausen-West - Garterfeld",
+   "coordinate": {
+    "lat": 52.898910713746545,
+    "long": 8.334586284449099
+   },
+   "description": [
+    "Die Baustelle ist zu folgenden Zeiträumen gültig:",
+    "14.07.26 19:00 bis zum 15.07.26 06:00 Uhr.",
+    "(Ende der Gesamtmaßnahme: 07.08.26)",
+    "",
+    "A1: Bremen -> Osnabrück, zwischen AS Wildeshausen-West und 1.2 km vor Garterfeld",
+    "",
+    "Länge: konnte nicht ermittelt werden",
+    "",
+    "A1 Betonfeldsanierung zw. AD Stuhr und AS Gr. Ippener"
+   ],
+   "routeRecommendation": [],
+   "footer": [],
+   "lorryParkingFeatureIcons": []
+  }
+ ]
+}

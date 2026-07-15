@@ -1,0 +1,25 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<rss version="2.0">
+    <channel>
+        <title>FRB: Speeches</title>
+        <link><![CDATA[https://www.federalreserve.gov/feeds/feeds.htm]]></link>
+        <description><![CDATA[Speeches of Federal Reserve Officials]]></description>
+        <language>en</language>
+        <item>
+            <title>Bowman, Responsible Innovation and Financial Inclusion</title>
+            <link><![CDATA[https://www.federalreserve.gov/newsevents/speech/bowman20260714a.htm]]></link>
+            <guid><![CDATA[https://www.federalreserve.gov/newsevents/speech/bowman20260714a.htm]]></guid>            
+            <description><![CDATA[Speech At “Next-Gen Financial Inclusion,” the third annual Financial Inclusion Conference hosted by the Federal Reserve Board, Washington, D.C. (via pre-recorded video)]]></description>
+            <category>Speech</category>
+            <pubDate><![CDATA[Tue, 14 Jul 2026 18:55:00 GMT]]></pubDate>    
+        </item>
+<item>
+            <title>Barr, Will Artificial Intelligence Broadly Raise Living Standards or Drive Income and Wealth Inequality?</title>
+            <link><![CDATA[https://www.federalreserve.gov/newsevents/speech/barr20260714a.htm]]></link>
+            <guid><![CDATA[https://www.federalreserve.gov/newsevents/speech/barr20260714a.htm]]></guid>            
+            <description><![CDATA[Speech At “Next-Gen Financial Inclusion,” the third annual Financial Inclusion Conference hosted by the Federal Reserve Board]]></description>
+            <category>Speech</category>
+            <pubDate><![CDATA[Tue, 14 Jul 2026 16:40:00 GMT]]></pubDate>    
+        </item>
+    </channel>
+</rss>

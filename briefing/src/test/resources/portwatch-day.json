@@ -1,0 +1,130 @@
+{
+ "objectIdFieldName": "ObjectId",
+ "features": [
+  {
+   "attributes": {
+    "date": "2026-07-12",
+    "year": 2026,
+    "month": 7,
+    "day": 12,
+    "portid": "chokepoint4",
+    "portname": "Bab el-Mandeb Strait",
+    "n_container": 7,
+    "n_dry_bulk": 10,
+    "n_general_cargo": 10,
+    "n_roro": 0,
+    "n_tanker": 14,
+    "n_cargo": 27,
+    "n_total": 41,
+    "capacity_container": 67990,
+    "capacity_dry_bulk": 502613,
+    "capacity_general_cargo": 61859,
+    "capacity_roro": 0,
+    "capacity_tanker": 733713,
+    "capacity_cargo": 632463,
+    "capacity": 1366176,
+    "ObjectId": 11800
+   }
+  },
+  {
+   "attributes": {
+    "date": "2026-07-12",
+    "year": 2026,
+    "month": 7,
+    "day": 12,
+    "portid": "chokepoint25",
+    "portname": "Balabac Strait",
+    "n_container": 2,
+    "n_dry_bulk": 5,
+    "n_general_cargo": 3,
+    "n_roro": 0,
+    "n_tanker": 8,
+    "n_cargo": 10,
+    "n_total": 18,
+    "capacity_container": 6431,
+    "capacity_dry_bulk": 240195,
+    "capacity_general_cargo": 12049,
+    "capacity_roro": 0,
+    "capacity_tanker": 161857,
+    "capacity_cargo": 258676,
+    "capacity": 420534,
+    "ObjectId": 69829
+   }
+  },
+  {
+   "attributes": {
+    "date": "2026-07-12",
+    "year": 2026,
+    "month": 7,
+    "day": 12,
+    "portid": "chokepoint26",
+    "portname": "Bering Strait",
+    "n_container": 0,
+    "n_dry_bulk": 0,
+    "n_general_cargo": 0,
+    "n_roro": 0,
+    "n_tanker": 2,
+    "n_cargo": 0,
+    "n_total": 2,
+    "capacity_container": 0,
+    "capacity_dry_bulk": 0,
+    "capacity_general_cargo": 0,
+    "capacity_roro": 0,
+    "capacity_tanker": 66061,
+    "capacity_cargo": 0,
+    "capacity": 66061,
+    "ObjectId": 70320
+   }
+  },
+  {
+   "attributes": {
+    "date": "2026-07-11",
+    "year": 2026,
+    "month": 7,
+    "day": 11,
+    "portid": "chokepoint4",
+    "portname": "Bab el-Mandeb Strait",
+    "n_container": 6,
+    "n_dry_bulk": 13,
+    "n_general_cargo": 3,
+    "n_roro": 1,
+    "n_tanker": 21,
+    "n_cargo": 23,
+    "n_total": 44,
+    "capacity_container": 97168,
+    "capacity_dry_bulk": 571936,
+    "capacity_general_cargo": 17289,
+    "capacity_roro": 0,
+    "capacity_tanker": 964204,
+    "capacity_cargo": 686395,
+    "capacity": 1650599,
+    "ObjectId": 11799
+   }
+  },
+  {
+   "attributes": {
+    "date": "2026-07-11",
+    "year": 2026,
+    "month": 7,
+    "day": 11,
+    "portid": "chokepoint25",
+    "portname": "Balabac Strait",
+    "n_container": 0,
+    "n_dry_bulk": 3,
+    "n_general_cargo": 2,
+    "n_roro": 0,
+    "n_tanker": 6,
+    "n_cargo": 5,
+    "n_total": 11,
+    "capacity_container": 0,
+    "capacity_dry_bulk": 221292,
+    "capacity_general_cargo": 3253,
+    "capacity_roro": 0,
+    "capacity_tanker": 22241,
+    "capacity_cargo": 224545,
+    "capacity": 246787,
+    "ObjectId": 69824
+   }
+  }
+ ]
+}

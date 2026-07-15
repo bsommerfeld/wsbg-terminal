@@ -1,0 +1,60 @@
+{
+ "objectIdFieldName": "ObjectId",
+ "features": [
+  {
+   "attributes": {
+    "date": "2026-07-12",
+    "portname": "Suez Canal",
+    "n_total": 39,
+    "n_tanker": 10,
+    "n_container": 12,
+    "n_cargo": 29,
+    "capacity": 1325078
+   }
+  },
+  {
+   "attributes": {
+    "date": "2026-07-11",
+    "portname": "Suez Canal",
+    "n_total": 48,
+    "n_tanker": 19,
+    "n_container": 9,
+    "n_cargo": 29,
+    "capacity": 1972985
+   }
+  },
+  {
+   "attributes": {
+    "date": "2026-07-10",
+    "portname": "Suez Canal",
+    "n_total": 44,
+    "n_tanker": 20,
+    "n_container": 10,
+    "n_cargo": 24,
+    "capacity": 1390434
+   }
+  },
+  {
+   "attributes": {
+    "date": "2026-07-09",
+    "portname": "Suez Canal",
+    "n_total": 37,
+    "n_tanker": 16,
+    "n_container": 6,
+    "n_cargo": 21,
+    "capacity": 1621135
+   }
+  },
+  {
+   "attributes": {
+    "date": "2026-07-08",
+    "portname": "Suez Canal",
+    "n_total": 44,
+    "n_tanker": 15,
+    "n_container": 13,
+    "n_cargo": 29,
+    "capacity": 1830675
+   }
+  }
+ ]
+}

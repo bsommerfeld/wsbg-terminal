@@ -1,0 +1,61 @@
+[
+ {
+  "date": "2026-01-01",
+  "localName": "Neujahr",
+  "name": "New Year's Day",
+  "countryCode": "DE",
+  "fixed": false,
+  "global": true,
+  "counties": null,
+  "launchYear": null,
+  "types": [
+   "Public"
+  ]
+ },
+ {
+  "date": "2026-01-06",
+  "localName": "Heilige Drei Könige",
+  "name": "Epiphany",
+  "countryCode": "DE",
+  "fixed": false,
+  "global": false,
+  "counties": [
+   "DE-BW",
+   "DE-BY",
+   "DE-ST"
+  ],
+  "launchYear": null,
+  "types": [
+   "Public"
+  ]
+ },
+ {
+  "date": "2026-03-08",
+  "localName": "Internationaler Frauentag",
+  "name": "International Women's Day",
+  "countryCode": "DE",
+  "fixed": false,
+  "global": false,
+  "counties": [
+   "DE-BE",
+   "DE-MV"
+  ],
+  "launchYear": null,
+  "types": [
+   "Public"
+  ]
+ },
+ {
+  "date": "2026-04-03",
+  "localName": "Karfreitag",
+  "name": "Good Friday",
+  "countryCode": "DE",
+  "fixed": false,
+  "global": true,
+  "counties": null,
+  "launchYear": null,
+  "types": [
+   "Public"
+  ]
+ }
+]

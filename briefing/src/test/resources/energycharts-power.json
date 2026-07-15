@@ -1,0 +1,200 @@
+{
+ "unix_seconds": [
+  1784056500,
+  1784057400,
+  1784058300,
+  1784059200
+ ],
+ "production_types": [
+  {
+   "name": "Hydro pumped storage consumption",
+   "data": [
+    -2.4,
+    -1.4,
+    -1.2,
+    -1.2
+   ]
+  },
+  {
+   "name": "Cross border electricity trading",
+   "data": [
+    8148.7,
+    8080.3,
+    7615.7,
+    7362.5
+   ]
+  },
+  {
+   "name": "Hydro Run-of-River",
+   "data": [
+    1483.1,
+    1474.8,
+    1472.1,
+    1475.3
+   ]
+  },
+  {
+   "name": "Biomass",
+   "data": [
+    3833.3,
+    3818.5,
+    3809.5,
+    3773.4
+   ]
+  },
+  {
+   "name": "Fossil brown coal / lignite",
+   "data": [
+    8711.0,
+    8699.8,
+    8709.8,
+    8795.9
+   ]
+  },
+  {
+   "name": "Fossil hard coal",
+   "data": [
+    3301.9,
+    3300.4,
+    3293.7,
+    3290.7
+   ]
+  },
+  {
+   "name": "Fossil oil",
+   "data": [
+    380.7,
+    380.7,
+    380.7,
+    381.2
+   ]
+  },
+  {
+   "name": "Fossil coal-derived gas",
+   "data": [
+    302.2,
+    299.6,
+    300.9,
+    294.5
+   ]
+  },
+  {
+   "name": "Fossil gas",
+   "data": [
+    5818.0,
+    5786.5,
+    5646.4,
+    5624.9
+   ]
+  },
+  {
+   "name": "Geothermal",
+   "data": [
+    13.4,
+    13.4,
+    13.4,
+    13.4
+   ]
+  },
+  {
+   "name": "Hydro water reservoir",
+   "data": [
+    806.7,
+    865.9,
+    896.7,
+    867.1
+   ]
+  },
+  {
+   "name": "Hydro pumped storage",
+   "data": [
+    5731.3,
+    5563.6,
+    5698.6,
+    5640.0
+   ]
+  },
+  {
+   "name": "Others",
+   "data": [
+    136.6,
+    136.6,
+    136.6,
+    136.6
+   ]
+  },
+  {
+   "name": "Waste",
+   "data": [
+    1455.2,
+    1456.3,
+    1457.5,
+    1460.0
+   ]
+  },
+  {
+   "name": "Wind offshore",
+   "data": [
+    2153.4,
+    2117.8,
+    2097.3,
+    2115.5
+   ]
+  },
+  {
+   "name": "Wind onshore",
+   "data": [
+    9553.2,
+    9590.1,
+    9500.2,
+    9501.4
+   ]
+  },
+  {
+   "name": "Solar",
+   "data": [
+    155.1,
+    33.3,
+    3.1,
+    0.0
+   ]
+  },
+  {
+   "name": "Load",
+   "data": [
+    55705.4,
+    55235.9,
+    46925.8,
+    null
+   ]
+  },
+  {
+   "name": "Residual load",
+   "data": [
+    43843.7,
+    43494.7,
+    35325.3,
+    null
+   ]
+  },
+  {
+   "name": "Renewable share of load",
+   "data": [
+    33.5,
+    33.7,
+    39.4,
+    null
+   ]
+  },
+  {
+   "name": "Renewable share of generation",
+   "data": [
+    49.0,
+    49.0,
+    49.0,
+    null
+   ]
+  }
+ ],
+ "deprecated": false
+}

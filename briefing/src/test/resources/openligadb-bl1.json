@@ -1,0 +1,72 @@
+[
+ {
+  "matchID": 83164,
+  "matchDateTime": "2026-08-29T15:30:00",
+  "timeZoneID": "W. Europe Standard Time",
+  "leagueId": 4937,
+  "leagueName": "1. Fußball-Bundesliga 2026/2027",
+  "leagueSeason": 2026,
+  "leagueShortcut": "bl1",
+  "matchDateTimeUTC": "2026-08-29T13:30:00Z",
+  "group": {
+   "groupName": "1. Spieltag",
+   "groupOrderID": 1,
+   "groupID": 50633
+  },
+  "team1": {
+   "teamId": 198,
+   "teamName": "SV 07 Elversberg",
+   "shortName": "Elversberg",
+   "teamIconUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/35/SV_Elversberg_Logo.svg/500px-SV_Elversberg_Logo.svg.png",
+   "teamGroupName": null
+  },
+  "team2": {
+   "teamId": 6,
+   "teamName": "Bayer 04 Leverkusen",
+   "shortName": "Leverkusen",
+   "teamIconUrl": "https://www.bundesliga-reisefuehrer.de/sites/default/files/B04_Standard_Logo_RGB.png",
+   "teamGroupName": null
+  },
+  "lastUpdateDateTime": "2026-07-03T07:37:14.97",
+  "matchIsFinished": false,
+  "matchResults": [],
+  "goals": [],
+  "location": null,
+  "numberOfViewers": null
+ },
+ {
+  "matchID": 83156,
+  "matchDateTime": "2026-08-28T20:30:00",
+  "timeZoneID": "W. Europe Standard Time",
+  "leagueId": 4937,
+  "leagueName": "1. Fußball-Bundesliga 2026/2027",
+  "leagueSeason": 2026,
+  "leagueShortcut": "bl1",
+  "matchDateTimeUTC": "2026-08-28T18:30:00Z",
+  "group": {
+   "groupName": "1. Spieltag",
+   "groupOrderID": 1,
+   "groupID": 50633
+  },
+  "team1": {
+   "teamId": 40,
+   "teamName": "FC Bayern München",
+   "shortName": "Bayern",
+   "teamIconUrl": "https://upload.wikimedia.org/wikipedia/commons/1/1f/Logo_FC_Bayern_M%C3%BCnchen_%282002%E2%80%932017%29.svg",
+   "teamGroupName": null
+  },
+  "team2": {
+   "teamId": 16,
+   "teamName": "VfB Stuttgart",
+   "shortName": "Stuttgart",
+   "teamIconUrl": "https://i.imgur.com/v0tkpNx.png",
+   "teamGroupName": null
+  },
+  "lastUpdateDateTime": "2026-07-03T07:35:20.9",
+  "matchIsFinished": false,
+  "matchResults": [],
+  "goals": [],
+  "location": null,
+  "numberOfViewers": null
+ }
+]
