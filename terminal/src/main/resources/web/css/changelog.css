@@ -4,14 +4,14 @@
    own dressing: the amber edge shimmer, the version breadcrumb, and the
    rendered-Markdown typography of the notes body. */
 
-/* Organic edge shimmer: two amber rim lights breathe and drift with
-   incommensurate periods (7s vs 11s), so the compound pattern never visibly
-   repeats. Deliberately TIGHT (small blur, hugging the border) — a wide soft
-   halo bled into the app content showing through the scrim and read as a
-   muddy cloud instead of a lit edge. They mirror the panel's box exactly and
-   sit behind it — only the spill past the edge shows. Animating while open
-   costs OSR repaints (see the paint-pipeline notes), acceptable for a modal
-   that lives seconds; [hidden] → display:none stops both entirely. */
+/* Static amber edge shimmer: two rim lights hug the panel border. Deliberately
+   TIGHT (small blur) — a wide soft halo bled into the app content showing
+   through the scrim and read as a muddy cloud instead of a lit edge. They
+   mirror the panel's box exactly and sit behind it — only the spill past the
+   edge shows. They are STATIC on purpose: under the software OSR renderer every
+   animated frame forces a full repaint of this large region (see the
+   paint-pipeline notes), which lagged the whole overlay for its lifetime — a
+   still rim paints once on open and costs nothing thereafter. */
 .changelog-overlay::before,
 .changelog-overlay::after {
   content: "";
@@ -23,19 +23,9 @@
 }
 .changelog-overlay::before {
   box-shadow: 0 0 14px 1px oklch(from var(--amber) l c h / .28);
-  animation: changelog-aura-breathe 7s ease-in-out infinite;
 }
 .changelog-overlay::after {
   box-shadow: 0 0 30px 2px oklch(from var(--amber) l c h / .12);
-  animation: changelog-aura-drift 11s ease-in-out infinite;
-}
-@keyframes changelog-aura-breathe {
-  0%, 100% { opacity: .5; }
-  50%      { opacity: 1; }
-}
-@keyframes changelog-aura-drift {
-  0%, 100% { opacity: .3; transform: translate(-50.25%, -50.35%); }
-  50%      { opacity: 1;   transform: translate(-49.75%, -49.65%); }
 }
 
 /* Breadcrumb: newest → oldest, "/"-separated; the selected release reads
