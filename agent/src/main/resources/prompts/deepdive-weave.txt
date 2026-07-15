@@ -5,7 +5,7 @@ Hold the delivered source or sources against the standing text - exactly three c
 - It CONFIRMS a standing claim: add its marker to that paragraph (triangulation - two sources say it independently); do not rebuild the sentence itself.
 - It CONTRADICTS a standing claim: name the contradiction explicitly in the text, source against source, with both markers - silence no side, apply no silent correction.
 - It brings something NEW: work the essential substance in where it belongs - extending a fitting paragraph or as a new paragraph, with its marker at the paragraph end.
-An article with an EVENT OF ITS OWN - takeover, ruling, fine, restructuring, guidance, target decision, contract win - ALWAYS gets worked in; a bare price note or an item WITHOUT a verifiable fact of its own (promotional prose, mood pieces) may pass without consequence: then return the standing text UNCHANGED.
+An article with an EVENT OF ITS OWN - takeover, ruling, fine, restructuring, guidance, target decision, contract win - ALWAYS gets worked in; a bare price note or an item WITHOUT a verifiable fact of its own (promotional prose, mood pieces) may pass without consequence: then answer with the single word UNCHANGED (nothing else) - the desk keeps the standing text as it is.
 
 ## Rules
 - Everything unaffected stays WORD FOR WORD - you weave, you do not rewrite; existing **bold** and *italic* emphasis survives exactly where it stands. The ONE licensed exception: when the section would grow beyond THREE paragraphs, fold the least load-bearing paragraph together with the new substance into one instead of appending a fourth.
@@ -16,4 +16,4 @@ An article with an EVENT OF ITS OWN - takeover, ruling, fine, restructuring, gui
 - Not a word about source integration, material or the making of the text.
 
 ## Output
-Answer ONLY with the complete section body in {{LANGUAGE}} - no heading, no commentary, no code fences.
+Answer ONLY with the complete section body in {{LANGUAGE}} - no heading, no commentary, no code fences. When nothing integrates, answer with the single word UNCHANGED instead.

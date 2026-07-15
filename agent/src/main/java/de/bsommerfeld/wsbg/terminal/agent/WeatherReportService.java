@@ -423,6 +423,19 @@ public class WeatherReportService {
         return assemble(headings, bodies, de, nameCatalog(headlines, stats.tickers()));
     }
 
+    /**
+     * The weave pass-case sentinel: the prompt licenses answering with the
+     * single word UNCHANGED instead of re-emitting the whole section (~1k
+     * saved output tokens per pass). Only an exact standalone match counts —
+     * a body that merely CONTAINS the word is a normal weave result.
+     */
+    static boolean isUnchangedSentinel(String reply) {
+        if (reply == null) return false;
+        String t = reply.strip();
+        if (t.endsWith(".")) t = t.substring(0, t.length() - 1);
+        return t.equalsIgnoreCase("UNCHANGED") || t.equalsIgnoreCase("UNVERÄNDERT");
+    }
+
     // --- fishing-net world-signal triage (2026-07-15) -----------------------
 
     private static final Pattern WORLD_TRIAGE_OBJ = Pattern.compile("\\{[^{}]*}");
@@ -650,7 +663,10 @@ public class WeatherReportService {
                         fixed + budgeted(story, weaveSys.length() + fixed.length())));
                 if (reply == null || reply.isBlank()) continue;
                 wovenStories.add(story);
-                if (reply.strip().equals(body.strip())) continue;
+                // The UNCHANGED sentinel (2026-07-15): a pass-case no longer
+                // re-emits the whole section — one word instead of ~1k tokens
+                // of generation, and no examiner pass on an unchanged body.
+                if (isUnchangedSentinel(reply) || reply.strip().equals(body.strip())) continue;
                 Repair repaired = examineAndRepair(model, reviseSys, header, heading,
                         shelf + "\n\n" + story, de, reply.strip());
                 body = repaired.body();

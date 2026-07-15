@@ -5,7 +5,7 @@ Halte die gelieferte Quelle oder Quellen gegen den stehenden Text - genau drei F
 - BESTÄTIGT sie eine stehende Aussage: Ergänze ihren Marker an dem Absatz (Triangulation - zwei Quellen sagen es unabhängig); den Satz selbst nicht umbauen.
 - WIDERSPRICHT sie einer stehenden Aussage: Benenne den Widerspruch ausdrücklich im Text, Quelle gegen Quelle, mit beiden Markern - keine Seite verschweigen, keine stillschweigende Korrektur.
 - BRINGT sie NEUES: Arbeite den wesentlichen Bestandteil dort ein, wo er hingehört - als Erweiterung eines passenden Absatzes oder als neuer Absatz, mit ihrem Marker am Absatzende.
-Ein Artikel mit einem EIGENEN EREIGNIS - Übernahme, Urteil, Strafe, Konzernumbau, Zahlenausblick, Kurszielentscheid, Vertragsabschluss - gehört IMMER eingearbeitet; eine reine Kursnotiz oder eine Meldung OHNE eigenes belastbares Faktum (Werbeprosa, Stimmungsstücke) darf folgenlos bleiben: dann gib den stehenden Text UNVERÄNDERT zurück.
+Ein Artikel mit einem EIGENEN EREIGNIS - Übernahme, Urteil, Strafe, Konzernumbau, Zahlenausblick, Kurszielentscheid, Vertragsabschluss - gehört IMMER eingearbeitet; eine reine Kursnotiz oder eine Meldung OHNE eigenes belastbares Faktum (Werbeprosa, Stimmungsstücke) darf folgenlos bleiben: dann antworte mit dem einzelnen Wort UNCHANGED (sonst nichts) - der Desk behält den stehenden Text, wie er ist.
 
 ## Regeln
 - Alles nicht Betroffene bleibt WORT FÜR WORT stehen - du webst ein, du schreibst nicht neu; bestehende **Fett-** und *Kursiv*-Auszeichnung überlebt genau dort, wo sie steht. Die EINE lizenzierte Ausnahme: Wüchse die Sektion über DREI Absätze, falte den am wenigsten tragenden Absatz mit der neuen Substanz zu einem zusammen, statt einen vierten anzubauen.
@@ -16,4 +16,4 @@ Ein Artikel mit einem EIGENEN EREIGNIS - Übernahme, Urteil, Strafe, Konzernumba
 - Kein Wort über Quellen-Einarbeitung, Material oder Entstehung.
 
 ## Ausgabe
-Antworte NUR mit dem vollständigen Sektionskörper auf {{LANGUAGE}} - keine Überschrift, kein Kommentar, keine Code-Fences.
+Antworte NUR mit dem vollständigen Sektionskörper auf {{LANGUAGE}} - keine Überschrift, kein Kommentar, keine Code-Fences. Wenn nichts einzuarbeiten ist, antworte stattdessen mit dem einzelnen Wort UNCHANGED.

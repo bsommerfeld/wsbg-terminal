@@ -862,6 +862,13 @@ public class DeepDiveService {
                         subject, heading, step);
                 continue;
             }
+            // The UNCHANGED sentinel (2026-07-15): a pass-case answers one
+            // word instead of re-emitting the whole section, and an unchanged
+            // body needs no examiner pass — the single biggest weave saving.
+            if (WeatherReportService.isUnchangedSentinel(woven)
+                    || woven.strip().equals(body.strip())) {
+                continue;
+            }
             RepairOutcome out = examineAndRepair(model, prompts, subject, header, heading, fed,
                     markersIn(fed), de, woven.strip());
             body = out.body();
@@ -1791,7 +1798,8 @@ public class DeepDiveService {
      */
     private Map<String, String> judgeNews(List<RawNewsItem> items, String about,
             String lang, String langName, ChatModel judge) {
-        Map<String, String> out = new HashMap<>();
+        // Concurrent: the batches run two-wide through the gate.
+        Map<String, String> out = new java.util.concurrent.ConcurrentHashMap<>();
         String prompt = PromptLoader.loadLocalized("deepdive-triage", lang)
                 .replace("{{LANGUAGE}}", langName);
         judgeBatches(items, about, prompt, judge, out);
@@ -1810,10 +1818,22 @@ public class DeepDiveService {
 
     private void judgeBatches(List<RawNewsItem> items, String about, String prompt,
             ChatModel judge, Map<String, String> out) {
+        // The batches are INDEPENDENT judge calls — run them two-wide, matching
+        // Ollama's NUM_PARALLEL (2026-07-15 performance pass; verdicts land in a
+        // concurrent map, quality untouched). The gate still governs every call.
+        List<Runnable> tasks = new ArrayList<>();
         for (int from = 0; from < items.size(); from += TRIAGE_BATCH) {
+            List<RawNewsItem> batch = items.subList(from, Math.min(items.size(), from + TRIAGE_BATCH));
+            tasks.add(() -> judgeOneBatch(batch, about, prompt, judge, out));
+        }
+        runTwoWide(tasks);
+    }
+
+    private void judgeOneBatch(List<RawNewsItem> batch, String about, String prompt,
+            ChatModel judge, Map<String, String> out) {
+        {
             // An uncapped pool means up to ~50 judge batches — cancel bites here too.
             checkCancelled();
-            List<RawNewsItem> batch = items.subList(from, Math.min(items.size(), from + TRIAGE_BATCH));
             StringBuilder list = new StringBuilder(1024);
             for (int i = 0; i < batch.size(); i++) {
                 RawNewsItem item = batch.get(i);
@@ -1875,6 +1895,47 @@ public class DeepDiveService {
                             head.substring(0, Math.min(head.length(), 400)));
                 }
             }
+        }
+    }
+
+    /**
+     * Runs independent judge tasks two-wide (Ollama's NUM_PARALLEL) on daemon
+     * workers. The submitting thread's INTERACTIVE lane rides into every task;
+     * a cancellation inside a task cancels the whole set.
+     */
+    private void runTwoWide(List<Runnable> tasks) {
+        if (tasks.isEmpty()) return;
+        if (tasks.size() == 1) {
+            tasks.get(0).run();
+            return;
+        }
+        boolean interactive = Boolean.TRUE.equals(ChatGateway.INTERACTIVE.get());
+        ExecutorService pool = Executors.newFixedThreadPool(2, r -> {
+            Thread t = new Thread(r, "dd-judge");
+            t.setDaemon(true);
+            return t;
+        });
+        try {
+            List<java.util.concurrent.Future<?>> futures = new ArrayList<>();
+            for (Runnable task : tasks) {
+                futures.add(pool.submit(() -> {
+                    if (interactive) ChatGateway.INTERACTIVE.set(Boolean.TRUE);
+                    try {
+                        task.run();
+                    } finally {
+                        ChatGateway.INTERACTIVE.remove();
+                    }
+                }));
+            }
+            for (java.util.concurrent.Future<?> f : futures) f.get();
+        } catch (java.util.concurrent.ExecutionException e) {
+            if (e.getCause() instanceof java.util.concurrent.CancellationException c) throw c;
+            if (e.getCause() instanceof RuntimeException r) throw r;
+            throw new RuntimeException(e.getCause());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } finally {
+            pool.shutdownNow();
         }
     }
 
@@ -4298,11 +4359,32 @@ public class DeepDiveService {
                 + (m.sectorDisplayName == null ? "" : "\nSECTOR: " + m.sectorDisplayName)
                 + (themes.length() == 0 ? ""
                         : "\n\nTHEMES (this report's accepted press titles):\n" + themes);
-        List<String> keep = new ArrayList<>();
+        // Independent batches, run two-wide (the triage pattern); each batch's
+        // survivors land in their own slot so the shelf order stays stable.
+        int batchCount = (candidates.size() + WORLD_JUDGE_BATCH - 1) / WORLD_JUDGE_BATCH;
+        List<List<String>> keepBySlot = new ArrayList<>();
+        for (int i = 0; i < batchCount; i++) {
+            keepBySlot.add(java.util.Collections.synchronizedList(new ArrayList<>()));
+        }
+        List<Runnable> tasks = new ArrayList<>();
         for (int from = 0; from < candidates.size(); from += WORLD_JUDGE_BATCH) {
-            checkCancelled();
+            final int slot = from / WORLD_JUDGE_BATCH;
             List<String> batch = candidates.subList(from,
                     Math.min(candidates.size(), from + WORLD_JUDGE_BATCH));
+            tasks.add(() -> judgeWorldBatch(batch, sys, context, judge, keepBySlot.get(slot)));
+        }
+        runTwoWide(tasks);
+        List<String> keep = new ArrayList<>();
+        for (List<String> slot : keepBySlot) keep.addAll(slot);
+        m.worldSignalKeep = keep;
+        LOG.info("[DEEPDIVE] '{}' world signals: {} candidate(s), {} judged relevant.",
+                subject, candidates.size(), keep.size());
+    }
+
+    private void judgeWorldBatch(List<String> batch, String sys, String context,
+            ChatModel judge, List<String> keep) {
+        {
+            checkCancelled();
             StringBuilder list = new StringBuilder(768);
             for (int i = 0; i < batch.size(); i++) {
                 list.append(i + 1).append(". ").append(batch.get(i)).append('\n');
@@ -4340,9 +4422,6 @@ public class DeepDiveService {
                 }
             }
         }
-        m.worldSignalKeep = keep;
-        LOG.info("[DEEPDIVE] '{}' world signals: {} candidate(s), {} judged relevant.",
-                subject, candidates.size(), keep.size());
     }
 
     /** The judge hint never reaches the shelf - it exists for the judge alone. */
