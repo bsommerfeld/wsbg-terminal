@@ -25,16 +25,6 @@ public class AgentConfig {
             + "recommendation lives in the launcher's hardware-recommendation.json.")
     private String modelTag = "";
 
-    @Key("agent.context-tokens")
-    @Comment("Context window (num_ctx) in tokens for the editorial-agent + vision model. "
-            + "Ollama silently defaults to 4096, which is tight for the agent's multi-cluster "
-            + "tool loop (system prompt + a getCluster report + accumulated tool results). 8192 "
-            + "doubles the headroom and stays comfortable on 16 GB unified memory together with "
-            + "OLLAMA_KV_CACHE_TYPE=q8_0 + flash attention. Raise to 16384 on 32 GB+ machines. "
-            + "Agent and vision share this value so they share one Ollama runner (one model in "
-            + "memory).")
-    private int contextTokens = 8192;
-
     @Key("agent.identity-desk")
     @Comment("The AI identity desk (border control): subject identity is decided by ONE "
             + "gemma4 judgment over the combined Yahoo + Lang & Schwarz search facts and the "
@@ -59,13 +49,6 @@ public class AgentConfig {
         this.editorialModel = editorialModel;
     }
 
-    public int getContextTokens() {
-        return contextTokens;
-    }
-
-    public void setContextTokens(int contextTokens) {
-        this.contextTokens = contextTokens;
-    }
 
     /**
      * Resolves the configured editorial-model string to a {@link Model}.
@@ -109,5 +92,39 @@ public class AgentConfig {
         String os = System.getProperty("os.name", "").toLowerCase();
         String arch = System.getProperty("os.arch", "").toLowerCase();
         return os.contains("mac") && (arch.contains("aarch64") || arch.contains("arm64"));
+    }
+
+    /**
+     * The effective context window (num_ctx) for the one resident model —
+     * fully automatic, scaled to this machine's physical memory (user mandate
+     * 2026-07-16: no maintained knob; the machine decides). The 8k floor was
+     * sized for 16 GB end-user machines with OLLAMA_KV_CACHE_TYPE=q8_0 +
+     * flash attention; a bigger window buys headroom per pass, not a
+     * different pipeline. Agent and vision share the value so they share one
+     * Ollama runner (num_ctx is a load-time parameter).
+     */
+    public int resolveContextTokens() {
+        return contextTokensFor(totalPhysicalMemoryBytes());
+    }
+
+    /** The memory tiers behind auto mode - package-visible for tests. */
+    static int contextTokensFor(long totalMemoryBytes) {
+        long gb = totalMemoryBytes / (1L << 30);
+        if (gb >= 64) return 24576;
+        if (gb >= 32) return 16384;
+        return 8192;
+    }
+
+    /** Total physical memory, or {@code 0} when the platform bean is unavailable. */
+    private static long totalPhysicalMemoryBytes() {
+        try {
+            var bean = java.lang.management.ManagementFactory.getOperatingSystemMXBean();
+            if (bean instanceof com.sun.management.OperatingSystemMXBean os) {
+                return os.getTotalMemorySize();
+            }
+        } catch (Throwable ignored) {
+            // fall through - auto mode then keeps the conservative floor
+        }
+        return 0;
     }
 }

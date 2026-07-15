@@ -26,8 +26,21 @@ class ConfigDefaultsTest {
     }
 
     @Test
-    void agentConfig_shouldDefaultContextTokensTo8192() {
-        assertEquals(8192, new AgentConfig().getContextTokens());
+    void agentConfig_shouldResolveContextTokensAutomatically() {
+        // Fully automatic (no config knob): the window scales with the
+        // machine's memory and never falls below the 8k end-user floor.
+        assertTrue(new AgentConfig().resolveContextTokens() >= 8192);
+    }
+
+    @Test
+    void agentConfig_shouldScaleAutoContextWindowByMemoryTier() {
+        long gb = 1L << 30;
+        assertEquals(8192, AgentConfig.contextTokensFor(0));       // unprobeable → floor
+        assertEquals(8192, AgentConfig.contextTokensFor(16 * gb));
+        assertEquals(16384, AgentConfig.contextTokensFor(32 * gb));
+        assertEquals(16384, AgentConfig.contextTokensFor(48 * gb));
+        assertEquals(24576, AgentConfig.contextTokensFor(64 * gb));
+        assertEquals(24576, AgentConfig.contextTokensFor(128 * gb));
     }
 
     @Test

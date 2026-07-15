@@ -73,8 +73,10 @@ final class OllamaModelFactory {
         // agent + vision share one Ollama runner instead of spawning a second
         // weight copy. The per-request sampling params (temperature, numPredict)
         // can still differ freely — those don't fork the runner.
-        int ctxTokens = config.getContextTokens();
+        int ctxTokens = config.resolveContextTokens();
         int visionCtxTokens = ctxTokens;
+        LOG.info("[models] context window auto-scaled to {} tokens for this machine's memory.",
+                ctxTokens);
 
         // gemma4 is a HYBRID THINKING model and Ollama defaults thinking ON — without an
         // explicit think=false every call silently generated ~2k chars of hidden English

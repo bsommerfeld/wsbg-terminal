@@ -254,6 +254,6 @@ public class AgentBrain {
      * because a silently-cut brief reads like the model suddenly got dumb.
      */
     public int contextTokens() {
-        return config.getAgent().getContextTokens();
+        return config.getAgent().resolveContextTokens();
     }
 }
