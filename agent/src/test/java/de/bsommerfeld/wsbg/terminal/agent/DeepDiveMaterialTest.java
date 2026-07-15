@@ -91,14 +91,26 @@ class DeepDiveMaterialTest {
         assertContains(brief, "COMPANY PORTRAIT (verified) [4]: Portrait");
 
         // Fundamentals: key-figure years incl. the estimate, balance sheet, boards.
+        // Every year label carries its reported/estimate status as a WORD the
+        // model can copy — the bare 'e' suffix provably lost against the 4B's
+        // training prior (reported years narrated as "geschätzt", live SAP
+        // 2026-07-15).
         assertContains(brief, "KEY FIGURES BY FISCAL YEAR");
-        assertContains(brief, "2026e:");
-        assertContains(brief, "EPS 55.00");
+        assertContains(brief, "2024 (reported):");
+        assertContains(brief, "2026e (consensus estimate):");
+        // Per-share values spelled out — the bare "EPS" acronym let the 4B
+        // narrate 6.95 per share as "6,95 Millionen Euro Gewinn" (live smoke
+        // 2026-07-15); the material now carries the meaning as a literal.
+        assertContains(brief, "earnings per share 55.00");
+        assertContains(brief, "dividend per share 12.00");
         assertContains(brief, "PEG 0.90");
         // Human units, never the upstream thousands-EUR raw values (a copied
         // "30 871 000" misstated SAP's revenue by three orders of magnitude).
         assertContains(brief, "BALANCE SHEET (verified");
-        assertContains(brief, "turnover 9.75B EUR");
+        // Balance years join their status via the key-figure flags; a year
+        // with no key-figure twin (2023) stays bare — honesty over a guess.
+        assertContains(brief, "2024 (reported): turnover 9.75B EUR");
+        assertContains(brief, "2023: turnover");
         assertContains(brief, "R&D 380.0M EUR");
         assertContains(brief, "BOARDS (verified) [4]: Armin Papperger (Vorstand)");
 
@@ -210,7 +222,8 @@ class DeepDiveMaterialTest {
         // 992.10 vs high 2008.50 / low 845.00.
         assertTrue(shelves[DeepDiveService.SEC_VALUATION].contains(
                 "VALUATION CONTEXT (house arithmetic on the verified figures)"));
-        assertTrue(shelves[DeepDiveService.SEC_VALUATION].contains("31.3x the 2026e consensus EPS"));
+        assertTrue(shelves[DeepDiveService.SEC_VALUATION]
+                .contains("31.3x the 2026e consensus earnings per share"));
         assertTrue(shelves[DeepDiveService.SEC_VALUATION].contains("50.6% below its 52w high"));
 
         assertTrue(shelves[DeepDiveService.SEC_CATALYSTS].contains("INSIDER DEALINGS"));

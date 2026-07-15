@@ -1433,7 +1433,10 @@ class WeatherStatsCollector {
                     () -> nasdaq.earningsOn(tomorrow, MAX_OUTLOOK_EARNINGS))) {
                 StringBuilder detail = new StringBuilder(e.symbol());
                 if (e.epsForecast() != null && !e.epsForecast().isBlank()) {
-                    detail.append(", erw. EPS ").append(e.epsForecast());
+                    // Spelled out, never the bare acronym — a 4B unfolds "EPS"
+                    // from its prior (live DD smoke 2026-07-15: per-share 6.95
+                    // narrated as "6,95 Millionen Euro Gewinn").
+                    detail.append(", erw. Gewinn je Aktie ").append(e.epsForecast());
                 }
                 EarningsWhispersClient.EarningsEstimate est =
                         estimates.get(e.symbol().toUpperCase(Locale.ROOT));

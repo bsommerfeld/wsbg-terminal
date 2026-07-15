@@ -3487,14 +3487,18 @@ public class DeepDiveService {
 
     private static void appendFundamentals(StringBuilder sb, CompanyDeepDive d, Map<String, Integer> nums) {
         if (d == null || d.keyFigures().isEmpty()) return;
-        sb.append("KEY FIGURES BY FISCAL YEAR (verified, 'e' = consensus estimate)")
+        sb.append("KEY FIGURES BY FISCAL YEAR (verified)")
                 .append(mark(nums, "consors")).append(":\n");
         List<CompanyDeepDive.KeyFigureYear> years = d.keyFigures();
         int from = Math.max(0, years.size() - MAX_KEY_FIGURE_YEARS);
+        // PER-SHARE values spelled out, never the bare acronym: a 4B unfolds
+        // "EPS" from its prior, not the desk's intent — live SAP smoke
+        // 2026-07-15 narrated "EPS 6.95" as "Gewinn von 6,95 Millionen Euro",
+        // a unit error the verbatim examiner cannot see (the figure matched).
         for (CompanyDeepDive.KeyFigureYear y : years.subList(from, years.size())) {
-            sb.append("  ").append(y.label()).append(':');
-            appendFig(sb, " EPS ", y.eps());
-            appendFig(sb, ", dividend ", y.dividendPerShare());
+            sb.append("  ").append(statusLabel(y)).append(':');
+            appendFig(sb, " earnings per share ", y.eps());
+            appendFig(sb, ", dividend per share ", y.dividendPerShare());
             appendFig(sb, " (yield ", y.dividendYieldPercent());
             if (Double.isFinite(y.dividendYieldPercent())) sb.append("%)");
             appendFig(sb, ", P/E ", y.peRatio());
@@ -3506,6 +3510,37 @@ public class DeepDiveService {
             if (y.employees() >= 0) sb.append(", ").append(groupedInt(y.employees())).append(" employees");
             sb.append('\n');
         }
+    }
+
+    /**
+     * A fiscal-year label rendered SELF-DESCRIBING for the material: the
+     * reported/estimate status as a word the model can COPY instead of a
+     * one-char 'e' convention it must decode — a 4B's training prior (2024/25
+     * read as future years) beats a low-salience suffix, and 4 of 6 archived
+     * reports narrated reported years as "geschätzt" (live SAP 2026-07-15:
+     * "2024 (Schätzung)" table on reported figures). Same lesson as the
+     * human-units rendering: the material carries the truth as a literal.
+     */
+    private static String statusLabel(CompanyDeepDive.KeyFigureYear y) {
+        return y.label() + (y.estimate() ? " (consensus estimate)" : " (reported)");
+    }
+
+    /**
+     * The reported/estimate status word for a BALANCE-SHEET year, joined by
+     * year digits against the key-figure flags (the balance leg itself
+     * carries no estimate marker). An unmatched year stays bare — honesty
+     * over a guessed status.
+     */
+    private static String balanceStatusLabel(CompanyDeepDive d, String label) {
+        for (CompanyDeepDive.KeyFigureYear y : d.keyFigures()) {
+            String year = y.estimate() && y.label().endsWith("e")
+                    ? y.label().substring(0, y.label().length() - 1)
+                    : y.label();
+            if (year.equals(label)) {
+                return label + (y.estimate() ? " (consensus estimate)" : " (reported)");
+            }
+        }
+        return label;
     }
 
     /**
@@ -3534,7 +3569,7 @@ public class DeepDiveService {
             for (CompanyDeepDive.KeyFigureYear y : m.deepDive.keyFigures()) {
                 if (!y.estimate() || !Double.isFinite(y.eps()) || y.eps() <= 0) continue;
                 line.append(String.format(Locale.ROOT,
-                        "the consensus target equals %.1fx the %s consensus EPS",
+                        "the consensus target equals %.1fx the %s consensus earnings per share",
                         av.targetPrice() / y.eps(), y.label()));
                 break;
             }
@@ -3577,9 +3612,9 @@ public class DeepDiveService {
             if (++n > 3) break;
             if (path.length() > 0) path.append("; ");
             path.append(y.label()).append(':');
-            appendFig(path, " EPS ", y.eps());
+            appendFig(path, " earnings per share ", y.eps());
             appendFig(path, ", P/E ", y.peRatio());
-            appendFig(path, ", dividend ", y.dividendPerShare());
+            appendFig(path, ", dividend per share ", y.dividendPerShare());
         }
         if (path.length() == 0) return;
         sb.append("CONSENSUS ESTIMATE PATH (verified, attributed street expectation)")
@@ -3652,7 +3687,7 @@ public class DeepDiveService {
         List<CompanyDeepDive.BalanceSheetYear> years = d.balanceSheet();
         int from = Math.max(0, years.size() - MAX_BALANCE_YEARS);
         for (CompanyDeepDive.BalanceSheetYear y : years.subList(from, years.size())) {
-            sb.append("  ").append(y.label()).append(':');
+            sb.append("  ").append(balanceStatusLabel(d, y.label())).append(':');
             appendMoneyThousands(sb, " turnover ", y.turnover());
             appendMoneyThousands(sb, ", net income ", y.netIncome());
             appendMoneyThousands(sb, ", equity ", y.equityCapital());
@@ -3751,7 +3786,8 @@ public class DeepDiveService {
         }
         boolean any = false;
         if (est.epsEstimate() != null) {
-            sb.append(String.format(Locale.ROOT, "consensus EPS %.2f USD", est.epsEstimate()));
+            sb.append(String.format(Locale.ROOT,
+                    "consensus earnings per share %.2f USD", est.epsEstimate()));
             any = true;
         }
         if (est.revenueEstimate() != null) {
@@ -4743,7 +4779,7 @@ public class DeepDiveService {
     /** The quarterly beat/miss track record vs consensus — Fundamentale Entwicklung. */
     private static void appendUsSurprises(StringBuilder sb, UsListingStats us, Map<String, Integer> nums) {
         if (us == null || us.earningsSurprises().isEmpty()) return;
-        sb.append("US EARNINGS SURPRISES (EPS actual vs consensus, NASDAQ, newest first)")
+        sb.append("US EARNINGS SURPRISES (earnings per share, actual vs consensus, NASDAQ, newest first)")
                 .append(mark(nums, "nasdaq")).append(":\n");
         int n = 0;
         for (UsListingStats.EarningsSurprise s : us.earningsSurprises()) {
