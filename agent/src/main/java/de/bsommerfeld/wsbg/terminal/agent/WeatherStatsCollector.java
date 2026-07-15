@@ -3,6 +3,7 @@ package de.bsommerfeld.wsbg.terminal.agent;
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.briefing.ApeWisdomClient;
 import de.bsommerfeld.wsbg.terminal.briefing.BundYieldClient;
+import de.bsommerfeld.wsbg.terminal.briefing.EcbFeedsClient;
 import de.bsommerfeld.wsbg.terminal.briefing.CboePutCallClient;
 import de.bsommerfeld.wsbg.terminal.briefing.CentralBankCalendarClient;
 import de.bsommerfeld.wsbg.terminal.briefing.CoinGeckoClient;
@@ -42,6 +43,7 @@ import de.bsommerfeld.wsbg.terminal.db.HeadlineSentiment;
 import de.bsommerfeld.wsbg.terminal.db.HeadlineSubject;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.AdhocStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.AnalystActionStat;
+import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.WorldSignals;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.BetStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.CbDateStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.CryptoStat;
@@ -95,6 +97,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.stream.Collectors;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Supplier;
@@ -188,6 +191,7 @@ class WeatherStatsCollector {
     private static final int WORLD_EVENTS_PER_CATEGORY = 2;
     private static final int MAX_WORLD_EVENTS = 8;
     private static final int MAX_TOP_NEWS = 8;
+    // Fishing-net freeze budgets live in WorldSignalsCollector (2026-07-15).
     /** Runaway backstop only (user mandate: no information lost to fixed caps). */
     private static final int MAX_PRESS_REVIEW = 400;
     private static final int MAX_HAZARDS = 10;
@@ -245,6 +249,11 @@ class WeatherStatsCollector {
     private volatile AnalystViewSource analystViewSource;
     private volatile ShortInterestSource shortInterestSource;
     private volatile InsiderDealingsSource insiderDealingsSource;
+    // The fishing-net world layer (2026-07-15) — collected by the ONE shared
+    // WorldSignalsCollector (the DD reads the same catch); the ECB client
+    // stays injected here separately for the rates section.
+    private volatile WorldSignalsCollector worldSignalsCollector;
+    private volatile EcbFeedsClient ecbFeedsClient;
     private volatile WatchlistService watchlistService;
     private volatile DeepDiveArchive deepDiveArchive;
 
@@ -439,6 +448,16 @@ class WeatherStatsCollector {
     }
 
     @com.google.inject.Inject(optional = true)
+    void setWorldSignalsCollector(WorldSignalsCollector collector) {
+        this.worldSignalsCollector = collector;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setEcbFeedsClient(EcbFeedsClient client) {
+        this.ecbFeedsClient = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
     void setDeepDiveArchive(DeepDiveArchive archive) {
         this.deepDiveArchive = archive;
     }
@@ -529,7 +548,8 @@ class WeatherStatsCollector {
                 guarded("hazards", List.of(), this::hazards),
                 guarded("ticker news", List.of(),
                         () -> tickerNews(tickers, todaysHeadlines, dayStart)),
-                guarded("street actions", List.of(), () -> streetActions(wireTickers)));
+                guarded("street actions", List.of(), () -> streetActions(wireTickers)),
+                guarded("world signals", null, () -> worldSignals(today, zone, dayStart)));
 
         return new Stats(indices(), tickers, news(todaysHeadlines), sentiment(), world);
     }
@@ -589,6 +609,30 @@ class WeatherStatsCollector {
             Double prev = Double.isFinite(s.previousClose())
                     ? normalizeTnx(s.previousClose()) : null;
             out.add(new RateStat("10J US-Treasury", normalizeTnx(s.price()), prev, null));
+        }
+        // The ECB's own policy anchors (SDMX, T+1) — the deposit facility rate
+        // IS the euro money market's floor, €STR the overnight fixing.
+        EcbFeedsClient ecb = ecbFeedsClient;
+        if (ecb != null) {
+            guardedRun("ecb rates", () -> {
+                EcbFeedsClient.Observation dfr = ecb.depositFacilityRate();
+                if (dfr != null) {
+                    out.add(new RateStat("EZB-Einlagensatz", dfr.value(), null,
+                            dfr.isoPeriod()));
+                }
+                EcbFeedsClient.Observation estr = ecb.estr();
+                if (estr != null) {
+                    out.add(new RateStat("€STR", estr.value(), null, estr.isoPeriod()));
+                }
+                // Inflation beside the yields it prices — desks read the pair.
+                EcbFeedsClient.Observation hicp = ecb.hicpFlash();
+                if (hicp != null) {
+                    out.add(new RateStat(hicp.estimate()
+                            ? "Inflation Euroraum (HICP-Flash, Schätzung)"
+                            : "Inflation Euroraum (HICP)",
+                            hicp.value(), null, hicp.isoPeriod()));
+                }
+            });
         }
         return out;
     }
@@ -1676,7 +1720,8 @@ class WeatherStatsCollector {
         for (WorldWeatherClient.PlaceWeather w : client.worldWeather()) {
             out.add(new de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.PlaceWeatherStat(
                     w.place(), w.role(), w.tempC(), w.word(), w.windKmh(),
-                    w.tomorrowMaxC(), w.tomorrowMinC(), w.tomorrowWord()));
+                    w.tomorrowMaxC(), w.tomorrowMinC(), w.tomorrowWord(),
+                    w.lat(), w.lon()));
         }
         return out;
     }
@@ -1688,8 +1733,20 @@ class WeatherStatsCollector {
         List<de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.HazardStat> out =
                 new ArrayList<>();
         for (GlobalHazardsClient.Hazard h : client.hazards()) {
+            Double lat = h.lat();
+            Double lon = h.lon();
+            if (lat == null && "AVIATION".equals(h.kind())) {
+                // FAA lines lead with the airport code ("EWR: Ground Stop …")
+                // — geocode it from the airport fact table.
+                int colon = h.text() == null ? -1 : h.text().indexOf(':');
+                double[] pos = colon > 0 ? WorldGeo.airport(h.text().substring(0, colon)) : null;
+                if (pos != null) {
+                    lat = pos[0];
+                    lon = pos[1];
+                }
+            }
             out.add(new de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.HazardStat(
-                    h.kind(), h.text(), h.severity()));
+                    h.kind(), h.text(), h.severity(), lat, lon));
             if (out.size() >= MAX_HAZARDS) break;
         }
         return out;
@@ -2027,6 +2084,27 @@ class WeatherStatsCollector {
             }
         }
         return out;
+    }
+
+    /**
+     * Freezes the fishing-net world layer beside the day — delegated to the
+     * ONE shared {@link WorldSignalsCollector} (the KI-DD reads the same
+     * catch). Which of these signals reaches the PROSE is decided by the
+     * report service's AI relevance triage; this only ingests.
+     */
+    private de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.WorldSignals worldSignals(
+            LocalDate today, ZoneId zone, Instant dayStart) {
+        WorldSignalsCollector collector = worldSignalsCollector;
+        return collector == null ? null : collector.collect(today, zone, dayStart);
+    }
+
+
+    /** {@link #guarded} for side-effecting sub-legs without a return value. */
+    private void guardedRun(String what, Runnable leg) {
+        guarded(what, null, () -> {
+            leg.run();
+            return null;
+        });
     }
 
     private static String isinForTicker(List<HeadlineRecord> headlines, String ticker) {

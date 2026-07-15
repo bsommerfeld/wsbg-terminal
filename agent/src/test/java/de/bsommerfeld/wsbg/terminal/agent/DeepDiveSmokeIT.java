@@ -85,6 +85,27 @@ class DeepDiveSmokeIT {
         svc.setPressScout(new CompanyPressScout(
                 new de.bsommerfeld.wsbg.terminal.source.net.DirectWebFetcher(),
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"));
+        // The fishing net (2026-07-15): the FULL catch + all hazards ride the
+        // smoke, so the subject-scoped world-signal judge runs live against
+        // the report's theme landscape.
+        WorldSignalsCollector world = new WorldSignalsCollector();
+        world.setPortWatchClient(new de.bsommerfeld.wsbg.terminal.briefing.PortWatchClient());
+        world.setEiaWpsrClient(new de.bsommerfeld.wsbg.terminal.briefing.EiaWpsrClient());
+        world.setHarpexClient(new de.bsommerfeld.wsbg.terminal.briefing.HarpexClient());
+        world.setEnergyChartsClient(
+                new de.bsommerfeld.wsbg.terminal.briefing.EnergyChartsClient());
+        world.setSpaceWeatherClient(
+                new de.bsommerfeld.wsbg.terminal.briefing.SpaceWeatherClient());
+        world.setFedFeedsClient(new de.bsommerfeld.wsbg.terminal.briefing.FedFeedsClient());
+        world.setEcbFeedsClient(new de.bsommerfeld.wsbg.terminal.briefing.EcbFeedsClient());
+        world.setCisaKevClient(new de.bsommerfeld.wsbg.terminal.briefing.CisaKevClient());
+        world.setPresseportalClient(
+                new de.bsommerfeld.wsbg.terminal.briefing.PresseportalClient());
+        world.setWikipediaClient(
+                new de.bsommerfeld.wsbg.terminal.briefing.WikipediaCurrentEventsClient());
+        svc.setWorldCollector(world);
+        svc.setGlobalHazardsClient(
+                new de.bsommerfeld.wsbg.terminal.briefing.GlobalHazardsClient());
 
         assertTrue(svc.generate("SAP"), "generation must start");
         // Generous window: the pipeline's own calls sum to ~5-6 minutes, but a

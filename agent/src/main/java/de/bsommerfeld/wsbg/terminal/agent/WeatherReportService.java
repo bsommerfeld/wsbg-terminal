@@ -150,6 +150,22 @@ public class WeatherReportService {
         this.newsDigester = digester;
     }
 
+    /** The market memory's event register (prod-wired, absent in unit tests/smoke). */
+    private volatile de.bsommerfeld.wsbg.terminal.db.MarketEventArchive marketEventArchive;
+
+    @com.google.inject.Inject(optional = true)
+    void setMarketEventArchive(de.bsommerfeld.wsbg.terminal.db.MarketEventArchive archive) {
+        this.marketEventArchive = archive;
+    }
+
+    /** The daily Fear&Greed history (prod-wired, absent in unit tests/smoke). */
+    private volatile de.bsommerfeld.wsbg.terminal.db.FearGreedHistoryArchive fearGreedHistory;
+
+    @com.google.inject.Inject(optional = true)
+    void setFearGreedHistoryArchive(de.bsommerfeld.wsbg.terminal.db.FearGreedHistoryArchive archive) {
+        this.fearGreedHistory = archive;
+    }
+
     private final AtomicBoolean started = new AtomicBoolean(false);
     private ScheduledFuture<?> pending;
     private long nextRunAtMs;
@@ -277,7 +293,7 @@ public class WeatherReportService {
             List<WeatherReportRecord.ChartStat> charts = List.of();
             try {
                 charts = new WeatherCharts(brain.getUserLanguage().code())
-                        .build(stats, headlines, zone);
+                        .build(stats, headlines, zone, fearGreedSeries(today));
             } catch (Exception e) {
                 LOG.warn("Wetterbericht chart build failed: {}", e.getMessage());
             }
@@ -295,6 +311,25 @@ public class WeatherReportService {
             if (started.get()) armSchedule();
             eventBus.post(new WeatherReportFinishedEvent(date, success));
         }
+    }
+
+    /** Calendar window of the Fear&Greed regime band (~60 days ≈ 40 trading points). */
+    private static final int FG_REGIME_DAYS = 60;
+
+    /**
+     * The last ~{@value #FG_REGIME_DAYS} days of archived Fear&amp;Greed
+     * scores, chronological (today last, non-trading days simply absent) —
+     * the regime band's series. Empty when the history archive isn't wired.
+     */
+    private List<Integer> fearGreedSeries(java.time.LocalDate today) {
+        var archive = fearGreedHistory;
+        if (archive == null) return List.of();
+        List<Integer> out = new java.util.ArrayList<>();
+        for (int back = FG_REGIME_DAYS - 1; back >= 0; back--) {
+            archive.byDate(today.minusDays(back).toString())
+                    .ifPresent(r -> out.add((int) Math.round(r.score())));
+        }
+        return out;
     }
 
     /**
@@ -318,8 +353,23 @@ public class WeatherReportService {
                 windowWire(headlines, 0, MIDDAY_FROM, digestSys, zone),
                 windowWire(headlines, MIDDAY_FROM, EVENING_FROM, digestSys, zone),
                 windowWire(headlines, EVENING_FROM, 24, digestSys, zone)};
+        List<WeatherMaterial.WorldSignal> worldSignals = triageWorldSignals(
+                stats.world() == null ? null : stats.world().worldSignals(), lang);
         String[] shelves = WeatherMaterial.sectionShelves(stats, today,
-                wires[0], wires[1], wires[2]);
+                wires[0], wires[1], wires[2], worldSignals);
+        // Market memory (deterministic): today's event classes with their house
+        // base rates + attributed literature priors onto the EVENING shelf —
+        // "wie reagierte der Markt historisch auf so eine Nachricht" beside the
+        // day's disclosures; the block's discipline line keeps it a prior.
+        try {
+            String memoryBlock = MarketMemoryBriefing.dayBlock(marketEventArchive, today, de);
+            if (memoryBlock != null && shelves.length > 3) {
+                shelves[3] = shelves[3] == null || shelves[3].isBlank()
+                        ? memoryBlock : shelves[3] + "\n" + memoryBlock;
+            }
+        } catch (Exception e) {
+            LOG.debug("[WEATHER] market-memory block failed: {}", e.getMessage());
+        }
         List<String> headings = de ? SECTIONS_DE : SECTIONS_EN;
 
         String sectionSys = localized("weather-section", lang);
@@ -371,6 +421,79 @@ public class WeatherReportService {
         }
         if (written == 0) return "";
         return assemble(headings, bodies, de, nameCatalog(headlines, stats.tickers()));
+    }
+
+    // --- fishing-net world-signal triage (2026-07-15) -----------------------
+
+    private static final Pattern WORLD_TRIAGE_OBJ = Pattern.compile("\\{[^{}]*}");
+    private static final Pattern WORLD_TRIAGE_I = Pattern.compile("\"i\"\\s*:\\s*(\\d+)");
+    private static final Pattern WORLD_TRIAGE_REL =
+            Pattern.compile("\"relevant\"\\s*:\\s*(true|false)");
+    private static final int WORLD_TRIAGE_BATCH = 10;
+
+    /**
+     * The fishing-net relevance triage: every frozen world signal is judged by
+     * the model ("does this plausibly matter for TODAY's market report?")
+     * before it may reach a shelf — ingestion is uncurated, the shelves are
+     * guarded. Deliberately FAIL-CLOSED per unjudged signal (the opposite of
+     * the DD's news triage): the frozen record keeps everything for the UI,
+     * but an unjudged Blaulicht line must never flood the report's scarce
+     * shelf space. A whiffed triage costs its batch's shelf lines, never the
+     * report.
+     */
+    private List<WeatherMaterial.WorldSignal> triageWorldSignals(
+            WeatherReportRecord.WorldSignals signals, String lang) {
+        List<WeatherMaterial.WorldSignal> candidates =
+                WeatherMaterial.worldSignalCandidates(signals);
+        if (candidates.isEmpty()) return List.of();
+        ChatModel judge = brain.getAgentModel();
+        if (judge == null) return List.of();
+        String sys = localized("weather-worldtriage", lang);
+        java.util.Set<Integer> keep = new java.util.HashSet<>();
+        for (int from = 0; from < candidates.size(); from += WORLD_TRIAGE_BATCH) {
+            List<WeatherMaterial.WorldSignal> batch = candidates.subList(from,
+                    Math.min(candidates.size(), from + WORLD_TRIAGE_BATCH));
+            StringBuilder list = new StringBuilder(768);
+            for (int i = 0; i < batch.size(); i++) {
+                list.append(i + 1).append(". ").append(batch.get(i).line()).append('\n');
+            }
+            // A zero-parse reply is a whiffed judge call, not a verdict — one
+            // retry before the batch falls closed (live smoke 2026-07-15: two
+            // of seven batches whiffed and 20 real signals were lost).
+            for (int attempt = 1; attempt <= 2; attempt++) {
+                int parsed = 0;
+                try {
+                    String reply = gateway.chat(judge, sys, "SIGNALS:\n" + list);
+                    Matcher obj = WORLD_TRIAGE_OBJ.matcher(reply == null ? "" : reply);
+                    while (obj.find()) {
+                        String o = obj.group();
+                        Matcher iM = WORLD_TRIAGE_I.matcher(o);
+                        if (!iM.find()) continue;
+                        int i = Integer.parseInt(iM.group(1));
+                        if (i < 1 || i > batch.size()) continue;
+                        Matcher relM = WORLD_TRIAGE_REL.matcher(o);
+                        if (relM.find() && Boolean.parseBoolean(relM.group(1))) {
+                            keep.add(batch.get(i - 1).i());
+                        }
+                        parsed++;
+                    }
+                } catch (Exception e) {
+                    LOG.warn("[WEATHER] world-signal triage batch failed: {}{}",
+                            e.getMessage(), attempt == 1 ? " — retrying" : " — fail-closed.");
+                }
+                if (parsed > 0) break;
+                if (attempt == 2) {
+                    LOG.warn("[WEATHER] world-signal triage batch yielded no verdicts "
+                            + "twice — its {} signal(s) stay off the shelves (fail-closed).",
+                            batch.size());
+                }
+            }
+        }
+        List<WeatherMaterial.WorldSignal> survivors = candidates.stream()
+                .filter(c -> keep.contains(c.i())).toList();
+        LOG.info("[WEATHER] world signals: {} candidate(s), {} relevant after triage.",
+                candidates.size(), survivors.size());
+        return survivors;
     }
 
     /**

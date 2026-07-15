@@ -194,7 +194,8 @@ public record WeatherReportRecord(
             List<PlaceWeatherStat> worldWeather,
             List<HazardStat> hazards,
             List<TickerNewsStat> tickerNews,
-            List<StreetActionStat> streetActions) {
+            List<StreetActionStat> streetActions,
+            WorldSignals worldSignals) {
 
         public WorldStats {
             sectors = sectors == null ? List.of() : List.copyOf(sectors);
@@ -223,6 +224,30 @@ public record WeatherReportRecord(
             hazards = hazards == null ? List.of() : List.copyOf(hazards);
             tickerNews = tickerNews == null ? List.of() : List.copyOf(tickerNews);
             streetActions = streetActions == null ? List.of() : List.copyOf(streetActions);
+        }
+
+        /** Pre-fishing-net shape (2026-07-15) — kept for tests/old lines. */
+        public WorldStats(List<IndexStat> sectors, List<IndexStat> overnight,
+                List<RateStat> rates, RoomPulse pulse, List<AdhocStat> adhocs,
+                List<AnalystActionStat> analystActions, List<MacroStat> macroActuals,
+                List<MacroStat> macroEvents, String pressDigest, List<MoverStat> movers,
+                PutCallStat putCall, List<SocialStat> social, CryptoStat crypto,
+                List<BetStat> bets, List<ShortVolStat> shortVolume, List<DepthStat> depth,
+                List<WatchlistStat> watchlist, List<String> deepDives,
+                List<OutlookStat> outlook, PegelStat pegel, Double usDebtUsd,
+                ExchangeWeatherStat exchangeWeather, MoonStat moon,
+                List<DaypartStat> dayparts, List<EconOutcomeStat> econOutcomes,
+                List<WorldEventStat> worldEvents, List<EventReviewStat> eventReviews,
+                List<CbDateStat> cbDates, List<TopNewsStat> topNews,
+                List<PressReviewStat> pressReview, List<PlaceWeatherStat> worldWeather,
+                List<HazardStat> hazards, List<TickerNewsStat> tickerNews,
+                List<StreetActionStat> streetActions) {
+            this(sectors, overnight, rates, pulse, adhocs, analystActions, macroActuals,
+                    macroEvents, pressDigest, movers, putCall, social, crypto, bets,
+                    shortVolume, depth, watchlist, deepDives, outlook, pegel, usDebtUsd,
+                    exchangeWeather, moon, dayparts, econOutcomes, worldEvents,
+                    eventReviews, cbDates, topNews, pressReview, worldWeather, hazards,
+                    tickerNews, streetActions, null);
         }
 
         /** Pre-street-actions shape (2026-07-14 late) — kept for tests/old lines. */
@@ -509,7 +534,16 @@ public record WeatherReportRecord(
      * current temperature + condition word, wind, and tomorrow's range.
      */
     public record PlaceWeatherStat(String place, String role, Double tempC, String word,
-            Double windKmh, Double tomorrowMaxC, Double tomorrowMinC, String tomorrowWord) {
+            Double windKmh, Double tomorrowMaxC, Double tomorrowMinC, String tomorrowWord,
+            Double lat, Double lon) {
+
+        /** Pre-map shape (2026-07-15) — kept for old JSONL lines/tests. */
+        public PlaceWeatherStat(String place, String role, Double tempC, String word,
+                Double windKmh, Double tomorrowMaxC, Double tomorrowMinC,
+                String tomorrowWord) {
+            this(place, role, tempC, word, windKmh, tomorrowMaxC, tomorrowMinC,
+                    tomorrowWord, null, null);
+        }
     }
 
     /**
@@ -517,7 +551,13 @@ public record WeatherReportRecord(
      * (NHC tropical systems), QUAKE (USGS M5.5+/PAGER), AVIATION (FAA ground
      * stops/delays); {@code severity} HIGH/MEDIUM.
      */
-    public record HazardStat(String kind, String text, String severity) {
+    public record HazardStat(String kind, String text, String severity,
+            Double lat, Double lon) {
+
+        /** Pre-map shape (2026-07-15) — kept for old JSONL lines/tests. */
+        public HazardStat(String kind, String text, String severity) {
+            this(kind, text, severity, null, null);
+        }
     }
 
     /**
@@ -550,5 +590,203 @@ public record WeatherReportRecord(
 
     /** The moon, because zum Mond: phase token, illumination, days to full. */
     public record MoonStat(String phase, Integer illuminationPercent, Integer daysToFull) {
+    }
+
+    /**
+     * The fishing-net world layer (2026-07-15): every viable world-data leg
+     * frozen beside the day — maritime chokepoints, US oil stocks, container
+     * freight, German power, space weather, the policy wires, polls, the civic
+     * layer, public health, exploited CVEs, sport and holidays. The frozen
+     * record always carries the full catch (sezierbar under the report);
+     * whether a signal reaches the PROSE is decided by an AI relevance triage
+     * at write time — curation happens at the shelves, never at ingestion.
+     * Nullable as a whole on pre-2026-07-15 lines; every leg best-effort.
+     */
+    public record WorldSignals(
+            List<ChokepointStat> chokepoints,
+            OilStockStat oilStocks,
+            FreightStat freight,
+            PowerStat power,
+            SpaceWxStat spaceWeather,
+            List<PolicyStat> policy,
+            List<PollStat> polls,
+            List<CivicStat> civic,
+            HealthStat health,
+            List<CyberStat> cyber,
+            List<String> sportsTomorrow,
+            HolidayStat holidays,
+            List<ConflictStat> conflicts) {
+
+        public WorldSignals {
+            chokepoints = chokepoints == null ? List.of() : List.copyOf(chokepoints);
+            policy = policy == null ? List.of() : List.copyOf(policy);
+            polls = polls == null ? List.of() : List.copyOf(polls);
+            civic = civic == null ? List.of() : List.copyOf(civic);
+            cyber = cyber == null ? List.of() : List.copyOf(cyber);
+            sportsTomorrow = sportsTomorrow == null ? List.of() : List.copyOf(sportsTomorrow);
+            conflicts = conflicts == null ? List.of() : List.copyOf(conflicts);
+        }
+
+        /** Pre-conflicts shape (2026-07-15 intra-day) — kept for tests. */
+        public WorldSignals(List<ChokepointStat> chokepoints, OilStockStat oilStocks,
+                FreightStat freight, PowerStat power, SpaceWxStat spaceWeather,
+                List<PolicyStat> policy, List<PollStat> polls, List<CivicStat> civic,
+                HealthStat health, List<CyberStat> cyber, List<String> sportsTomorrow,
+                HolidayStat holidays) {
+            this(chokepoints, oilStocks, freight, power, spaceWeather, policy, polls,
+                    civic, health, cyber, sportsTomorrow, holidays, null);
+        }
+    }
+
+    /**
+     * One maritime chokepoint as of {@code dateIso} (IMF PortWatch, T-2):
+     * vessel transits that day plus the house-computed change vs the same
+     * chokepoint one week earlier (null when the week-ago day is absent).
+     */
+    public record ChokepointStat(String name, String dateIso, Integer transits,
+            Double weekDeltaPercent) {
+    }
+
+    /**
+     * The weekly US petroleum stock report (EIA WPSR), all in million barrels,
+     * deltas week-over-week; {@code weekEnding} the stock date. NaN-free —
+     * absent rows arrive as null here.
+     */
+    public record OilStockStat(String weekEnding,
+            Double crudeMb, Double crudeDeltaMb, Double sprMb, Double sprDeltaMb,
+            Double gasolineMb, Double gasolineDeltaMb,
+            Double distillateMb, Double distillateDeltaMb) {
+    }
+
+    /**
+     * Container charter rates (Harpex, weekly): latest value, the prior
+     * week's, and the weekly series (chronological, index points) for the
+     * freight curve figure.
+     */
+    public record FreightStat(Double harpex, Double harpexWeekAgo, String dateIso,
+            List<Double> series) {
+
+        public FreightStat {
+            series = series == null ? List.of() : List.copyOf(series);
+        }
+
+        /** Pre-series shape (2026-07-15 intra-day) — kept for tests. */
+        public FreightStat(Double harpex, Double harpexWeekAgo, String dateIso) {
+            this(harpex, harpexWeekAgo, dateIso, null);
+        }
+    }
+
+    /**
+     * The German power day (Energy-Charts/Fraunhofer): day-ahead price stats
+     * in EUR/MWh plus the live generation mix (renewable share, top source).
+     */
+    public record PowerStat(Double currentEurMwh, Double minEurMwh, Double maxEurMwh,
+            Double avgEurMwh, Double renewableSharePercent, String topSource,
+            List<Double> priceSeries) {
+
+        public PowerStat {
+            priceSeries = priceSeries == null ? List.of() : List.copyOf(priceSeries);
+        }
+
+        /** Pre-series shape (2026-07-15 intra-day) — kept for tests. */
+        public PowerStat(Double currentEurMwh, Double minEurMwh, Double maxEurMwh,
+                Double avgEurMwh, Double renewableSharePercent, String topSource) {
+            this(currentEurMwh, minEurMwh, maxEurMwh, avgEurMwh, renewableSharePercent,
+                    topSource, null);
+        }
+    }
+
+    /**
+     * NOAA space-weather scales today (radio blackouts R, solar radiation S,
+     * geomagnetic storms G, each 0-5; -1 unknown) + the 3-day max G forecast.
+     */
+    public record SpaceWxStat(Integer r, Integer s, Integer g, Integer forecastMaxG) {
+    }
+
+    /**
+     * One policy-wire item of the day; {@code source} names the desk
+     * (FED / EZB / WHITE_HOUSE / FEDERAL_REGISTER / EU_KOMMISSION),
+     * {@code time} local HH:mm where the feed carries one.
+     */
+    public record PolicyStat(String source, String title, String time) {
+    }
+
+    /**
+     * One fresh election poll (dawum): parliament, institute, survey date and
+     * the preformatted top-parties line ("CDU/CSU 29 %, AfD 24 %, …").
+     */
+    public record PollStat(String parliament, String institute, String dateIso,
+            String topline, java.util.Map<String, Double> results) {
+
+        public PollStat {
+            results = results == null ? java.util.Map.of()
+                    : java.util.Collections.unmodifiableMap(
+                            new java.util.LinkedHashMap<>(results));
+        }
+
+        /** Pre-results shape (2026-07-15 intra-day) — kept for tests. */
+        public PollStat(String parliament, String institute, String dateIso,
+                String topline) {
+            this(parliament, institute, dateIso, topline, null);
+        }
+    }
+
+    /**
+     * One civic-layer press release of the day (presseportal/dpa-OTS):
+     * {@code channel} the feed it came from (BLAULICHT / FINANZEN / POLITIK /
+     * HANDEL / …), {@code office} the emitting police office or company where
+     * the item carries one, {@code time} local HH:mm.
+     */
+    public record CivicStat(String channel, String office, String title, String time) {
+    }
+
+    /**
+     * The public-health snapshot: German ICU occupancy (DIVI), the RKI ARE
+     * consultation incidence with its ISO week, and the newest WHO disease
+     * outbreak notices as preformatted "date — title" lines.
+     */
+    public record HealthStat(Double icuOccupancyPercent, Double areIncidence,
+            String areWeek, List<String> outbreaks, List<Double> areSeries) {
+
+        public HealthStat {
+            outbreaks = outbreaks == null ? List.of() : List.copyOf(outbreaks);
+            areSeries = areSeries == null ? List.of() : List.copyOf(areSeries);
+        }
+
+        /** Pre-series shape (2026-07-15 intra-day) — kept for tests. */
+        public HealthStat(Double icuOccupancyPercent, Double areIncidence,
+                String areWeek, List<String> outbreaks) {
+            this(icuOccupancyPercent, areIncidence, areWeek, outbreaks, null);
+        }
+    }
+
+    /** One newly exploited CVE (CISA KEV): id, "Vendor Product", date added. */
+    public record CyberStat(String cve, String vendorProduct, String dateAdded) {
+    }
+
+    /**
+     * The holiday board: the next German public holiday (name + ISO date),
+     * whether TOMORROW is one (a schedule fact for the outlook), and the
+     * state codes currently in school holidays.
+     */
+    public record HolidayStat(String nextHolidayName, String nextHolidayDateIso,
+            boolean tomorrowIsHoliday, List<String> schoolHolidayStates) {
+
+        public HolidayStat {
+            schoolHolidayStates = schoolHolidayStates == null
+                    ? List.of() : List.copyOf(schoolHolidayStates);
+        }
+    }
+
+    /**
+     * One armed-conflict/attack event of the day (Wikipedia Current Events
+     * portal, attributed): the portal sentence, the cited outlet, and the
+     * house's deterministic COUNTRY-LEVEL geocode (Natural Earth centroid —
+     * coarse by design and labeled as such; null when no country is named).
+     * The user's Hormuz case lives here: a conflict marker beside a
+     * chokepoint whose transit delta shows the effect.
+     */
+    public record ConflictStat(String country, String text, String source,
+            Double lat, Double lon) {
     }
 }

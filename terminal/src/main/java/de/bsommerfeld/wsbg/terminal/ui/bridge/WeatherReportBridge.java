@@ -288,9 +288,11 @@ public class WeatherReportBridge {
         putList(out, "worldWeather", w.worldWeather(), p -> map("place", p.place(),
                 "role", p.role(), "tempC", p.tempC(), "word", p.word(),
                 "windKmh", p.windKmh(), "tomorrowMaxC", p.tomorrowMaxC(),
-                "tomorrowMinC", p.tomorrowMinC(), "tomorrowWord", p.tomorrowWord()));
+                "tomorrowMinC", p.tomorrowMinC(), "tomorrowWord", p.tomorrowWord(),
+                "lat", p.lat(), "lon", p.lon()));
         putList(out, "hazards", w.hazards(), h -> map("kind", h.kind(),
-                "text", h.text(), "severity", h.severity()));
+                "text", h.text(), "severity", h.severity(),
+                "lat", h.lat(), "lon", h.lon()));
         putList(out, "tickerNews", w.tickerNews(), n -> map("ticker", n.ticker(),
                 "title", n.title(), "publisher", n.publisher(), "time", n.time()));
         putList(out, "streetActions", w.streetActions(), a -> map("symbol", a.symbol(),
@@ -299,6 +301,76 @@ public class WeatherReportBridge {
                 "targetOld", a.targetOld(), "targetNew", a.targetNew(),
                 "targetCurrency", a.targetCurrency(),
                 "inKaefig", a.inKaefig() ? Boolean.TRUE : null));
+        if (w.worldSignals() != null) {
+            Map<String, Object> sig = worldSignalsJson(w.worldSignals());
+            if (!sig.isEmpty()) out.put("worldSignals", sig);
+        }
+        return out;
+    }
+
+    /**
+     * The fishing-net world layer (worldSignals, 2026-07-15) — null as a whole
+     * on older archive lines, every leg individually optional; same omission
+     * rules as the rest of the world block.
+     */
+    private static Map<String, Object> worldSignalsJson(WeatherReportRecord.WorldSignals s) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        putList(out, "chokepoints", s.chokepoints(), c -> map("name", c.name(),
+                "dateIso", c.dateIso(), "transits", c.transits(),
+                "weekDeltaPercent", c.weekDeltaPercent()));
+        if (s.oilStocks() != null) {
+            WeatherReportRecord.OilStockStat o = s.oilStocks();
+            out.put("oilStocks", map("weekEnding", o.weekEnding(),
+                    "crudeMb", o.crudeMb(), "crudeDeltaMb", o.crudeDeltaMb(),
+                    "sprMb", o.sprMb(), "sprDeltaMb", o.sprDeltaMb(),
+                    "gasolineMb", o.gasolineMb(), "gasolineDeltaMb", o.gasolineDeltaMb(),
+                    "distillateMb", o.distillateMb(), "distillateDeltaMb", o.distillateDeltaMb()));
+        }
+        if (s.freight() != null) {
+            out.put("freight", map("harpex", s.freight().harpex(),
+                    "harpexWeekAgo", s.freight().harpexWeekAgo(),
+                    "dateIso", s.freight().dateIso(),
+                    "series", s.freight().series().isEmpty() ? null : s.freight().series()));
+        }
+        if (s.power() != null) {
+            out.put("power", map("currentEurMwh", s.power().currentEurMwh(),
+                    "minEurMwh", s.power().minEurMwh(), "maxEurMwh", s.power().maxEurMwh(),
+                    "avgEurMwh", s.power().avgEurMwh(),
+                    "renewableSharePercent", s.power().renewableSharePercent(),
+                    "topSource", s.power().topSource(),
+                    "priceSeries", s.power().priceSeries().isEmpty()
+                            ? null : s.power().priceSeries()));
+        }
+        if (s.spaceWeather() != null) {
+            out.put("spaceWeather", map("r", s.spaceWeather().r(), "s", s.spaceWeather().s(),
+                    "g", s.spaceWeather().g(), "forecastMaxG", s.spaceWeather().forecastMaxG()));
+        }
+        putList(out, "policy", s.policy(), p -> map("source", p.source(),
+                "title", p.title(), "time", p.time()));
+        putList(out, "polls", s.polls(), p -> map("parliament", p.parliament(),
+                "institute", p.institute(), "dateIso", p.dateIso(), "topline", p.topline(),
+                "results", p.results().isEmpty() ? null : p.results()));
+        putList(out, "civic", s.civic(), c -> map("channel", c.channel(),
+                "office", c.office(), "title", c.title(), "time", c.time()));
+        if (s.health() != null) {
+            out.put("health", map("icuOccupancyPercent", s.health().icuOccupancyPercent(),
+                    "areIncidence", s.health().areIncidence(), "areWeek", s.health().areWeek(),
+                    "outbreaks", s.health().outbreaks().isEmpty() ? null : s.health().outbreaks(),
+                    "areSeries", s.health().areSeries().isEmpty()
+                            ? null : s.health().areSeries()));
+        }
+        putList(out, "cyber", s.cyber(), c -> map("cve", c.cve(),
+                "vendorProduct", c.vendorProduct(), "dateAdded", c.dateAdded()));
+        putList(out, "conflicts", s.conflicts(), c -> map("country", c.country(),
+                "text", c.text(), "source", c.source(), "lat", c.lat(), "lon", c.lon()));
+        if (!s.sportsTomorrow().isEmpty()) out.put("sportsTomorrow", s.sportsTomorrow());
+        if (s.holidays() != null) {
+            out.put("holidays", map("nextHolidayName", s.holidays().nextHolidayName(),
+                    "nextHolidayDateIso", s.holidays().nextHolidayDateIso(),
+                    "tomorrowIsHoliday", s.holidays().tomorrowIsHoliday() ? Boolean.TRUE : null,
+                    "schoolHolidayStates", s.holidays().schoolHolidayStates().isEmpty()
+                            ? null : s.holidays().schoolHolidayStates()));
+        }
         return out;
     }
 

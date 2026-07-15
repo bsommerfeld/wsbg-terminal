@@ -25,10 +25,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * workspace (window wires → shelves → author → examiner → challenger →
  * typesetter) against the REAL resident gemma4, fed with the REAL day's
  * headlines from the install's permanent archive (copied read-only into a
- * temp archive — the live install is never touched). World legs beyond Yahoo
- * stay absent — every leg is optional by design, and the section loop is
- * what this smoke proves. Gated twice: {@code WEATHER_SMOKE=true} AND a
- * reachable Ollama; a run makes ~15-30 model calls.
+ * temp archive — the live install is never touched). Since 2026-07-15 the
+ * FULL fishing net rides along live: every world leg collects, the relevance
+ * triage judges the real day's signals, and the frozen record must carry the
+ * catch plus the Weltlage map figure. Gated twice: {@code WEATHER_SMOKE=true}
+ * AND a reachable Ollama; a run makes ~20-40 model calls.
  *
  * <pre>WEATHER_SMOKE=true mvn test -pl agent -Dtest=WeatherSmokeIT -Dtest.excludedGroups=</pre>
  *
@@ -71,6 +72,44 @@ class WeatherSmokeIT {
                 new de.bsommerfeld.wsbg.terminal.briefing.WorldWeatherClient());
         collector.setGlobalHazardsClient(
                 new de.bsommerfeld.wsbg.terminal.briefing.GlobalHazardsClient());
+        // The FULL fishing net rides the smoke live (2026-07-15): every world
+        // leg collects, the relevance triage judges the real day's signals,
+        // and the frozen record must carry the catch.
+        WorldSignalsCollector world = new WorldSignalsCollector();
+        world.setPortWatchClient(new de.bsommerfeld.wsbg.terminal.briefing.PortWatchClient());
+        world.setEiaWpsrClient(new de.bsommerfeld.wsbg.terminal.briefing.EiaWpsrClient());
+        world.setHarpexClient(new de.bsommerfeld.wsbg.terminal.briefing.HarpexClient());
+        world.setEnergyChartsClient(
+                new de.bsommerfeld.wsbg.terminal.briefing.EnergyChartsClient());
+        world.setSpaceWeatherClient(
+                new de.bsommerfeld.wsbg.terminal.briefing.SpaceWeatherClient());
+        world.setFedFeedsClient(new de.bsommerfeld.wsbg.terminal.briefing.FedFeedsClient());
+        world.setEcbFeedsClient(new de.bsommerfeld.wsbg.terminal.briefing.EcbFeedsClient());
+        world.setWhiteHouseClient(
+                new de.bsommerfeld.wsbg.terminal.briefing.WhiteHouseActionsClient());
+        world.setFederalRegisterClient(
+                new de.bsommerfeld.wsbg.terminal.briefing.FederalRegisterClient());
+        world.setDawumClient(new de.bsommerfeld.wsbg.terminal.briefing.DawumClient());
+        world.setEuPresscornerClient(
+                new de.bsommerfeld.wsbg.terminal.briefing.EuPresscornerClient());
+        world.setPresseportalClient(
+                new de.bsommerfeld.wsbg.terminal.briefing.PresseportalClient());
+        world.setWhoOutbreakClient(
+                new de.bsommerfeld.wsbg.terminal.briefing.WhoOutbreakClient());
+        world.setDiviClient(new de.bsommerfeld.wsbg.terminal.briefing.DiviClient());
+        world.setRkiClient(new de.bsommerfeld.wsbg.terminal.briefing.RkiSurveillanceClient());
+        world.setCisaKevClient(new de.bsommerfeld.wsbg.terminal.briefing.CisaKevClient());
+        world.setSportsClient(
+                new de.bsommerfeld.wsbg.terminal.briefing.SportsCalendarClient());
+        world.setHolidayClient(
+                new de.bsommerfeld.wsbg.terminal.briefing.HolidayCalendarClient());
+        world.setSanctionsMapClient(
+                new de.bsommerfeld.wsbg.terminal.briefing.SanctionsMapClient());
+        world.setTrafficClient(new de.bsommerfeld.wsbg.terminal.briefing.TrafficClient());
+        world.setWikipediaClient(
+                new de.bsommerfeld.wsbg.terminal.briefing.WikipediaCurrentEventsClient());
+        collector.setWorldSignalsCollector(world);
+        collector.setEcbFeedsClient(new de.bsommerfeld.wsbg.terminal.briefing.EcbFeedsClient());
 
         WeatherReportService svc = new WeatherReportService(brain, gate,
                 headlines, reports, collector, config, bus);
@@ -107,5 +146,34 @@ class WeatherSmokeIT {
             assertTrue(spans <= WeatherReportService.MAX_BOLD_SPANS,
                     "bold budget broken (" + spans + " spans) in: " + section);
         }
+
+        // The fishing net (2026-07-15): the frozen record must carry the full
+        // catch — every leg is network-best-effort, but a live machine where
+        // EVERY world leg whiffed means the net is broken, not the weather.
+        WeatherReportRecord rec = written.get(0);
+        assertTrue(rec.world() != null, "no world block frozen");
+        WeatherReportRecord.WorldSignals sig = rec.world().worldSignals();
+        assertTrue(sig != null, "fishing net froze nothing — every world leg whiffed");
+        System.out.println("world signals frozen: chokepoints=" + sig.chokepoints().size()
+                + " oil=" + (sig.oilStocks() != null)
+                + " freight=" + (sig.freight() != null)
+                + " power=" + (sig.power() != null)
+                + " policy=" + sig.policy().size()
+                + " polls=" + sig.polls().size()
+                + " civic=" + sig.civic().size()
+                + " health=" + (sig.health() != null)
+                + " cyber=" + sig.cyber().size()
+                + " conflicts=" + sig.conflicts().size()
+                + " sports=" + sig.sportsTomorrow().size()
+                + " holidays=" + (sig.holidays() != null));
+        // The frozen world map rides the charts whenever any geocoded marker
+        // exists (chokepoints alone guarantee 28).
+        if (!sig.chokepoints().isEmpty()) {
+            assertTrue(rec.charts().stream().anyMatch(c ->
+                            c.title() != null && c.title().contains("Weltlage")),
+                    "chokepoints frozen but no Weltlage map figure");
+        }
+        System.out.println("charts frozen: " + rec.charts().size() + " — "
+                + rec.charts().stream().map(WeatherReportRecord.ChartStat::title).toList());
     }
 }

@@ -799,49 +799,46 @@ class DeepDiveMaterialTest {
     }
 
     /**
-     * The world-context gate (user mandate "Wetter/Gefahrenlage einbauen,
-     * falls es passt"): hazards reach the Lage shelf ONLY for a sector with a
-     * mapped exposure, filtered to the hazard classes that sector trades on.
+     * The judge design (2026-07-15, user mandate "alles rein, die KI sortiert
+     * aus"): EVERY hazard is a candidate for every subject — the old exposure
+     * gate survives only as a HINT on the lines the map knows; the judge's
+     * survivors reach the Lage shelf under the "world" register entry.
      */
     @Test
-    void hazardGateFeedsOnlyExposedSectors() {
+    void hazardsBecomeJudgeCandidatesWithExposureHints() {
         var storm = new GlobalHazardsClient.Hazard(
                 "STORM", "Hurrikan Delta, 120 kt (Atlantik)", "HIGH");
         var quake = new GlobalHazardsClient.Hazard(
                 "QUAKE", "M6.2 near Tokyo — PAGER orange", "HIGH");
         var aviation = new GlobalHazardsClient.Hazard(
                 "AVIATION", "EWR: Ground Stop bis 21:00 (Wetter)", "HIGH");
-        List<GlobalHazardsClient.Hazard> all = List.of(storm, quake, aviation);
-
-        assertEquals(List.of(storm), DeepDiveService.exposedHazards("XLE", all));
-        assertEquals(List.of(storm, quake), DeepDiveService.exposedHazards("XLF", all));
-        assertEquals(List.of(storm, aviation), DeepDiveService.exposedHazards("XLI", all));
-        // No exposure mapping = nothing, never a wrong world signal.
-        assertTrue(DeepDiveService.exposedHazards("XLK", all).isEmpty());
-        assertTrue(DeepDiveService.exposedHazards("XLV", all).isEmpty());
-        assertTrue(DeepDiveService.exposedHazards(null, all).isEmpty());
 
         DeepDiveService.Material m = new DeepDiveService.Material();
         m.canonicalName = "Exxon Mobil";
         m.ticker = "XOM";
-        m.sectorEtf = new MarketSnapshot("XLE", 91.10, 92.20, -1.19, 92.5, 90.8,
-                0, Double.NaN, Double.NaN, "USD", "NYSEArca",
-                Instant.now().getEpochSecond(), List.of());
         m.sectorEtfSymbol = "XLE";
-        m.sectorDisplayName = "Energie";
-        m.sectorHazards = DeepDiveService.exposedHazards("XLE", all);
+        m.allHazards = List.of(storm, quake, aviation);
+        List<String> candidates = DeepDiveService.worldSignalCandidateLines(m);
+        // ALL three are candidates — nothing is pre-filtered away …
+        assertEquals(3, candidates.size());
+        // … but only the storm (XLE's mapped class) carries the hint.
+        assertTrue(candidates.get(0).contains("Hurrikan Delta"), candidates.get(0));
+        assertTrue(candidates.get(0).contains("[hint:"), candidates.get(0));
+        assertFalse(candidates.get(1).contains("[hint:"), candidates.get(1));
+        assertFalse(candidates.get(2).contains("[hint:"), candidates.get(2));
 
+        // Judge survivors reach the shelf verbatim under the world register.
+        m.worldSignalKeep = List.of(
+                "World hazard [STORM, HIGH]: Hurrikan Delta, 120 kt (Atlantik)");
         String lage = DeepDiveService.sectionMaterials(m)[DeepDiveService.SEC_SITUATION];
-        assertContains(lage, "WORLD CONTEXT (verified — hazards the sector is exposed to) [1]:");
-        assertContains(lage, "  - STORM (HIGH): Hurrikan Delta, 120 kt (Atlantik)");
-        assertFalse(lage.contains("QUAKE"), "energy is not quake-exposed");
-        assertFalse(lage.contains("AVIATION"), "energy is not aviation-exposed");
-        assertContains(DeepDiveService.sourcesSection(m, true), "Gefahrenlage (NOAA/USGS/FAA)");
+        assertContains(lage, "WORLD SIGNALS");
+        assertContains(lage, "Hurrikan Delta, 120 kt (Atlantik)");
+        assertContains(DeepDiveService.sourcesSection(m, true), "Weltsignale");
     }
 
-    /** The negative side of the gate: an unexposed sector adds NOTHING. */
+    /** No judged survivors = no world block and no register claim. */
     @Test
-    void unexposedSectorAddsNoWorldContext() {
+    void noSurvivorsMeansNoWorldBlock() {
         DeepDiveService.Material m = new DeepDiveService.Material();
         m.canonicalName = "SAP SE";
         m.ticker = "SAP.DE";
@@ -850,12 +847,11 @@ class DeepDiveMaterialTest {
                 Instant.now().getEpochSecond(), List.of());
         m.sectorEtfSymbol = "XLK";
         m.sectorDisplayName = "Tech";
-        // The collect gate never queries hazards for XLK — sectorHazards stays empty.
         for (String shelf : DeepDiveService.sectionMaterials(m)) {
-            assertFalse(shelf != null && shelf.contains("WORLD CONTEXT"),
-                    "unexposed sector must not carry a world block");
+            assertFalse(shelf != null && shelf.contains("WORLD SIGNALS"),
+                    "no survivors must mean no world block");
         }
-        assertFalse(DeepDiveService.sourcesSection(m, true).contains("Gefahrenlage"));
+        assertFalse(DeepDiveService.sourcesSection(m, true).contains("Weltsignale"));
     }
 
     @Test

@@ -239,6 +239,41 @@ final class DeepDiveFactCheck {
      * {@value #SPLIT_TARGET_SENTENCES} sentences — order and every sentence
      * kept verbatim, shaped paragraphs untouched.
      */
+    /**
+     * Deterministic length enforcement (2026-07-15, the weather lesson ported):
+     * a section over {@link #MAX_SECTION_CHARS} is cut from the END at block
+     * boundaries — table blocks stay atomic, a lone oversized prose block is
+     * cut at a sentence boundary. A model revision provably never shrinks a
+     * section (live smoke: 4241 → 4291 → 4335 → 4481 chars across LENGTH
+     * rounds), so the scissors are the house's, not the model's.
+     */
+    static String cutToLength(String body, int max) {
+        if (body == null) return null;
+        String text = body.strip();
+        if (text.length() <= max) return body;
+        StringBuilder out = new StringBuilder(max);
+        for (String block : text.split("\\n\\n")) {
+            int sep = out.length() == 0 ? 0 : 2;
+            if (out.length() + sep + block.length() <= max) {
+                if (sep > 0) out.append("\n\n");
+                out.append(block);
+                continue;
+            }
+            // The overflowing block: a table stays atomic (drop it whole); a
+            // prose block on an otherwise EMPTY result is cut per sentence so
+            // one giant paragraph can never yield an empty section.
+            if (out.length() == 0 && !isTableLine(block.split("\\n")[0])) {
+                for (String sentence : sentences(block)) {
+                    if (out.length() + sentence.length() + 1 > max) break;
+                    if (out.length() > 0) out.append(' ');
+                    out.append(sentence);
+                }
+            }
+            break;
+        }
+        return out.length() == 0 ? text.substring(0, max) : out.toString();
+    }
+
     static String splitLongParagraphs(String body) {
         if (body == null || body.isBlank()) return body;
         List<String> outParas = new ArrayList<>();

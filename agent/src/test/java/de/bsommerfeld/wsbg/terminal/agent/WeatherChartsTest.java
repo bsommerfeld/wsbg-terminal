@@ -4,17 +4,30 @@ import de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight;
 import de.bsommerfeld.wsbg.terminal.db.HeadlineRecord;
 import de.bsommerfeld.wsbg.terminal.db.HeadlineSentiment;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.ChartStat;
+import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.ChokepointStat;
+import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.ConflictStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.DaypartStat;
+import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.FreightStat;
+import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.HazardStat;
+import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.HealthStat;
+import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.HolidayStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.IndexStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.MoonStat;
+import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.OilStockStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.OutlookStat;
+import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.PlaceWeatherStat;
+import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.PollStat;
+import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.PowerStat;
+import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.RateStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.RoomPulse;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.SentimentStat;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.TickerStat;
+import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.WorldSignals;
 import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.WorldStats;
 import org.junit.jupiter.api.Test;
 
 import java.time.ZoneOffset;
+import java.util.LinkedHashMap;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -58,7 +71,7 @@ class WeatherChartsTest {
                 headline(1783864800L, HeadlineSentiment.NEUTRAL, "RHM"));  // 14:00 UTC
 
         List<ChartStat> charts = new WeatherCharts("de")
-                .build(stats, headlines, ZoneOffset.UTC);
+                .build(stats, headlines, ZoneOffset.UTC, List.of());
         assertTrue(charts.size() >= 5, "expected a filled figure set, got " + charts.size());
         for (ChartStat c : charts) {
             assertTrue(c.section() >= 0 && c.section() <= 4,
@@ -67,6 +80,158 @@ class WeatherChartsTest {
         }
         assertTrue(charts.stream().anyMatch(c -> c.title().contains("auf einen Blick")));
         assertTrue(charts.stream().anyMatch(c -> c.title().contains("Zum Mond")));
+    }
+
+    @Test
+    void worldSignalFiguresRenderFromTheFrozenCatch() {
+        LinkedHashMap<String, Double> results = new LinkedHashMap<>();
+        results.put("CDU/CSU", 29.0);
+        results.put("AfD", 24.5);
+        WorldSignals signals = new WorldSignals(
+                List.of(new ChokepointStat("Strait of Hormuz", "2026-07-13", 90, -12.5)),
+                new OilStockStat("2026-07-10", 443.2, -2.1, 403.0, 0.5,
+                        228.4, 1.9, 118.0, -1.2),
+                new FreightStat(1250.0, 1210.0, "2026-07-12",
+                        List.of(1100.0, 1150.0, 1210.0, 1250.0)),
+                new PowerStat(85.0, 61.0, 142.0, 83.0, 55.0, "Wind",
+                        List.of(70.0, 61.0, 90.0, 142.0, 80.0)),
+                null,
+                List.of(),
+                List.of(new PollStat("Bundestag", "Forsa", "2026-07-13",
+                        "CDU/CSU 29 %, AfD 24,5 %", results)),
+                List.of(),
+                new HealthStat(78.5, 6200.0, "2026-W28", List.of(),
+                        List.of(5000.0, 5600.0, 6200.0)),
+                List.of(),
+                List.of("Bundesliga: Bayern – Dortmund"),
+                new HolidayStat("Tag der Deutschen Einheit", "2026-10-03", true,
+                        List.of("BY", "BW")),
+                List.of(new ConflictStat("Iran", "Strikes reported near Hormuz",
+                        "Reuters", 33.4, 53.2)));
+        WorldStats world = new WorldStats(
+                null, null,
+                List.of(new RateStat("10J Bund", 2.61, 2.58, "2026-07-13"),
+                        new RateStat("10J US-Treasury", 4.40, 4.38, null),
+                        new RateStat("HICP-Inflation Euroraum", 2.10, 2.00, null)),
+                null, null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null,
+                List.of(new PlaceWeatherStat("New York", "Wall Street", 28.0, "klar",
+                        10.0, 30.0, 21.0, "klar", 40.71, -74.01)),
+                List.of(new HazardStat("STORM", "Hurricane Egon", "HIGH", 25.0, -70.0)),
+                null, null, signals);
+        WeatherStatsCollector.Stats stats = new WeatherStatsCollector.Stats(
+                List.of(), List.of(), List.of(), null, world);
+
+        List<ChartStat> charts = new WeatherCharts("de").build(stats, List.of(), ZoneOffset.UTC, List.of());
+        for (ChartStat c : charts) {
+            assertTrue(c.section() >= 0 && c.section() <= 4,
+                    c.title() + " anchored outside the five sections: " + c.section());
+        }
+
+        ChartStat freight = figure(charts, "Harpex");
+        assertEquals(0, freight.section());
+        assertTrue(freight.note().contains("Harper Petersen"), freight.note());
+        assertTrue(freight.svg().contains("1.250") && freight.svg().contains("Vorwoche"),
+                freight.svg());
+
+        ChartStat power = figure(charts, "Strompreis");
+        assertEquals(0, power.section());
+        assertTrue(power.note().contains("Fraunhofer"), power.note());
+        assertTrue(power.svg().contains("EUR/MWh") && power.svg().contains("142"),
+                power.svg());
+
+        ChartStat oil = figure(charts, "US-Öllager");
+        assertEquals(0, oil.section());
+        assertTrue(oil.note().contains("EIA"), oil.note());
+        assertTrue(oil.svg().contains("Rohöl") && oil.svg().contains("SPR")
+                && oil.svg().contains("2,1 Mb"), oil.svg());
+        assertTrue(oil.title().contains("2026-07-10"), oil.title());
+
+        ChartStat ladder = figure(charts, "Zins-Leiter");
+        assertEquals(2, ladder.section());
+        assertTrue(ladder.note().contains("Bundesbank"), ladder.note());
+        assertTrue(ladder.svg().contains("10J Bund") && ladder.svg().contains("2,61 %"),
+                ladder.svg());
+        assertTrue(ladder.svg().contains("var(--ddc-surface"),
+                "HICP mark should render hollow: " + ladder.svg());
+
+        ChartStat poll = figure(charts, "Bundestag");
+        assertEquals(0, poll.section());
+        assertTrue(poll.title().contains("Forsa") && poll.title().contains("2026-07-13"),
+                poll.title());
+        assertTrue(poll.svg().contains("CDU/CSU") && poll.svg().contains("24,5 %"),
+                poll.svg());
+
+        ChartStat health = figure(charts, "Gesundheitslage");
+        assertEquals(0, health.section());
+        assertTrue(health.note().contains("RKI"), health.note());
+        assertTrue(health.svg().contains("INTENSIVBETTEN")
+                && health.svg().contains("2026-W28"), health.svg());
+
+        ChartStat calendar = figure(charts, "Kalender");
+        assertEquals(4, calendar.section());
+        assertTrue(calendar.svg().contains("Feiertag")
+                && calendar.svg().contains("Bayern"), calendar.svg());
+
+        ChartStat map = figure(charts, "Weltlage");
+        assertEquals(0, map.section());
+        assertTrue(map.note().contains("PortWatch"), map.note());
+        assertTrue(map.svg().contains("viewBox=\"0 0 1000 500\""), map.svg());
+        assertTrue(map.svg().contains("var(--ddc-conflict"),
+                "conflict triangle missing: " + map.svg());
+        assertTrue(map.svg().contains("28°"), "place temp label missing");
+        assertTrue(map.svg().contains("var(--ddc-neg"),
+                "chokepoint down-delta tint missing");
+    }
+
+    @Test
+    void worldSignalFiguresStayAbsentWithoutTheCatch() {
+        WeatherStatsCollector.Stats bare = new WeatherStatsCollector.Stats(
+                List.of(), List.of(), List.of(), null, null);
+        assertTrue(new WeatherCharts("de").build(bare, List.of(), ZoneOffset.UTC, List.of()).isEmpty(),
+                "null world must yield no figures");
+
+        WorldSignals hollow = new WorldSignals(null, null, null, null, null, null,
+                null, null, null, null, null, null, null);
+        WorldStats world = new WorldStats(
+                null, null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null, null, null,
+                null, hollow);
+        WeatherStatsCollector.Stats stats = new WeatherStatsCollector.Stats(
+                List.of(), List.of(), List.of(), null, world);
+        assertTrue(new WeatherCharts("de").build(stats, List.of(), ZoneOffset.UTC, List.of()).isEmpty(),
+                "an empty catch must yield no figures");
+    }
+
+    @Test
+    void fearGreedBandRendersFromTheArchivedHistory() {
+        WeatherStatsCollector.Stats bare = new WeatherStatsCollector.Stats(
+                List.of(), List.of(), List.of(), null, null);
+        List<Integer> scores = new java.util.ArrayList<>();
+        for (int i = 0; i < 40; i++) scores.add(30 + i); // fear → greed sweep
+        List<ChartStat> charts = new WeatherCharts("de")
+                .build(bare, List.of(), ZoneOffset.UTC, scores);
+        assertEquals(1, charts.size());
+        ChartStat band = charts.get(0);
+        assertEquals(0, band.section());
+        assertEquals("CNN", band.note());
+        assertTrue(band.title().contains("40 Handelstage"), band.title());
+        assertTrue(band.svg().contains("heute 69"), "today's score direct-labeled");
+        assertTrue(band.svg().contains("extreme Gier")
+                && band.svg().contains("extreme Angst"), "band zone labels");
+        assertTrue(band.svg().contains("var(--ddc-pos")
+                && band.svg().contains("var(--ddc-neg"), "zone washes");
+        // A lone reading is no regime band.
+        assertTrue(new WeatherCharts("de")
+                .build(bare, List.of(), ZoneOffset.UTC, List.of(55)).isEmpty());
+    }
+
+    private static ChartStat figure(List<ChartStat> charts, String titlePart) {
+        return charts.stream().filter(c -> c.title().contains(titlePart)).findFirst()
+                .orElseThrow(() -> new AssertionError("missing figure: " + titlePart
+                        + " — have " + charts.stream().map(ChartStat::title).toList()));
     }
 
     @Test

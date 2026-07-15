@@ -220,6 +220,9 @@ public class DeepDiveService {
     private volatile de.bsommerfeld.wsbg.terminal.core.price.HedgeFundPopularitySource hedgeFundSource;
     private volatile de.bsommerfeld.wsbg.terminal.core.price.AnalystActionsSource analystActionsSource;
     private volatile YahooFinanceClient yahooClient;
+    private volatile de.bsommerfeld.wsbg.terminal.core.price.OrderBookSource orderBookSource;
+    private volatile de.bsommerfeld.wsbg.terminal.db.MarketEventArchive marketEventArchive;
+    private volatile de.bsommerfeld.wsbg.terminal.db.FearGreedHistoryArchive fearGreedHistory;
     private volatile TradingViewCalendarClient tvCalendar;
     private volatile EconCalendarClient econCalendar;
     private volatile CentralBankCalendarClient cbCalendar;
@@ -230,6 +233,9 @@ public class DeepDiveService {
     private volatile CompanyPressScout pressScout;
     private volatile de.bsommerfeld.wsbg.terminal.websearch.BingWebSearchClient webSearch;
     private volatile de.bsommerfeld.wsbg.terminal.briefing.GlobalHazardsClient hazardsClient;
+    // The fishing-net's ONE collection point (2026-07-15) — the full catch,
+    // judged per subject, never pre-filtered.
+    private volatile WorldSignalsCollector worldCollector;
 
     private final AtomicBoolean busy = new AtomicBoolean(false);
     private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
@@ -353,6 +359,26 @@ public class DeepDiveService {
     @com.google.inject.Inject(optional = true)
     void setGlobalHazardsClient(de.bsommerfeld.wsbg.terminal.briefing.GlobalHazardsClient client) {
         this.hazardsClient = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setWorldCollector(WorldSignalsCollector collector) {
+        this.worldCollector = collector;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setOrderBookSource(de.bsommerfeld.wsbg.terminal.core.price.OrderBookSource source) {
+        this.orderBookSource = source;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setMarketEventArchive(de.bsommerfeld.wsbg.terminal.db.MarketEventArchive archive) {
+        this.marketEventArchive = archive;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setFearGreedHistoryArchive(de.bsommerfeld.wsbg.terminal.db.FearGreedHistoryArchive archive) {
+        this.fearGreedHistory = archive;
     }
 
     /** Browser UA for the first-party press scout's plain page fetches. */
@@ -570,6 +596,12 @@ public class DeepDiveService {
         checkCancelled();
         digestArticles(subject, m);
         checkCancelled();
+        // World signals are judged LAST in the triage phase, when the report's
+        // THEME LANDSCAPE (the accepted press titles) is known — a wild-but-
+        // real connection (a satellite deal in the news pool licensing space
+        // weather) is only visible from here, never at collect time.
+        judgeWorldSignals(subject, m, lang);
+        checkCancelled();
 
         Map<String, Integer> nums = sourceNumbers(m);
         Set<Integer> validNums = new HashSet<>(nums.values());
@@ -705,7 +737,8 @@ public class DeepDiveService {
         // draws), frozen into the record so UI and PDF show the same picture.
         List<DeepDiveRecord.ChartFigure> charts = new DeepDiveCharts(lang)
                 .build(m.snapshot, m.deepDive, m.analystView, m.shortInterest, m.insiderDealings,
-                        m.venueStats);
+                        m.venueStats, m.usStats, m.analystActions, m.hedgeFunds, m.pressTimeline,
+                        m.worldSignalKeep, m.volumeProfile, m.orderBook, m.memoryEvents);
         DeepDiveRecord record = new DeepDiveRecord(
                 "dd-" + UUID.randomUUID().toString().substring(0, 8),
                 subject, m.canonicalName, m.ticker, m.isin,
@@ -1362,10 +1395,28 @@ public class DeepDiveService {
                         + "may arrive via several sources; work the story in ONCE and cite "
                         + "EVERY marker below on the statements it supports):\n"
                 : "NEW SOURCE:\n";
+        // Prevention beats scissors (user mandate 2026-07-15 "NICHTS darf
+        // wegfallen"): once the standing text nears its contract, every
+        // further weave must integrate by TIGHTENING — merge and compress the
+        // weaker sentences to make room — instead of appending; the house cut
+        // stays the last resort, not the plan.
+        String budgetNote = "";
+        if (body != null && body.length() > WEAVE_TIGHTEN_FROM) {
+            budgetNote = "\n\nLENGTH BUDGET: the standing text has " + body.length()
+                    + " of at most " + DeepDiveFactCheck.MAX_SECTION_CHARS
+                    + " characters. Integrate the new material by TIGHTENING - merge "
+                    + "overlapping statements, compress wordy ones, keep every fact, "
+                    + "figure and marker. The result must NOT be longer than the "
+                    + "standing text.";
+        }
         String fixed = header + "SECTION: ## " + heading + "\n\nSTANDING TEXT:\n" + body
-                + "\n\n" + label;
+                + budgetNote + "\n\n" + label;
         return fixed + budgeted(block, promptChars + fixed.length());
     }
+
+    /** Weave calls carry the tighten instruction from this standing-text length on. */
+    private static final int WEAVE_TIGHTEN_FROM =
+            (int) (DeepDiveFactCheck.MAX_SECTION_CHARS * 0.8);
 
     /**
      * The deterministic examiner cycle: inspect, let the author fix, re-inspect,
@@ -1428,6 +1479,28 @@ public class DeepDiveService {
         // habit round after round (live: five identical RESIDUE objections in
         // Der Raum), and the typesetter scrubs them at assembly anyway.
         body = DeepDiveFactCheck.scrubNonMarkerBrackets(body);
+        // Length pipeline (2026-07-15, user mandate "NICHTS darf wegfallen"):
+        // over-max first gets ONE dedicated CONDENSE call — compress, merge,
+        // keep every fact/figure/marker (a generic LENGTH revision provably
+        // GREW the text; a condense instruction is a different job). Only
+        // what still overflows after that meets the house scissors, loudly —
+        // the block/sentence-boundary cut is the last resort, never the plan.
+        if (body != null && body.strip().length() > DeepDiveFactCheck.MAX_SECTION_CHARS) {
+            String condensed = condense(model, prompts, header, heading, body);
+            if (!isBlank(condensed) && condensed.strip().length() < body.strip().length()) {
+                LOG.info("[DEEPDIVE] '{}' section '{}': condense pass {} -> {} chars.",
+                        subject, heading, body.strip().length(), condensed.strip().length());
+                body = condensed.strip();
+            }
+        }
+        if (body != null && body.strip().length() > DeepDiveFactCheck.MAX_SECTION_CHARS) {
+            String cut = DeepDiveFactCheck.cutToLength(body,
+                    DeepDiveFactCheck.MAX_SECTION_CHARS);
+            LOG.warn("[DEEPDIVE] '{}' section '{}': house length cut ({} -> {} chars) "
+                    + "— tail content LOST despite the condense pass.", subject, heading,
+                    body.strip().length(), cut.strip().length());
+            body = cut;
+        }
         // Density is DELIBERATELY not enforced here: a revision provably
         // never reduces the figure count (live: "18 figures" stood identical
         // across ten challenge rounds — pure churn). The number wall is the
@@ -1470,6 +1543,32 @@ public class DeepDiveService {
         return new RepairOutcome(
                 DeepDiveFactCheck.splitLongParagraphs(DeepDiveFactCheck.scrubResidue(body)),
                 hadHard);
+    }
+
+    /**
+     * ONE dedicated condense call for an over-budget section: the reviser gets
+     * a single objection whose repair is COMPRESSION — merge overlapping
+     * statements, cut filler, keep every fact, figure and marker. Returns the
+     * model's text (caller keeps it only when it actually shrank).
+     */
+    private String condense(ChatModel model, Prompts prompts, String header,
+            String heading, String body) {
+        String bodyHead = body.strip().substring(0, Math.min(60, body.strip().length()));
+        String objection = "E: \"" + bodyHead + "\" - der Abschnitt "
+                + "überschreitet den Längenvertrag (" + body.strip().length() + " von maximal "
+                + DeepDiveFactCheck.MAX_SECTION_CHARS + " Zeichen). Repariere durch "
+                + "VERDICHTEN, nicht durch Streichen: verschmelze überlappende Aussagen, "
+                + "kürze Füllwörter und Umwege - JEDER Fakt, jede Zahl und jeder "
+                + "Quellenmarker bleibt erhalten.";
+        try {
+            String reply = chatGateway.chat(model, prompts.revise(),
+                    header + "SECTION: ## " + heading + "\n\nSTANDING TEXT:\n" + body
+                            + "\n\nOBJECTIONS:\n" + objection);
+            return reply == null ? null : cleanReport(reply);
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] condense pass failed: {}", e.getMessage());
+            return null;
+        }
     }
 
     /** The author's user message, material hard-budgeted against the window. */
@@ -2219,14 +2318,32 @@ public class DeepDiveService {
         AnalystActions analystActions;
         /** The months-spanning dated press timeline (MarketBeat news tab) — "Was war" context. */
         de.bsommerfeld.wsbg.terminal.core.price.PressTimeline pressTimeline;
+        /** House-computed volume profile (Yahoo hourly bars) — the structure layer's traded side. */
+        VolumeProfile.Profile volumeProfile;
+        /** The Frankfurt floor-book window (10 levels with order counts) — who stands there NOW. */
+        de.bsommerfeld.wsbg.terminal.core.price.OrderBookSnapshot orderBook;
+        /** The instrument's dated events from the house register (market memory), oldest first. */
+        List<de.bsommerfeld.wsbg.terminal.db.MarketEventRecord> memoryEvents = List.of();
+        /** Finished base-rate lines (house statistics + attributed literature priors), ROOT locale. */
+        List<String> baseRateLines = List.of();
         /** The instrument's US sector proxy (XL* SPDR), day snapshot. Null = no mapping. */
         MarketSnapshot sectorEtf;
         String sectorEtfSymbol;
         String sectorDisplayName;
-        /** World hazards the SECTOR is exposed to (storm/quake/aviation) — empty when the gate says no. */
-        List<de.bsommerfeld.wsbg.terminal.briefing.GlobalHazardsClient.Hazard> sectorHazards = List.of();
+        /** ALL current world hazards (storm/quake/aviation) — the judge sorts, never a pre-gate. */
+        List<de.bsommerfeld.wsbg.terminal.briefing.GlobalHazardsClient.Hazard> allHazards = List.of();
         /** Today's high-impact macro ACTUALS (Ist vs Prognose vs zuvor — the weather pattern). */
         List<TradingViewCalendarClient.TvEvent> macroActualsToday = List.of();
+        /**
+         * The fishing-net's FULL catch (2026-07-15, user mandate "alles rein,
+         * die KI sortiert aus"): every world signal is offered to the
+         * subject-scoped relevance judge — the exposure maps survive only as
+         * HINTS on the candidate lines, never as pre-filters (a pre-filter
+         * would hide the wild-but-real connection from the model forever).
+         */
+        de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.WorldSignals worldSignals;
+        /** The judge's survivors — finished ROOT-locale material lines for the Lage shelf. */
+        List<String> worldSignalKeep = List.of();
         /** Upcoming high-impact macro events the sector trades on (Ausblick anchors). */
         List<EconCalendarClient.EconEvent> macroDocket = List.of();
         /** The next central-bank rate decisions (EZB/Fed). */
@@ -2466,18 +2583,28 @@ public class DeepDiveService {
         } catch (Exception e) {
             LOG.debug("[DEEPDIVE] sector proxy failed: {}", e.getMessage());
         }
-        // World context where it FITS (user mandate 2026-07-14): physical-world
-        // hazards reach the Lage shelf ONLY through the sector-exposure gate —
-        // an unexposed sector adds NOTHING (a wrong world signal is worse than
-        // none).
+        // The fishing-net's FULL catch (2026-07-15, user mandate "alles rein,
+        // die KI sortiert aus"): hazards AND world signals are collected
+        // unfiltered — the subject-scoped relevance judge decides later, with
+        // the report's theme landscape on the table. The old sector-exposure
+        // pre-gate is demoted to a candidate-line HINT (a pre-filter would
+        // hide the wild-but-real connection from the model forever).
         try {
             de.bsommerfeld.wsbg.terminal.briefing.GlobalHazardsClient hazards = hazardsClient;
-            if (hazards != null && m.sectorEtfSymbol != null
-                    && SECTOR_HAZARD_EXPOSURE.containsKey(m.sectorEtfSymbol)) {
-                m.sectorHazards = exposedHazards(m.sectorEtfSymbol, hazards.hazards());
-            }
+            if (hazards != null) m.allHazards = hazards.hazards();
         } catch (Exception e) {
             LOG.debug("[DEEPDIVE] world hazards failed: {}", e.getMessage());
+        }
+        try {
+            WorldSignalsCollector collector = worldCollector;
+            if (collector != null) {
+                java.time.ZoneId zone = java.time.ZoneId.systemDefault();
+                java.time.LocalDate today = java.time.LocalDate.now(zone);
+                m.worldSignals = collector.collect(today, zone,
+                        today.atStartOfDay(zone).toInstant());
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] world signals failed: {}", e.getMessage());
         }
         try {
             if (tvCalendar != null) {
@@ -2526,6 +2653,49 @@ public class DeepDiveService {
             }
         } catch (Exception e) {
             LOG.debug("[DEEPDIVE] wire archive failed: {}", e.getMessage());
+        }
+        // Structure layer (market memory): the house-computed volume profile
+        // (where volume TRADED — every level justified by its own volume) and
+        // the Frankfurt floor-book window (who is standing there NOW, orders +
+        // units per level). Deterministic arithmetic, the model only reads.
+        checkCancelled();
+        try {
+            if (yahooClient != null && m.ticker != null) {
+                m.volumeProfile = VolumeProfile.build(
+                        yahooClient.fetchHourlyBars(m.ticker, VOLUME_PROFILE_RANGE_DAYS))
+                        .orElse(null);
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] volume profile failed: {}", e.getMessage());
+        }
+        try {
+            if (orderBookSource != null && m.isin != null) {
+                m.orderBook = orderBookSource.orderBookByIsin(m.isin).orElse(null);
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] order book failed: {}", e.getMessage());
+        }
+        // Market memory: the instrument's own dated events from the house
+        // register plus the class base rates (house statistics gated by N,
+        // attributed literature priors as the default layer). The current
+        // regime slices the statistics when its cell carries enough events.
+        try {
+            if (marketEventArchive != null) {
+                List<de.bsommerfeld.wsbg.terminal.db.MarketEventRecord> events =
+                        new ArrayList<>(m.ticker != null
+                                ? marketEventArchive.byInstrument(m.ticker) : List.of());
+                if (m.isin != null) {
+                    for (var e : marketEventArchive.byInstrument(m.isin)) {
+                        if (!events.contains(e)) events.add(e);
+                    }
+                }
+                events.sort(java.util.Comparator.comparing(
+                        de.bsommerfeld.wsbg.terminal.db.MarketEventRecord::date));
+                m.memoryEvents = events;
+                m.baseRateLines = buildBaseRateLines(events, marketEventArchive, currentRegimeBand());
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] market memory failed: {}", e.getMessage());
         }
         journalCollectedSources(ticker, m);
 
@@ -2756,11 +2926,11 @@ public class DeepDiveService {
             journalNotes(subject, List.of((de ? "Sektor/Makro — " : "Sector/macro — ")
                     + String.join(", ", bits)));
         }
-        if (!m.sectorHazards.isEmpty()) {
-            journalNotes(subject, List.of((de ? "Welt-Lage — " : "World picture — ")
-                    + m.sectorHazards.size()
-                    + (de ? " Gefahrenmeldung(en) mit Sektor-Bezug"
-                            : " hazard note(s) with sector relevance")));
+        if (!m.worldSignalKeep.isEmpty()) {
+            journalNotes(subject, List.of((de ? "Weltsignale — " : "World signals — ")
+                    + m.worldSignalKeep.size()
+                    + (de ? " vom Richter als relevant beurteilt"
+                            : " judged relevant by the subject judge")));
         }
         if (!m.wireHistory.isEmpty()) {
             journalNotes(subject, List.of((de ? "Wire-Archiv — " : "Wire archive — ")
@@ -2772,6 +2942,25 @@ public class DeepDiveService {
             journalNotes(subject, List.of((de ? "Käfig — " : "The room — ")
                     + m.evidenceCount + (de ? " Erwähnung(en) über " : " mention(s) across ")
                     + m.roomUnits.size() + (de ? " Subjekt-Einheit(en)" : " subject unit(s)")));
+        }
+        if (m.volumeProfile != null || m.orderBook != null) {
+            List<String> bits = new ArrayList<>();
+            if (m.volumeProfile != null) {
+                bits.add(de ? "Volume Profile (POC/Value Area)" : "volume profile (POC/value area)");
+            }
+            if (m.orderBook != null) {
+                bits.add((de ? "Orderbuch " : "order book ")
+                        + m.orderBook.bids().size() + "x" + m.orderBook.asks().size()
+                        + (de ? " Level" : " levels"));
+            }
+            journalNotes(subject, List.of((de ? "Struktur — " : "Structure — ")
+                    + String.join(", ", bits)));
+        }
+        if (!m.memoryEvents.isEmpty() || !m.baseRateLines.isEmpty()) {
+            journalNotes(subject, List.of((de ? "Markt-Gedächtnis — " : "Market memory — ")
+                    + m.memoryEvents.size()
+                    + (de ? " registrierte(s) Ereignis(se), " : " registered event(s), ")
+                    + m.baseRateLines.size() + (de ? " Basisraten-Zeile(n)" : " base-rate line(s)")));
         }
     }
 
@@ -2868,8 +3057,9 @@ public class DeepDiveService {
 
         appendMarket(sb, m.snapshot, nums);
         appendTrading(sb, m.venueStats, m.facts, nums);
+        appendStructure(sb, m, nums);
         appendSectorContext(sb, m, nums);
-        appendWorldContext(sb, m, nums);
+        appendWorldSignals(sb, m, nums);
         appendPressTimeline(sb, m.pressTimeline, nums);
         appendPerformance(sb, m.deepDive, nums);
         out[SEC_SITUATION] = new Shelf(take(sb), newsBlocksFor(m, "LAGE", nums));
@@ -2896,6 +3086,7 @@ public class DeepDiveService {
         appendUsShortQuote(sb, m.analystActions, nums);
         appendShareCount(sb, m.deepDive, nums);
         appendTechnical(sb, m.deepDive, nums);
+        appendMarketMemory(sb, m, nums);
         out[SEC_CATALYSTS] = new Shelf(take(sb), newsBlocksFor(m, "KATALYSATOR", nums));
 
         appendUpcomingEvents(sb, m.analystView, nums);
@@ -3086,7 +3277,10 @@ public class DeepDiveService {
                 || !m.macroDocket.isEmpty() || !m.cbDecisions.isEmpty()) {
             nums.put("sector", ++n);
         }
+        if (!m.worldSignalKeep.isEmpty()) nums.put("world", ++n);
         if (m.earningsEstimate != null) nums.put("whispers", ++n);
+        if (m.volumeProfile != null || m.orderBook != null) nums.put("structure", ++n);
+        if (!m.memoryEvents.isEmpty() || !m.baseRateLines.isEmpty()) nums.put("memory", ++n);
         for (int i = 0; i < m.news.size(); i++) nums.put("news:" + i, ++n);
         if (roomHasContent(m)) nums.put("room", ++n);
         return nums;
@@ -3849,19 +4043,22 @@ public class DeepDiveService {
             "XLP", Set.of("STORM"),
             "XLU", Set.of("STORM", "QUAKE"));
 
-    /** The hazards the sector is exposed to; empty for an unmapped sector. */
-    static List<de.bsommerfeld.wsbg.terminal.briefing.GlobalHazardsClient.Hazard> exposedHazards(
-            String sectorEtfSymbol,
-            List<de.bsommerfeld.wsbg.terminal.briefing.GlobalHazardsClient.Hazard> hazards) {
-        if (sectorEtfSymbol == null || hazards == null || hazards.isEmpty()) return List.of();
-        Set<String> exposed = SECTOR_HAZARD_EXPOSURE.get(sectorEtfSymbol);
-        if (exposed == null) return List.of();
-        List<de.bsommerfeld.wsbg.terminal.briefing.GlobalHazardsClient.Hazard> out = new ArrayList<>();
-        for (var h : hazards) {
-            if (h.kind() != null && exposed.contains(h.kind())) out.add(h);
-        }
-        return out;
-    }
+    /**
+     * Which fishing-net world signals a sector proxy TRADES ON — the same
+     * conservative doctrine as {@link #SECTOR_HAZARD_EXPOSURE}: energy on US
+     * oil stocks and tanker routes, industrials/logistics on chokepoints and
+     * container freight, materials on chokepoints and power input costs,
+     * staples on supply-chain routes, utilities on power and geomagnetic
+     * storms (grid), tech on actively exploited vulnerabilities. No mapping,
+     * NOTHING.
+     */
+    static final Map<String, Set<String>> SECTOR_WORLD_EXPOSURE = Map.of(
+            "XLE", Set.of("OIL", "CHOKEPOINTS"),
+            "XLI", Set.of("CHOKEPOINTS", "FREIGHT"),
+            "XLB", Set.of("CHOKEPOINTS", "POWER"),
+            "XLP", Set.of("CHOKEPOINTS"),
+            "XLU", Set.of("POWER", "SPACEWX"),
+            "XLK", Set.of("CYBER"));
 
     /** The weather docket rule: high impact anywhere, medium only for US/DE/EU. */
     private static boolean relevantMacro(int importance, String country) {
@@ -3915,20 +4112,427 @@ public class DeepDiveService {
     }
 
     /**
-     * The physical-world hazards the SECTOR is exposed to (Lage) — only what
-     * passed the {@link #SECTOR_HAZARD_EXPOSURE} gate; an unexposed sector
-     * never sees this block.
+     * The full fishing-net catch as judgeable candidate lines — strict ROOT
+     * locale for the examiner, every value EXPLAINED (level + comparison, the
+     * weather doctrine). The exposure maps ride along as HINTS on the lines
+     * they know; nothing is pre-filtered (user mandate 2026-07-15: "alles
+     * rein, die KI sortiert aus").
      */
-    private static void appendWorldContext(StringBuilder sb, Material m, Map<String, Integer> nums) {
-        if (m.sectorHazards.isEmpty()) return;
-        sb.append("WORLD CONTEXT (verified — hazards the sector is exposed to)")
-                .append(mark(nums, "sector")).append(":\n");
-        for (var h : m.sectorHazards) {
+    static List<String> worldSignalCandidateLines(Material m) {
+        List<String> out = new ArrayList<>();
+        Set<String> worldHints = m.sectorEtfSymbol == null ? Set.of()
+                : SECTOR_WORLD_EXPOSURE.getOrDefault(m.sectorEtfSymbol, Set.of());
+        Set<String> hazardHints = m.sectorEtfSymbol == null ? Set.of()
+                : SECTOR_HAZARD_EXPOSURE.getOrDefault(m.sectorEtfSymbol, Set.of());
+        var s = m.worldSignals;
+        if (s != null) {
+            if (s.oilStocks() != null) {
+                var o = s.oilStocks();
+                StringBuilder line = new StringBuilder(
+                        "US petroleum stocks (EIA weekly report, week ending ")
+                        .append(o.weekEnding()).append("):");
+                appendOilLine(line, " commercial crude", o.crudeMb(), o.crudeDeltaMb());
+                appendOilLine(line, "; SPR", o.sprMb(), o.sprDeltaMb());
+                appendOilLine(line, "; gasoline", o.gasolineMb(), o.gasolineDeltaMb());
+                appendOilLine(line, "; distillates", o.distillateMb(), o.distillateDeltaMb());
+                out.add(line + hint(worldHints.contains("OIL")));
+            }
+            for (var c : s.chokepoints()) {
+                if (c.transits() == null) continue;
+                StringBuilder line = new StringBuilder("Maritime chokepoint ").append(c.name())
+                        .append(": ").append(c.transits())
+                        .append(" vessel transits/day (IMF PortWatch, as of ").append(c.dateIso());
+                if (c.weekDeltaPercent() != null) {
+                    line.append(String.format(Locale.ROOT, ", %+.1f%% vs one week earlier",
+                            c.weekDeltaPercent()));
+                }
+                line.append(')');
+                out.add(line + hint(worldHints.contains("CHOKEPOINTS")));
+            }
+            if (s.freight() != null && s.freight().harpex() != null) {
+                var f = s.freight();
+                StringBuilder line = new StringBuilder(String.format(Locale.ROOT,
+                        "Container charter rates (Harpex, as of %s): %.0f points",
+                        f.dateIso(), f.harpex()));
+                if (f.harpexWeekAgo() != null) {
+                    line.append(String.format(Locale.ROOT, " (prior week %.0f)",
+                            f.harpexWeekAgo()));
+                }
+                out.add(line + hint(worldHints.contains("FREIGHT")));
+            }
+            if (s.power() != null && s.power().currentEurMwh() != null) {
+                var p = s.power();
+                StringBuilder line = new StringBuilder(String.format(Locale.ROOT,
+                        "German day-ahead power (Fraunhofer): %.2f EUR/MWh now",
+                        p.currentEurMwh()));
+                if (p.minEurMwh() != null && p.maxEurMwh() != null) {
+                    line.append(String.format(Locale.ROOT, ", day range %.2f to %.2f",
+                            p.minEurMwh(), p.maxEurMwh()));
+                }
+                if (p.avgEurMwh() != null) {
+                    line.append(String.format(Locale.ROOT, ", day average %.2f", p.avgEurMwh()));
+                }
+                out.add(line + hint(worldHints.contains("POWER")));
+            }
+            var wx = s.spaceWeather();
+            if (wx != null && (level(wx.r()) > 0 || level(wx.s()) > 0 || level(wx.g()) > 0
+                    || level(wx.forecastMaxG()) > 0)) {
+                // A quiet all-zero space-weather day carries no signal at all.
+                out.add("Space weather (NOAA): scales R" + level(wx.r()) + "/S" + level(wx.s())
+                        + "/G" + level(wx.g()) + " today, 3-day maximum G"
+                        + level(wx.forecastMaxG())
+                        + " (geomagnetic storms stress power grids and satellites)"
+                        + hint(worldHints.contains("SPACEWX")));
+            }
+            for (var k : s.cyber()) {
+                out.add("Actively exploited vulnerability (CISA KEV"
+                        + (k.dateAdded() == null ? "" : ", listed " + k.dateAdded()) + "): "
+                        + k.cve() + " " + k.vendorProduct()
+                        + hint(worldHints.contains("CYBER")));
+            }
+            for (var p : s.policy()) {
+                out.add("Policy wire [" + p.source() + "]"
+                        + (p.time() == null ? "" : " " + p.time()) + ": " + p.title());
+            }
+            for (var p : s.polls()) {
+                out.add("German election poll " + p.parliament() + " (" + p.institute()
+                        + ", " + p.dateIso() + "): " + p.topline());
+            }
+            for (var c : s.civic()) {
+                out.add("Civic wire [" + c.channel() + "]"
+                        + (c.time() == null ? "" : " " + c.time()) + ": "
+                        + (c.office() == null || c.office().isBlank() ? "" : c.office() + ": ")
+                        + c.title());
+            }
+            if (s.health() != null) {
+                var h = s.health();
+                StringBuilder line = new StringBuilder("German public health:");
+                boolean any = false;
+                if (h.icuOccupancyPercent() != null) {
+                    line.append(String.format(Locale.ROOT, " ICU occupancy %.1f%% (DIVI)",
+                            h.icuOccupancyPercent()));
+                    any = true;
+                }
+                if (h.areIncidence() != null) {
+                    line.append(any ? ";" : "").append(String.format(Locale.ROOT,
+                            " ARE consultation incidence %.0f (RKI%s)", h.areIncidence(),
+                            h.areWeek() == null ? "" : ", " + h.areWeek()));
+                    any = true;
+                }
+                if (any) out.add(line.toString());
+                for (String outbreak : h.outbreaks()) {
+                    out.add("WHO disease outbreak notice: " + outbreak);
+                }
+            }
+            for (var c : s.conflicts()) {
+                out.add("Armed conflict/attack (Wikipedia Current Events, attributed): "
+                        + c.text()
+                        + (c.country() == null ? "" : " [region: " + c.country() + "]"));
+            }
+            for (String fixture : s.sportsTomorrow()) {
+                out.add("German football tomorrow: " + fixture);
+            }
+            if (s.holidays() != null) {
+                var h = s.holidays();
+                if (h.tomorrowIsHoliday()) {
+                    out.add("TOMORROW is a nationwide German public holiday: "
+                            + h.nextHolidayName() + " (" + h.nextHolidayDateIso() + ")");
+                } else if (h.nextHolidayName() != null) {
+                    out.add("Next German public holiday: " + h.nextHolidayName()
+                            + " on " + h.nextHolidayDateIso());
+                }
+                if (!h.schoolHolidayStates().isEmpty()) {
+                    out.add("German school holidays currently in "
+                            + h.schoolHolidayStates().size() + " states ("
+                            + String.join(", ", h.schoolHolidayStates()) + ")");
+                }
+            }
+        }
+        for (var h : m.allHazards) {
             String text = h.text() == null ? "" : h.text().strip();
             if (text.length() > 160) text = text.substring(0, 160) + "…";
-            sb.append("  - ").append(h.kind()).append(" (").append(h.severity())
-                    .append("): ").append(text).append('\n');
+            out.add("World hazard [" + h.kind() + ", " + h.severity() + "]: " + text
+                    + hint(h.kind() != null && hazardHints.contains(h.kind())));
         }
+        return out;
+    }
+
+    /** The exposure maps as judge context — information, never a filter. */
+    private static String hint(boolean exposed) {
+        return exposed
+                ? " [hint: the instrument's sector proxy is known to trade on this signal class]"
+                : "";
+    }
+
+    private static int level(Integer scale) {
+        return scale == null ? 0 : Math.max(scale, 0);
+    }
+
+    /** World-signal judge batch size — the full catch runs to ~60 lines. */
+    private static final int WORLD_JUDGE_BATCH = 10;
+
+    /**
+     * The subject-scoped relevance judge over the fishing-net's FULL catch —
+     * run at the END of the triage phase, when the report's THEME LANDSCAPE
+     * (the accepted press titles) is on the table: only from there is the
+     * wild-but-real connection visible (a satellite story in the pool
+     * licenses space weather for a software name). FAIL-CLOSED per unjudged
+     * signal: the catch is broad by mandate, the shelf stays guarded.
+     */
+    private void judgeWorldSignals(String subject, Material m, String lang) {
+        List<String> candidates = worldSignalCandidateLines(m);
+        if (candidates.isEmpty()) return;
+        ChatModel judge = brain.getAgentModel();
+        if (judge == null) return;
+        String sys = PromptLoader.loadLocalized("deepdive-worldsignals", lang);
+        StringBuilder themes = new StringBuilder();
+        int themeCount = 0;
+        for (RawNewsItem n : m.news) {
+            if ("".equals(m.newsTargets.getOrDefault(newsKey(n), ""))) continue;
+            if (n.title() == null || n.title().isBlank()) continue;
+            themes.append("- ").append(n.title().strip()).append('\n');
+            if (++themeCount >= 30) break;
+        }
+        String context = "SUBJECT: " + subject
+                + (m.ticker == null ? "" : " (" + m.ticker + ")")
+                + (m.sectorDisplayName == null ? "" : "\nSECTOR: " + m.sectorDisplayName)
+                + (themes.length() == 0 ? ""
+                        : "\n\nTHEMES (this report's accepted press titles):\n" + themes);
+        List<String> keep = new ArrayList<>();
+        for (int from = 0; from < candidates.size(); from += WORLD_JUDGE_BATCH) {
+            checkCancelled();
+            List<String> batch = candidates.subList(from,
+                    Math.min(candidates.size(), from + WORLD_JUDGE_BATCH));
+            StringBuilder list = new StringBuilder(768);
+            for (int i = 0; i < batch.size(); i++) {
+                list.append(i + 1).append(". ").append(batch.get(i)).append('\n');
+            }
+            // A zero-parse reply is a whiffed judge call, not a verdict — one
+            // retry before the batch falls closed (live smoke 2026-07-15: two
+            // of six batches whiffed, 20 signals lost — the triage pattern).
+            for (int attempt = 1; attempt <= 2; attempt++) {
+                int parsed = 0;
+                try {
+                    String reply = chatGateway.chat(judge, sys,
+                            context + "\nSIGNALS:\n" + list);
+                    Matcher obj = TRIAGE_OBJ.matcher(reply == null ? "" : reply);
+                    while (obj.find()) {
+                        String o = obj.group();
+                        Matcher iM = TRIAGE_I.matcher(o);
+                        if (!iM.find()) continue;
+                        int i = Integer.parseInt(iM.group(1));
+                        if (i < 1 || i > batch.size()) continue;
+                        Matcher relM = TRIAGE_REL.matcher(o);
+                        if (relM.find() && Boolean.parseBoolean(relM.group(1))) {
+                            keep.add(stripHint(batch.get(i - 1)));
+                        }
+                        parsed++;
+                    }
+                } catch (Exception e) {
+                    LOG.warn("[DEEPDIVE] world-signal judge batch failed: {}{}",
+                            e.getMessage(), attempt == 1 ? " - retrying" : " - fail-closed.");
+                }
+                if (parsed > 0) break;
+                if (attempt == 2) {
+                    LOG.warn("[DEEPDIVE] world-signal judge batch yielded no verdicts "
+                            + "twice - its {} signal(s) stay off the shelf (fail-closed).",
+                            batch.size());
+                }
+            }
+        }
+        m.worldSignalKeep = keep;
+        LOG.info("[DEEPDIVE] '{}' world signals: {} candidate(s), {} judged relevant.",
+                subject, candidates.size(), keep.size());
+    }
+
+    /** The judge hint never reaches the shelf - it exists for the judge alone. */
+    private static String stripHint(String line) {
+        int idx = line.indexOf(" [hint:");
+        return idx < 0 ? line : line.substring(0, idx);
+    }
+
+    /**
+     * The judged world signals (Lage) - verified world data the subject-scoped
+     * judge let through; any tie to the instrument is the desk's attributed
+     * reading, never a fact.
+     */
+    private static void appendWorldSignals(StringBuilder sb, Material m,
+            Map<String, Integer> nums) {
+        if (m.worldSignalKeep.isEmpty()) return;
+        sb.append("WORLD SIGNALS (verified world data, judged relevant to THIS subject; "
+                        + "any tie to the instrument is the desk's attributed reading)")
+                .append(mark(nums, "world")).append(":\n");
+        for (String line : m.worldSignalKeep) {
+            sb.append("  - ").append(line).append('\n');
+        }
+    }
+
+    private static void appendOilLine(StringBuilder sb, String label, Double level,
+            Double delta) {
+        if (level == null) return;
+        sb.append(label).append(String.format(Locale.ROOT, " %.1f million barrels", level));
+        if (delta != null) {
+            sb.append(String.format(Locale.ROOT, " (%+.1f week-over-week)", delta));
+        }
+    }
+
+    /** Volume-profile input horizon (hourly bars) — the position-level class. */
+    static final int VOLUME_PROFILE_RANGE_DAYS = 180;
+    /** Newest register events carried verbatim into the memory block. */
+    private static final int MEMORY_EVENTS_TAIL = 8;
+
+    /** The current F&G band (yesterday's settled reading), or null. */
+    private String currentRegimeBand() {
+        de.bsommerfeld.wsbg.terminal.db.FearGreedHistoryArchive history = fearGreedHistory;
+        if (history == null) return null;
+        try {
+            return history.latestDate()
+                    .flatMap(history::byDate)
+                    .map(d -> MarketMemoryService.bandOf(d.score()))
+                    .orElse(null);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * The finished base-rate lines for every class the instrument's own events
+     * touch: house statistics (regime-conditioned when THAT cell carries
+     * {@link BaseRates#MIN_N_FOR_CONDITIONED} events, else unconditioned with
+     * the honest fallback note) plus the attributed literature prior. All
+     * license gates are code — the model reads finished sentences.
+     */
+    static List<String> buildBaseRateLines(
+            List<de.bsommerfeld.wsbg.terminal.db.MarketEventRecord> instrumentEvents,
+            de.bsommerfeld.wsbg.terminal.db.MarketEventArchive archive, String currentBand) {
+        List<String> out = new ArrayList<>();
+        Set<String> classes = new java.util.LinkedHashSet<>();
+        for (var e : instrumentEvents) classes.add(e.eventClass());
+        for (String eventClass : classes) {
+            List<de.bsommerfeld.wsbg.terminal.db.MarketEventRecord> classEvents =
+                    archive.byClass(eventClass);
+            java.util.Optional<BaseRates.Stats> conditioned = currentBand == null
+                    ? java.util.Optional.empty()
+                    : BaseRates.forClass(eventClass, classEvents, currentBand)
+                            .filter(s -> s.n() >= BaseRates.MIN_N_FOR_CONDITIONED);
+            if (conditioned.isPresent()) {
+                out.add(eventClass + " (house register, conditioned on the current regime): "
+                        + BaseRates.describe(conditioned.get()));
+            } else {
+                BaseRates.forClass(eventClass, classEvents, null).ifPresent(s -> out.add(
+                        eventClass + " (house register, unconditioned"
+                                + (currentBand == null ? "" : " - too few cases in the current regime cell")
+                                + "): " + BaseRates.describe(s)));
+            }
+            LiteraturePriors.priorFor(eventClass)
+                    .ifPresent(p -> out.add(eventClass + " (attributed prior): " + p));
+        }
+        if (!out.isEmpty()) out.add(LiteraturePriors.CROSS_CUTTING);
+        return out;
+    }
+
+    /**
+     * Structure block (Lage): volume profile + order-book window. Every level
+     * arrives WITH its justification (traded volume / resting orders) and the
+     * depth-honesty note — the base for the "historically X, but the current
+     * structure says Y" weighing the user mandated.
+     */
+    private static void appendStructure(StringBuilder sb, Material m, Map<String, Integer> nums) {
+        if (m.volumeProfile == null && m.orderBook == null) return;
+        String mark = mark(nums, "structure");
+        String unit = m.snapshot != null && m.snapshot.currency() != null
+                ? " " + m.snapshot.currency() : "";
+        if (m.volumeProfile != null) {
+            VolumeProfile.Profile p = m.volumeProfile;
+            sb.append("STRUCTURE - VOLUME PROFILE (house-computed from hourly bars, ~")
+                    .append(VOLUME_PROFILE_RANGE_DAYS / 30).append(" months)").append(mark).append(":\n");
+            sb.append(String.format(Locale.ROOT,
+                    "  - point of control (volume-heaviest price): %.2f%s (%s units traded there)\n",
+                    p.poc(), unit, grouped(p.pocUnits())));
+            sb.append(String.format(Locale.ROOT,
+                    "  - value area (70 %% of traded volume): %.2f to %.2f%s\n",
+                    p.val(), p.vah(), unit));
+            sb.append(String.format(Locale.ROOT,
+                    "  - profile range %.2f to %.2f%s, total volume %s units\n",
+                    p.low(), p.high(), unit, grouped(p.totalUnits())));
+            sb.append("  - reading: high-volume zones are acceptance (price sticks), low-volume "
+                    + "zones slip through; a level is justified ONLY by the volume behind it\n");
+        }
+        if (m.orderBook != null
+                && (!m.orderBook.bids().isEmpty() || !m.orderBook.asks().isEmpty())) {
+            sb.append("ORDER BOOK (Boerse Frankfurt floor book");
+            if (m.orderBook.time() != null && !m.orderBook.time().isBlank()) {
+                sb.append(", snapshot ").append(m.orderBook.time());
+            }
+            sb.append(')').append(mark).append(":\n");
+            appendBookSide(sb, "bid (buy) side", m.orderBook.bids(), unit);
+            appendBookSide(sb, "ask (sell) side", m.orderBook.asks(), unit);
+            sb.append("  - honesty: a keyless WINDOW of the Frankfurt floor book (10 levels), "
+                    + "never the consolidated market depth\n");
+        }
+    }
+
+    private static void appendBookSide(StringBuilder sb,
+            String label, List<de.bsommerfeld.wsbg.terminal.core.price.OrderBookSnapshot.Level> levels,
+            String unit) {
+        if (levels.isEmpty()) return;
+        int orders = 0;
+        long units = 0;
+        de.bsommerfeld.wsbg.terminal.core.price.OrderBookSnapshot.Level strongest = levels.get(0);
+        for (var level : levels) {
+            orders += level.orders();
+            units += level.units();
+            if (level.units() > strongest.units()) strongest = level;
+        }
+        sb.append(String.format(Locale.ROOT,
+                "  - %s: %d resting orders / %s units across %.2f-%.2f%s; strongest level %.2f "
+                        + "(%d orders, %s units)\n",
+                label, orders, grouped(units),
+                Math.min(levels.get(0).price(), levels.get(levels.size() - 1).price()),
+                Math.max(levels.get(0).price(), levels.get(levels.size() - 1).price()), unit,
+                strongest.price(), strongest.orders(), grouped(strongest.units())));
+    }
+
+    /**
+     * Market-memory block (Katalysatoren): the instrument's own dated events
+     * with measured reactions, then the class base rates + priors. The
+     * discipline line pins the mandated weighing: base rates are priors,
+     * never predictions — the CURRENT material decides.
+     */
+    private static void appendMarketMemory(StringBuilder sb, Material m, Map<String, Integer> nums) {
+        if (m.memoryEvents.isEmpty() && m.baseRateLines.isEmpty()) return;
+        sb.append("MARKET MEMORY (house event register)").append(mark(nums, "memory")).append(":\n");
+        int from = Math.max(0, m.memoryEvents.size() - MEMORY_EVENTS_TAIL);
+        if (from > 0) {
+            sb.append("  - ").append(from).append(" older event(s) elided; newest below\n");
+        }
+        for (int i = from; i < m.memoryEvents.size(); i++) {
+            var e = m.memoryEvents.get(i);
+            sb.append("  - [").append(e.date()).append("] ").append(e.eventClass())
+                    .append(" (").append(e.source()).append(')');
+            if (e.carEvent() != null) {
+                sb.append(String.format(Locale.ROOT,
+                        ": reaction CAR(-1,+1) %+.1f %%, CAR(0,+5) %+.1f %% vs %s",
+                        e.carEvent(), e.carShort(), e.benchmark()));
+                if (e.regimeBand() != null) sb.append(", regime then ").append(e.regimeBand());
+                if (Boolean.TRUE.equals(e.confounded())) {
+                    sb.append(" [confounded - another event within 2 days]");
+                }
+            } else {
+                sb.append(": reaction not yet measured");
+            }
+            sb.append('\n');
+        }
+        for (String line : m.baseRateLines) {
+            sb.append("  - ").append(line).append('\n');
+        }
+        sb.append("  - discipline: base rates are PRIORS, never predictions - weigh them against "
+                + "the current structure and material, and say when they disagree\n");
+    }
+
+    /** ROOT-locale integer with SPACE grouping (the house material convention). */
+    private static String grouped(long v) {
+        return String.format(Locale.ROOT, "%,d", v).replace(',', ' ');
     }
 
     /** Oldest entries kept verbatim at the timeline's start. */
@@ -4689,15 +5293,20 @@ public class DeepDiveService {
                 return "BaFin" + (de ? " - Directors' Dealings (§ 19 MAR)"
                         : " - directors' dealings (art. 19 MAR)");
             case "sector": {
-                boolean hazards = !m.sectorHazards.isEmpty();
                 return (de
                         ? "Sektor- und Makro-Kontext - Yahoo Sektor-ETFs, TradingView/ForexFactory-"
                                 + "Wirtschaftskalender, Notenbank-Termine"
-                                + (hazards ? ", Gefahrenlage (NOAA/USGS/FAA)" : "")
                         : "Sector and macro context - Yahoo sector ETFs, TradingView/ForexFactory "
-                                + "economic calendars, central-bank dates"
-                                + (hazards ? ", hazard picture (NOAA/USGS/FAA)" : ""));
+                                + "economic calendars, central-bank dates");
             }
+            case "world":
+                return de
+                        ? "Weltsignale - IMF PortWatch, EIA, Harpex, Energy-Charts, NOAA, CISA, "
+                                + "Politik-/Zivil-Ticker, Gefahrenlage (NOAA/USGS/FAA); "
+                                + "je Subjekt KI-beurteilt"
+                        : "World signals - IMF PortWatch, EIA, Harpex, Energy-Charts, NOAA, CISA, "
+                                + "policy/civic wires, hazard picture (NOAA/USGS/FAA); "
+                                + "AI-judged per subject";
             case "marketbeat":
                 return "MarketBeat" + (de
                         ? " - Analysten-Aktionshistorie, US-Short-Quote und Presse-Zeitleiste"
@@ -4712,6 +5321,19 @@ public class DeepDiveService {
                                 + "Analysten-Kursziele, institutionelle Halter (13F), Earnings-Historie"
                         : " - US listing: insider trades (Form 4), FINRA short interest, "
                                 + "analyst targets, institutional holders (13F), earnings history");
+            case "structure":
+                return de
+                        ? "Struktur - hausgerechnetes Volume Profile (Yahoo-Stundenkerzen) und "
+                                + "Börse-Frankfurt-Orderbuchfenster (10 Level)"
+                        : "Structure - house-computed volume profile (Yahoo hourly bars) and "
+                                + "Boerse Frankfurt order-book window (10 levels)";
+            case "memory":
+                return de
+                        ? "Markt-Gedächtnis - hauseigenes Ereignisregister (EDGAR, MarketBeat, "
+                                + "NASDAQ, EQS-Ad-hocs) mit gemessenen Reaktionen und attribuierten "
+                                + "Literatur-Prioren"
+                        : "Market memory - house event register (EDGAR, MarketBeat, NASDAQ, EQS "
+                                + "ad-hocs) with measured reactions and attributed literature priors";
             case "whispers":
                 return "EarningsWhispers" + (de
                         ? " - Konsensschätzungen zum nächsten Bericht"

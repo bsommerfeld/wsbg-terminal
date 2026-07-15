@@ -20,7 +20,11 @@ class DeepDiveChartsPreviewDump {
         List<ChartFigure> figures = new DeepDiveCharts("de").build(
                 DeepDiveChartsTest.snapshot(), DeepDiveChartsTest.deepDive(),
                 DeepDiveChartsTest.analystView(), DeepDiveChartsTest.shorts(),
-                DeepDiveChartsTest.insider(), DeepDiveChartsTest.venueStats());
+                DeepDiveChartsTest.insider(), DeepDiveChartsTest.venueStats(),
+                DeepDiveChartsTest.usStats(), DeepDiveChartsTest.actions(),
+                DeepDiveChartsTest.hedgeFunds(), DeepDiveChartsTest.pressTimeline(),
+                DeepDiveChartsTest.worldSignals(), DeepDiveChartsTest.volumeProfile(),
+                DeepDiveChartsTest.orderBook(), DeepDiveChartsTest.memoryEvents());
         StringBuilder html = new StringBuilder("<!doctype html><meta charset=utf-8><body style='background:#fff;max-width:620px;margin:20px auto;font-family:sans-serif'>");
         for (ChartFigure f : figures) {
             html.append("<h4 style='font-size:12px;color:#52514e'>").append(f.title())

@@ -510,4 +510,32 @@ class DeepDiveFactCheckTest {
         assertFalse(has(inspect(draft), DeepDiveFactCheck.Objection.Kind.REPEAT),
                 String.valueOf(inspect(draft)));
     }
+
+    /**
+     * The house scissors (2026-07-15): over-max sections are cut at block/
+     * sentence boundaries — a model LENGTH round provably grew the section
+     * instead (live smoke: 4241 → 4481 chars).
+     */
+    @org.junit.jupiter.api.Test
+    void cutToLengthCutsAtBoundariesAndKeepsTablesAtomic() {
+        String s80 = "Dieser Satz traegt genau achtzig Zeichen Substanz fuer den "
+                + "Schnitt am Rand hier."; // 80 chars
+        String body = s80 + "\n\n" + s80 + "\n\n" + s80;
+        // Budget for two blocks + separator: the third block falls off whole.
+        String cut = DeepDiveFactCheck.cutToLength(body, 2 * 80 + 2);
+        org.junit.jupiter.api.Assertions.assertEquals(s80 + "\n\n" + s80, cut);
+        // Under the limit: untouched.
+        org.junit.jupiter.api.Assertions.assertEquals(body,
+                DeepDiveFactCheck.cutToLength(body, 10_000));
+        // One giant prose block cuts at a sentence boundary, never empty.
+        String giant = (s80 + " ").repeat(10).strip();
+        String giantCut = DeepDiveFactCheck.cutToLength(giant, 200);
+        org.junit.jupiter.api.Assertions.assertTrue(giantCut.length() <= 200);
+        org.junit.jupiter.api.Assertions.assertTrue(giantCut.endsWith("hier."));
+        // A table block stays atomic: it is dropped whole, never torn.
+        String table = "| a | b |\n| --- | --- |\n| 1 | 2 |";
+        String withTable = s80 + "\n\n" + table;
+        String tableCut = DeepDiveFactCheck.cutToLength(withTable, 90);
+        org.junit.jupiter.api.Assertions.assertEquals(s80, tableCut);
+    }
 }

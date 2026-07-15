@@ -76,6 +76,18 @@ final class WeatherMaterial {
      */
     static String[] sectionShelves(WeatherStatsCollector.Stats stats, LocalDate today,
             String wireMorning, String wireMidday, String wireEvening) {
+        return sectionShelves(stats, today, wireMorning, wireMidday, wireEvening, List.of());
+    }
+
+    /**
+     * The full variant with the fishing-net world signals: {@code worldSignals}
+     * carries ONLY the triage survivors (the service judged every frozen signal
+     * for market relevance first — curation at the shelves, never at
+     * ingestion), each already routed to its home shelf.
+     */
+    static String[] sectionShelves(WeatherStatsCollector.Stats stats, LocalDate today,
+            String wireMorning, String wireMidday, String wireEvening,
+            List<WorldSignal> worldSignals) {
         WorldStats w = stats.world();
         List<de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.DaypartStat> dayparts =
                 w == null ? List.of() : w.dayparts();
@@ -104,6 +116,7 @@ final class WeatherMaterial {
         append(picture, topNewsBlock(w == null ? List.of() : w.topNews()));
         append(picture, hazardsBlock(w == null ? List.of() : w.hazards()));
         append(picture, worldWeatherBlock(w == null ? List.of() : w.worldWeather()));
+        append(picture, worldSignalsBlock("of the day", worldSignals, SEC_PICTURE));
         append(picture, tickersBlock(stats.tickers()));
         append(picture, marketsBlock(stats.indices()));
         append(picture, sectorsBlock(w == null ? List.of() : w.sectors()));
@@ -119,6 +132,7 @@ final class WeatherMaterial {
         append(morning, tickerNewsBlock("this window (morning)", inWindow(tickerNews,
                 de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.TickerNewsStat::time,
                 0, false)));
+        append(morning, worldSignalsBlock("this window (morning)", worldSignals, SEC_MORNING));
         append(morning, tickersBlock(stats.tickers()));
         append(morning, sectorsBlock(w == null ? List.of() : w.sectors()));
         append(morning, adhocBlock(inWindow(adhocs, AdhocStat::time, 0, true)));
@@ -136,6 +150,7 @@ final class WeatherMaterial {
         append(midday, tickerNewsBlock("this window (midday)", inWindow(tickerNews,
                 de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.TickerNewsStat::time,
                 1, false)));
+        append(midday, worldSignalsBlock("this window (midday)", worldSignals, SEC_MIDDAY));
         append(midday, marketsBlock(stats.indices()));
         append(midday, sectorsBlock(w == null ? List.of() : w.sectors()));
         append(midday, analystBlock(inWindow(analyst, AnalystActionStat::time, 1, true)));
@@ -156,6 +171,7 @@ final class WeatherMaterial {
         append(evening, tickerNewsBlock("this window (evening)", inWindow(tickerNews,
                 de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.TickerNewsStat::time,
                 2, true)));
+        append(evening, worldSignalsBlock("this window (evening)", worldSignals, SEC_EVENING));
         append(evening, adhocBlock(inWindow(adhocs, AdhocStat::time, 2, false)));
         append(evening, macroBlock(inWindow(actuals, MacroStat::time, 2, false),
                 inWindow(events, MacroStat::time, 2, false)));
@@ -185,13 +201,16 @@ final class WeatherMaterial {
             outlookBlock = outlookBlock.isEmpty() ? cbBlock : outlookBlock + "\n\n" + cbBlock;
         }
         String colourBlock = colourBlock(w);
-        if (!outlookBlock.isEmpty() || !colourBlock.isEmpty()) {
+        String worldOutlook = worldSignalsBlock("for tomorrow (schedule facts)",
+                worldSignals, SEC_OUTLOOK);
+        if (!outlookBlock.isEmpty() || !colourBlock.isEmpty() || !worldOutlook.isEmpty()) {
             // Tomorrow's ISO date, so a written-out "am 14. Juli 2026" can
             // reconcile — the first live run's outlook died on a DATE
             // objection because only TODAY's date was on the shelf.
             LocalDate tomorrow = today.plusDays(1);
             append(outlook, "TOMORROW'S DATE: " + tomorrow + " (" + tomorrow.getDayOfWeek() + ")");
             append(outlook, outlookBlock);
+            append(outlook, worldOutlook);
             append(outlook, hazardsBlock(w == null ? List.of() : w.hazards()));
             append(outlook, worldWeatherBlock(w == null ? List.of() : w.worldWeather()));
             // Today's sector table rides along so the docket can be tied to
@@ -1122,6 +1141,240 @@ final class WeatherMaterial {
     /** Stable band token → a readable word for the material (the UI localizes properly). */
     private static String bandWord(String band) {
         return band.replace('_', ' ').toLowerCase(Locale.ROOT);
+    }
+
+    // --- fishing-net world signals (2026-07-15) -----------------------------
+
+    /**
+     * One fishing-net signal: {@code i} the candidate ordinal the triage judges
+     * by, {@code shelf} the deterministic home section, {@code line} the
+     * material line (value explained — never a naked number, the weather
+     * doctrine).
+     */
+    record WorldSignal(int i, int shelf, String line) {
+    }
+
+    /**
+     * Every frozen world signal as a judgeable candidate line with its home
+     * shelf: state signals (chokepoints, oil, freight, power, space weather,
+     * polls, health, cyber) home in the Großwetterlage, timed policy/civic
+     * items in their day-part window (untimed policy → Großwetterlage, untimed
+     * civic → morning, the press convention), sport and holidays in the
+     * outlook. The AI triage then decides which of these REACH a shelf —
+     * ingestion is uncurated, the report's space is guarded.
+     */
+    static List<WorldSignal> worldSignalCandidates(
+            de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.WorldSignals s) {
+        if (s == null) return List.of();
+        List<WorldSignal> out = new ArrayList<>();
+        for (var c : s.chokepoints()) {
+            if (c.transits() == null) continue;
+            StringBuilder line = new StringBuilder("Seefracht-Chokepoint ").append(c.name())
+                    .append(": ").append(c.transits())
+                    .append(" Schiffspassagen/Tag (IMF PortWatch, Stand ").append(c.dateIso());
+            if (c.weekDeltaPercent() != null) {
+                line.append(", ").append(pct(c.weekDeltaPercent())).append(" vs Vorwoche");
+            }
+            line.append(')');
+            add(out, SEC_PICTURE, line.toString());
+        }
+        var oil = s.oilStocks();
+        if (oil != null && (oil.crudeMb() != null || oil.gasolineMb() != null)) {
+            StringBuilder line = new StringBuilder("US-Öllager (EIA-Wochenbericht, Woche bis ")
+                    .append(oil.weekEnding()).append("):");
+            appendOilPart(line, " Rohöl", oil.crudeMb(), oil.crudeDeltaMb());
+            appendOilPart(line, "; strategische Reserve", oil.sprMb(), oil.sprDeltaMb());
+            appendOilPart(line, "; Benzin", oil.gasolineMb(), oil.gasolineDeltaMb());
+            appendOilPart(line, "; Destillate", oil.distillateMb(), oil.distillateDeltaMb());
+            add(out, SEC_PICTURE, line.toString());
+        }
+        var freight = s.freight();
+        if (freight != null && freight.harpex() != null) {
+            StringBuilder line = new StringBuilder("Container-Charterraten (Harpex, Stand ")
+                    .append(freight.dateIso()).append("): ")
+                    .append(num(freight.harpex(), 0)).append(" Punkte");
+            if (freight.harpexWeekAgo() != null) {
+                line.append(" (Vorwoche ").append(num(freight.harpexWeekAgo(), 0)).append(')');
+            }
+            add(out, SEC_PICTURE, line.toString());
+        }
+        var power = s.power();
+        if (power != null && (power.currentEurMwh() != null
+                || power.renewableSharePercent() != null)) {
+            StringBuilder line = new StringBuilder("Strom Deutschland (Day-Ahead, Fraunhofer):");
+            if (power.currentEurMwh() != null) {
+                line.append(" aktuell ").append(num(power.currentEurMwh(), 2)).append(" EUR/MWh");
+                if (power.minEurMwh() != null && power.maxEurMwh() != null) {
+                    line.append(", Tagesspanne ").append(num(power.minEurMwh(), 2))
+                            .append(" bis ").append(num(power.maxEurMwh(), 2));
+                }
+                if (power.avgEurMwh() != null) {
+                    line.append(", Schnitt ").append(num(power.avgEurMwh(), 2));
+                }
+            }
+            if (power.renewableSharePercent() != null) {
+                line.append("; Erzeugung ").append(num(power.renewableSharePercent(), 0))
+                        .append(" % erneuerbar");
+                if (power.topSource() != null && !power.topSource().isBlank()) {
+                    line.append(", stärkste Quelle ").append(power.topSource());
+                }
+            }
+            add(out, SEC_PICTURE, line.toString());
+        }
+        var wx = s.spaceWeather();
+        if (wx != null && (level(wx.r()) > 0 || level(wx.s()) > 0 || level(wx.g()) > 0
+                || level(wx.forecastMaxG()) > 0)) {
+            // A quiet all-zero space-weather day carries no signal at all —
+            // only actual activity becomes a candidate.
+            add(out, SEC_PICTURE, "Weltraumwetter (NOAA): Skalen R" + level(wx.r())
+                    + "/S" + level(wx.s()) + "/G" + level(wx.g())
+                    + " heute, 3-Tage-Maximum G" + level(wx.forecastMaxG()));
+        }
+        for (var p : s.polls()) {
+            add(out, SEC_PICTURE, "Sonntagsfrage " + p.parliament() + " (" + p.institute()
+                    + ", " + p.dateIso() + "): " + p.topline());
+        }
+        var health = s.health();
+        if (health != null) {
+            StringBuilder line = new StringBuilder("Gesundheitslage Deutschland:");
+            boolean any = false;
+            if (health.icuOccupancyPercent() != null) {
+                line.append(" Intensivbetten-Auslastung ")
+                        .append(num(health.icuOccupancyPercent(), 1)).append(" % (DIVI)");
+                any = true;
+            }
+            if (health.areIncidence() != null) {
+                line.append(any ? "; " : " ").append("ARE-Konsultationsinzidenz ")
+                        .append(num(health.areIncidence(), 0)).append(" (RKI");
+                if (health.areWeek() != null) line.append(", ").append(health.areWeek());
+                line.append(')');
+                any = true;
+            }
+            if (any) add(out, SEC_PICTURE, line.toString());
+            for (String outbreak : health.outbreaks()) {
+                add(out, SEC_PICTURE, "WHO-Ausbruchsmeldung: " + outbreak);
+            }
+        }
+        for (var k : s.cyber()) {
+            add(out, SEC_PICTURE, "Aktiv ausgenutzte Schwachstelle (CISA KEV"
+                    + (k.dateAdded() == null ? "" : ", gelistet " + k.dateAdded()) + "): "
+                    + k.cve() + " " + k.vendorProduct());
+        }
+        for (var c : s.conflicts()) {
+            StringBuilder line = new StringBuilder(
+                    "Bewaffneter Konflikt/Angriff (Wikipedia Current Events, attribuiert");
+            if (c.source() != null && !c.source().isBlank()) {
+                line.append(", zitiert ").append(c.source());
+            }
+            line.append("): ").append(c.text());
+            if (c.country() != null) line.append(" [Region: ").append(c.country()).append(']');
+            add(out, SEC_PICTURE, line.toString());
+        }
+        for (var p : s.policy()) {
+            int shelf = shelfFor(p.time(), SEC_PICTURE);
+            add(out, shelf, "[" + policySourceWord(p.source()) + "] "
+                    + (p.time() == null ? "" : p.time() + " ") + p.title());
+        }
+        for (var c : s.civic()) {
+            int shelf = shelfFor(c.time(), SEC_MORNING);
+            add(out, shelf, "[" + civicChannelWord(c.channel()) + "] "
+                    + (c.time() == null ? "" : c.time() + " ")
+                    + (c.office() == null || c.office().isBlank() ? "" : c.office() + ": ")
+                    + c.title());
+        }
+        for (String fixture : s.sportsTomorrow()) {
+            add(out, SEC_OUTLOOK, "Fußball morgen: " + fixture);
+        }
+        var holidays = s.holidays();
+        if (holidays != null) {
+            if (holidays.tomorrowIsHoliday()) {
+                add(out, SEC_OUTLOOK, "Morgen ist bundesweiter Feiertag: "
+                        + holidays.nextHolidayName() + " (" + holidays.nextHolidayDateIso()
+                        + ") — deutsche Börsenplätze prüfen");
+            } else if (holidays.nextHolidayName() != null) {
+                add(out, SEC_OUTLOOK, "Nächster Feiertag: " + holidays.nextHolidayName()
+                        + " am " + holidays.nextHolidayDateIso());
+            }
+            if (!holidays.schoolHolidayStates().isEmpty()) {
+                add(out, SEC_PICTURE, "Schulferien aktuell in "
+                        + holidays.schoolHolidayStates().size() + " Bundesländern ("
+                        + String.join(", ", holidays.schoolHolidayStates()) + ")");
+            }
+        }
+        return out;
+    }
+
+    /**
+     * The world signals of ONE shelf — verified world data the AI relevance
+     * triage let through. Any market tie the prose draws from these is the
+     * desk's attributed reading, never a fact.
+     */
+    static String worldSignalsBlock(String scope, List<WorldSignal> signals, int shelf) {
+        if (signals == null || signals.isEmpty()) return "";
+        StringBuilder sb = null;
+        for (WorldSignal s : signals) {
+            if (s.shelf() != shelf) continue;
+            if (sb == null) {
+                sb = new StringBuilder("WORLD SIGNALS ").append(scope)
+                        .append(" (verified world data, relevance-triaged; a market tie"
+                                + " is the desk's attributed reading, never a fact. The"
+                                + " FIGURES and the map carry these values — the prose may"
+                                + " read a signal's MEANING for the day, never recite the"
+                                + " series; a signal you cannot tie to the day's story"
+                                + " stays in the figures):");
+            }
+            sb.append("\n- ").append(s.line());
+        }
+        return sb == null ? "" : sb.toString();
+    }
+
+    private static void add(List<WorldSignal> out, int shelf, String line) {
+        out.add(new WorldSignal(out.size() + 1, shelf, line));
+    }
+
+    private static void appendOilPart(StringBuilder line, String label, Double level,
+            Double delta) {
+        if (level == null) return;
+        line.append(label).append(' ').append(num(level, 1)).append(" Mio. Barrel");
+        if (delta != null) {
+            line.append(" (").append(delta >= 0 ? "+" : "").append(num(delta, 1))
+                    .append(" zur Vorwoche)");
+        }
+    }
+
+    private static int level(Integer scale) {
+        return scale == null ? 0 : Math.max(scale, 0);
+    }
+
+    /** Timed items home in their day-part window; untimed in {@code fallback}. */
+    private static int shelfFor(String hhmm, int fallback) {
+        int window = windowOf(hhmm);
+        return window < 0 ? fallback : SEC_MORNING + window;
+    }
+
+    private static String policySourceWord(String source) {
+        if (source == null) return "Politik";
+        return switch (source) {
+            case "FED" -> "Fed";
+            case "EZB" -> "EZB";
+            case "WHITE_HOUSE" -> "Weißes Haus";
+            case "FEDERAL_REGISTER" -> "Federal Register";
+            case "EU_KOMMISSION" -> "EU-Kommission";
+            case "EU_SANKTIONEN" -> "EU-Sanktionen";
+            default -> source;
+        };
+    }
+
+    private static String civicChannelWord(String channel) {
+        if (channel == null) return "OTS";
+        return switch (channel) {
+            case "BLAULICHT" -> "Blaulicht";
+            case "GENERAL" -> "OTS";
+            case "AUTO_VERKEHR" -> "OTS Auto/Verkehr";
+            case "AUTOBAHN" -> "Autobahn";
+            case "MVG" -> "MVG München";
+            default -> "OTS " + channel.charAt(0) + channel.substring(1).toLowerCase(Locale.ROOT);
+        };
     }
 
     private static void append(StringBuilder sb, String block) {

@@ -1,11 +1,17 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
 import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
+import de.bsommerfeld.wsbg.terminal.core.price.AnalystActions;
 import de.bsommerfeld.wsbg.terminal.core.price.AnalystView;
 import de.bsommerfeld.wsbg.terminal.core.price.CompanyDeepDive;
+import de.bsommerfeld.wsbg.terminal.core.price.HedgeFundPopularity;
 import de.bsommerfeld.wsbg.terminal.core.price.InsiderDealings;
+import de.bsommerfeld.wsbg.terminal.core.price.OrderBookSnapshot;
+import de.bsommerfeld.wsbg.terminal.core.price.PressTimeline;
 import de.bsommerfeld.wsbg.terminal.core.price.ShortInterest;
+import de.bsommerfeld.wsbg.terminal.core.price.UsListingStats;
 import de.bsommerfeld.wsbg.terminal.db.DeepDiveRecord.ChartFigure;
+import de.bsommerfeld.wsbg.terminal.db.MarketEventRecord;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -70,7 +76,11 @@ final class DeepDiveCharts {
     List<ChartFigure> build(MarketSnapshot snapshot, CompanyDeepDive deepDive,
             AnalystView analystView, ShortInterest shortInterest,
             InsiderDealings insiderDealings,
-            de.bsommerfeld.wsbg.terminal.core.price.VenueStats venueStats) {
+            de.bsommerfeld.wsbg.terminal.core.price.VenueStats venueStats,
+            UsListingStats usStats, AnalystActions analystActions,
+            HedgeFundPopularity hedgeFunds, PressTimeline pressTimeline,
+            List<String> worldSignalKeep, VolumeProfile.Profile volumeProfile,
+            OrderBookSnapshot orderBook, List<MarketEventRecord> memoryEvents) {
         List<ChartFigure> out = new ArrayList<>();
         addIfPresent(out, factsFigure(snapshot, deepDive, analystView));
         if (deepDive != null) {
@@ -79,16 +89,27 @@ final class DeepDiveCharts {
             addIfPresent(out, marginFigure(deepDive.keyFigures()));
             addIfPresent(out, cashflowFigure(deepDive.balanceSheet()));
         }
+        addIfPresent(out, surpriseFigure(usStats));
         addIfPresent(out, analystFigure(analystView));
+        addIfPresent(out, actionsFigure(analystActions));
+        addIfPresent(out, hedgeFundFigure(hedgeFunds));
+        addIfPresent(out, peerScatterFigure(deepDive, snapshot));
         addIfPresent(out, priceFigure(snapshot));
         addIfPresent(out, venueFigure(venueStats));
+        addIfPresent(out, volumeProfileFigure(volumeProfile, snapshot));
+        addIfPresent(out, orderBookFigure(orderBook, snapshot));
+        addIfPresent(out, pressTimelineFigure(pressTimeline));
+        addIfPresent(out, worldSignalsFigure(worldSignalKeep));
         if (deepDive != null) {
             addIfPresent(out, performanceFigure(deepDive.performance()));
             addIfPresent(out, rangeFigure(deepDive.performance(), snapshot));
         }
         addIfPresent(out, eventsFigure(analystView));
+        addIfPresent(out, streetBandFigure(usStats, analystView, snapshot));
         addIfPresent(out, insiderFigure(insiderDealings));
         addIfPresent(out, shortFigure(shortInterest));
+        addIfPresent(out, usShortHistoryFigure(usStats));
+        addIfPresent(out, memoryEventsFigure(memoryEvents));
         if (deepDive != null) {
             addIfPresent(out, srFigure(deepDive.technicalView(), snapshot));
         }
@@ -781,6 +802,254 @@ final class DeepDiveCharts {
                 svg.toString());
     }
 
+    // ---- 21. volume-profile ladder (POC + value area) — Lage ----
+
+    /**
+     * The market memory's traded-structure ladder: profile range, the 70 %
+     * value area as a shaded band, the POC emphasized WITH the volume that
+     * justifies it (a level is only ever justified by the volume behind it),
+     * the live price marked between them. The finished profile carries
+     * aggregates, not raw buckets — the POC bar's length is its honest share
+     * of total traded volume, and the share rides as text beside it.
+     */
+    private ChartFigure volumeProfileFigure(VolumeProfile.Profile p, MarketSnapshot s) {
+        if (p == null || !Double.isFinite(p.poc()) || !Double.isFinite(p.low())
+                || !Double.isFinite(p.high()) || p.high() <= p.low()
+                || p.totalUnits() <= 0) {
+            return null;
+        }
+        double price = s != null && s.hasPrice() ? s.price() : Double.NaN;
+        double min = p.low(), max = p.high();
+        if (Double.isFinite(price)) {
+            min = Math.min(min, price);
+            max = Math.max(max, price);
+        }
+        double span = max - min == 0 ? 1 : max - min;
+        int h = 190, padT = 14, padB = 20, xL = 96, xR = W - 96;
+        int plotH = h - padT - padB;
+
+        record Rung(String name, double value, boolean isPrice, boolean isPoc) {}
+        List<Rung> rungs = new ArrayList<>();
+        rungs.add(new Rung(de ? "Profil-Hoch" : "Profile high", p.high(), false, false));
+        if (Double.isFinite(p.vah())) rungs.add(new Rung("VAH", p.vah(), false, false));
+        rungs.add(new Rung("POC", p.poc(), false, true));
+        if (Double.isFinite(p.val())) rungs.add(new Rung("VAL", p.val(), false, false));
+        rungs.add(new Rung(de ? "Profil-Tief" : "Profile low", p.low(), false, false));
+        if (Double.isFinite(price)) rungs.add(new Rung(de ? "Kurs" : "Price", price, true, false));
+
+        StringBuilder svg = open(h);
+        // The 70 % value area as a shaded acceptance band.
+        if (Double.isFinite(p.vah()) && Double.isFinite(p.val()) && p.vah() > p.val()) {
+            double yVah = padT + (1 - (p.vah() - min) / span) * plotH;
+            double yVal = padT + (1 - (p.val() - min) / span) * plotH;
+            svg.append("<rect x=\"").append(xL).append("\" y=\"").append(r1(yVah))
+                    .append("\" width=\"").append(xR - xL).append("\" height=\"")
+                    .append(r1(Math.max(yVal - yVah, 1))).append("\" fill=\"").append(S1)
+                    .append("\" opacity=\"0.08\"/>");
+        }
+        // Collision pass (the srFigure grammar): sorted by value, nudged apart.
+        List<Rung> sorted = new ArrayList<>(rungs);
+        sorted.sort((a, b) -> Double.compare(b.value(), a.value()));
+        double[] ys = new double[sorted.size()];
+        for (int i = 0; i < sorted.size(); i++) {
+            ys[i] = padT + (1 - (sorted.get(i).value() - min) / span) * plotH;
+            if (i > 0 && ys[i] - ys[i - 1] < 12) ys[i] = ys[i - 1] + 12;
+        }
+        for (int i = 0; i < sorted.size(); i++) {
+            Rung rg = sorted.get(i);
+            double y = ys[i];
+            if (rg.isPrice()) {
+                line(svg, xL, y, xR, y, S1, 2);
+                svg.append("<circle cx=\"").append(r1(xR)).append("\" cy=\"").append(r1(y))
+                        .append("\" r=\"4\" fill=\"").append(S1).append("\" stroke=\"")
+                        .append(SURFACE).append("\" stroke-width=\"2\"/>");
+                text(svg, xL - 8, y + 4, "end", 11, INK, rg.name(), true);
+                text(svg, xR + 10, y + 4, "start", 11, INK, fmt(rg.value(), 2), true);
+            } else if (rg.isPoc()) {
+                // The POC bar: its length is the POC bucket's share of total
+                // traded volume — the level arrives WITH its justification.
+                double share = (double) p.pocUnits() / p.totalUnits();
+                double w = Math.max(clamp(share, 0, 1) * (xR - xL), 3);
+                svg.append(roundedRightBar(xL, y - 4, w, 8, S2));
+                text(svg, xL - 8, y + 4, "end", 11, INK, rg.name(), true);
+                text(svg, xR + 10, y + 4, "start", 11, INK, fmt(rg.value(), 2), true);
+                text(svg, xL + w + 8, y + 4, "start", 9, MUTE,
+                        units(p.pocUnits()) + (de ? " Stück · " : " units · ")
+                                + fmt(share * 100, 1) + " %", false);
+            } else {
+                line(svg, xL, y, xR, y, GRID, 1);
+                text(svg, xL - 8, y + 4, "end", 10, MUTE, rg.name(), false);
+                text(svg, xR + 10, y + 4, "start", 10, MUTE, fmt(rg.value(), 2), false);
+            }
+        }
+        text(svg, xL, h - 4, "start", 9, MUTE,
+                (de ? "gehandelt insgesamt " : "total traded ") + units(p.totalUnits())
+                        + (de ? " Stück" : " units"), false);
+        svg.append("</svg>");
+        String title = de
+                ? "Volumenprofil: Akzeptanzzonen (POC und 70-%-Value-Area)"
+                : "Volume profile: acceptance zones (POC and 70 % value area)";
+        String note = de
+                ? "hausgerechnet aus Stundenkerzen, ~"
+                        + (DeepDiveService.VOLUME_PROFILE_RANGE_DAYS / 30) + " Monate (Yahoo)"
+                : "house-computed from hourly bars, ~"
+                        + (DeepDiveService.VOLUME_PROFILE_RANGE_DAYS / 30) + " months (Yahoo)";
+        return new ChartFigure(SEC_SITUATION, title, note, svg.toString());
+    }
+
+    // ---- 22. order-book depth ladder (bids left, asks right) — Lage ----
+
+    /**
+     * Who stands there NOW: the visible window of the floor specialist book as
+     * a mirrored depth ladder — bid levels left (green), ask levels right
+     * (red), the price labels down the center spine, resting orders and units
+     * as text at every level. An empty book is no figure.
+     */
+    private ChartFigure orderBookFigure(OrderBookSnapshot book, MarketSnapshot s) {
+        if (book == null || (book.bids().isEmpty() && book.asks().isEmpty())) return null;
+        List<OrderBookSnapshot.Level> bids = book.bids().size() > 10
+                ? book.bids().subList(0, 10) : book.bids();
+        List<OrderBookSnapshot.Level> asks = book.asks().size() > 10
+                ? book.asks().subList(0, 10) : book.asks();
+        long maxUnits = 0;
+        for (OrderBookSnapshot.Level l : bids) maxUnits = Math.max(maxUnits, l.units());
+        for (OrderBookSnapshot.Level l : asks) maxUnits = Math.max(maxUnits, l.units());
+        if (maxUnits <= 0) return null;
+
+        int rows = Math.max(bids.size(), asks.size());
+        int barH = 14, rowGap = 8, padT = 26;
+        int h = padT + rows * (barH + rowGap);
+        double centerX = W / 2.0;
+        double bx = centerX - 62, ax = centerX + 62; // bar baselines beside the price spine
+        double half = bx - 70;                        // leave room for the outer text
+        StringBuilder svg = open(h);
+        text(svg, bx, 14, "end", 10, MUTE, de ? "GELD (Kauf)" : "BID (buy)", true);
+        text(svg, ax, 14, "start", 10, MUTE, de ? "BRIEF (Verkauf)" : "ASK (sell)", true);
+        line(svg, centerX, padT - 4, centerX, h - 4, AXIS, 1);
+        for (int i = 0; i < rows; i++) {
+            double y = padT + i * (barH + rowGap);
+            double cy = y + barH / 2.0 + 4;
+            if (i < bids.size()) {
+                OrderBookSnapshot.Level l = bids.get(i);
+                double w = Math.max((double) l.units() / maxUnits * half, 2);
+                svg.append(roundedLeftBar(bx - w, y, w, barH, POS));
+                text(svg, centerX - 6, cy, "end", 10, INK, fmt(l.price(), 2), i == 0);
+                text(svg, bx - w - 6, cy, "end", 9, MUTE, levelLabel(l), false);
+            }
+            if (i < asks.size()) {
+                OrderBookSnapshot.Level l = asks.get(i);
+                double w = Math.max((double) l.units() / maxUnits * half, 2);
+                svg.append(roundedRightBar(ax, y, w, barH, NEG));
+                text(svg, centerX + 6, cy, "start", 10, INK, fmt(l.price(), 2), i == 0);
+                text(svg, ax + w + 6, cy, "start", 9, MUTE, levelLabel(l), false);
+            }
+        }
+        svg.append("</svg>");
+        String title = de
+                ? "Orderbuch-Tiefe (sichtbares Fenster, " + bids.size() + "×" + asks.size()
+                        + " Level)"
+                : "Order-book depth (visible window, " + bids.size() + "×" + asks.size()
+                        + " levels)";
+        String note = "Börse Frankfurt"
+                + (book.time() != null && !book.time().isBlank() ? " · " + book.time() : "");
+        return new ChartFigure(SEC_SITUATION, title, note, svg.toString());
+    }
+
+    /** Resting interest of one book level: units, plus the order count where published. */
+    private String levelLabel(OrderBookSnapshot.Level l) {
+        String base = units(l.units());
+        return l.orders() > 0
+                ? base + " · " + l.orders() + (de ? " Ord." : " ord.")
+                : base;
+    }
+
+    // ---- 23. the instrument's event history (market memory) — Katalysatoren ----
+
+    /**
+     * "Was war" measured: the house register's dated events on a time axis,
+     * one mark per event colored by the SIGN of its measured reaction
+     * (CAR(−1,+1)); unmeasured events stay muted. The class token and the
+     * measured percent ride as tiny labels — only fields the record carries,
+     * never an invented probability. Newest ~20 events.
+     */
+    private ChartFigure memoryEventsFigure(List<MarketEventRecord> events) {
+        if (events == null || events.isEmpty()) return null;
+        List<MarketEventRecord> tail = events.size() > 20
+                ? events.subList(events.size() - 20, events.size()) : events;
+        record Ev(java.time.LocalDate date, MarketEventRecord rec) {}
+        List<Ev> rows = new ArrayList<>();
+        for (MarketEventRecord e : tail) {
+            if (e.date() == null) continue;
+            try {
+                rows.add(new Ev(java.time.LocalDate.parse(e.date()), e));
+            } catch (Exception ignored) {
+                // an unparseable register date is no mark
+            }
+        }
+        if (rows.isEmpty()) return null;
+        java.time.LocalDate min = rows.stream().map(Ev::date)
+                .min(java.time.LocalDate::compareTo).orElseThrow();
+        java.time.LocalDate max = rows.stream().map(Ev::date)
+                .max(java.time.LocalDate::compareTo).orElseThrow();
+        if (min.equals(max)) max = max.plusDays(1);
+        long spanDays = java.time.temporal.ChronoUnit.DAYS.between(min, max);
+
+        int h = 118, xL = 20, xR = W - 20;
+        double axisY = 88;
+        StringBuilder svg = open(h);
+        line(svg, xL, axisY, xR, axisY, AXIS, 1);
+        for (int i = 0; i < rows.size(); i++) {
+            Ev ev = rows.get(i);
+            MarketEventRecord e = ev.rec();
+            double x = xL + (double) java.time.temporal.ChronoUnit.DAYS.between(min, ev.date())
+                    / spanDays * (xR - xL);
+            String tone = e.carEvent() == null ? MUTE : e.carEvent() >= 0 ? POS : NEG;
+            svg.append("<circle cx=\"").append(r1(x)).append("\" cy=\"").append(r1(axisY))
+                    .append("\" r=\"4.5\" fill=\"").append(tone).append("\" stroke=\"")
+                    .append(SURFACE).append("\" stroke-width=\"1.5\"/>");
+            // Two label lanes above the axis so neighbouring events don't collide.
+            double labelY = i % 2 == 0 ? axisY - 42 : axisY - 16;
+            double lx = clamp(x, xL + 20, xR - 20);
+            line(svg, x, axisY - 6, x, labelY + (e.carEvent() != null ? 14 : 4), GRID, 1);
+            text(svg, lx, labelY, "middle", 8, MUTE,
+                    truncate(e.eventClass() == null ? "?" : e.eventClass(), 14), false);
+            if (e.carEvent() != null) {
+                text(svg, lx, labelY + 10, "middle", 9, INK, pct(e.carEvent()), false);
+            }
+        }
+        // Edge dates beneath the axis.
+        text(svg, xL, axisY + 16, "start", 9, MUTE, isoDate(min.toString()), false);
+        text(svg, xR, axisY + 16, "end", 9, MUTE, isoDate(max.toString()), false);
+        svg.append("</svg>");
+        String title = de
+                ? "Ereignis-Historie (" + rows.size()
+                        + " Ereignisse; Farbe = Vorzeichen der Reaktion CAR(−1,+1))"
+                : "Event history (" + rows.size()
+                        + " events; color = sign of the measured reaction CAR(−1,+1))";
+        return new ChartFigure(SEC_CATALYSTS, title,
+                de ? "eigenes Ereignis-Register" : "house event register", svg.toString());
+    }
+
+    /** A units count: full grouped digits below a million, compact above. */
+    private String units(long v) {
+        return v >= 1_000_000 ? compactNum(v) : fmt(v, 0);
+    }
+
+    /** Mirrored horizontal bar: rounded LEFT data-end, square at the right (spine) side. */
+    private static String roundedLeftBar(double x, double y, double w, double h, String fill) {
+        if (w <= 4) {
+            return "<rect x=\"" + r1(x) + "\" y=\"" + r1(y) + "\" width=\"" + r1(Math.max(w, 1))
+                    + "\" height=\"" + r1(h) + "\" fill=\"" + fill + "\"/>";
+        }
+        double r = 4, x2 = x + w;
+        return "<path d=\"M " + r1(x2) + ' ' + r1(y)
+                + " L " + r1(x + r) + ' ' + r1(y)
+                + " Q " + r1(x) + ' ' + r1(y) + ' ' + r1(x) + ' ' + r1(y + r)
+                + " L " + r1(x) + ' ' + r1(y + h - r)
+                + " Q " + r1(x) + ' ' + r1(y + h) + ' ' + r1(x + r) + ' ' + r1(y + h)
+                + " L " + r1(x2) + ' ' + r1(y + h) + " Z\" fill=\"" + fill + "\"/>";
+    }
+
     /** An ISO date string rendered in the report language (dotted German). */
     private String isoDate(String iso) {
         try {
@@ -792,6 +1061,641 @@ final class DeepDiveCharts {
         } catch (Exception e) {
             return iso;
         }
+    }
+
+    // ---- 13. analyst-action timeline (targets old → new) — Bewertung ----
+
+    /**
+     * The street's dated action trail: one row per action, newest first, the
+     * target move drawn as an arrow on a shared value scale (green up, red
+     * down) with the new target direct-labeled at the right edge. Actions
+     * without both target halves keep their dated row — a single target draws
+     * a tick mark, a target-less action stays a labeled row. The scale needs
+     * ONE currency: the first target-carrying action sets it; rows in another
+     * currency keep their label but draw no mark.
+     */
+    private ChartFigure actionsFigure(AnalystActions aa) {
+        if (aa == null || aa.actions() == null || aa.actions().isEmpty()) return null;
+        List<AnalystActions.Action> rows = aa.actions().stream()
+                .filter(a -> a.dateIso() != null && a.brokerage() != null)
+                .limit(10)
+                .toList();
+        if (rows.isEmpty()) return null;
+        String cur = rows.stream()
+                .filter(a -> a.targetCurrency() != null
+                        && (Double.isFinite(a.targetOld()) || Double.isFinite(a.targetNew())))
+                .map(AnalystActions.Action::targetCurrency)
+                .findFirst().orElse(null);
+        // A label-only history is the actions TABLE's job, not a figure's.
+        if (cur == null) return null;
+        double min = Double.POSITIVE_INFINITY, max = Double.NEGATIVE_INFINITY;
+        for (AnalystActions.Action a : rows) {
+            if (!cur.equals(a.targetCurrency())) continue;
+            for (double v : new double[]{a.targetOld(), a.targetNew()}) {
+                if (Double.isFinite(v) && v > 0) {
+                    min = Math.min(min, v);
+                    max = Math.max(max, v);
+                }
+            }
+        }
+        if (!Double.isFinite(min) || !Double.isFinite(max)) return null;
+        if (min == max) { // one lone value still needs a span
+            min *= 0.95;
+            max *= 1.05;
+        }
+        double span = max - min;
+
+        int rowH = 24, padT = 8;
+        int h = padT + rows.size() * rowH;
+        double xS = 306, xE = W - 58;
+        StringBuilder svg = open(h);
+        for (int i = 0; i < rows.size(); i++) {
+            AnalystActions.Action a = rows.get(i);
+            double y = padT + i * rowH + 12;
+            text(svg, 4, y + 4, "start", 10, MUTE, isoDate(a.dateIso()), false);
+            text(svg, 68, y + 4, "start", 10, INK, truncate(a.brokerage(), 18), false);
+            String rating = a.ratingOld() != null && a.ratingNew() != null
+                    ? a.ratingOld() + " → " + a.ratingNew()
+                    : a.ratingNew() != null ? a.ratingNew()
+                    : a.ratingOld() != null ? a.ratingOld()
+                    : a.actionType() != null ? a.actionType() : "";
+            text(svg, 178, y + 4, "start", 9, MUTE, truncate(rating, 24), false);
+            boolean inScale = cur.equals(a.targetCurrency());
+            boolean hasOld = inScale && Double.isFinite(a.targetOld()) && a.targetOld() > 0;
+            boolean hasNew = inScale && Double.isFinite(a.targetNew()) && a.targetNew() > 0;
+            if (hasOld && hasNew) {
+                double xO = xS + (a.targetOld() - min) / span * (xE - xS);
+                double xN = xS + (a.targetNew() - min) / span * (xE - xS);
+                String tone = a.targetNew() > a.targetOld() ? POS
+                        : a.targetNew() < a.targetOld() ? NEG : MUTE;
+                line(svg, xO, y, xN, y, tone, 2);
+                double dx = xN >= xO ? 1 : -1;
+                svg.append("<path d=\"M ").append(r1(xN + 3 * dx)).append(' ').append(r1(y))
+                        .append(" L ").append(r1(xN - 3 * dx)).append(' ').append(r1(y - 3.5))
+                        .append(" L ").append(r1(xN - 3 * dx)).append(' ').append(r1(y + 3.5))
+                        .append(" Z\" fill=\"").append(tone).append("\"/>");
+                text(svg, xE + 10, y + 4, "start", 10, INK, fmt(a.targetNew(), 2), true);
+            } else if (hasOld || hasNew) {
+                double v = hasNew ? a.targetNew() : a.targetOld();
+                double x = xS + (v - min) / span * (xE - xS);
+                line(svg, x, y - 5, x, y + 5, AXIS, 2);
+                text(svg, xE + 10, y + 4, "start", 10, MUTE, fmt(v, 2), false);
+            }
+        }
+        svg.append("</svg>");
+        String title = de
+                ? "Analysten-Aktionen (Kursziele alt → neu, " + cur + ")"
+                : "Analyst actions (price targets old → new, " + cur + ")";
+        return new ChartFigure(SEC_VALUATION, title, "MarketBeat", svg.toString());
+    }
+
+    // ---- 14. US short-interest history (FINRA settlements) — Katalysatoren ----
+
+    /**
+     * The bi-monthly FINRA settlement series as a line (shares held short),
+     * each point direct-labeled with its days-to-cover — the two numbers the
+     * prose used to recite side by side.
+     */
+    private ChartFigure usShortHistoryFigure(UsListingStats us) {
+        if (us == null || us.shortInterest() == null) return null;
+        List<UsListingStats.ShortInterestPoint> pts = us.shortInterest().stream()
+                .filter(p -> p.settlementDateIso() != null && p.shortInterestShares() >= 0)
+                .toList();
+        if (pts.size() < 2) return null;
+        if (pts.size() > 12) pts = pts.subList(0, 12);
+        List<UsListingStats.ShortInterestPoint> chron = new ArrayList<>(pts);
+        java.util.Collections.reverse(chron); // newest first → chronological
+
+        int h = 150, padL = 14, padR = 90, padT = 24, padB = 22;
+        int plotW = W - padL - padR, plotH = h - padT - padB;
+        double min = chron.stream().mapToDouble(p -> p.shortInterestShares()).min().orElse(0);
+        double max = chron.stream().mapToDouble(p -> p.shortInterestShares()).max().orElse(1);
+        double span = max - min == 0 ? 1 : max - min;
+
+        StringBuilder svg = open(h);
+        for (int g = 0; g <= 2; g++) {
+            double gy = padT + g * plotH / 2.0;
+            line(svg, padL, gy, padL + plotW, gy, GRID, 1);
+        }
+        StringBuilder poly = new StringBuilder();
+        for (int i = 0; i < chron.size(); i++) {
+            double x = padL + (double) i / (chron.size() - 1) * plotW;
+            double y = padT + (1 - (chron.get(i).shortInterestShares() - min) / span) * plotH;
+            if (i > 0) poly.append(' ');
+            poly.append(r1(x)).append(',').append(r1(y));
+        }
+        svg.append("<polyline points=\"").append(poly).append("\" fill=\"none\" stroke=\"")
+                .append(S1).append("\" stroke-width=\"2\" stroke-linejoin=\"round\" ")
+                .append("stroke-linecap=\"round\"/>");
+        for (int i = 0; i < chron.size(); i++) {
+            UsListingStats.ShortInterestPoint p = chron.get(i);
+            double x = padL + (double) i / (chron.size() - 1) * plotW;
+            double y = padT + (1 - (p.shortInterestShares() - min) / span) * plotH;
+            svg.append("<circle cx=\"").append(r1(x)).append("\" cy=\"").append(r1(y))
+                    .append("\" r=\"3\" fill=\"").append(S1).append("\" stroke=\"").append(SURFACE)
+                    .append("\" stroke-width=\"1.5\"/>");
+            if (Double.isFinite(p.daysToCover())) {
+                text(svg, x, clamp(y - 8, 10, h - padB), "middle", 9, MUTE,
+                        fmt(p.daysToCover(), 1), false);
+            }
+        }
+        UsListingStats.ShortInterestPoint last = chron.get(chron.size() - 1);
+        double lastY = padT + (1 - (last.shortInterestShares() - min) / span) * plotH;
+        text(svg, padL + plotW + 8, clamp(lastY + 4, padT + 8, padT + plotH), "start", 11, INK,
+                compactNum(last.shortInterestShares()), true);
+        text(svg, padL, h - 6, "start", 9, MUTE, isoDate(chron.get(0).settlementDateIso()), false);
+        text(svg, padL + plotW, h - 6, "end", 9, MUTE, isoDate(last.settlementDateIso()), false);
+        svg.append("</svg>");
+        String title = de
+                ? "US-Short-Interest je Stichtag (Aktien; Punktwerte = Days to Cover)"
+                : "US short interest by settlement (shares; point labels = days to cover)";
+        return new ChartFigure(SEC_CATALYSTS, title, "NASDAQ · FINRA", svg.toString());
+    }
+
+    // ---- 15. earnings-surprise strip (beat/miss per quarter) — Fundamentaldaten ----
+
+    /**
+     * The quarterly track record against the street: one lollipop per quarter,
+     * green above / red below consensus, the surprise percent as text — every
+     * mark carries its signed value (the CVD secondary encoding).
+     */
+    private ChartFigure surpriseFigure(UsListingStats us) {
+        if (us == null || us.earningsSurprises() == null) return null;
+        List<UsListingStats.EarningsSurprise> rows = us.earningsSurprises().stream()
+                .filter(q -> q.fiscalQuarter() != null && Double.isFinite(q.surprisePercent()))
+                .limit(8)
+                .toList();
+        if (rows.size() < 2) return null;
+        List<UsListingStats.EarningsSurprise> chron = new ArrayList<>(rows);
+        java.util.Collections.reverse(chron); // newest first → chronological
+
+        int h = 150, padT = 22, padB = 26, padL = 16, padR = 16;
+        int plotH = h - padT - padB;
+        double posMax = chron.stream().mapToDouble(q -> Math.max(0, q.surprisePercent())).max().orElse(0);
+        double negMax = chron.stream().mapToDouble(q -> Math.max(0, -q.surprisePercent())).max().orElse(0);
+        double totalSpan = posMax + negMax == 0 ? 1 : posMax + negMax;
+        double baseY = padT + posMax / totalSpan * plotH;
+        int n = chron.size();
+        double slot = (double) (W - padL - padR) / n;
+
+        StringBuilder svg = open(h);
+        line(svg, padL, baseY, W - padR, baseY, AXIS, 1);
+        for (int i = 0; i < n; i++) {
+            UsListingStats.EarningsSurprise q = chron.get(i);
+            double v = q.surprisePercent();
+            double x = padL + slot * i + slot / 2;
+            double len = Math.abs(v) / totalSpan * plotH;
+            String tone = v >= 0 ? POS : NEG;
+            double dotY = v >= 0 ? baseY - len : baseY + len;
+            line(svg, x, baseY, x, dotY, tone, 1);
+            svg.append("<circle cx=\"").append(r1(x)).append("\" cy=\"").append(r1(dotY))
+                    .append("\" r=\"5\" fill=\"").append(tone).append("\" stroke=\"").append(SURFACE)
+                    .append("\" stroke-width=\"1.5\"/>");
+            text(svg, x, v >= 0 ? dotY - 9 : dotY + 16, "middle", 10, INK, pct(v), false);
+            text(svg, x, h - 8, "middle", 9, MUTE, truncate(q.fiscalQuarter(), 12), false);
+        }
+        svg.append("</svg>");
+        String title = de
+                ? "EPS-Überraschung je Quartal (Ist gegen Konsens)"
+                : "EPS surprise by quarter (actual vs consensus)";
+        return new ChartFigure(SEC_FUNDAMENTALS, title, "NASDAQ", svg.toString());
+    }
+
+    // ---- 16. hedge-fund positioning curve (13F quarters) — Bewertung ----
+
+    /**
+     * Insider Monkey's quarterly popularity curve: the fund count as a line,
+     * new/closed positions as small +/− bars beneath — the flow behind the
+     * level. The still-filling current quarter is de-emphasized.
+     */
+    private ChartFigure hedgeFundFigure(HedgeFundPopularity hf) {
+        if (hf == null || hf.quarters() == null) return null;
+        List<HedgeFundPopularity.QuarterPoint> rows = hf.quarters().stream()
+                .filter(q -> q.funds() >= 0)
+                .toList();
+        if (rows.size() < 2) return null;
+        if (rows.size() > 12) rows = rows.subList(rows.size() - 12, rows.size());
+
+        int h = 185, padL = 16, padR = 70, padT = 14;
+        int lineH = 86;
+        int plotW = W - padL - padR;
+        double min = rows.stream().mapToDouble(HedgeFundPopularity.QuarterPoint::funds).min().orElse(0);
+        double max = rows.stream().mapToDouble(HedgeFundPopularity.QuarterPoint::funds).max().orElse(1);
+        double span = max - min == 0 ? 1 : max - min;
+        int n = rows.size();
+
+        StringBuilder svg = open(h);
+        for (int g = 0; g <= 1; g++) {
+            double gy = padT + g * lineH;
+            line(svg, padL, gy, padL + plotW, gy, GRID, 1);
+        }
+        StringBuilder pts = new StringBuilder();
+        for (int i = 0; i < n; i++) {
+            double x = padL + (double) i / (n - 1) * plotW;
+            double y = padT + (1 - (rows.get(i).funds() - min) / span) * lineH;
+            if (i > 0) pts.append(' ');
+            pts.append(r1(x)).append(',').append(r1(y));
+        }
+        svg.append("<polyline points=\"").append(pts).append("\" fill=\"none\" stroke=\"")
+                .append(S1).append("\" stroke-width=\"2\" stroke-linejoin=\"round\" ")
+                .append("stroke-linecap=\"round\"/>");
+        HedgeFundPopularity.QuarterPoint last = rows.get(n - 1);
+        double lastX = padL + plotW;
+        double lastY = padT + (1 - (last.funds() - min) / span) * lineH;
+        svg.append("<circle cx=\"").append(r1(lastX)).append("\" cy=\"").append(r1(lastY))
+                .append("\" r=\"4\" fill=\"").append(S1).append("\" stroke=\"").append(SURFACE)
+                .append("\" stroke-width=\"2\"/>");
+        text(svg, lastX + 8, lastY + 4, "start", 12, INK,
+                last.funds() + (last.ongoing() ? (de ? " (läuft)" : " (open)") : ""), true);
+        text(svg, padL, padT + (1 - (rows.get(0).funds() - min) / span) * lineH - 8, "start",
+                10, MUTE, String.valueOf(rows.get(0).funds()), false);
+
+        // Flow bars beneath the curve: new positions up (green), closed down (red).
+        double flowBase = padT + lineH + 34;
+        double flowMax = 1;
+        for (HedgeFundPopularity.QuarterPoint q : rows) {
+            flowMax = Math.max(flowMax, Math.max(q.newPositions(), q.closedPositions()));
+        }
+        double slot = (double) plotW / n;
+        double barW = Math.min(10, slot * 0.5);
+        line(svg, padL, flowBase, padL + plotW, flowBase, AXIS, 1);
+        for (int i = 0; i < n; i++) {
+            HedgeFundPopularity.QuarterPoint q = rows.get(i);
+            double x = padL + slot * i + (slot - barW) / 2;
+            if (q.newPositions() > 0) {
+                double len = q.newPositions() / flowMax * 20;
+                svg.append(roundedTopBar(x, flowBase - len, barW, len, POS));
+                text(svg, x + barW / 2, flowBase - len - 3, "middle", 8, MUTE,
+                        "+" + q.newPositions(), false);
+            }
+            if (q.closedPositions() > 0) {
+                double len = q.closedPositions() / flowMax * 20;
+                svg.append(roundedBottomBar(x, flowBase, barW, len, NEG));
+                text(svg, x + barW / 2, flowBase + len + 9, "middle", 8, MUTE,
+                        "−" + q.closedPositions(), false);
+            }
+        }
+        text(svg, padL, h - 4, "start", 9, MUTE, rows.get(0).quarterLabel(), false);
+        text(svg, padL + plotW, h - 4, "end", 9, MUTE, last.quarterLabel(), false);
+        svg.append("</svg>");
+        String title = de
+                ? "Hedgefonds-Positionierung (Linie: Fonds; Balken: neue/geschlossene Positionen)"
+                : "Hedge-fund positioning (line: funds; bars: new/closed positions)";
+        return new ChartFigure(SEC_VALUATION, title, "Insider Monkey", svg.toString());
+    }
+
+    // ---- 17. street target band on the price ladder — Ausblick ----
+
+    /**
+     * The street's target band as a vertical ladder (the srFigure grammar):
+     * street high / consensus / street low with the band shaded, the live
+     * price marked between them and the house-computed distance to consensus
+     * as text — SAME currency only (the scenario table's guard: a
+     * cross-currency percentage is the figure-corruption class the EUR guards
+     * killed). Primary leg: the NASDAQ target panel (USD); fallback: the
+     * Consorsbank consensus target, then a lone mean line needs the price
+     * mark to be a figure at all.
+     */
+    private ChartFigure streetBandFigure(UsListingStats us, AnalystView av, MarketSnapshot s) {
+        double lo = Double.NaN, mean = Double.NaN, hi = Double.NaN;
+        String cur = null, source = null;
+        UsListingStats.AnalystRatings r = us == null ? null : us.analystRatings();
+        if (r != null && Double.isFinite(r.meanPriceTargetUsd())
+                && Double.isFinite(r.highPriceTargetUsd()) && Double.isFinite(r.lowPriceTargetUsd())
+                && r.lowPriceTargetUsd() > 0 && r.highPriceTargetUsd() >= r.lowPriceTargetUsd()) {
+            lo = r.lowPriceTargetUsd();
+            mean = r.meanPriceTargetUsd();
+            hi = r.highPriceTargetUsd();
+            cur = "USD";
+            source = "NASDAQ";
+        } else if (av != null && av.hasRatings() && Double.isFinite(av.targetPrice())
+                && av.targetPrice() > 0) {
+            mean = av.targetPrice();
+            cur = av.targetCurrency();
+            source = "Consorsbank";
+        } else {
+            return null;
+        }
+        boolean band = Double.isFinite(lo) && Double.isFinite(hi);
+        double price = s != null && s.hasPrice() && cur != null && cur.equals(s.currency())
+                ? s.price() : Double.NaN;
+        if (!band && !Double.isFinite(price)) return null; // a lone mean line is no ladder
+
+        record Rung(String name, double value, boolean isPrice, boolean emph) {}
+        List<Rung> rungs = new ArrayList<>();
+        if (band) rungs.add(new Rung(de ? "Street-Hoch" : "Street high", hi, false, false));
+        rungs.add(new Rung(de ? "Konsens" : "Consensus", mean, false, true));
+        if (band) rungs.add(new Rung(de ? "Street-Tief" : "Street low", lo, false, false));
+        if (Double.isFinite(price)) rungs.add(new Rung(de ? "Kurs" : "Price", price, true, true));
+
+        double min = rungs.stream().mapToDouble(Rung::value).min().orElse(0);
+        double max = rungs.stream().mapToDouble(Rung::value).max().orElse(1);
+        double span = max - min == 0 ? 1 : max - min;
+        int h = 170, padT = 16, padB = 16, xL = 110, xR = W - 90;
+        int plotH = h - padT - padB;
+
+        StringBuilder svg = open(h);
+        if (band) {
+            double yHi = padT + (1 - (hi - min) / span) * plotH;
+            double yLo = padT + (1 - (lo - min) / span) * plotH;
+            svg.append("<rect x=\"").append(xL).append("\" y=\"").append(r1(yHi))
+                    .append("\" width=\"").append(xR - xL).append("\" height=\"")
+                    .append(r1(Math.max(yLo - yHi, 1))).append("\" fill=\"").append(S1)
+                    .append("\" opacity=\"0.08\"/>");
+        }
+        List<Rung> sorted = new ArrayList<>(rungs);
+        sorted.sort((a, b) -> Double.compare(b.value(), a.value()));
+        double[] ys = new double[sorted.size()];
+        for (int i = 0; i < sorted.size(); i++) {
+            ys[i] = padT + (1 - (sorted.get(i).value() - min) / span) * plotH;
+            if (i > 0 && ys[i] - ys[i - 1] < 12) ys[i] = ys[i - 1] + 12;
+        }
+        for (int i = 0; i < sorted.size(); i++) {
+            Rung rg = sorted.get(i);
+            double y = ys[i];
+            if (rg.isPrice()) {
+                line(svg, xL, y, xR, y, S1, 2);
+                svg.append("<circle cx=\"").append(r1(xR)).append("\" cy=\"").append(r1(y))
+                        .append("\" r=\"4\" fill=\"").append(S1).append("\" stroke=\"")
+                        .append(SURFACE).append("\" stroke-width=\"2\"/>");
+                text(svg, xL - 8, y + 4, "end", 11, INK, rg.name(), true);
+                text(svg, xR + 10, y + 4, "start", 11, INK, fmt(rg.value(), 2), true);
+                double toMean = (mean / rg.value() - 1) * 100;
+                text(svg, (xL + xR) / 2.0, y - 6, "middle", 10, MUTE,
+                        pct(toMean) + (de ? " bis Konsens" : " to consensus"), false);
+            } else {
+                line(svg, xL, y, xR, y, rg.emph() ? AXIS : GRID, 1);
+                text(svg, xL - 8, y + 4, "end", 10, rg.emph() ? INK : MUTE, rg.name(), rg.emph());
+                text(svg, xR + 10, y + 4, "start", 10, rg.emph() ? INK : MUTE,
+                        fmt(rg.value(), 2), rg.emph());
+            }
+        }
+        svg.append("</svg>");
+        String title = de
+                ? "Kursziel-Band der Street (" + cur + ")"
+                : "Street target band (" + cur + ")";
+        return new ChartFigure(SEC_OUTLOOK, title, source, svg.toString());
+    }
+
+    // ---- 18. peer scatter (market cap × P/E) — Bewertung ----
+
+    /**
+     * The peer field as a scatter: x = market cap (log scale), y = P/E, the
+     * subject highlighted gold. Only peers carrying BOTH values plot; fewer
+     * than three points is no field to read.
+     */
+    private ChartFigure peerScatterFigure(CompanyDeepDive d, MarketSnapshot s) {
+        if (d == null) return null;
+        record Pt(String name, double mcap, double pe, boolean subject) {}
+        List<Pt> pts = new ArrayList<>();
+        List<CompanyDeepDive.Peer> peers = d.peers() == null ? List.of() : d.peers();
+        for (CompanyDeepDive.Peer p : peers) {
+            if (p.name() == null || !Double.isFinite(p.marketCapEur()) || p.marketCapEur() <= 0
+                    || !Double.isFinite(p.peRatio()) || p.peRatio() <= 0) {
+                continue;
+            }
+            pts.add(new Pt(p.name(), p.marketCapEur(), p.peRatio(), false));
+            if (pts.size() >= 8) break;
+        }
+        CompanyDeepDive.Profile prof = d.profile();
+        double subjPe = Double.NaN;
+        if (d.keyFigures() != null) {
+            for (CompanyDeepDive.KeyFigureYear y : d.keyFigures()) {
+                if (!Double.isFinite(y.peRatio()) || y.peRatio() <= 0) continue;
+                if (!y.estimate()) subjPe = y.peRatio(); // latest ACTUAL wins
+                else if (!Double.isFinite(subjPe)) subjPe = y.peRatio(); // else nearest estimate
+            }
+        }
+        if (prof != null && Double.isFinite(prof.marketCapEur()) && prof.marketCapEur() > 0
+                && Double.isFinite(subjPe)) {
+            String name = s != null && s.symbol() != null ? s.symbol()
+                    : de ? "Subjekt" : "subject";
+            pts.add(new Pt(name, prof.marketCapEur(), subjPe, true));
+        }
+        if (pts.size() < 3) return null;
+
+        double xMin = Double.POSITIVE_INFINITY, xMax = Double.NEGATIVE_INFINITY;
+        double yMin = Double.POSITIVE_INFINITY, yMax = Double.NEGATIVE_INFINITY;
+        for (Pt p : pts) {
+            double lx = Math.log10(p.mcap());
+            xMin = Math.min(xMin, lx);
+            xMax = Math.max(xMax, lx);
+            yMin = Math.min(yMin, p.pe());
+            yMax = Math.max(yMax, p.pe());
+        }
+        if (xMax - xMin < 0.2) { xMin -= 0.1; xMax += 0.1; }
+        if (yMax - yMin < 1) { yMin -= 0.5; yMax += 0.5; }
+        double xSpan = xMax - xMin, ySpan = yMax - yMin;
+        int h = 190, padL = 46, padR = 24, padT = 18, padB = 30;
+        int plotW = W - padL - padR, plotH = h - padT - padB;
+        String gold = "var(--ddc-sun,#c99a1e)";
+
+        StringBuilder svg = open(h);
+        for (int g = 0; g <= 2; g++) {
+            double gy = padT + g * plotH / 2.0;
+            line(svg, padL, gy, padL + plotW, gy, GRID, 1);
+        }
+        text(svg, padL - 6, padT + 4, "end", 9, MUTE, (de ? "KGV " : "P/E ") + fmt(yMax, 0), false);
+        text(svg, padL - 6, padT + plotH + 4, "end", 9, MUTE, fmt(yMin, 0), false);
+        text(svg, padL, h - 6, "start", 9, MUTE, compactEur(Math.pow(10, xMin)), false);
+        text(svg, padL + plotW, h - 6, "end", 9, MUTE, compactEur(Math.pow(10, xMax)), false);
+        for (Pt p : pts) {
+            double x = padL + (Math.log10(p.mcap()) - xMin) / xSpan * plotW;
+            double y = padT + (1 - (p.pe() - yMin) / ySpan) * plotH;
+            svg.append("<circle cx=\"").append(r1(x)).append("\" cy=\"").append(r1(y))
+                    .append("\" r=\"").append(p.subject() ? 6 : 4).append("\" fill=\"")
+                    .append(p.subject() ? gold : S1).append("\" stroke=\"").append(SURFACE)
+                    .append("\" stroke-width=\"1.5\"/>");
+            double lx = clamp(x, padL + 30, padL + plotW - 30);
+            text(svg, lx, y - 9, "middle", 9, p.subject() ? INK : MUTE,
+                    truncate(p.name(), 18), p.subject());
+        }
+        svg.append("</svg>");
+        String title = de
+                ? "Peer-Vergleich: Marktkapitalisierung (log) × KGV"
+                : "Peer comparison: market cap (log) × P/E";
+        return new ChartFigure(SEC_VALUATION, title, "Consorsbank", svg.toString());
+    }
+
+    // ---- 19. press-timeline strip (dated coverage density) — Lage ----
+
+    /**
+     * "Was war" as a picture: one tick per dated headline on a horizontal time
+     * axis, month labels beneath — coverage density readable at a glance
+     * (overlapping half-opaque ticks darken where the news piled up).
+     */
+    private ChartFigure pressTimelineFigure(PressTimeline pt) {
+        if (pt == null || pt.entries() == null) return null;
+        List<java.time.LocalDate> dates = new ArrayList<>();
+        for (PressTimeline.Entry e : pt.entries()) {
+            if (e.dateIso() == null) continue;
+            try {
+                dates.add(java.time.LocalDate.parse(e.dateIso()));
+            } catch (Exception ignored) {
+                // an unparseable provider date is no tick
+            }
+            if (dates.size() >= 40) break; // entries arrive newest first
+        }
+        if (dates.size() < 3) return null;
+        java.time.LocalDate min = dates.stream().min(java.time.LocalDate::compareTo).orElseThrow();
+        java.time.LocalDate max = dates.stream().max(java.time.LocalDate::compareTo).orElseThrow();
+        if (min.equals(max)) max = max.plusDays(1);
+        long spanDays = java.time.temporal.ChronoUnit.DAYS.between(min, max);
+
+        int h = 72, xL = 16, xR = W - 16;
+        double axisY = 48;
+        StringBuilder svg = open(h);
+        line(svg, xL, axisY, xR, axisY, AXIS, 1);
+        for (java.time.LocalDate d : dates) {
+            double x = xL + (double) java.time.temporal.ChronoUnit.DAYS.between(min, d)
+                    / spanDays * (xR - xL);
+            svg.append("<line x1=\"").append(r1(x)).append("\" y1=\"28\" x2=\"").append(r1(x))
+                    .append("\" y2=\"46\" stroke=\"").append(S1)
+                    .append("\" stroke-width=\"2\" opacity=\"0.55\"/>");
+        }
+        // Month labels: every month start inside the range, thinned when crowded.
+        List<java.time.LocalDate> months = new ArrayList<>();
+        java.time.LocalDate m = min.withDayOfMonth(1);
+        if (m.isBefore(min)) m = m.plusMonths(1);
+        while (!m.isAfter(max)) {
+            months.add(m);
+            m = m.plusMonths(1);
+        }
+        if (months.isEmpty()) { // whole range inside one month: date the edges directly
+            text(svg, xL, axisY + 16, "start", 9, MUTE, isoDate(min.toString()), false);
+            text(svg, xR, axisY + 16, "end", 9, MUTE, isoDate(max.toString()), false);
+        }
+        int step = Math.max(1, (int) Math.ceil(months.size() / 8.0));
+        boolean spansYears = min.getYear() != max.getYear();
+        for (int i = 0; i < months.size(); i += step) {
+            java.time.LocalDate mo = months.get(i);
+            double x = xL + (double) java.time.temporal.ChronoUnit.DAYS.between(min, mo)
+                    / spanDays * (xR - xL);
+            line(svg, x, axisY, x, axisY + 4, AXIS, 1);
+            text(svg, clamp(x, xL + 12, xR - 12), axisY + 16, "middle", 9, MUTE,
+                    monthShort(mo.getMonthValue())
+                            + (spansYears ? " " + (mo.getYear() % 100) : ""), false);
+        }
+        svg.append("</svg>");
+        String title = de
+                ? "Presse-Zeitleiste (" + dates.size() + " datierte Schlagzeilen)"
+                : "Press timeline (" + dates.size() + " dated headlines)";
+        return new ChartFigure(SEC_SITUATION, title, "MarketBeat", svg.toString());
+    }
+
+    private String monthShort(int month) {
+        String[] deM = {"Jan", "Feb", "Mär", "Apr", "Mai", "Jun",
+                "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"};
+        String[] enM = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+        return (de ? deM : enM)[month - 1];
+    }
+
+    // ---- 20. world-signals icon strip — Lage ----
+
+    /**
+     * The judged world signals as a glyph strip: one tile per surviving line,
+     * the glyph chosen by the line's stable producer prefix (the
+     * worldSignalCandidateLines contract), the line's head as caption. Glyphs
+     * are drawn SVG primitives — the WeatherCharts wxIcon approach, never
+     * emoji/text icons.
+     */
+    private ChartFigure worldSignalsFigure(List<String> lines) {
+        if (lines == null || lines.isEmpty()) return null;
+        List<String> rows = lines.size() > 8 ? lines.subList(0, 8) : lines;
+
+        int rowH = 26, padT = 8;
+        int h = padT + rows.size() * rowH;
+        StringBuilder svg = open(h);
+        for (int i = 0; i < rows.size(); i++) {
+            String line = rows.get(i);
+            double cy = padT + i * rowH + rowH / 2.0 - 1;
+            signalGlyph(svg, 18, cy, line);
+            text(svg, 38, cy + 4, "start", 10, INK, truncate(line, 82), false);
+        }
+        svg.append("</svg>");
+        String title = de
+                ? "Weltsignale (je Subjekt KI-beurteilt)"
+                : "World signals (AI-judged per subject)";
+        return new ChartFigure(SEC_SITUATION, title,
+                de ? "Welt-Datenquellen" : "world data feeds", svg.toString());
+    }
+
+    /** A small drawn glyph centered at (cx, cy), chosen by the signal line's prefix. */
+    private static void signalGlyph(StringBuilder svg, double cx, double cy, String line) {
+        String l = line == null ? "" : line;
+        String sun = "var(--ddc-sun,#c99a1e)";
+        if (l.startsWith("US petroleum")) { // oil barrel
+            svg.append("<rect x=\"").append(r1(cx - 5)).append("\" y=\"").append(r1(cy - 7))
+                    .append("\" width=\"10\" height=\"14\" rx=\"2\" fill=\"").append(MUTE).append("\"/>");
+            line(svg, cx - 5, cy - 2.5, cx + 5, cy - 2.5, SURFACE, 1);
+            line(svg, cx - 5, cy + 2.5, cx + 5, cy + 2.5, SURFACE, 1);
+        } else if (l.startsWith("Maritime chokepoint")) { // ship
+            svg.append("<path d=\"M ").append(r1(cx - 8)).append(' ').append(r1(cy + 1))
+                    .append(" L ").append(r1(cx + 8)).append(' ').append(r1(cy + 1))
+                    .append(" L ").append(r1(cx + 5)).append(' ').append(r1(cy + 6))
+                    .append(" L ").append(r1(cx - 5)).append(' ').append(r1(cy + 6))
+                    .append(" Z\" fill=\"").append(S1).append("\"/>")
+                    .append("<rect x=\"").append(r1(cx - 2)).append("\" y=\"").append(r1(cy - 5))
+                    .append("\" width=\"5\" height=\"5\" fill=\"").append(S1).append("\"/>");
+        } else if (l.startsWith("Container charter")) { // container
+            svg.append("<rect x=\"").append(r1(cx - 7)).append("\" y=\"").append(r1(cy - 4))
+                    .append("\" width=\"14\" height=\"9\" rx=\"1\" fill=\"").append(S2).append("\"/>");
+            line(svg, cx - 3, cy - 4, cx - 3, cy + 5, SURFACE, 1);
+            line(svg, cx + 1, cy - 4, cx + 1, cy + 5, SURFACE, 1);
+        } else if (l.startsWith("German day-ahead power")) { // bolt
+            svg.append("<path d=\"M ").append(r1(cx + 2)).append(' ').append(r1(cy - 7))
+                    .append(" L ").append(r1(cx - 4)).append(' ').append(r1(cy + 1))
+                    .append(" L ").append(r1(cx)).append(' ').append(r1(cy + 1))
+                    .append(" L ").append(r1(cx - 2)).append(' ').append(r1(cy + 7))
+                    .append(" L ").append(r1(cx + 5)).append(' ').append(r1(cy - 2))
+                    .append(" L ").append(r1(cx + 1)).append(' ').append(r1(cy - 2))
+                    .append(" Z\" fill=\"").append(sun).append("\"/>");
+        } else if (l.startsWith("Space weather")) { // sun
+            svg.append("<circle cx=\"").append(r1(cx)).append("\" cy=\"").append(r1(cy))
+                    .append("\" r=\"4\" fill=\"").append(sun).append("\"/>");
+            for (int a = 0; a < 360; a += 45) {
+                double rad = Math.toRadians(a);
+                line(svg, cx + Math.cos(rad) * 5.5, cy + Math.sin(rad) * 5.5,
+                        cx + Math.cos(rad) * 8, cy + Math.sin(rad) * 8, sun, 1);
+            }
+        } else if (l.startsWith("Actively exploited")) { // bug
+            svg.append("<circle cx=\"").append(r1(cx)).append("\" cy=\"").append(r1(cy + 1))
+                    .append("\" r=\"4.5\" fill=\"").append(MUTE).append("\"/>")
+                    .append("<circle cx=\"").append(r1(cx)).append("\" cy=\"").append(r1(cy - 5))
+                    .append("\" r=\"2\" fill=\"").append(MUTE).append("\"/>");
+            for (int side = -1; side <= 1; side += 2) {
+                line(svg, cx + 4 * side, cy - 2, cx + 7 * side, cy - 4, MUTE, 1);
+                line(svg, cx + 4.5 * side, cy + 1, cx + 8 * side, cy + 1, MUTE, 1);
+                line(svg, cx + 4 * side, cy + 4, cx + 7 * side, cy + 6, MUTE, 1);
+            }
+        } else if (l.startsWith("Policy wire")) { // newspaper
+            svg.append("<rect x=\"").append(r1(cx - 7)).append("\" y=\"").append(r1(cy - 5))
+                    .append("\" width=\"14\" height=\"11\" rx=\"1\" fill=\"").append(MUTE).append("\"/>");
+            line(svg, cx - 5, cy - 2, cx + 5, cy - 2, SURFACE, 1);
+            line(svg, cx - 5, cy + 1, cx + 5, cy + 1, SURFACE, 1);
+            line(svg, cx - 5, cy + 4, cx + 1, cy + 4, SURFACE, 1);
+        } else if (l.startsWith("World hazard")) { // warning triangle
+            svg.append("<path d=\"M ").append(r1(cx)).append(' ').append(r1(cy - 7))
+                    .append(" L ").append(r1(cx + 8)).append(' ').append(r1(cy + 6))
+                    .append(" L ").append(r1(cx - 8)).append(' ').append(r1(cy + 6))
+                    .append(" Z\" fill=\"").append(NEG).append("\"/>");
+            line(svg, cx, cy - 2.5, cx, cy + 1.5, SURFACE, 2);
+            svg.append("<circle cx=\"").append(r1(cx)).append("\" cy=\"").append(r1(cy + 4))
+                    .append("\" r=\"1\" fill=\"").append(SURFACE).append("\"/>");
+        } else { // generic dot
+            svg.append("<circle cx=\"").append(r1(cx)).append("\" cy=\"").append(r1(cy))
+                    .append("\" r=\"3\" fill=\"").append(MUTE).append("\"/>");
+        }
+    }
+
+    /** A plain count in compact units (shares, not money — no € suffix). */
+    private String compactNum(double v) {
+        double abs = Math.abs(v);
+        if (abs >= 1e9) return fmt(v / 1e9, 1) + (de ? " Mrd." : "B");
+        if (abs >= 1e6) return fmt(v / 1e6, 1) + (de ? " Mio." : "M");
+        if (abs >= 1e3) return fmt(v / 1e3, 0) + (de ? " Tsd." : "k");
+        return fmt(v, 0);
     }
 
     // ---- grouped-column engine (two series, direct-labeled caps, legend) ----
