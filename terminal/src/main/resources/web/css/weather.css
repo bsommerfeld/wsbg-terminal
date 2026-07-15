@@ -873,6 +873,150 @@ html[data-theme="light"] .weather-figure {
   color: var(--mute);
 }
 
+/* ---- the interactive world map (2026-07-15) ----
+   Client-rendered from the frozen world stats (js/map/worldmap.js): baked
+   Natural-Earth land path on a token-tinted ocean, marker layers on top.
+   Theme-aware via the same tokens as everything else; hovers are plain
+   state transitions, nothing loops (OSR paint rule). ---- */
+
+.weather-map { position: relative; }
+.weather-map-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.weather-map-chip {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  background: var(--bg-1);
+  color: var(--txt-2);
+  font: inherit;
+  font-size: 0.72em;
+  letter-spacing: .06em;
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: color .15s ease, border-color .15s ease, background .15s ease, opacity .15s ease;
+}
+.weather-map-chip:hover:not(:disabled) { color: var(--txt); border-color: var(--line); background: var(--bg-hover); }
+.weather-map-chip.off { opacity: .45; }
+.weather-map-chip.off .weather-map-dot { background: var(--mute-2); }
+.weather-map-chip:disabled { opacity: .3; cursor: default; }
+.weather-map-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+.weather-map-dot.weather { background: var(--amber); }
+.weather-map-dot.hazards { background: var(--red); }
+.weather-map-dot.conflicts { background: color-mix(in oklch, var(--red) 65%, black); }
+.weather-map-dot.choke { background: var(--green); }
+.weather-map-dot.exchanges { background: var(--amber); border-radius: 2px; }
+.weather-map-zoom {
+  margin-left: auto;
+  appearance: none;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  background: var(--bg-1);
+  color: var(--mute);
+  font: inherit;
+  font-size: 0.78em;
+  line-height: 1;
+  padding: 3px 9px;
+  cursor: zoom-in;
+  transition: color .15s ease, border-color .15s ease;
+}
+.weather-map-zoom:hover { color: var(--txt); border-color: var(--line); }
+
+.weather-map-stage svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  /* the ocean — reads dark in dark theme, paper-grey in light, all tokens */
+  background: color-mix(in oklch, var(--bg-1) 82%, var(--bg));
+}
+.wm-land {
+  fill: color-mix(in oklch, var(--mute-2) 42%, transparent);
+  stroke: color-mix(in oklch, var(--mute-2) 55%, transparent);
+  stroke-width: 0.4;
+}
+
+/* Markers: local-coordinate glyphs, gentle hover grow (state transition). */
+.wm-marker { cursor: pointer; transform-box: fill-box; transform-origin: center; transition: transform .12s ease; }
+.wm-marker:hover { transform: scale(1.35); }
+.wm-choke circle { stroke: var(--bg); stroke-width: 0.6; }
+.wm-choke.up circle { fill: var(--green); }
+.wm-choke.down circle { fill: var(--red); }
+.wm-choke.na circle { fill: var(--mute); }
+.wm-exchange rect {
+  fill: var(--amber);
+  stroke: color-mix(in oklch, var(--amber) 55%, black);
+  stroke-width: 0.5;
+}
+.wm-conflict path {
+  fill: color-mix(in oklch, var(--red) 65%, black);
+  stroke: var(--red);
+  stroke-width: 0.6;
+}
+.wm-storm-eye { fill: var(--amber); }
+.wm-storm-arm { fill: none; stroke: var(--amber); stroke-width: 1.4; stroke-linecap: round; }
+.wm-hazard.hi .wm-storm-eye { fill: var(--red); }
+.wm-hazard.hi .wm-storm-arm { stroke: var(--red); }
+.wm-quake-core { fill: var(--red); }
+.wm-quake-ring { fill: none; stroke: var(--red); stroke-width: 0.9; opacity: .8; }
+.wm-quake-ring.outer { opacity: .4; }
+.wm-plane { fill: var(--amber); stroke: color-mix(in oklch, var(--amber) 55%, black); stroke-width: 0.4; }
+.wm-hazard.hi .wm-plane { fill: var(--red); stroke: color-mix(in oklch, var(--red) 55%, black); }
+.wm-cond { fill: none; stroke-width: 1.1; stroke-linecap: round; stroke-linejoin: round; }
+.wm-cond .sun { stroke: var(--amber); }
+.wm-cond circle.sun { fill: none; }
+.wm-cond .cloud { stroke: var(--txt-2); }
+.wm-cond .wet { stroke: var(--red); }
+.wm-temp {
+  fill: var(--txt);
+  font-family: "Inter", sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  paint-order: stroke;
+  stroke: color-mix(in oklch, var(--bg) 85%, transparent);
+  stroke-width: 2.5;
+}
+
+/* One shared tooltip near the cursor (spark-bubble grammar). */
+.weather-map-tip {
+  position: absolute;
+  max-width: 320px;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--txt-2);
+  font-size: 0.78em;
+  line-height: 1.45;
+  pointer-events: none;
+  z-index: 3;
+  box-shadow: 0 2px 10px color-mix(in oklch, var(--mute-2) 30%, transparent);
+}
+.weather-map-tip b { color: var(--txt); font-weight: 650; }
+.wm-tip-mute { color: var(--mute); }
+.wm-tip-hint { margin-top: 3px; color: var(--mute); font-size: 0.9em; }
+
+/* The map stage inside the lightbox clone (interaction stays on the page). */
+.weather-lightbox-inner .weather-map-stage svg {
+  width: 100%;
+  height: auto;
+  background: var(--bg);
+  box-shadow: 0 14px 44px color-mix(in oklch, var(--mute-2) 40%, transparent);
+}
+
 /* The moon row launches — once per click, then the DOM node is gone. */
 .js-weather-moon { cursor: pointer; }
 .js-weather-moon:hover .weather-plain-main { color: var(--txt); }
@@ -890,3 +1034,38 @@ html[data-theme="light"] .weather-figure {
   pointer-events: none;
 }
 .weather-plain.js-weather-moon { position: relative; }
+
+/* ---- shared figure interaction layer (figure-hover.js) ----
+   Mark emphasis is a class toggle, the tooltip rides the map-tip grammar,
+   the section-jump flash is a finite one-shot (OSR paint rule). */
+.weather-figure { position: relative; }
+.weather-figure svg rect.fh-hover,
+.weather-figure svg circle.fh-hover,
+.weather-figure svg path.fh-hover,
+.weather-figure svg polygon.fh-hover {
+  stroke: var(--txt);
+  stroke-width: 1.5;
+}
+.weather-figure svg polyline.fh-hover { stroke-width: 3; }
+.weather-figure .fh-tip {
+  position: absolute;
+  max-width: 300px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--txt);
+  font-size: 0.74em;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  z-index: 3;
+  box-shadow: 0 2px 8px color-mix(in oklch, var(--mute-2) 25%, transparent);
+}
+.weather-figure figcaption.fh-jump { cursor: pointer; }
+.weather-figure figcaption.fh-jump:hover .weather-figure-title { color: var(--amber); }
+.weather-figure figcaption.fh-jump:focus-visible { outline: 1px solid var(--amber); outline-offset: 2px; }
+@keyframes fh-flash-kf {
+  from { color: var(--amber); }
+}
+.fh-flash { animation: fh-flash-kf 1.2s ease-out 1; }

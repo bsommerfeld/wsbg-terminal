@@ -18,6 +18,7 @@
 import { t, currentLang } from '../i18n/i18n.js';
 import { escapeHtml } from '../format/escape.js';
 import { renderMarkdown } from '../format/markdown.js';
+import { wireFigureHover, wireFigureJumps } from '../map/figure-hover.js';
 
 let sock = null;
 let hostEl = null;
@@ -251,7 +252,13 @@ function render() {
   homeEl.hidden = open;
   detailEl.hidden = !open;
   detailEl.innerHTML = open ? detailHtml(current) : '';
-  if (open) return;
+  if (open) {
+    // Shared figure layer (figure-hover.js): marks answer the cursor with
+    // their own labels, the title row jumps to the figure's ## section.
+    wireFigureHover(detailEl);
+    wireFigureJumps(detailEl);
+    return;
+  }
   renderHome();
 }
 

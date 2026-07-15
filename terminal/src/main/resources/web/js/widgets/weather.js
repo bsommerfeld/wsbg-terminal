@@ -23,6 +23,8 @@ import { escapeHtml } from '../format/escape.js';
 import { renderMarkdown } from '../format/markdown.js';
 import { fmtDuration } from '../format/time.js';
 import { isNum, fmtVol } from '../format/numbers.js';
+import { renderWorldMap, wireWorldMap } from '../map/worldmap.js';
+import { wireFigureHover, wireFigureJumps, clearFigureJumps } from '../map/figure-hover.js';
 
 let lastPayload = null;
 let viewIndex = 0;         // 0 = newest archived report
@@ -136,6 +138,7 @@ function paintReport(host, p, reports, idx) {
               title="${escapeHtml(t('weather.next'))} (→)" aria-label="${escapeHtml(t('weather.next'))}">›</button>
     </div>
     ${forecastStripHtml(w(r).dayparts)}
+    ${renderWorldMap(w(r))}
     <div class="weather-text">${reportWithFigures(r)}</div>
     ${idx === 0 && !p.generating ? `<div class="weather-next-line">${escapeHtml(t('weather.countdown.label'))} <span class="js-weather-count">--:--</span></div>` : ''}
     <div class="weather-sections">
@@ -164,6 +167,7 @@ function paintReport(host, p, reports, idx) {
       ${overnightHtml(w(r).overnight)}
       ${outlookHtml(w(r).outlook, w(r).cbDates)}
       ${worldWeatherHtml(w(r).worldWeather)}
+      ${worldSignalsHtml(w(r).worldSignals)}
       ${colourHtml(w(r))}
     </div>`;
 
@@ -211,6 +215,25 @@ function wireInteractions(host) {
   wireSectionCollapse(host);
   wireSparkHover(host);
   wireLightbox(host);
+  // Shared figure layer: marks answer the cursor with their own labels, the
+  // title row jumps to the figure's prose section (figure-hover.js).
+  wireFigureHover(host);
+  wireFigureJumps(host);
+  wireWorldMap(host, {
+    // A marker click jumps to the item's stat section — same mechanics as the
+    // navigator chips (expand if collapsed, smooth scroll, one-shot flash).
+    jumpToSection: key => {
+      const sec = host.querySelector(`.weather-section[data-key="${key}"]`);
+      if (!sec) return;
+      if (sec.classList.contains('collapsed')) {
+        toggleSection(sec, false);
+        saveCollapsed();
+      }
+      sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      flash(sec.querySelector('.weather-section-title') || sec);
+    },
+    openLightbox,
+  });
   wireMoon(host);
 }
 
@@ -337,6 +360,10 @@ function openLightbox(fig) {
   const inner = document.createElement('div');
   inner.className = 'weather-lightbox-inner';
   inner.appendChild(fig.cloneNode(true));
+  // The clone lost its listeners: re-wire the mark hover, strip the dead
+  // section-jump affordance (a jump makes no sense behind the overlay).
+  clearFigureJumps(inner);
+  wireFigureHover(inner);
   const hint = document.createElement('div');
   hint.className = 'weather-lightbox-hint';
   hint.textContent = t('weather.lightbox.close');
@@ -909,6 +936,200 @@ function hazardsHtml(hazards) {
     </div>`;
   }).join('');
   return section('weather.stats.hazards', `<div class="weather-plain-list">${rows}</div>`);
+}
+
+// ---- the fishing-net world layer (worldSignals; absent on old lines) --------
+
+function worldSignalsHtml(s) {
+  if (!s) return '';
+  return chokepointsHtml(s)
+      + energyHtml(s)
+      + policyHtml(s.policy)
+      + conflictsHtml(s.conflicts)
+      + pollsHtml(s.polls)
+      + civicHtml(s.civic)
+      + healthCyberHtml(s.health, s.cyber)
+      + sportHolidaysHtml(s.sportsTomorrow, s.holidays);
+}
+
+/** One chip-led signal row: small label chip, then the wrapped main line. */
+function sigRow(chip, mainHtml) {
+  return `<div class="weather-plain">
+    <span class="weather-plain-time">${escapeHtml(chip)}</span>
+    <span class="weather-plain-main wrap">${mainHtml}</span>
+  </div>`;
+}
+
+// The physical flow of goods and energy: maritime chokepoints (IMF PortWatch),
+// container charter rates (Harpex) and the weekly US oil stocks (EIA).
+function chokepointsHtml(s) {
+  const rows = (s.chokepoints || []).map(c => `<div class="weather-plain">
+      <span class="weather-plain-main">${escapeHtml(c.name || '')}
+        ${c.dateIso ? `<span class="weather-plain-mute">${escapeHtml(fmtDate(c.dateIso))}</span>` : ''}
+      </span>
+      <span class="weather-plain-trail">
+        ${isNum(c.transits) ? `<span class="weather-tick-price">${fmtNum(c.transits, 0)} ${escapeHtml(t('weather.choke.transits'))}</span>` : ''}
+        ${pct(c.weekDeltaPercent)}
+      </span>
+    </div>`).join('');
+  let freight = '';
+  if (s.freight && isNum(s.freight.harpex)) {
+    const f = s.freight;
+    freight = `<div class="weather-plain">
+      <span class="weather-plain-main">${escapeHtml(t('weather.freight.label'))}
+        ${f.dateIso ? `<span class="weather-plain-mute">${escapeHtml(fmtDate(f.dateIso))}</span>` : ''}
+      </span>
+      <span class="weather-plain-trail">
+        <span class="weather-tick-price">${fmtNum(f.harpex, 0)}</span>
+        ${isNum(f.harpexWeekAgo) ? `<span class="weather-plain-mute">${escapeHtml(t('weather.week.prev'))} ${fmtNum(f.harpexWeekAgo, 0)}</span>` : ''}
+      </span>
+    </div>`;
+  }
+  let oil = '';
+  if (s.oilStocks) {
+    const o = s.oilStocks;
+    const bit = (key, v, d) => isNum(v)
+      ? `${t(key)} ${fmtNum(v, 1)}${isNum(d) ? ` (${d > 0 ? '+' : ''}${fmtNum(d, 1)})` : ''}`
+      : '';
+    const bits = [bit('weather.oil.crude', o.crudeMb, o.crudeDeltaMb),
+      bit('weather.oil.spr', o.sprMb, o.sprDeltaMb),
+      bit('weather.oil.gasoline', o.gasolineMb, o.gasolineDeltaMb),
+      bit('weather.oil.distillate', o.distillateMb, o.distillateDeltaMb)].filter(Boolean);
+    if (bits.length) {
+      oil = `<div class="weather-plain">
+        <span class="weather-plain-main wrap">${escapeHtml(t('weather.oil.label'))} ${escapeHtml(bits.join(' · '))}
+          <span class="weather-plain-mute">${escapeHtml(t('weather.oil.unit'))}${o.weekEnding ? ` · ${escapeHtml(fmtDate(o.weekEnding))}` : ''}</span>
+        </span>
+      </div>`;
+    }
+  }
+  const body = rows + freight + oil;
+  if (!body) return '';
+  return section('weather.stats.chokepoints', `<div class="weather-plain-list">${body}</div>`);
+}
+
+// The German power day (Energy-Charts) and NOAA's space-weather scales.
+function energyHtml(s) {
+  const rows = [];
+  if (s.power) {
+    const p = s.power;
+    const bits = [];
+    if (isNum(p.currentEurMwh)) bits.push(`${escapeHtml(t('weather.power.current'))} <span class="weather-tick-price">${fmtNum(p.currentEurMwh, 2)} €/MWh</span>`);
+    if (isNum(p.avgEurMwh)) bits.push(`${escapeHtml(t('weather.power.avg'))} ${fmtNum(p.avgEurMwh, 0)}`);
+    if (isNum(p.minEurMwh) && isNum(p.maxEurMwh)) bits.push(`${escapeHtml(t('weather.power.range'))} ${fmtNum(p.minEurMwh, 0)}-${fmtNum(p.maxEurMwh, 0)} €/MWh`);
+    if (isNum(p.renewableSharePercent)) bits.push(`${escapeHtml(t('weather.power.renewables'))} ${fmtNum(p.renewableSharePercent, 0)} %`);
+    if (p.topSource) bits.push(`${escapeHtml(t('weather.power.top'))} ${escapeHtml(p.topSource)}`);
+    if (bits.length) rows.push(sigRow(t('weather.power.label'), bits.join('<span class="weather-dot">·</span>')));
+  }
+  if (s.spaceWeather) {
+    const sw = s.spaceWeather;
+    const scale = (letter, v) => isNum(v) && v >= 0 ? `${letter}${v}` : '';
+    const scales = [scale('R', sw.r), scale('S', sw.s), scale('G', sw.g)].filter(Boolean).join(' ');
+    const bits = [];
+    if (scales) bits.push(`<span class="weather-tick-price">${escapeHtml(scales)}</span>`);
+    if (isNum(sw.forecastMaxG) && sw.forecastMaxG >= 0) bits.push(`${escapeHtml(t('weather.space.forecast'))} G${sw.forecastMaxG}`);
+    if (bits.length) rows.push(sigRow(t('weather.space.label'), bits.join('<span class="weather-dot">·</span>')));
+  }
+  if (!rows.length) return '';
+  return section('weather.stats.energy', `<div class="weather-plain-list">${rows.join('')}</div>`);
+}
+
+// The day's policy wires; the emitting desk reads as an attributed bracket.
+function policyHtml(policy) {
+  if (!policy || !policy.length) return '';
+  const srcKey = src => ({ FED: 'weather.policy.fed', EZB: 'weather.policy.ezb',
+    WHITE_HOUSE: 'weather.policy.whitehouse', FEDERAL_REGISTER: 'weather.policy.register',
+    EU_KOMMISSION: 'weather.policy.eu', EU_SANKTIONEN: 'weather.policy.sanctions' })[src] || null;
+  const rows = policy.map(p => {
+    const key = srcKey(p.source);
+    return `<div class="weather-plain">
+      ${p.time ? `<span class="weather-plain-time">${escapeHtml(p.time)}</span>` : ''}
+      <span class="weather-plain-main wrap"><span class="weather-plain-mute">[${key ? escapeHtml(t(key)) : escapeHtml(p.source || '')}]</span> ${escapeHtml(p.title || '')}</span>
+    </div>`;
+  }).join('');
+  return section('weather.stats.policy', `<div class="weather-plain-list">${rows}</div>`);
+}
+
+// Conflict events (country-level geocode): country chip leads, event line
+// wrapped, emitting feed attributed — the map's conflict layer jumps here.
+function conflictsHtml(conflicts) {
+  if (!conflicts || !conflicts.length) return '';
+  const rows = conflicts.map(c => sigRow(c.country || '',
+      `${escapeHtml(c.text || '')}${c.source
+          ? ` <span class="weather-plain-mute">(${escapeHtml(c.source)})</span>` : ''}`)).join('');
+  return section('weather.stats.conflicts', `<div class="weather-plain-list">${rows}</div>`);
+}
+
+// Fresh election polls (dawum): parliament + topline, institute and date attributed.
+function pollsHtml(polls) {
+  if (!polls || !polls.length) return '';
+  const rows = polls.map(p => `<div class="weather-plain">
+      <span class="weather-plain-main wrap"><b>${escapeHtml(p.parliament || '')}</b> ${escapeHtml(p.topline || '')}
+        <span class="weather-plain-mute">${[p.institute, p.dateIso ? fmtDate(p.dateIso) : ''].filter(Boolean).map(x => escapeHtml(x)).join(' · ')}</span>
+      </span>
+    </div>`).join('');
+  return section('weather.stats.polls', `<div class="weather-plain-list">${rows}</div>`);
+}
+
+// The civic layer (presseportal/dpa-OTS + Autobahn/MVG): feed channel bracket,
+// emitting office. Known channels localize; unknown tokens fall back raw.
+function civicHtml(civic) {
+  if (!civic || !civic.length) return '';
+  const chKey = ch => ({ BLAULICHT: 'weather.civic.blaulicht', GENERAL: 'weather.civic.general',
+    FINANZEN: 'weather.civic.finanzen', POLITIK: 'weather.civic.politik',
+    HANDEL: 'weather.civic.handel', AUTO_VERKEHR: 'weather.civic.autoverkehr',
+    GESUNDHEIT: 'weather.civic.gesundheit', NETZWELT: 'weather.civic.netzwelt',
+    PANORAMA: 'weather.civic.panorama', AUTOBAHN: 'weather.civic.autobahn',
+    MVG: 'weather.civic.mvg' })[ch] || null;
+  const rows = civic.map(c => {
+    const key = chKey(c.channel);
+    return `<div class="weather-plain">
+      ${c.time ? `<span class="weather-plain-time">${escapeHtml(c.time)}</span>` : ''}
+      <span class="weather-plain-main wrap"><span class="weather-plain-mute">[${key ? escapeHtml(t(key)) : escapeHtml(c.channel || '')}]</span> ${escapeHtml(c.title || '')}
+        ${c.office ? `<span class="weather-plain-mute">${escapeHtml(c.office)}</span>` : ''}
+      </span>
+    </div>`;
+  }).join('');
+  return section('weather.stats.civic', `<div class="weather-plain-list">${rows}</div>`);
+}
+
+// Public health (DIVI / RKI / WHO) and newly exploited CVEs (CISA KEV).
+function healthCyberHtml(health, cyber) {
+  const rows = [];
+  if (health) {
+    if (isNum(health.icuOccupancyPercent)) {
+      rows.push(sigRow(t('weather.health.divi'),
+          `${escapeHtml(t('weather.health.icu'))} <span class="weather-tick-price">${fmtNum(health.icuOccupancyPercent, 1)} %</span>`));
+    }
+    if (isNum(health.areIncidence)) {
+      rows.push(sigRow(t('weather.health.rki'),
+          `${escapeHtml(t('weather.health.are'))} <span class="weather-tick-price">${fmtNum(health.areIncidence, 0)}</span>${health.areWeek ? ` <span class="weather-plain-mute">${escapeHtml(health.areWeek)}</span>` : ''}`));
+    }
+    (health.outbreaks || []).forEach(o => rows.push(sigRow(t('weather.health.who'), escapeHtml(o))));
+  }
+  (cyber || []).forEach(c => rows.push(sigRow(t('weather.cyber.kev'),
+      `${escapeHtml(c.cve || '')}${c.vendorProduct ? ` · ${escapeHtml(c.vendorProduct)}` : ''}${c.dateAdded ? ` <span class="weather-plain-mute">${escapeHtml(fmtDate(c.dateAdded))}</span>` : ''}`)));
+  if (!rows.length) return '';
+  return section('weather.stats.healthcyber', `<div class="weather-plain-list">${rows.join('')}</div>`);
+}
+
+// Tomorrow's sport docket and the holiday board.
+function sportHolidaysHtml(sports, holidays) {
+  const rows = [];
+  (sports || []).forEach(line => rows.push(sigRow(t('weather.sport.label'), escapeHtml(line))));
+  if (holidays) {
+    const h = holidays;
+    if (h.nextHolidayName) {
+      rows.push(sigRow(t('weather.holiday.label'),
+          `${escapeHtml(h.nextHolidayName)}${h.nextHolidayDateIso ? ` <span class="weather-plain-mute">${escapeHtml(fmtDate(h.nextHolidayDateIso))}</span>` : ''}${h.tomorrowIsHoliday ? ` <span class="weather-chip-impact high">${escapeHtml(t('weather.holiday.tomorrow'))}</span>` : ''}`));
+    }
+    if (h.schoolHolidayStates && h.schoolHolidayStates.length) {
+      rows.push(sigRow(t('weather.holiday.school'),
+          `<span class="weather-plain-mute">${escapeHtml(h.schoolHolidayStates.join(', '))}</span>`));
+    }
+  }
+  if (!rows.length) return '';
+  return section('weather.stats.sportholidays', `<div class="weather-plain-list">${rows.join('')}</div>`);
 }
 
 // US movers, one wrapped chip line per kind; cage overlap marked gold.

@@ -809,3 +809,36 @@ html[data-theme="light"] .dd-figure {
   font-family: "Inter", sans-serif;
   font-size: 30px;
 }
+
+/* ---- shared figure interaction layer (figure-hover.js) ----
+   Same grammar as the weather figures: mark emphasis via class toggle,
+   nearest-label tooltip, finite section-jump flash (keyframes fh-flash-kf
+   live in weather.css — both sheets always load on the one page). */
+.dd-figure { position: relative; }
+.dd-figure svg rect.fh-hover,
+.dd-figure svg circle.fh-hover,
+.dd-figure svg path.fh-hover,
+.dd-figure svg polygon.fh-hover {
+  stroke: var(--txt);
+  stroke-width: 1.5;
+}
+.dd-figure svg polyline.fh-hover { stroke-width: 3; }
+.dd-figure .fh-tip {
+  position: absolute;
+  max-width: 300px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--txt);
+  font-size: 0.74em;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  z-index: 3;
+  box-shadow: 0 2px 8px color-mix(in oklch, var(--mute-2) 25%, transparent);
+}
+.dd-figure figcaption.fh-jump { cursor: pointer; }
+.dd-figure figcaption.fh-jump:hover .dd-figure-title { color: var(--amber); }
+.dd-figure figcaption.fh-jump:focus-visible { outline: 1px solid var(--amber); outline-offset: 2px; }
+.dd-report h2 { scroll-margin-top: 8px; }
