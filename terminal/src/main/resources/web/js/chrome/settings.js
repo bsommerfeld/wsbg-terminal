@@ -92,6 +92,16 @@ export function initSettings(socket) {
   if (updateBtn) updateBtn.addEventListener('click',
       () => socket.send('update', { command: 'apply' }));
 
+  // ---- Launcher renewal (titlebar amber button, isolated from the green one) ----
+  // Own topic, own DOM node: the two indicators never overwrite each other —
+  // an old hull with a pending app update simply shows both buttons.
+  const launcherBtn = document.querySelector('.js-launcher-update');
+  socket.on('launcher-update-available', payload => {
+    if (launcherBtn) launcherBtn.hidden = !(payload && payload.available);
+  });
+  if (launcherBtn) launcherBtn.addEventListener('click',
+      () => socket.send('launcher-update', { command: 'get' }));
+
   // ---- Open the app-data folder ("Zu den Logs") ----
   const openLogsBtn = view.querySelector('.js-open-logs');
   if (openLogsBtn) openLogsBtn.addEventListener('click',

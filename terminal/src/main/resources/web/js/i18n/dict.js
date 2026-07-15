@@ -13,6 +13,8 @@ export const DICT = {
     // --- titlebar ---
     'titlebar.update.title': 'Update verfügbar - jetzt installieren',
     'titlebar.update.aria': 'Update installieren',
+    'titlebar.launcher.title': 'Launcher veraltet - einmalig neu installieren',
+    'titlebar.launcher.aria': 'Launcher erneuern',
     'titlebar.settings.title': 'Einstellungen',
     'titlebar.settings.aria': 'Einstellungen öffnen',
 
@@ -434,6 +436,8 @@ export const DICT = {
     // --- titlebar ---
     'titlebar.update.title': 'Update available – install now',
     'titlebar.update.aria': 'Install update',
+    'titlebar.launcher.title': 'Launcher outdated – reinstall once',
+    'titlebar.launcher.aria': 'Renew launcher',
     'titlebar.settings.title': 'Settings',
     'titlebar.settings.aria': 'Open settings',
 

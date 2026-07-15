@@ -4,6 +4,7 @@ import com.google.inject.AbstractModule;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.ArchiveQueryBridge;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.ChangelogBridge;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.CommandBridge;
+import de.bsommerfeld.wsbg.terminal.ui.bridge.LauncherUpdateService;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.SettingsBridge;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.UninstallService;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.UpdateService;
@@ -33,6 +34,10 @@ final class BridgeModule extends AbstractModule {
         // In-app update indicator (titlebar green button) + relaunch, the
         // counterpart to the launcher's auto-update opt-out.
         bind(UpdateService.class).asEagerSingleton();
+        // Launcher-hull renewal indicator (titlebar amber button): one-time
+        // guided reinstall for launchers too old to update themselves.
+        // Deliberately separate from UpdateService — both may show at once.
+        bind(LauncherUpdateService.class).asEagerSingleton();
         // "Was hat sich geändert" overlay: pushes the GitHub release notes
         // once after a fresh update (installed version ≠ last seen).
         bind(ChangelogBridge.class).asEagerSingleton();

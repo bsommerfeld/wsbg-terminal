@@ -8,10 +8,21 @@ package de.bsommerfeld.updater.api;
  * for the latest release. Used by {@link TinyUpdateClient} to resolve
  * where to check for updates.
  *
- * @param owner repository owner — GitHub user or organization name
- * @param repo  repository name
+ * @param owner   repository owner — GitHub user or organization name
+ * @param repo    repository name
+ * @param apiBase REST API base URL, {@code https://api.github.com} in
+ *                production; overridable so update flows can be verified
+ *                against a locally served release (no test mode in the
+ *                client itself — same code path, different host)
  */
-public record GitHubRepository(String owner, String repo) {
+public record GitHubRepository(String owner, String repo, String apiBase) {
+
+    private static final String GITHUB_API = "https://api.github.com";
+
+    /** Production shorthand: the real GitHub API. */
+    public GitHubRepository(String owner, String repo) {
+        this(owner, repo, GITHUB_API);
+    }
 
     /**
      * Parses {@code "owner/repo"} slug notation into a typed record.
@@ -29,11 +40,11 @@ public record GitHubRepository(String owner, String repo) {
     }
 
     /**
-     * Returns the GitHub REST API endpoint for the latest release.
+     * Returns the REST API endpoint for the latest release.
      * The response includes the tag name, asset list with download URLs,
      * and release metadata.
      */
     public String latestReleaseUrl() {
-        return "https://api.github.com/repos/" + owner + "/" + repo + "/releases/latest";
+        return apiBase + "/repos/" + owner + "/" + repo + "/releases/latest";
     }
 }

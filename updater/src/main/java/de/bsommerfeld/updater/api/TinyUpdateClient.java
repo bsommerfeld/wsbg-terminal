@@ -46,12 +46,38 @@ public final class TinyUpdateClient implements UpdateClient {
     private final ZipExtractor zipExtractor;
     private final ArchiveDownloader archiveDownloader;
 
+    private final String manifestAsset;
+    private final String archiveAsset;
+    private final String appArchiveAsset;
+    private final String depsArchiveAsset;
+
+    /** The standard application channel: {@code update.json} + {@code files.zip} (+ split zips). */
     public TinyUpdateClient(GitHubRepository repository, Path appDirectory) {
+        this(repository, appDirectory, "update.json", "files.zip", "app.zip", "deps.zip");
+    }
+
+    /**
+     * A channel with custom release-asset names — the same pipeline pointed at
+     * a different asset pair (e.g. the launcher's self-update channel,
+     * {@code launcher-update.json} + {@code launcher-files.zip}). Channels are
+     * fully independent: separate target directory, separate {@code version.txt}.
+     *
+     * @param appArchiveAsset  optional split-zip asset; {@code null} disables the
+     *                         app/deps split and always downloads {@code archiveAsset}
+     * @param depsArchiveAsset see {@code appArchiveAsset}
+     */
+    public TinyUpdateClient(GitHubRepository repository, Path appDirectory,
+            String manifestAsset, String archiveAsset,
+            String appArchiveAsset, String depsArchiveAsset) {
         this.repository = repository;
         this.updateManager = new UpdateManager(appDirectory);
         this.versionFile = new VersionFile(appDirectory);
         this.zipExtractor = new ZipExtractor(appDirectory, TinyUpdateClient::trace);
         this.archiveDownloader = new ArchiveDownloader(TinyUpdateClient::trace);
+        this.manifestAsset = manifestAsset;
+        this.archiveAsset = archiveAsset;
+        this.appArchiveAsset = appArchiveAsset;
+        this.depsArchiveAsset = depsArchiveAsset;
     }
 
     /**
@@ -93,8 +119,8 @@ public final class TinyUpdateClient implements UpdateClient {
         // is newer but the assets don't exist yet. Treat that as "nothing to do
         // yet" and run the cached version, instead of erroring — the next launch
         // retries once the upload completes.
-        if (!hasAsset(releaseJson, "update.json")) {
-            trace("Release " + tagName + " has no update.json yet (still building?) — "
+        if (!hasAsset(releaseJson, manifestAsset)) {
+            trace("Release " + tagName + " has no " + manifestAsset + " yet (still building?) — "
                     + "keeping current version");
             progress.accept(UpdateProgress.of(UpdatePhase.UP_TO_DATE.token(), 1.0));
             return new UpdateResult(false, currentVersion(), 0);
@@ -130,7 +156,7 @@ public final class TinyUpdateClient implements UpdateClient {
     private UpdateCheckResult resolveChanges(String releaseJson,
             Consumer<UpdateProgress> progress) throws Exception {
         progress.accept(UpdateProgress.indeterminate(UpdatePhase.CHECKING.token()));
-        String manifestUrl = findAssetUrl(releaseJson, "update.json");
+        String manifestUrl = findAssetUrl(releaseJson, manifestAsset);
         String manifestJson = Downloader.toString(manifestUrl);
         UpdateManifest manifest = JsonParser.parseManifest(manifestJson);
         return updateManager.check(manifest);
@@ -145,10 +171,11 @@ public final class TinyUpdateClient implements UpdateClient {
     private int applyUpdate(String releaseJson, UpdateCheckResult diff,
             Consumer<UpdateProgress> progress, int extraSteps) throws Exception {
 
-        String manifestUrl = findAssetUrl(releaseJson, "update.json");
+        String manifestUrl = findAssetUrl(releaseJson, manifestAsset);
         UpdateManifest manifest = JsonParser.parseManifest(Downloader.toString(manifestUrl));
 
-        boolean hasSplitZips = hasAsset(releaseJson, "app.zip") && hasAsset(releaseJson, "deps.zip");
+        boolean hasSplitZips = appArchiveAsset != null && depsArchiveAsset != null
+                && hasAsset(releaseJson, appArchiveAsset) && hasAsset(releaseJson, depsArchiveAsset);
 
         // Only downloads count as steps
         int downloadSteps = hasSplitZips ? 2 : 1;
@@ -157,7 +184,7 @@ public final class TinyUpdateClient implements UpdateClient {
 
         if (hasSplitZips) {
             step++;
-            byte[] appZipData = archiveDownloader.download(releaseJson, "app.zip",
+            byte[] appZipData = archiveDownloader.download(releaseJson, appArchiveAsset,
                     UpdatePhase.DOWNLOADING_UPDATE.token(), step, totalSteps, progress);
 
             progress.accept(UpdateProgress.indeterminate(UpdatePhase.EXTRACTING_FILES.token()));
@@ -166,7 +193,7 @@ public final class TinyUpdateClient implements UpdateClient {
             UpdateCheckResult remainingDiff = updateManager.check(manifest);
             if (!remainingDiff.outdated().isEmpty()) {
                 step++;
-                byte[] depsZipData = archiveDownloader.download(releaseJson, "deps.zip",
+                byte[] depsZipData = archiveDownloader.download(releaseJson, depsArchiveAsset,
                         UpdatePhase.DOWNLOADING_DEPENDENCIES.token(), step, totalSteps, progress);
 
                 progress.accept(UpdateProgress.indeterminate(UpdatePhase.EXTRACTING_DEPENDENCIES.token()));
@@ -174,7 +201,7 @@ public final class TinyUpdateClient implements UpdateClient {
             }
         } else {
             step++;
-            byte[] zipData = archiveDownloader.download(releaseJson, "files.zip",
+            byte[] zipData = archiveDownloader.download(releaseJson, archiveAsset,
                     UpdatePhase.DOWNLOADING_UPDATE.token(), step, totalSteps, progress);
 
             progress.accept(UpdateProgress.indeterminate(UpdatePhase.EXTRACTING_FILES.token()));

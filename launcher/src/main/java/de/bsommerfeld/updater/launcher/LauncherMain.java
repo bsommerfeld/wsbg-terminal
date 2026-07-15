@@ -64,10 +64,21 @@ public final class LauncherMain {
         //
         // Best-effort: any failure to detect (timeout, future protocol
         // change, port collision) falls through to the normal install
-        // path. The launcher can't be auto-updated, so the fallback
-        // matters whenever we change the contract.
+        // path. The native HULL can't be auto-updated (only its jar, via
+        // StagedLauncher) and pre-self-update launchers stay in the wild,
+        // so the fallback matters whenever we change the contract.
         if (TerminalRaiser.raise()) {
             log.log("Existing terminal detected — raised it, launcher exiting.");
+            System.exit(0);
+        }
+
+        // Stage-loader: if the OTA-synced launcher jar in <appDir>/launcher/
+        // is strictly newer than this hull's embedded one, hand the whole
+        // startup over to it and exit — the native hull stays a dumb
+        // bootstrap that never needs reinstalling for jar-level changes.
+        // The staged child skips this block (env guard) and otherwise runs
+        // this exact same pipeline. Every failure path continues embedded.
+        if (StagedLauncher.handoff(appDir, log, args)) {
             System.exit(0);
         }
 
@@ -108,6 +119,11 @@ public final class LauncherMain {
             try {
                 int downloadSteps = runUpdatePhase(updateClient, window, log, firstRun, i18n,
                         autoUpdate, forceUpdate, ENVIRONMENT_STEPS);
+                // Launcher self-update rides the same phase, quietly (log-only,
+                // no window steps): a newly staged jar takes over on the NEXT
+                // start, so there is nothing to show now. Same auto-update
+                // gate + --force-update override as the terminal update above.
+                StagedLauncher.sync(REPO, appDir, log, autoUpdate, forceUpdate);
                 runEnvironmentPhase(envSetup, window, log, i18n, downloadSteps);
                 runLaunchPhase(appDir, window, log, forwardArgs, i18n);
             } catch (Throwable e) {

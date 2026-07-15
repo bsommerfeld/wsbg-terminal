@@ -161,6 +161,14 @@ html[data-theme="light"] .tb-title .flag {
 /* Finite: a few pulses draw the eye when the button appears, then it settles
    steady — an infinite glow would force continuous full-window OSR paints. */
 .update-btn:not([hidden]) { animation: update-glow 2.4s ease-in-out 6; }
+
+/* Launcher-renewal indicator: the update button's amber sibling. Same rules
+   (pinned gone while hidden, finite attention pulse), own class so the two
+   buttons can never override each other — both may show at the same time. */
+.launcher-btn[hidden] { display: none; }
+.launcher-btn { color: var(--amber); }
+.launcher-btn:hover { color: var(--amber); background: var(--bg-1); }
+.launcher-btn:not([hidden]) { animation: update-glow 2.4s ease-in-out 6; }
 @keyframes update-glow {
   0%, 100% { opacity: .65; }
   50%      { opacity: 1; }

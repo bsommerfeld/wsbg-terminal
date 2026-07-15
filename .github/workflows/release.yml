@@ -66,6 +66,37 @@ jobs:
           artifact-dirs: 'terminal/target,terminal/target/deps'
           script-dir: '.script'
 
+      # Launcher self-update channel: the same TinyUpdate mechanism, second
+      # instance. A SEPARATE asset pair (launcher-update.json/-files.zip) so
+      # pre-self-update launchers keep seeing exactly the assets they know —
+      # they ignore these entirely and stay functional. Payload is the one
+      # shaded launcher jar under the STABLE name launcher.jar; installed
+      # launchers sync it into <appDir>/launcher/ and the native hull re-execs
+      # it on the next start when it is strictly newer than the hull itself.
+      - name: Package Launcher Self-Update Channel
+        run: |
+          STAGING=updater-dist/launcher-staging
+          mkdir -p "$STAGING"
+
+          # Exactly the shaded fat jar (byte-identical to the jpackage input in
+          # package.yml) — never the "original-" unshaded copy.
+          SHADED_JAR=$(find launcher/target -maxdepth 1 -name 'launcher-*.jar' ! -name 'original-*' | head -1)
+          if [ -z "$SHADED_JAR" ]; then
+            echo "::error::No shaded launcher JAR found in launcher/target/"
+            exit 1
+          fi
+          cp "$SHADED_JAR" "$STAGING/launcher.jar"
+
+          SHA256=$(sha256sum "$STAGING/launcher.jar" | cut -d' ' -f1)
+          SIZE=$(stat --printf="%s" "$STAGING/launcher.jar")
+
+          # Same manifest shape as updater/action generates for update.json.
+          printf '{\n  "version": "%s",\n  "files": [\n    { "path": "launcher.jar", "sha256": "%s", "size": %s }\n  ]\n}\n' \
+            "${GITHUB_REF_NAME}" "$SHA256" "$SIZE" > updater-dist/launcher-update.json
+
+          (cd "$STAGING" && zip -r ../launcher-files.zip . -x '.*')
+          echo "Launcher channel packaged: version ${GITHUB_REF_NAME}, sha256 ${SHA256}"
+
       - name: Prepare Build Status Badges
         id: badges
         run: |
@@ -124,4 +155,6 @@ jobs:
             updater-dist/files.zip \
             updater-dist/app.zip \
             updater-dist/deps.zip \
+            updater-dist/launcher-update.json \
+            updater-dist/launcher-files.zip \
             --clobber

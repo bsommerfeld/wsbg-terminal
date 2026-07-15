@@ -86,12 +86,30 @@ final class AppLauncher {
 
         PathEnricher.enrich(pb);
 
-        // Hand the terminal our own executable path so its in-app "update now"
-        // button can relaunch us (cleanly close → restart the launcher, which
-        // applies the update). Absent in dev runs (run.sh starts the terminal
-        // directly) — the terminal hides the update button when this is unset.
-        ProcessHandle.current().info().command().ifPresent(
-                exe -> pb.environment().put("WSBG_LAUNCHER_EXECUTABLE", exe));
+        // Hand the terminal the launcher executable path so its in-app "update
+        // now" button can relaunch us (cleanly close → restart the launcher,
+        // which applies the update). When we run as the staged OTA jar, our own
+        // process is just the bundled java binary — useless for a relaunch — so
+        // the hull forwards its native executable via WSBG_HULL_EXECUTABLE and
+        // we pass that on instead. Absent in dev runs (run.sh starts the
+        // terminal directly) — the terminal hides the button when unset.
+        String hullExe = System.getenv(StagedLauncher.HULL_EXECUTABLE_ENV);
+        if (hullExe != null && !hullExe.isBlank()) {
+            pb.environment().put("WSBG_LAUNCHER_EXECUTABLE", hullExe);
+        } else {
+            ProcessHandle.current().info().command().ifPresent(
+                    exe -> pb.environment().put("WSBG_LAUNCHER_EXECUTABLE", exe));
+        }
+
+        // Hull-generation handshake for the terminal's amber "renew launcher"
+        // button: launchers that never set this count as generation 1. The
+        // terminal compares against its required generation and, when the
+        // installed hull is older, offers the one-time guided reinstall via
+        // the platform installer. Bump ONLY in lockstep with
+        // LauncherUpdateService.REQUIRED_GENERATION in the terminal module —
+        // and only for hull changes an installed launcher cannot pick up
+        // itself (runtime bump, packaging change), never for jar-level logic.
+        pb.environment().put("WSBG_LAUNCHER_GENERATION", "2");
 
         pb.start();
     }
