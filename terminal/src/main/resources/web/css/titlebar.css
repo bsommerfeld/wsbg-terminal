@@ -166,9 +166,41 @@ html[data-theme="light"] .tb-title .flag {
    (pinned gone while hidden, finite attention pulse), own class so the two
    buttons can never override each other — both may show at the same time. */
 .launcher-btn[hidden] { display: none; }
-.launcher-btn { color: var(--amber); }
+/* Deliberately NO attention pulse (unlike the green update button): the
+   amber wrench is a calm, standing repair notice — steady color only. */
+.launcher-btn { position: relative; color: var(--amber); }
 .launcher-btn:hover { color: var(--amber); background: var(--bg-1); }
-.launcher-btn:not([hidden]) { animation: update-glow 2.4s ease-in-out 6; }
+
+/* Instant tooltip (real element, so the heading can be styled): the native
+   title waits ~1s — too slow for a rescue button that needs explaining.
+   Opens downward (the button lives in the titlebar) and right-aligns so it
+   never leaves the viewport. */
+.launcher-tip {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: max-content;
+  max-width: 260px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--bg-1);
+  border: 1px solid color-mix(in oklch, var(--amber) 40%, transparent);
+  box-shadow: 0 4px 14px oklch(0 0 0 / .25);
+  font-size: .72rem;
+  line-height: 1.35;
+  text-align: left;
+  white-space: normal;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .08s ease;
+}
+.launcher-tip strong { color: var(--amber); font-size: .74rem; font-weight: 700; }
+.launcher-tip > span { color: var(--txt); font-weight: 400; }
+.launcher-btn:hover .launcher-tip { opacity: 1; }
 @keyframes update-glow {
   0%, 100% { opacity: .65; }
   50%      { opacity: 1; }
