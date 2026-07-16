@@ -18,6 +18,7 @@
 import { t, currentLang } from '../i18n/i18n.js';
 import { escapeHtml } from '../format/escape.js';
 import { renderMarkdown } from '../format/markdown.js';
+import { readingTimeLabel, readingTimeLabelFromWords } from '../format/readtime.js';
 import { wireFigureHover, wireFigureJumps } from '../map/figure-hover.js';
 
 let sock = null;
@@ -351,7 +352,8 @@ function renderHome() {
 function cardHtml(r) {
   const armed = armedDelete === r.id;
   const meta = [fmtDateTime(r.createdAt),
-    r.price != null ? fmtPrice(r.price, r.currency) : null].filter(Boolean).join(' · ');
+    r.price != null ? fmtPrice(r.price, r.currency) : null,
+    readingTimeLabelFromWords(r.reportWords)].filter(Boolean).join(' · ');
   return `
   <li class="dd-card" data-id="${escapeHtml(r.id)}" role="button" tabindex="0">
     <span class="dd-card-main">
@@ -434,7 +436,9 @@ function journalLineHtml(l) {
 
 function detailHtml(r) {
   const meta = [fmtDateTime(r.createdAt),
-    r.price != null ? fmtPrice(r.price, r.currency) : null].filter(Boolean).join(' · ');
+    r.price != null ? fmtPrice(r.price, r.currency) : null,
+    r.reportWords != null ? readingTimeLabelFromWords(r.reportWords)
+                          : readingTimeLabel(r.report)].filter(Boolean).join(' · ');
   return `
   <div class="dd-detail-head">
     <button class="dd-back" type="button" title="${escapeHtml(t('dd.back'))}"

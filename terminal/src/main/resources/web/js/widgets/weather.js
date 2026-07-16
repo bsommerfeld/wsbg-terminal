@@ -22,6 +22,7 @@ import { t, currentLang } from '../i18n/i18n.js';
 import { escapeHtml } from '../format/escape.js';
 import { renderMarkdown } from '../format/markdown.js';
 import { fmtDuration } from '../format/time.js';
+import { readingTimeLabel } from '../format/readtime.js';
 import { isNum, fmtVol } from '../format/numbers.js';
 import { renderWorldMap, wireWorldMap } from '../map/worldmap.js';
 import { wireFigureHover, wireFigureJumps, clearFigureJumps } from '../map/figure-hover.js';
@@ -125,6 +126,7 @@ function paintReport(host, p, reports, idx) {
   const dateLabel = fmtDate(r.date);
   const genClock = new Date(r.generatedAt * 1000).toLocaleTimeString(
       currentLang() === 'de' ? 'de-DE' : 'en-GB', { hour: '2-digit', minute: '2-digit' });
+  const readTime = readingTimeLabel(r.text);
 
   host.innerHTML = `
     <div class="weather-nav">
@@ -132,7 +134,7 @@ function paintReport(host, p, reports, idx) {
               title="${escapeHtml(t('weather.prev'))} (←)" aria-label="${escapeHtml(t('weather.prev'))}">‹</button>
       <div class="weather-nav-title">
         <span class="weather-nav-date">${escapeHtml(t('weather.report.from'))} ${escapeHtml(dateLabel)}</span>
-        <span class="weather-nav-meta">${escapeHtml(genClock)} · ${r.headlineCount} ${escapeHtml(t('weather.stats.headlines'))}${r.importantCount > 0 ? ` · <b>${r.importantCount}</b> ${escapeHtml(t('weather.stats.important'))}` : ''}</span>
+        <span class="weather-nav-meta">${escapeHtml(genClock)} · ${r.headlineCount} ${escapeHtml(t('weather.stats.headlines'))}${r.importantCount > 0 ? ` · <b>${r.importantCount}</b> ${escapeHtml(t('weather.stats.important'))}` : ''}${readTime ? ` · ${escapeHtml(readTime)}` : ''}</span>
       </div>
       <button class="weather-nav-btn js-weather-next" type="button" ${newer ? '' : 'disabled'}
               title="${escapeHtml(t('weather.next'))} (→)" aria-label="${escapeHtml(t('weather.next'))}">›</button>

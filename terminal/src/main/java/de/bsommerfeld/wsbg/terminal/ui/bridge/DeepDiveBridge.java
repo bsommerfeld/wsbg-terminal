@@ -228,6 +228,7 @@ public final class DeepDiveBridge {
             m.put("price", r.priceAtTime());
             if (r.priceCurrency() != null) m.put("currency", r.priceCurrency());
         }
+        m.put("reportWords", reportWords(r.report()));
         if (withReport) {
             m.put("report", r.report());
             if (!r.chartsOrEmpty().isEmpty()) {
@@ -244,5 +245,18 @@ public final class DeepDiveBridge {
             }
         }
         return m;
+    }
+
+    /** Prose word count for the reading-time badge — the list payload carries
+     *  no report text, so the count travels instead. Tokens without a letter
+     *  or digit (table pipes, heading markers, rules) are pure markdown
+     *  scaffolding, not words. */
+    private static int reportWords(String report) {
+        if (report == null || report.isBlank()) return 0;
+        int words = 0;
+        for (String token : report.split("\\s+")) {
+            if (token.codePoints().anyMatch(Character::isLetterOrDigit)) words++;
+        }
+        return words;
     }
 }
