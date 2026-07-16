@@ -69,6 +69,34 @@ public class NewsAggregator {
      * the company without printing the ISIN must not be lost), and it is the
      * one key that never chases a wrong same-named twin.
      */
+    /**
+     * ARCHIVE window fan-out: every source's {@code newsForNameWindow} for one
+     * date window, deduplicated by title - the multi-year press-history leg
+     * (2026-07-16). Sources without an archive contribute nothing.
+     */
+    public List<RawNewsItem> historyFor(String name, String isin, String fromIsoDate,
+            String toIsoDateExclusive, int limit) {
+        if (limit <= 0 || ((name == null || name.isBlank()) && (isin == null || isin.isBlank()))) {
+            return List.of();
+        }
+        List<RawNewsItem> out = new java.util.ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (NewsSource source : sources) {
+            try {
+                for (RawNewsItem item : source.newsForNameWindow(
+                        name, isin, fromIsoDate, toIsoDateExclusive, limit)) {
+                    String key = item.title() == null ? "" :
+                            item.title().strip().toLowerCase(java.util.Locale.ROOT);
+                    if (!key.isEmpty() && seen.add(key)) out.add(item);
+                }
+            } catch (Exception e) {
+                LOG.debug("history window from {} failed: {}", source.sourceName(), e.getMessage());
+            }
+            if (out.size() >= limit) break;
+        }
+        return out.size() > limit ? out.subList(0, limit) : out;
+    }
+
     public List<RawNewsItem> newsFor(String symbol, String name, String isin, int limit) {
         boolean haveSymbol = symbol != null && !symbol.isBlank();
         boolean haveName = name != null && !name.isBlank();

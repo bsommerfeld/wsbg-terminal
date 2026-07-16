@@ -62,5 +62,12 @@ final class NewsSourceModule extends AbstractModule {
         // api.nasdaq.com; probed 2026-07-14). Symbol-addressed, US shapes only.
         newsSources.addBinding().to(
                 de.bsommerfeld.wsbg.terminal.nasdaq.NasdaqNewsRssClient.class);
+        // onvista articles finder: the multi-year press ARCHIVE leg - dated,
+        // attributed history as plain JSON, ISIN-addressed; for small caps
+        // and pennystocks the COMPLETE history sits inside the pagination cap
+        // (probed 2026-07-16). Answers only the windowed archive fan
+        // (newsForNameWindow), never the live-news queries.
+        newsSources.addBinding().to(
+                de.bsommerfeld.wsbg.terminal.onvista.OnvistaClient.class);
     }
 }

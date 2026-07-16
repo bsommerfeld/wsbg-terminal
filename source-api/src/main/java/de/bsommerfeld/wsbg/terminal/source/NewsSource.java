@@ -17,6 +17,18 @@ public interface NewsSource {
     String sourceName();
 
     /**
+     * ARCHIVE window: news for the company NAME restricted to a date window
+     * (ISO dates, {@code to} exclusive) - the multi-year press-history leg of
+     * the long-term dossier (2026-07-16). Sources without a date-addressable
+     * archive keep this default no-op.
+     */
+    default java.util.List<RawNewsItem> newsForNameWindow(
+            String companyName, String isin, String fromIsoDate, String toIsoDateExclusive,
+            int limit) {
+        return java.util.List.of();
+    }
+
+    /**
      * News referencing the given instrument, most-relevant first.
      *
      * @param symbol the ticker symbol to fetch news for

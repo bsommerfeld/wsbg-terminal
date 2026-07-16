@@ -42,7 +42,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * estimate is never presented as an actual.
  */
 @Singleton
-public class OnvistaClient implements InstrumentFactsSource {
+public class OnvistaClient implements InstrumentFactsSource,
+        de.bsommerfeld.wsbg.terminal.source.NewsSource {
 
     private static final Logger LOG = LoggerFactory.getLogger(OnvistaClient.class);
 
@@ -68,6 +69,141 @@ public class OnvistaClient implements InstrumentFactsSource {
     @Inject
     public OnvistaClient(@de.bsommerfeld.wsbg.terminal.source.net.DirectFirst WebFetcher fetcher) {
         this.fetcher = fetcher;
+    }
+
+    // ---- multi-year press ARCHIVE (NewsSource window leg, 2026-07-16) ----
+
+    private static final String ARTICLES_URL_FMT =
+            "https://api.onvista.de/api/v1/articles/finder/configuration_query"
+                    + "?application=WEBSITE&calculateTotal=true&device=DESKTOP"
+                    + "&entityType=STOCK&entityValue=%s&page=%d&perPage=100";
+    /** The finder paginates to ~1,000 articles per instrument (probed 2026-07-16). */
+    private static final int MAX_ARTICLE_PAGES = 10;
+
+    @Override
+    public String sourceName() {
+        return "onvista";
+    }
+
+    /** The archive is entity-addressed - a bare symbol answers nothing here. */
+    @Override
+    public java.util.List<de.bsommerfeld.wsbg.terminal.source.RawNewsItem> newsFor(
+            String symbol, int limit) {
+        return java.util.List.of();
+    }
+
+    /**
+     * The per-instrument news ARCHIVE, windowed: onvista's articles finder
+     * serves the dated, attributed press history (dpa-AFX, EQS/DGAP corporate
+     * news) as plain JSON - for small caps and pennystocks the COMPLETE
+     * multi-year history sits inside the ~1,000-article pagination cap
+     * (probed 2026-07-16: artec technologies = 57 articles back 4.7 years in
+     * one request; SAP total 3,499, cap reaches ~14 months). ISIN-addressed
+     * first (never a same-named twin), company name as the fallback.
+     */
+    @Override
+    public java.util.List<de.bsommerfeld.wsbg.terminal.source.RawNewsItem> newsForNameWindow(
+            String companyName, String isin, String fromIsoDate, String toIsoDateExclusive,
+            int limit) {
+        if (limit <= 0) return java.util.List.of();
+        try {
+            String entity = archiveEntity(isin, companyName);
+            if (entity == null) return java.util.List.of();
+            java.time.Instant from = java.time.LocalDate.parse(fromIsoDate)
+                    .atStartOfDay(java.time.ZoneOffset.UTC).toInstant();
+            java.time.Instant to = java.time.LocalDate.parse(toIsoDateExclusive)
+                    .atStartOfDay(java.time.ZoneOffset.UTC).toInstant();
+            java.util.List<de.bsommerfeld.wsbg.terminal.source.RawNewsItem> out =
+                    new java.util.ArrayList<>();
+            for (int page = 0; page < MAX_ARTICLE_PAGES && out.size() < limit; page++) {
+                WebResponse resp = get(String.format(ARTICLES_URL_FMT, entity, page));
+                if (resp == null || resp.status() != 200) break;
+                JsonNode items = articleArray(JSON.readTree(resp.body()));
+                if (items == null || items.isEmpty()) break;
+                boolean pageOlderThanWindow = true;
+                for (JsonNode item : items) {
+                    java.time.Instant at = parseArticleInstant(
+                            item.path("datetimePublication").asText(null));
+                    if (at == null) continue;
+                    if (!at.isBefore(from)) pageOlderThanWindow = false;
+                    if (at.isBefore(from) || !at.isBefore(to)) continue;
+                    String headline = item.path("headline").asText(null);
+                    if (headline == null || headline.isBlank()) continue;
+                    JsonNode pub = item.path("publisher");
+                    String publisher = pub.isTextual() ? pub.asText()
+                            : pub.path("name").asText("onvista");
+                    // Live shape (probed 2026-07-16): urls = {"WEBSITE": "<link>"}.
+                    String url = item.path("urls").path("WEBSITE").asText(null);
+                    if (url == null) url = firstText(item, "urlArticle", "url", "link");
+                    out.add(new de.bsommerfeld.wsbg.terminal.source.RawNewsItem(
+                            "onvista-" + entity + "-" + at.getEpochSecond()
+                                    + "-" + Math.abs(headline.hashCode()),
+                            headline.strip(), publisher, url, at, java.util.List.of()));
+                    if (out.size() >= limit) break;
+                }
+                // Newest-first pagination: a page entirely older than the
+                // window means everything after it is older too.
+                if (pageOlderThanWindow) break;
+            }
+            if (!out.isEmpty()) {
+                LOG.info("[onvista] archive {}..{} for {} → {} headline(s)",
+                        fromIsoDate, toIsoDateExclusive,
+                        isin != null ? isin : companyName, out.size());
+            }
+            return out;
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            LOG.debug("[onvista] archive window failed: {}", e.getMessage());
+            return java.util.List.of();
+        }
+    }
+
+    /** Entity for the archive: ISIN lookup first (exact), name as fallback. */
+    private String archiveEntity(String isin, String companyName) throws Exception {
+        for (String key : new String[]{isin, companyName}) {
+            if (key == null || key.isBlank()) continue;
+            WebResponse resp = get(QUERY_URL
+                    + URLEncoder.encode(key.trim(), StandardCharsets.UTF_8));
+            if (resp == null) continue;
+            EntityLookup lookup = lookupEntity(resp.body(), key, "STOCK");
+            if (lookup.isHit()) return lookup.entityValue();
+        }
+        return null;
+    }
+
+    /** The finder's article array - field name parsed defensively. */
+    private static JsonNode articleArray(JsonNode root) {
+        for (String field : new String[]{"list", "articles", "items", "data"}) {
+            JsonNode n = root.path(field);
+            if (n.isArray()) return n;
+        }
+        java.util.Iterator<JsonNode> it = root.elements();
+        while (it.hasNext()) {
+            JsonNode n = it.next();
+            if (n.isArray() && n.size() > 0 && n.get(0).has("headline")) return n;
+        }
+        return null;
+    }
+
+    private static String firstText(JsonNode node, String... fields) {
+        for (String f : fields) {
+            String v = node.path(f).asText(null);
+            if (v != null && !v.isBlank()) return v;
+        }
+        return null;
+    }
+
+    private static java.time.Instant parseArticleInstant(String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        try {
+            return java.time.OffsetDateTime.parse(raw).toInstant();
+        } catch (Exception e) {
+            try {
+                return java.time.Instant.parse(raw);
+            } catch (Exception e2) {
+                return null;
+            }
+        }
     }
 
     @Override

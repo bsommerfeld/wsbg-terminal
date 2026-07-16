@@ -141,6 +141,22 @@ public class GoogleNewsClient implements NewsSource {
         return search(isin.strip().toUpperCase(Locale.ROOT), null, limit);
     }
 
+    /**
+     * Multi-year press HISTORY: the same search narrowed to a date window via
+     * Google News' {@code after:}/{@code before:} query operators - the
+     * long-term dossier needs the years, not just the weeks (user mandate
+     * 2026-07-16). Same transport, cache and consent tripwire as every other
+     * query; the window rides in the cache key.
+     */
+    @Override
+    public List<RawNewsItem> newsForNameWindow(String companyName, String isin,
+            String fromIsoDate, String toIsoDateExclusive, int limit) {
+        if (companyName == null || companyName.isBlank() || limit <= 0) return List.of();
+        String q = cleanName(companyName) + " Aktie after:" + fromIsoDate
+                + " before:" + toIsoDateExclusive;
+        return search(q, companyName, limit);
+    }
+
     private List<RawNewsItem> search(String query, String relevanceName, int limit) {
         String cacheKey = query.toLowerCase(Locale.ROOT);
         CachedResult cached = cache.get(cacheKey);
