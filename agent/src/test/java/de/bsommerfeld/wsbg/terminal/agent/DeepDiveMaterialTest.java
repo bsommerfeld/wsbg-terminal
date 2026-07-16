@@ -339,7 +339,8 @@ class DeepDiveMaterialTest {
         String longSentence = "Die Entwicklung wird anhand der kommenden Berichte gemessen,"
                 + " allen voran des Berichts zum zweiten Quartal 2026 am 24. Juli 2026 [4].";
         String[] bodies = new String[DeepDiveService.SECTION_COUNT];
-        // The thesis may ECHO the body (page-1 summary convention) — exempt.
+        // The thesis reads the FULL sections (2026-07-16): a sentence it
+        // copied from the body dies in the THESIS - the body keeps its own.
         bodies[DeepDiveService.SEC_THESIS] = "Das Bild lehnt bullish [4]. " + longSentence;
         // Two BODY sections carrying the identical sentence: first wins.
         bodies[DeepDiveService.SEC_CATALYSTS] = longSentence + " Das Risiko bleibt benannt [7].";
@@ -349,8 +350,8 @@ class DeepDiveMaterialTest {
                 + " Ein Beitrag hielt dagegen [19].";
         String report = DeepDiveService.assemble(DeepDiveService.SECTIONS_DE, bodies, true);
 
-        assertEquals(2, occurrences(report, "am 24. Juli 2026"),
-                "once in the exempt thesis + once among the body sections:\n" + report);
+        assertEquals(1, occurrences(report, "am 24. Juli 2026"),
+                "the copied thesis sentence dies, one body occurrence stays:\n" + report);
         int thesisAt = report.indexOf("## These");
         int catalystsAt = report.indexOf("## Katalysatoren");
         int outlookAt = report.indexOf("## Ausblick");
@@ -359,8 +360,8 @@ class DeepDiveMaterialTest {
         String outlookSec = report.substring(outlookAt, roomAt);
         assertTrue(catalystsSec.contains("am 24. Juli 2026"), "first body occurrence wins");
         assertTrue(!outlookSec.contains("am 24. Juli 2026"), "the later body duplicate drops");
-        assertTrue(report.substring(thesisAt, catalystsAt).contains("am 24. Juli 2026"),
-                "the thesis keeps its echo");
+        assertTrue(!report.substring(thesisAt, catalystsAt).contains("am 24. Juli 2026"),
+                "the thesis loses its copied sentence to the body");
         assertContains(report, "am 22.10.2026");
         assertTrue(!report.contains("2026-10-22"), report);
         assertContains(report, "Der Käfig stritt am Nachmittag.");
@@ -1174,6 +1175,20 @@ class DeepDiveMaterialTest {
         assertTrue(shelves[DeepDiveService.SEC_OUTLOOK].contains("IR CALENDAR (first-party"));
         assertTrue(shelves[DeepDiveService.SEC_OUTLOOK].contains("[2099-05-14] Hauptversammlung"));
         assertFalse(shelves[DeepDiveService.SEC_OUTLOOK].contains("Quartalsmitteilung Q1 2026"));
+    }
+
+    /** Immaterial-skipped sources appear under their own honest register label. */
+    @Test
+    void sightedOnlySourcesGetTheirOwnRegisterLine() {
+        DeepDiveService.Material m = fullMaterial();
+        // uuid-1 is news:0 - mark it sighted-only and cite nothing.
+        java.util.Map<String, Integer> nums = DeepDiveService.sourceNumbers(m);
+        int newsNum = nums.entrySet().stream()
+                .filter(e -> e.getKey().equals("news:0")).findFirst().orElseThrow().getValue();
+        m.sightedOnly.add(newsNum);
+        String register = DeepDiveService.sourcesSection(m, true, java.util.Set.of());
+        assertContains(register, "Gesichtet, ohne eigenständigen Beitrag zur Lesart:");
+        assertContains(register, "- [" + newsNum + "] ");
     }
 
     /** A covered story's markers land on the most similar paragraph, deduped. */

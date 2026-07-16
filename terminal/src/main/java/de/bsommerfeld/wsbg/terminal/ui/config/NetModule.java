@@ -101,6 +101,35 @@ final class NetModule extends AbstractModule {
      * wall, and it is the SAME shared {@link CefWebFetcher} instance as the
      * browser-first chain (one hidden tab per origin, 2026-07-13 audit C4).
      */
+    /**
+     * The {@link de.bsommerfeld.wsbg.terminal.source.net.OpenWebConversations}
+     * binding (2026-07-16): Yahoo's per-ticker comment boards via the OpenWeb
+     * widget handshake, run as page-context POSTs from a hidden tab anchored
+     * on finance.yahoo.com. NOT a chain — plain HTTP answers 403 on both
+     * handshake legs (AWS edge, probed 2026-07-16), so the browser leg is the
+     * only one that exists. With the browser transport disabled the binding
+     * degrades to a fetcher answering a transport failure (status 0): the
+     * source yields empty instead of breaking.
+     */
+    @Provides
+    @Singleton
+    @de.bsommerfeld.wsbg.terminal.source.net.OpenWebConversations
+    WebFetcher provideOpenWebConversationsFetcher(GlobalConfig config, CefHost cefHost) {
+        if (!config.getYahoo().isBrowserFetchEnabled()) {
+            LOG.info("WebFetcher (openweb): browser transport disabled — degraded stub");
+            return new WebFetcher() {
+                @Override public String name() { return "openweb-disabled"; }
+                @Override public de.bsommerfeld.wsbg.terminal.source.net.WebResponse fetch(
+                        String url, java.util.Map<String, String> headers,
+                        java.time.Duration timeout) {
+                    return new de.bsommerfeld.wsbg.terminal.source.net.WebResponse(
+                            0, "", java.util.Map.of());
+                }
+            };
+        }
+        return new de.bsommerfeld.wsbg.terminal.ui.net.OpenWebConversationFetcher(cefHost);
+    }
+
     @Provides
     @Singleton
     @DirectFirst

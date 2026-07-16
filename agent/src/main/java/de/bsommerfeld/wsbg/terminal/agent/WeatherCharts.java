@@ -323,6 +323,133 @@ final class WeatherCharts {
                 "CNN", svg.toString());
     }
 
+    // ---- 1e. the quant-signal series (house-computed) — Großwetterlage --------
+
+    /**
+     * The two house-computed mood instruments over their archive-derived
+     * history, recomputed at generation time with the SAME formulas as the
+     * material's QUANT SIGNALS lines and frozen with the edition — an old
+     * edition keeps the series view of its day. Both measure the FORM of the
+     * day (attention concentration, mood distance), never the topic, so the
+     * series stays comparable across changing stories.
+     */
+    List<ChartStat> signalSeriesFigures(List<Double> entropySeries,
+            List<Double> cageIndexSeries, List<Double> streetSeries) {
+        List<ChartStat> out = new ArrayList<>();
+        addIfPresent(out, entropySeriesFigure(entropySeries));
+        addIfPresent(out, cageVsStreetFigure(cageIndexSeries, streetSeries));
+        return out;
+    }
+
+    /** Points below this count draw no series — a two-point "trend" is noise. */
+    private static final int MIN_SERIES_POINTS = 10;
+
+    /**
+     * Attention entropy of the cage per measurable day, fixed 0-1 scale:
+     * 1 = attention fragmented over many names, 0 = everyone staring at ONE
+     * name. A collapse of the curve is the swarm-formation early warning.
+     */
+    private ChartStat entropySeriesFigure(List<Double> series) {
+        List<Double> vals = series == null ? List.of()
+                : series.stream().filter(v -> v != null && v >= 0 && v <= 1).toList();
+        if (vals.size() < MIN_SERIES_POINTS) return null;
+
+        int h = 124, padL = 12, padR = 92, padT = 10, padB = 12;
+        double plotW = W - padL - padR, plotH = h - padT - padB;
+        StringBuilder svg = open(h);
+        // The two reading bands of the material line, washed + labeled muted.
+        double[][] zones = {{0.8, 1.0}, {0.0, 0.4}};
+        String[] zoneNames = de
+                ? new String[]{"zersplittert", "fokussiert (Schwarm)"}
+                : new String[]{"fragmented", "focused (swarm)"};
+        for (int z = 0; z < zones.length; z++) {
+            double yTop = padT + (1 - zones[z][1]) * plotH;
+            double yBot = padT + (1 - zones[z][0]) * plotH;
+            svg.append("<rect x=\"").append(padL).append("\" y=\"").append(r1(yTop))
+                    .append("\" width=\"").append(r1(plotW)).append("\" height=\"")
+                    .append(r1(yBot - yTop)).append("\" fill=\"").append(z == 0 ? S1 : NEG)
+                    .append("\" opacity=\"0.07\"/>");
+            text(svg, padL + 4, (yTop + yBot) / 2 + 3, "start", 8, MUTE, zoneNames[z], false);
+        }
+        line(svg, padL, padT + plotH / 2.0, padL + plotW, padT + plotH / 2.0, GRID, 1);
+        linePath(svg, vals, padL, padT, plotW, plotH, 0, 1, S1);
+        double lastX = padL + plotW;
+        double lastY = padT + (1 - vals.getLast()) * plotH;
+        svg.append("<circle cx=\"").append(r1(lastX)).append("\" cy=\"").append(r1(lastY))
+                .append("\" r=\"4\" fill=\"").append(S1).append("\" stroke=\"").append(SURFACE)
+                .append("\" stroke-width=\"2\"/>");
+        text(svg, lastX + 8, Math.max(padT + 8, Math.min(lastY + 4, padT + plotH)), "start",
+                12, INK, (de ? "heute " : "today ") + fmt(vals.getLast(), 2), true);
+        svg.append("</svg>");
+        return new ChartStat(SEC_PICTURE,
+                de ? "Aufmerksamkeits-Entropie des Käfigs (letzte " + vals.size()
+                        + " messbare Tage)"
+                        : "Cage attention entropy (last " + vals.size() + " measurable days)",
+                de ? "eigene Wire" : "own wire", svg.toString());
+    }
+
+    /**
+     * BOTH barometers on one 0-100 scale: the house's cage mood index (gold,
+     * percentile-scored crowd behavior) against CNN's Fear &amp; Greed (blue,
+     * the market). The gap BETWEEN the lines is the finding — cage above
+     * street is the classic contra constellation when wide and fresh. The
+     * series are day-aligned by construction (same aligned pairs the
+     * divergence reading measures on).
+     */
+    private ChartStat cageVsStreetFigure(List<Double> cageSeries, List<Double> streetSeries) {
+        if (cageSeries == null || streetSeries == null
+                || cageSeries.size() != streetSeries.size()
+                || cageSeries.size() < MIN_SERIES_POINTS) {
+            return null;
+        }
+        int n = cageSeries.size();
+        int h = 140, padL = 12, padR = 92, padT = 10, padB = 12;
+        double plotW = W - padL - padR, plotH = h - padT - padB;
+        StringBuilder svg = open(h);
+        // The greed/fear halves as the lightest wash, labels muted inside.
+        svg.append("<rect x=\"").append(padL).append("\" y=\"").append(r1(padT))
+                .append("\" width=\"").append(r1(plotW)).append("\" height=\"")
+                .append(r1(plotH / 2.0)).append("\" fill=\"").append(POS)
+                .append("\" opacity=\"0.05\"/>");
+        svg.append("<rect x=\"").append(padL).append("\" y=\"").append(r1(padT + plotH / 2.0))
+                .append("\" width=\"").append(r1(plotW)).append("\" height=\"")
+                .append(r1(plotH / 2.0)).append("\" fill=\"").append(NEG)
+                .append("\" opacity=\"0.05\"/>");
+        text(svg, padL + 4, padT + 9, "start", 8, MUTE, de ? "Gier" : "greed", false);
+        text(svg, padL + 4, padT + plotH - 2, "start", 8, MUTE, de ? "Angst" : "fear", false);
+        line(svg, padL, padT + plotH / 2.0, padL + plotW, padT + plotH / 2.0, GRID, 1);
+        linePath(svg, streetSeries, padL, padT, plotW, plotH, 0, 100, S1);
+        linePath(svg, cageSeries, padL, padT, plotW, plotH, 0, 100, SUN);
+        // Today: both end markers, labels collision-spread.
+        double cageY = padT + (1 - cageSeries.getLast() / 100.0) * plotH;
+        double streetY = padT + (1 - streetSeries.getLast() / 100.0) * plotH;
+        double lastX = padL + plotW;
+        for (double[] end : new double[][]{{streetY, 0}, {cageY, 1}}) {
+            String tone = end[1] == 1 ? SUN : S1;
+            svg.append("<circle cx=\"").append(r1(lastX)).append("\" cy=\"").append(r1(end[0]))
+                    .append("\" r=\"4\" fill=\"").append(tone).append("\" stroke=\"")
+                    .append(SURFACE).append("\" stroke-width=\"2\"/>");
+        }
+        double cageLabelY = clampLabel(cageY + 4, padT, plotH);
+        double streetLabelY = clampLabel(streetY + 4, padT, plotH);
+        if (Math.abs(cageLabelY - streetLabelY) < 12) {
+            streetLabelY = cageLabelY + (streetY >= cageY ? 12 : -12);
+        }
+        text(svg, lastX + 8, cageLabelY, "start", 11, INK,
+                (de ? "Käfig " : "cage ") + fmt(cageSeries.getLast(), 0), true);
+        text(svg, lastX + 8, streetLabelY, "start", 11, MUTE,
+                "CNN " + fmt(streetSeries.getLast(), 0), false);
+        svg.append("</svg>");
+        return new ChartStat(SEC_PICTURE,
+                de ? "Käfig vs Wall Street (beide Barometer, letzte " + n + " Tage)"
+                        : "Cage vs Wall Street (both barometers, last " + n + " days)",
+                de ? "eigene Wire + CNN" : "own wire + CNN", svg.toString());
+    }
+
+    private static double clampLabel(double y, int padT, double plotH) {
+        return Math.max(padT + 8, Math.min(y, padT + plotH));
+    }
+
     // ---- 1c. most discussed (h-bars by mentions, tinted by day move) ---------
 
     private ChartStat mostDiscussedFigure(List<TickerStat> tickers) {

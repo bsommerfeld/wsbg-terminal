@@ -117,6 +117,38 @@ class SignalDeskTest {
         assertTrue(reading.isPresent());
         assertEquals("attention-entropy", reading.get().id());
         assertTrue(reading.get().interpretation().contains("ENTROPY COLLAPSE"));
+        // one measurable past day is far below the context floor
+        assertFalse(reading.get().interpretation().contains("Own-history context"));
+    }
+
+    @Test
+    void entropyGetsOwnHistoryPercentileWithEnoughMeasurableDays() {
+        LocalDate today = LocalDate.of(2026, 7, 16);
+        List<HeadlineRecord> archive = new ArrayList<>();
+        // 15 past days, each fragmented over four names (high entropy)
+        for (int back = 15; back >= 1; back--) {
+            for (String t : List.of("AAA", "BBB", "CCC", "DDD")) {
+                for (int i = 0; i < 3; i++) {
+                    archive.add(line("h" + back + t + i, "x", at(today.minusDays(back), 8 + i),
+                            t, null, List.of(new HeadlineSubject(t, t))));
+                }
+            }
+        }
+        // today: collapsed onto one name
+        for (int i = 0; i < 11; i++) {
+            archive.add(line("t" + i, "x", at(today, 8 + i % 8), "AAA", null,
+                    List.of(new HeadlineSubject("Alpha", "AAA"))));
+        }
+        archive.add(line("tb", "x", at(today, 9), "BBB", null,
+                List.of(new HeadlineSubject("Beta", "BBB"))));
+        Optional<SignalReading> reading = SignalDesk.attentionEntropy(archive, today, ZONE);
+        assertTrue(reading.isPresent());
+        String text = reading.get().interpretation();
+        assertTrue(text.contains("Own-history context"));
+        assertTrue(text.contains("15 measurable days"));
+        // today is more focused than every past day -> bottom percentile
+        assertTrue(text.contains("percentile 0") || text.contains("percentile 1")
+                || text.contains("percentile 2") || text.contains("percentile 3"));
     }
 
     @Test
@@ -139,6 +171,91 @@ class SignalDeskTest {
         assertTrue(reading.isPresent());
         assertEquals("sentiment-divergence", reading.get().id());
         assertTrue(reading.get().value() > 1.5, "cage greedy vs fearful street must diverge");
+        String text = reading.get().interpretation();
+        assertTrue(text.contains("Own-history context"));
+        assertTrue(text.contains("unusually greedy"), "top-of-record divergence reads greedy");
+    }
+
+    @Test
+    void entropySeriesIsChronologicalAndSkipsThinDays() {
+        LocalDate today = LocalDate.of(2026, 7, 16);
+        List<HeadlineRecord> archive = new ArrayList<>();
+        // 5 fragmented days, then a thin day (2 mentions - below the floor), then today collapsed
+        for (int back = 6; back >= 2; back--) {
+            for (String t : List.of("AAA", "BBB", "CCC", "DDD")) {
+                for (int i = 0; i < 3; i++) {
+                    archive.add(line("h" + back + t + i, "x", at(today.minusDays(back), 8 + i),
+                            t, null, List.of(new HeadlineSubject(t, t))));
+                }
+            }
+        }
+        archive.add(line("thin", "x", at(today.minusDays(1), 9), "AAA", null,
+                List.of(new HeadlineSubject("Alpha", "AAA"))));
+        for (int i = 0; i < 10; i++) {
+            archive.add(line("t" + i, "x", at(today, 8 + i % 8), "AAA", null,
+                    List.of(new HeadlineSubject("Alpha", "AAA"))));
+        }
+        archive.add(line("tb", "x", at(today, 9), "BBB", null,
+                List.of(new HeadlineSubject("Beta", "BBB"))));
+        List<Double> series = SignalDesk.entropySeries(archive, today, ZONE, 60);
+        assertEquals(6, series.size(), "5 measurable past days + today, thin day skipped");
+        assertTrue(series.get(0) > 0.9, "fragmented day reads high");
+        assertTrue(series.get(series.size() - 1) < 0.5, "today's collapse reads low");
+    }
+
+    @Test
+    void divergenceSeriesPairsCageWithStreetPerDay() {
+        LocalDate today = LocalDate.of(2026, 7, 16);
+        List<HeadlineRecord> archive = new ArrayList<>();
+        Map<String, Double> fg = new HashMap<>();
+        for (int back = 12; back >= 1; back--) {
+            LocalDate day = today.minusDays(back);
+            archive.add(line("b" + back, "x", at(day, 9), "AAA",
+                    HeadlineSentiment.BULLISH, List.of()));
+            archive.add(line("b2" + back, "x", at(day, 10), "BBB",
+                    back == 1 ? HeadlineSentiment.BULLISH : HeadlineSentiment.BEARISH, List.of()));
+            fg.put(day.toString(), back == 1 ? 20.0 : 50.0);
+        }
+        List<Double> series = SignalDesk.divergenceSeries(archive, fg, today, ZONE);
+        assertEquals(12, series.size());
+        assertTrue(Math.abs(series.get(0)) < 10,
+                "balanced day vs neutral street stays near zero, was " + series.get(0));
+        assertTrue(series.get(series.size() - 1) > 30,
+                "record-bull day vs fearful street diverges wide, was "
+                        + series.get(series.size() - 1));
+    }
+
+    @Test
+    void cageMoodIndexReadsARecordHotDayAsGreed() {
+        LocalDate today = LocalDate.of(2026, 7, 16);
+        List<HeadlineRecord> archive = new ArrayList<>();
+        for (int back = 12; back >= 1; back--) {
+            LocalDate day = today.minusDays(back);
+            archive.add(line("b" + back, "x", at(day, 9), "AAA",
+                    HeadlineSentiment.BULLISH, List.of()));
+            archive.add(line("s" + back, "x", at(day, 10), "BBB",
+                    HeadlineSentiment.BEARISH, List.of()));
+        }
+        // today: all-bull with FOMO heat - the cage's hottest day on record
+        for (int i = 0; i < 4; i++) {
+            archive.add(line("t" + i, "x", at(today, 9 + i), "AAA",
+                    HeadlineSentiment.BULLISH, List.of()));
+        }
+        archive.add(line("tf1", "x", at(today, 13), "AAA", HeadlineSentiment.FOMO, List.of()));
+        archive.add(line("tf2", "x", at(today, 14), "AAA", HeadlineSentiment.SQUEEZE, List.of()));
+        Optional<SignalReading> reading = SignalDesk.cageMoodIndex(archive, today, ZONE);
+        assertTrue(reading.isPresent());
+        assertEquals("cage-mood-index", reading.get().id());
+        assertTrue(reading.get().value() > 75, "record day must score high, was "
+                + reading.get().value());
+        assertTrue(reading.get().interpretation().contains("EXTREME GREED"));
+        assertTrue(reading.get().interpretation().contains("direction"),
+                "component breakdown named");
+
+        // The series twin agrees with the live reading on today's point.
+        Map<LocalDate, Double> byDay = SignalDesk.cageIndexByDay(archive, today, ZONE);
+        assertEquals(reading.get().value(), byDay.get(today), 1e-9,
+                "shared kernel formula: series and reading can never disagree");
     }
 
     @Test

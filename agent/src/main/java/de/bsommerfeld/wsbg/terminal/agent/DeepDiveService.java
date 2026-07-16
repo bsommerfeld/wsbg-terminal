@@ -149,6 +149,8 @@ public class DeepDiveService {
     private static final int MAX_ACTION_TABLE_ROWS = 8;
     /** First-party IR-archive entries kept (reports, calls, calendar). */
     private static final int MAX_IR_ENTRIES = 12;
+    /** The thesis' machine ceiling - its 400-900 prompt contract plus slack. */
+    private static final int THESIS_MAX_CHARS = 1000;
     /** Past calendar years the press-history leg sweeps (one window each). */
     private static final int PRESS_HISTORY_YEARS = 3;
     /** Headlines kept per history year - an arc marker, never a second firehose. */
@@ -743,6 +745,10 @@ public class DeepDiveService {
         }
 
         eventBus.post(new DeepDiveProgressEvent(subject, "these"));
+        // The thesis' length contract (400-900) lived only in its prompt - with
+        // full-section input the editor provably overflows it (live 2026-07-16:
+        // an 8-paragraph thesis opening with a copied profile). One condense
+        // call, then the house scissors, both loud.
         bodies[SEC_THESIS] = writeSection(model, new Prompts(prompts.these(), prompts.these(),
                         prompts.revise(), prompts.challenge(), prompts.weave(), prompts.polish(),
                         prompts.arbiter(), prompts.samestory(), prompts.consistency(),
@@ -752,7 +758,23 @@ public class DeepDiveService {
                 headings.get(SEC_THESIS), new Shelf(thesisMaterial(headings, bodies, m), List.of()),
                 de, (SEC_THESIS + 1) + "/" + SECTION_COUNT + " · " + headings.get(SEC_THESIS),
                 dropWords, m, false);
-        if (bodies[SEC_THESIS] != null) written++;
+        if (bodies[SEC_THESIS] != null) {
+            written++;
+            String thesis = bodies[SEC_THESIS].strip();
+            if (thesis.length() > THESIS_MAX_CHARS) {
+                String condensed = condense(model, prompts, header,
+                        headings.get(SEC_THESIS), thesis);
+                if (!isBlank(condensed) && condensed.strip().length() < thesis.length()) {
+                    thesis = condensed.strip();
+                }
+                if (thesis.length() > THESIS_MAX_CHARS) {
+                    LOG.warn("[DEEPDIVE] '{}' thesis over its contract ({} chars) - house cut.",
+                            subject, thesis.length());
+                    thesis = DeepDiveFactCheck.cutToLength(thesis, THESIS_MAX_CHARS);
+                }
+                bodies[SEC_THESIS] = thesis;
+            }
+        }
 
         // -- the RECLAIM pass (user design 2026-07-16): the report stands -
         // re-judge the triage-discarded articles against ITS picture. An
@@ -987,24 +1009,20 @@ public class DeepDiveService {
                 journalNotes(subject, group.stream().map(DeepDiveService::firstLine).toList());
                 continue;
             }
-            // COVERAGE SHORT-CUT (2026-07-16, the tempo zoom-out): the
-            // chronicle-seeded author integrates most of the picture up
-            // front, so most steps only CONFIRM the standing text. A tiny
-            // coverage judge decides per story; a covered story contributes
-            // its MARKERS to its most similar paragraph mechanically (the
-            // substance stands, the citation must too - the old UNCHANGED
-            // pass-case silently dropped it) and skips the full weave call
-            // with its exams. AI-first: skipping is the judge's call, a
-            // whiff falls open into the normal weave.
-            if (rawFed && storyCovered(arbiter, prompts.covered(), body, block)) {
-                String withMarkers = attachMarkers(body, block);
-                if (!withMarkers.equals(body)) {
-                    body = withMarkers;
-                    journalDiff(subject, shown, body);
-                    shown = body;
-                }
-                journalNotes(subject, List.of((de ? "Gedeckt durch den stehenden Text: "
-                        : "Covered by the standing text: ") + firstLine(block)));
+            // MATERIALITY SHORT-CUT (user decision 2026-07-16): the length
+            // contract already forces the section to carry only the load-
+            // bearing ~20 statements - weaving all 70+ stories pays the full
+            // call for substance the fold then discards anyway. A tiny judge
+            // asks the honest early question instead: would this story CHANGE
+            // the section's read? Immaterial stories are skipped WITHOUT a
+            // text citation (no fake markers) and listed in the register
+            // under their own sighted-only label - read, chronicled, visible,
+            // just not load-bearing. Doubt or whiff = material = full weave.
+            if (rawFed && !storyMaterial(arbiter, prompts.covered(), body, block)) {
+                m.sightedOnly.addAll(markersIn(block));
+                journalNotes(subject, List.of((de
+                        ? "Gesichtet, ändert die Lesart nicht: "
+                        : "Sighted, does not change the read: ") + firstLine(block)));
                 wovenBlocks.add(block);
                 coveredSteps++;
                 continue;
@@ -1063,8 +1081,8 @@ public class DeepDiveService {
             shown = body;
         }
         if (coveredSteps > 0) {
-            LOG.info("[DEEPDIVE] '{}' section '{}': coverage short-cut took {} of {} story "
-                    + "step(s) - markers attached, weave calls saved.",
+            LOG.info("[DEEPDIVE] '{}' section '{}': materiality short-cut skipped {} of {} "
+                    + "story step(s) - sighted-only, weave calls saved.",
                     subject, heading, coveredSteps, total);
         }
 
@@ -1614,21 +1632,23 @@ public class DeepDiveService {
      * and a whiff answers false so the story weaves normally (fail-open,
      * nothing is ever lost to a broken call).
      */
-    private boolean storyCovered(ChatModel judge, String prompt, String body, String block) {
+    private boolean storyMaterial(ChatModel judge, String prompt, String body, String block) {
         try {
             String reply = chatGateway.chat(judge, prompt,
                     "STANDING TEXT:\n" + body + "\n\nSTORY:\n" + block);
-            if (reply == null) return false;
-            Matcher m = COVERED_VERDICT.matcher(reply);
-            return m.find() && Boolean.parseBoolean(m.group(1));
+            if (reply == null) return true;
+            Matcher m = MATERIAL_VERDICT.matcher(reply);
+            // Fail-open: no parseable verdict means the story weaves normally
+            // - a whiffed judge must never cost substance.
+            return !m.find() || Boolean.parseBoolean(m.group(1));
         } catch (Exception e) {
-            LOG.debug("[DEEPDIVE] coverage judge whiffed: {}", e.getMessage());
-            return false;
+            LOG.debug("[DEEPDIVE] materiality judge whiffed: {}", e.getMessage());
+            return true;
         }
     }
 
-    private static final Pattern COVERED_VERDICT =
-            Pattern.compile("\"covered\"\\s*:\\s*(true|false)");
+    private static final Pattern MATERIAL_VERDICT =
+            Pattern.compile("\"material\"\\s*:\\s*(true|false)");
 
     /**
      * Attaches a covered story's markers to the paragraph most similar to it
@@ -2974,6 +2994,11 @@ public class DeepDiveService {
         /** Triage-discarded articles - kept for the RECLAIM pass (re-judged
          * against the STANDING report, where a window may have opened). */
         List<RawNewsItem> newsDiscarded = List.of();
+        /** Markers of stories judged IMMATERIAL at the weave (sighted, read,
+         * chronicled - but they would not change the section's read; listed
+         * honestly in the register under their own label, never as fake
+         * in-text citations). */
+        Set<Integer> sightedOnly = java.util.Collections.synchronizedSet(new java.util.TreeSet<>());
         /** The figure layer, built BEFORE the prose (pure function of the legs). */
         List<DeepDiveRecord.ChartFigure> charts = List.of();
         /**
@@ -5831,6 +5856,21 @@ public class DeepDiveService {
     static String assemble(List<String> headings, String[] bodies, boolean de) {
         Set<String> seenParagraphs = new HashSet<>();
         Set<String> seenSentences = new HashSet<>();
+        // Every non-thesis paragraph/sentence, pre-scanned: the thesis is
+        // deduped against the BODY regardless of assembly order.
+        Set<String> bodyParagraphNorms = new HashSet<>();
+        Set<String> bodySentenceNorms = new HashSet<>();
+        for (int i = 0; i < bodies.length; i++) {
+            if (i == SEC_THESIS || bodies[i] == null) continue;
+            for (String rawPara : bodies[i].strip().split("\n\\s*\n")) {
+                String para = rawPara.strip();
+                if (para.isEmpty()) continue;
+                bodyParagraphNorms.add(para.replaceAll("\\s+", " "));
+                for (String sentence : DeepDiveFactCheck.sentences(para)) {
+                    bodySentenceNorms.add(sentence.strip().replaceAll("\\s+", " "));
+                }
+            }
+        }
         StringBuilder sb = new StringBuilder(8192);
         for (int i = 0; i < SECTION_COUNT; i++) {
             String body = bodies[i];
@@ -5855,11 +5895,22 @@ public class DeepDiveService {
             for (Integer n : sectionMarkers) sb.append(" [").append(n).append(']');
             sb.append('\n').append('\n');
             boolean thesis = i == SEC_THESIS;
+            // The thesis reads the FULL sections now (2026-07-16) - a copied
+            // paragraph must die in the THESIS, never in the body it was
+            // copied from. bodyNorms is pre-scanned from every non-thesis
+            // section, so the check is order-independent.
             for (String rawPara : body.strip().split("\n\\s*\n")) {
                 String para = rawPara.strip();
                 if (para.isEmpty()) continue;
+                // A paragraph that is ONLY markers/punctuation collapses to a
+                // lone comma after the marker lift (live 2026-07-16: ',' rows
+                // between sections) - it carries nothing, it dies here.
+                if (para.replaceAll("\\[\\d{1,3}]", "")
+                        .replaceAll("[ \\t.,;:–—-]+", "").isEmpty()) {
+                    continue;
+                }
                 String norm = para.replaceAll("\\s+", " ");
-                if (!seenParagraphs.add(norm)) {
+                if (thesis ? bodyParagraphNorms.contains(norm) : !seenParagraphs.add(norm)) {
                     LOG.info("[DEEPDIVE] assembly dropped a cross-section duplicate paragraph.");
                     continue;
                 }
@@ -5870,7 +5921,7 @@ public class DeepDiveService {
                 if (isTableBlock(para)) {
                     StringBuilder table = new StringBuilder(para.length());
                     for (String row : para.split("\n")) {
-                        String cleanRow = row.strip().replaceAll(" ?\\[\\d{1,2}]", "");
+                        String cleanRow = row.strip().replaceAll(" ?\\[\\d{1,3}]", "");
                         if (!cleanRow.isEmpty()) table.append(cleanRow).append('\n');
                     }
                     sb.append(table).append('\n');
@@ -5879,8 +5930,12 @@ public class DeepDiveService {
                 StringBuilder kept = new StringBuilder(para.length());
                 for (String sentence : DeepDiveFactCheck.sentences(para)) {
                     String sNorm = sentence.strip().replaceAll("\\s+", " ");
-                    if (!thesis && sNorm.length() >= CROSS_SECTION_SENTENCE_CHARS
-                            && !seenSentences.add(sNorm)) {
+                    boolean duplicate = thesis
+                            ? sNorm.length() >= CROSS_SECTION_SENTENCE_CHARS
+                                    && bodySentenceNorms.contains(sNorm)
+                            : sNorm.length() >= CROSS_SECTION_SENTENCE_CHARS
+                                    && !seenSentences.add(sNorm);
+                    if (duplicate) {
                         LOG.info("[DEEPDIVE] assembly dropped a cross-section duplicate sentence.");
                         continue;
                     }
@@ -5891,7 +5946,7 @@ public class DeepDiveService {
                 // Lift the in-prose markers — they now live on the heading.
                 // Punctuation splice residue (",." after a weave cut) tidied
                 // deterministically — live: 'bei,.' survived every pass.
-                String clean = kept.toString().replaceAll(" ?\\[\\d{1,2}]", "")
+                String clean = kept.toString().replaceAll(" ?\\[\\d{1,3}]", "")
                         .replaceAll(" +([.,;:!?])", "$1").replaceAll("[ \\t]{2,}", " ")
                         .replaceAll(",+\\s*\\.", ".").replaceAll(",{2,}", ",");
                 if (clean.isBlank()) continue;
@@ -6139,7 +6194,7 @@ public class DeepDiveService {
         return -1;
     }
 
-    private static final Pattern MARKER_NUM = Pattern.compile("\\[(\\d{1,2})]");
+    private static final Pattern MARKER_NUM = Pattern.compile("\\[(\\d{1,3})]");
 
     /** Every {@code [n]} source marker a text carries. */
     static Set<Integer> markersIn(String text) {
@@ -6156,7 +6211,7 @@ public class DeepDiveService {
      */
     static String scrubUnknownSourceMarkers(String report, java.util.Set<Integer> valid) {
         if (report == null || report.isEmpty()) return report;
-        Matcher mt = Pattern.compile(" ?\\[(\\d{1,2})]").matcher(report);
+        Matcher mt = Pattern.compile(" ?\\[(\\d{1,3})]").matcher(report);
         StringBuilder out = new StringBuilder(report.length());
         while (mt.find()) {
             boolean known = valid.contains(Integer.parseInt(mt.group(1)));
@@ -6188,12 +6243,31 @@ public class DeepDiveService {
         StringBuilder sb = new StringBuilder(512);
         sb.append("## ").append(de ? "Quellen" : "Sources").append('\n');
         for (Map.Entry<String, Integer> e : nums.entrySet()) {
+            boolean sightedOnly = e.getKey().startsWith("news:")
+                    && m.sightedOnly.contains(e.getValue())
+                    && (cited == null || !cited.contains(e.getValue()));
+            if (sightedOnly) continue; // listed below under their own label
             if (cited != null && e.getKey().startsWith("news:")
                     && !cited.contains(e.getValue())) {
                 continue;
             }
             sb.append("- [").append(e.getValue()).append("] ")
                     .append(sourceLabel(m, e.getKey(), de)).append('\n');
+        }
+        // The sighted-only sources: read and chronicled, judged not to change
+        // the section's read - listed honestly under their own label, never
+        // as fake in-text citations and never silently dropped.
+        StringBuilder sighted = new StringBuilder();
+        for (Map.Entry<String, Integer> e : nums.entrySet()) {
+            if (!e.getKey().startsWith("news:")) continue;
+            if (!m.sightedOnly.contains(e.getValue())) continue;
+            if (cited != null && cited.contains(e.getValue())) continue;
+            sighted.append("- [").append(e.getValue()).append("] ")
+                    .append(sourceLabel(m, e.getKey(), de)).append('\n');
+        }
+        if (sighted.length() > 0) {
+            sb.append(de ? "Gesichtet, ohne eigenständigen Beitrag zur Lesart:\n"
+                    : "Sighted, no standalone contribution to the read:\n").append(sighted);
         }
         return sb.toString();
     }

@@ -65,13 +65,17 @@ public class TelegramChannelClient implements NewsSource {
     private static final Logger LOG = LoggerFactory.getLogger(TelegramChannelClient.class);
 
     /**
-     * Publisher push channels as the starting set — finanzen.net's headline
-     * blaster, GodmodeTrader's analysis wire and the MarketTwits macro feed.
+     * Publisher push channels as the starting set, re-probed live 2026-07-16
+     * across ~35 finance candidates (most have the preview opted out):
+     * finanzen.net's headline blaster (DE, minutes-fresh), the MarketTwits
+     * macro feed, WalterBloomberg (the DeItaone market wire mirror,
+     * minutes-fresh) and Watcher.Guru (breaking markets/crypto).
+     * GodmodeTrader was dropped — its channel went silent in 2022.
      * A curated START list is wiring, not editorial curation: the set is
      * injectable via the channel-list constructor for tests and expansion.
      */
     static final List<String> DEFAULT_CHANNELS =
-            List.of("finanzen_net", "godmodetrader", "markettwits");
+            List.of("finanzen_net", "markettwits", "WalterBloomberg", "watcherguru");
 
     private static final String PREVIEW_URL = "https://t.me/s/";
     private static final Duration CACHE_TTL = Duration.ofMinutes(5);

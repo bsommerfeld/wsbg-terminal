@@ -102,6 +102,22 @@ final class NewsSourceModule extends AbstractModule {
         // body (keyless, no wall; probed 2026-07-16).
         newsSources.addBinding().to(
                 de.bsommerfeld.wsbg.terminal.lemmy.LemmyClient.class);
+        // Stocktwits: the one social venue with a MACHINE-READABLE mood label
+        // (users tag their posts Bullish/Bearish). Keyless but Cloudflare-
+        // walled — rides the standard BROWSER-FIRST chain (the hidden CEF tab
+        // solves the challenge during warmup; probed 2026-07-16). Symbol-only,
+        // US shapes only (an exchange suffix is never cut).
+        newsSources.addBinding().to(
+                de.bsommerfeld.wsbg.terminal.stocktwits.StocktwitsClient.class);
+        // Yahoo Conversations (OpenWeb): the per-ticker comment board — one
+        // stable board per instrument incl. the German venue listings
+        // (SAP.DE/RHM.DE), covering what Stocktwits' US-only gate skips. Two
+        // steps: board id from the quote page (browser-first), conversation
+        // via the @OpenWebConversations handshake fetcher (page-context POSTs
+        // in a hidden tab; plain HTTP 403s — probed 2026-07-16). Shape caveat:
+        // the conversation JSON re-pins against the first live answer.
+        newsSources.addBinding().to(
+                de.bsommerfeld.wsbg.terminal.yahooconversations.YahooConversationsClient.class);
         // 4chan /biz/: raw US retail sentiment (the closest cultural relative
         // to WSB — /smg/ and the ticker generals) via the official read-only
         // JSON API, ONE catalog fetch per 5-min TTL (the 1-req/s API rule is
@@ -115,6 +131,27 @@ final class NewsSourceModule extends AbstractModule {
         // digester reads. No ticker/ISIN tagging, so only newsForName answers.
         newsSources.addBinding().to(
                 de.bsommerfeld.wsbg.terminal.prnewswire.PrNewswireUkClient.class);
+        // Reuters: the flagship global newswire via its Arc news-sitemap —
+        // the ONE keyless door left (classic RSS is dead, articles are
+        // bot-walled; probed 2026-07-16). Name-addressed firehose pool over
+        // the freshest ~50 headlines; no teaser, the headline is the value.
+        newsSources.addBinding().to(
+                de.bsommerfeld.wsbg.terminal.reuters.ReutersNewsClient.class);
+        // Bloomberg: the flagship US newswire via the keyless vertical RSS
+        // feeds (markets/economics/technology/politics/wealth; probed
+        // 2026-07-16). Name-addressed against title AND teaser — headlines
+        // abbreviate ("Citi"), the teaser prints the legal name ("Citigroup").
+        newsSources.addBinding().to(
+                de.bsommerfeld.wsbg.terminal.bloomberg.BloombergNewsClient.class);
+        // Benzinga newsdesk (/news + /markets category feeds + the
+        // "Why Is It Moving?" topic feed with its small-cap mover
+        // explanations, NOT the evergreen /feed money-blog; probed
+        // 2026-07-16): the fast US retail-facing wire with MACHINE-READABLE
+        // ticker tags in the article HTML (data-ticker + /quote anchors) —
+        // so it answers the symbol fan by exact tag match besides the name
+        // fan.
+        newsSources.addBinding().to(
+                de.bsommerfeld.wsbg.terminal.benzinga.BenzingaNewsClient.class);
         // (StockTitan was removed 2026-07-14 — its per-ticker RSS rate-limits
         // so aggressively that the wire's per-unit fan 429-locked the host
         // permanently; user verdict "useless". Recover from git history.)

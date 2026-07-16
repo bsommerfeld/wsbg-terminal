@@ -228,6 +228,39 @@ class WeatherChartsTest {
                 .build(bare, List.of(), ZoneOffset.UTC, List.of(55)).isEmpty());
     }
 
+    @Test
+    void signalSeriesFiguresRenderFromArchiveDerivedHistory() {
+        List<Double> entropy = new java.util.ArrayList<>();
+        for (int i = 0; i < 14; i++) entropy.add(0.85);
+        entropy.add(0.31); // today: collapsed
+        List<Double> cage = new java.util.ArrayList<>();
+        List<Double> street = new java.util.ArrayList<>();
+        for (int i = 0; i < 11; i++) {
+            cage.add(50.0);
+            street.add(50.0);
+        }
+        cage.add(80.0);  // today: cage far greedier...
+        street.add(20.0); // ...than the fearful street
+        List<ChartStat> charts = new WeatherCharts("de")
+                .signalSeriesFigures(entropy, cage, street);
+        assertEquals(2, charts.size());
+        ChartStat entropyFig = figure(charts, "Aufmerksamkeits-Entropie");
+        assertEquals(0, entropyFig.section());
+        assertTrue(entropyFig.title().contains("15 messbare Tage"), entropyFig.title());
+        assertTrue(entropyFig.svg().contains("heute 0,31"), "today direct-labeled (de decimal)");
+        assertTrue(entropyFig.svg().contains("fokussiert"), "reading bands labeled");
+        ChartStat both = figure(charts, "beide Barometer");
+        assertEquals(0, both.section());
+        assertTrue(both.svg().contains("Käfig 80"), "cage barometer direct-labeled");
+        assertTrue(both.svg().contains("CNN 20"), "street barometer direct-labeled");
+        assertTrue(both.svg().contains("Gier") && both.svg().contains("Angst"),
+                "greed/fear halves labeled");
+        // Below the point floor no series is drawn - a two-point trend is noise.
+        assertTrue(new WeatherCharts("de")
+                .signalSeriesFigures(List.of(0.5, 0.6), List.of(1.0, 2.0), List.of(3.0, 4.0))
+                .isEmpty());
+    }
+
     private static ChartStat figure(List<ChartStat> charts, String titlePart) {
         return charts.stream().filter(c -> c.title().contains(titlePart)).findFirst()
                 .orElseThrow(() -> new AssertionError("missing figure: " + titlePart

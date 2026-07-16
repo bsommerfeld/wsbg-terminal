@@ -101,7 +101,7 @@ final class DeepDiveFactCheck {
             "(Dieser Abschnitt folgt",
     };
 
-    private static final Pattern MARKER = Pattern.compile("\\[(\\d{1,2})]");
+    private static final Pattern MARKER = Pattern.compile("\\[(\\d{1,3})]");
     /**
      * Number tokens: space-grouped ("36 800 000") or separator-decimal — a
      * separator counts only when a digit follows DIRECTLY, so two numbers
@@ -111,7 +111,7 @@ final class DeepDiveFactCheck {
     private static final Pattern NUMBER = Pattern.compile(
             "[+\\-−]?\\d{1,3}(?:[  ]\\d{3})+(?:[.,]\\d+)?|[+\\-−]?\\d+(?:[.,]\\d+)*");
     /** Bracket content that is NOT a plain source marker — prose carries no other brackets. */
-    private static final Pattern NON_MARKER_BRACKET = Pattern.compile("\\[(?!\\d{1,2}])[^\\]\\n]+]");
+    private static final Pattern NON_MARKER_BRACKET = Pattern.compile("\\[(?!\\d{1,3}])[^\\]\\n]+]");
     /** Dotted numeric date (13.07.2026). */
     private static final Pattern DOTTED_DATE = Pattern.compile("\\b(\\d{1,2})\\.(\\d{1,2})\\.(\\d{4})\\b");
     /** ISO date in the material (2026-07-24). */
@@ -390,7 +390,7 @@ final class DeepDiveFactCheck {
                 if (para.isEmpty()) continue;
             }
             // Trailing source markers are legitimate after the closing punctuation.
-            String stripped = para.replaceAll("(\\s*\\[\\d{1,2}])+\\s*$", "").stripTrailing();
+            String stripped = para.replaceAll("(\\s*\\[\\d{1,3}])+\\s*$", "").stripTrailing();
             if (stripped.isEmpty()) continue;
             char last = stripped.charAt(stripped.length() - 1);
             if (last != '.' && last != '!' && last != '?' && last != '…'
@@ -991,13 +991,13 @@ final class DeepDiveFactCheck {
             Pattern.compile("\\[\\d{4}-\\d{2}-\\d{2}[^\\]\\n]*]");
     /** Line head: optional dash/bullet, then any run of [n] markers. */
     private static final Pattern LIST_LINE_HEAD =
-            Pattern.compile("^(?:[-–—•]\\s+)?(?:\\[\\d{1,2}]\\s*)*");
+            Pattern.compile("^(?:[-–—•]\\s+)?(?:\\[\\d{1,3}]\\s*)*");
     /** The doubled-identical-marker echo head ("[17] [17] Titel."). */
     private static final Pattern DOUBLED_MARKER_HEAD =
-            Pattern.compile("^(?:[-–—•]\\s+)?\\[(\\d{1,2})]\\s*\\[(\\d{1,2})]");
+            Pattern.compile("^(?:[-–—•]\\s+)?\\[(\\d{1,3})]\\s*\\[(\\d{1,3})]");
     /** Sentence-leading [n] markers — markers belong at sentence/paragraph ENDS. */
     private static final Pattern LEADING_MARKERS =
-            Pattern.compile("^(?:\\s*\\[\\d{1,2}])+\\s*");
+            Pattern.compile("^(?:\\s*\\[\\d{1,3}])+\\s*");
 
     /**
      * Deterministic belt against RAW SOURCE-LIST lines copied into a body
@@ -1056,7 +1056,7 @@ final class DeepDiveFactCheck {
         // A "· Publisher" tail (trailing markers tolerated) that does not end
         // like a sentence — the list line's title/publisher form.
         if (s.contains(" · ")) {
-            String tail = s.replaceAll("(\\s*\\[\\d{1,2}])+\\s*$", "").stripTrailing();
+            String tail = s.replaceAll("(\\s*\\[\\d{1,3}])+\\s*$", "").stripTrailing();
             if (!tail.isEmpty()) {
                 char last = tail.charAt(tail.length() - 1);
                 if (last != '.' && last != '!' && last != '?' && last != '…') return true;

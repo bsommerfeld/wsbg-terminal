@@ -37,7 +37,12 @@
         <module>comdirect</module>
         <module>lemmy</module>
         <module>fourchan</module>
+        <module>stocktwits</module>
+        <module>yahoo-conversations</module>
         <module>prnewswire</module>
+        <module>reuters</module>
+        <module>bloomberg</module>
+        <module>benzinga</module>
         <module>fool</module>
         <module>fn-news</module>
         <module>websearch</module>
@@ -221,7 +226,32 @@
             </dependency>
             <dependency>
                 <groupId>de.bsommerfeld</groupId>
+                <artifactId>stocktwits</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>yahoo-conversations</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
                 <artifactId>prnewswire</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>reuters</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>bloomberg</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>benzinga</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

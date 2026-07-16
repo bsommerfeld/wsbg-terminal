@@ -170,6 +170,19 @@ public final class CefFetchClient {
      *                   not arrive within {@code timeout}
      */
     public HttpResult fetch(String url, Duration timeout) throws Exception {
+        return fetch(url, "GET", null, null, timeout);
+    }
+
+    /**
+     * Full request form (2026-07-16, the OpenWeb leg): arbitrary method,
+     * request headers and an optional string body, run as the page's own
+     * {@code fetch()} — cross-origin calls carry the page's Origin and pass
+     * the target's CORS exactly like the site's own widget XHRs. The classic
+     * {@link #fetch(String, Duration)} delegates here with GET/no-extras and
+     * behaves byte-identically to before.
+     */
+    public HttpResult fetch(String url, String method, Map<String, String> headers,
+            String body, Duration timeout) throws Exception {
         // Hard rule: never fetch FROM the EDT. The whole JCEF pump (page loads,
         // injected JS, router replies) rides EDT cycles — a blocked EDT can't
         // pump the work that would complete this future: deadlock-until-timeout.
@@ -179,7 +192,7 @@ public final class CefFetchClient {
         }
         // Fail fast on a known-dead anchor instead of stalling every caller 45 s.
         ensureReady(warmupExhaustedAt != 0 ? READY_WAIT_EXHAUSTED : READY_WAIT);
-        HttpResult result = rawFetch(url, timeout);
+        HttpResult result = rawFetch(url, method, headers, body, timeout);
         // A restricted status mid-session usually means the document's session
         // went stale; reload the anchor so the next request runs against a fresh
         // page. This request still returns that status (the scraper records it),
@@ -256,12 +269,20 @@ public final class CefFetchClient {
      * exist and a page to be loaded; callers ensure that.
      */
     private HttpResult rawFetch(String url, Duration timeout) throws Exception {
+        return rawFetch(url, "GET", null, null, timeout);
+    }
+
+    private HttpResult rawFetch(String url, String method, Map<String, String> headers,
+            String body, Duration timeout) throws Exception {
         long id = nextId.incrementAndGet();
         Pending p = new Pending();
         pending.put(id, p);
         try {
-            browser.executeJavaScript(
-                    FetchWireProtocol.buildScript(clientTag, credentials, id, url), anchorUrl, 0);
+            String script = headers == null && body == null && "GET".equals(method)
+                    ? FetchWireProtocol.buildScript(clientTag, credentials, id, url)
+                    : FetchWireProtocol.buildScript(clientTag, credentials, id, url,
+                            method, headers, body);
+            browser.executeJavaScript(script, anchorUrl, 0);
             return p.future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
         } finally {
             pending.remove(id);

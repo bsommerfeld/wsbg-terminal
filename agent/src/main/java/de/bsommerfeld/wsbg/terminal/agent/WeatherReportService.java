@@ -305,8 +305,31 @@ public class WeatherReportService {
             // a whiffed chart build never blocks the edition.
             List<WeatherReportRecord.ChartStat> charts = List.of();
             try {
-                charts = new WeatherCharts(brain.getUserLanguage().code())
-                        .build(stats, headlines, zone, fearGreedSeries(today));
+                WeatherCharts chartBuilder = new WeatherCharts(brain.getUserLanguage().code());
+                List<WeatherReportRecord.ChartStat> built = new java.util.ArrayList<>(
+                        chartBuilder.build(stats, headlines, zone, fearGreedSeries(today)));
+                // The quant-signal series: recomputed from the permanent
+                // archives with the SAME formulas as the material lines, so
+                // the curve exists from day one (no waiting for editions to
+                // accumulate) and can never disagree with the reading.
+                try {
+                    List<HeadlineRecord> recent =
+                            headlineArchive.recent(java.time.Duration.ofDays(61));
+                    List<double[]> pairs = SignalDesk.cageStreetPairs(recent,
+                            fearGreedByDate(today), today, zone);
+                    List<Double> cageSeries = new java.util.ArrayList<>(pairs.size());
+                    List<Double> streetSeries = new java.util.ArrayList<>(pairs.size());
+                    for (double[] pair : pairs) {
+                        cageSeries.add(pair[0]);
+                        streetSeries.add(pair[1]);
+                    }
+                    built.addAll(chartBuilder.signalSeriesFigures(
+                            SignalDesk.entropySeries(recent, today, zone, 60),
+                            cageSeries, streetSeries));
+                } catch (Exception e) {
+                    LOG.debug("[WEATHER] signal-series figures failed: {}", e.getMessage());
+                }
+                charts = built;
             } catch (Exception e) {
                 LOG.warn("Wetterbericht chart build failed: {}", e.getMessage());
             }

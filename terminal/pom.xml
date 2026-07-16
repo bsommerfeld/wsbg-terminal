@@ -119,7 +119,27 @@
         </dependency>
         <dependency>
             <groupId>de.bsommerfeld</groupId>
+            <artifactId>stocktwits</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>yahoo-conversations</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
             <artifactId>prnewswire</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>reuters</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>bloomberg</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>benzinga</artifactId>
         </dependency>
         <dependency>
             <groupId>de.bsommerfeld</groupId>

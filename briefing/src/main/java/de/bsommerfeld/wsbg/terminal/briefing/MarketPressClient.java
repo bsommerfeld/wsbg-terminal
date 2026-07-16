@@ -34,9 +34,13 @@ import java.util.Set;
  * current lastBuildDate, probed 2026-07-14 — and deliberately absent), WSJ
  * Markets (headlines keyless, articles paywalled — the title is the value),
  * Investing.com stock-market news (Reuters syndication; zone-less pubDates,
- * handled by {@link Rss#parseDate}), and the German desk: n-tv Wirtschaft,
- * Spiegel Wirtschaft, Handelsblatt and WiWo Schlagzeilen (both 301 onto their
- * feeds.cms.* hosts — the transport follows).
+ * handled by {@link Rss#parseDate}), the flagship wires (probed 2026-07-16):
+ * Bloomberg Markets/Economics vertical RSS, Reuters via its Arc news-sitemap
+ * (the one keyless door — classic RSS is dead; parsed by {@link NewsSitemap},
+ * the desk read from the article URL's path), FT international homepage RSS,
+ * and the German desk: n-tv Wirtschaft, Spiegel Wirtschaft, Handelsblatt and
+ * WiWo Schlagzeilen (both 301 onto their feeds.cms.* hosts — the transport
+ * follows).
  *
  * <p>Whole-sweep politeness cache (10 min); an outage keeps the stale pool.
  * Items carry the FEED's category tag (US_MARKETS/US_ECONOMY/US_TECH/DE) so
@@ -72,6 +76,16 @@ public class MarketPressClient {
                     "https://feeds.content.dowjones.io/public/rss/RSSMarketsMain"),
             new Feed("Investing.com", "US_MARKETS",
                     "https://www.investing.com/rss/news_25.rss"),
+            new Feed("Bloomberg", "US_MARKETS",
+                    "https://feeds.bloomberg.com/markets/news.rss"),
+            new Feed("Bloomberg", "US_ECONOMY",
+                    "https://feeds.bloomberg.com/economics/news.rss"),
+            // The catalog category is the FALLBACK desk: the sitemap branch
+            // reads the actual desk from each article URL's path.
+            new Feed("Reuters", "WORLD",
+                    "https://www.reuters.com/arc/outboundfeeds/news-sitemap/?outputType=xml"),
+            new Feed("FT", "WORLD",
+                    "https://www.ft.com/rss/home"),
             new Feed("n-tv", "DE",
                     "https://www.n-tv.de/wirtschaft/rss"),
             new Feed("Spiegel", "DE",
@@ -173,6 +187,7 @@ public class MarketPressClient {
 
     /** Package-private for tests: one feed's XML → capped, tagged headlines. */
     static List<PressHeadline> parseFeed(Feed feed, String xml) {
+        if (xml != null && xml.contains("<urlset")) return parseSitemapFeed(feed, xml);
         List<PressHeadline> out = new ArrayList<>();
         for (Rss.Item item : Rss.parse(xml)) {
             String teaser = item.description();
@@ -187,6 +202,38 @@ public class MarketPressClient {
             }
         }
         return out;
+    }
+
+    /**
+     * The Google-News-sitemap branch (Reuters Arc): headline + instant, no
+     * teaser, the desk derived from the article URL's path — /business/ and
+     * /markets/ report the tape, /technology/ the tech desk, everything else
+     * (world, sports, the non-English desks) keeps the feed's fallback
+     * category. Ingestion stays wide (house principle) — the model judges
+     * relevance, the desk label only tells it where a headline broke.
+     */
+    private static List<PressHeadline> parseSitemapFeed(Feed feed, String xml) {
+        List<PressHeadline> out = new ArrayList<>();
+        for (NewsSitemap.Item item : NewsSitemap.parse(xml)) {
+            out.add(new PressHeadline(item.title(), null,
+                    feed.source(), sitemapCategory(item.loc(), feed.category()),
+                    item.publishedAt(),
+                    item.loc().isBlank() ? null : item.loc()));
+            if (out.size() >= PER_FEED_BACKSTOP) {
+                LOG.warn("[MarketPress] feed {} hit the {}-item runaway backstop",
+                        feed.url(), PER_FEED_BACKSTOP);
+                break;
+            }
+        }
+        return out;
+    }
+
+    /** The desk from a wire article URL's first path segment. */
+    static String sitemapCategory(String loc, String fallback) {
+        String l = loc == null ? "" : loc.toLowerCase(Locale.ROOT);
+        if (l.contains("/business/") || l.contains("/markets/")) return "US_MARKETS";
+        if (l.contains("/technology/")) return "US_TECH";
+        return fallback;
     }
 
     /** Cross-feed dedupe key: lowercased, punctuation-less title. */
