@@ -124,6 +124,13 @@ final class AppLauncher {
 
         addDockIconFlags(cmd);
 
+        // The Metal Java2D pipeline crashes the JVM after ~1-2h (SIGSEGV in the
+        // Queue Flusher: MTLContext dealloc over-releases, a JDK bug). The OSR
+        // blit is plain BufferedImage work, so the OpenGL pipeline is fine.
+        if (isMacOS()) {
+            cmd.add("-Dsun.java2d.metal=false");
+        }
+
         // JCEF native bridge needs unrestricted access to OS APIs (Cocoa,
         // GDI, etc.). Required for the embedded Chromium browser to
         // initialise; without it, the JNI helpers log a warning and the

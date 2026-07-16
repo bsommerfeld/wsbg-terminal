@@ -89,7 +89,7 @@ final class OsrInputRouter {
             @Override public void componentResized(ComponentEvent e) { browser.handleComponentResized(); }
             @Override public void componentMoved(ComponentEvent e) { browser.handleComponentMoved(); }
         });
-        new DropTarget(panel, new CefDropTargetListener(browser));
+        new DropTarget(panel, new OsrDropTargetGuard(new CefDropTargetListener(browser)));
     }
 
     /**
