@@ -43,6 +43,13 @@
 }
 .widget-head .ident .glyph-reddit { background-image: url("/icons/reddit.png"); }
 .widget-head .ident .glyph-fj     { background-image: url("/icons/financialjuice.png"); }
+.widget-head .ident .glyph-dd     {
+  background-image: url("/icons/kidd.png");
+  width: 29px; height: 29px;
+  /* 29px in the 46px header row reads visually low (the monkey's mass sits
+     at the bottom of the artwork) - lift it without affecting the row box. */
+  transform: translateY(-6px);
+}
 
 /* Brand glyphs double as links to the source (subreddit / FinancialJuice),
    opened in the OS browser via CefHost.onBeforeBrowse. */

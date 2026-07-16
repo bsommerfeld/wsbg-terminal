@@ -202,6 +202,14 @@ html[data-theme="light"] .main > .widget.exit-card .grid-hit {
 }
 .grid-hit-icon.icon-reddit { background-image: url("/icons/reddit.png"); }
 .grid-hit-icon.icon-fj     { background-image: url("/icons/financialjuice.png"); }
+.grid-hit-icon.icon-dd     {
+  background-image: url("/icons/kidd.png");
+  width: 44px; height: 44px;
+  /* the tag anchors half a 34px icon over the card edge - re-centre the
+     44px mark on the edge and hand the 5px back so the label stays in
+     line with the other cards */
+  margin-top: -5px; margin-bottom: 5px;
+}
 .grid-hit-icon-fg {
   width: 44px; height: 28px;
   margin-top: 3px; /* optical: the gauge is flatter than the square marks */
@@ -295,6 +303,7 @@ html[data-theme="light"] .rail-logo { box-shadow: 0 10px 28px oklch(0 0 0 / .12)
 }
 .rail-logo-reddit { background-image: url("/icons/reddit.png"); }
 .rail-logo-fj     { background-image: url("/icons/financialjuice.png"); }
+.rail-logo-dd     { background-image: url("/icons/kidd.png"); width: 31px; height: 31px; }
 .rail-logo-fg     { width: 32px; height: 21px; }
 
 .rail-sep {

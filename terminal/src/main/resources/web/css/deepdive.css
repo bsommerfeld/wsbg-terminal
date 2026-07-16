@@ -711,20 +711,6 @@ html[data-theme="light"] .dd-figure {
   color: var(--mute);
 }
 
-/* ---- header glyph + grid/rail icons ----
-   The DD mark is a self-coloured SVG (report sheet + green/amber/red bars
-   under the amber loupe — the EUR-USD/F&G inline-SVG pattern): fills and
-   strokes live as presentation attributes IN the markup, so CSS only sizes
-   it. Never force stroke/fill here — a CSS rule beats the attributes and
-   greys the mark out. */
-
-.glyph-dd svg { width: 22px; height: 22px; }
-.grid-hit-icon-dd {
-  width: 34px; height: 34px;
-  filter: drop-shadow(0 2px 6px oklch(0 0 0 / .45));
-}
-.rail-logo-dd { width: 24px; height: 24px; }
-
 /* ---- dedicated grid-card tile (.grid-thumb, see widget-grid.css) ----
    Shown INSTEAD of the miniature view in the overview: the newest report as
    hero (name + ticker + date/price) with earlier reports as terse rows, the
