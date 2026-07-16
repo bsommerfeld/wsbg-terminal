@@ -364,7 +364,12 @@ public final class EditorialPipeline {
             try {
                 process(job);
             } catch (Exception e) {
-                LOG.warn("EditorialPipeline: compose job {} failed: {}", job.id(), e.getMessage());
+                if (!running) {
+                    // shutdownNow interrupted the compose mid-action — expected, not a failure.
+                    LOG.debug("EditorialPipeline: compose job {} aborted by shutdown", job.id());
+                } else {
+                    LOG.warn("EditorialPipeline: compose job {} failed: {}", job.id(), e.getMessage());
+                }
             } finally {
                 queue.done(job);
                 LOG.info("[PIPE] worker DONE {} (queue={})", job.id(), queue.size());
@@ -417,6 +422,10 @@ public final class EditorialPipeline {
         prepPool.shutdownNow();
         workerPool.shutdownNow();
         mergeScheduler.shutdownNow();
+        // The digest worker is the only editorial LLM lane outside these pools —
+        // stop it here too, while Ollama is still up, so it can't die mid-call
+        // against the killed server.
+        agent.newsDigester().shutdown();
         LOG.info("EditorialPipeline stopped.");
     }
 

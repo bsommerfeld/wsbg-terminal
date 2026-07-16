@@ -129,6 +129,9 @@ public final class OllamaServerManager {
 
     /** Destroys the managed subprocess if we started one. */
     public void shutdown() {
+        // Flag the teardown FIRST — even when reusing an external server, any lane
+        // still mid-call must fail fast instead of riding the connect-retry ladder.
+        ChatGateway.noteAppShutdown();
         if (serverProcess == null) {
             LOG.debug("No managed Ollama server to shut down");
             return;

@@ -35,6 +35,19 @@ final class ChatGateway {
      */
     static final ThreadLocal<Boolean> INTERACTIVE = ThreadLocal.withInitial(() -> Boolean.FALSE);
 
+    /**
+     * App-teardown latch: once set (by {@link OllamaServerManager#shutdown()},
+     * just before the managed server is killed), a connect failure is a verdict,
+     * not a transient — the retry ladder is skipped so daemon lanes caught
+     * mid-call don't sit out ~45 s of backoff against a deliberately dead server.
+     */
+    private static volatile boolean appShutdown = false;
+
+    /** Marks the app as shutting down — every in-flight ChatGateway stops retrying. */
+    static void noteAppShutdown() {
+        appShutdown = true;
+    }
+
 
     private static final Logger LOG = LoggerFactory.getLogger(ChatGateway.class);
 
@@ -72,6 +85,7 @@ final class ChatGateway {
         RuntimeException lastConnectFailure = null;
         for (int attempt = 0; attempt <= CONNECT_RETRY_BACKOFF_MS.length; attempt++) {
             if (attempt > 0) {
+                if (appShutdown) throw lastConnectFailure; // server was killed on purpose — no backoff
                 long backoff = CONNECT_RETRY_BACKOFF_MS[attempt - 1];
                 LOG.warn("[LLM] Ollama unreachable — retry {}/{} in {} ms",
                         attempt, CONNECT_RETRY_BACKOFF_MS.length, backoff);

@@ -119,6 +119,15 @@ final class NewsDigester {
     }
 
     /**
+     * Stops the background digest worker — called from the app shutdown sequence
+     * BEFORE Ollama goes down, so a digest mid-flight is interrupted instead of
+     * dying against the killed server and riding the retry machinery.
+     */
+    void shutdown() {
+        digestExecutor.shutdownNow();
+    }
+
+    /**
      * Lookup-only read for the brief renderer: the digest if this article has
      * already been read + distilled, otherwise empty — never triggers work.
      */
@@ -198,6 +207,11 @@ final class NewsDigester {
                         text.length(), digest.length(), link);
             }
         } catch (Exception e) {
+            if (digestExecutor.isShutdown()) {
+                // Interrupted by teardown, not a real miss — don't cache, don't warn.
+                LOG.debug("[NEWS] digest aborted by shutdown: {}", link);
+                return;
+            }
             LOG.warn("[NEWS] digest failed for {}: {}", link, e.getMessage());
             byLink.put(link, "");
         }
