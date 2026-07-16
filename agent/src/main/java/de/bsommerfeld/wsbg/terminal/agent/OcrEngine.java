@@ -26,11 +26,22 @@ final class OcrEngine {
     private static final Logger LOG = LoggerFactory.getLogger(OcrEngine.class);
 
     /**
-     * Common install roots of the native Tesseract library. JNA only searches
-     * the system default paths, which on Homebrew (Apple Silicon) and some
-     * Linux distros do NOT include the actual install prefix.
+     * The app's OWN Tesseract bundle inside the isolated app-data container
+     * ({@code <appData>/tesseract/lib} + {@code /tessdata}), provisioned by the
+     * setup scripts exactly like the isolated Ollama. Probed FIRST on both the
+     * library and tessdata axes — a system install is only the fallback.
+     */
+    private static final Path BUNDLE_DIR =
+            de.bsommerfeld.wsbg.terminal.core.util.StorageUtils.getAppDataDir().resolve("tesseract");
+
+    /**
+     * Install roots of the native Tesseract library, probed in order: the app's
+     * own bundle first, then common system prefixes. JNA only searches the
+     * system default paths, which on Homebrew (Apple Silicon) and some Linux
+     * distros do NOT include the actual install prefix.
      */
     private static final String[] NATIVE_LIB_DIRS = {
+            BUNDLE_DIR.resolve("lib").toString(),
             "/opt/homebrew/lib", // Homebrew, Apple Silicon
             "/usr/local/lib",    // Homebrew Intel / manual installs
             "/usr/lib",
@@ -38,8 +49,9 @@ final class OcrEngine {
             "/usr/lib/aarch64-linux-gnu",
     };
 
-    /** Common tessdata locations, probed when TESSDATA_PREFIX is not set. */
+    /** Tessdata locations: own bundle first, then TESSDATA_PREFIX, then system paths. */
     private static final String[] TESSDATA_DIRS = {
+            BUNDLE_DIR.resolve("tessdata").toString(),
             "/opt/homebrew/share/tessdata",
             "/usr/local/share/tessdata",
             "/usr/share/tessdata",
@@ -67,11 +79,14 @@ final class OcrEngine {
         if (ok) {
             instance = new Tesseract();
             instance.setDatapath(dataPath);
-            instance.setLanguage("eng");
+            // German UI text (umlauts, broker labels) reads clean only with the
+            // deu model; ship it in the bundle, degrade to eng-only without it.
+            String language = Files.exists(Path.of(dataPath, "deu.traineddata")) ? "deu+eng" : "eng";
+            instance.setLanguage(language);
             // Screenshots carry no DPI metadata; without this Tesseract guesses
             // 70dpi and degrades. 144 matches the 2x-upscaled phone-UI reality.
             instance.setVariable("user_defined_dpi", "144");
-            LOG.info("OCR ready: tessdata at {}", dataPath);
+            LOG.info("OCR ready: tessdata at {} (language: {})", dataPath, language);
         } else {
             LOG.warn("OCR unavailable (tessdata found: {}, native lib found: {}) — image text is skipped",
                     dataPath != null, nativeLibraryPresent());
@@ -215,6 +230,10 @@ final class OcrEngine {
     }
 
     private static String resolveTessdata() {
+        String bundle = TESSDATA_DIRS[0];
+        if (Files.exists(Path.of(bundle, "eng.traineddata"))) {
+            return bundle;
+        }
         String env = System.getenv("TESSDATA_PREFIX");
         if (env != null && Files.exists(Path.of(env, "eng.traineddata"))) {
             return env;

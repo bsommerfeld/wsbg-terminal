@@ -158,3 +158,49 @@ jobs:
             updater-dist/launcher-update.json \
             updater-dist/launcher-files.zip \
             --clobber
+
+  # ---------------------------------------------------------------------------
+  # Tesseract OCR bundle: the terminal's mechanical image read (OcrEngine)
+  # pulls a self-contained Tesseract at setup time into the isolated app-data
+  # container (<appData>/tesseract), exactly like the isolated Ollama. Every
+  # release carries its own copy so each release is complete in itself —
+  # pruning old releases can never break a newer install.
+  #
+  # Two assets: the macOS arm64 dylib closure (built fresh from Homebrew and
+  # rewritten to @loader_path by .script/bundle-tesseract.sh, which also
+  # verifies self-containment and dlopens the result), and the traineddata
+  # (eng+osd+deu) which is PLATFORM-NEUTRAL — Windows needs only this, since
+  # tess4j ships the Windows DLLs inside its jar.
+  #
+  # Deliberately independent of build_and_release: a failure here never
+  # touches the OTA assets, and the app degrades to "no image text" when the
+  # asset is missing.
+  # ---------------------------------------------------------------------------
+  tesseract_bundle:
+    name: Tesseract OCR Bundle (macOS arm64 + tessdata)
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Tesseract via Homebrew
+        run: brew install tesseract
+
+      - name: Build self-contained bundle
+        run: bash .script/bundle-tesseract.sh bundle-out
+
+      - name: Pack assets
+        run: |
+          tar -czf tesseract-macos-arm64.tar.gz -C bundle-out lib
+          tar -czf tesseract-tessdata.tar.gz -C bundle-out tessdata
+          shasum -a 256 tesseract-macos-arm64.tar.gz tesseract-tessdata.tar.gz
+
+      - name: Upload Release Assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" \
+            tesseract-macos-arm64.tar.gz \
+            tesseract-tessdata.tar.gz \
+            --clobber
