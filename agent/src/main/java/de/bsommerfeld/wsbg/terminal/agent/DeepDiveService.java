@@ -137,7 +137,7 @@ public class DeepDiveService {
      */
     private static final int MAX_DIGESTED_ARTICLES = 150;
     /** Per-article digest cap inside a material block (mirrors the wire brief's cap). */
-    private static final int MAX_DIGEST_CHARS = 500;
+    private static final int MAX_DIGEST_CHARS_BASE = 500;
     private static final int MAX_INSIDER_DEALS = 8;
     private static final int MAX_SHORT_POSITIONS = 8;
     /** NASDAQ tab caps — material stays model-sized, the tabs carry hundreds of rows. */
@@ -157,7 +157,7 @@ public class DeepDiveService {
     private static final int MAX_EVENTS = 4;
     private static final int MAX_WIRE_LINES = 6;
     /** Room chunking inside {@link #roomBlocks} — two chunks join into ONE author material. */
-    private static final int ROOM_PACKET_CHARS = 2400;
+    private static final int ROOM_PACKET_CHARS_BASE = 2400;
     /** How many room chunks ride the section material (newest evidence kept when over). */
     private static final int MAX_ROOM_PACKETS = 2;
     /**
@@ -167,9 +167,32 @@ public class DeepDiveService {
      * half out of the material, and the examiner then rightly kills the
      * sentence every single run (live: "138,01" recurred in three runs).
      */
-    private static final int MAX_TECHNICAL_COMMENT_CHARS = 700;
+    private static final int MAX_TECHNICAL_COMMENT_CHARS_BASE = 700;
     /** Hard cap on ONE section's material — must fit an author call beside the prompt. */
-    private static final int SECTION_MATERIAL_CHARS = 6200;
+    private static final int SECTION_MATERIAL_CHARS_BASE = 6200;
+
+    /**
+     * The material char budgets scale with the resolved context window — the
+     * BASE values above are the 8k arithmetic (16 GB end-user floor), and a
+     * machine that resolves a bigger window gets proportionally fuller
+     * shelves, digests, room packets and chart-technical prose instead of
+     * pure headroom (user mandate 2026-07-16 "vollere Regale": mechanical
+     * compression only where the window forces it). Static because the shelf
+     * builders are static; the ONE service instance stamps the resolved
+     * window at construction, tests keep the deterministic 8k floor.
+     */
+    static volatile int windowTokens = 8192;
+
+    /** A base char budget scaled by the window (1x at 8k, 2x at 16k, capped 3x). */
+    static int scaled(int base) {
+        int factor = Math.max(1, Math.min(3, windowTokens / 8192));
+        return base * factor;
+    }
+
+    private static int sectionMaterialChars() { return scaled(SECTION_MATERIAL_CHARS_BASE); }
+    private static int maxDigestChars() { return scaled(MAX_DIGEST_CHARS_BASE); }
+    private static int roomPacketChars() { return scaled(ROOM_PACKET_CHARS_BASE); }
+    private static int maxTechnicalCommentChars() { return scaled(MAX_TECHNICAL_COMMENT_CHARS_BASE); }
     /**
      * Runaway backstop on the archived report — NOT a working budget. Section
      * sizes are bounded upstream ({@link DeepDiveFactCheck#MAX_SECTION_CHARS}
@@ -252,6 +275,10 @@ public class DeepDiveService {
         this.chatGateway = new ChatGateway(brain, llmGate);
         this.archive = archive;
         this.eventBus = eventBus;
+        // Stamp the resolved window for the static shelf builders — the ONE
+        // service instance owns the material arithmetic; without a service
+        // (plain unit tests) the deterministic 8k floor stays in force.
+        windowTokens = brain.contextTokens();
     }
 
     @com.google.inject.Inject(optional = true)
@@ -3191,9 +3218,10 @@ public class DeepDiveService {
         String text = sb.toString();
         sb.setLength(0);
         if (text.isBlank()) return null;
-        if (text.length() > SECTION_MATERIAL_CHARS) {
-            int nl = text.lastIndexOf('\n', SECTION_MATERIAL_CHARS);
-            text = text.substring(0, nl > SECTION_MATERIAL_CHARS / 2 ? nl : SECTION_MATERIAL_CHARS)
+        int cap = sectionMaterialChars();
+        if (text.length() > cap) {
+            int nl = text.lastIndexOf('\n', cap);
+            text = text.substring(0, nl > cap / 2 ? nl : cap)
                     + "\n  (material trimmed)\n";
         }
         return text;
@@ -3376,7 +3404,7 @@ public class DeepDiveService {
         String digest = item.link() == null ? null : digests.get(item.link().trim());
         if (digest != null && !digest.isBlank()) {
             String dg = digest.replace('\n', ' ').strip();
-            if (dg.length() > MAX_DIGEST_CHARS) dg = dg.substring(0, MAX_DIGEST_CHARS) + "…";
+            if (dg.length() > maxDigestChars()) dg = dg.substring(0, maxDigestChars()) + "…";
             sb.append("      ").append(dg).append('\n');
         }
         return sb.toString();
@@ -4825,13 +4853,14 @@ public class DeepDiveService {
         sb.append('\n');
         if (t.commentText() != null) {
             String comment = t.commentText();
-            if (comment.length() > MAX_TECHNICAL_COMMENT_CHARS) {
+            int cap = maxTechnicalCommentChars();
+            if (comment.length() > cap) {
                 // Cut at the last full sentence inside the cap — a torn sentence
                 // strands its figures outside the material.
-                String head = comment.substring(0, MAX_TECHNICAL_COMMENT_CHARS);
+                String head = comment.substring(0, cap);
                 int lastStop = Math.max(head.lastIndexOf(". "),
                         Math.max(head.lastIndexOf("! "), head.lastIndexOf("? ")));
-                comment = (lastStop > MAX_TECHNICAL_COMMENT_CHARS / 2
+                comment = (lastStop > cap / 2
                         ? head.substring(0, lastStop + 1) : head.stripTrailing()) + " …";
             }
             sb.append("  Its comment: ").append(comment).append('\n');
@@ -4917,7 +4946,7 @@ public class DeepDiveService {
     }
 
     /**
-     * The room's material as one or more chunk texts (≤ {@link #ROOM_PACKET_CHARS}
+     * The room's material as one or more chunk texts (≤ {@link #roomPacketChars()}
      * each, at most {@link #MAX_ROOM_PACKETS}): the first carries the price
      * anchor, the last carries the already-published wire lines, evidence runs
      * CHRONOLOGICALLY through all of them so the retelling can follow the
@@ -4933,7 +4962,7 @@ public class DeepDiveService {
         }
         SubjectUnit primary = units.get(0);
         List<StringBuilder> chunks = new ArrayList<>();
-        StringBuilder cur = new StringBuilder(ROOM_PACKET_CHARS + 256);
+        StringBuilder cur = new StringBuilder(roomPacketChars() + 256);
         cur.append(head).append(":\n");
         chunks.add(cur);
         // The primary unit's price anchor: since-first-mention is the room's own scoreboard.
@@ -4959,7 +4988,7 @@ public class DeepDiveService {
         evidence.sort(java.util.Comparator.comparingLong(SubjectUnit.EvidenceRef::addedAtEpoch));
         if (evidence.isEmpty()) cur.append("  (none in the current window)\n");
         int start = evidence.size();
-        int budget = ROOM_PACKET_CHARS * MAX_ROOM_PACKETS;
+        int budget = roomPacketChars() * MAX_ROOM_PACKETS;
         while (start > 0 && budget - evidence.get(start - 1).snippet().length() - 24 >= 0) {
             start--;
             budget -= evidence.get(start).snippet().length() + 24;
@@ -4968,8 +4997,8 @@ public class DeepDiveService {
         for (SubjectUnit.EvidenceRef ref : evidence.subList(start, evidence.size())) {
             String line = "  - [" + STAMP.format(Instant.ofEpochSecond(ref.addedAtEpoch()))
                     + "] " + ref.snippet() + "\n";
-            if (cur.length() + line.length() > ROOM_PACKET_CHARS) {
-                cur = new StringBuilder(ROOM_PACKET_CHARS + 256);
+            if (cur.length() + line.length() > roomPacketChars()) {
+                cur = new StringBuilder(roomPacketChars() + 256);
                 cur.append(head).append(" (continued):\n");
                 chunks.add(cur);
             }

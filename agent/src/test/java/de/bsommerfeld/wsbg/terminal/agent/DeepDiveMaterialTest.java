@@ -1023,6 +1023,29 @@ class DeepDiveMaterialTest {
         assertTrue(!report.contains(",."));
     }
 
+    @Test
+    void materialBudgetsScaleWithTheResolvedWindow() {
+        // The char budgets are the 8k arithmetic times the window factor —
+        // an 8k machine keeps exactly the historical values, bigger windows
+        // buy proportionally fuller shelves (capped at 3x), and an odd
+        // window between tiers never scales partially.
+        try {
+            DeepDiveService.windowTokens = 8192;
+            assertEquals(6200, DeepDiveService.scaled(6200));
+            DeepDiveService.windowTokens = 12288; // between tiers → still 1x
+            assertEquals(6200, DeepDiveService.scaled(6200));
+            DeepDiveService.windowTokens = 16384;
+            assertEquals(12400, DeepDiveService.scaled(6200));
+            assertEquals(1000, DeepDiveService.scaled(500));
+            DeepDiveService.windowTokens = 24576;
+            assertEquals(18600, DeepDiveService.scaled(6200));
+            DeepDiveService.windowTokens = 1 << 20; // absurd window → 3x cap
+            assertEquals(18600, DeepDiveService.scaled(6200));
+        } finally {
+            DeepDiveService.windowTokens = 8192;
+        }
+    }
+
     private static int occurrences(String s, String needle) {
         int n = 0;
         for (int i = s.indexOf(needle); i >= 0; i = s.indexOf(needle, i + 1)) n++;
