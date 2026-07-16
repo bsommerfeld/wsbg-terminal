@@ -17,9 +17,21 @@ final class PromptLoader {
     private PromptLoader() {
     }
 
+    /**
+     * Include marker: a line {@code {{include:<name>}}} splices the named
+     * prompt snippet (language-matched) in place. ONE canonical craft block
+     * instead of five drifting copies (user mandate 2026-07-16 "stark
+     * entwirren"): shared rules live once, each prompt keeps only its
+     * role-specific deltas. One level deep - an include inside an included
+     * snippet is a wiring error and throws at load time.
+     */
+    private static final java.util.regex.Pattern INCLUDE =
+            java.util.regex.Pattern.compile("\\{\\{include:([a-z0-9-]+)}}");
+
     /** Returns the raw prompt template from {@code prompts/<name>.txt}. */
     static String load(String name) {
-        return CACHE.computeIfAbsent(name, PromptLoader::readResource);
+        return CACHE.computeIfAbsent(name,
+                key -> resolveIncludes(readResource(key), null));
     }
 
     /**
@@ -46,8 +58,29 @@ final class PromptLoader {
         String lang = langCode.toLowerCase();
         return CACHE.computeIfAbsent(name + "@" + lang, key -> {
             String localized = tryReadResource("prompts/" + name + "." + lang + ".txt");
-            return localized != null ? localized : load(name);
+            return localized != null ? resolveIncludes(localized, lang) : load(name);
         });
+    }
+
+    /** Splices {@code {{include:<name>}}} lines with the language-matched snippet. */
+    private static String resolveIncludes(String template, String lang) {
+        java.util.regex.Matcher m = INCLUDE.matcher(template);
+        StringBuilder out = new StringBuilder(template.length() + 2048);
+        while (m.find()) {
+            String inc = m.group(1);
+            String body = lang != null
+                    ? tryReadResource("prompts/" + inc + "." + lang + ".txt") : null;
+            if (body == null) body = tryReadResource("prompts/" + inc + ".txt");
+            if (body == null) {
+                throw new IllegalStateException("Included prompt snippet not found: " + inc);
+            }
+            if (INCLUDE.matcher(body).find()) {
+                throw new IllegalStateException("Nested include in snippet: " + inc);
+            }
+            m.appendReplacement(out, java.util.regex.Matcher.quoteReplacement(body.trim()));
+        }
+        m.appendTail(out);
+        return out.toString();
     }
 
     /**

@@ -9,11 +9,10 @@ An article with an EVENT OF ITS OWN - takeover, ruling, fine, restructuring, gui
 
 ## Rules
 - Everything unaffected stays WORD FOR WORD - you weave, you do not rewrite; existing **bold** and *italic* emphasis survives exactly where it stands. The ONE licensed exception: when the section would grow beyond THREE paragraphs, fold the least load-bearing paragraph together with the new substance into one instead of appending a fourth.
-- Every figure value-identical from the source, in the report language's conventions (day and year in DIGITS, only the month name as a word; numbers NEVER spelled out as words), with its label. A value enters the text only inside its causal chain - driver, value, consequence - otherwise it stays with the figures. Markers copy-only; square brackets for markers only.
-- A standing markdown pipe table survives VERBATIM like the emphasis; the weave may EXTEND it by one row when the new story is another instance of the same comparison the table carries - the new row's cells value-identical from the source, the story's marker inside the row. Beyond that, tables are never created, reshaped or dissolved here.
 - Source list lines (marker, date, title, publisher) are catalog metadata and NEVER enter the body: what gets woven is the FACT, phrased as report prose, its marker at the end of the sentence it supports. One story may arrive through SEVERAL sources - work it in ONCE and set every marker that carries it at the statements it supports.
-- WIRE REGISTER: the actor leads, active world verbs — never a bureaucratic passive or a data-frame subject; the woven substance is the concrete the reader did not know; every word must carry non-derivable information, and absence of data is never content. Third-party views attributed; no promises, no unconditional future tense; no lists, no headings, no NEW tables. Paragraphs stay claim-led, two to four sentences each, SEPARATED BY A BLANK LINE - never collapse the section into one block.
-- Not a word about source integration, material or the making of the text.
+- Paragraphs stay claim-led, two to four sentences each, SEPARATED BY A BLANK LINE - never collapse the section into one block.
+- The craft canon binds every woven sentence (the "material" here is this step's source):
+{{include:deepdive-craft-core}}
 
 ## Output
 Answer ONLY with the complete section body in {{LANGUAGE}} - no heading, no commentary, no code fences. When nothing integrates, answer with the single word UNCHANGED instead.

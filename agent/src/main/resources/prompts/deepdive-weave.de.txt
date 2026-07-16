@@ -9,11 +9,10 @@ Ein Artikel mit einem EIGENEN EREIGNIS - Übernahme, Urteil, Strafe, Konzernumba
 
 ## Regeln
 - Alles nicht Betroffene bleibt WORT FÜR WORT stehen - du webst ein, du schreibst nicht neu; bestehende **Fett-** und *Kursiv*-Auszeichnung überlebt genau dort, wo sie steht. Die EINE lizenzierte Ausnahme: Wüchse die Sektion über DREI Absätze, falte den am wenigsten tragenden Absatz mit der neuen Substanz zu einem zusammen, statt einen vierten anzubauen.
-- Jede Zahl wertgleich aus der Quelle, in der Schreibweise der Berichtssprache (auf Deutsch: Dezimalkomma; Tag und Jahr in ZIFFERN, nur der Monatsname als Wort; Zahlen NIE als Zahlwörter), mit Label. Ein Wert steht im Text nur in seiner Kausalkette - Treiber, Wert, Folge -, sonst gehört er den Abbildungen. Marker nur abschreiben; eckige Klammern nur für Marker.
-- Eine stehende Markdown-Pipe-Tabelle überlebt WÖRTLICH wie die Auszeichnung; das Einweben darf sie um EINE Zeile ERWEITERN, wenn die neue Geschichte eine weitere Instanz desselben Vergleichs ist, den die Tabelle trägt - die Zellen der neuen Zeile wertgleich aus der Quelle, der Marker der Geschichte in der Zeile. Darüber hinaus werden Tabellen hier nie erzeugt, umgebaut oder aufgelöst.
 - Quellenlisten-Zeilen (Marker, Datum, Titel, Publisher) sind Katalog-Metadaten und gehören NIE in den Fließtext: Eingewoben wird das FAKTUM, formuliert als Berichtsprosa, sein Marker am Ende des Satzes, den er stützt. Eine Geschichte kann über MEHRERE Quellen kommen - arbeite sie EINMAL ein und setze jeden Marker, der sie trägt, an die Aussagen, die er stützt.
-- WIRE-REGISTER: Der Akteur führt, aktive Welt-Verben - nie Amtsdeutsch-Passiv oder ein Daten-Rahmen-Subjekt; die eingewobene Substanz ist das Konkretum, das der Leser nicht wusste; jedes Wort trägt nicht-ableitbare Information, und Abwesenheit von Daten ist nie Inhalt. Fremdsichten attribuiert; keine Versprechen, kein unbedingtes Futur; keine Listen, keine Überschriften, keine NEUEN Tabellen. Absätze bleiben aussagegeführt, zwei bis vier Sätze, GETRENNT DURCH EINE LEERZEILE - die Sektion nie zu einem Block zusammenfallen lassen.
-- Kein Wort über Quellen-Einarbeitung, Material oder Entstehung.
+- Absätze bleiben aussagegeführt, zwei bis vier Sätze, GETRENNT DURCH EINE LEERZEILE - die Sektion nie zu einem Block zusammenfallen lassen.
+- Der Handwerks-Kanon bindet jeden eingewobenen Satz (das "Material" ist hier die Quelle dieses Schritts):
+{{include:deepdive-craft-core}}
 
 ## Ausgabe
 Antworte NUR mit dem vollständigen Sektionskörper auf {{LANGUAGE}} - keine Überschrift, kein Kommentar, keine Code-Fences. Wenn nichts einzuarbeiten ist, antworte stattdessen mit dem einzelnen Wort UNCHANGED.

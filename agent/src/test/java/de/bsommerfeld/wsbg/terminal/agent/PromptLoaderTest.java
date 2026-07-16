@@ -15,6 +15,21 @@ class PromptLoaderTest {
         assertFalse(content.isBlank());
     }
 
+    /**
+     * The craft canon lives ONCE and is spliced via {@code {{include:...}}}
+     * (2026-07-16 "stark entwirren") - a loaded prompt carries the resolved
+     * canon in its own language and never the raw include token.
+     */
+    @Test
+    void load_shouldResolveIncludesLanguageMatched() {
+        String en = PromptLoader.load("deepdive-weave");
+        assertTrue(en.contains("WIRE REGISTER"), "EN core spliced");
+        assertFalse(en.contains("{{include:"), "no raw include token");
+        String de = PromptLoader.loadLocalized("deepdive-weave", "de");
+        assertTrue(de.contains("WIRE-REGISTER"), "DE core spliced");
+        assertFalse(de.contains("{{include:"), "no raw include token");
+    }
+
     @Test
     void load_shouldCacheRepeatCalls() {
         String first = PromptLoader.load("vision");
