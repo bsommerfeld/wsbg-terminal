@@ -10,7 +10,7 @@ class PromptLoaderTest {
 
     @Test
     void load_shouldReturnNonEmptyContent() {
-        String content = PromptLoader.load("vision");
+        String content = PromptLoader.load("subject-extraction");
         assertNotNull(content);
         assertFalse(content.isBlank());
     }
@@ -32,8 +32,8 @@ class PromptLoaderTest {
 
     @Test
     void load_shouldCacheRepeatCalls() {
-        String first = PromptLoader.load("vision");
-        String second = PromptLoader.load("vision");
+        String first = PromptLoader.load("subject-extraction");
+        String second = PromptLoader.load("subject-extraction");
         assertSame(first, second, "Cached calls should return the same String reference");
     }
 

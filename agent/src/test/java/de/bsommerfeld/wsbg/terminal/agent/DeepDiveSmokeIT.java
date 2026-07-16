@@ -86,8 +86,10 @@ class DeepDiveSmokeIT {
         // pipeline. Unset = the full pool (the release-grade smoke).
         int newsCap = Integer.parseInt(
                 System.getenv().getOrDefault("DD_SMOKE_NEWS", String.valueOf(Integer.MAX_VALUE)));
-        svc.setNewsAggregator(new NewsAggregator(
-                Set.of(new GoogleNewsClient(), new OnvistaClient())) {
+        svc.setNewsAggregator(new NewsAggregator(Set.of(new GoogleNewsClient(),
+                new OnvistaClient(),
+                new de.bsommerfeld.wsbg.terminal.briefing.EqsNewsArchiveClient(),
+                new de.bsommerfeld.wsbg.terminal.websearch.GdeltDocClient())) {
             @Override
             public List<de.bsommerfeld.wsbg.terminal.source.RawNewsItem> newsFor(
                     String symbol, String name, String isin, int limit) {

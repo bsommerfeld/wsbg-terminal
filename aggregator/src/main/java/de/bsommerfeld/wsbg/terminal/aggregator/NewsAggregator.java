@@ -79,23 +79,35 @@ public class NewsAggregator {
         if (limit <= 0 || ((name == null || name.isBlank()) && (isin == null || isin.isBlank()))) {
             return List.of();
         }
-        List<RawNewsItem> out = new java.util.ArrayList<>();
-        java.util.Set<String> seen = new java.util.HashSet<>();
+        // Every source answers up to the full ask, then a ROUND-ROBIN merge
+        // interleaves them (2026-07-16 fix: the old first-wins break let the
+        // first source fill the budget and the archive sources were never
+        // asked). Dedupe by title across sources.
+        List<List<RawNewsItem>> perSource = new java.util.ArrayList<>();
         for (NewsSource source : sources) {
-            if (source.socialSentiment()) continue; // the archive is a press leg
             try {
-                for (RawNewsItem item : source.newsForNameWindow(
-                        name, isin, fromIsoDate, toIsoDateExclusive, limit)) {
-                    String key = item.title() == null ? "" :
-                            item.title().strip().toLowerCase(java.util.Locale.ROOT);
-                    if (!key.isEmpty() && seen.add(key)) out.add(item);
-                }
+                List<RawNewsItem> items = source.newsForNameWindow(
+                        name, isin, fromIsoDate, toIsoDateExclusive, limit);
+                if (!items.isEmpty()) perSource.add(items);
             } catch (Exception e) {
                 LOG.debug("history window from {} failed: {}", source.sourceName(), e.getMessage());
             }
-            if (out.size() >= limit) break;
         }
-        return out.size() > limit ? out.subList(0, limit) : out;
+        List<RawNewsItem> out = new java.util.ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (int round = 0; out.size() < limit; round++) {
+            boolean any = false;
+            for (List<RawNewsItem> items : perSource) {
+                if (round >= items.size() || out.size() >= limit) continue;
+                any = true;
+                RawNewsItem item = items.get(round);
+                String key = item.title() == null ? "" :
+                        item.title().strip().toLowerCase(java.util.Locale.ROOT);
+                if (!key.isEmpty() && seen.add(key)) out.add(item);
+            }
+            if (!any) break;
+        }
+        return out;
     }
 
     public List<RawNewsItem> newsFor(String symbol, String name, String isin, int limit) {

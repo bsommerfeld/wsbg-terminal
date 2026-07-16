@@ -124,12 +124,10 @@ final class AppLauncher {
 
         addDockIconFlags(cmd);
 
-        // The Metal Java2D pipeline crashes the JVM after ~1-2h (SIGSEGV in the
-        // Queue Flusher: MTLContext dealloc over-releases, a JDK bug). The OSR
-        // blit is plain BufferedImage work, so the OpenGL pipeline is fine.
-        if (isMacOS()) {
-            cmd.add("-Dsun.java2d.metal=false");
-        }
+        // Metal stays ON: forcing the OpenGL Java2D fallback makes every
+        // full-window OSR blit ~15ms on the EDT and turns the grid view into
+        // a slideshow. The rare Metal Queue-Flusher SIGSEGV workaround is
+        // opt-in via WSBG_J2D_OPENGL=true, handled in the app's AppMain.
 
         // JCEF native bridge needs unrestricted access to OS APIs (Cocoa,
         // GDI, etc.). Required for the embedded Chromium browser to

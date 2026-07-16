@@ -168,14 +168,6 @@
             <groupId>de.bsommerfeld</groupId>
             <artifactId>aggregator</artifactId>
         </dependency>
-        <dependency>
-            <groupId>de.bsommerfeld</groupId>
-            <artifactId>briefing</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>de.bsommerfeld</groupId>
-            <artifactId>websearch</artifactId>
-        </dependency>
 
         <!-- JCEF (embedded Chromium) + WebSocket push.
              No JavaFX in this module — the terminal UI is HTML/CSS/JS. -->
@@ -264,10 +256,10 @@
                 <configuration>
                     <executable>java</executable>
                     <arguments>
-                        <!-- Metal stays ON: the OpenGL fallback makes every
-                             full-window OSR blit ~15ms on the EDT (grid-view
-                             slideshow). The rare Metal Queue-Flusher SIGSEGV is
-                             opted into via WSBG_J2D_OPENGL=true (see AppMain). -->
+                        <!-- The Metal Java2D pipeline SIGSEGVs in the Queue Flusher
+                             (MTLContext dealloc over-releases, JDK bug) after ~1-2h;
+                             the OSR blit is plain BufferedImage work, OpenGL is fine. -->
+                        <argument>-Dsun.java2d.metal=false</argument>
                         <argument>--enable-native-access=ALL-UNNAMED</argument>
                         <argument>--add-opens=java.desktop/sun.awt=ALL-UNNAMED</argument>
                         <argument>--add-opens=java.desktop/sun.lwawt=ALL-UNNAMED</argument>

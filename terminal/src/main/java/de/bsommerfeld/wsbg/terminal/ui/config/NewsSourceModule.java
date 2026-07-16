@@ -175,5 +175,15 @@ final class NewsSourceModule extends AbstractModule {
         // (newsForNameWindow), never the live-news queries.
         newsSources.addBinding().to(
                 de.bsommerfeld.wsbg.terminal.onvista.OnvistaClient.class);
+        // EQS disclosure ARCHIVE (wp-json, keyless, ISIN-filtered): the DGAP
+        // legacy back beyond 2018 even for pennystocks (probed 2026-07-16:
+        // Mutares = 654 records). Archive fan only.
+        newsSources.addBinding().to(
+                de.bsommerfeld.wsbg.terminal.briefing.EqsNewsArchiveClient.class);
+        // GDELT DOC 2.0: keyless world-press full text from 2017 on - the
+        // breadth source of the multi-year history. HARD rate gate inside
+        // (8s global, bursts earn multi-minute IP blocks). Archive fan only.
+        newsSources.addBinding().to(
+                de.bsommerfeld.wsbg.terminal.websearch.GdeltDocClient.class);
     }
 }

@@ -2839,36 +2839,39 @@ public class DeepDiveService {
         // get cited by the weave. The safety net is the RE-KNOCK: a hard
         // examiner finding on a group whose members went unread fetches the
         // missing digests on demand and re-weaves once.
-        Map<String, String> digests = new LinkedHashMap<>();
+        // TWO-WIDE (2026-07-16 tempo queue): the representatives are
+        // independent fetch+digest tasks - run them at Ollama's NUM_PARALLEL
+        // like the judge batches; the gate still governs every model call.
+        Map<String, String> digests = new java.util.concurrent.ConcurrentHashMap<>();
         List<List<RawNewsItem>> groups = groupStories(m.news,
                 storyDropWords(m.canonicalName, m.ticker));
         if (groups.size() < m.news.size()) {
             LOG.info("[DEEPDIVE] '{}' group digest: {} article(s) → {} story "
                     + "representative(s) to read.", subject, m.news.size(), groups.size());
         }
-        int total = Math.min(groups.size(), MAX_DIGESTED_ARTICLES);
-        int done = 0;
+        List<Runnable> tasks = new ArrayList<>();
+        java.util.concurrent.atomic.AtomicInteger done = new java.util.concurrent.atomic.AtomicInteger();
         for (List<RawNewsItem> group : groups) {
-            if (done >= MAX_DIGESTED_ARTICLES) break;
+            if (tasks.size() >= MAX_DIGESTED_ARTICLES) break;
             RawNewsItem rep = representativeOf(group);
             if (rep == null) continue;
-            // Cancel must bite BETWEEN articles: with the uncapped pool this
-            // loop runs for many minutes, and without the check the UI's X
-            // waited out the whole digest phase (live 2026-07-14: 20 cancel
-            // clicks, the generation kept running).
-            checkCancelled();
-            done++;
-            eventBus.post(new DeepDiveProgressEvent(subject, "triage",
-                    "Artikel " + done + "/" + total));
-            try {
-                String digest = digestAgent.newsDigester().digestNow(rep.link());
-                if (!digest.isBlank()) digests.put(rep.link().trim(), digest);
-            } catch (Exception e) {
-                LOG.debug("[DEEPDIVE] article digest failed for {}: {}",
-                        rep.link(), e.getMessage());
-            }
+            tasks.add(() -> {
+                // Cancel must bite BETWEEN articles (live 2026-07-14: 20
+                // cancel clicks, the generation kept running).
+                checkCancelled();
+                eventBus.post(new DeepDiveProgressEvent(subject, "triage",
+                        "Artikel " + done.incrementAndGet() + "/" + tasks.size()));
+                try {
+                    String digest = digestAgent.newsDigester().digestNow(rep.link());
+                    if (!digest.isBlank()) digests.put(rep.link().trim(), digest);
+                } catch (Exception e) {
+                    LOG.debug("[DEEPDIVE] article digest failed for {}: {}",
+                            rep.link(), e.getMessage());
+                }
+            });
         }
-        m.digests = digests;
+        runTwoWide(tasks);
+                m.digests = new LinkedHashMap<>(digests);
     }
 
     /**
@@ -6349,10 +6352,10 @@ public class DeepDiveService {
                                 + "company website (first-party)";
             case "history":
                 return de
-                        ? "Google News Archiv - mehrjährige Presse-Historie (Schlagzeilen, "
-                                + "Jahresfenster-Suche)"
-                        : "Google News archive - multi-year press history (headlines, "
-                                + "windowed yearly search)";
+                        ? "Presse-/Disclosure-Archiv - mehrjährige Historie in Jahresfenstern "
+                                + "(Google News, onvista, EQS-News, GDELT)"
+                        : "Press/disclosure archive - multi-year history in yearly windows "
+                                + "(Google News, onvista, EQS-News, GDELT)";
             case "whispers":
                 return "EarningsWhispers" + (de
                         ? " - Konsensschätzungen zum nächsten Bericht"
