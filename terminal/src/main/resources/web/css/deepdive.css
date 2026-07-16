@@ -630,6 +630,26 @@ html[data-theme="light"] .dd-figure {
   font-size: .78em;
   color: var(--txt-2);
 }
+/* Paper-style figure register: the ID badge on the card ... */
+.dd-figure-id {
+  flex-shrink: 0;
+  font-family: "JetBrains Mono", monospace;
+  font-size: .68em;
+  font-weight: 600;
+  color: var(--mute);
+  border: 1px solid var(--line-soft);
+  border-radius: 4px;
+  padding: 0 5px;
+  transform: translateY(-.08em);
+}
+/* ... and the cross-reference in the prose that jumps to it. */
+.dd-figref {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px dotted var(--mute);
+  white-space: nowrap;
+}
+.dd-figref:hover { color: var(--amber); border-bottom-color: var(--amber); }
 .dd-figure-rule {
   flex: 1;
   border-top: 1px solid var(--line-soft);

@@ -171,6 +171,8 @@ public final class DeepDivePdfExporter {
                 + "figure.dd-figure figcaption{font-family:Helvetica,Arial,sans-serif;"
                 + "font-size:9.5px;color:#52514e;margin-bottom:6px;}"
                 + "figure.dd-figure .fig-note{color:#898781;float:right;}"
+                + "figure.dd-figure .fig-id{color:#898781;border:1px solid #e1e0d9;"
+                + "border-radius:3px;padding:0 4px;font-size:.9em;}"
                 + ".src{font-size:10.5px;color:#444;margin:0 0 3px;padding-left:14px;text-indent:-14px;}"
                 + ".foot{font-family:Helvetica,Arial,sans-serif;font-size:9px;color:#888;"
                 + "margin-top:26px;border-top:1px solid #ccc;padding-top:8px;}"
@@ -208,7 +210,7 @@ public final class DeepDivePdfExporter {
         flushChunkWithFigures(out, chunk, section, charts);
         // Defensive: figures whose section ordinal never appeared go to the end.
         for (var fig : charts) {
-            if (fig.section() > section) out.append(figureHtml(fig));
+            if (fig.section() > section) out.append(figureHtml(fig, figureId(charts, fig)));
         }
         return out.toString();
     }
@@ -221,20 +223,28 @@ public final class DeepDivePdfExporter {
         }
         if (section < 0) return;
         for (var fig : charts) {
-            if (fig.section() == section) out.append(figureHtml(fig));
+            if (fig.section() == section) out.append(figureHtml(fig, figureId(charts, fig)));
         }
     }
 
-    private static String figureHtml(DeepDiveRecord.ChartFigure fig) {
+    /** Positional figure ID (A1, A2, ...) — the register the prose cites. */
+    private static String figureId(java.util.List<DeepDiveRecord.ChartFigure> charts,
+            DeepDiveRecord.ChartFigure fig) {
+        int idx = charts.indexOf(fig);
+        return idx < 0 ? null : "A" + (idx + 1);
+    }
+
+    private static String figureHtml(DeepDiveRecord.ChartFigure fig, String id) {
         return "<figure class=\"dd-figure\"><figcaption>"
                 + (fig.note() != null ? "<span class=\"fig-note\">" + escape(fig.note()) + "</span>" : "")
+                + (id != null ? "<span class=\"fig-id\">" + id + "</span> " : "")
                 + escape(fig.title())
                 + "</figcaption>" + fig.svg() + "</figure>";
     }
 
     /**
      * Escape-first markdown subset: ## headings, **bold**, blank-line
-     * paragraphs, compact pipe tables (model-licensed 2026-07-14).
+     * paragraphs, compact pipe tables (typesetter-set - the model's table licence was revoked 2026-07-16).
      */
     static String markdownToHtml(String markdown) {
         if (markdown == null) return "";

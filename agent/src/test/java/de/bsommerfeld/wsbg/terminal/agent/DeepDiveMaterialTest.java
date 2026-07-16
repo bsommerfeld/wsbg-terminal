@@ -254,6 +254,20 @@ class DeepDiveMaterialTest {
     }
 
     /**
+     * Multi-label routing (2026-07-16): one article may serve SEVERAL shelves
+     * - the comma-joined route reaches every named section, and only those.
+     */
+    @Test
+    void multiRoutedNewsReachesEveryNamedShelf() {
+        DeepDiveService.Material m = fullMaterial();
+        m.newsTargets = Map.of("uuid-1", "LAGE,AUSBLICK");
+        String[] shelves = DeepDiveService.sectionMaterials(m);
+        assertTrue(shelves[DeepDiveService.SEC_SITUATION].contains("Großauftrag"));
+        assertTrue(shelves[DeepDiveService.SEC_OUTLOOK].contains("Großauftrag"));
+        assertFalse(shelves[DeepDiveService.SEC_CATALYSTS].contains("Großauftrag"));
+    }
+
+    /**
      * An empty room yields NO shelf — the section then gets its honest literal
      * without any model call, so an empty room can never be hallucinated into
      * a dated discussion (live-observed SAP 2026-07-13: evidenceCount 0, yet
@@ -1044,6 +1058,30 @@ class DeepDiveMaterialTest {
         } finally {
             DeepDiveService.windowTokens = 8192;
         }
+    }
+
+    /** The multi-year press history rides the Lage shelf with its own register leg. */
+    @Test
+    void pressHistoryRidesTheSituationShelf() {
+        DeepDiveService.Material m = fullMaterial();
+        m.pressHistory = List.of(new RawNewsItem("h1",
+                "Rheinmetall verdoppelt Munitionskapazität", "Handelsblatt", null,
+                java.time.Instant.parse("2024-03-14T09:00:00Z"), List.of()));
+        String[] shelves = DeepDiveService.sectionMaterials(m);
+        assertTrue(shelves[DeepDiveService.SEC_SITUATION].contains("PRESS HISTORY (multi-year"));
+        assertTrue(shelves[DeepDiveService.SEC_SITUATION]
+                .contains("[2024-03-14] Rheinmetall verdoppelt Munitionskapazität · Handelsblatt"));
+    }
+
+    /** The diff-judge sees only the step's delta - the sentence set difference. */
+    @Test
+    void addedSentencesReturnsOnlyTheDelta() {
+        String before = "Der Vorstand verkaufte Anteile. Die Marge stieg 2025.";
+        String after = before + " UBS senkte das Ziel auf 164 EUR.";
+        assertEquals(List.of("UBS senkte das Ziel auf 164 EUR."),
+                DeepDiveService.addedSentences(before, after));
+        assertTrue(DeepDiveService.addedSentences(after, after).isEmpty());
+        assertEquals(2, DeepDiveService.addedSentences(null, before).size());
     }
 
     private static int occurrences(String s, String needle) {

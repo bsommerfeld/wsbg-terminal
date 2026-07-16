@@ -80,7 +80,22 @@ class DeepDiveSmokeIT {
         svc.setVenueStatsSource(new TradegateQuoteClient());
         svc.setShortInterestSource(new ShortInterestClient());
         svc.setInsiderDealingsSource(new InsiderDealingsClient());
-        svc.setNewsAggregator(new NewsAggregator(Set.of(new GoogleNewsClient())));
+        // DD_SMOKE_NEWS caps the LIVE news pool for a quick iteration run
+        // (~8-10 min instead of 30+): still real HTTP and a real Ollama -
+        // never a synthetic fixture - just less volume through the same
+        // pipeline. Unset = the full pool (the release-grade smoke).
+        int newsCap = Integer.parseInt(
+                System.getenv().getOrDefault("DD_SMOKE_NEWS", String.valueOf(Integer.MAX_VALUE)));
+        svc.setNewsAggregator(new NewsAggregator(
+                Set.of(new GoogleNewsClient(), new OnvistaClient())) {
+            @Override
+            public List<de.bsommerfeld.wsbg.terminal.source.RawNewsItem> newsFor(
+                    String symbol, String name, String isin, int limit) {
+                List<de.bsommerfeld.wsbg.terminal.source.RawNewsItem> items =
+                        super.newsFor(symbol, name, isin, limit);
+                return items.size() > newsCap ? items.subList(0, newsCap) : items;
+            }
+        });
         svc.setFnRssClient(new de.bsommerfeld.wsbg.terminal.briefing.FnRssClient());
         svc.setPressScout(new CompanyPressScout(
                 new de.bsommerfeld.wsbg.terminal.source.net.DirectWebFetcher(),
@@ -111,11 +126,15 @@ class DeepDiveSmokeIT {
         // Generous window: the pipeline's own calls sum to ~5-6 minutes, but a
         // busy host (parallel builds, the live terminal) has stalled the worker
         // thread for minutes at a time (observed 2026-07-13, run 2).
-        long deadline = System.currentTimeMillis() + 35 * 60_000;
+        // 60 min: the 2026-07-16 pipeline legitimately carries more model
+        // passes (press chronicle, per-step diff-judge, final-instance
+        // consistency loop) - the full-pool smoke is the release gate, not a
+        // quick check (DD_SMOKE_NEWS caps it for iteration runs).
+        long deadline = System.currentTimeMillis() + 60 * 60_000;
         while (svc.isBusy() && System.currentTimeMillis() < deadline) {
             Thread.sleep(2_000);
         }
-        assertFalse(svc.isBusy(), "generation did not finish within 35 minutes");
+        assertFalse(svc.isBusy(), "generation did not finish within 60 minutes");
 
         List<DeepDiveRecord> recent = archive.recent(1);
         assertFalse(recent.isEmpty(), "no report was archived");

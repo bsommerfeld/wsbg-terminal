@@ -241,6 +241,13 @@ function onDetailClick(e) {
   if (pdf && current) {
     sock.send('deepdive', { command: 'export-pdf', id: current.id });
   }
+  // Figure pointer in the prose ("Abbildung A3") — scroll to its figure card.
+  const ref = e.target.closest('.dd-figref');
+  if (ref) {
+    e.preventDefault();
+    const fig = detailEl.querySelector(`[data-figid="${ref.dataset.fig}"]`);
+    if (fig) fig.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
 }
 
 /* ---- rendering ---- */
@@ -470,29 +477,39 @@ function reportWithFigures(r) {
       chunk.body.push(line);
     }
   }
+  // Positional figure IDs (A1, A2, ...) — the same register the prose cites.
+  const figId = new Map(charts.map((f, i) => [f, 'A' + (i + 1)]));
   const parts = [];
   // chunks[i+1] is section i (0-based ordinal of ## occurrences).
   for (let c = 0; c < chunks.length; c++) {
     const text = chunks[c].body.join('\n').trim();
-    if (text) parts.push(renderMarkdown(text));
+    if (text) parts.push(linkFigureRefs(renderMarkdown(text)));
     const sectionIdx = c - 1;
     if (sectionIdx >= 0) {
       for (const fig of charts.filter(f => f.section === sectionIdx)) {
-        parts.push(figureHtml(fig));
+        parts.push(figureHtml(fig, figId.get(fig)));
       }
     }
   }
   // Figures whose section never appeared (defensive) go to the end.
   const maxSection = chunks.length - 2;
   for (const fig of charts.filter(f => f.section > maxSection)) {
-    parts.push(figureHtml(fig));
+    parts.push(figureHtml(fig, figId.get(fig)));
   }
   return parts.join('');
 }
 
-function figureHtml(fig) {
-  return `<figure class="dd-figure">
+/* Prose pointers like "Abbildung A3" / "Figure A3" become jump links to the
+   figure card carrying that ID badge (paper-style cross-references). */
+function linkFigureRefs(html) {
+  return html.replace(/\b(Abbildung|Figure)\s+(A\d+)\b/g,
+    (m0, word, id) => `<a href="#" class="dd-figref" data-fig="${id}">${word}&nbsp;${id}</a>`);
+}
+
+function figureHtml(fig, id) {
+  return `<figure class="dd-figure" ${id ? `data-figid="${id}"` : ''}>
     <figcaption>
+      ${id ? `<span class="dd-figure-id">${id}</span>` : ''}
       <span class="dd-figure-title">${escapeHtml(fig.title || '')}</span>
       <span class="dd-figure-rule"></span>
       ${fig.note ? `<span class="dd-figure-note">${escapeHtml(fig.note)}</span>` : ''}

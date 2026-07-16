@@ -147,6 +147,10 @@ public class DeepDiveService {
     private static final int MAX_US_SURPRISES = 4;
     private static final int MAX_ANALYST_ACTIONS = 10;
     private static final int MAX_ACTION_TABLE_ROWS = 8;
+    /** Past calendar years the press-history leg sweeps (one window each). */
+    private static final int PRESS_HISTORY_YEARS = 3;
+    /** Headlines kept per history year - an arc marker, never a second firehose. */
+    private static final int PRESS_HISTORY_PER_YEAR = 6;
     private static final int MAX_MACRO_ACTUALS = 4;
     private static final int MAX_MACRO_DOCKET = 4;
     /** Wire-archive lines fed to the room shelf: the first N + the newest M. */
@@ -214,6 +218,8 @@ public class DeepDiveService {
      * backstop, never a working limit.
      */
     private static final int CHALLENGE_ROUNDS_BACKSTOP = 10;
+    /** Runaway net for the whole-report final instance - never a working limit. */
+    private static final int CONSISTENCY_ROUNDS_BACKSTOP = 4;
     /** Below this many relevant news the alias follow-up re-queries the aggregator. */
     private static final int THIN_NEWS_THRESHOLD = 3;
     /**
@@ -555,7 +561,7 @@ public class DeepDiveService {
     /** The loaded prompt set of one run. */
     private record Prompts(String section, String these, String revise, String challenge,
             String weave, String polish, String arbiter, String samestory,
-            String consistency) {
+            String consistency, String diffcheck, String chronicle) {
     }
 
     /**
@@ -630,6 +636,29 @@ public class DeepDiveService {
         judgeWorldSignals(subject, m, lang);
         checkCancelled();
 
+        // Figures are built BEFORE the prose (they are a pure function of the
+        // collected material): every figure gets a positional ID (A1, A2, ...)
+        // and each section's shelf lists its figures as ID + caption, so the
+        // prose can POINT at a figure like a paper does ("Abbildung A3") -
+        // IDs copy-only, the register of the figure layer (user mandate
+        // 2026-07-16 "Visuals referieren mit IDs").
+        try {
+            m.charts = new DeepDiveCharts(lang).build(m.snapshot, m.deepDive, m.analystView,
+                    m.shortInterest, m.insiderDealings, m.venueStats, m.usStats,
+                    m.analystActions, m.hedgeFunds, m.pressTimeline, m.worldSignalKeep,
+                    m.volumeProfile, m.orderBook, m.memoryEvents);
+            Map<Integer, List<String>> captions = new LinkedHashMap<>();
+            for (int ci = 0; ci < m.charts.size(); ci++) {
+                DeepDiveRecord.ChartFigure fig = m.charts.get(ci);
+                captions.computeIfAbsent(fig.section(), k -> new ArrayList<>())
+                        .add("A" + (ci + 1) + ": " + fig.title());
+            }
+            m.figureCaptions = captions;
+        } catch (Exception e) {
+            LOG.warn("[DEEPDIVE] '{}' figure build failed - report continues without "
+                    + "figure pointers: {}", subject, e.getMessage());
+        }
+
         Map<String, Integer> nums = sourceNumbers(m);
         Set<Integer> validNums = new HashSet<>(nums.values());
         // A third UI language writes its prose in that language but keeps the
@@ -660,7 +689,10 @@ public class DeepDiveService {
                 PromptLoader.loadLocalized("deepdive-polish", lang).replace("{{LANGUAGE}}", langName),
                 PromptLoader.loadLocalized("deepdive-arbiter", lang),
                 PromptLoader.loadLocalized("deepdive-samestory", lang),
-                PromptLoader.loadLocalized("deepdive-consistency", lang)
+                PromptLoader.loadLocalized("deepdive-consistency", lang),
+                PromptLoader.loadLocalized("deepdive-diffcheck", lang)
+                        .replace("{{LANGUAGE}}", langName),
+                PromptLoader.loadLocalized("deepdive-chronicle", lang)
                         .replace("{{LANGUAGE}}", langName));
 
         // -- the section workspace: author → weave sources one at a time →
@@ -679,7 +711,7 @@ public class DeepDiveService {
             long tSec = System.currentTimeMillis();
             bodies[idx] = writeSection(model, prompts, subject,
                     headerWithThought(header, previousThought), headings.get(idx),
-                    shelves[idx], de, label, dropWords, m);
+                    shelves[idx], de, label, dropWords, m, idx == SEC_SITUATION);
             LOG.info("[DEEPDIVE] '{}' section '{}' {} in {} s.", subject, headings.get(idx),
                     bodies[idx] != null ? "stands" : "empty (honest literal)",
                     (System.currentTimeMillis() - tSec) / 1000);
@@ -699,11 +731,12 @@ public class DeepDiveService {
         eventBus.post(new DeepDiveProgressEvent(subject, "these"));
         bodies[SEC_THESIS] = writeSection(model, new Prompts(prompts.these(), prompts.these(),
                         prompts.revise(), prompts.challenge(), prompts.weave(), prompts.polish(),
-                        prompts.arbiter(), prompts.samestory(), prompts.consistency()),
+                        prompts.arbiter(), prompts.samestory(), prompts.consistency(),
+                        prompts.diffcheck(), prompts.chronicle()),
                 subject, header,
                 headings.get(SEC_THESIS), new Shelf(thesisMaterial(headings, bodies, m), List.of()),
                 de, (SEC_THESIS + 1) + "/" + SECTION_COUNT + " · " + headings.get(SEC_THESIS),
-                dropWords, m);
+                dropWords, m, false);
         if (bodies[SEC_THESIS] != null) written++;
 
         // -- cross-section consistency: the ONE review that sees the whole
@@ -715,8 +748,20 @@ public class DeepDiveService {
         eventBus.post(new DeepDiveProgressEvent(subject, "finish",
                 de ? "Konsistenz" : "consistency"));
         try {
-            crossSectionConsistency(model, prompts, subject, headings, bodies, shelves, m, de,
-                    header);
+            // The FINAL INSTANCE (user design 2026-07-16): the whole-report
+            // review re-runs after its own fixes until it stands - demand as
+            // many corrections as it takes; the backstop is the runaway net,
+            // never a working limit.
+            for (int round = 1; round <= CONSISTENCY_ROUNDS_BACKSTOP; round++) {
+                if (!crossSectionConsistency(model, prompts, subject, headings, bodies,
+                        shelves, m, de, header)) {
+                    break;
+                }
+                if (round == CONSISTENCY_ROUNDS_BACKSTOP) {
+                    LOG.warn("[DEEPDIVE] '{}' consistency review hit the runaway backstop ({}).",
+                            subject, CONSISTENCY_ROUNDS_BACKSTOP);
+                }
+            }
         } catch (java.util.concurrent.CancellationException e) {
             throw e;
         } catch (Exception e) {
@@ -734,6 +779,7 @@ public class DeepDiveService {
         appendTypesetTable(bodies, SEC_OUTLOOK, scenarioTable(m, tableNums, de));
         String report = assemble(headings, bodies, de);
         report = scrubUnknownSourceMarkers(report, validNums);
+        report = scrubUnknownFigureRefs(report, m.charts.size());
         if (!looksLikeReport(report, headings)) {
             // By construction this cannot fail — if it does, a logic error upstream.
             LOG.warn("[DEEPDIVE] '{}' assembled report failed the skeleton sanity gate.", subject);
@@ -761,11 +807,9 @@ public class DeepDiveService {
             report = report.stripTrailing() + "\n\n" + sources;
         }
         // Figures: deterministic SVG from the verified material (the model never
-        // draws), frozen into the record so UI and PDF show the same picture.
-        List<DeepDiveRecord.ChartFigure> charts = new DeepDiveCharts(lang)
-                .build(m.snapshot, m.deepDive, m.analystView, m.shortInterest, m.insiderDealings,
-                        m.venueStats, m.usStats, m.analystActions, m.hedgeFunds, m.pressTimeline,
-                        m.worldSignalKeep, m.volumeProfile, m.orderBook, m.memoryEvents);
+        // draws), built BEFORE the prose so the sections could point at them
+        // by ID; frozen into the record so UI and PDF show the same picture.
+        List<DeepDiveRecord.ChartFigure> charts = m.charts;
         DeepDiveRecord record = new DeepDiveRecord(
                 "dd-" + UUID.randomUUID().toString().substring(0, 8),
                 subject, m.canonicalName, m.ticker, m.isin,
@@ -801,7 +845,7 @@ public class DeepDiveService {
      */
     private String writeSection(ChatModel model, Prompts prompts, String subject, String header,
             String heading, Shelf shelf, boolean de, String progressLabel,
-            Set<String> storyDropWords, Material m) {
+            Set<String> storyDropWords, Material m, boolean chronicleSeed) {
         if (shelf == null || shelf.isEmpty()) return null;
         String newsHeader = "NEWS (verified, last " + NEWS_MAX_AGE_DAYS + " days):\n";
 
@@ -823,11 +867,35 @@ public class DeepDiveService {
         // Seed: the base blocks — or, base-less, the first story group.
         String seed = shelf.base();
         List<String> seedGroup = null;
-        if (isBlank(seed) && !groups.isEmpty()) {
-            seedGroup = groups.remove(0);
-            seed = newsHeader + String.join("", seedGroup);
+        // THE PRESS CHRONICLE (scratchpad pilot, user mandate 2026-07-16):
+        // for the chronicle-seeded section the desk first DISTILLS the whole
+        // routed press into a dated fact note - facts as facts, nothing
+        // dropped, no relevance filter - and the author writes the section's
+        // ARC from it instead of discovering the story weave by weave (the
+        // litany's root). The EXAMINER'S yardstick stays the RAW press: a
+        // figure the chronicle invented dies at the first inspection, so the
+        // note can never launder into the material. Fail-open: a whiffed
+        // chronicle falls back to the classic seed path.
+        String chronicleNote = chronicleSeed && !shelf.newsBlocks().isEmpty()
+                ? chronicleNote(model, prompts, subject, header, shelf.newsBlocks(),
+                        progressLabel, de)
+                : null;
+        boolean rawFed = !isBlank(chronicleNote);
+        String fed;
+        if (rawFed) {
+            String raw = newsHeader + String.join("", shelf.newsBlocks());
+            fed = isBlank(seed) ? raw : seed + "\n" + raw;
+            seed = (isBlank(seed) ? "" : seed)
+                    + "PRESS CHRONICLE (the desk's own dated fact note, distilled from the "
+                    + "routed press - the section's ARC; every line carries its markers):\n"
+                    + chronicleNote;
+        } else {
+            if (isBlank(seed) && !groups.isEmpty()) {
+                seedGroup = groups.remove(0);
+                seed = newsHeader + String.join("", seedGroup);
+            }
+            fed = seed;
         }
-        String fed = seed;
 
         // Author. One retry — an aborted section over a single hiccup is waste.
         String body = null;
@@ -880,7 +948,7 @@ public class DeepDiveService {
             }
             eventBus.post(new DeepDiveProgressEvent(subject, "sections",
                     progressLabel + " · " + (de ? "Quelle " : "source ") + step + "/" + total));
-            fed = fed + "\n" + newsHeader + block;
+            if (!rawFed) fed = fed + "\n" + newsHeader + block;
             String woven = cleanReport(chatGateway.chat(model, prompts.weave(),
                     weaveMessage(header, heading, body, block, prompts.weave().length(),
                             group.size())));
@@ -896,9 +964,17 @@ public class DeepDiveService {
                     || woven.strip().equals(body.strip())) {
                 continue;
             }
+            String beforeStep = body;
             RepairOutcome out = examineAndRepair(model, prompts, subject, header, heading, fed,
                     markersIn(fed), de, woven.strip());
             body = out.body();
+            // DIFF-JUDGE (user design 2026-07-16): the step examiner reads
+            // ONLY the delta this weave produced beside the ONE new source -
+            // concentrated attention instead of a whole-section pass (a
+            // one-word direction inversion provably slipped the full-view
+            // challenger, live smoke 4: a BaFin SALE narrated as a buy).
+            body = diffJudgeStep(model, prompts, subject, header, heading, beforeStep,
+                    body, block, fed, de);
             // RE-KNOCK (user mandate 2026-07-14): a HARD finding on a group
             // step whose members were never full-text-read means the desk may
             // be missing exactly the source that carries the figure — the
@@ -1402,6 +1478,52 @@ public class DeepDiveService {
         return (double) inter.size() / union.size();
     }
 
+    /**
+     * Distills the routed press of one section into the dated FACT CHRONICLE
+     * - the scratchpad note the author writes the section's arc from. Pure
+     * restatement (facts as facts, no relevance judgment, nothing dropped),
+     * batched under the context budget when the press outsizes one call.
+     * Returns {@code null} on a whiff - the caller falls back to the classic
+     * seed path, never blocks on the note.
+     */
+    private String chronicleNote(ChatModel model, Prompts prompts, String subject,
+            String header, List<String> blocks, String progressLabel, boolean de) {
+        try {
+            eventBus.post(new DeepDiveProgressEvent(subject, "sections",
+                    progressLabel + " · " + (de ? "Chronik" : "chronicle")));
+            int budget = Math.max(2000, inputBudgetChars() - prompts.chronicle().length()
+                    - header.length() - 400);
+            List<String> batches = new ArrayList<>();
+            StringBuilder batch = new StringBuilder();
+            for (String b : blocks) {
+                if (batch.length() > 0 && batch.length() + b.length() > budget) {
+                    batches.add(batch.toString());
+                    batch.setLength(0);
+                }
+                batch.append(b);
+            }
+            if (batch.length() > 0) batches.add(batch.toString());
+            StringBuilder note = new StringBuilder();
+            for (String b : batches) {
+                checkCancelled();
+                String reply = cleanReport(chatGateway.chat(model, prompts.chronicle(),
+                        header + "SOURCES:\n" + b));
+                if (!isBlank(reply)) note.append(reply.strip()).append('\n');
+            }
+            if (note.length() == 0) return null;
+            LOG.info("[DEEPDIVE] '{}' press chronicle: {} source block(s) distilled to "
+                            + "{} chars in {} batch(es).", subject, blocks.size(),
+                    note.length(), batches.size());
+            return note.toString();
+        } catch (java.util.concurrent.CancellationException e) {
+            throw e;
+        } catch (Exception e) {
+            LOG.warn("[DEEPDIVE] '{}' press chronicle failed - classic seed path: {}",
+                    subject, e.getMessage());
+            return null;
+        }
+    }
+
     /** The letterhead plus the previous section's closing thought (the red thread). */
     private static String headerWithThought(String header, String previousThought) {
         if (previousThought == null || previousThought.isBlank()) return header;
@@ -1618,9 +1740,11 @@ public class DeepDiveService {
      * conflicts a per-section challenger is blind to (section A vs section B,
      * section vs page-1 figures). Each objection is routed to the section
      * that carries the quoted claim; that section gets ONE revision against
-     * its OWN shelf, re-examined. Bounded to a single round.
+     * its OWN shelf, re-examined. Returns {@code true} when it applied fixes
+     * (the caller re-runs the review until the report stands - the final
+     * instance loops, backstopped).
      */
-    private void crossSectionConsistency(ChatModel model, Prompts prompts, String subject,
+    private boolean crossSectionConsistency(ChatModel model, Prompts prompts, String subject,
             List<String> headings, String[] bodies, Shelf[] shelves, Material m, boolean de,
             String header) {
         StringBuilder report = new StringBuilder(8192);
@@ -1629,7 +1753,7 @@ public class DeepDiveService {
             report.append("## ").append(headings.get(i)).append('\n')
                     .append(bodies[i]).append("\n\n");
         }
-        if (report.isEmpty()) return;
+        if (report.isEmpty()) return false;
         Map<String, Integer> nums = sourceNumbers(m);
         StringBuilder keyData = new StringBuilder(512);
         appendKeyData(keyData, m, nums);
@@ -1647,7 +1771,7 @@ public class DeepDiveService {
         }
         if (objections.isEmpty()) {
             LOG.info("[DEEPDIVE] '{}' cross-section review: consistent.", subject);
-            return;
+            return false;
         }
         journalNotes(subject, objections);
         Map<Integer, List<String>> bySection = new LinkedHashMap<>();
@@ -1657,6 +1781,7 @@ public class DeepDiveService {
         }
         LOG.info("[DEEPDIVE] '{}' cross-section review: {} objection(s) across {} section(s).",
                 subject, objections.size(), bySection.size());
+        boolean applied = false;
         for (Map.Entry<Integer, List<String>> entry : bySection.entrySet()) {
             int idx = entry.getKey();
             checkCancelled();
@@ -1669,9 +1794,29 @@ public class DeepDiveService {
             if (isBlank(revised)) continue;
             String repaired = examineAndRepair(model, prompts, subject, header,
                     headings.get(idx), material, markersIn(material), de, revised.strip()).body();
+            if (!repaired.strip().equals(bodies[idx].strip())) applied = true;
             journalDiff(subject, bodies[idx], repaired);
             bodies[idx] = repaired;
         }
+        return applied;
+    }
+
+    /**
+     * Removes prose pointers to figure IDs the figure layer does not carry -
+     * the same copy-only contract as source markers: a 4B must never mint its
+     * own cross-references ("Abbildung A9" with eight figures standing).
+     */
+    static String scrubUnknownFigureRefs(String report, int figureCount) {
+        java.util.regex.Matcher mRef = java.util.regex.Pattern
+                .compile("\\s?\\b(?:Abbildung|Figure)\\s+A(\\d+)\\b").matcher(report);
+        StringBuilder sb = new StringBuilder(report.length());
+        while (mRef.find()) {
+            int n = Integer.parseInt(mRef.group(1));
+            mRef.appendReplacement(sb, n >= 1 && n <= figureCount
+                    ? java.util.regex.Matcher.quoteReplacement(mRef.group()) : "");
+        }
+        mRef.appendTail(sb);
+        return sb.toString().replaceAll("[ \\t]{2,}", " ");
     }
 
     /** The quoted span of an E-line ({@code E: "<Zitat>" — <Problem>}), or empty. */
@@ -1692,6 +1837,75 @@ public class DeepDiveService {
             if (bodies[i].replaceAll("\\s+", " ").contains(needle)) return i;
         }
         return -1;
+    }
+
+    /**
+     * The DIFF-JUDGE of one weave step (user design 2026-07-16): the examiner
+     * sees ONLY the sentences this step added or reworked, beside the step's
+     * ONE source block - the concentrated view in which a direction inversion
+     * or a mislabeled value cannot hide. At most one revision per step; the
+     * section-end challenge and the cross-section review stay the final
+     * instances for everything a delta view cannot see.
+     */
+    private String diffJudgeStep(ChatModel model, Prompts prompts, String subject,
+            String header, String heading, String before, String after, String block,
+            String fed, boolean de) {
+        List<String> delta = addedSentences(before, after);
+        if (delta.isEmpty()) return after;
+        String message = header + "SECTION: ## " + heading
+                + "\n\nNEW SOURCE (this step's only material):\n" + block
+                + "\nDELTA (only the sentences this step added or reworked):\n  - "
+                + String.join("\n  - ", delta);
+        String reply = chatGateway.chat(model, prompts.diffcheck(),
+                budgeted(message, prompts.diffcheck().length()));
+        List<String> objections = new ArrayList<>();
+        if (reply != null) {
+            String deltaNorm = String.join(" ", delta);
+            for (String line : reply.split("\n")) {
+                String s = line.strip();
+                if (!s.startsWith("E:")) continue;
+                // Judge-output validity: an objection whose quote does not
+                // appear in the delta is the judge hallucinating a defect -
+                // it verifies nothing and would only churn a revision (live
+                // smoke 2026-07-16: 53 objections over ~16 steps, Lage alone
+                // 22 minutes). ONE valid objection max - the step examiner is
+                // a tripwire, not a second challenger.
+                String quote = quotedSpan(s).replaceAll("\\s+", " ");
+                if (quote.length() < 12 || !deltaNorm.contains(quote)) {
+                    LOG.debug("[DEEPDIVE] diff-judge objection dropped (quote not in delta).");
+                    continue;
+                }
+                objections.add(s);
+                break;
+            }
+        }
+        if (objections.isEmpty()) return after;
+        journalNotes(subject, objections);
+        LOG.info("[DEEPDIVE] '{}' section '{}': diff-judge raised {} objection(s) on the step.",
+                subject, heading, objections.size());
+        String revised = revise(model, prompts, header, heading, after, fed,
+                String.join("\n", objections));
+        if (isBlank(revised)) return after;
+        return examineAndRepair(model, prompts, subject, header, heading, fed,
+                markersIn(fed), de, revised.strip()).body();
+    }
+
+    /** The sentences of {@code after} that {@code before} does not carry (normalized). */
+    static List<String> addedSentences(String before, String after) {
+        Set<String> old = new java.util.HashSet<>();
+        if (before != null && !before.isBlank()) {
+            for (String s : DeepDiveFactCheck.sentences(before)) {
+                old.add(s.strip().replaceAll("\\s+", " "));
+            }
+        }
+        List<String> added = new ArrayList<>();
+        if (after != null && !after.isBlank()) {
+            for (String s : DeepDiveFactCheck.sentences(after)) {
+                String norm = s.strip().replaceAll("\\s+", " ");
+                if (!norm.isEmpty() && !old.contains(norm)) added.add(norm);
+            }
+        }
+        return added;
     }
 
     private List<String> challenge(ChatModel model, Prompts prompts, String header,
@@ -1758,7 +1972,16 @@ public class DeepDiveService {
     private static final Pattern TRIAGE_OBJ = Pattern.compile("\\{[^{}]*}");
     private static final Pattern TRIAGE_I = Pattern.compile("\"i\"\\s*:\\s*(\\d+)");
     private static final Pattern TRIAGE_REL = Pattern.compile("\"relevant\"\\s*:\\s*(true|false)");
-    private static final Pattern TRIAGE_TARGET = Pattern.compile("\"target\"\\s*:\\s*\"(\\w+)\"");
+    /**
+     * A quoted section token anywhere in the verdict object — the triage may
+     * route one article to SEVERAL shelves ("targets" array, 2026-07-16 user
+     * mandate: a single-label route hid the guidance article from the outlook
+     * forever); matching the tokens instead of the key shape also swallows the
+     * legacy single-"target" form.
+     */
+    private static final Pattern TRIAGE_TARGET = Pattern.compile(
+            "\"(LAGE|SITUATION|KATALYSATOR\\w*|CATALYST\\w*|AUSBLICK|OUTLOOK)\"",
+            Pattern.CASE_INSENSITIVE);
     private static final Pattern ALIAS_ITEM = Pattern.compile("\"([^\"]{2,40})\"");
     private static final int TRIAGE_BATCH = 6;
 
@@ -1895,17 +2118,21 @@ public class DeepDiveService {
                         if (i < 1 || i > batch.size()) continue;
                         Matcher relM = TRIAGE_REL.matcher(o);
                         boolean relevant = !relM.find() || Boolean.parseBoolean(relM.group(1));
-                        String target = "LAGE";
+                        StringBuilder targets = new StringBuilder();
                         Matcher tM = TRIAGE_TARGET.matcher(o);
-                        if (tM.find()) {
+                        while (tM.find()) {
                             String t = tM.group(1).toUpperCase(Locale.ROOT);
-                            if (t.startsWith("KATALYSATOR") || t.startsWith("CATALYST")) {
-                                target = "KATALYSATOR";
-                            } else if (t.startsWith("AUSBLICK") || t.startsWith("OUTLOOK")) {
-                                target = "AUSBLICK";
+                            String norm = t.startsWith("KATALYSATOR") || t.startsWith("CATALYST")
+                                    ? "KATALYSATOR"
+                                    : t.startsWith("AUSBLICK") || t.startsWith("OUTLOOK")
+                                            ? "AUSBLICK" : "LAGE";
+                            if (targets.indexOf(norm) < 0) {
+                                if (targets.length() > 0) targets.append(',');
+                                targets.append(norm);
                             }
                         }
-                        out.put(newsKey(batch.get(i - 1)), relevant ? target : "");
+                        if (targets.length() == 0) targets.append("LAGE");
+                        out.put(newsKey(batch.get(i - 1)), relevant ? targets.toString() : "");
                         parsed++;
                     }
                 } catch (Exception e) {
@@ -2445,6 +2672,12 @@ public class DeepDiveService {
         List<RawNewsItem> news = List.of();
         /** item key -> target section ("LAGE"/"KATALYSATOR"/"AUSBLICK"), set by triage. */
         Map<String, String> newsTargets = Map.of();
+        /** Multi-year press HISTORY (headlines only) - the name's longer arc. */
+        List<RawNewsItem> pressHistory = List.of();
+        /** The figure layer, built BEFORE the prose (pure function of the legs). */
+        List<DeepDiveRecord.ChartFigure> charts = List.of();
+        /** Per section ordinal: the figure IDs + captions the prose may point at. */
+        Map<Integer, List<String>> figureCaptions = Map.of();
         /** link -> key-fact digest of the FULL article, read after triage. */
         Map<String, String> digests = Map.of();
         /** exact news-block text -> article link (the re-knock's way back to the URL). */
@@ -2848,6 +3081,27 @@ public class DeepDiveService {
         } catch (Exception e) {
             LOG.debug("[DEEPDIVE] news failed: {}", e.getMessage());
         }
+        // Multi-year press HISTORY (2026-07-16): one windowed archive query
+        // per past calendar year - headlines only, never triaged or digested
+        // (context for the long-term arc, not weave material; the freshness
+        // cut on m.news must not touch it).
+        try {
+            if (newsAggregator != null && m.canonicalName != null) {
+                int year = java.time.LocalDate.now().getYear();
+                List<RawNewsItem> history = new ArrayList<>();
+                for (int y = year - PRESS_HISTORY_YEARS; y < year; y++) {
+                    history.addAll(newsAggregator.historyFor(m.canonicalName, m.isin,
+                            y + "-01-01", (y + 1) + "-01-01", PRESS_HISTORY_PER_YEAR));
+                }
+                if (!history.isEmpty()) {
+                    m.pressHistory = history;
+                    LOG.info("[DEEPDIVE] '{}' press history: {} headline(s) across {} year(s).",
+                            ticker, history.size(), PRESS_HISTORY_YEARS);
+                }
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] press history failed: {}", e.getMessage());
+        }
         // The general web sweep ("<Name> News", user mandate): Bing's search
         // RSS answers the open web — IR pages, publisher articles Google News
         // never indexes — with direct target URLs the digester can read.
@@ -3101,7 +3355,10 @@ public class DeepDiveService {
     /** The compact identity header every pass carries (date, subject, ticker, ISIN, index). */
     static String header(String subject, Material m) {
         StringBuilder sb = new StringBuilder(160);
-        sb.append("NOW: ").append(STAMP.format(Instant.now())).append('\n');
+        // Date only: the vantage the dossier speaks from needs no minutes -
+        // and a clock time in the letterhead leaks into prose ("Eine
+        // Veröffentlichung vom 16. Juli 2026 um 05:38", live smoke 2026-07-16).
+        sb.append("NOW: ").append(STAMP.format(Instant.now()), 0, 10).append('\n');
         sb.append("SUBJECT: ").append(m.canonicalName);
         if (m.ticker != null) sb.append(" (Ticker ").append(m.ticker).append(')');
         if (m.isin != null) sb.append(" [ISIN ").append(m.isin).append(']');
@@ -3143,13 +3400,20 @@ public class DeepDiveService {
         appendBoard(sb, m.deepDive, nums);
         out[SEC_ABOUT] = new Shelf(take(sb), List.of());
 
-        appendMarket(sb, m.snapshot, nums);
-        appendTrading(sb, m.venueStats, m.facts, nums);
-        appendStructure(sb, m, nums);
+        // NARRATIVE FIRST, tape LAST: a 4B anchors on the material's opening
+        // line (the thesis lesson, 2026-07-14), and with the market block up
+        // front the Lage opened as a price recitation in every live run
+        // despite the section definition ("the event leads, the price
+        // reaction follows"). The shelf now leads with the story context -
+        // sector, world, press arc - and the trading tape closes as evidence.
         appendSectorContext(sb, m, nums);
         appendWorldSignals(sb, m, nums);
         appendPressTimeline(sb, m.pressTimeline, nums);
+        appendPressHistory(sb, m, nums);
         appendPerformance(sb, m.deepDive, nums);
+        appendMarket(sb, m.snapshot, nums);
+        appendTrading(sb, m.venueStats, m.facts, nums);
+        appendStructure(sb, m, nums);
         out[SEC_SITUATION] = new Shelf(take(sb), newsBlocksFor(m, "LAGE", nums));
 
         appendFundamentals(sb, m.deepDive, nums);
@@ -3194,7 +3458,47 @@ public class DeepDiveService {
                 : (roomSb.length() == 0 ? room : room + "\n" + roomSb);
         out[SEC_ROOM] = new Shelf(roomShelf, List.of());
         out[SEC_THESIS] = new Shelf(null, List.of());
+        // Figure pointers ride LAST on every non-empty shelf: the IDs and
+        // captions of the section's house figures, so the prose can point at
+        // them ("Abbildung A3") instead of retelling their series - copy-only
+        // tokens, appended after the cap (a dozen short lines never starve
+        // the material). An otherwise-empty shelf stays empty: pointers alone
+        // are no reason to write a section.
+        for (int i = 0; i < SECTION_COUNT; i++) {
+            List<String> captions = m.figureCaptions.get(i);
+            if (captions == null || captions.isEmpty() || out[i] == null) continue;
+            String base = out[i].base();
+            if (isBlank(base) && out[i].newsBlocks().isEmpty()) continue;
+            String block = "FIGURES set beside this section (point at one by its ID, "
+                    + "e.g. \"Abbildung " + captions.get(0).split(":")[0]
+                    + "\"; IDs copy-only, never invented):\n  "
+                    + String.join("\n  ", captions) + "\n";
+            out[i] = new Shelf(isBlank(base) ? block : base + block, out[i].newsBlocks());
+        }
         return out;
+    }
+
+    /**
+     * The multi-year press history as a compact dated block - headlines only,
+     * one line per entry, newest years last so the arc reads forward. The
+     * long-term dossier's memory of the name beyond the 30-day news window.
+     */
+    private static void appendPressHistory(StringBuilder sb, Material m,
+            Map<String, Integer> nums) {
+        if (m.pressHistory.isEmpty()) return;
+        sb.append("PRESS HISTORY (multi-year, headlines only - the name's longer arc; ")
+                .append("windowed archive search)").append(mark(nums, "history")).append(":\n");
+        for (RawNewsItem item : m.pressHistory) {
+            sb.append("  - ");
+            if (item.publishedAt() != null) {
+                sb.append('[').append(STAMP.format(item.publishedAt()), 0, 10).append("] ");
+            }
+            sb.append(item.title() == null ? "" : item.title().strip());
+            if (item.publisher() != null && !item.publisher().isBlank()) {
+                sb.append(" · ").append(item.publisher());
+            }
+            sb.append('\n');
+        }
     }
 
     /** One weave step per routed article: the item block WITH its digest. */
@@ -3204,7 +3508,7 @@ public class DeepDiveService {
         for (int i = 0; i < m.news.size(); i++) {
             RawNewsItem item = m.news.get(i);
             String route = m.newsTargets.getOrDefault(newsKey(item), "LAGE");
-            if (!route.equals(target)) continue;
+            if (!routeCovers(route, target)) continue;
             String block = newsItemBlock(item, m.digests, mark(nums, "news:" + i));
             if (item.link() != null && !item.link().isBlank()) {
                 m.newsLinksByBlock.put(block, item.link().trim());
@@ -3212,6 +3516,14 @@ public class DeepDiveService {
             out.add(block);
         }
         return out;
+    }
+
+    /** Whether a comma-joined triage route covers the shelf's target section. */
+    private static boolean routeCovers(String route, String target) {
+        for (String r : route.split(",")) {
+            if (r.trim().equals(target)) return true;
+        }
+        return false;
     }
 
     private static String take(StringBuilder sb) {
@@ -3368,6 +3680,7 @@ public class DeepDiveService {
         }
         if (!m.worldSignalKeep.isEmpty()) nums.put("world", ++n);
         if (m.earningsEstimate != null) nums.put("whispers", ++n);
+        if (!m.pressHistory.isEmpty()) nums.put("history", ++n);
         if (m.volumeProfile != null || m.orderBook != null) nums.put("structure", ++n);
         if (!m.memoryEvents.isEmpty() || !m.baseRateLines.isEmpty()) nums.put("memory", ++n);
         for (int i = 0; i < m.news.size(); i++) nums.put("news:" + i, ++n);
@@ -4995,8 +5308,11 @@ public class DeepDiveService {
         }
         if (start > 0) cur.append("  (").append(start).append(" older mentions omitted)\n");
         for (SubjectUnit.EvidenceRef ref : evidence.subList(start, evidence.size())) {
+            // Date-only stamps: the room section is an AGGREGATE - clock
+            // times invited the model to retell single posts ("um 03:22 Uhr",
+            // live Wave-1 smoke) instead of drawing the mood picture.
             String line = "  - [" + STAMP.format(Instant.ofEpochSecond(ref.addedAtEpoch()))
-                    + "] " + ref.snippet() + "\n";
+                    .substring(0, 10) + "] " + ref.snippet() + "\n";
             if (cur.length() + line.length() > roomPacketChars()) {
                 cur = new StringBuilder(roomPacketChars() + 256);
                 cur.append(head).append(" (continued):\n");
@@ -5012,7 +5328,10 @@ public class DeepDiveService {
             cur.append("WIRE LINES ALREADY PUBLISHED FOR THIS SUBJECT:\n");
             int from = Math.max(0, headlines.size() - MAX_WIRE_LINES);
             for (SubjectUnit.UnitHeadline h : headlines.subList(from, headlines.size())) {
-                cur.append("  - [").append(STAMP.format(Instant.ofEpochSecond(h.atEpoch())))
+                // Date only - the aggregate room needs no minutes, and a clock
+                // time in the material leaks into prose ("um 06:37 Uhr",
+                // live smoke 2026-07-16).
+                cur.append("  - [").append(STAMP.format(Instant.ofEpochSecond(h.atEpoch())), 0, 10)
                         .append("] ").append(h.text()).append('\n');
             }
         }
@@ -5478,6 +5797,12 @@ public class DeepDiveService {
                                 + "Literatur-Prioren"
                         : "Market memory - house event register (EDGAR, MarketBeat, NASDAQ, EQS "
                                 + "ad-hocs) with measured reactions and attributed literature priors";
+            case "history":
+                return de
+                        ? "Google News Archiv - mehrjährige Presse-Historie (Schlagzeilen, "
+                                + "Jahresfenster-Suche)"
+                        : "Google News archive - multi-year press history (headlines, "
+                                + "windowed yearly search)";
             case "whispers":
                 return "EarningsWhispers" + (de
                         ? " - Konsensschätzungen zum nächsten Bericht"
