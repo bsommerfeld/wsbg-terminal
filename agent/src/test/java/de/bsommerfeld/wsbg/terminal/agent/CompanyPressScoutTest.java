@@ -59,6 +59,36 @@ class CompanyPressScoutTest {
         assertEquals("https://www.example-ag.de/presse/2026/quartal", out.get(1).url());
     }
 
+    /**
+     * The IR-archive mode (2026-07-16): report-shaped entries with their
+     * dates, nav noise and non-filing links skipped, dates from anchor text
+     * or href - ISO first, dotted German, bare year as the honest fallback.
+     */
+    @Test
+    void extractIrEntriesLiftsDatedReports() {
+        String html = """
+                <a href="/investor/q1-2026.pdf">Quartalsmitteilung Q1 2026</a>
+                <a href="/investor/hv">Hauptversammlung am 14.05.2026</a>
+                <a href="/investor/report-2024">Annual Report 2024</a>
+                <a href="/karriere">Karriere bei der Example AG - jetzt bewerben</a>
+                <a href="/investor/glossar">Unser Glossar erklärt alle Begriffe im Detail</a>""";
+        List<CompanyPressScout.IrEntry> out =
+                CompanyPressScout.extractIrEntries(html, HOME, 10);
+        assertEquals(3, out.size(), String.valueOf(out));
+        assertEquals("2026", out.get(0).dateIso());
+        assertEquals("2026-05-14", out.get(1).dateIso());
+        assertEquals("Annual Report 2024", out.get(2).title());
+        assertEquals("2024", out.get(2).dateIso());
+    }
+
+    @Test
+    void irDateParsesIsoDottedAndBareYear() {
+        assertEquals("2026-07-24", CompanyPressScout.irDate("Report", "/x/2026-07-24/report"));
+        assertEquals("2026-05-14", CompanyPressScout.irDate("HV am 14.5.2026", "/hv"));
+        assertEquals("2024", CompanyPressScout.irDate("Annual Report 2024", "/r"));
+        assertNull(CompanyPressScout.irDate("Interim statement", "/statement"));
+    }
+
     @Test
     void normalizeToleratesSchemelessProfileUrls() {
         assertEquals("www.sap.com", CompanyPressScout.normalize("www.sap.com").getHost());

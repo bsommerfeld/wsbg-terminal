@@ -1084,6 +1084,21 @@ class DeepDiveMaterialTest {
                 .contains("[2024-03-14] Rheinmetall verdoppelt Munitionskapazität · Handelsblatt"));
     }
 
+    /** The first-party IR archive rides fundamentals in full, the outlook future-only. */
+    @Test
+    void irArchiveRidesFundamentalsAndOutlookShelves() {
+        DeepDiveService.Material m = fullMaterial();
+        m.irEntries = List.of(
+                new CompanyPressScout.IrEntry("Quartalsmitteilung Q1 2026", "2026-04-30", "u1"),
+                new CompanyPressScout.IrEntry("Hauptversammlung", "2099-05-14", "u2"));
+        String[] shelves = DeepDiveService.sectionMaterials(m);
+        assertTrue(shelves[DeepDiveService.SEC_FUNDAMENTALS].contains("IR ARCHIVE (first-party"));
+        assertTrue(shelves[DeepDiveService.SEC_FUNDAMENTALS].contains("[2026-04-30] Quartalsmitteilung"));
+        assertTrue(shelves[DeepDiveService.SEC_OUTLOOK].contains("IR CALENDAR (first-party"));
+        assertTrue(shelves[DeepDiveService.SEC_OUTLOOK].contains("[2099-05-14] Hauptversammlung"));
+        assertFalse(shelves[DeepDiveService.SEC_OUTLOOK].contains("Quartalsmitteilung Q1 2026"));
+    }
+
     /** The diff-judge sees only the step's delta - the sentence set difference. */
     @Test
     void addedSentencesReturnsOnlyTheDelta() {

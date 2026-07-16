@@ -107,6 +107,117 @@ final class CompanyPressScout {
         }
     }
 
+    // ---- the IR ARCHIVE mode (first-party reports + financial calendar) ----
+
+    /**
+     * IR-archive hints in priority order - the financial-reports/calendar
+     * section, NOT the press stream (its own hints above). German and English
+     * corporate conventions.
+     */
+    private static final String[] IR_HINTS = {
+            "finanzberichte", "quartalsbericht", "geschaeftsbericht", "financial-report",
+            "quarterly-report", "quarterly-result", "financial-result", "finanzkalender",
+            "financial-calendar", "ir-kalender", "publikationen", "publications",
+            "berichte", "reports", "results", "investor-relations", "investor",
+    };
+
+    /** A report-shaped anchor: it must smell like a filing, call or calendar entry. */
+    private static final Pattern IR_ENTRY_TOKEN = Pattern.compile(
+            "(?i)quartal|zwischenmitteilung|halbjahr|geschäftsbericht|geschaeftsbericht"
+                    + "|jahresbericht|finanzbericht|hauptversammlung|kapitalmarkttag"
+                    + "|\\bq[1-4]\\b|quarter|half-year|annual report|interim|report|results"
+                    + "|earnings|call|webcast|präsentation|praesentation|presentation"
+                    + "|statement|10-k|10-q|20-f");
+    private static final Pattern IR_DATE_ISO = Pattern.compile("(20\\d{2})-(\\d{2})-(\\d{2})");
+    private static final Pattern IR_DATE_DOTTED =
+            Pattern.compile("(\\d{1,2})\\.(\\d{1,2})\\.(20\\d{2})");
+    private static final Pattern IR_YEAR = Pattern.compile("\\b(20\\d{2})\\b");
+
+    /** One dated entry of the company's IR archive (date null when undatable). */
+    record IrEntry(String title, String dateIso, String url) {
+    }
+
+    /**
+     * Lifts up to {@code limit} report/calendar entries from the company's IR
+     * archive - the FIRST-PARTY record of past quarters and coming dates the
+     * press only paraphrases (user mandate 2026-07-16 "Ist, Soll UND
+     * vergangener Stand"). Same tight budget as the press mode: two fetches,
+     * one host family, empty on any failure.
+     */
+    List<IrEntry> irEntries(String website, int limit) {
+        if (fetcher == null || website == null || website.isBlank()) return List.of();
+        try {
+            URI home = normalize(website);
+            if (home == null) return List.of();
+            String homeHtml = fetch(home.toString());
+            if (homeHtml == null) return List.of();
+            String irUrl = bestLink(homeHtml, home, IR_HINTS);
+            String listingHtml = homeHtml;
+            URI listingBase = home;
+            if (irUrl != null && !irUrl.equals(home.toString())) {
+                String fetched = fetch(irUrl);
+                if (fetched != null) {
+                    listingHtml = fetched;
+                    listingBase = URI.create(irUrl);
+                }
+            }
+            List<IrEntry> out = extractIrEntries(listingHtml, listingBase, limit);
+            if (!out.isEmpty()) {
+                LOG.info("[DEEPDIVE] IR scout lifted {} entry(ies) from {} (listing {})",
+                        out.size(), home.getHost(), irUrl == null ? "homepage" : irUrl);
+            }
+            return out;
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] IR scout failed for '{}': {}", website, e.getMessage());
+            return List.of();
+        }
+    }
+
+    /**
+     * Report-shaped links of an IR listing: shorter titles than headlines
+     * ("Q1 2026 Report" is a valid entry), but every entry must carry a
+     * filing/call/calendar token; dates parsed from anchor text or href
+     * (ISO, dotted German, bare year as the honest fallback).
+     */
+    static List<IrEntry> extractIrEntries(String html, URI base, int limit) {
+        List<IrEntry> out = new ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        Matcher m = ANCHOR.matcher(html);
+        while (m.find() && out.size() < limit) {
+            String title = flatten(m.group(2));
+            if (title.length() < 8 || title.length() > MAX_TITLE_CHARS) continue;
+            if (!IR_ENTRY_TOKEN.matcher(title).find()) continue;
+            String lower = title.toLowerCase(Locale.ROOT);
+            boolean noise = false;
+            for (String bad : NAV_NOISE) {
+                if (lower.contains(bad)) {
+                    noise = true;
+                    break;
+                }
+            }
+            if (noise) continue;
+            String url = resolve(base, m.group(1).strip());
+            if (url == null || !sameHostFamily(base, url)) continue;
+            if (!seen.add(url) && !seen.add(lower)) continue;
+            out.add(new IrEntry(title, irDate(title, url), url));
+        }
+        return out;
+    }
+
+    /** ISO date from title or href - full date first, dotted German, bare year last. */
+    static String irDate(String title, String url) {
+        String hay = title + " " + url;
+        Matcher iso = IR_DATE_ISO.matcher(hay);
+        if (iso.find()) return iso.group();
+        Matcher dot = IR_DATE_DOTTED.matcher(hay);
+        if (dot.find()) {
+            return String.format(Locale.ROOT, "%s-%02d-%02d", dot.group(3),
+                    Integer.parseInt(dot.group(2)), Integer.parseInt(dot.group(1)));
+        }
+        Matcher year = IR_YEAR.matcher(hay);
+        return year.find() ? year.group(1) : null;
+    }
+
     private String fetch(String url) throws Exception {
         Map<String, String> headers = new LinkedHashMap<>();
         headers.put("User-Agent", userAgent);
@@ -135,6 +246,11 @@ final class CompanyPressScout {
      * link must stay on the company's own host family.
      */
     static String bestPressLink(String html, URI base) {
+        return bestLink(html, base, PRESS_HINTS);
+    }
+
+    /** The best-ranked section link of a page for the given hint list. */
+    static String bestLink(String html, URI base, String[] hints) {
         String bestUrl = null;
         int bestRank = Integer.MAX_VALUE;
         Matcher m = ANCHOR.matcher(html);
@@ -142,8 +258,8 @@ final class CompanyPressScout {
             String href = m.group(1).strip();
             String text = flatten(m.group(2)).toLowerCase(Locale.ROOT);
             String hrefLower = href.toLowerCase(Locale.ROOT);
-            for (int rank = 0; rank < PRESS_HINTS.length && rank < bestRank; rank++) {
-                String hint = PRESS_HINTS[rank];
+            for (int rank = 0; rank < hints.length && rank < bestRank; rank++) {
+                String hint = hints[rank];
                 if (!hrefLower.contains(hint) && !text.contains(hint)) continue;
                 String absolute = resolve(base, href);
                 if (absolute == null || !sameHostFamily(base, absolute)) continue;

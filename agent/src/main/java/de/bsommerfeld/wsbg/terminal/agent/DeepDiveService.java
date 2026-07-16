@@ -147,6 +147,8 @@ public class DeepDiveService {
     private static final int MAX_US_SURPRISES = 4;
     private static final int MAX_ANALYST_ACTIONS = 10;
     private static final int MAX_ACTION_TABLE_ROWS = 8;
+    /** First-party IR-archive entries kept (reports, calls, calendar). */
+    private static final int MAX_IR_ENTRIES = 12;
     /** Past calendar years the press-history leg sweeps (one window each). */
     private static final int PRESS_HISTORY_YEARS = 3;
     /** Headlines kept per history year - an arc marker, never a second firehose. */
@@ -2429,6 +2431,20 @@ public class DeepDiveService {
         } catch (Exception e) {
             LOG.debug("[DEEPDIVE] press sweep failed: {}", e.getMessage());
         }
+        // The IR ARCHIVE leg (user mandate 2026-07-16 "Ist, Soll UND
+        // vergangener Stand"): the first-party record of reports, calls and
+        // calendar dates - its OWN shelf block, never through the news triage
+        // (the 30-day freshness cut would behead every past quarter).
+        try {
+            List<CompanyPressScout.IrEntry> entries = scout.irEntries(website, MAX_IR_ENTRIES);
+            if (!entries.isEmpty()) {
+                m.irEntries = entries;
+                LOG.info("[DEEPDIVE] '{}' IR archive: {} first-party entry(ies) from {}.",
+                        subject, entries.size(), website);
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] IR archive failed: {}", e.getMessage());
+        }
     }
 
     /**
@@ -2689,6 +2705,8 @@ public class DeepDiveService {
         Map<String, String> newsTargets = Map.of();
         /** Multi-year press HISTORY (headlines only) - the name's longer arc. */
         List<RawNewsItem> pressHistory = List.of();
+        /** The company's OWN IR archive: dated reports, calls, calendar (first-party). */
+        List<CompanyPressScout.IrEntry> irEntries = List.of();
         /** The figure layer, built BEFORE the prose (pure function of the legs). */
         List<DeepDiveRecord.ChartFigure> charts = List.of();
         /** Per section ordinal: the figure IDs + captions the prose may point at. */
@@ -3431,6 +3449,7 @@ public class DeepDiveService {
         appendStructure(sb, m, nums);
         out[SEC_SITUATION] = new Shelf(take(sb), newsBlocksFor(m, "LAGE", nums));
 
+        appendIrArchive(sb, m, nums, false);
         appendFundamentals(sb, m.deepDive, nums);
         appendBalance(sb, m.deepDive, nums);
         appendShareCount(sb, m.deepDive, nums);
@@ -3457,6 +3476,7 @@ public class DeepDiveService {
         out[SEC_CATALYSTS] = new Shelf(take(sb), newsBlocksFor(m, "KATALYSATOR", nums));
 
         appendUpcomingEvents(sb, m.analystView, nums);
+        appendIrArchive(sb, m, nums, true);
         appendMacroDocket(sb, m, nums);
         appendEarningsConsensus(sb, m, nums);
         appendEstimatePath(sb, m.deepDive, nums);
@@ -3491,6 +3511,32 @@ public class DeepDiveService {
             out[i] = new Shelf(isBlank(base) ? block : base + block, out[i].newsBlocks());
         }
         return out;
+    }
+
+    /**
+     * The company's OWN IR archive as a dated block - the first-party record
+     * the press paraphrases. {@code futureOnly} serves the outlook (coming
+     * dates); the fundamentals shelf carries the full archive. Undatable
+     * entries ride only the full view, honestly unlabeled.
+     */
+    private static void appendIrArchive(StringBuilder sb, Material m,
+            Map<String, Integer> nums, boolean futureOnly) {
+        if (m.irEntries.isEmpty()) return;
+        String today = STAMP.format(Instant.now()).substring(0, 10);
+        List<String> lines = new ArrayList<>();
+        for (CompanyPressScout.IrEntry e : m.irEntries) {
+            if (futureOnly && (e.dateIso() == null || e.dateIso().compareTo(today) < 0)) {
+                continue;
+            }
+            lines.add("  - " + (e.dateIso() != null ? "[" + e.dateIso() + "] " : "")
+                    + e.title());
+        }
+        if (lines.isEmpty()) return;
+        sb.append(futureOnly
+                        ? "IR CALENDAR (first-party, the company's own coming dates)"
+                        : "IR ARCHIVE (first-party: the company's own reports, calls and dates)")
+                .append(mark(nums, "ir")).append(":\n");
+        for (String line : lines) sb.append(line).append('\n');
     }
 
     /**
@@ -3684,6 +3730,7 @@ public class DeepDiveService {
         if (!m.worldSignalKeep.isEmpty()) nums.put("world", ++n);
         if (m.earningsEstimate != null) nums.put("whispers", ++n);
         if (!m.pressHistory.isEmpty()) nums.put("history", ++n);
+        if (!m.irEntries.isEmpty()) nums.put("ir", ++n);
         if (m.volumeProfile != null || m.orderBook != null) nums.put("structure", ++n);
         if (!m.memoryEvents.isEmpty() || !m.baseRateLines.isEmpty()) nums.put("memory", ++n);
         for (int i = 0; i < m.news.size(); i++) nums.put("news:" + i, ++n);
@@ -5791,6 +5838,12 @@ public class DeepDiveService {
                                 + "Literatur-Prioren"
                         : "Market memory - house event register (EDGAR, MarketBeat, NASDAQ, EQS "
                                 + "ad-hocs) with measured reactions and attributed literature priors";
+            case "ir":
+                return de
+                        ? "Unternehmens-IR - Finanzberichte, Calls und Finanzkalender von der "
+                                + "Firmenwebsite (first-party)"
+                        : "Company IR - financial reports, calls and calendar from the "
+                                + "company website (first-party)";
             case "history":
                 return de
                         ? "Google News Archiv - mehrjährige Presse-Historie (Schlagzeilen, "
