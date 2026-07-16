@@ -23,13 +23,13 @@ class RegimeConditionalBaseRateTest {
         assertTrue(reading.isPresent());
         assertEquals(0.5, reading.get().value(), 1e-12);
         String interpretation = reading.get().interpretation();
-        assertTrue(interpretation.contains("BELASTBAR"));
-        assertTrue(interpretation.contains("dagegen"));
+        assertTrue(interpretation.contains("ROBUST"));
+        assertTrue(interpretation.contains("by contrast"));
         assertTrue(interpretation.contains("BÄR"));
         assertTrue(interpretation.contains("SEITWÄRTS"));
-        assertTrue(interpretation.contains("regimeübergreifend"));
+        assertTrue(interpretation.contains("across regimes"));
         assertTrue(interpretation.contains("n=200"));
-        assertTrue(interpretation.contains("90%-CI"));
+        assertTrue(interpretation.contains("90% CI"));
     }
 
     @Test
@@ -38,8 +38,8 @@ class RegimeConditionalBaseRateTest {
                 "Zins-Event", BY_REGIME, "BÄR");
         assertTrue(reading.isPresent());
         assertEquals(0.25, reading.get().value(), 1e-12);
-        assertTrue(reading.get().interpretation().contains("INDIKATIV"));
-        assertTrue(reading.get().interpretation().contains("Tendenz"));
+        assertTrue(reading.get().interpretation().contains("INDICATIVE"));
+        assertTrue(reading.get().interpretation().contains("tendency"));
     }
 
     @Test
@@ -49,9 +49,9 @@ class RegimeConditionalBaseRateTest {
         assertTrue(reading.isPresent());
         assertEquals(0.25, reading.get().value(), 1e-12);
         String interpretation = reading.get().interpretation();
-        assertTrue(interpretation.contains("ANEKDOTISCH"));
-        assertTrue(interpretation.contains("praktisch wertlos"));
-        assertTrue(interpretation.contains("Vorsicht"));
+        assertTrue(interpretation.contains("ANECDOTAL"));
+        assertTrue(interpretation.contains("practically worthless"));
+        assertTrue(interpretation.contains("Caution"));
     }
 
     @Test

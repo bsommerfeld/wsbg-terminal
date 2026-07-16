@@ -6,44 +6,44 @@ import de.bsommerfeld.wsbg.terminal.signals.SignalReading;
 import java.util.Optional;
 
 /**
- * Multivariater Abstand des heutigen Weltzustands vom Normalzustand ueber
- * alle Fischernetz-Pegel gleichzeitig.
+ * Multivariate distance of today's world state from the normal state across
+ * all of the fishing net's gauges at once.
  *
- * <p><b>Methode:</b> Aus der Tages-Historie (Zeilen = Tage, Spalten = Pegel)
- * werden Mittelwert-Vektor und Stichproben-Kovarianzmatrix geschaetzt und die
- * Mahalanobis-Distanz (Mahalanobis, "On the generalised distance in
- * statistics", 1936) des aktuellen Pegel-Vektors gerechnet. Gegen wacklige
- * bzw. singulaere Kovarianzen wird Ridge-regularisiert (Shrinkage-Gedanke
- * nach Ledoit/Wolf): auf die Diagonale kommt lambda = 0.1 * (Spur/d). Die
- * Inverse entsteht per Gauss-Jordan-Elimination mit Spalten-Pivotisierung
- * (d ist klein). Der Signalwert ist D/sqrt(d), also eine sigma-Anmutung
- * unabhaengig von der Pegel-Zahl. Zusaetzlich wird pro Pegel der univariate
- * z-Score gerechnet und die drei staerksten Treiber werden benannt.
+ * <p><b>Method:</b> from the daily history (rows = days, columns = gauges)
+ * the mean vector and sample covariance matrix are estimated and the
+ * Mahalanobis distance (Mahalanobis, "On the generalised distance in
+ * statistics", 1936) of the current gauge vector is computed. Against shaky
+ * or singular covariances a ridge regularisation is applied (shrinkage idea
+ * after Ledoit/Wolf): lambda = 0.1 * (trace/d) goes onto the diagonal. The
+ * inverse comes from Gauss-Jordan elimination with column pivoting (d is
+ * small). The signal value is D/sqrt(d), a sigma-like reading independent of
+ * the gauge count. Additionally the univariate z-score per gauge is computed
+ * and the three strongest drivers are named.
  *
- * <p><b>Inputs im Terminal:</b> die taeglichen Fischernetz-Pegelstaende der
- * Welt-Kontext-Clients - Politik, Oel, Maritim sowie die Zivilschicht
- * (Blaulicht, Streiks, Oeffis, Kliniken) - als Matrix Tage x Pegel, plus der
- * heutige Pegel-Vektor.
+ * <p><b>Terminal inputs:</b> the daily fishing-net gauge levels of the
+ * world-context clients - politics, oil, maritime plus the civil layer
+ * (emergency services, strikes, transit, clinics) - as a days x gauges
+ * matrix, plus today's gauge vector.
  */
 public final class WorldAnomalyIndex {
 
-    /** Ridge-Anteil an der mittleren Diagonal-Varianz. */
+    /** Ridge share of the mean diagonal variance. */
     private static final double RIDGE_FRACTION = 0.1;
-    /** Ab hier gilt die Welt als Ausnahmezustand (sigma-Einheiten). */
+    /** From here the world counts as an exceptional state (sigma units). */
     private static final double EXTREME = 3.0;
-    /** Ab hier gilt erhoehte Weltspannung (sigma-Einheiten). */
+    /** From here elevated world tension applies (sigma units). */
     private static final double ELEVATED = 1.5;
 
     private WorldAnomalyIndex() {
     }
 
     /**
-     * Misst, wie viele sigma der heutige Weltzustand vom Normalzustand entfernt ist.
+     * Measures how many sigma today's world state sits from the normal state.
      *
-     * @param history        Historie, Zeilen = Tage, Spalten = Pegel (t x d)
-     * @param current        aktueller Pegel-Vektor (Laenge d)
-     * @param dimensionNames Namen der Pegel (Laenge d)
-     * @return Befund, oder empty bei d &lt; 2, t &lt; max(30, 3*d) oder inkonsistenten Laengen
+     * @param history        history, rows = days, columns = gauges (t x d)
+     * @param current        current gauge vector (length d)
+     * @param dimensionNames gauge names (length d)
+     * @return reading, or empty for d &lt; 2, t &lt; max(30, 3*d) or inconsistent lengths
      */
     public static Optional<SignalReading> measure(double[][] history, double[] current, String[] dimensionNames) {
         if (history == null || current == null || dimensionNames == null) {
@@ -64,7 +64,7 @@ public final class WorldAnomalyIndex {
             }
         }
 
-        // Mittelwert-Vektor und Stichproben-Kovarianz (n-1)
+        // Mean vector and sample covariance (n-1)
         double[] mean = new double[d];
         for (double[] row : history) {
             for (int j = 0; j < d; j++) {
@@ -90,7 +90,7 @@ public final class WorldAnomalyIndex {
             }
         }
 
-        // Ridge-Regularisierung: lambda = 0.1 * (Spur/d) auf die Diagonale
+        // Ridge regularisation: lambda = 0.1 * (trace/d) onto the diagonal
         double trace = 0;
         for (int j = 0; j < d; j++) {
             trace += cov[j][j];
@@ -105,7 +105,7 @@ public final class WorldAnomalyIndex {
             return Optional.empty();
         }
 
-        // Mahalanobis-Distanz des aktuellen Vektors
+        // Mahalanobis distance of the current vector
         double[] diff = new double[d];
         for (int j = 0; j < d; j++) {
             diff[j] = current[j] - mean[j];
@@ -119,7 +119,7 @@ public final class WorldAnomalyIndex {
         double distance = Math.sqrt(Math.max(0, d2));
         double value = distance / Math.sqrt(d);
 
-        // Univariate Einzel-z-Scores als Treiber-Ranking
+        // Univariate per-gauge z-scores as the driver ranking
         double[] z = new double[d];
         for (int j = 0; j < d; j++) {
             double[] column = new double[t];
@@ -134,7 +134,7 @@ public final class WorldAnomalyIndex {
             order[j] = j;
         }
         java.util.Arrays.sort(order, (x, y) -> Double.compare(z[y], z[x]));
-        StringBuilder drivers = new StringBuilder("Top-Treiber: ");
+        StringBuilder drivers = new StringBuilder("Top drivers: ");
         int top = Math.min(3, d);
         for (int r = 0; r < top; r++) {
             if (r > 0) {
@@ -147,36 +147,36 @@ public final class WorldAnomalyIndex {
 
         String interpretation;
         if (value >= EXTREME) {
-            interpretation = "AUSNAHMEZUSTAND: die Welt ist heute " + MathKit.fmt(value, 1)
-                    + " sigma vom Normalband entfernt - quantitative Rückwand für die Großwetterlage. "
-                    + "Die benannten Treiber zuerst sezieren und mit der News-Lage abgleichen. "
-                    + drivers;
+            interpretation = "EXCEPTIONAL STATE: the world is " + MathKit.fmt(value, 1)
+                    + " sigma strange today, driven by the named gauges - quantitative backstop "
+                    + "for the big-picture read. Dissect the drivers first and cross-check them "
+                    + "against the news picture. " + drivers;
         } else if (value >= ELEVATED) {
-            interpretation = "Erhöhte Weltspannung: der heutige Weltzustand weicht spürbar vom "
-                    + "Normalband ab - die benannten Treiber im Auge behalten. " + drivers;
+            interpretation = "Elevated world tension: today's world state deviates noticeably from "
+                    + "the normal band - keep the named drivers in view. " + drivers;
         } else {
-            interpretation = "Normalzustand: das Fischernetz ist ruhig, keine multivariate "
-                    + "Auffälligkeit über die Pegel hinweg. " + drivers;
+            interpretation = "Normal state: the fishing net is quiet, no multivariate anomaly "
+                    + "across the gauges. " + drivers;
         }
         if (t < 2 * minRows) {
-            interpretation += " Vorsicht: nur " + t + " Tage Historie bei " + d
-                    + " Pegeln - die Kovarianz-Schätzung ist entsprechend wacklig.";
+            interpretation += " Caution: only " + t + " days of history against " + d
+                    + " gauges - the covariance estimate is shaky accordingly.";
         }
 
         return Optional.of(new SignalReading(
                 "world-anomaly-index",
-                "Welt-Anomalie-Index (Mahalanobis)",
+                "World anomaly index (Mahalanobis)",
                 value,
-                MathKit.fmt(value, 2) + " sigma (Mahalanobis-Distanz / sqrt(d), 0 = Normalzustand)",
-                "Misst den multivariaten Abstand des heutigen Weltzustands vom Normalzustand "
-                        + "über alle Fischernetz-Pegel gleichzeitig - wie viele sigma seltsam die "
-                        + "Welt heute ist und welche Pegel das treiben.",
+                MathKit.fmt(value, 2) + " sigma (Mahalanobis distance / sqrt(d), 0 = normal state)",
+                "Measures the multivariate distance of today's world state from the normal state "
+                        + "across all fishing-net gauges at once - how many sigma strange the "
+                        + "world is today and which gauges drive it.",
                 interpretation));
     }
 
     /**
-     * Gauss-Jordan-Inversion mit Spalten-Pivotisierung; null bei (numerisch)
-     * singulaerer Matrix - kommt nach der Ridge-Regularisierung praktisch nicht vor.
+     * Gauss-Jordan inversion with column pivoting; null on a (numerically)
+     * singular matrix - practically ruled out after the ridge regularisation.
      */
     private static double[][] invert(double[][] m) {
         int d = m.length;

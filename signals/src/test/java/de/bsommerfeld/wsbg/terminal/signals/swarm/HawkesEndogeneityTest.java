@@ -23,13 +23,13 @@ class HawkesEndogeneityTest {
         }
         SignalReading reading = HawkesEndogeneity.measure(events).orElseThrow();
         assertTrue(reading.value() < 0.3, "value=" + reading.value());
-        assertTrue(reading.interpretation().contains("exogen"), reading.interpretation());
-        assertFalse(reading.interpretation().contains("Vorsicht"), reading.interpretation());
+        assertTrue(reading.interpretation().contains("EXOGENOUS"), reading.interpretation());
+        assertFalse(reading.interpretation().contains("Caution"), reading.interpretation());
     }
 
     @Test
     void seedsWithTwoQuickRepliesAreMixed() {
-        // 20 Wurzel-Events im 10-Minuten-Takt, jedes mit zwei schnellen Folge-Events.
+        // 20 root events at 10-minute intervals, each with two quick follow-up events.
         List<Instant> events = new ArrayList<>();
         for (int s = 0; s < 20; s++) {
             long seed = s * 600L;
@@ -39,12 +39,12 @@ class HawkesEndogeneityTest {
         }
         SignalReading reading = HawkesEndogeneity.measure(events).orElseThrow();
         assertTrue(reading.value() > 0.3 && reading.value() < 0.7, "value=" + reading.value());
-        assertTrue(reading.interpretation().contains("gemischt"), reading.interpretation());
+        assertTrue(reading.interpretation().contains("MIXED"), reading.interpretation());
     }
 
     @Test
     void denseCascadesAreEndogenous() {
-        // 5 Wurzel-Events, jedes zieht eine dichte, ausklingende Kaskade nach sich.
+        // 5 root events, each dragging a dense, decaying cascade behind it.
         int[] offsets = {3, 6, 10, 15, 21, 28, 36, 45, 55, 66};
         List<Instant> events = new ArrayList<>();
         for (int s = 0; s < 5; s++) {
@@ -56,7 +56,7 @@ class HawkesEndogeneityTest {
         }
         SignalReading reading = HawkesEndogeneity.measure(events).orElseThrow();
         assertTrue(reading.value() > 0.7, "value=" + reading.value());
-        assertTrue(reading.interpretation().contains("endogen"), reading.interpretation());
+        assertTrue(reading.interpretation().contains("ENDOGENOUS"), reading.interpretation());
     }
 
     @Test
@@ -66,7 +66,7 @@ class HawkesEndogeneityTest {
             events.add(BASE.plusSeconds(i * 60L));
         }
         SignalReading reading = HawkesEndogeneity.measure(events).orElseThrow();
-        assertTrue(reading.interpretation().contains("Vorsicht"), reading.interpretation());
+        assertTrue(reading.interpretation().contains("Caution"), reading.interpretation());
     }
 
     @Test

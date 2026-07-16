@@ -15,8 +15,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class AdHocTimingPriorTest {
 
     /**
-     * 36 Meldungen: 12 FREITAGNACHT (11 negativ), 12 HANDELSZEIT (6 negativ),
-     * 12 NACHBOERSLICH (2 negativ).
+     * 36 filings: 12 FRIDAY NIGHT (11 negative), 12 TRADING HOURS (6 negative),
+     * 12 AFTER HOURS (2 negative).
      */
     private static List<TimedFiling> history() {
         List<TimedFiling> h = new ArrayList<>();
@@ -39,8 +39,8 @@ class AdHocTimingPriorTest {
         // Posterior (11+1)/(12+2) = 0.857
         assertEquals(12.0 / 14.0, r.get().value(), 1e-9);
         assertTrue(r.get().value() >= 0.65);
-        assertTrue(r.get().interpretation().contains("TIMING-PRIOR SCHLECHT"));
-        assertTrue(r.get().interpretation().contains("FREITAGNACHT"));
+        assertTrue(r.get().interpretation().contains("BAD TIMING PRIOR"));
+        assertTrue(r.get().interpretation().contains("FRIDAY NIGHT"));
         assertTrue(r.get().interpretation().contains("n=12"));
     }
 
@@ -50,8 +50,8 @@ class AdHocTimingPriorTest {
         assertTrue(r.isPresent());
         // Posterior (6+1)/(12+2) = 0.5
         assertEquals(0.5, r.get().value(), 1e-9);
-        assertTrue(r.get().interpretation().contains("Neutraler Prior"));
-        assertTrue(r.get().interpretation().contains("HANDELSZEIT"));
+        assertTrue(r.get().interpretation().contains("Neutral prior"));
+        assertTrue(r.get().interpretation().contains("TRADING HOURS"));
     }
 
     @Test
@@ -61,21 +61,21 @@ class AdHocTimingPriorTest {
         // Posterior (2+1)/(12+2) = 0.214
         assertEquals(3.0 / 14.0, r.get().value(), 1e-9);
         assertTrue(r.get().value() < 0.45);
-        assertTrue(r.get().interpretation().contains("Unauffaelliges Zeitfenster"));
-        assertTrue(r.get().interpretation().contains("NACHBOERSLICH"));
+        assertTrue(r.get().interpretation().contains("Unremarkable window"));
+        assertTrue(r.get().interpretation().contains("AFTER HOURS"));
     }
 
     @Test
     void thinBucketCarriesCautionNote() {
-        // 30 Meldungen HANDELSZEIT, keine im FREITAGNACHT-Bucket -> n=0 dort.
+        // 30 filings TRADING HOURS, none in the FRIDAY NIGHT bucket -> n=0 there.
         List<TimedFiling> h = new ArrayList<>();
         for (int i = 0; i < 30; i++) {
             h.add(new TimedFiling(DayOfWeek.MONDAY, 10, i % 2 == 0));
         }
         Optional<SignalReading> r = AdHocTimingPrior.measure(h, DayOfWeek.SUNDAY, 12);
         assertTrue(r.isPresent());
-        assertTrue(r.get().interpretation().contains("Vorsicht"));
-        assertTrue(r.get().interpretation().contains("duenne Datenbasis"));
+        assertTrue(r.get().interpretation().contains("Caution"));
+        assertTrue(r.get().interpretation().contains("thin data"));
     }
 
     @Test

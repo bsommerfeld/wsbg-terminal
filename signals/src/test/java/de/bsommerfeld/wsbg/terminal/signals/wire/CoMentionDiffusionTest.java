@@ -15,7 +15,7 @@ class CoMentionDiffusionTest {
 
     @Test
     void chainGraphConcentratesMassOnClearContagionPath() {
-        // Linie seedco - alpha - beta - gamma: Masse fliesst weit vom Seed weg.
+        // Chain seedco - alpha - beta - gamma: mass flows far away from the seed.
         List<Edge> edges = List.of(
                 new Edge("seedco", "alpha", 1),
                 new Edge("alpha", "beta", 1),
@@ -26,10 +26,10 @@ class CoMentionDiffusionTest {
         assertTrue(reading.isPresent());
         assertEquals("co-mention-diffusion", reading.get().id());
         assertTrue(reading.get().value() >= 0.5, "chain graph pushes mass off the seed");
-        assertTrue(reading.get().interpretation().contains("Ansteckungspfad"));
+        assertTrue(reading.get().interpretation().contains("contagion path"));
         assertTrue(reading.get().interpretation().contains("alpha (0."),
                 "top candidate must be listed with its score");
-        assertTrue(reading.get().interpretation().contains("Rauch"));
+        assertTrue(reading.get().interpretation().contains("smoke"));
     }
 
     @Test
@@ -43,7 +43,7 @@ class CoMentionDiffusionTest {
 
         assertTrue(reading.isPresent());
         assertTrue(reading.get().value() >= 0.25 && reading.get().value() < 0.5);
-        assertTrue(reading.get().interpretation().contains("Mittlere Kopplung"));
+        assertTrue(reading.get().interpretation().contains("Medium coupling"));
     }
 
     @Test
@@ -57,7 +57,7 @@ class CoMentionDiffusionTest {
 
         assertTrue(reading.isPresent());
         assertTrue(reading.get().value() < 0.25, "mass spread over 12 equal satellites");
-        assertTrue(reading.get().interpretation().contains("Diffuses Umfeld"));
+        assertTrue(reading.get().interpretation().contains("Diffuse surroundings"));
         assertTrue(reading.get().interpretation().contains("satellita (0."));
     }
 
@@ -71,7 +71,7 @@ class CoMentionDiffusionTest {
         Optional<SignalReading> reading = CoMentionDiffusion.measure(edges, "seedco", 3);
 
         assertTrue(reading.isPresent());
-        assertTrue(reading.get().interpretation().contains("Vorsicht"));
+        assertTrue(reading.get().interpretation().contains("Caution"));
     }
 
     @Test

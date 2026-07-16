@@ -52,9 +52,9 @@ class GroundUnrestResidualTest {
                 .measure(civil(press, 0.0), press)
                 .orElseThrow();
         assertTrue(reading.value() < 1.0);
-        assertTrue(reading.interpretation().contains("gedeckt"));
+        assertTrue(reading.interpretation().contains("covered"));
         // 40 Tage sind unter der Komfort-Schwelle -> Vorsichts-Zusatz
-        assertTrue(reading.interpretation().contains("Vorsicht"));
+        assertTrue(reading.interpretation().contains("Caution"));
         assertEquals("ground-unrest-residual", reading.id());
     }
 
@@ -65,7 +65,7 @@ class GroundUnrestResidualTest {
                 .measure(civil(press, 0.15), press)
                 .orElseThrow();
         assertTrue(reading.value() >= 1.0 && reading.value() < 2.0);
-        assertTrue(reading.interpretation().contains("Voreile"));
+        assertTrue(reading.interpretation().contains("head start"));
     }
 
     @Test
@@ -75,7 +75,7 @@ class GroundUnrestResidualTest {
                 .measure(civil(press, 0.5), press)
                 .orElseThrow();
         assertTrue(reading.value() >= 2.0);
-        assertTrue(reading.interpretation().contains("WIR SIND FRÜH"));
+        assertTrue(reading.interpretation().contains("WE ARE EARLY"));
     }
 
     @Test

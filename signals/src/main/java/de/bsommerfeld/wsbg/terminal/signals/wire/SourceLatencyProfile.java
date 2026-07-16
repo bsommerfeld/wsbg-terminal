@@ -10,31 +10,30 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Quellen-Latenz-Profil: erkennt den Exklusiv-Verdacht, wenn eine chronisch
- * langsame Quelle eine Story als Erstdrucker bringt.
+ * Source latency profile: flags exclusive suspicion when a chronically slow
+ * source prints a story first.
  *
- * <p><b>Methode:</b> robuste Lagemasse statt Mittelwerten (Median-Statistik im
- * Sinne der explorativen Datenanalyse nach Tukey, "Exploratory Data Analysis",
- * 1977). Fuer jede Quelle wird der Median ihrer historischen Minuten hinter dem
- * jeweiligen Erstdrucker gebildet (0 = war selbst Erstdrucker). Der Befund ist
- * das Langsamkeits-Ratio: Median der aktuellen Erstdrucker-Quelle geteilt durch
- * den Median aller Quellen-Mediane. Ein Ratio deutlich ueber 1 heisst: eine
- * Quelle, die sonst hinterherdruckt, ist diesmal vorn - das klassische Muster
- * von Eigenmaterial/Exklusivrecherche statt Agentur-Uebernahme.
+ * <p><b>Method:</b> robust location measures instead of means (median statistics
+ * in the spirit of Tukey's exploratory data analysis, "Exploratory Data
+ * Analysis", 1977). For each source, the median of its historical minutes behind
+ * the respective first printer is computed (0 = was first printer itself). The
+ * finding is the slowness ratio: median of the current first-printer source
+ * divided by the median of all per-source medians. A ratio well above 1 means a
+ * source that usually trails is out front this time - the classic pattern of own
+ * material/exclusive reporting rather than wire pickup.
  *
- * <p><b>Inputs im Terminal:</b> die Story-Cluster der Redaktion tragen pro
- * Mitglied den Quellen-Zeitstempel; daraus laesst sich pro Story die Reihenfolge
- * der Drucker und pro Quelle die Historie "Minuten hinter dem Erstdrucker"
- * ableiten. Diese Historie wird hier als {@code minutesBehindFirstBySource}
- * uebergeben, zusammen mit dem Namen der Quelle, die die aktuelle Story zuerst
- * gedruckt hat.
+ * <p><b>Inputs in the terminal:</b> the newsroom's story clusters carry a source
+ * timestamp per member; from these one can derive, per story, the printing order
+ * and, per source, the history "minutes behind the first printer". That history
+ * is passed here as {@code minutesBehindFirstBySource}, together with the name
+ * of the source that printed the current story first.
  */
 public final class SourceLatencyProfile {
 
-    /** Stabiler Maschinen-Schluessel dieses Signals. */
+    /** Stable machine key of this signal. */
     public static final String ID = "source-latency-profile";
 
-    private static final String TITLE = "Quellen-Latenz (Erstdrucker-Analyse)";
+    private static final String TITLE = "Source latency (first-printer analysis)";
 
     private static final int MIN_OBSERVATIONS = 10;
     private static final int COMFORTABLE_OBSERVATIONS = 20;
@@ -45,9 +44,9 @@ public final class SourceLatencyProfile {
     }
 
     /**
-     * @param firstPrinterNow            Name der Quelle, die die aktuelle Story zuerst gedruckt hat
-     * @param minutesBehindFirstBySource pro Quelle die historischen Minuten hinter dem Erstdrucker
-     *                                   (0 = war selbst Erstdrucker)
+     * @param firstPrinterNow            name of the source that printed the current story first
+     * @param minutesBehindFirstBySource per source, the historical minutes behind the first printer
+     *                                   (0 = was first printer itself)
      */
     public static Optional<SignalReading> measure(
             String firstPrinterNow, Map<String, double[]> minutesBehindFirstBySource) {
@@ -77,7 +76,7 @@ public final class SourceLatencyProfile {
         }
         double fieldMedian = median(mediansArray);
         if (fieldMedian <= 0 || !Double.isFinite(fieldMedian)) {
-            // Degeneriertes Feld (alle Quellen chronisch Erstdrucker) - kein belastbares Ratio.
+            // Degenerate field (all sources chronically first printers) - no reliable ratio.
             return Optional.empty();
         }
 
@@ -88,31 +87,31 @@ public final class SourceLatencyProfile {
 
         String interpretation;
         if (value >= 1.5) {
-            interpretation = "EXKLUSIV-VERDACHT: " + firstPrinterNow
-                    + " ist chronisch langsam (Median " + ownMedianText
-                    + " min hinter dem Erstdrucker, Feld-Median " + fieldMedianText
-                    + " min) und druckt diese Story trotzdem zuerst - die Quelle hat mit hoher"
-                    + " Wahrscheinlichkeit Eigenmaterial, die Story ist mehr wert als ihre Reichweite.";
+            interpretation = "EXCLUSIVE SUSPICION: " + firstPrinterNow
+                    + " is chronically slow (median " + ownMedianText
+                    + " min behind the first printer, field median " + fieldMedianText
+                    + " min) yet prints this story first - the source most likely holds own"
+                    + " material, the story is worth more than its reach.";
         } else if (value > 0.7) {
-            interpretation = "Unauffällig: " + firstPrinterNow + " (Median " + ownMedianText
-                    + " min) liegt im normalen Latenz-Feld (Feld-Median " + fieldMedianText
-                    + " min) - normale Erstdrucker-Reihenfolge ohne Extra-Aussage.";
+            interpretation = "Unremarkable: " + firstPrinterNow + " (median " + ownMedianText
+                    + " min) sits within the normal latency field (field median " + fieldMedianText
+                    + " min) - ordinary first-printer order with no extra message.";
         } else {
-            interpretation = "Der übliche Schnellste war zuerst: " + firstPrinterNow
-                    + " (Median " + ownMedianText + " min) ist ohnehin flotter als das Feld (Feld-Median "
-                    + fieldMedianText + " min) - kein Zusatzsignal aus der Reihenfolge.";
+            interpretation = "The usual fastest was first: " + firstPrinterNow
+                    + " (median " + ownMedianText + " min) is quicker than the field anyway (field median "
+                    + fieldMedianText + " min) - no extra signal from the printing order.";
         }
         if (ownHistory.length < COMFORTABLE_OBSERVATIONS
                 || minutesBehindFirstBySource.size() < COMFORTABLE_SOURCES) {
-            interpretation += " Vorsicht: dünne Datenlage (wenige Beobachtungen bzw. Quellen)"
-                    + " - Befund nur als schwaches Indiz lesen.";
+            interpretation += " Caution: only thin data (few observations or sources)"
+                    + " - read the finding as a weak hint only.";
         }
 
         String formattedValue = MathKit.fmt(value, 2)
-                + "x (Langsamkeits-Ratio, >1 = chronisch langsamer als das Feld)";
-        String definition = "Verhältnis des Latenz-Medians der aktuellen Erstdrucker-Quelle"
-                + " (Minuten hinter dem jeweils schnellsten Drucker) zum Median aller"
-                + " Quellen-Mediane - misst, ob eine sonst langsame Quelle diesmal vorn liegt.";
+                + "x (slowness ratio, >1 = chronically slower than the field)";
+        String definition = "Ratio of the current first-printer source's latency median"
+                + " (minutes behind the fastest printer) to the median of all per-source"
+                + " medians - measures whether a usually slow source is out front this time.";
 
         return Optional.of(new SignalReading(ID, TITLE, value, formattedValue, definition, interpretation));
     }

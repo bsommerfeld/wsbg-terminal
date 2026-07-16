@@ -280,7 +280,20 @@ public class WeatherReportService {
             String pressText = WeatherMaterial.pressText(
                     statsCollector.pressItems(MAX_PRESS_ITEMS));
             WeatherStatsCollector.Stats stats = statsCollector.collect(headlines, pressText);
-            String text = writeReport(headlines, stats);
+            // Quant signals (house-computed): attention entropy incl. collapse
+            // and the cage-vs-Wall-Street divergence, both DERIVED from the
+            // permanent archives at generation time — statistics in code, the
+            // model only reads the finished lines. A whiffed computation costs
+            // the block, never the edition.
+            List<de.bsommerfeld.wsbg.terminal.signals.SignalReading> signalReadings = List.of();
+            try {
+                signalReadings = SignalDesk.forMarket(
+                        headlineArchive.recent(java.time.Duration.ofDays(61)),
+                        fearGreedByDate(today), today, zone);
+            } catch (Exception e) {
+                LOG.debug("[WEATHER] quant signals failed: {}", e.getMessage());
+            }
+            String text = writeReport(headlines, stats, SignalDesk.block(signalReadings));
             if (text == null || text.isBlank()) {
                 LOG.warn("Wetterbericht {}: model returned no usable text; giving up for this run.", date);
                 return;
@@ -300,7 +313,7 @@ public class WeatherReportService {
             reportArchive.append(new WeatherReportRecord(date, Instant.now().getEpochSecond(),
                     text, brain.getUserLanguage().code(), headlines.size(), important,
                     stats.indices(), stats.tickers(), stats.news(), stats.sentiment(),
-                    stats.world(), charts));
+                    stats.world(), charts, SignalDesk.values(signalReadings)));
             success = true;
             LOG.info("Wetterbericht {} written: {} headlines → {} chars in {} s.",
                     date, headlines.size(), text.length(), (System.currentTimeMillis() - t0) / 1_000);
@@ -332,6 +345,18 @@ public class WeatherReportService {
         return out;
     }
 
+    /** ISO date → archived Fear&amp;Greed score — the divergence signal's alignment key. */
+    private java.util.Map<String, Double> fearGreedByDate(java.time.LocalDate today) {
+        var archive = fearGreedHistory;
+        if (archive == null) return java.util.Map.of();
+        java.util.Map<String, Double> out = new java.util.HashMap<>();
+        for (int back = FG_REGIME_DAYS; back >= 0; back--) {
+            String iso = today.minusDays(back).toString();
+            archive.byDate(iso).ifPresent(r -> out.put(iso, r.score()));
+        }
+        return out;
+    }
+
     /**
      * The Redaktion: window-split wire digests → five section shelves → per
      * section author → deterministic examiner → challenge/revise until STANDS
@@ -339,7 +364,8 @@ public class WeatherReportService {
      * belt. A whiffed section degrades to its honest literal, never to a
      * missing heading (the charts anchor by ordinal).
      */
-    private String writeReport(List<HeadlineRecord> headlines, WeatherStatsCollector.Stats stats) {
+    private String writeReport(List<HeadlineRecord> headlines, WeatherStatsCollector.Stats stats,
+            String signalBlock) {
         String lang = brain.getUserLanguage().code();
         boolean de = "de".equalsIgnoreCase(lang);
         ChatModel model = brain.getDeepDiveModel() != null
@@ -369,6 +395,14 @@ public class WeatherReportService {
             }
         } catch (Exception e) {
             LOG.debug("[WEATHER] market-memory block failed: {}", e.getMessage());
+        }
+        // Quant signals onto the Großwetterlage shelf — the quantitative back
+        // wall of the big picture (the market-memory pattern: appended block,
+        // discipline line included, never a shelf of its own).
+        if (signalBlock != null && !signalBlock.isBlank()) {
+            int idx = WeatherMaterial.SEC_PICTURE;
+            shelves[idx] = shelves[idx] == null || shelves[idx].isBlank()
+                    ? signalBlock : shelves[idx] + "\n" + signalBlock;
         }
         List<String> headings = de ? SECTIONS_DE : SECTIONS_EN;
 

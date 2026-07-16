@@ -19,7 +19,7 @@ class EstimateFanDivergenceTest {
         Optional<SignalReading> reading = EstimateFanDivergence.measure(WIDE, NARROW);
         assertTrue(reading.isPresent());
         assertTrue(reading.get().value() >= 0.2);
-        assertTrue(reading.get().interpretation().contains("FÄCHER ÖFFNET SICH"));
+        assertTrue(reading.get().interpretation().contains("FAN OPENING"));
     }
 
     @Test
@@ -27,7 +27,7 @@ class EstimateFanDivergenceTest {
         Optional<SignalReading> reading = EstimateFanDivergence.measure(NARROW, WIDE);
         assertTrue(reading.isPresent());
         assertTrue(reading.get().value() <= -0.2);
-        assertTrue(reading.get().interpretation().contains("FÄCHER KOLLABIERT"));
+        assertTrue(reading.get().interpretation().contains("FAN COLLAPSING"));
     }
 
     @Test
@@ -35,7 +35,7 @@ class EstimateFanDivergenceTest {
         Optional<SignalReading> reading = EstimateFanDivergence.measure(WIDE, WIDE);
         assertTrue(reading.isPresent());
         assertEquals(0.0, reading.get().value(), 1e-12);
-        assertTrue(reading.get().interpretation().contains("stabil"));
+        assertTrue(reading.get().interpretation().contains("stable"));
     }
 
     @Test
@@ -44,14 +44,14 @@ class EstimateFanDivergenceTest {
                 WIDE, Map.of(2026, 100.0, 2027, 100.0, 2028, 100.0));
         assertTrue(reading.isPresent());
         assertEquals(1.0, reading.get().value(), 1e-12);
-        assertTrue(reading.get().interpretation().contains("FÄCHER ÖFFNET SICH"));
+        assertTrue(reading.get().interpretation().contains("FAN OPENING"));
     }
 
     @Test
     void threeYearSnapshotsCarryCaution() {
         Optional<SignalReading> reading = EstimateFanDivergence.measure(WIDE, NARROW);
         assertTrue(reading.isPresent());
-        assertTrue(reading.get().interpretation().contains("Vorsicht"));
+        assertTrue(reading.get().interpretation().contains("Caution"));
     }
 
     @Test

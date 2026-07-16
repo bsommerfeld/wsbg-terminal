@@ -32,7 +32,7 @@ class NoveltyScoreTest {
 
         assertTrue(reading.isPresent());
         assertTrue(reading.get().value() >= 0.85, "erwartet Neuheit >= 0.85, war " + reading.get().value());
-        assertTrue(reading.get().interpretation().contains("REGIMEWECHSEL-KANDIDAT"));
+        assertTrue(reading.get().interpretation().contains("REGIME-CHANGE CANDIDATE"));
         assertEquals("novelty-score", reading.get().id());
     }
 
@@ -43,7 +43,7 @@ class NoveltyScoreTest {
 
         assertTrue(reading.isPresent());
         assertTrue(reading.get().value() <= 0.25, "erwartet Neuheit <= 0.25, war " + reading.get().value());
-        assertTrue(reading.get().interpretation().contains("Wiederholung"));
+        assertTrue(reading.get().interpretation().contains("Repetition"));
     }
 
     @Test
@@ -54,7 +54,7 @@ class NoveltyScoreTest {
         assertTrue(reading.isPresent());
         assertTrue(reading.get().value() > 0.25 && reading.get().value() < 0.85,
                 "erwartet Mittelband, war " + reading.get().value());
-        assertTrue(reading.get().interpretation().contains("Fortschreibung"));
+        assertTrue(reading.get().interpretation().contains("Normal continuation"));
     }
 
     @Test
@@ -63,7 +63,7 @@ class NoveltyScoreTest {
                 "Quartalszahlen kommen am Donnerstag vor Handelsstart", ARCHIVE);
 
         assertTrue(reading.isPresent());
-        assertTrue(reading.get().interpretation().contains("Vorsicht"));
+        assertTrue(reading.get().interpretation().contains("Caution"));
     }
 
     @Test

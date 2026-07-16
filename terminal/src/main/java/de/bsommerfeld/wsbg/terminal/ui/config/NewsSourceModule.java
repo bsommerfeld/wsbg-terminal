@@ -40,6 +40,75 @@ final class NewsSourceModule extends AbstractModule {
         // with teasers; keyless, public feed key (probed 2026-07-13).
         newsSources.addBinding().to(
                 de.bsommerfeld.wsbg.terminal.fool.FoolNewsClient.class);
+        // Ariva forum: the German retail FORUM-SENTIMENT leg — one keyless
+        // community RSS firehose with authoritative <isin> tags per post
+        // (multi-listing threads tag both share classes; probed 2026-07-16).
+        // The same forum backs the finanzen.net/onvista community white-labels,
+        // so this one feed covers all three venues. ISIN-addressed ONLY — post
+        // titles never name the company, so the name fan stays off. These are
+        // user opinions, not articles (publisher says "Ariva-Forum (name)").
+        newsSources.addBinding().to(
+                de.bsommerfeld.wsbg.terminal.ariva.ArivaForumRssClient.class);
+        // Ariva analysts: the sell-side RATINGS leg (dpa-AFX Analyser) — price
+        // targets and up/downgrades for German/European names as a keyless RSS
+        // firehose, a genre no other source carries as a feed (probed
+        // 2026-07-16). Dual-addressed: exact via the link's utm_content ISIN,
+        // name-fallback via the house title-precision filter.
+        newsSources.addBinding().to(
+                de.bsommerfeld.wsbg.terminal.ariva.ArivaAnalystRssClient.class);
+        // wallstreet-online board RSS: German retail FORUM SENTIMENT from the
+        // four broad equity boards (hot stocks, Deutsche Aktien im Fokus,
+        // Nebenwerte Deutschland, US hot stocks) — name-addressed against
+        // THREAD titles (which name the company); the German counterpart to
+        // the Ariva forum leg (which is ISIN-addressed). Board slugs are
+        // pinned verbatim from the live /rss index: an unknown slug answers
+        // 200 with a VALID default-board feed (probed 2026-07-16).
+        newsSources.addBinding().to(
+                de.bsommerfeld.wsbg.terminal.wallstreetonline.WsoBoardRssClient.class);
+        // Bluesky post search (app.bsky.feed.searchPosts): global social
+        // sentiment, keyless via api.bsky.app (the documented public.-host
+        // WAF-403s from DE; probed 2026-07-16). SOCIAL posts, not articles:
+        // cashtag search per symbol, name search with the house precision
+        // filter against the post text; ISIN leg no-op.
+        newsSources.addBinding().to(
+                de.bsommerfeld.wsbg.terminal.bluesky.BlueskyNewsClient.class);
+        // TradingView Minds: per-symbol ticker talk as a sentiment leg
+        // (social posts, not articles) — keyless JSON with cursor pagination
+        // (probed 2026-07-16), .DE→XETR mapping, US NASDAQ→NYSE fallback
+        // with venue memory. Symbol-addressed only.
+        newsSources.addBinding().to(
+                de.bsommerfeld.wsbg.terminal.tradingview.TradingViewMindsClient.class);
+        // Telegram publisher channels via the keyless t.me/s/ web preview:
+        // the fast German push wire (finanzen.net, GodmodeTrader, MarketTwits)
+        // — name-addressed firehose pool; channels with the preview opted out
+        // go session-dead via the probe gate (probed 2026-07-16).
+        newsSources.addBinding().to(
+                de.bsommerfeld.wsbg.terminal.telegram.TelegramChannelClient.class);
+        // Hacker News (Algolia search, keyless): the tech-salience signal —
+        // a paper surfacing on HN means the nerd public noticed; points and
+        // comment counts ride in the summary as weight. Name-addressed,
+        // last 90 days (probed 2026-07-16).
+        newsSources.addBinding().to(
+                de.bsommerfeld.wsbg.terminal.hackernews.HackerNewsClient.class);
+        // comdirect Community (Khoros forum): German investor echo as
+        // sentiment evidence — service/tax threads name instruments. ONLY the
+        // /rss/board endpoints pass the Cloudflare wall (pinned 2026-07-16);
+        // name-addressed firehose pool over the four finance boards.
+        newsSources.addBinding().to(
+                de.bsommerfeld.wsbg.terminal.comdirect.ComdirectCommunityClient.class);
+        // Lemmy / Fediverse community echo: !finanzen@feddit.org (German,
+        // small but real, ~1-2 posts/day) + !stocks@lemmy.world — a
+        // discussion signal, not volume; name-addressed against title AND
+        // body (keyless, no wall; probed 2026-07-16).
+        newsSources.addBinding().to(
+                de.bsommerfeld.wsbg.terminal.lemmy.LemmyClient.class);
+        // 4chan /biz/: raw US retail sentiment (the closest cultural relative
+        // to WSB — /smg/ and the ticker generals) via the official read-only
+        // JSON API, ONE catalog fetch per 5-min TTL (the 1-req/s API rule is
+        // trivially honoured). Unfiltered by design: the source delivers
+        // evidence, the model judges (house principle).
+        newsSources.addBinding().to(
+                de.bsommerfeld.wsbg.terminal.fourchan.FourChanBizClient.class);
         // PR Newswire UK: the EMEA press-release desk — one keyless all-news
         // RSS firehose (minutes-fresh, probed 2026-07-14), name-addressed via
         // the google-news precision filter; links are direct release URLs the

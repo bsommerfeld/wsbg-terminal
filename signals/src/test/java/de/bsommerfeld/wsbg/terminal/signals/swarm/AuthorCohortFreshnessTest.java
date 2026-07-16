@@ -22,7 +22,7 @@ class AuthorCohortFreshnessTest {
     void unusuallyFreshCohortIsPumpSuspicion() {
         Set<String> active = new HashSet<>();
         Map<String, Instant> firstSeen = new HashMap<>();
-        // 6 nie zuvor gesehene Accounts, 2 alte Hasen - kleine, sehr frische Kohorte.
+        // 6 never-before-seen accounts, 2 old hands - small, very fresh cohort.
         for (int i = 0; i < 6; i++) {
             active.add("fresh" + i);
         }
@@ -33,9 +33,9 @@ class AuthorCohortFreshnessTest {
         SignalReading reading = AuthorCohortFreshness
                 .measure(active, firstSeen, NOW, WINDOW, 0.20).orElseThrow();
         assertEquals(0.75, reading.value(), 1e-9);
-        assertTrue(reading.interpretation().contains("PUMP-VERDACHT"), reading.interpretation());
-        assertTrue(reading.interpretation().contains("Baseline 0.20"), reading.interpretation());
-        assertTrue(reading.interpretation().contains("Vorsicht"), reading.interpretation());
+        assertTrue(reading.interpretation().contains("PUMP SUSPICION"), reading.interpretation());
+        assertTrue(reading.interpretation().contains("baseline 0.20"), reading.interpretation());
+        assertTrue(reading.interpretation().contains("Caution"), reading.interpretation());
     }
 
     @Test
@@ -49,16 +49,16 @@ class AuthorCohortFreshnessTest {
         SignalReading reading = AuthorCohortFreshness
                 .measure(active, firstSeen, NOW, WINDOW, 0.20).orElseThrow();
         assertEquals(0.0, reading.value(), 1e-9);
-        assertTrue(reading.interpretation().contains("rganisch"), reading.interpretation());
-        assertTrue(reading.interpretation().contains("Baseline 0.20"), reading.interpretation());
+        assertTrue(reading.interpretation().contains("ORGANIC"), reading.interpretation());
+        assertTrue(reading.interpretation().contains("baseline 0.20"), reading.interpretation());
     }
 
     @Test
     void moderatelyFreshCohortIsElevated() {
         Set<String> active = new HashSet<>();
         Map<String, Instant> firstSeen = new HashMap<>();
-        // 4 von 10 jung (innerhalb des Fensters gesehen), Baseline 0.20:
-        // 0.4 > 1.5*0.2, aber nicht > 0.5 -> erhoeht statt Pump.
+        // 4 of 10 young (seen within the window), baseline 0.20:
+        // 0.4 > 1.5*0.2, but not > 0.5 -> elevated instead of pump.
         for (int i = 0; i < 4; i++) {
             active.add("young" + i);
             firstSeen.put("young" + i, NOW.minus(Duration.ofDays(2)));
@@ -70,8 +70,8 @@ class AuthorCohortFreshnessTest {
         SignalReading reading = AuthorCohortFreshness
                 .measure(active, firstSeen, NOW, WINDOW, 0.20).orElseThrow();
         assertEquals(0.4, reading.value(), 1e-9);
-        assertTrue(reading.interpretation().contains("rhöht"), reading.interpretation());
-        assertTrue(reading.interpretation().contains("Baseline 0.20"), reading.interpretation());
+        assertTrue(reading.interpretation().contains("ELEVATED"), reading.interpretation());
+        assertTrue(reading.interpretation().contains("baseline 0.20"), reading.interpretation());
     }
 
     @Test

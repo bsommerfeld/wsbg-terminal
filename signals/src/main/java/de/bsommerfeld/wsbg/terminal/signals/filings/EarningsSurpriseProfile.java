@@ -6,21 +6,21 @@ import de.bsommerfeld.wsbg.terminal.signals.SignalReading;
 import java.util.Optional;
 
 /**
- * Sandbagging-Profil: misst per Beta-Binomial-Posterior, ob eine Firma ihre
- * Prognosen systematisch schlaegt - und ob die aktuelle Ueberraschung selbst
- * gegen dieses Muster noch aussergewoehnlich ist.
+ * Sandbagging profile: uses a beta-binomial posterior to measure whether a
+ * firm systematically beats its guidance - and whether the current surprise
+ * is exceptional even against that pattern.
  *
- * <p><b>Methode:</b> Beta(1,1)-Posterior fuer die Beat-Wahrscheinlichkeit,
- * P(beat) = (beats + 1) / (reports + 2). Liegt eine aktuelle
- * Surprise-Prozentzahl und genug Surprise-Historie vor, wird zusaetzlich die
- * standardisierte Ueberraschung z = (aktuell - Mittel) / Std berechnet.
- * Literaturanker: Erwartungsmanagement und "meet or beat"-Verhalten
- * (Bartov/Givoly/Hayn 2002; Matsumoto 2002) - der eingepreiste Beat traegt
- * keine Information, erst die Abweichung vom eigenen Muster bewegt.
+ * <p><b>Method:</b> Beta(1,1) posterior for the beat probability,
+ * P(beat) = (beats + 1) / (reports + 2). If a current surprise percentage and
+ * enough surprise history are available, the standardized surprise
+ * z = (current - mean) / std is computed in addition. Literature anchor:
+ * expectations management and "meet or beat" behaviour (Bartov/Givoly/Hayn
+ * 2002; Matsumoto 2002) - the priced-in beat carries no information, only the
+ * deviation from the firm's own pattern moves.
  *
- * <p><b>Inputs im Terminal:</b> historische Beat/Miss-Bilanz und
- * Surprise-Prozente aus dem Kalender-Briefing (Ist vs. Prognose) sowie
- * Ergebnis-Meldungen der Ad-hoc-Feeds (fn-adhoc, EQS) und EDGAR-Filings.
+ * <p><b>Terminal inputs:</b> historical beat/miss record and surprise
+ * percentages from the calendar briefing (actual vs. forecast) plus earnings
+ * releases from the ad-hoc feeds (fn-adhoc, EQS) and EDGAR filings.
  */
 public final class EarningsSurpriseProfile {
 
@@ -32,12 +32,12 @@ public final class EarningsSurpriseProfile {
     }
 
     /**
-     * @param historicalBeats         Anzahl historischer Beats
-     * @param historicalReports       Anzahl historischer Reports (mindestens {@value #MIN_REPORTS})
-     * @param currentSurprisePct      aktuelle Ueberraschung in Prozent, oder null wenn unbekannt
-     * @param historicalSurprisesPct  historische Ueberraschungen in Prozent (fuer den z-Score,
-     *                                mindestens {@value #MIN_SURPRISE_HISTORY} Werte noetig)
-     * @return Befund, oder empty bei zu duenner Datenlage
+     * @param historicalBeats         number of historical beats
+     * @param historicalReports       number of historical reports (at least {@value #MIN_REPORTS})
+     * @param currentSurprisePct      current surprise in percent, or null if unknown
+     * @param historicalSurprisesPct  historical surprises in percent (for the z-score,
+     *                                at least {@value #MIN_SURPRISE_HISTORY} values required)
+     * @return reading, or empty on too thin data
      */
     public static Optional<SignalReading> measure(int historicalBeats, int historicalReports,
                                                   Double currentSurprisePct, double[] historicalSurprisesPct) {
@@ -56,42 +56,42 @@ public final class EarningsSurpriseProfile {
             }
         }
 
-        String formatted = "P(Beat)=" + MathKit.fmt(posterior, 2)
-                + " (90%-Intervall " + MathKit.fmt(ci[0], 2) + "-" + MathKit.fmt(ci[1], 2)
+        String formatted = "P(beat)=" + MathKit.fmt(posterior, 2)
+                + " (90% interval " + MathKit.fmt(ci[0], 2) + "-" + MathKit.fmt(ci[1], 2)
                 + ", n=" + historicalReports
-                + (z != null ? ", Surprise-z=" + MathKit.fmt(z, 2) : "") + ")";
+                + (z != null ? ", surprise z=" + MathKit.fmt(z, 2) : "") + ")";
 
         String zNote = z != null
-                ? " Standardisierte Ueberraschung z=" + MathKit.fmt(z, 2) + " bei n=" + historicalReports + "."
-                : " Keine standardisierte Ueberraschung berechenbar (zu wenig Surprise-Historie), n="
+                ? " Standardized surprise z=" + MathKit.fmt(z, 2) + " at n=" + historicalReports + "."
+                : " No standardized surprise computable (too little surprise history), n="
                 + historicalReports + ".";
 
         String interpretation;
         if (posterior >= 0.7 && z != null && z >= 1) {
-            interpretation = "ECHTE UEBERRASCHUNG: selbst gegen das eigene Sandbagging-Muster"
-                    + " aussergewoehnlich - das bewegt." + zNote;
+            interpretation = "GENUINE SURPRISE: exceptional even against the firm's own sandbagging"
+                    + " pattern - this moves." + zNote;
         } else if (posterior >= 0.7) {
-            interpretation = "BEAT IST HIER DER NORMALFALL: die aktuelle Zahl ist kein echtes Signal,"
-                    + " der Markt kennt das Muster." + zNote;
+            interpretation = "A BEAT IS THE NORM HERE: the current print is no real signal,"
+                    + " the market knows the pattern." + zNote;
         } else if (posterior < 0.5) {
-            interpretation = "Ehrlicher Streuer: kein systematisches Erwartungsmanagement erkennbar"
-                    + " - hier zaehlt schon der einfache Beat/Miss." + zNote;
+            interpretation = "Honest scatterer: no systematic expectations management visible"
+                    + " - here the plain beat/miss already counts." + zNote;
         } else {
-            interpretation = "Gemischtes Beat-Profil: kein klares Muster in der Historie"
-                    + " - die aktuelle Zahl fuer sich bewerten." + zNote;
+            interpretation = "Mixed beat profile: no clear pattern in the history"
+                    + " - judge the current print on its own." + zNote;
         }
         if (historicalReports < THIN_REPORTS) {
-            interpretation += " Vorsicht: nur n=" + historicalReports + " Reports"
-                    + " - duenne Datenbasis, Profil mit Zurueckhaltung lesen.";
+            interpretation += " Caution: only n=" + historicalReports + " reports"
+                    + " - thin data, read the profile with restraint.";
         }
 
         return Optional.of(new SignalReading(
                 "earnings-surprise-profile",
-                "Sandbagging-Profil (Beta-Binomial)",
+                "Sandbagging profile (beta-binomial)",
                 posterior,
                 formatted,
-                "Misst das Erwartungsmanagement einer Firma - schlaegt sie ihre Prognosen systematisch"
-                        + " (Sandbagging), ist ein Beat der Normalfall und vom Markt eingepreist.",
+                "Measures a firm's expectations management - if it systematically beats its guidance"
+                        + " (sandbagging), a beat is the norm and priced in by the market.",
                 interpretation));
     }
 }

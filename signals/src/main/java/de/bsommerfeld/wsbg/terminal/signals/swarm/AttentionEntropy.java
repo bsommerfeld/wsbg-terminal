@@ -7,29 +7,28 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Aufmerksamkeits-Entropie: normierte Shannon-Entropie (Shannon 1948) über die
- * Verteilung der Ticker-Nennungen eines Ticks. 1 bedeutet maximal zersplitterte
- * Aufmerksamkeit, 0 bedeutet alle starren auf ein Papier.
+ * Attention entropy: normalized Shannon entropy (Shannon 1948) over the
+ * distribution of ticker mentions in a tick. 1 means maximally fragmented
+ * attention, 0 means everyone is staring at one instrument.
  *
- * <p>Numerik: {@link MathKit#normalizedEntropy(double[])} über alle Ticker mit
- * mindestens einer Nennung (H / ln k, k = Anzahl genannter Ticker). Liegt ein
- * Vor-Tick vor, der dieselben Mindestanforderungen erfüllt, wird zusätzlich das
- * Delta (aktuell - vorher) berechnet - ein schlagartiger Entropie-Abfall ist
- * das eigentliche Frühwarnsignal (Kollaps der Aufmerksamkeitsverteilung als
- * Vorbote von Herdenverhalten, vgl. die Entropie-Kollaps-Diagnostik in der
- * Ökonophysik).
+ * <p>Numerics: {@link MathKit#normalizedEntropy(double[])} over all tickers
+ * with at least one mention (H / ln k, k = number of mentioned tickers). If a
+ * previous tick meets the same minimum requirements, the delta
+ * (current - previous) is computed as well - a sudden entropy drop is the
+ * actual early-warning signal (collapse of the attention distribution as a
+ * precursor of herding, cf. the entropy-collapse diagnostics in econophysics).
  *
- * <p>Input im Terminal: die Nennungs-Zähler pro aufgelöstem Ticker aus den
- * Subjekt-Clustern eines Ticks (Subject Registry), als Vor-Tick die Zähler des
- * vorherigen Laufs aus dem Session-Snapshot.
+ * <p>Terminal input: the mention counts per resolved ticker from the subject
+ * clusters of a tick (Subject Registry), with the previous run's counts from
+ * the session snapshot as the previous tick.
  */
 public final class AttentionEntropy {
 
     private static final String ID = "attention-entropy";
-    private static final String TITLE = "Aufmerksamkeits-Entropie";
+    private static final String TITLE = "Attention entropy";
     private static final String DEFINITION =
-            "Misst, wie verteilt die Aufmerksamkeit des Subreddits über die Papiere ist"
-                    + " (1 = zersplittert, 0 = alle starren auf ein Papier).";
+            "Measures how spread out the cage's attention is across instruments"
+                    + " (1 = fragmented, 0 = everyone staring at one instrument).";
 
     private static final int MIN_TICKERS = 2;
     private static final int MIN_TOTAL_MENTIONS = 10;
@@ -40,13 +39,13 @@ public final class AttentionEntropy {
     }
 
     /**
-     * Berechnet die normierte Entropie der Nennungsverteilung; mit Vor-Tick
-     * zusätzlich das Delta. Mindestens {@value #MIN_TICKERS} Ticker mit &gt;0
-     * Nennungen und Summe &gt;= {@value #MIN_TOTAL_MENTIONS}, sonst
+     * Computes the normalized entropy of the mention distribution; with a
+     * previous tick also the delta. At least {@value #MIN_TICKERS} tickers with
+     * &gt;0 mentions and a sum &gt;= {@value #MIN_TOTAL_MENTIONS}, otherwise
      * {@link Optional#empty()}.
      *
-     * @param mentionsByTicker       Nennungen pro Ticker im aktuellen Tick
-     * @param previousMentionsOrNull Nennungen des vorherigen Ticks oder null
+     * @param mentionsByTicker       mentions per ticker in the current tick
+     * @param previousMentionsOrNull mentions of the previous tick, or null
      */
     public static Optional<SignalReading> measure(
             Map<String, Integer> mentionsByTicker,
@@ -67,14 +66,14 @@ public final class AttentionEntropy {
         }
 
         String interpretation = interpret(value, delta, totalMentions);
-        String formatted = MathKit.fmt(value, 2) + " (Skala 0-1, 1 = maximal zersplittert)";
+        String formatted = MathKit.fmt(value, 2) + " (scale 0-1, 1 = maximally fragmented)";
         if (delta != null) {
-            formatted += ", Delta zum Vor-Tick " + fmtSigned(delta);
+            formatted += ", delta vs previous tick " + fmtSigned(delta);
         }
         return Optional.of(new SignalReading(ID, TITLE, value, formatted, DEFINITION, interpretation));
     }
 
-    /** Rückgabe {normierte Entropie, Summe der Nennungen} oder {NaN, 0} bei zu dünner Lage. */
+    /** Returns {normalized entropy, sum of mentions} or {NaN, 0} when the data is too thin. */
     private static double[] entropyOrNaN(Map<String, Integer> mentions) {
         if (mentions == null) {
             return new double[]{Double.NaN, 0};
@@ -103,22 +102,22 @@ public final class AttentionEntropy {
     private static String interpret(double value, Double delta, int totalMentions) {
         String band;
         if (delta != null && delta <= COLLAPSE_DELTA) {
-            band = "ENTROPIE-KOLLAPS: die Aufmerksamkeit fokussiert sich gerade"
-                    + " schlagartig (Delta " + fmtSigned(delta) + " zum Vor-Tick) -"
-                    + " Frühwarnsignal für Schwarmbildung, wichtiger als jede Vote-Zahl.";
+            band = "ENTROPY COLLAPSE: attention is snapping into focus right now"
+                    + " (delta " + fmtSigned(delta) + " vs previous tick) -"
+                    + " early warning of swarm formation, more important than any vote count.";
         } else if (value < 0.4) {
-            band = "Konsens/Fixierung auf wenige Papiere, Schwarmpotenzial vorhanden.";
+            band = "CONSENSUS/FIXATION on few instruments - swarm potential present.";
         } else if (value <= 0.8) {
-            band = "Die Aufmerksamkeit ist normal verteilt.";
+            band = "Attention is normally distributed.";
         } else {
-            band = "Zersplitterte Aufmerksamkeit über viele Papiere, kein Schwarmpotenzial.";
+            band = "FRAGMENTED attention across many instruments - no swarm potential.";
         }
         if (delta != null && delta > COLLAPSE_DELTA) {
-            band += " Delta zum Vor-Tick: " + fmtSigned(delta) + ".";
+            band += " Delta vs previous tick: " + fmtSigned(delta) + ".";
         }
         if (totalMentions < THIN_TOTAL_MENTIONS) {
-            band += " Vorsicht: nur " + totalMentions + " Nennungen insgesamt,"
-                    + " die Verteilung ist entsprechend wackelig.";
+            band += " Caution: only n=" + totalMentions + " mentions in total -"
+                    + " the distribution is correspondingly shaky.";
         }
         return band;
     }

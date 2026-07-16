@@ -34,12 +34,12 @@ class SupplyChainLagTest {
                 .measure(cause, effect, 5, "pegelFracht", "pegelMarge")
                 .orElseThrow();
         assertTrue(reading.value() >= 0.4);
-        assertTrue(reading.interpretation().contains("VORLAUFKETTE BESTÄTIGT"));
-        assertTrue(reading.interpretation().contains("~3 Tage"));
+        assertTrue(reading.interpretation().contains("SUPPLY CHAIN CONFIRMED"));
+        assertTrue(reading.interpretation().contains("~3 days"));
         assertTrue(reading.interpretation().contains("pegelFracht"));
         assertTrue(reading.interpretation().contains("pegelMarge"));
         // 120 Tage sind komfortabel -> kein Vorsichts-Zusatz
-        assertFalse(reading.interpretation().contains("Vorsicht"));
+        assertFalse(reading.interpretation().contains("Caution"));
         assertEquals("supply-chain-lag", reading.id());
     }
 
@@ -56,7 +56,7 @@ class SupplyChainLagTest {
                 .measure(cause, effect, 5, "pegelFracht", "pegelMarge")
                 .orElseThrow();
         assertTrue(reading.value() >= 0.2 && reading.value() < 0.4);
-        assertTrue(reading.interpretation().contains("Nebenindiz"));
+        assertTrue(reading.interpretation().contains("side indication"));
         assertTrue(reading.interpretation().contains("pegelFracht"));
     }
 
@@ -69,7 +69,7 @@ class SupplyChainLagTest {
                 .measure(cause, effect, 5, "pegelFracht", "pegelMarge")
                 .orElseThrow();
         assertTrue(reading.value() < 0.2);
-        assertTrue(reading.interpretation().contains("verwerfen"));
+        assertTrue(reading.interpretation().contains("discard"));
     }
 
     @Test
@@ -83,7 +83,7 @@ class SupplyChainLagTest {
         SignalReading reading = SupplyChainLag
                 .measure(cause, effect, 5, "pegelFracht", "pegelMarge")
                 .orElseThrow();
-        assertTrue(reading.interpretation().contains("Vorsicht"));
+        assertTrue(reading.interpretation().contains("Caution"));
     }
 
     @Test

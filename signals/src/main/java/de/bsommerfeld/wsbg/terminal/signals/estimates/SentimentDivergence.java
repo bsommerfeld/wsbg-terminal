@@ -6,33 +6,33 @@ import de.bsommerfeld.wsbg.terminal.signals.SignalReading;
 import java.util.Optional;
 
 /**
- * Sentiment-Divergenz Käfig vs Wall Street: z-Score der aktuellen Differenz
- * zwischen dem eigenen Reddit-Barometer und einem externen
- * Fear&amp;Greed-Index, plus CUSUM-Umschwung-Detektor.
+ * Sentiment divergence cage vs Wall Street: z-score of the current difference
+ * between the in-house Reddit barometer and an external Fear&amp;Greed index,
+ * plus a CUSUM shift detector.
  *
- * <p>Numerik: aus beiden 0-100-Reihen wird die Divergenzreihe
- * d = käfig - extern gebildet; der Signalwert ist der z-Score des letzten d
- * gegen die Historie der Reihe. Zusätzlich läuft ein einseitiger CUSUM in
- * beide Richtungen (Page 1954; Referenzwert k = 0.5 Sigma, Schwelle
- * h = 4 Sigma, Standard-Parametrisierung der SPC-Literatur) über d - schlägt
- * er am aktuellen Rand an, liegt ein frischer, anhaltender Umschwung der
- * Divergenz vor, den ein einzelner z-Score noch nicht zeigt. Hintergrund ist
- * die Sentiment-Spread-Literatur (Retail vs. institutionell als
- * Kontra-Indikator, vgl. Baker/Wurgler 2006).
+ * <p>Numerics: from both 0-100 series the divergence series
+ * d = cage - external is built; the signal value is the z-score of the last d
+ * against the history of the series. Additionally a one-sided CUSUM runs in
+ * both directions (Page 1954; reference value k = 0.5 sigma, threshold
+ * h = 4 sigma, the standard parametrization of the SPC literature) over d -
+ * if it fires at the current edge, there is a fresh, persistent shift of the
+ * divergence that a single z-score does not yet show. Background is the
+ * sentiment-spread literature (retail vs institutional as a contrarian
+ * indicator, cf. Baker/Wurgler 2006).
  *
- * <p>Input im Terminal: die Historie des eigenen Reddit-Stimmungs-Barometers
- * (0-100) und die gleichgetaktete Historie eines externen
- * Fear&amp;Greed-Index (0-100), beide aus dem Markt-Gedächtnis.
+ * <p>Terminal input: the history of the in-house Reddit sentiment barometer
+ * (0-100) and the equally-clocked history of an external Fear&amp;Greed index
+ * (0-100), both from the market memory.
  */
 public final class SentimentDivergence {
 
     private static final String ID = "sentiment-divergence";
-    private static final String TITLE = "Sentiment-Divergenz Käfig vs Wall Street (CUSUM)";
+    private static final String TITLE = "Sentiment divergence cage vs Wall Street (CUSUM)";
     private static final String DEFINITION =
-            "Misst, wie ungewöhnlich weit das Reddit-Barometer gerade vom externen"
-                    + " Fear&Greed abweicht (z-Score der aktuellen Divergenz gegen"
-                    + " ihre eigene Historie), plus CUSUM-Detektor für einen"
-                    + " frischen Umschwung der Divergenz.";
+            "Measures how unusually far the Reddit barometer currently deviates"
+                    + " from the external Fear&Greed (z-score of the current"
+                    + " divergence against its own history), plus a CUSUM detector"
+                    + " for a fresh shift of the divergence.";
 
     private static final int MIN_LENGTH = 20;
     private static final int THIN_LENGTH = 40;
@@ -44,12 +44,12 @@ public final class SentimentDivergence {
     }
 
     /**
-     * Berechnet z-Score und CUSUM-Status der Divergenzreihe. Beide Reihen
-     * müssen gleich lang sein und mindestens {@value #MIN_LENGTH} Punkte
-     * haben, sonst {@link Optional#empty()}.
+     * Computes z-score and CUSUM status of the divergence series. Both series
+     * must have equal length and at least {@value #MIN_LENGTH} points,
+     * otherwise {@link Optional#empty()}.
      *
-     * @param cageSeries0to100     Historie des eigenen Reddit-Barometers (0-100)
-     * @param externalSeries0to100 gleichgetaktete Historie des externen Fear&amp;Greed (0-100)
+     * @param cageSeries0to100     history of the in-house Reddit barometer (0-100)
+     * @param externalSeries0to100 equally-clocked history of the external Fear&amp;Greed (0-100)
      */
     public static Optional<SignalReading> measure(
             double[] cageSeries0to100, double[] externalSeries0to100) {
@@ -70,16 +70,16 @@ public final class SentimentDivergence {
         double value = MathKit.zScore(last, d);
         int cusum = cusumDirection(d);
 
-        String formatted = "z = " + fmtSigned(value) + " (aktuelle Divergenz "
-                + fmtSigned(last) + " Punkte auf der 0-100-Skala)";
+        String formatted = "z = " + fmtSigned(value) + " (current divergence "
+                + fmtSigned(last) + " points on the 0-100 scale)";
         return Optional.of(new SignalReading(
                 ID, TITLE, value, formatted, DEFINITION, interpret(value, cusum, n)));
     }
 
     /**
-     * Einseitiger CUSUM in beide Richtungen (k = 0.5 Sigma, h = 4 Sigma).
-     * Rückgabe: +1 wenn am Reihenende ein Aufwärts-Alarm aktiv ist, -1 bei
-     * Abwärts-Alarm, 0 sonst (auch bei degenerierter Reihe).
+     * One-sided CUSUM in both directions (k = 0.5 sigma, h = 4 sigma).
+     * Returns +1 if an upward alarm is active at the end of the series, -1 on
+     * a downward alarm, 0 otherwise (also for a degenerate series).
      */
     private static int cusumDirection(double[] d) {
         double sigma = MathKit.std(d);
@@ -102,29 +102,28 @@ public final class SentimentDivergence {
     private static String interpret(double value, int cusum, int n) {
         String band;
         if (value >= Z_THRESHOLD) {
-            band = "KÄFIG GIERIG, WALL STREET ÄNGSTLICH: klassische"
-                    + " Kontra-Konstellation - Retail kauft in institutionelle Angst"
-                    + " hinein, historisch ein schlechtes Vorzeichen für die"
-                    + " Retail-Seite.";
+            band = "CAGE GREEDY, WALL STREET FEARFUL: the classic contrarian"
+                    + " constellation - retail buys into institutional fear,"
+                    + " historically a bad omen for the retail side.";
         } else if (value <= -Z_THRESHOLD) {
-            band = "KÄFIG ÄNGSTLICH, WALL STREET GIERIG: Retail-Kapitulation bei"
-                    + " institutioneller Zuversicht - oft ein spätes Boden-Muster.";
+            band = "CAGE FEARFUL, WALL STREET GREEDY: retail capitulation amid"
+                    + " institutional confidence - often a late bottoming pattern.";
         } else {
-            band = "Käfig und Wall Street sind im Einklang - die aktuelle"
-                    + " Divergenz liegt im normalen Rauschen ihrer Historie.";
+            band = "Cage and Wall Street are in sync - the current divergence"
+                    + " lies within the normal noise of its history.";
         }
         if (cusum > 0) {
-            band += " Zusätzlich: frischer Umschwung der Divergenz seit kurzem"
-                    + " (CUSUM-Alarm nach oben, der Käfig löst sich anhaltend nach"
-                    + " oben von der Wall Street).";
+            band += " Additionally: fresh shift of the divergence just recently"
+                    + " (upward CUSUM alarm, the cage is persistently detaching"
+                    + " upward from Wall Street).";
         } else if (cusum < 0) {
-            band += " Zusätzlich: frischer Umschwung der Divergenz seit kurzem"
-                    + " (CUSUM-Alarm nach unten, der Käfig löst sich anhaltend nach"
-                    + " unten von der Wall Street).";
+            band += " Additionally: fresh shift of the divergence just recently"
+                    + " (downward CUSUM alarm, the cage is persistently detaching"
+                    + " downward from Wall Street).";
         }
         if (n < THIN_LENGTH) {
-            band += " Vorsicht: nur " + n + " Punkte Historie, z-Score und CUSUM"
-                    + " sind entsprechend wackelig.";
+            band += " Caution: only " + n + " points of history, z-score and CUSUM"
+                    + " are accordingly shaky.";
         }
         return band;
     }

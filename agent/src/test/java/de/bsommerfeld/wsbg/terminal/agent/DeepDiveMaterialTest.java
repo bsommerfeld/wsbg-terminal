@@ -470,6 +470,83 @@ class DeepDiveMaterialTest {
     }
 
     /**
+     * The OUTSIDE ROOMS shelf (2026-07-16): forum/social voices from the
+     * sentiment fan ride the ROOM shelf as ONE capped aggregate block —
+     * venue-labeled lines, an own source marker, loom bypass by design.
+     */
+    @Test
+    void outsideRoomsRideTheRoomShelfAsOneCappedBlock() {
+        DeepDiveService.Material m = fullMaterial();
+        m.socialSentiment = List.of(
+                new RawNewsItem("s1", "RHM zieht an", "Ariva-Forum (St2023)", "https://x/1",
+                        Instant.parse("2026-07-16T12:00:00Z"), List.of(), null,
+                        "die Vorzüge ziehen an, bin long", false),
+                new RawNewsItem("s2", "/smg/ - stock market general", "4chan /biz/",
+                        "https://x/2", Instant.parse("2026-07-16T11:00:00Z"),
+                        List.of(), null, null, false));
+
+        var nums = DeepDiveService.sourceNumbers(m);
+        assertTrue(nums.containsKey("sentiment"), "the outside rooms earn a source number");
+
+        String block = DeepDiveService.sentimentBlock(m, nums);
+        assertTrue(block.startsWith("OUTSIDE ROOMS"), block);
+        assertTrue(block.contains("[Ariva-Forum (St2023)] die Vorzüge ziehen an"),
+                "each voice carries its venue label: " + block);
+        assertTrue(block.contains("[4chan /biz/] /smg/ - stock market general"),
+                "a summary-less voice falls back to its title");
+        assertTrue(block.contains("[" + nums.get("sentiment") + "]"),
+                "the block carries its own source marker");
+        assertTrue(block.contains("[2026-07-16]"), "date-only stamps, aggregate discipline");
+
+        String roomShelf = DeepDiveService.sectionMaterials(m)[DeepDiveService.SEC_ROOM];
+        assertTrue(roomShelf.contains("OUTSIDE ROOMS"),
+                "the voices ride the ROOM shelf: " + roomShelf);
+        assertTrue(roomShelf.contains("ROOM EVIDENCE"),
+                "the cage stays first on the shelf");
+
+        String register = DeepDiveService.sourcesSection(m, true);
+        assertTrue(register.contains("Foren & Social Media"), register);
+
+        // An empty fan leaves NO scaffolding behind.
+        DeepDiveService.Material empty = fullMaterial();
+        assertTrue(DeepDiveService.sentimentBlock(empty,
+                DeepDiveService.sourceNumbers(empty)) == null);
+    }
+
+    /**
+     * Fair share across venues (2026-07-16): a loud venue must not crowd the
+     * quiet ones out of the budget — the block interleaves round-robin, each
+     * venue's freshest first, and the author suffix never splits a venue.
+     */
+    @Test
+    void outsideRoomsInterleaveVenuesFreshestFirst() {
+        java.util.function.BiFunction<String, Integer, RawNewsItem> voice =
+                (publisher, minute) -> new RawNewsItem(
+                        publisher + "#" + minute, "t", publisher, "https://x/" + minute,
+                        Instant.parse(String.format("2026-07-16T12:%02d:00Z", minute)),
+                        List.of(), null, "post " + publisher + " " + minute, false);
+        // 4chan floods (four voices, all freshest), Ariva speaks twice with
+        // two different authors, Lemmy once — recency order alone would put
+        // all four 4chan lines first.
+        List<RawNewsItem> mixed = List.of(
+                voice.apply("4chan /biz/", 59), voice.apply("4chan /biz/", 58),
+                voice.apply("4chan /biz/", 57), voice.apply("4chan /biz/", 56),
+                voice.apply("Ariva-Forum (St2023)", 30),
+                voice.apply("Ariva-Forum (azulon)", 20),
+                voice.apply("Lemmy (!finanzen@feddit.org)", 10));
+
+        List<RawNewsItem> out = DeepDiveService.venueInterleaved(mixed);
+        assertEquals("4chan /biz/#59", out.get(0).uuid());
+        assertEquals("Ariva-Forum (St2023)#30", out.get(1).uuid(),
+                "round one carries every venue's freshest — Ariva before 4chan's backlog");
+        assertEquals("Lemmy (!finanzen@feddit.org)#10", out.get(2).uuid());
+        assertEquals("4chan /biz/#58", out.get(3).uuid(), "round two starts");
+        assertEquals("Ariva-Forum (azulon)#20", out.get(4).uuid(),
+                "two authors are ONE Ariva room — the author suffix never splits a venue");
+        assertEquals(7, out.size(), "interleaving loses nothing");
+    }
+
+    /**
      * The skeleton gate: all eight canonical headings must appear line-leading
      * and in order — the final belt before the archive.
      */
@@ -1097,6 +1174,18 @@ class DeepDiveMaterialTest {
         assertTrue(shelves[DeepDiveService.SEC_OUTLOOK].contains("IR CALENDAR (first-party"));
         assertTrue(shelves[DeepDiveService.SEC_OUTLOOK].contains("[2099-05-14] Hauptversammlung"));
         assertFalse(shelves[DeepDiveService.SEC_OUTLOOK].contains("Quartalsmitteilung Q1 2026"));
+    }
+
+    /** A covered story's markers land on the most similar paragraph, deduped. */
+    @Test
+    void attachMarkersTargetsTheMostSimilarParagraph() {
+        String body = "Die UBS senkte das Kursziel auf 164 EUR. [3]\n\n"
+                + "Der Vorstand verkaufte Anteile im Juni. [5]";
+        String block = "  - [9] UBS kappt Kursziel - bleibt trotzdem Käufer · Investing.com\n";
+        String out = DeepDiveService.attachMarkers(body, block);
+        assertTrue(out.startsWith("Die UBS senkte das Kursziel auf 164 EUR. [3] [9]"), out);
+        // already-cited markers never repeat
+        assertEquals(out, DeepDiveService.attachMarkers(out, block));
     }
 
     /** The diff-judge sees only the step's delta - the sentence set difference. */

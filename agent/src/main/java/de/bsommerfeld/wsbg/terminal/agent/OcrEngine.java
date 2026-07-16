@@ -216,6 +216,11 @@ final class OcrEngine {
     }
 
     private static boolean nativeLibraryPresent() {
+        // Windows needs no install to probe for: tess4j ships the native DLLs
+        // inside its jar and JNA self-extracts them on first load.
+        if (System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("win")) {
+            return true;
+        }
         for (String dir : NATIVE_LIB_DIRS) {
             if (containsTesseractLib(Path.of(dir))) return true;
         }

@@ -38,7 +38,7 @@ class LeadLagInformationFlowTest {
 
         assertTrue(reading.isPresent());
         assertTrue(reading.get().value() > 0.02, "erwartet TE-Differenz > 0.02, war " + reading.get().value());
-        assertTrue(reading.get().interpretation().contains("VORAUS"));
+        assertTrue(reading.get().interpretation().contains("THE CAGE LEADS"));
         assertEquals("lead-lag-information-flow", reading.get().id());
     }
 
@@ -50,7 +50,7 @@ class LeadLagInformationFlowTest {
 
         assertTrue(reading.isPresent());
         assertTrue(reading.get().value() < -0.02, "erwartet TE-Differenz < -0.02, war " + reading.get().value());
-        assertTrue(reading.get().interpretation().contains("plappert nach"));
+        assertTrue(reading.get().interpretation().contains("The cage parrots"));
     }
 
     @Test
@@ -62,7 +62,7 @@ class LeadLagInformationFlowTest {
         assertTrue(reading.isPresent());
         assertTrue(Math.abs(reading.get().value()) <= 0.02,
                 "erwartet |TE-Differenz| <= 0.02, war " + reading.get().value());
-        assertTrue(reading.get().interpretation().contains("Kein belastbarer Informationsfluss"));
+        assertTrue(reading.get().interpretation().contains("No reliable information flow"));
     }
 
     @Test
@@ -70,9 +70,9 @@ class LeadLagInformationFlowTest {
         Optional<SignalReading> reading = LeadLagInformationFlow.measure(redditSeries(), laggedCopy(redditSeries()));
 
         assertTrue(reading.isPresent());
-        assertTrue(reading.get().interpretation().contains("TE(Reddit->Presse)="));
-        assertTrue(reading.get().interpretation().contains("TE(Presse->Reddit)="));
-        assertTrue(reading.get().interpretation().contains("Vorsicht"));
+        assertTrue(reading.get().interpretation().contains("TE(Reddit->wire)="));
+        assertTrue(reading.get().interpretation().contains("TE(wire->Reddit)="));
+        assertTrue(reading.get().interpretation().contains("Caution"));
     }
 
     @Test

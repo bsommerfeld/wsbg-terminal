@@ -8,35 +8,34 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Burstiness-Fingerprint des Nachrichtenflusses eines Papiers.
+ * Burstiness fingerprint of an instrument's news flow.
  *
- * <p><b>Methode:</b> Ueber die Zwischenankunftszeiten der Headline-Events wird
- * das Burstiness-Mass B = (sigma - mu) / (sigma + mu) nach Goh/Barabasi
- * ("Burstiness and memory in complex systems", EPL 2008; Kim/Jo-Korrekturlinie)
- * gerechnet: B nahe -1 ist ein perfekt regelmaessiger Takt, B nahe 0 ein
- * Poisson-Strom, B nahe +1 ein extrem geschubter Fluss (Explosionen mit
- * langer Stille dazwischen). Mittelwert und Streuung kommen aus
- * {@link MathKit}.
+ * <p><b>Method:</b> Over the inter-arrival times of the headline events the
+ * burstiness measure B = (sigma - mu) / (sigma + mu) after Goh/Barabasi
+ * ("Burstiness and memory in complex systems", EPL 2008; Kim/Jo correction
+ * line) is computed: B near -1 is a perfectly regular cadence, B near 0 a
+ * Poisson stream, B near +1 an extremely bursty flow (explosions with long
+ * silence in between). Mean and standard deviation come from {@link MathKit}.
  *
- * <p><b>Inputs im Terminal:</b> die Event-Zeitstempel sind die per Ticker
- * indizierten Publikationszeiten aus dem Headline-Archiv (JSONL), also der
- * gesamte je gelaufene News-Wire-Fluss zu diesem Papier.
+ * <p><b>Terminal inputs:</b> the event timestamps are the per-ticker indexed
+ * publication times from the headline archive (JSONL), i.e. the entire news
+ * wire flow that ever ran on this instrument.
  */
 public final class Burstiness {
 
-    /** Unter dieser Event-Zahl (= weniger als 7 Abstaende) keine Messung. */
+    /** Below this event count (= fewer than 7 gaps) no measurement. */
     private static final int MIN_EVENTS = 8;
-    /** Unter dieser Event-Zahl traegt die Deutung einen Vorsichts-Zusatz. */
+    /** Below this event count the interpretation carries a caution note. */
     private static final int COMFORTABLE_EVENTS = 20;
 
     private Burstiness() {
     }
 
     /**
-     * Misst den Takt-Charakter des Nachrichtenflusses.
+     * Measures the cadence character of the news flow.
      *
-     * @param events Publikations-Zeitpunkte der Headlines eines Papiers
-     * @return Befund, oder empty bei weniger als {@value #MIN_EVENTS} Events
+     * @param events publication times of an instrument's headlines
+     * @return reading, or empty with fewer than {@value #MIN_EVENTS} events
      */
     public static Optional<SignalReading> measure(List<Instant> events) {
         if (events == null) {
@@ -60,27 +59,27 @@ public final class Burstiness {
 
         String interpretation;
         if (value <= 0.1) {
-            interpretation = "REGELMÄSSIGER TAKT (Blue-Chip-Profil): eine einzelne Headline ist hier "
-                    + "Normalbetrieb - erst die Abweichung vom Takt ist das Ereignis.";
+            interpretation = "REGULAR CADENCE (blue-chip profile): a single headline is business "
+                    + "as usual here - only the deviation from the cadence is the event.";
         } else if (value < 0.5) {
-            interpretation = "Gemischtes Profil: der Fluss hat Schübe, aber auch einen tragenden Takt - "
-                    + "eine einzelne Headline ist weder Routine noch Alarm.";
+            interpretation = "Mixed profile: the flow has bursts but also a carrying cadence - "
+                    + "a single headline is neither routine nor alarm.";
         } else {
-            interpretation = "EXPLOSIVES PROFIL (Pennystock-Muster): dieses Papier existiert nur in "
-                    + "Schüben - schon eine einzelne Meldung ist ein Ereignis und verdient Aufmerksamkeit.";
+            interpretation = "EXPLOSIVE PROFILE (pennystock pattern): this instrument only exists in "
+                    + "bursts - even a single headline is an event and deserves attention.";
         }
         if (sorted.size() < COMFORTABLE_EVENTS) {
-            interpretation += " Vorsicht: nur " + sorted.size()
-                    + " Events in der Historie - der Fingerprint ist entsprechend unsicher.";
+            interpretation += " Caution: only n=" + sorted.size()
+                    + " events in the history - the fingerprint is accordingly uncertain.";
         }
 
         return Optional.of(new SignalReading(
                 "burstiness",
-                "Burstiness-Fingerprint (Nachrichten-Takt)",
+                "Burstiness fingerprint (news cadence)",
                 value,
-                MathKit.fmt(value, 2) + " (Skala -1 bis +1, +1 = maximal geschubt)",
-                "Misst den Charakter des Nachrichtenflusses eines Papiers - regelmässiger Takt "
-                        + "oder Explosionen mit Stille dazwischen.",
+                MathKit.fmt(value, 2) + " (scale -1 to +1, +1 = maximally bursty)",
+                "Measures the character of an instrument's news flow - regular cadence "
+                        + "or explosions with silence in between.",
                 interpretation));
     }
 }

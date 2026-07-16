@@ -11,33 +11,33 @@ import java.util.Optional;
 import java.util.TreeMap;
 
 /**
- * Themen-Ansteckung: personalisierter PageRank ueber den Ko-Erwähnungs-Graphen,
- * um die Zweitrunden-Kandidaten eines brennenden Themas zu finden.
+ * Topic contagion: personalized PageRank over the co-mention graph to find the
+ * second-round candidates of a burning topic.
  *
- * <p><b>Methode:</b> Personalized PageRank (Page/Brin et al., "The PageRank
- * Citation Ranking", 1999; themenzentriert nach Haveliwala, "Topic-Sensitive
- * PageRank", 2002): Dämpfung 0.85, die Restart-Masse liegt vollständig auf dem
- * Seed-Knoten, die Kantengewichte werden pro Knoten zu Übergangswahrscheinlich-
- * keiten normalisiert (ungerichteter Graph, beide Richtungen). Iteriert wird bis
- * zur L1-Konvergenz 1e-9 oder maximal 200 Iterationen. Der Befund ist die
- * Masse-Konzentration der drei stärksten Nicht-Seed-Knoten: je höher, desto
- * enger und klarer der Ansteckungspfad vom Seed in sein Umfeld.
+ * <p><b>Method:</b> personalized PageRank (Page/Brin et al., "The PageRank
+ * Citation Ranking", 1999; topic-centered per Haveliwala, "Topic-Sensitive
+ * PageRank", 2002): damping 0.85, the restart mass sits entirely on the seed
+ * node, edge weights are normalized per node into transition probabilities
+ * (undirected graph, both directions). Iterates until L1 convergence 1e-9 or at
+ * most 200 iterations. The finding is the mass concentration of the three
+ * strongest non-seed nodes: the higher, the tighter and clearer the contagion
+ * path from the seed into its surroundings.
  *
- * <p><b>Inputs im Terminal:</b> die Ko-Erwähnungs-Cluster der Redaktion - zwei
- * Namen, die in derselben Story bzw. demselben Cluster auftauchen, bilden eine
- * ungerichtete Kante, die Häufigkeit der gemeinsamen Nennung das Gewicht. Der
- * Seed ist das Thema bzw. der Name, der gerade brennt.
+ * <p><b>Inputs in the terminal:</b> the newsroom's co-mention clusters - two
+ * names appearing in the same story or cluster form an undirected edge, the
+ * frequency of joint mention its weight. The seed is the topic or name that is
+ * burning right now.
  */
 public final class CoMentionDiffusion {
 
-    /** Ungerichtete Ko-Erwähnungs-Kante zwischen zwei Knoten mit Gewicht (z.B. Nennungs-Häufigkeit). */
+    /** Undirected co-mention edge between two nodes with a weight (e.g. mention frequency). */
     public record Edge(String a, String b, double weight) {
     }
 
-    /** Stabiler Maschinen-Schluessel dieses Signals. */
+    /** Stable machine key of this signal. */
     public static final String ID = "co-mention-diffusion";
 
-    private static final String TITLE = "Themen-Ansteckung (Personalisierter PageRank)";
+    private static final String TITLE = "Topic contagion (personalized PageRank)";
 
     private static final double DAMPING = 0.85;
     private static final double CONVERGENCE = 1e-9;
@@ -51,16 +51,16 @@ public final class CoMentionDiffusion {
     }
 
     /**
-     * @param edges Ko-Erwähnungs-Kanten (ungerichtet, Gewichte &gt; 0 werden gewertet)
-     * @param seed  der brennende Knoten, auf dem die Restart-Masse liegt
-     * @param topN  wie viele Zweitrunden-Kandidaten in der Deutung gelistet werden
+     * @param edges co-mention edges (undirected, only weights &gt; 0 are scored)
+     * @param seed  the burning node carrying the restart mass
+     * @param topN  how many second-round candidates are listed in the interpretation
      */
     public static Optional<SignalReading> measure(List<Edge> edges, String seed, int topN) {
         if (edges == null || edges.isEmpty() || seed == null) {
             return Optional.empty();
         }
 
-        // Adjazenz aufbauen: deterministisch sortiert, nur positive Gewichte, keine Selbstschleifen.
+        // Build adjacency: deterministically sorted, positive weights only, no self-loops.
         Map<String, Map<String, Double>> adjacency = new TreeMap<>();
         int validEdges = 0;
         for (Edge e : edges) {
@@ -76,7 +76,7 @@ public final class CoMentionDiffusion {
             return Optional.empty();
         }
 
-        // Personalisierter PageRank.
+        // Personalized PageRank.
         Map<String, Double> rank = new TreeMap<>();
         for (String node : adjacency.keySet()) {
             rank.put(node, node.equals(seed) ? 1.0 : 0.0);
@@ -114,7 +114,7 @@ public final class CoMentionDiffusion {
             }
         }
 
-        // Nicht-Seed-Knoten absteigend nach Masse, bei Gleichstand nach Name.
+        // Non-seed nodes descending by mass, ties broken by name.
         List<Map.Entry<String, Double>> nonSeed = new ArrayList<>();
         for (Map.Entry<String, Double> entry : rank.entrySet()) {
             if (!entry.getKey().equals(seed)) {
@@ -140,28 +140,28 @@ public final class CoMentionDiffusion {
                     .append(" (").append(MathKit.fmt(nonSeed.get(i).getValue(), 2)).append(")");
         }
 
-        String lead = "Wenn " + seed + " brennt, stehen diese als Nächstes im Rauch: " + listed + ". ";
+        String lead = "When " + seed + " burns, these stand in the smoke next: " + listed + ". ";
         String interpretation;
         if (value >= 0.5) {
-            interpretation = lead + "Enger, klarer Ansteckungspfad - die Zweitrunden-Kandidaten"
-                    + " sind belastbar, bevor die Presse den Zusammenhang zieht.";
+            interpretation = lead + "Tight, clear contagion path - the second-round candidates"
+                    + " are solid before the press draws the connection.";
         } else if (value >= 0.25) {
-            interpretation = lead + "Mittlere Kopplung - die Kandidaten sind plausibel,"
-                    + " aber der Pfad ist nicht zwingend.";
+            interpretation = lead + "Medium coupling - the candidates are plausible,"
+                    + " but the path is not compelling.";
         } else {
-            interpretation = lead + "Diffuses Umfeld - die Masse verteilt sich breit,"
-                    + " die Ansteckungsrichtung ist unklar.";
+            interpretation = lead + "Diffuse surroundings - the mass spreads wide,"
+                    + " the contagion direction is unclear.";
         }
         if (adjacency.size() < COMFORTABLE_NODES || validEdges < COMFORTABLE_EDGES) {
-            interpretation += " Vorsicht: dünne Datenlage (kleiner Graph)"
-                    + " - Befund nur als schwaches Indiz lesen.";
+            interpretation += " Caution: only thin data (small graph)"
+                    + " - read the finding as a weak hint only.";
         }
 
         String formattedValue = MathKit.fmt(value, 2)
-                + " (Skala 0-1, PageRank-Masse der Top-3 Nicht-Seed-Knoten)";
-        String definition = "Personalisierter PageRank vom Seed über den Ko-Erwähnungs-Graphen;"
-                + " gemessen wird, wie stark sich die Aufmerksamkeits-Masse auf die drei"
-                + " nächstliegenden Nicht-Seed-Knoten konzentriert.";
+                + " (scale 0-1, PageRank mass of the top-3 non-seed nodes)";
+        String definition = "Personalized PageRank from the seed over the co-mention graph;"
+                + " measures how strongly the attention mass concentrates on the three"
+                + " nearest non-seed nodes.";
 
         return Optional.of(new SignalReading(ID, TITLE, value, formattedValue, definition, interpretation));
     }

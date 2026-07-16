@@ -6,40 +6,40 @@ import de.bsommerfeld.wsbg.terminal.signals.SignalReading;
 import java.util.Optional;
 
 /**
- * Richtung des Informationsflusses zwischen Käfig (Reddit) und Presse (Wire)
- * via Transfer-Entropie.
+ * Direction of information flow between the cage (Reddit) and the wire (press)
+ * via transfer entropy.
  *
- * <p><b>Methode:</b> Beide Zeitreihen (Erwaehnungs- bzw. Headline-Zaehler pro
- * Zeit-Bin) werden binarisiert (Aktivitaet ja/nein) und die Lag-1-Transfer-
- * Entropie nach Schreiber ("Measuring Information Transfer", PRL 2000) in
- * beide Richtungen gerechnet: TE(X-&gt;Y) = Summe p(y_t+1, y_t, x_t) *
- * log[ p(y_t+1 | y_t, x_t) / p(y_t+1 | y_t) ], in Nats, mit Laplace-Glaettung
- * (+1) ueber die acht gemeinsamen Zustaende gegen leere Zellen. Der
- * Signalwert ist die Differenz TE(Reddit-&gt;Wire) - TE(Wire-&gt;Reddit).
+ * <p><b>Method:</b> Both time series (mention resp. headline counts per time
+ * bin) are binarized (activity yes/no) and the lag-1 transfer entropy after
+ * Schreiber ("Measuring Information Transfer", PRL 2000) is computed in both
+ * directions: TE(X-&gt;Y) = sum p(y_t+1, y_t, x_t) *
+ * log[ p(y_t+1 | y_t, x_t) / p(y_t+1 | y_t) ], in nats, with Laplace smoothing
+ * (+1) over the eight joint states against empty cells. The signal value is
+ * the difference TE(Reddit-&gt;wire) - TE(wire-&gt;Reddit).
  *
- * <p><b>Inputs im Terminal:</b> die Reddit-Reihe sind die gebinnten
- * Ticker-Erwaehnungen aus den Story-Clustern des Subreddit-Feeds, die
- * Wire-Reihe die gebinnten Headline-Zaehler desselben Papiers aus dem
- * Headline-Archiv (JSONL) bzw. dem laufenden News-Wire.
+ * <p><b>Terminal inputs:</b> the Reddit series is the binned ticker mentions
+ * from the story clusters of the subreddit feed; the wire series is the binned
+ * headline counts of the same instrument from the headline archive (JSONL)
+ * resp. the running news wire.
  */
 public final class LeadLagInformationFlow {
 
-    /** Unter dieser Bin-Zahl keine Messung. */
+    /** Below this bin count no measurement. */
     private static final int MIN_BINS = 30;
-    /** Unter dieser Bin-Zahl traegt die Deutung einen Vorsichts-Zusatz. */
+    /** Below this bin count the interpretation carries a caution note. */
     private static final int COMFORTABLE_BINS = 60;
-    /** Deutungs-Schwelle fuer eine belastbare Fluss-Richtung (Nats). */
+    /** Interpretation threshold for a reliable flow direction (nats). */
     private static final double THRESHOLD = 0.02;
 
     private LeadLagInformationFlow() {
     }
 
     /**
-     * Misst die Netto-Richtung des Informationsflusses zwischen den Reihen.
+     * Measures the net direction of information flow between the series.
      *
-     * @param redditBins Reddit-Erwaehnungen pro Zeit-Bin
-     * @param wireBins   Presse-Headlines pro Zeit-Bin (gleiche Bins)
-     * @return Befund, oder empty bei ungleicher Laenge oder weniger als {@value #MIN_BINS} Bins
+     * @param redditBins Reddit mentions per time bin
+     * @param wireBins   press headlines per time bin (same bins)
+     * @return reading, or empty on unequal length or fewer than {@value #MIN_BINS} bins
      */
     public static Optional<SignalReading> measure(int[] redditBins, int[] wireBins) {
         if (redditBins == null || wireBins == null
@@ -54,32 +54,32 @@ public final class LeadLagInformationFlow {
         double teWireToReddit = transferEntropy(wire, reddit);
         double value = teRedditToWire - teWireToReddit;
 
-        String teText = "TE(Reddit->Presse)=" + MathKit.fmt(teRedditToWire, 4)
-                + " Nats, TE(Presse->Reddit)=" + MathKit.fmt(teWireToReddit, 4) + " Nats.";
+        String teText = "TE(Reddit->wire)=" + MathKit.fmt(teRedditToWire, 4)
+                + " nats, TE(wire->Reddit)=" + MathKit.fmt(teWireToReddit, 4) + " nats.";
 
         String interpretation;
         if (value > THRESHOLD) {
-            interpretation = "DER KÄFIG LÄUFT VORAUS: Reddit ist bei diesem Papier ein echter "
-                    + "Frühindikator - das Sentiment hier ernst nehmen. " + teText;
+            interpretation = "THE CAGE LEADS: Reddit is a genuine early indicator for this "
+                    + "instrument - take the sentiment here seriously. " + teText;
         } else if (value < -THRESHOLD) {
-            interpretation = "Der Käfig plappert nach: das Reddit-Sentiment ist bei diesem Papier "
-                    + "nachlaufend und als Signal abzuwerten. " + teText;
+            interpretation = "The cage parrots: Reddit sentiment is lagging for this instrument "
+                    + "and should be discounted as a signal. " + teText;
         } else {
-            interpretation = "Kein belastbarer Informationsfluss messbar: keine Richtung dominiert - "
-                    + "Reddit weder Früh- noch Nachlaufindikator. " + teText;
+            interpretation = "No reliable information flow measurable: neither direction dominates - "
+                    + "Reddit is neither a leading nor a lagging indicator. " + teText;
         }
         if (redditBins.length < COMFORTABLE_BINS) {
-            interpretation += " Vorsicht: nur " + redditBins.length
-                    + " Zeit-Bins - die Fluss-Richtung ist entsprechend unsicher.";
+            interpretation += " Caution: only n=" + redditBins.length
+                    + " time bins - the flow direction is accordingly uncertain.";
         }
 
         return Optional.of(new SignalReading(
                 "lead-lag-information-flow",
-                "Informationsfluss Käfig↔Presse (Transfer-Entropie)",
+                "Information flow cage<->wire (transfer entropy)",
                 value,
-                MathKit.fmt(value, 4) + " Nats (TE-Differenz Reddit->Presse minus Presse->Reddit)",
-                "Misst, ob die Reddit-Erwähnungen die Presse-Headlines eines Papiers informieren "
-                        + "oder umgekehrt - kalibriert, wo der Käfig Frühindikator ist.",
+                MathKit.fmt(value, 4) + " nats (TE difference Reddit->wire minus wire->Reddit)",
+                "Measures whether Reddit mentions inform an instrument's press headlines "
+                        + "or vice versa - calibrates where the cage is an early indicator.",
                 interpretation));
     }
 
@@ -92,8 +92,8 @@ public final class LeadLagInformationFlow {
     }
 
     /**
-     * Lag-1-Transfer-Entropie TE(src->dst) in Nats mit Laplace-Glaettung (+1)
-     * ueber die acht gemeinsamen Zustaende (dst_t+1, dst_t, src_t).
+     * Lag-1 transfer entropy TE(src->dst) in nats with Laplace smoothing (+1)
+     * over the eight joint states (dst_t+1, dst_t, src_t).
      */
     private static double transferEntropy(int[] src, int[] dst) {
         double[][][] c = new double[2][2][2]; // [dstNext][dstNow][srcNow]

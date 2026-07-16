@@ -12,37 +12,37 @@ import java.util.Optional;
 import java.util.zip.Deflater;
 
 /**
- * Neuheitsgrad einer Headline gegen das Headline-Archiv desselben Papiers.
+ * Novelty of a headline against the headline archive of the same instrument.
  *
- * <p><b>Methode:</b> Pro Archiv-Zeile wird eine hybride Aehnlichkeit gerechnet:
- * 0.5 mal Kosinus-Aehnlichkeit ueber TF-Vektoren (lowercase-Wort-Token) plus
- * 0.5 mal (1 - NCD), wobei NCD die Normalized Compression Distance nach
- * Cilibrasi/Vitanyi ("Clustering by Compression", IEEE Trans. Inf. Theory 2005)
- * ist, hier via {@link java.util.zip.Deflater} approximiert:
- * NCD(x,y) = (C(x+y) - min(C(x),C(y))) / max(C(x),C(y)), geklemmt auf [0,1].
- * Der Signalwert ist 1 minus der maximalen Aehnlichkeit ueber das Archiv -
- * also die Distanz zur naechstgelegenen je gelaufenen Zeile.
+ * <p><b>Method:</b> For each archive line a hybrid similarity is computed:
+ * 0.5 times cosine similarity over TF vectors (lowercase word tokens) plus
+ * 0.5 times (1 - NCD), where NCD is the Normalized Compression Distance after
+ * Cilibrasi/Vitanyi ("Clustering by Compression", IEEE Trans. Inf. Theory 2005),
+ * approximated here via {@link java.util.zip.Deflater}:
+ * NCD(x,y) = (C(x+y) - min(C(x),C(y))) / max(C(x),C(y)), clamped to [0,1].
+ * The signal value is 1 minus the maximum similarity over the archive -
+ * i.e. the distance to the nearest line that ever ran.
  *
- * <p><b>Inputs im Terminal:</b> die neue Headline kommt vom News-Wire bzw. aus
- * dem Redaktions-Tick, das Vergleichs-Archiv sind die per Ticker indizierten
- * Zeilen aus dem append-only Headline-Archiv (JSONL).
+ * <p><b>Terminal inputs:</b> the new headline comes from the news wire or the
+ * editorial tick; the comparison archive is the per-ticker indexed lines from
+ * the append-only headline archive (JSONL).
  */
 public final class NoveltyScore {
 
-    /** Unter dieser Archiv-Groesse ist kein Vergleich moeglich. */
+    /** Below this archive size no comparison is possible. */
     private static final int MIN_ARCHIVE = 10;
-    /** Unter dieser Archiv-Groesse traegt die Deutung einen Vorsichts-Zusatz. */
+    /** Below this archive size the interpretation carries a caution note. */
     private static final int COMFORTABLE_ARCHIVE = 30;
 
     private NoveltyScore() {
     }
 
     /**
-     * Misst den Neuheitsgrad der Headline gegen das Archiv.
+     * Measures the novelty of the headline against the archive.
      *
-     * @param headline         die neue Zeile
-     * @param archiveHeadlines alle bisherigen Zeilen zu diesem Papier
-     * @return Befund, oder empty bei weniger als {@value #MIN_ARCHIVE} Archiv-Zeilen
+     * @param headline         the new line
+     * @param archiveHeadlines all previous lines for this instrument
+     * @return reading, or empty with fewer than {@value #MIN_ARCHIVE} archive lines
      */
     public static Optional<SignalReading> measure(String headline, List<String> archiveHeadlines) {
         if (headline == null || headline.isBlank() || archiveHeadlines == null) {
@@ -67,32 +67,32 @@ public final class NoveltyScore {
 
         String interpretation;
         if (value >= 0.85) {
-            interpretation = "REGIMEWECHSEL-KANDIDAT: maximale Distanz zur eigenen Geschichte - "
-                    + "diese Zeile deckt sich mit nichts, was zu diesem Papier je lief, "
-                    + "und verdient eine Highlight-Prüfung.";
+            interpretation = "REGIME-CHANGE CANDIDATE: maximum distance to the instrument's own history - "
+                    + "this line matches nothing that ever ran on this instrument "
+                    + "and deserves a highlight check.";
         } else if (value <= 0.25) {
-            interpretation = "Wiederholung: hohe Nähe zu mindestens einer Archiv-Zeile - "
-                    + "Dup-Verdacht, kein neuer Informationsgehalt.";
+            interpretation = "Repetition: high proximity to at least one archive line - "
+                    + "duplicate suspicion, no new information content.";
         } else {
-            interpretation = "Normale Fortschreibung: die Zeile setzt eine bekannte Geschichte fort - "
-                    + "weder Dublette noch Bruch.";
+            interpretation = "Normal continuation: the line extends a known story - "
+                    + "neither duplicate nor break.";
         }
         if (archive.size() < COMFORTABLE_ARCHIVE) {
-            interpretation += " Vorsicht: nur " + archive.size()
-                    + " Archiv-Zeilen als Vergleichsbasis - der Neuheitsgrad ist entsprechend unsicher.";
+            interpretation += " Caution: only n=" + archive.size()
+                    + " archive lines as comparison base - the novelty is accordingly uncertain.";
         }
 
         return Optional.of(new SignalReading(
                 "novelty-score",
-                "Neuheitsgrad gegen das Archiv",
+                "Novelty vs own archive",
                 value,
-                MathKit.fmt(value, 2) + " (Skala 0-1, 1 = maximal neu)",
-                "Misst die Distanz einer neuen Headline zu allem, was je zu diesem Papier lief - "
-                        + "Neuheit ist die eigentliche Ware.",
+                MathKit.fmt(value, 2) + " (scale 0-1, 1 = maximally new)",
+                "Measures the distance of a new headline to everything that ever ran on this "
+                        + "instrument - novelty is the actual commodity.",
                 interpretation));
     }
 
-    // ---- Kosinus ueber TF-Vektoren ----
+    // ---- Cosine over TF vectors ----
 
     private static Map<String, Integer> termFrequencies(String text) {
         Map<String, Integer> tf = new HashMap<>();

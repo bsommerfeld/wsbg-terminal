@@ -27,7 +27,7 @@ class SpreadAnxietyTest {
                 SpreadAnxiety.measure(100.0, 100.15, history(60), 0.1, false);
         assertTrue(reading.isPresent());
         assertTrue(reading.get().value() >= 2.0, "z-Score muss ueber der Alarmschwelle liegen");
-        assertTrue(reading.get().interpretation().contains("ANGSTSENSOR SCHLÄGT AN"));
+        assertTrue(reading.get().interpretation().contains("ANXIETY SENSOR FIRING"));
         assertEquals("spread-anxiety", reading.get().id());
     }
 
@@ -37,8 +37,8 @@ class SpreadAnxietyTest {
                 SpreadAnxiety.measure(100.0, 100.15, history(60), 0.1, true);
         assertTrue(reading.isPresent());
         assertTrue(reading.get().value() >= 2.0);
-        assertTrue(reading.get().interpretation().contains("konsistent zur Nachrichtenlage"));
-        assertFalse(reading.get().interpretation().contains("ANGSTSENSOR"));
+        assertTrue(reading.get().interpretation().contains("consistent with the news flow"));
+        assertFalse(reading.get().interpretation().contains("ANXIETY SENSOR"));
     }
 
     @Test
@@ -46,7 +46,7 @@ class SpreadAnxietyTest {
         Optional<SignalReading> reading =
                 SpreadAnxiety.measure(100.0, 100.15, history(60), 1.2, false);
         assertTrue(reading.isPresent());
-        assertTrue(reading.get().interpretation().contains("konsistent zur Nachrichtenlage"));
+        assertTrue(reading.get().interpretation().contains("consistent with the news flow"));
     }
 
     @Test
@@ -55,7 +55,7 @@ class SpreadAnxietyTest {
                 SpreadAnxiety.measure(100.0, 100.11, history(60), 0.1, false);
         assertTrue(reading.isPresent());
         assertTrue(Math.abs(reading.get().value()) < 2.0);
-        assertTrue(reading.get().interpretation().contains("Unauffällig"));
+        assertTrue(reading.get().interpretation().contains("Unremarkable"));
     }
 
     @Test
@@ -64,7 +64,7 @@ class SpreadAnxietyTest {
                 SpreadAnxiety.measure(100.0, 100.08, history(60), 0.1, false);
         assertTrue(reading.isPresent());
         assertTrue(reading.get().value() <= -1.5, "z-Score muss unter der Eng-Schwelle liegen");
-        assertTrue(reading.get().interpretation().contains("ruhiges Fahrwasser"));
+        assertTrue(reading.get().interpretation().contains("calm waters"));
     }
 
     @Test
@@ -72,7 +72,7 @@ class SpreadAnxietyTest {
         Optional<SignalReading> reading =
                 SpreadAnxiety.measure(100.0, 100.11, history(30), 0.1, false);
         assertTrue(reading.isPresent());
-        assertTrue(reading.get().interpretation().contains("Vorsicht"));
+        assertTrue(reading.get().interpretation().contains("Caution"));
     }
 
     @Test
@@ -97,7 +97,7 @@ class SpreadAnxietyTest {
         Optional<SignalReading> reading =
                 SpreadAnxiety.measure(100.0, 100.15, history(60), 0.1, false);
         assertTrue(reading.isPresent());
-        assertTrue(reading.get().formattedValue().contains("z-Score"));
+        assertTrue(reading.get().formattedValue().contains("z-score"));
         assertTrue(reading.get().formattedValue().contains("%"));
     }
 

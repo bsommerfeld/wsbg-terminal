@@ -31,13 +31,24 @@ public record WeatherReportRecord(
         List<NewsStat> news,
         SentimentStat sentiment,
         WorldStats world,
-        List<ChartStat> charts) {
+        List<ChartStat> charts,
+        List<SignalValue> signals) {
 
     public WeatherReportRecord {
         indices = indices == null ? List.of() : List.copyOf(indices);
         tickers = tickers == null ? List.of() : List.copyOf(tickers);
         news = news == null ? List.of() : List.copyOf(news);
         charts = charts == null ? List.of() : List.copyOf(charts);
+        signals = signals == null ? List.of() : List.copyOf(signals);
+    }
+
+    /** Pre-signal shape (2026-07-16 intra-day) — keeps positional call sites compiling. */
+    public WeatherReportRecord(String date, long generatedAt, String text, String language,
+            int headlineCount, int importantCount, List<IndexStat> indices,
+            List<TickerStat> tickers, List<NewsStat> news, SentimentStat sentiment,
+            WorldStats world, List<ChartStat> charts) {
+        this(date, generatedAt, text, language, headlineCount, importantCount,
+                indices, tickers, news, sentiment, world, charts, null);
     }
 
     /** Pre-world shape (v1 call sites / tests): everything beyond the four sections absent. */

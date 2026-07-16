@@ -17,6 +17,19 @@ public interface NewsSource {
     String sourceName();
 
     /**
+     * {@code true} when this source carries SOCIAL SENTIMENT (forum posts,
+     * social-network chatter — opinion from a room) rather than reported news.
+     * The aggregator keeps the two streams apart: sentiment sources never
+     * answer the news fan (so a forum post can't masquerade as an article in
+     * the press loom), and the news sources never answer the sentiment fan.
+     * Each source declares its own nature here — self-description on the
+     * contract, not a curated list anywhere else (2026-07-16).
+     */
+    default boolean socialSentiment() {
+        return false;
+    }
+
+    /**
      * ARCHIVE window: news for the company NAME restricted to a date window
      * (ISO dates, {@code to} exclusive) - the multi-year press-history leg of
      * the long-term dossier (2026-07-16). Sources without a date-addressable

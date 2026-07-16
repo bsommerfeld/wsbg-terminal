@@ -6,21 +6,20 @@ import de.bsommerfeld.wsbg.terminal.signals.SignalReading;
 import java.util.Optional;
 
 /**
- * Erwartungs-Vakuum: Kombinations-Signal aus Kalender-Naehe und
- * Reddit-Aufmerksamkeit - sucht Termine, auf die niemand schaut.
+ * Expectation vacuum: combo signal from calendar proximity and Reddit
+ * attention - hunts for events nobody is watching.
  *
- * <p><b>Methode:</b> Produkt dreier normierter Faktoren:
- * Naehe = 1 - Tage/14 (Termin steht kurz bevor),
- * Stille = 1 - min(1, Erwaehnungen/Baseline) (kaum Erwaehnungen relativ zur
- * eigenen Baseline) und Streuung = normierte Aufmerksamkeits-Entropie
- * (keine fokussierte Aufmerksamkeit). Literaturanker: limited attention und
- * Unteradaption an oeffentliche Termine (Hirshleifer/Teoh 2003;
- * DellaVigna/Pollet 2009) - ohne eingepreiste Erwartung ist die Bewegung pro
- * Informationseinheit maximal.
+ * <p><b>Method:</b> product of three normalized factors:
+ * proximity = 1 - days/14 (event is imminent),
+ * silence = 1 - min(1, mentions/baseline) (hardly any mentions relative to
+ * the own baseline) and spread = normalized attention entropy (no focused
+ * attention). Literature anchor: limited attention and underreaction to
+ * public events (Hirshleifer/Teoh 2003; DellaVigna/Pollet 2009) - without a
+ * priced-in expectation the move per unit of information is maximal.
  *
- * <p><b>Inputs im Terminal:</b> Termin-Naehe aus dem Kalender-Briefing
- * (Earnings, EZB/Fed, Makro), Erwaehnungsraten aus dem Reddit-Feed und die
- * normierte Entropie aus dem Aufmerksamkeits-Entropie-Signal.
+ * <p><b>Terminal inputs:</b> event proximity from the calendar briefing
+ * (earnings, ECB/Fed, macro), mention rates from the Reddit feed and the
+ * normalized entropy from the attention-entropy signal.
  */
 public final class ExpectationVacuum {
 
@@ -31,11 +30,11 @@ public final class ExpectationVacuum {
     }
 
     /**
-     * @param daysToEvent                 Tage bis zum Termin (0 bis {@value #MAX_DAYS})
-     * @param mentionsPerDay              aktuelle Erwaehnungen pro Tag
-     * @param baselineMentionsPerDay      historische Baseline der Erwaehnungen pro Tag (> 0)
-     * @param normalizedAttentionEntropy  normierte Aufmerksamkeits-Entropie in [0,1]
-     * @return Befund, oder empty wenn der Termin ausserhalb des Fensters liegt oder die Baseline fehlt
+     * @param daysToEvent                 days until the event (0 to {@value #MAX_DAYS})
+     * @param mentionsPerDay              current mentions per day
+     * @param baselineMentionsPerDay      historical baseline of mentions per day (> 0)
+     * @param normalizedAttentionEntropy  normalized attention entropy in [0,1]
+     * @return reading, or empty if the event lies outside the window or the baseline is missing
      */
     public static Optional<SignalReading> measure(long daysToEvent, double mentionsPerDay,
                                                   double baselineMentionsPerDay,
@@ -48,37 +47,37 @@ public final class ExpectationVacuum {
         double spread = Math.max(0.0, Math.min(1.0, normalizedAttentionEntropy));
         double value = proximity * silence * spread;
 
-        String formatted = MathKit.fmt(value, 2) + " (Skala 0-1; Naehe " + MathKit.fmt(proximity, 2)
-                + " x Stille " + MathKit.fmt(silence, 2) + " x Streuung " + MathKit.fmt(spread, 2)
-                + ", Termin in " + daysToEvent + " Tag(en))";
+        String formatted = MathKit.fmt(value, 2) + " (scale 0-1; proximity " + MathKit.fmt(proximity, 2)
+                + " x silence " + MathKit.fmt(silence, 2) + " x spread " + MathKit.fmt(spread, 2)
+                + ", event in " + daysToEvent + " day(s))";
 
         String interpretation;
         if (value >= 0.6) {
-            interpretation = "ERWARTUNGS-VAKUUM: es gibt keine eingepreiste Erwartung - maximale"
-                    + " Bewegung pro Informationseinheit, idealer Kandidat fuer eine vorbereitende DD."
-                    + " Termin in " + daysToEvent + " Tag(en).";
+            interpretation = "EXPECTATION VACUUM: there is no priced-in expectation - maximum"
+                    + " move per unit of information, ideal candidate for a preparatory DD."
+                    + " Event in " + daysToEvent + " day(s).";
         } else if (value >= 0.3) {
-            interpretation = "Duenn beachtet: der Termin laeuft unter dem Radar, aber nicht voellig"
-                    + " unbeobachtet - ein Blick vorab kann sich lohnen."
-                    + " Termin in " + daysToEvent + " Tag(en).";
+            interpretation = "Thinly covered: the event runs under the radar, but not entirely"
+                    + " unwatched - a look ahead can pay off."
+                    + " Event in " + daysToEvent + " day(s).";
         } else {
-            interpretation = "Erwartung ist gebildet: der Termin ist eingepreist - hier ueberrascht nur"
-                    + " noch eine Abweichung vom Konsens."
-                    + " Termin in " + daysToEvent + " Tag(en).";
+            interpretation = "Expectation is formed: the event is priced in - only a deviation"
+                    + " from consensus still surprises here."
+                    + " Event in " + daysToEvent + " day(s).";
         }
         if (baselineMentionsPerDay < THIN_BASELINE) {
-            interpretation += " Vorsicht: sehr niedrige Erwaehnungs-Baseline ("
-                    + MathKit.fmt(baselineMentionsPerDay, 2) + "/Tag)"
-                    + " - duenne Datenbasis, Stille-Faktor mit Zurueckhaltung lesen.";
+            interpretation += " Caution: very low mention baseline ("
+                    + MathKit.fmt(baselineMentionsPerDay, 2) + "/day)"
+                    + " - thin data, read the silence factor with restraint.";
         }
 
         return Optional.of(new SignalReading(
                 "expectation-vacuum",
-                "Erwartungs-Vakuum (Kombi-Signal)",
+                "Expectation vacuum (combo signal)",
                 value,
                 formatted,
-                "Dreht den Kalender um - sucht Termine, auf die NIEMAND schaut: keine Erwaehnungen,"
-                        + " keine fokussierte Aufmerksamkeit, Termin steht kurz bevor.",
+                "Inverts the calendar - hunts for events NOBODY is watching: no mentions,"
+                        + " no focused attention, event is imminent.",
                 interpretation));
     }
 }

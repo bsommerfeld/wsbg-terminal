@@ -1,0 +1,216 @@
+package de.bsommerfeld.wsbg.terminal.agent;
+
+import de.bsommerfeld.wsbg.terminal.db.HeadlineRecord;
+import de.bsommerfeld.wsbg.terminal.db.HeadlineSentiment;
+import de.bsommerfeld.wsbg.terminal.db.HeadlineSubject;
+import de.bsommerfeld.wsbg.terminal.db.SignalValue;
+import de.bsommerfeld.wsbg.terminal.signals.SignalReading;
+import org.junit.jupiter.api.Test;
+
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * The desk is pure adapter: archive lines in, kernel readings out. Fixtures
+ * are synthetic {@link HeadlineRecord}s - the desk never talks to a source.
+ */
+class SignalDeskTest {
+
+    private static final ZoneId ZONE = ZoneId.systemDefault();
+
+    private static HeadlineRecord line(String clusterId, String headline, long createdAt,
+            String ticker, HeadlineSentiment sentiment, List<HeadlineSubject> subjects) {
+        return new HeadlineRecord(clusterId, headline, null, createdAt,
+                List.of(), List.of(), null, ticker, subjects, null, List.of(), null,
+                sentiment, null);
+    }
+
+    private static long at(LocalDate day, int hour) {
+        return day.atStartOfDay(ZONE).plusHours(hour).toEpochSecond();
+    }
+
+    @Test
+    void mentionsBucketPerDayAndSubject() {
+        LocalDate today = LocalDate.of(2026, 7, 16);
+        List<HeadlineRecord> archive = List.of(
+                line("c1", "a", at(today, 9), "AAA", null,
+                        List.of(new HeadlineSubject("Alpha", "AAA"))),
+                line("c2", "b", at(today, 10), "AAA", null,
+                        List.of(new HeadlineSubject("Alpha", "AAA"))),
+                line("c3", "c", at(today, 11), "BBB", null,
+                        List.of(new HeadlineSubject("Beta", "BBB"))),
+                line("c4", "d", at(today.minusDays(1), 9), "CCC", null,
+                        List.of(new HeadlineSubject("Gamma", "CCC"))));
+        Map<String, Integer> today0 = SignalDesk.mentionsOn(archive, today, ZONE);
+        assertEquals(2, today0.get("AAA"));
+        assertEquals(1, today0.get("BBB"));
+        assertFalse(today0.containsKey("CCC"));
+    }
+
+    @Test
+    void noveltyReadsNewestAgainstOlderLines() {
+        LocalDate day = LocalDate.of(2026, 7, 16);
+        List<HeadlineRecord> wire = new ArrayList<>();
+        for (int i = 0; i < 12; i++) {
+            wire.add(line("c" + i, "quarterly numbers in line with expectations " + i,
+                    at(day.minusDays(12 - i), 9), "AAA", null, List.of()));
+        }
+        wire.add(line("cx", "insolvency filing after failed refinancing",
+                at(day, 10), "AAA", null, List.of()));
+        Optional<SignalReading> reading = SignalDesk.novelty(wire);
+        assertTrue(reading.isPresent());
+        assertEquals("novelty-score", reading.get().id());
+        assertTrue(reading.get().value() > 0.5);
+    }
+
+    @Test
+    void storyHalfLifeUsesClusterSpansExcludingTheCurrentStory() {
+        LocalDate day = LocalDate.of(2026, 7, 16);
+        List<HeadlineRecord> wire = new ArrayList<>();
+        for (int c = 0; c < 9; c++) {
+            // nine finished stories, each living exactly two days
+            wire.add(line("old" + c, "story open " + c, at(day.minusDays(40 - c * 3), 9),
+                    "AAA", null, List.of()));
+            wire.add(line("old" + c, "story close " + c, at(day.minusDays(38 - c * 3), 9),
+                    "AAA", null, List.of()));
+        }
+        // the current story started 10 days ago - far beyond the 2-day norm
+        wire.add(line("cur", "current story", at(day.minusDays(10), 9), "AAA", null, List.of()));
+        wire.add(line("cur", "current story update",
+                at(day, 8), "AAA", null, List.of()));
+        Optional<SignalReading> reading = SignalDesk.storyHalfLife(wire,
+                day.atStartOfDay(ZONE).plusHours(12).toInstant());
+        assertTrue(reading.isPresent());
+        assertEquals("story-half-life", reading.get().id());
+        assertTrue(reading.get().value() > 0.9, "10d age vs 2d norm must read structural");
+    }
+
+    @Test
+    void attentionEntropyComparesTodayWithYesterday() {
+        LocalDate today = LocalDate.of(2026, 7, 16);
+        List<HeadlineRecord> archive = new ArrayList<>();
+        // yesterday: attention spread over four names
+        for (String t : List.of("AAA", "BBB", "CCC", "DDD")) {
+            for (int i = 0; i < 3; i++) {
+                archive.add(line("y" + t + i, "x", at(today.minusDays(1), 8 + i), t, null,
+                        List.of(new HeadlineSubject(t, t))));
+            }
+        }
+        // today: everyone stares at one name
+        for (int i = 0; i < 10; i++) {
+            archive.add(line("t" + i, "x", at(today, 8 + i % 8), "AAA", null,
+                    List.of(new HeadlineSubject("Alpha", "AAA"))));
+        }
+        archive.add(line("tb", "x", at(today, 9), "BBB", null,
+                List.of(new HeadlineSubject("Beta", "BBB"))));
+        Optional<SignalReading> reading = SignalDesk.attentionEntropy(archive, today, ZONE);
+        assertTrue(reading.isPresent());
+        assertEquals("attention-entropy", reading.get().id());
+        assertTrue(reading.get().interpretation().contains("ENTROPY COLLAPSE"));
+    }
+
+    @Test
+    void sentimentDivergenceAlignsCageAndFearGreedByDate() {
+        LocalDate today = LocalDate.of(2026, 7, 16);
+        List<HeadlineRecord> archive = new ArrayList<>();
+        Map<String, Double> fg = new HashMap<>();
+        for (int back = 25; back >= 1; back--) {
+            LocalDate day = today.minusDays(back);
+            // cage broadly bullish every day...
+            archive.add(line("b" + back, "x", at(day, 9), "AAA",
+                    HeadlineSentiment.BULLISH, List.of()));
+            archive.add(line("b2" + back, "x", at(day, 10), "BBB",
+                    back == 1 ? HeadlineSentiment.BULLISH : HeadlineSentiment.BEARISH, List.of()));
+            // ...Wall street neutral, last day fearful
+            fg.put(day.toString(), back == 1 ? 20.0 : 50.0);
+        }
+        Optional<SignalReading> reading =
+                SignalDesk.sentimentDivergence(archive, fg, today, ZONE);
+        assertTrue(reading.isPresent());
+        assertEquals("sentiment-divergence", reading.get().id());
+        assertTrue(reading.get().value() > 1.5, "cage greedy vs fearful street must diverge");
+    }
+
+    @Test
+    void valuesFreezeIdTitleAndNumber() {
+        SignalReading r = new SignalReading("test-id", "Test title", 0.42, "0.42 (scale 0-1)",
+                "d", "i");
+        List<SignalValue> values = SignalDesk.values(List.of(r));
+        assertEquals(1, values.size());
+        assertEquals("test-id", values.get(0).id());
+        assertEquals(0.42, values.get(0).value());
+        assertEquals("0.42 (scale 0-1)", values.get(0).formattedValue());
+        assertTrue(SignalDesk.values(List.of()).isEmpty());
+    }
+
+    @Test
+    void returnsFromClosesArePercent() {
+        double[] r = SignalDesk.returnsFromCloses(List.of(100.0, 110.0, 99.0));
+        assertEquals(2, r.length);
+        assertEquals(10.0, r[0], 1e-9);
+        assertEquals(-10.0, r[1], 1e-9);
+        assertEquals(0, SignalDesk.returnsFromCloses(null).length);
+    }
+
+    @Test
+    void signalBlockRidesTheSituationShelf() {
+        DeepDiveService.Material m = new DeepDiveService.Material();
+        m.signalReadings = List.of(new SignalReading("novelty-score", "Novelty vs own archive",
+                0.9, "0.90 (scale 0-1)", "d", "REGIME-CHANGE CANDIDATE: x"));
+        DeepDiveService.Shelf[] shelves = DeepDiveService.sectionShelves(m);
+        int hits = 0;
+        for (DeepDiveService.Shelf shelf : shelves) {
+            if (shelf != null && shelf.combined() != null
+                    && shelf.combined().contains("QUANT SIGNALS")) {
+                hits++;
+                assertTrue(shelf.combined().contains("REGIME-CHANGE CANDIDATE"));
+                assertTrue(shelf.combined().contains("discipline:"));
+            }
+        }
+        assertEquals(1, hits, "exactly one shelf carries the situation signals");
+    }
+
+    @Test
+    void roomOnlySignalRidesTheRoomShelfNotTheSituation() {
+        DeepDiveService.Material m = new DeepDiveService.Material();
+        m.signalReadings = List.of(new SignalReading("hawkes-endogeneity",
+                "Hawkes endogeneity", 0.8, "0.80", "d", "ENDOGENOUS - self-igniting cascade"));
+        DeepDiveService.Shelf[] shelves = DeepDiveService.sectionShelves(m);
+        int hits = 0;
+        for (DeepDiveService.Shelf shelf : shelves) {
+            if (shelf != null && shelf.combined() != null
+                    && shelf.combined().contains("ENDOGENOUS")) {
+                hits++;
+            }
+        }
+        assertEquals(1, hits);
+    }
+
+    @Test
+    void hawkesReadsRoomEvidenceTimestamps() {
+        SubjectUnit unit = new SubjectUnit("AAA", "Alpha");
+        long base = Instant.parse("2026-07-16T08:00:00Z").getEpochSecond();
+        // dense cascade: bursts of near-simultaneous mentions
+        List<SubjectUnit.EvidenceRef> refs = new ArrayList<>();
+        for (int i = 0; i < 30; i++) {
+            refs.add(new SubjectUnit.EvidenceRef("t" + i, "c" + i, "s", "reddit",
+                    base + (i / 5) * 3600 + (i % 5) * 20));
+        }
+        SubjectUnit restored = new SubjectUnit(new SubjectUnit.Snapshot(
+                "AAA", "Alpha", "AAA", null, base, base, null, null, null,
+                refs, List.of(), List.of()));
+        Optional<SignalReading> reading = SignalDesk.hawkes(List.of(restored));
+        assertTrue(reading.isPresent());
+        assertEquals("hawkes-endogeneity", reading.get().id());
+    }
+}

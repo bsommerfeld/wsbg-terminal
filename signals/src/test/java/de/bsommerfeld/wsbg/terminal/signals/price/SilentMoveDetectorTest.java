@@ -35,7 +35,7 @@ class SilentMoveDetectorTest {
                 SilentMoveDetector.measure(pair[0], pair[1], 1.6, 0.5, false);
         assertTrue(reading.isPresent());
         assertTrue(reading.get().value() >= 2.5, "z-Score muss ueber der Abnormal-Schwelle liegen");
-        assertTrue(reading.get().interpretation().contains("STILLER MOVE"));
+        assertTrue(reading.get().interpretation().contains("SILENT MOVE"));
         assertEquals("silent-move-detector", reading.get().id());
     }
 
@@ -47,7 +47,7 @@ class SilentMoveDetectorTest {
                 SilentMoveDetector.measure(pair[0], pair[1], -0.4, 0.5, false);
         assertTrue(reading.isPresent());
         assertTrue(reading.get().value() <= -2.5, "Richtung des Moves muss im Vorzeichen stehen");
-        assertTrue(reading.get().interpretation().contains("STILLER MOVE"));
+        assertTrue(reading.get().interpretation().contains("SILENT MOVE"));
     }
 
     @Test
@@ -57,8 +57,8 @@ class SilentMoveDetectorTest {
                 SilentMoveDetector.measure(pair[0], pair[1], 1.6, 0.5, true);
         assertTrue(reading.isPresent());
         assertTrue(reading.get().value() >= 2.5);
-        assertTrue(reading.get().interpretation().contains("attribuiert"));
-        assertFalse(reading.get().interpretation().contains("STILLER MOVE"));
+        assertTrue(reading.get().interpretation().contains("attributed"));
+        assertFalse(reading.get().interpretation().contains("SILENT MOVE"));
     }
 
     @Test
@@ -69,7 +69,7 @@ class SilentMoveDetectorTest {
                 SilentMoveDetector.measure(pair[0], pair[1], 0.65, 0.5, false);
         assertTrue(reading.isPresent());
         assertTrue(Math.abs(reading.get().value()) < 2.5);
-        assertTrue(reading.get().interpretation().contains("Im Rahmen"));
+        assertTrue(reading.get().interpretation().contains("Within range"));
     }
 
     @Test
@@ -78,8 +78,8 @@ class SilentMoveDetectorTest {
         Optional<SignalReading> reading =
                 SilentMoveDetector.measure(pair[0], pair[1], 1.6, 0.5, false);
         assertTrue(reading.isPresent());
-        assertTrue(reading.get().interpretation().contains("Beta 1.20"));
-        assertTrue(reading.get().interpretation().contains("abnormale Rendite 1.00 %"));
+        assertTrue(reading.get().interpretation().contains("beta 1.20"));
+        assertTrue(reading.get().interpretation().contains("abnormal return 1.00 %"));
     }
 
     @Test
@@ -88,7 +88,7 @@ class SilentMoveDetectorTest {
         Optional<SignalReading> reading =
                 SilentMoveDetector.measure(pair[0], pair[1], 0.65, 0.5, false);
         assertTrue(reading.isPresent());
-        assertTrue(reading.get().interpretation().contains("Vorsicht"));
+        assertTrue(reading.get().interpretation().contains("Caution"));
     }
 
     @Test

@@ -8,40 +8,39 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Lebensdauer-Perzentil einer laufenden Story via Weibull-Survival-Analyse.
+ * Lifetime percentile of a running story via Weibull survival analysis.
  *
- * <p><b>Methode:</b> Auf die historischen Story-Lebensdauern wird eine
- * Weibull-Verteilung (Weibull 1951; Standardmodell der Survival-Analyse,
- * vgl. Lawless, "Statistical Models and Methods for Lifetime Data") per
- * Maximum-Likelihood gefittet. Der Shape-Parameter k wird ueber die
- * MLE-Gleichung per Newton-Iteration geloest
- * (Sum x^k ln x / Sum x^k - 1/k - mean(ln x) = 0), der Scale-Parameter
- * lambda folgt danach geschlossen als (Sum x^k / n)^(1/k). Der Signalwert
- * ist F(t) = 1 - exp(-(t/lambda)^k), also das Perzentil, das die aktuelle
- * Story-Dauer in der fuer diesen Story-Typ ueblichen Lebensdauer-Verteilung
- * einnimmt.
+ * <p><b>Method:</b> A Weibull distribution (Weibull 1951; the standard model
+ * of survival analysis, cf. Lawless, "Statistical Models and Methods for
+ * Lifetime Data") is fitted to the historical story lifetimes by maximum
+ * likelihood. The shape parameter k is solved from the MLE equation by Newton
+ * iteration (Sum x^k ln x / Sum x^k - 1/k - mean(ln x) = 0); the scale
+ * parameter lambda then follows in closed form as (Sum x^k / n)^(1/k). The
+ * signal value is F(t) = 1 - exp(-(t/lambda)^k), i.e. the percentile the
+ * current story duration occupies in the lifetime distribution typical for
+ * this story type.
  *
- * <p><b>Inputs im Terminal:</b> die historischen Lebensdauern kommen aus den
- * Story-Clustern (Zeit von erster bis letzter zugeordneter Zeile, rekonstruiert
- * aus dem Headline-Archiv JSONL), die aktuelle Dauer aus dem lebenden Cluster
- * auf dem News-Wire.
+ * <p><b>Terminal inputs:</b> the historical lifetimes come from the story
+ * clusters (time from first to last assigned line, reconstructed from the
+ * headline archive JSONL); the current age comes from the living cluster on
+ * the news wire.
  */
 public final class StoryHalfLife {
 
-    /** Unter dieser Zahl historischer Lebensdauern ist kein Fit moeglich. */
+    /** Below this number of historical lifetimes no fit is possible. */
     private static final int MIN_LIFETIMES = 8;
-    /** Unter dieser Zahl traegt die Deutung einen Vorsichts-Zusatz. */
+    /** Below this number the interpretation carries a caution note. */
     private static final int COMFORTABLE_LIFETIMES = 20;
 
     private StoryHalfLife() {
     }
 
     /**
-     * Misst, wie weit die aktuelle Story ihre uebliche Lebensdauer ausgeschoepft hat.
+     * Measures how far the current story has used up its typical lifetime.
      *
-     * @param historicalLifetimes abgeschlossene Story-Lebensdauern dieses Story-Typs
-     * @param currentAge          Alter der laufenden Story
-     * @return Befund, oder empty bei weniger als {@value #MIN_LIFETIMES} positiven Lebensdauern
+     * @param historicalLifetimes completed story lifetimes of this story type
+     * @param currentAge          age of the running story
+     * @return reading, or empty with fewer than {@value #MIN_LIFETIMES} positive lifetimes
      */
     public static Optional<SignalReading> measure(List<Duration> historicalLifetimes, Duration currentAge) {
         if (historicalLifetimes == null || currentAge == null || currentAge.isNegative()) {
@@ -63,42 +62,42 @@ public final class StoryHalfLife {
         value = Math.max(0, Math.min(1, value));
 
         String lambdaText = lambda >= 72
-                ? MathKit.fmt(lambda / 24.0, 1) + " Tagen"
-                : MathKit.fmt(lambda, 1) + " Stunden";
-        String fitText = "Weibull-Fit: Form k=" + MathKit.fmt(k, 2)
-                + ", charakteristische Lebensdauer lambda=" + lambdaText + ".";
+                ? MathKit.fmt(lambda / 24.0, 1) + " days"
+                : MathKit.fmt(lambda, 1) + " hours";
+        String fitText = "Weibull fit: shape k=" + MathKit.fmt(k, 2)
+                + ", characteristic lifetime lambda=" + lambdaText + ".";
 
         String interpretation;
         if (value > 0.9) {
-            interpretation = "STRUKTURELL: die Story überlebt ihre erwartete Lebensdauer deutlich - "
-                    + "das ist keine Episode mehr, die Lage selbst hat sich geändert "
-                    + "(Chronik-relevant). " + fitText;
+            interpretation = "STRUCTURAL: the story clearly outlives its expected lifetime - "
+                    + "this is no longer an episode, the situation itself has changed "
+                    + "(chronicle-relevant). " + fitText;
         } else if (value >= 0.5) {
-            interpretation = "Reif: die Story hat den Grossteil ihrer üblichen Lebensdauer hinter sich - "
-                    + "Auslaufen einplanen. " + fitText;
+            interpretation = "Mature: the story has most of its typical lifetime behind it - "
+                    + "plan for it to fade out. " + fitText;
         } else {
-            interpretation = "Episodisch normal: die Story liegt im üblichen Lebensdauer-Fenster ihres Typs - "
-                    + "kein besonderer Schluss. " + fitText;
+            interpretation = "Episodically normal: the story sits within the usual lifetime window "
+                    + "of its type - no particular conclusion. " + fitText;
         }
         if (hours.length < COMFORTABLE_LIFETIMES) {
-            interpretation += " Vorsicht: der Fit stützt sich auf nur " + hours.length
-                    + " historische Lebensdauern - das Perzentil ist entsprechend unsicher.";
+            interpretation += " Caution: only n=" + hours.length
+                    + " historical lifetimes back this fit - the percentile is accordingly uncertain.";
         }
 
         return Optional.of(new SignalReading(
                 "story-half-life",
-                "Story-Lebensdauer (Weibull-Survival)",
+                "Story lifetime (Weibull survival)",
                 value,
-                MathKit.fmt(value * 100, 0) + " % Lebensdauer-Perzentil (Skala 0-1)",
-                "Misst, wie weit die aktuelle Story ihre für diesen Story-Typ übliche "
-                        + "Lebensdauer schon ausgeschöpft hat.",
+                MathKit.fmt(value * 100, 0) + " % lifetime percentile (scale 0-1)",
+                "Measures how far the current story has already used up the lifetime "
+                        + "typical for its story type.",
                 interpretation));
     }
 
     // ---- Weibull-MLE ----
 
     /**
-     * Newton-Iteration auf der Shape-MLE-Gleichung
+     * Newton iteration on the shape MLE equation
      * g(k) = Sum x^k ln x / Sum x^k - 1/k - mean(ln x) = 0.
      */
     private static double fitShape(double[] xs) {
@@ -136,7 +135,7 @@ public final class StoryHalfLife {
         return k;
     }
 
-    /** Geschlossene Loesung fuer lambda gegeben k: (Sum x^k / n)^(1/k). */
+    /** Closed-form solution for lambda given k: (Sum x^k / n)^(1/k). */
     private static double fitScale(double[] xs, double k) {
         double s = 0;
         for (double x : xs) {

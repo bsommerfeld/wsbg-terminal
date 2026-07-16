@@ -34,7 +34,7 @@ class BurstinessTest {
 
         assertTrue(reading.isPresent());
         assertTrue(reading.get().value() <= 0.1, "erwartet B <= 0.1, war " + reading.get().value());
-        assertTrue(reading.get().interpretation().contains("TAKT"));
+        assertTrue(reading.get().interpretation().contains("REGULAR CADENCE"));
         assertEquals("burstiness", reading.get().id());
     }
 
@@ -47,7 +47,7 @@ class BurstinessTest {
 
         assertTrue(reading.isPresent());
         assertTrue(reading.get().value() >= 0.5, "erwartet B >= 0.5, war " + reading.get().value());
-        assertTrue(reading.get().interpretation().contains("EXPLOSIVES PROFIL"));
+        assertTrue(reading.get().interpretation().contains("EXPLOSIVE PROFILE"));
     }
 
     @Test
@@ -58,7 +58,7 @@ class BurstinessTest {
         assertTrue(reading.isPresent());
         assertTrue(reading.get().value() > 0.1 && reading.get().value() < 0.5,
                 "erwartet Mittelband, war " + reading.get().value());
-        assertTrue(reading.get().interpretation().contains("Gemischtes Profil"));
+        assertTrue(reading.get().interpretation().contains("Mixed profile"));
     }
 
     @Test
@@ -67,7 +67,7 @@ class BurstinessTest {
         Optional<SignalReading> reading = Burstiness.measure(fromGaps(0, gaps));
 
         assertTrue(reading.isPresent());
-        assertTrue(reading.get().interpretation().contains("Vorsicht"));
+        assertTrue(reading.get().interpretation().contains("Caution"));
     }
 
     @Test

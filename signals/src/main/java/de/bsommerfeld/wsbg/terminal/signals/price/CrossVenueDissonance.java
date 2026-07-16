@@ -7,48 +7,47 @@ import java.util.Arrays;
 import java.util.Optional;
 
 /**
- * Venue-Dissonanz: dieselbe Aktie an zwei Handelsplaetzen im Preisvergleich.
+ * Venue dissonance: the same stock compared across two trading venues.
  *
- * <p><b>Methode:</b> Aus den Mittelkursen beider Plaetze wird die
- * Log-Preisdifferenz d = ln(A) - ln(B) gebildet. Der letzte Wert wird als
- * z-Score gegen die vorherigen Werte der Differenzreihe gestellt
- * ({@link MathKit#zScore}); dazu kommt eine Persistenz-Quote: der Anteil der
- * letzten 5 Werte, deren Abstand vom historischen Mittel mehr als eine
- * Standardabweichung betraegt. Theorieanker ist das Law of One Price:
- * identische Papiere duerfen sich nur im Rahmen von Gebuehren- und
- * Latenzrauschen unterscheiden - eine anhaltende Differenz zeigt, von welcher
- * Seite der Druck kommt (Retail-Platz vs institutionell gepraegter Fluss).
+ * <p><b>Method:</b> From the mid prices of both venues the log price
+ * differential d = ln(A) - ln(B) is formed. The latest value is z-scored
+ * against the earlier values of the differential series
+ * ({@link MathKit#zScore}); on top comes a persistence ratio: the share of
+ * the last 5 values whose distance from the historical mean exceeds one
+ * standard deviation. The theory anchor is the Law of One Price: identical
+ * instruments may only differ within fee and latency noise - a persistent
+ * differential shows which side the pressure comes from (retail venue vs
+ * institutionally driven flow).
  *
- * <p><b>Inputs im Terminal:</b> die Mittelkurse (Bid/Ask-Mid) desselben
- * Papiers von zwei Handelsplaetzen, im Terminal typischerweise die L&amp;S-
- * und die Tradegate-Quote-Reihe; die Venue-Namen kommen als Runtime-Parameter
- * herein.
+ * <p><b>Terminal inputs:</b> the mid prices (bid/ask mid) of the same
+ * instrument from two trading venues; the venue names come in as runtime
+ * parameters.
  */
 public final class CrossVenueDissonance {
 
-    /** Unter dieser Reihenlaenge ist kein Differenz-z-Score belastbar. */
+    /** Below this series length no differential z-score is reliable. */
     private static final int MIN_SERIES = 40;
-    /** Unter dieser Reihenlaenge traegt die Deutung einen Vorsichts-Zusatz. */
+    /** Below this series length the interpretation carries a caution suffix. */
     private static final int COMFORTABLE_SERIES = 80;
-    /** Ab diesem absoluten z-Score gilt die Differenz als auffaellig. */
+    /** At or above this absolute z-score the differential counts as notable. */
     private static final double Z_DISSONANT = 2.0;
-    /** Ab dieser Persistenz-Quote gilt die Differenz als anhaltend. */
+    /** At or above this persistence ratio the differential counts as sustained. */
     private static final double PERSISTENCE_THRESHOLD = 0.6;
-    /** Fenster fuer die Persistenz-Quote. */
+    /** Window for the persistence ratio. */
     private static final int PERSISTENCE_WINDOW = 5;
 
     private CrossVenueDissonance() {
     }
 
     /**
-     * Misst die aktuelle Preisdifferenz desselben Papiers zwischen zwei Plaetzen.
+     * Measures the current price differential of the same instrument between two venues.
      *
-     * @param midsVenueA Mittelkurse an Platz A, alle &gt; 0
-     * @param midsVenueB Mittelkurse an Platz B, gleiche Laenge, alle &gt; 0
-     * @param venueAName Anzeigename von Platz A
-     * @param venueBName Anzeigename von Platz B
-     * @return Befund, oder empty bei ungleich langen oder zu kurzen Reihen
-     *         (unter {@value #MIN_SERIES}), nicht-positiven Kursen oder fehlenden Namen
+     * @param midsVenueA mid prices at venue A, all &gt; 0
+     * @param midsVenueB mid prices at venue B, same length, all &gt; 0
+     * @param venueAName display name of venue A
+     * @param venueBName display name of venue B
+     * @return reading, or empty on mismatched or too-short series
+     *         (below {@value #MIN_SERIES}), non-positive prices, or missing names
      */
     public static Optional<SignalReading> measure(double[] midsVenueA, double[] midsVenueB,
             String venueAName, String venueBName) {
@@ -88,30 +87,30 @@ public final class CrossVenueDissonance {
         String interpretation;
         if (Math.abs(z) >= Z_DISSONANT && persistence >= PERSISTENCE_THRESHOLD) {
             String payingVenue = z > 0 ? venueAName : venueBName;
-            interpretation = "VENUE-DISSONANZ: der Druck kommt einseitig von " + payingVenue
-                    + " - dieser Platz zahlt anhaltend mehr für dasselbe Papier. "
-                    + "Fluss-Herkunft in die Lagebeurteilung aufnehmen.";
+            interpretation = "VENUE DISSONANCE: the pressure comes one-sidedly from " + payingVenue
+                    + " - this venue keeps paying more for the same instrument. "
+                    + "Fold the flow origin into the situation read.";
         } else if (Math.abs(z) >= Z_DISSONANT) {
-            interpretation = "Kurzlebiger Ausreißer zwischen " + venueAName + " und " + venueBName
-                    + " ohne Persistenz - wahrscheinlich eine Stale Quote, kein belastbares Signal.";
+            interpretation = "Short-lived outlier between " + venueAName + " and " + venueBName
+                    + " without persistence - likely a stale quote, no reliable signal.";
         } else {
-            interpretation = "Plätze im Einklang: " + venueAName + " und " + venueBName
-                    + " preisen dasselbe Papier im Rahmen des Gebührenrauschens gleich.";
+            interpretation = "Venues in harmony: " + venueAName + " and " + venueBName
+                    + " price the same instrument alike within fee noise.";
         }
         if (n < COMFORTABLE_SERIES) {
-            interpretation += " Vorsicht: nur " + n
-                    + " Kurspaare als Vergleichsbasis - z-Score und Persistenz sind entsprechend unsicher.";
+            interpretation += " Caution: only " + n
+                    + " price pairs as comparison base - z-score and persistence are accordingly uncertain.";
         }
 
         return Optional.of(new SignalReading(
                 "cross-venue-dissonance",
-                "Venue-Dissonanz (Preis-Differenzsignal)",
+                "Venue dissonance (price differential)",
                 z,
-                MathKit.fmt(z, 2) + " (z-Score der Log-Preisdifferenz; Persistenz "
-                        + MathKit.fmt(persistence, 2) + ", positiv = " + venueAName + " zahlt mehr)",
-                "Misst, wie weit die aktuelle Log-Preisdifferenz desselben Papiers zwischen zwei "
-                        + "Handelsplätzen aus ihrem eigenen historischen Band gelaufen ist und wie "
-                        + "anhaltend die Abweichung ist.",
+                MathKit.fmt(z, 2) + " (z-score of the log price differential; persistence "
+                        + MathKit.fmt(persistence, 2) + ", positive = " + venueAName + " pays more)",
+                "Measures how far the current log price differential of the same instrument "
+                        + "between two trading venues has run out of its own historical band and "
+                        + "how sustained the deviation is.",
                 interpretation));
     }
 }

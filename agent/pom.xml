@@ -30,6 +30,10 @@
         </dependency>
         <dependency>
             <groupId>de.bsommerfeld</groupId>
+            <artifactId>signals</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
             <artifactId>yahoo-finance</artifactId>
         </dependency>
         <dependency>

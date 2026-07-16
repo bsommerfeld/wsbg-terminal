@@ -6,20 +6,18 @@ import de.bsommerfeld.wsbg.terminal.signals.SignalReading;
 import java.util.Optional;
 
 /**
- * Kalender-Kollisionsdichte: misst, wie ueberladen der heutige
- * Ereignis-Kalender im Vergleich zur eigenen Historie ist.
+ * Calendar collision density: measures how overloaded today's event calendar
+ * is compared to its own history.
  *
- * <p><b>Methode:</b> Das heutige Ereignis-Gewicht wird als empirisches
- * Perzentil gegen die Verteilung der historischen Tagesgewichte eingeordnet
- * (Mid-Rank bei Gleichstand). Literaturanker: limited attention / Ablenkung
- * durch konkurrierende Nachrichten - an Tagen mit vielen gleichzeitigen
- * Ereignissen reagieren Kurse nachweislich verzoegert (Hirshleifer/Lim/Teoh
- * 2009, "Driven to Distraction").
+ * <p><b>Method:</b> today's event weight is ranked as an empirical percentile
+ * against the distribution of historical daily weights (mid-rank on ties).
+ * Literature anchor: limited attention / distraction by competing news - on
+ * days with many simultaneous events prices demonstrably react with a lag
+ * (Hirshleifer/Lim/Teoh 2009, "Driven to Distraction").
  *
- * <p><b>Inputs im Terminal:</b> gewichtete Tages-Ereignislast aus dem
- * Kalender-Briefing (Earnings-Termine, EZB/Fed-Entscheide, Makro-Daten,
- * Hauptversammlungen) plus Meldungsaufkommen der Ad-hoc-Feeds (fn-adhoc,
- * EQS).
+ * <p><b>Terminal inputs:</b> weighted daily event load from the calendar
+ * briefing (earnings dates, ECB/Fed decisions, macro data, annual general
+ * meetings) plus filing volume from the ad-hoc feeds (fn-adhoc, EQS).
  */
 public final class CalendarCollisionDensity {
 
@@ -30,10 +28,10 @@ public final class CalendarCollisionDensity {
     }
 
     /**
-     * @param historicalDailyEventWeights historische Tagesgewichte
-     *                                    (mindestens {@value #MIN_HISTORY} Tage)
-     * @param todayWeight                 heutiges Ereignis-Gewicht
-     * @return Befund, oder empty bei zu duenner Historie
+     * @param historicalDailyEventWeights historical daily weights
+     *                                    (at least {@value #MIN_HISTORY} days)
+     * @param todayWeight                 today's event weight
+     * @return reading, or empty on too thin a history
      */
     public static Optional<SignalReading> measure(double[] historicalDailyEventWeights, double todayWeight) {
         if (historicalDailyEventWeights == null || historicalDailyEventWeights.length < MIN_HISTORY) {
@@ -42,33 +40,33 @@ public final class CalendarCollisionDensity {
         int n = historicalDailyEventWeights.length;
         double percentile = MathKit.empiricalPercentile(todayWeight, historicalDailyEventWeights);
 
-        String formatted = "Perzentil " + MathKit.fmt(percentile, 2)
-                + " (heutiges Gewicht " + MathKit.fmt(todayWeight, 1) + ", n=" + n + " Tage)";
+        String formatted = "Percentile " + MathKit.fmt(percentile, 2)
+                + " (today's weight " + MathKit.fmt(todayWeight, 1) + ", n=" + n + " days)";
 
         String interpretation;
         if (percentile >= 0.9) {
-            interpretation = "KOLLISIONSTAG: kleine Meldungen preisen sich heute verzoegert ein"
-                    + " - die unbeachtete Small-Cap-Meldung von heute ist der beste Kandidat fuer noch"
-                    + " nicht verdaute Information, gezielt nachfassen.";
+            interpretation = "COLLISION DAY: small filings price in with a lag today"
+                    + " - today's unnoticed small-cap filing is the best candidate for not-yet-digested"
+                    + " information, follow up deliberately.";
         } else if (percentile >= 0.5) {
-            interpretation = "Voller Tag: leichter Ablenkungs-Effekt moeglich - einzelne Meldungen"
-                    + " koennen etwas verzoegert verarbeitet werden.";
+            interpretation = "Busy day: a mild distraction effect is possible - individual filings"
+                    + " may be processed with some lag.";
         } else {
-            interpretation = "Ruhiger Kalender: Meldungen werden sofort verarbeitet - was heute nicht"
-                    + " reagiert, hat den Markt vermutlich wirklich nicht ueberzeugt.";
+            interpretation = "Quiet calendar: filings are processed immediately - whatever does not"
+                    + " react today probably genuinely failed to convince the market.";
         }
         if (n < THIN_HISTORY) {
-            interpretation += " Vorsicht: nur n=" + n + " historische Tage"
-                    + " - duenne Datenbasis, Perzentil mit Zurueckhaltung lesen.";
+            interpretation += " Caution: only n=" + n + " historical days"
+                    + " - thin data, read the percentile with restraint.";
         }
 
         return Optional.of(new SignalReading(
                 "calendar-collision-density",
-                "Kalender-Kollisionsdichte",
+                "Calendar collision density",
                 percentile,
                 formatted,
-                "Misst, wie ueberladen der heutige Ereignis-Kalender gegen die Historie ist - an"
-                        + " Kollisionstagen verarbeitet der Markt Informationen nachweislich schlechter"
+                "Measures how overloaded today's event calendar is against its own history - on"
+                        + " collision days the market demonstrably processes information worse"
                         + " (limited attention).",
                 interpretation));
     }

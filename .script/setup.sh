@@ -7,6 +7,7 @@
 # 1. Installs our OWN, isolated Ollama binary under <appData>/ollama/bin.
 # 2. Starts a private Ollama server (own port + own model store).
 # 3. Pulls the LLMs into that isolated store.
+# 3b. Installs the OCR runtime (Tesseract) under <appData>/tesseract.
 # 4. Pre-installs JCEF + fonts and scaffolds the config.
 #
 # Full isolation: we never touch a user's existing Ollama (binary, models, or
@@ -315,6 +316,60 @@ if [ -x "$OLLAMA" ]; then
 else
     warn "Isolated Ollama binary missing -- skipping model install."
 fi
+
+# ------------------------------------------------------------------------------
+# 3b. Install the OCR runtime (Tesseract) into the isolated container
+# ------------------------------------------------------------------------------
+# The terminal reads Reddit images mechanically (OCR); the engine probes
+# <appData>/tesseract/{lib,tessdata} BEFORE any system install. Every app
+# release carries the assets (release.yml, job tesseract_bundle): the macOS
+# arm64 dylib closure and the platform-neutral tessdata (eng+osd+deu).
+# /releases/latest/download always resolves — every release has the assets.
+# Fully optional: on any failure the terminal runs without image text.
+TESS_DIR="$CONFIG_DIR/tesseract"
+TESS_BASE="https://github.com/bsommerfeld/wsbg-terminal/releases/latest/download"
+
+install_tesseract() {
+    # macOS arm64 gets our self-contained dylib bundle; Linux uses the distro
+    # library (hint below) and only needs the traineddata. Intel Macs have no
+    # bundle (arm64-only CI runner) and fall back to a system install too.
+    local need_lib=false
+    [ "$OS" = "Darwin" ] && [ "$(uname -m)" = "arm64" ] && need_lib=true
+
+    local have_data=false have_lib=true
+    [ -f "$TESS_DIR/tessdata/eng.traineddata" ] && have_data=true
+    if [ "$need_lib" = true ] && [ ! -f "$TESS_DIR/lib/libtesseract.dylib" ]; then
+        have_lib=false
+    fi
+    if [ "$have_data" = true ] && [ "$have_lib" = true ]; then
+        echo "[*] OCR runtime already installed."
+        return 0
+    fi
+
+    echo "[*] Installing OCR runtime (Tesseract) into $TESS_DIR ..."
+    mkdir -p "$TESS_DIR"
+    local tmp
+    if [ "$have_data" = false ]; then
+        tmp="/tmp/tess-data-$$.tar.gz"
+        curl -fL --retry 3 --retry-delay 2 --progress-bar -o "$tmp" "$TESS_BASE/tesseract-tessdata.tar.gz" \
+            || { warn "OCR tessdata download failed."; rm -f "$tmp"; return 1; }
+        tar -xzf "$tmp" -C "$TESS_DIR" || { warn "OCR tessdata extract failed."; rm -f "$tmp"; return 1; }
+        rm -f "$tmp"
+    fi
+    if [ "$have_lib" = false ]; then
+        tmp="/tmp/tess-lib-$$.tar.gz"
+        curl -fL --retry 3 --retry-delay 2 --progress-bar -o "$tmp" "$TESS_BASE/tesseract-macos-arm64.tar.gz" \
+            || { warn "OCR library download failed."; rm -f "$tmp"; return 1; }
+        tar -xzf "$tmp" -C "$TESS_DIR" || { warn "OCR library extract failed."; rm -f "$tmp"; return 1; }
+        rm -f "$tmp"
+    fi
+    if [ "$OS" = "Linux" ] && ! ls /usr/lib/*/libtesseract.so* /usr/lib/libtesseract.so* >/dev/null 2>&1; then
+        echo "    Hint: image reading needs the system Tesseract library (e.g. 'sudo apt install tesseract-ocr')."
+    fi
+    echo "    OCR runtime ready at $TESS_DIR"
+}
+
+install_tesseract || warn "OCR runtime install failed -- images are skipped, the terminal still runs."
 
 # ------------------------------------------------------------------------------
 # 4. Pre-install JCEF (embedded Chromium) native bundle

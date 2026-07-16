@@ -36,10 +36,10 @@ public record SignalReading(
         Objects.requireNonNull(interpretation, "interpretation");
     }
 
-    /** Die eine Zeile, die als Kontext in einen Prompt injiziert wird. */
+    /** Die eine Zeile, die als Kontext in einen Prompt injiziert wird (ROOT-Material-Konvention: Englisch). */
     public String toContextLine() {
         return "SIGNAL [" + title + "] = " + formattedValue
-                + " | Was das misst: " + definition
-                + " | Deutung: " + interpretation;
+                + " | measures: " + definition
+                + " | reading: " + interpretation;
     }
 }

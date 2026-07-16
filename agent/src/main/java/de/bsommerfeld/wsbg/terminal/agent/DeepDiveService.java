@@ -164,6 +164,10 @@ public class DeepDiveService {
     private static final int MAX_WIRE_LINES = 6;
     /** Base char budget for the room's evidence block (window-scaled, newest kept). */
     private static final int ROOM_PACKET_CHARS_BASE = 2400;
+    /** Base char budget for the OUTSIDE ROOMS block (forum/social chatter, window-scaled). */
+    private static final int SENTIMENT_PACKET_CHARS_BASE = 2200;
+    /** Fetch cap for the sentiment fan (the char budget is the real gate). */
+    private static final int MAX_SENTIMENT_ITEMS = 60;
     /**
      * The TradingCentral comment prose is attributed context, not the star —
      * capped, but at a SENTENCE boundary: a mid-sentence cut leaves the
@@ -196,6 +200,7 @@ public class DeepDiveService {
     private static int sectionMaterialChars() { return scaled(SECTION_MATERIAL_CHARS_BASE); }
     private static int maxDigestChars() { return scaled(MAX_DIGEST_CHARS_BASE); }
     private static int roomPacketChars() { return scaled(ROOM_PACKET_CHARS_BASE); }
+    private static int sentimentPacketChars() { return scaled(SENTIMENT_PACKET_CHARS_BASE); }
     private static int maxTechnicalCommentChars() { return scaled(MAX_TECHNICAL_COMMENT_CHARS_BASE); }
     /**
      * Runaway backstop on the archived report — NOT a working budget. Section
@@ -561,7 +566,8 @@ public class DeepDiveService {
     /** The loaded prompt set of one run. */
     private record Prompts(String section, String these, String revise, String challenge,
             String weave, String polish, String arbiter, String samestory,
-            String consistency, String diffcheck, String chronicle) {
+            String consistency, String diffcheck, String chronicle, String covered,
+            String reclaim) {
     }
 
     /**
@@ -643,10 +649,16 @@ public class DeepDiveService {
         // IDs copy-only, the register of the figure layer (user mandate
         // 2026-07-16 "Visuals referieren mit IDs").
         try {
-            m.charts = new DeepDiveCharts(lang).build(m.snapshot, m.deepDive, m.analystView,
+            DeepDiveCharts chartBuilder = new DeepDiveCharts(lang);
+            List<DeepDiveRecord.ChartFigure> figs = new ArrayList<>(chartBuilder.build(
+                    m.snapshot, m.deepDive, m.analystView,
                     m.shortInterest, m.insiderDealings, m.venueStats, m.usStats,
                     m.analystActions, m.hedgeFunds, m.pressTimeline, m.worldSignalKeep,
-                    m.volumeProfile, m.orderBook, m.memoryEvents);
+                    m.volumeProfile, m.orderBook, m.memoryEvents));
+            DeepDiveRecord.ChartFigure signalBoard =
+                    chartBuilder.signalsFigure(SignalDesk.values(m.signalReadings));
+            if (signalBoard != null) figs.add(signalBoard);
+            m.charts = figs;
             Map<Integer, List<String>> captions = new LinkedHashMap<>();
             for (int ci = 0; ci < m.charts.size(); ci++) {
                 DeepDiveRecord.ChartFigure fig = m.charts.get(ci);
@@ -693,7 +705,9 @@ public class DeepDiveService {
                 PromptLoader.loadLocalized("deepdive-diffcheck", lang)
                         .replace("{{LANGUAGE}}", langName),
                 PromptLoader.loadLocalized("deepdive-chronicle", lang)
-                        .replace("{{LANGUAGE}}", langName));
+                        .replace("{{LANGUAGE}}", langName),
+                PromptLoader.loadLocalized("deepdive-covered", lang),
+                PromptLoader.loadLocalized("deepdive-reclaim", lang));
 
         // -- the section workspace: author → weave sources one at a time →
         // examine → challenge → revise, one section at a time; "These" (the
@@ -732,12 +746,28 @@ public class DeepDiveService {
         bodies[SEC_THESIS] = writeSection(model, new Prompts(prompts.these(), prompts.these(),
                         prompts.revise(), prompts.challenge(), prompts.weave(), prompts.polish(),
                         prompts.arbiter(), prompts.samestory(), prompts.consistency(),
-                        prompts.diffcheck(), prompts.chronicle()),
+                        prompts.diffcheck(), prompts.chronicle(), prompts.covered(),
+                        prompts.reclaim()),
                 subject, header,
                 headings.get(SEC_THESIS), new Shelf(thesisMaterial(headings, bodies, m), List.of()),
                 de, (SEC_THESIS + 1) + "/" + SECTION_COUNT + " · " + headings.get(SEC_THESIS),
                 dropWords, m, false);
         if (bodies[SEC_THESIS] != null) written++;
+
+        // -- the RECLAIM pass (user design 2026-07-16): the report stands -
+        // re-judge the triage-discarded articles against ITS picture. An
+        // article with no visible relevance at triage time may be the cause,
+        // consequence or missing piece of a thread the report now carries
+        // ("um 2 Ecken denken"); the reclaimed few are digested and woven
+        // into their sections BEFORE the final instance reviews the whole. --
+        checkCancelled();
+        try {
+            reclaimPass(model, prompts, subject, headings, bodies, m, de, header);
+        } catch (java.util.concurrent.CancellationException e) {
+            throw e;
+        } catch (Exception e) {
+            LOG.warn("[DEEPDIVE] '{}' reclaim pass failed: {}", subject, e.getMessage());
+        }
 
         // -- cross-section consistency: the ONE review that sees the whole
         // report at once (live finding run 10: Bewertung said "no revisions"
@@ -818,7 +848,8 @@ public class DeepDiveService {
                 m.snapshot != null && m.snapshot.hasPrice() ? m.snapshot.currency() : null,
                 m.evidenceCount, m.news.size(),
                 System.currentTimeMillis() - t0,
-                charts);
+                charts,
+                SignalDesk.values(m.signalReadings));
         archive.append(record);
         LOG.info("[DEEPDIVE] '{}' report {} archived: {} chars, {} figure(s), {} ms "
                         + "({} of {} sections written).",
@@ -925,6 +956,7 @@ public class DeepDiveService {
         // marker can be cited.
         int total = groups.size();
         int step = 0;
+        int coveredSteps = 0;
         ChatModel arbiter = brain.getAgentModel();
         List<String> wovenBlocks = new ArrayList<>();
         if (seedGroup != null) wovenBlocks.add(String.join("", seedGroup));
@@ -943,7 +975,38 @@ public class DeepDiveService {
                 LOG.info("[DEEPDIVE] '{}' section '{}' weave step {}: arbiter ruled the story "
                         + "group ({} source(s)) a re-spin of an already woven one — skipped.",
                         subject, heading, step, group.size());
+                // The re-spin's SUBSTANCE stands via its twin - its CITATION
+                // must too (2026-07-16: the skip used to drop the markers, so
+                // the register omitted a source whose story the report tells).
+                String cited = attachMarkers(body, block);
+                if (!cited.equals(body)) {
+                    body = cited;
+                    journalDiff(subject, shown, body);
+                    shown = body;
+                }
                 journalNotes(subject, group.stream().map(DeepDiveService::firstLine).toList());
+                continue;
+            }
+            // COVERAGE SHORT-CUT (2026-07-16, the tempo zoom-out): the
+            // chronicle-seeded author integrates most of the picture up
+            // front, so most steps only CONFIRM the standing text. A tiny
+            // coverage judge decides per story; a covered story contributes
+            // its MARKERS to its most similar paragraph mechanically (the
+            // substance stands, the citation must too - the old UNCHANGED
+            // pass-case silently dropped it) and skips the full weave call
+            // with its exams. AI-first: skipping is the judge's call, a
+            // whiff falls open into the normal weave.
+            if (rawFed && storyCovered(arbiter, prompts.covered(), body, block)) {
+                String withMarkers = attachMarkers(body, block);
+                if (!withMarkers.equals(body)) {
+                    body = withMarkers;
+                    journalDiff(subject, shown, body);
+                    shown = body;
+                }
+                journalNotes(subject, List.of((de ? "Gedeckt durch den stehenden Text: "
+                        : "Covered by the standing text: ") + firstLine(block)));
+                wovenBlocks.add(block);
+                coveredSteps++;
                 continue;
             }
             eventBus.post(new DeepDiveProgressEvent(subject, "sections",
@@ -998,6 +1061,11 @@ public class DeepDiveService {
             wovenBlocks.add(block);
             journalDiff(subject, shown, body);
             shown = body;
+        }
+        if (coveredSteps > 0) {
+            LOG.info("[DEEPDIVE] '{}' section '{}': coverage short-cut took {} of {} story "
+                    + "step(s) - markers attached, weave calls saved.",
+                    subject, heading, coveredSteps, total);
         }
 
         // Challenger (the desk's grilling) against the FULL shelf, each round
@@ -1539,6 +1607,57 @@ public class DeepDiveService {
         }
     }
 
+    /**
+     * The coverage judge of one weave step: does the STANDING TEXT already
+     * carry this story's load-bearing substance? One tiny JSON verdict -
+     * skipping the weave is an AI judgment (never a similarity threshold),
+     * and a whiff answers false so the story weaves normally (fail-open,
+     * nothing is ever lost to a broken call).
+     */
+    private boolean storyCovered(ChatModel judge, String prompt, String body, String block) {
+        try {
+            String reply = chatGateway.chat(judge, prompt,
+                    "STANDING TEXT:\n" + body + "\n\nSTORY:\n" + block);
+            if (reply == null) return false;
+            Matcher m = COVERED_VERDICT.matcher(reply);
+            return m.find() && Boolean.parseBoolean(m.group(1));
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] coverage judge whiffed: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    private static final Pattern COVERED_VERDICT =
+            Pattern.compile("\"covered\"\\s*:\\s*(true|false)");
+
+    /**
+     * Attaches a covered story's markers to the paragraph most similar to it
+     * - the substance already stands there, so the citation belongs there
+     * (deterministic; markers the body already cites are not repeated).
+     */
+    static String attachMarkers(String body, String block) {
+        Set<Integer> already = markersIn(body);
+        List<Integer> fresh = new ArrayList<>();
+        for (Integer n : markersIn(block)) {
+            if (!already.contains(n)) fresh.add(n);
+        }
+        if (fresh.isEmpty()) return body;
+        String[] paras = body.strip().split("\n\\s*\n");
+        int bestIdx = 0;
+        double best = -1;
+        for (int i = 0; i < paras.length; i++) {
+            double sim = tokenSimilarity(block, paras[i]);
+            if (sim > best) {
+                best = sim;
+                bestIdx = i;
+            }
+        }
+        StringBuilder marks = new StringBuilder();
+        for (Integer n : fresh) marks.append('[').append(n).append(']');
+        paras[bestIdx] = paras[bestIdx].stripTrailing() + " " + marks;
+        return String.join("\n\n", paras);
+    }
+
     /** The letterhead plus the previous section's closing thought (the red thread). */
     private static String headerWithThought(String header, String previousThought) {
         if (previousThought == null || previousThought.isBlank()) return header;
@@ -1747,6 +1866,138 @@ public class DeepDiveService {
         String fixed = header + "SECTION TO WRITE: ## " + heading
                 + "\n\nMATERIAL (verified blocks; [n] = source markers to copy):\n";
         return fixed + budgeted(material, promptChars + fixed.length());
+    }
+
+    /** Reclaimed articles woven per run - a runaway net, never a working limit. */
+    private static final int MAX_RECLAIMED = 8;
+
+    /**
+     * The RECLAIM pass: the triage's set-aside pool, judged ONCE MORE against
+     * the STANDING report - the finished picture licenses two-corner
+     * connections the blind first triage could not see. Reclaimed articles
+     * are digested and woven into their target sections through the normal
+     * gauntlet (weave + examiner + diff-judge), and they join the news pool
+     * APPENDED so every already-assigned source number stays stable.
+     */
+    private void reclaimPass(ChatModel model, Prompts prompts, String subject,
+            List<String> headings, String[] bodies, Material m, boolean de, String header) {
+        if (m.newsDiscarded.isEmpty()) return;
+        eventBus.post(new DeepDiveProgressEvent(subject, "finish",
+                de ? "Nachlese" : "reclaim"));
+        StringBuilder report = new StringBuilder(8192);
+        for (int i = 0; i < SECTION_COUNT; i++) {
+            if (bodies[i] == null) continue;
+            report.append("## ").append(headings.get(i)).append('\n')
+                    .append(bodies[i]).append("\n\n");
+        }
+        if (report.isEmpty()) return;
+        StringBuilder list = new StringBuilder(1024);
+        List<RawNewsItem> pool = m.newsDiscarded;
+        for (int i = 0; i < pool.size(); i++) {
+            RawNewsItem item = pool.get(i);
+            list.append(i + 1).append(". ").append(item.title());
+            if (item.publisher() != null && !item.publisher().isEmpty()) {
+                list.append(" · ").append(item.publisher());
+            }
+            list.append('\n');
+        }
+        String fixed = header + "REPORT:\n";
+        String message = fixed + budgeted(report.toString(),
+                prompts.reclaim().length() + fixed.length() + list.length() + 16)
+                + "\nITEMS:\n" + list;
+        String reply = chatGateway.chat(model, prompts.reclaim(), message);
+        if (reply == null) return;
+        // Same verdict grammar as the triage - i, relevant, quoted section tokens.
+        List<int[]> reclaimed = new ArrayList<>(); // [poolIdx] with targets resolved below
+        Map<Integer, String> targetsByIdx = new LinkedHashMap<>();
+        Matcher obj = TRIAGE_OBJ.matcher(reply);
+        while (obj.find()) {
+            String o = obj.group();
+            Matcher iM = TRIAGE_I.matcher(o);
+            if (!iM.find()) continue;
+            int i = Integer.parseInt(iM.group(1));
+            if (i < 1 || i > pool.size()) continue;
+            Matcher relM = TRIAGE_REL.matcher(o);
+            if (!relM.find() || !Boolean.parseBoolean(relM.group(1))) continue;
+            StringBuilder targets = new StringBuilder();
+            Matcher tM = TRIAGE_TARGET.matcher(o);
+            while (tM.find()) {
+                String t = tM.group(1).toUpperCase(Locale.ROOT);
+                String norm = t.startsWith("KATALYSATOR") || t.startsWith("CATALYST")
+                        ? "KATALYSATOR"
+                        : t.startsWith("AUSBLICK") || t.startsWith("OUTLOOK") ? "AUSBLICK"
+                        : t.startsWith("BEWERTUNG") || t.startsWith("VALUATION") ? "BEWERTUNG"
+                        : "LAGE";
+                if (targets.indexOf(norm) < 0) {
+                    if (targets.length() > 0) targets.append(',');
+                    targets.append(norm);
+                }
+            }
+            targetsByIdx.put(i - 1, targets.length() == 0 ? "LAGE" : targets.toString());
+        }
+        if (targetsByIdx.isEmpty()) {
+            LOG.info("[DEEPDIVE] '{}' reclaim pass: none of {} set-aside item(s) earned a "
+                    + "window - the first triage stands.", subject, pool.size());
+            return;
+        }
+        int woven = 0;
+        EditorialAgent digestAgent = editorialAgent;
+        for (Map.Entry<Integer, String> entry : targetsByIdx.entrySet()) {
+            if (woven >= MAX_RECLAIMED) {
+                LOG.warn("[DEEPDIVE] '{}' reclaim hit the runaway net ({}).", subject,
+                        MAX_RECLAIMED);
+                break;
+            }
+            checkCancelled();
+            RawNewsItem item = pool.get(entry.getKey());
+            // Join the pool APPENDED - source numbering is order-stable.
+            List<RawNewsItem> news = new ArrayList<>(m.news);
+            news.add(item);
+            m.news = news;
+            Map<String, String> targets = new LinkedHashMap<>(m.newsTargets);
+            targets.put(newsKey(item), entry.getValue());
+            m.newsTargets = targets;
+            if (digestAgent != null && item.link() != null && !item.link().isBlank()
+                    && isBlank(m.digests.get(item.link().trim()))) {
+                String digest = digestAgent.newsDigester().digestNow(item.link());
+                if (!isBlank(digest)) {
+                    if (!(m.digests instanceof LinkedHashMap)) {
+                        m.digests = new LinkedHashMap<>(m.digests);
+                    }
+                    m.digests.put(item.link().trim(), digest);
+                }
+            }
+            Map<String, Integer> nums = sourceNumbers(m);
+            String block = newsItemBlock(item, m.digests,
+                    mark(nums, "news:" + (m.news.size() - 1)));
+            for (String target : entry.getValue().split(",")) {
+                int sec = switch (target.trim()) {
+                    case "KATALYSATOR" -> SEC_CATALYSTS;
+                    case "AUSBLICK" -> SEC_OUTLOOK;
+                    case "BEWERTUNG" -> SEC_VALUATION;
+                    default -> SEC_SITUATION;
+                };
+                if (bodies[sec] == null) continue;
+                String wovenBody = cleanReport(chatGateway.chat(model, prompts.weave(),
+                        weaveMessage(header, headings.get(sec), bodies[sec], block,
+                                prompts.weave().length(), 1)));
+                if (isBlank(wovenBody) || WeatherReportService.isUnchangedSentinel(wovenBody)) {
+                    continue;
+                }
+                String before = bodies[sec];
+                String repaired = examineAndRepair(model, prompts, subject, header,
+                        headings.get(sec), before + "\n" + block, markersIn(before + block),
+                        de, wovenBody.strip()).body();
+                repaired = diffJudgeStep(model, prompts, subject, header, headings.get(sec),
+                        before, repaired, block, before + "\n" + block, de);
+                journalDiff(subject, before, repaired);
+                bodies[sec] = repaired;
+            }
+            woven++;
+            journalNotes(subject, List.of((de ? "Nachlese: " : "Reclaimed: ") + item.title()));
+        }
+        LOG.info("[DEEPDIVE] '{}' reclaim pass: {} of {} set-aside item(s) earned a window "
+                + "and were woven.", subject, woven, pool.size());
     }
 
     /**
@@ -2018,6 +2269,7 @@ public class DeepDiveService {
         List<RawNewsItem> kept = new ArrayList<>();
         Map<String, String> targets = new LinkedHashMap<>();
         List<String> dropped = new ArrayList<>();
+        List<RawNewsItem> droppedItems = new ArrayList<>();
         List<String> unjudged = new ArrayList<>();
         for (RawNewsItem item : m.news) {
             String verdict = verdicts.get(newsKey(item));
@@ -2028,6 +2280,7 @@ public class DeepDiveService {
                 if (verdict == null) unjudged.add(item.title());
             } else {
                 dropped.add(item.title());
+                droppedItems.add(item);
             }
         }
         if (!dropped.isEmpty()) {
@@ -2048,11 +2301,16 @@ public class DeepDiveService {
                     verdicts.get(newsKey(b)) != null, verdicts.get(newsKey(a)) != null));
             for (RawNewsItem lost : kept.subList(MAX_NEWS, kept.size())) {
                 targets.remove(newsKey(lost));
+                droppedItems.add(lost);
             }
             kept = new ArrayList<>(kept.subList(0, MAX_NEWS));
         }
         m.news = kept;
         m.newsTargets = targets;
+        // Nothing leaves for good: the set-aside pool waits for the RECLAIM
+        // pass, where the STANDING report may open a window the first triage
+        // could not see (user mandate 2026-07-16 "um 2 Ecken denken").
+        m.newsDiscarded = droppedItems;
     }
 
     /**
@@ -2705,10 +2963,26 @@ public class DeepDiveService {
         Map<String, String> newsTargets = Map.of();
         /** Multi-year press HISTORY (headlines only) - the name's longer arc. */
         List<RawNewsItem> pressHistory = List.of();
+        /**
+         * Forum/social chatter from the sentiment fan (2026-07-16): room
+         * opinion, strictly apart from {@link #news} - joins the ROOM shelf
+         * as ONE capped aggregate block, never the triage/weave loom.
+         */
+        List<RawNewsItem> socialSentiment = List.of();
         /** The company's OWN IR archive: dated reports, calls, calendar (first-party). */
         List<CompanyPressScout.IrEntry> irEntries = List.of();
+        /** Triage-discarded articles - kept for the RECLAIM pass (re-judged
+         * against the STANDING report, where a window may have opened). */
+        List<RawNewsItem> newsDiscarded = List.of();
         /** The figure layer, built BEFORE the prose (pure function of the legs). */
         List<DeepDiveRecord.ChartFigure> charts = List.of();
+        /**
+         * The quant-signal layer (house statistics kernels over the legs
+         * already collected — archive cadence, contagion graph, event-study
+         * attribution, regime, room cascade). Each reading carries its number
+         * PLUS the reading instruction, finished material lines by contract.
+         */
+        List<de.bsommerfeld.wsbg.terminal.signals.SignalReading> signalReadings = List.of();
         /** Per section ordinal: the figure IDs + captions the prose may point at. */
         Map<Integer, List<String>> figureCaptions = Map.of();
         /** link -> key-fact digest of the FULL article, read after triage. */
@@ -3135,6 +3409,23 @@ public class DeepDiveService {
         } catch (Exception e) {
             LOG.debug("[DEEPDIVE] press history failed: {}", e.getMessage());
         }
+        // The OUTSIDE ROOMS (2026-07-16): the aggregator's sentiment fan -
+        // forum/social chatter, kept strictly apart from the press pool. The
+        // clients cut exchange suffixes themselves, so one triangulated call
+        // suffices; the result feeds the ROOM shelf as one capped block.
+        try {
+            if (newsAggregator != null) {
+                List<RawNewsItem> sentiment = newsAggregator.sentimentFor(
+                        m.ticker, m.canonicalName, m.isin, MAX_SENTIMENT_ITEMS);
+                if (!sentiment.isEmpty()) {
+                    m.socialSentiment = sentiment;
+                    LOG.info("[DEEPDIVE] '{}' outside rooms: {} forum/social voice(s).",
+                            ticker, sentiment.size());
+                }
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] sentiment fan failed: {}", e.getMessage());
+        }
         // The general web sweep ("<Name> News", user mandate): Bing's search
         // RSS answers the open web — IR pages, publisher articles Google News
         // never indexes — with direct target URLs the digester can read.
@@ -3176,6 +3467,24 @@ public class DeepDiveService {
                             + " Kandidaten (Symbol + Name + ISIN + Websuche + Presse)"
                     : "News pool — " + m.news.size()
                             + " candidates (symbol + name + ISIN + web search + press)"));
+        }
+        // Quant signals LAST — the kernels read the legs collected above
+        // (wire archive, room evidence, daily closes, sector proxy, earnings
+        // date) and answer as finished reading lines (number + definition +
+        // reading instruction). Statistics in code, the model only reads;
+        // a data-starved kernel costs its line, never the block.
+        try {
+            List<HeadlineRecord> recentArchive = headlineArchive != null
+                    ? headlineArchive.recent(java.time.Duration.ofDays(60)) : List.of();
+            m.signalReadings = SignalDesk.forInstrument(m.ticker, m.wireHistory,
+                    recentArchive, m.roomUnits, m.snapshot, m.sectorEtf,
+                    m.earningsEstimateDateIso, !m.news.isEmpty(), Instant.now());
+            if (!m.signalReadings.isEmpty()) {
+                LOG.info("[DEEPDIVE] '{}' quant signals: {} reading(s).",
+                        ticker, m.signalReadings.size());
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] quant signals failed: {}", e.getMessage());
         }
         return m;
     }
@@ -3447,6 +3756,7 @@ public class DeepDiveService {
         appendMarket(sb, m.snapshot, nums);
         appendTrading(sb, m.venueStats, m.facts, nums);
         appendStructure(sb, m, nums);
+        appendSignals(sb, m, nums, SIGNALS_SITUATION);
         out[SEC_SITUATION] = new Shelf(take(sb), newsBlocksFor(m, "LAGE", nums));
 
         appendIrArchive(sb, m, nums, false);
@@ -3483,15 +3793,24 @@ public class DeepDiveService {
         appendAnalystRatings(sb, m.analystView, nums);
         appendUsAnalysts(sb, m.usStats, nums);
         appendValuationContext(sb, m, nums);
+        appendSignals(sb, m, nums, SIGNALS_OUTLOOK);
         out[SEC_OUTLOOK] = new Shelf(take(sb), newsBlocksFor(m, "AUSBLICK", nums));
 
         StringBuilder roomSb = new StringBuilder(256);
         appendWireHistory(roomSb, m, nums);
         String room = roomText(m, nums);
-        String roomShelf = room == null || room.isBlank()
-                ? (roomSb.length() == 0 ? null : roomSb.toString())
-                : (roomSb.length() == 0 ? room : room + "\n" + roomSb);
-        out[SEC_ROOM] = new Shelf(roomShelf, List.of());
+        List<String> roomParts = new ArrayList<>(3);
+        if (room != null && !room.isBlank()) roomParts.add(room);
+        if (roomSb.length() > 0) roomParts.add(roomSb.toString());
+        // The OUTSIDE ROOMS ride the same shelf as one capped aggregate
+        // block (empty newsBlocks = loom bypass, exactly like the cage).
+        String outsideRooms = sentimentBlock(m, nums);
+        if (outsideRooms != null) roomParts.add(outsideRooms);
+        StringBuilder roomSignals = new StringBuilder();
+        appendSignals(roomSignals, m, nums, SIGNALS_ROOM);
+        if (roomSignals.length() > 0) roomParts.add(roomSignals.toString());
+        out[SEC_ROOM] = new Shelf(
+                roomParts.isEmpty() ? null : String.join("\n", roomParts), List.of());
         out[SEC_THESIS] = new Shelf(null, List.of());
         // Figure pointers ride LAST on every non-empty shelf: the IDs and
         // captions of the section's house figures, so the prose can point at
@@ -3733,8 +4052,10 @@ public class DeepDiveService {
         if (!m.irEntries.isEmpty()) nums.put("ir", ++n);
         if (m.volumeProfile != null || m.orderBook != null) nums.put("structure", ++n);
         if (!m.memoryEvents.isEmpty() || !m.baseRateLines.isEmpty()) nums.put("memory", ++n);
+        if (!m.signalReadings.isEmpty()) nums.put("signals", ++n);
         for (int i = 0; i < m.news.size(); i++) nums.put("news:" + i, ++n);
         if (roomHasContent(m)) nums.put("room", ++n);
+        if (!m.socialSentiment.isEmpty()) nums.put("sentiment", ++n);
         return nums;
     }
 
@@ -5036,6 +5357,38 @@ public class DeepDiveService {
                 + "the current structure and material, and say when they disagree\n");
     }
 
+    /**
+     * Quant-signal block: the statistics kernels' finished reading lines
+     * (number + definition + reading instruction), FILTERED to the section the
+     * shelf belongs to — every section author sees only the signals that
+     * answer his question. The discipline line pins the weighing: a signal is
+     * a clue, never a verdict.
+     */
+    private static void appendSignals(StringBuilder sb, Material m,
+            Map<String, Integer> nums, Set<String> ids) {
+        if (m.signalReadings.isEmpty()) return;
+        List<de.bsommerfeld.wsbg.terminal.signals.SignalReading> picked = new ArrayList<>();
+        for (var r : m.signalReadings) {
+            if (ids.contains(r.id())) picked.add(r);
+        }
+        if (picked.isEmpty()) return;
+        sb.append("QUANT SIGNALS (house-computed in code, never guessed)")
+                .append(mark(nums, "signals")).append(":\n");
+        for (var r : picked) {
+            sb.append("  - ").append(r.toContextLine()).append('\n');
+        }
+        sb.append("  - discipline: a signal is a clue, never a verdict - cite the number "
+                + "when you lean on it, and contradict it explicitly when the material "
+                + "says otherwise\n");
+    }
+
+    /** Which signal ids ride which section shelf. */
+    private static final Set<String> SIGNALS_SITUATION = Set.of(
+            "novelty-score", "burstiness", "story-half-life", "co-mention-diffusion",
+            "silent-move-detector", "market-regime-hmm");
+    private static final Set<String> SIGNALS_OUTLOOK = Set.of("expectation-vacuum");
+    private static final Set<String> SIGNALS_ROOM = Set.of("hawkes-endogeneity");
+
     /** ROOT-locale integer with SPACE grouping (the house material convention). */
     private static String grouped(long v) {
         return String.format(Locale.ROOT, "%,d", v).replace(',', ' ');
@@ -5301,6 +5654,82 @@ public class DeepDiveService {
      * (live-observed SAP 2026-07-13: evidenceCount 0, yet the report claimed a
      * dated debate).
      */
+    /**
+     * The OUTSIDE ROOMS as ONE capped block (2026-07-16): forum/social
+     * chatter from the sentiment fan — every line labeled with its venue
+     * (the item's publisher: "Ariva-Forum (name)", "4chan /biz/",
+     * "Bluesky (@handle)", …), newest first within the window-scaled budget.
+     * Aggregate mood material for the ROOM section, deliberately NOT weave
+     * material: the section reads the mood picture, never retells posts.
+     * Null when the fan delivered nothing (no empty scaffolding).
+     *
+     * <p><b>Fair share across venues (2026-07-16):</b> the lines ride
+     * venue-INTERLEAVED (each venue's freshest first, round-robin) instead
+     * of purely newest-first — a loud venue (4chan's minute-cadence /smg/)
+     * must not crowd the quiet ones (Ariva, Lemmy) out of the budget; the
+     * mood picture wants as many ROOMS as possible, not one room's stream.
+     */
+    static String sentimentBlock(Material m, Map<String, Integer> nums) {
+        if (m.socialSentiment.isEmpty()) return null;
+        StringBuilder sb = new StringBuilder(sentimentPacketChars() + 256);
+        sb.append("OUTSIDE ROOMS (forum/social chatter, unverified opinion - an "
+                + "aggregate mood signal like the cage, venue labeled per line)")
+                .append(mark(nums, "sentiment")).append(":\n");
+        int budget = sentimentPacketChars();
+        int dropped = 0;
+        for (RawNewsItem item : venueInterleaved(m.socialSentiment)) {
+            String text = item.summary() == null || item.summary().isBlank()
+                    ? item.title() : item.summary();
+            if (text == null || text.isBlank()) continue;
+            text = text.replaceAll("\\s+", " ").strip();
+            if (text.length() > 240) text = text.substring(0, 240).stripTrailing() + "…";
+            StringBuilder line = new StringBuilder(280);
+            line.append("  - ");
+            if (item.publishedAt() != null) {
+                line.append('[').append(STAMP.format(item.publishedAt()), 0, 10).append("] ");
+            }
+            line.append('[')
+                    .append(item.publisher() == null || item.publisher().isBlank()
+                            ? "Social" : item.publisher())
+                    .append("] ").append(text).append('\n');
+            if (budget - line.length() < 0) {
+                dropped++;
+                continue;
+            }
+            budget -= line.length();
+            sb.append(line);
+        }
+        if (dropped > 0) sb.append("  (").append(dropped).append(" more voices omitted)\n");
+        return sb.toString();
+    }
+
+    /**
+     * Round-robin across venues, each venue's items newest first: pick every
+     * venue's freshest voice, then every venue's second-freshest, and so on.
+     * The venue is the publisher's stem — "Ariva-Forum (St2023)" and
+     * "Ariva-Forum (azulon)" are ONE room, the author suffix is cut.
+     */
+    static List<RawNewsItem> venueInterleaved(List<RawNewsItem> items) {
+        Map<String, List<RawNewsItem>> byVenue = new LinkedHashMap<>();
+        for (RawNewsItem item : items) {
+            String publisher = item.publisher() == null ? "Social" : item.publisher();
+            int paren = publisher.indexOf(" (");
+            String venue = paren > 0 ? publisher.substring(0, paren) : publisher;
+            byVenue.computeIfAbsent(venue, k -> new ArrayList<>()).add(item);
+        }
+        for (List<RawNewsItem> perVenue : byVenue.values()) {
+            perVenue.sort(java.util.Comparator.comparing(RawNewsItem::publishedAt,
+                    java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder())));
+        }
+        List<RawNewsItem> out = new ArrayList<>(items.size());
+        for (int round = 0; out.size() < items.size(); round++) {
+            for (List<RawNewsItem> perVenue : byVenue.values()) {
+                if (round < perVenue.size()) out.add(perVenue.get(round));
+            }
+        }
+        return out;
+    }
+
     static String roomText(Material m, Map<String, Integer> nums) {
         if (!roomHasContent(m)) return null;
         List<SubjectUnit> units = !m.roomUnits.isEmpty() ? m.roomUnits
@@ -5857,6 +6286,12 @@ public class DeepDiveService {
             case "room":
                 return "r/wallstreetbetsGER" + (de ? " - Diskussion im Käfig (unverifiziert)"
                         : " - the room's discussion (unverified)");
+            case "sentiment":
+                return de
+                        ? "Foren & Social Media - Stimmen aus den Außen-Räumen "
+                                + "(unverifiziert, aggregiert; Ort je Zeile im Material)"
+                        : "Forums & social media - voices from the outside rooms "
+                                + "(unverified, aggregated; venue labeled per line)";
             default: {
                 int idx = Integer.parseInt(key.substring("news:".length()));
                 RawNewsItem item = m.news.get(idx);

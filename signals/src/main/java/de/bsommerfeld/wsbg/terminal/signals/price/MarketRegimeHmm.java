@@ -7,46 +7,46 @@ import java.util.Arrays;
 import java.util.Optional;
 
 /**
- * Marktregime-Erkennung ueber ein 3-Zustands-Hidden-Markov-Modell.
+ * Market regime detection via a 3-state hidden Markov model.
  *
- * <p><b>Methode:</b> Auf der Beobachtungsreihe (z.B. Tagesrenditen in Prozent)
- * wird ein HMM mit drei Zustaenden und univariaten Gauss-Emissionen per
- * Baum-Welch/EM geschaetzt (Rabiner 1989; Regime-Idee nach Hamilton 1989).
- * Die Initialisierung ist DETERMINISTISCH: Emissions-Mittelwerte auf den
- * empirischen Quantilen P20/P50/P80, Varianzen auf der Gesamtvarianz,
- * Uebergangsmatrix uniform mit Diagonal-Praeferenz (0.8/0.1/0.1). Das
- * Forward-Backward laeuft skaliert (Normalisierung pro Zeitschritt gegen
- * Unterlauf), maximal 50 Iterationen, Konvergenz bei 1e-6 auf der
- * Log-Likelihood. Die Zustaende werden nach Emissions-Standardabweichung
- * aufsteigend RUHE/NORMAL/STRESS gelabelt; das aktuelle Regime ist das argmax
- * der gefilterten Forward-Posterior am letzten Beobachtungspunkt.
+ * <p><b>Method:</b> On the observation series (e.g. daily returns in percent)
+ * an HMM with three states and univariate Gaussian emissions is fitted via
+ * Baum-Welch/EM (Rabiner 1989; regime idea after Hamilton 1989).
+ * Initialization is DETERMINISTIC: emission means on the empirical quantiles
+ * P20/P50/P80, variances on the total variance, transition matrix uniform
+ * with diagonal preference (0.8/0.1/0.1). Forward-backward runs scaled
+ * (per-timestep normalization against underflow), at most 50 iterations,
+ * convergence at 1e-6 on the log-likelihood. States are labeled
+ * CALM/NORMAL/STRESS by ascending emission standard deviation; the current
+ * regime is the argmax of the filtered forward posterior at the last
+ * observation point.
  *
- * <p><b>Inputs im Terminal:</b> die Beobachtungen kommen aus den Kursreihen
- * des Terminals (Tagesrenditen aus L&amp;S/Tradegate-Kursen bzw. einer
- * Index-Reihe als Marktproxy).
+ * <p><b>Terminal inputs:</b> the observations come from the terminal's price
+ * series (daily returns from venue quotes or an index series as market
+ * proxy).
  */
 public final class MarketRegimeHmm {
 
-    /** Unter dieser Laenge ist kein HMM belastbar. */
+    /** Below this length no HMM is reliable. */
     private static final int MIN_OBSERVATIONS = 60;
-    /** Unter dieser Laenge traegt die Deutung einen Vorsichts-Zusatz. */
+    /** Below this length the interpretation carries a caution suffix. */
     private static final int COMFORTABLE_OBSERVATIONS = 120;
     private static final int STATES = 3;
     private static final int MAX_ITERATIONS = 50;
     private static final double CONVERGENCE = 1e-6;
     private static final double VARIANCE_FLOOR = 1e-8;
     private static final double DENSITY_FLOOR = 1e-300;
-    private static final String[] LABELS = {"RUHE", "NORMAL", "STRESS"};
+    private static final String[] LABELS = {"CALM", "NORMAL", "STRESS"};
 
     private MarketRegimeHmm() {
     }
 
     /**
-     * Erkennt das aktuelle Marktregime aus der Beobachtungsreihe selbst.
+     * Detects the current market regime from the observation series itself.
      *
-     * @param observations Beobachtungsreihe, z.B. Tagesrenditen in Prozent
-     * @return Befund, oder empty bei weniger als {@value #MIN_OBSERVATIONS}
-     *         Beobachtungen oder degenerierter (konstanter) Reihe
+     * @param observations observation series, e.g. daily returns in percent
+     * @return reading, or empty on fewer than {@value #MIN_OBSERVATIONS}
+     *         observations or a degenerate (constant) series
      */
     public static Optional<SignalReading> measure(double[] observations) {
         if (observations == null || observations.length < MIN_OBSERVATIONS) {
@@ -63,7 +63,7 @@ public final class MarketRegimeHmm {
 
         int n = observations.length;
 
-        // ---- deterministische Initialisierung ----
+        // ---- deterministic initialization ----
         double[] mu = {quantile(observations, 0.20),
                 quantile(observations, 0.50),
                 quantile(observations, 0.80)};
@@ -77,7 +77,7 @@ public final class MarketRegimeHmm {
         }
         double[] pi = {1.0 / STATES, 1.0 / STATES, 1.0 / STATES};
 
-        // ---- Baum-Welch mit skaliertem Forward-Backward ----
+        // ---- Baum-Welch with scaled forward-backward ----
         double[][] alpha = new double[n][STATES];
         double[][] beta = new double[n][STATES];
         double[][] b = new double[n][STATES];
@@ -87,7 +87,7 @@ public final class MarketRegimeHmm {
         for (int iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
             double logLikelihood = eStep(observations, pi, a, mu, va, b, alpha, beta, scale);
 
-            // gamma und xi-Summen fuer den M-Step
+            // gamma and xi sums for the M-step
             double[][] gamma = new double[n][STATES];
             for (int t = 0; t < n; t++) {
                 double sum = 0;
@@ -111,7 +111,7 @@ public final class MarketRegimeHmm {
                 }
             }
 
-            // ---- M-Step ----
+            // ---- M-step ----
             System.arraycopy(gamma[0], 0, pi, 0, STATES);
             for (int i = 0; i < STATES; i++) {
                 double rowSum = 0;
@@ -148,11 +148,11 @@ public final class MarketRegimeHmm {
             previousLogLikelihood = logLikelihood;
         }
 
-        // finaler Forward-Pass mit den konvergierten Parametern: gefilterte Posterior
+        // final forward pass with the converged parameters: filtered posterior
         eStep(observations, pi, a, mu, va, b, alpha, beta, scale);
         double[] posterior = alpha[n - 1];
 
-        // ---- Zustaende nach Emissions-Standardabweichung aufsteigend labeln ----
+        // ---- label states by ascending emission standard deviation ----
         Integer[] order = {0, 1, 2};
         Arrays.sort(order, (x, y) -> Double.compare(va[x], va[y]));
         int currentState = 0;
@@ -170,34 +170,34 @@ public final class MarketRegimeHmm {
         String label = LABELS[regimeIndex];
         double probability = posterior[currentState];
 
-        String interpretation = "Alle anderen Signale in diesem Regime lesen - dieselbe Euphorie "
-                + "oder derselbe Spread bedeutet im Stress-Regime etwas anderes als im Ruhe-Regime. ";
+        String interpretation = "Read every other signal conditioned on this regime - the same "
+                + "euphoria or the same spread means something different under STRESS than under CALM. ";
         interpretation += switch (regimeIndex) {
-            case 0 -> "Aktuell RUHE: Ausschläge ernst nehmen, sie sind hier selten und tragen "
-                    + "entsprechend Gewicht.";
-            case 1 -> "Aktuell NORMAL: Standardbasisraten gelten, keine Sonderbehandlung.";
-            default -> "Aktuell STRESS: Korrelationen springen auf 1, Einzeltitel-Signale abwerten "
-                    + "und der Liquidität misstrauen.";
+            case 0 -> "Currently CALM: take swings seriously, they are rare here and carry "
+                    + "corresponding weight.";
+            case 1 -> "Currently NORMAL: standard base rates apply, no special treatment.";
+            default -> "Currently STRESS: correlations jump to 1, discount single-name signals "
+                    + "and distrust liquidity.";
         };
         if (n < COMFORTABLE_OBSERVATIONS) {
-            interpretation += " Vorsicht: nur " + n
-                    + " Beobachtungen für die Regime-Schätzung - die Zustandszuordnung ist entsprechend unsicher.";
+            interpretation += " Caution: only " + n
+                    + " observations for the regime fit - the state assignment is accordingly uncertain.";
         }
 
         return Optional.of(new SignalReading(
                 "market-regime-hmm",
-                "Marktregime (Hidden-Markov-Modell)",
+                "Market regime (hidden Markov model)",
                 regimeIndex,
                 label + " (p=" + MathKit.fmt(probability, 2) + ")",
-                "Erkennt das aktuelle Marktregime aus den Daten selbst - ein 3-Zustands-HMM mit "
-                        + "Gauß-Emissionen, gelabelt nach Volatilität - nicht als Prognose, sondern "
-                        + "als Konditionierung aller übrigen Signale.",
+                "Detects the current market regime from the data itself - a 3-state HMM with "
+                        + "Gaussian emissions, labeled by volatility - not as a forecast but as "
+                        + "the conditioning of every other signal.",
                 interpretation));
     }
 
     /**
-     * Skalierter Forward-Backward-Pass; fuellt b, alpha, beta, scale und gibt
-     * die Log-Likelihood zurueck.
+     * Scaled forward-backward pass; fills b, alpha, beta, scale and returns
+     * the log-likelihood.
      */
     private static double eStep(double[] obs, double[] pi, double[][] a, double[] mu, double[] va,
             double[][] b, double[][] alpha, double[][] beta, double[] scale) {
@@ -239,7 +239,7 @@ public final class MarketRegimeHmm {
         return logLikelihood;
     }
 
-    /** Normiert das Array in-place auf Summe 1 und gibt die alte Summe zurueck. */
+    /** Normalizes the array in place to sum 1 and returns the old sum. */
     private static double normalize(double[] xs) {
         double sum = 0;
         for (double x : xs) {
@@ -260,7 +260,7 @@ public final class MarketRegimeHmm {
         return Math.exp(-d * d / (2 * variance)) / Math.sqrt(2 * Math.PI * variance);
     }
 
-    /** Empirisches Quantil mit linearer Interpolation (deterministisch). */
+    /** Empirical quantile with linear interpolation (deterministic). */
     private static double quantile(double[] xs, double p) {
         double[] sorted = xs.clone();
         Arrays.sort(sorted);

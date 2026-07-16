@@ -53,6 +53,14 @@ final class ScriptOutputClassifier {
     private static final Pattern FONTS_INSTALL_PATTERN = Pattern.compile(
             "(?i)\\[\\*]\\s*installing\\s+(?:terminal\\s+)?fonts");
 
+    // The script's OCR-runtime install announcement — "[*] Installing OCR
+    // runtime (Tesseract) into ..." (sh) / "[*] Installing OCR traineddata
+    // into ..." (ps1). A 13-40 MB download whose curl progress rides under its
+    // own phase; the "OCR runtime ready" line ends it. The "[*] OCR runtime
+    // already installed." short-circuit deliberately does not match.
+    private static final Pattern OCR_INSTALL_PATTERN = Pattern.compile(
+            "(?i)\\[\\*]\\s*installing\\s+ocr");
+
     // The script's "[*] Cleaning up old models..." header — the model-store GC
     // step, emitted ONLY when at least one no-longer-desired model is about to
     // be removed. Surfaced under its own "Räume Altlasten weg" label so the
@@ -107,6 +115,9 @@ final class ScriptOutputClassifier {
     /** Active while the script downloads the JCEF (browser) runtime. */
     private boolean installingBrowser;
 
+    /** Active while the script downloads the OCR (Tesseract) runtime. */
+    private boolean installingOcr;
+
     /**
      * Classifies a clean output line into a structured {@code (phase, detail)}
      * pair. Ollama-specific patterns are checked first because they are the
@@ -116,6 +127,8 @@ final class ScriptOutputClassifier {
         if (tryEmitOllamaInstall(line, consumer))
             return;
         if (tryEmitBrowserInstall(line, consumer))
+            return;
+        if (tryEmitOcrInstall(line, consumer))
             return;
         if (tryEmitFontsInstall(line, consumer))
             return;

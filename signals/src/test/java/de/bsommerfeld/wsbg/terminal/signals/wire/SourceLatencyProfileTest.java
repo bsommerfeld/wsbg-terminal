@@ -33,7 +33,7 @@ class SourceLatencyProfileTest {
         assertTrue(reading.isPresent());
         assertEquals("source-latency-profile", reading.get().id());
         assertTrue(reading.get().value() >= 1.5, "ratio must flag chronic slowness");
-        assertTrue(reading.get().interpretation().contains("EXKLUSIV-VERDACHT"));
+        assertTrue(reading.get().interpretation().contains("EXCLUSIVE SUSPICION"));
         assertTrue(reading.get().interpretation().contains("quelleA"));
         assertTrue(reading.get().interpretation().contains("30.0"));
         assertTrue(reading.get().interpretation().contains("10.0"));
@@ -50,9 +50,9 @@ class SourceLatencyProfileTest {
 
         assertTrue(reading.isPresent());
         assertTrue(reading.get().value() > 0.7 && reading.get().value() < 1.5);
-        assertTrue(reading.get().interpretation().contains("nauffällig"));
-        assertFalse(reading.get().interpretation().contains("kein Zusatzsignal"));
-        assertFalse(reading.get().interpretation().contains("Vorsicht"),
+        assertTrue(reading.get().interpretation().contains("Unremarkable"));
+        assertFalse(reading.get().interpretation().contains("no extra signal"));
+        assertFalse(reading.get().interpretation().contains("Caution"),
                 "25 observations over 3 sources is not thin data");
     }
 
@@ -67,7 +67,7 @@ class SourceLatencyProfileTest {
 
         assertTrue(reading.isPresent());
         assertTrue(reading.get().value() <= 0.7);
-        assertTrue(reading.get().interpretation().contains("kein Zusatzsignal"));
+        assertTrue(reading.get().interpretation().contains("no extra signal"));
     }
 
     @Test
@@ -80,7 +80,7 @@ class SourceLatencyProfileTest {
         Optional<SignalReading> reading = SourceLatencyProfile.measure("quelleA", history);
 
         assertTrue(reading.isPresent());
-        assertTrue(reading.get().interpretation().contains("Vorsicht"));
+        assertTrue(reading.get().interpretation().contains("Caution"));
     }
 
     @Test

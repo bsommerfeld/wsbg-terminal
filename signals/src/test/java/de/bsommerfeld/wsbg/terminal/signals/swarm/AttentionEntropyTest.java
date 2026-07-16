@@ -25,7 +25,7 @@ class AttentionEntropyTest {
         Map<String, Integer> current = counts("AAA1", 40, "BBB2", 2);
         SignalReading reading = AttentionEntropy.measure(current, previous).orElseThrow();
         assertTrue(reading.value() < 0.4, "value=" + reading.value());
-        assertTrue(reading.interpretation().contains("ENTROPIE-KOLLAPS"), reading.interpretation());
+        assertTrue(reading.interpretation().contains("ENTROPY COLLAPSE"), reading.interpretation());
         assertTrue(reading.interpretation().contains("-0.72"), reading.interpretation());
     }
 
@@ -33,15 +33,15 @@ class AttentionEntropyTest {
     void concentratedAttentionWithoutHistoryIsConsensus() {
         SignalReading reading = AttentionEntropy.measure(counts("AAA1", 40, "BBB2", 2), null).orElseThrow();
         assertTrue(reading.value() < 0.4, "value=" + reading.value());
-        assertTrue(reading.interpretation().contains("Konsens"), reading.interpretation());
+        assertTrue(reading.interpretation().contains("CONSENSUS"), reading.interpretation());
     }
 
     @Test
     void skewedButNotFixatedIsNormalAndThinDataCarriesCaution() {
         SignalReading reading = AttentionEntropy.measure(counts("AAA1", 20, "BBB2", 4, "CCC3", 1), null).orElseThrow();
         assertTrue(reading.value() > 0.4 && reading.value() < 0.8, "value=" + reading.value());
-        assertTrue(reading.interpretation().contains("normal verteilt"), reading.interpretation());
-        assertTrue(reading.interpretation().contains("Vorsicht"), reading.interpretation());
+        assertTrue(reading.interpretation().contains("normally distributed"), reading.interpretation());
+        assertTrue(reading.interpretation().contains("Caution"), reading.interpretation());
     }
 
     @Test
@@ -49,8 +49,8 @@ class AttentionEntropyTest {
         Map<String, Integer> current = counts("AAA1", 10, "BBB2", 10, "CCC3", 10, "DDD4", 10, "EEE5", 10);
         SignalReading reading = AttentionEntropy.measure(current, null).orElseThrow();
         assertTrue(reading.value() > 0.8, "value=" + reading.value());
-        assertTrue(reading.interpretation().contains("ersplittert"), reading.interpretation());
-        assertFalse(reading.interpretation().contains("Vorsicht"), reading.interpretation());
+        assertTrue(reading.interpretation().contains("FRAGMENTED"), reading.interpretation());
+        assertFalse(reading.interpretation().contains("Caution"), reading.interpretation());
     }
 
     @Test

@@ -29,10 +29,10 @@ class ConditionalHitRateTest {
                 "Testsignal", trials(2, 12, 10, 12));
         assertTrue(reading.isPresent());
         assertTrue(reading.get().value() <= -0.15);
-        assertTrue(reading.get().interpretation().contains("ENTWERTET UNTER AUFMERKSAMKEIT"));
+        assertTrue(reading.get().interpretation().contains("DEVALUED UNDER ATTENTION"));
         assertTrue(reading.get().interpretation().contains("Testsignal"));
         assertTrue(reading.get().interpretation().contains("n=12"));
-        assertTrue(reading.get().interpretation().contains("90%-CI"));
+        assertTrue(reading.get().interpretation().contains("90% CI"));
     }
 
     @Test
@@ -41,7 +41,7 @@ class ConditionalHitRateTest {
                 "Testsignal", trials(10, 12, 2, 12));
         assertTrue(reading.isPresent());
         assertTrue(reading.get().value() >= 0.15);
-        assertTrue(reading.get().interpretation().contains("verstärkt sich unter Aufmerksamkeit"));
+        assertTrue(reading.get().interpretation().contains("amplifies under attention"));
     }
 
     @Test
@@ -50,8 +50,8 @@ class ConditionalHitRateTest {
                 "Testsignal", trials(6, 12, 6, 12));
         assertTrue(reading.isPresent());
         assertTrue(Math.abs(reading.get().value()) < 0.15);
-        assertTrue(reading.get().interpretation().contains("Kein belastbarer Unterschied"));
-        assertTrue(reading.get().interpretation().contains("statistisch nicht gesichert"));
+        assertTrue(reading.get().interpretation().contains("No robust difference"));
+        assertTrue(reading.get().interpretation().contains("not statistically secured"));
     }
 
     @Test
@@ -59,7 +59,7 @@ class ConditionalHitRateTest {
         Optional<SignalReading> reading = ConditionalHitRate.measure(
                 "Testsignal", trials(6, 12, 6, 12));
         assertTrue(reading.isPresent());
-        assertTrue(reading.get().interpretation().contains("Vorsicht"));
+        assertTrue(reading.get().interpretation().contains("Caution"));
     }
 
     @Test

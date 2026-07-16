@@ -7,31 +7,31 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Bedingte Trefferquote: prüft ein beliebiges Signal darauf, ob es unter
- * hoher Retail-Aufmerksamkeit noch funktioniert.
+ * Conditional hit rate: tests an arbitrary signal for whether it still works
+ * under high retail attention.
  *
- * <p>Numerik: die Trials werden in zwei Buckets geteilt (hohe vs. niedrige
- * Aufmerksamkeit), pro Bucket wird die Trefferquote mit Wilson-90%-Intervall
- * (Wilson 1927, z = 1.645) geschätzt; der Signalwert ist die Differenz
- * rateHoch - rateNiedrig. Hintergrund ist die Crowding-Literatur (McLean/
- * Pontiff 2016: publizierte Anomalien verlieren nach Veröffentlichung
- * deutlich an Rendite) - öffentliche, gehypte Signale werden durch die
- * Aufmerksamkeit selbst entwertet. Überlappen die beiden Intervalle, wird
- * ausdrücklich gesagt, dass der Unterschied statistisch nicht gesichert ist.
+ * <p>Numerics: the trials are split into two buckets (high vs low attention),
+ * per bucket the hit rate is estimated with a Wilson 90% interval (Wilson
+ * 1927, z = 1.645); the signal value is the difference rateHigh - rateLow.
+ * Background is the crowding literature (McLean/Pontiff 2016: published
+ * anomalies lose significant return after publication) - public, hyped
+ * signals are devalued by the attention itself. If the two intervals
+ * overlap, the reading explicitly states that the difference is not
+ * statistically secured.
  *
- * <p>Input im Terminal: historische Signal-Auslösungen aus dem
- * Markt-Gedächtnis (Erfolg = Ereignis-Definition erfüllt), das
- * Aufmerksamkeits-Flag aus dem eigenen Reddit-Barometer bzw. den
- * Nennungs-Zählern der Subject Registry zum Auslöse-Zeitpunkt.
+ * <p>Terminal input: historical signal firings from the market memory
+ * (success = event definition met), the attention flag from the in-house
+ * Reddit barometer or the mention counters of the Subject Registry at firing
+ * time.
  */
 public final class ConditionalHitRate {
 
     private static final String ID = "conditional-hit-rate";
-    private static final String TITLE = "Bedingte Trefferquote (Crowding-Prüfstand)";
+    private static final String TITLE = "Conditional hit rate (crowding test)";
     private static final String DEFINITION =
-            "Misst, ob ein Signal unter hoher Retail-Aufmerksamkeit noch trifft"
-                    + " (Trefferquote bei hoher minus bei niedriger Aufmerksamkeit) -"
-                    + " Crowding entwertet öffentliche Signale.";
+            "Measures whether a signal still hits under high retail attention"
+                    + " (hit rate under high minus under low attention) -"
+                    + " crowding devalues public signals.";
 
     private static final int MIN_PER_BUCKET = 10;
     private static final int THIN_PER_BUCKET = 30;
@@ -39,7 +39,7 @@ public final class ConditionalHitRate {
     private static final double DEVALUED_THRESHOLD = -0.15;
     private static final double AMPLIFIED_THRESHOLD = 0.15;
 
-    /** Ein einzelner historischer Signal-Fall: Treffer ja/nein unter hoher/niedriger Aufmerksamkeit. */
+    /** A single historical signal case: hit yes/no under high/low attention. */
     public record Trial(boolean success, boolean highAttention) {
     }
 
@@ -47,12 +47,12 @@ public final class ConditionalHitRate {
     }
 
     /**
-     * Berechnet die Trefferquoten-Differenz zwischen hoher und niedriger
-     * Aufmerksamkeit. Mindestens {@value #MIN_PER_BUCKET} Trials in JEDEM
-     * Bucket, sonst {@link Optional#empty()}.
+     * Computes the hit-rate difference between high and low attention.
+     * Requires at least {@value #MIN_PER_BUCKET} trials in EACH bucket,
+     * otherwise {@link Optional#empty()}.
      *
-     * @param signalLabel Bezeichnung des geprüften Signals (nur zur Anzeige)
-     * @param trials      historische Fälle des Signals
+     * @param signalLabel label of the tested signal (display only)
+     * @param trials      historical cases of the signal
      */
     public static Optional<SignalReading> measure(String signalLabel, List<Trial> trials) {
         if (signalLabel == null || trials == null) {
@@ -80,9 +80,9 @@ public final class ConditionalHitRate {
         double[] ciLow = MathKit.wilsonInterval(sLow, nLow, Z_90);
         double value = rateHigh - rateLow;
 
-        String formatted = fmtSigned(value * 100) + " Prozentpunkte Trefferquoten-Differenz"
-                + " (hohe Aufmerksamkeit " + MathKit.fmt(rateHigh * 100, 0)
-                + " %, niedrige " + MathKit.fmt(rateLow * 100, 0) + " %)";
+        String formatted = fmtSigned(value * 100) + " percentage points hit-rate difference"
+                + " (high attention " + MathKit.fmt(rateHigh * 100, 0)
+                + " %, low " + MathKit.fmt(rateLow * 100, 0) + " %)";
         return Optional.of(new SignalReading(ID, TITLE, value, formatted, DEFINITION,
                 interpret(signalLabel, value, rateHigh, sHigh, nHigh, ciHigh,
                         rateLow, sLow, nLow, ciLow)));
@@ -92,35 +92,35 @@ public final class ConditionalHitRate {
             String signalLabel, double value,
             double rateHigh, int sHigh, int nHigh, double[] ciHigh,
             double rateLow, int sLow, int nLow, double[] ciLow) {
-        String buckets = " Signal '" + signalLabel + "': Trefferquote bei hoher"
-                + " Aufmerksamkeit " + bucket(rateHigh, nHigh, ciHigh)
-                + ", bei niedriger " + bucket(rateLow, nLow, ciLow) + ".";
+        String buckets = " Signal '" + signalLabel + "': hit rate under high"
+                + " attention " + bucket(rateHigh, nHigh, ciHigh)
+                + ", under low " + bucket(rateLow, nLow, ciLow) + ".";
         String band;
         if (value <= DEVALUED_THRESHOLD) {
-            band = "ENTWERTET UNTER AUFMERKSAMKEIT: bei gehypten Papieren"
-                    + " funktioniert das Signal schlechter bis invers - dort den"
-                    + " kontraeren Nutzen prüfen, statt ihm blind zu folgen.";
+            band = "DEVALUED UNDER ATTENTION: on hyped names the signal works"
+                    + " worse to inverse - check its contrarian use there instead"
+                    + " of following it blindly.";
         } else if (value >= AMPLIFIED_THRESHOLD) {
-            band = "Das Signal verstärkt sich unter Aufmerksamkeit - es trifft"
-                    + " bei gehypten Papieren besser als bei unbeachteten.";
+            band = "The signal amplifies under attention - it hits better on"
+                    + " hyped names than on unnoticed ones.";
         } else {
-            band = "Kein belastbarer Unterschied zwischen hoher und niedriger"
-                    + " Aufmerksamkeit - das Signal verhält sich crowding-neutral.";
+            band = "No robust difference between high and low attention - the"
+                    + " signal behaves crowding-neutral.";
         }
         band += buckets;
         if (overlaps(ciHigh, ciLow)) {
-            band += " Die beiden Intervalle überlappen deutlich - der Unterschied"
-                    + " ist statistisch nicht gesichert.";
+            band += " The two intervals overlap clearly - the difference is not"
+                    + " statistically secured.";
         }
         if (nHigh < THIN_PER_BUCKET || nLow < THIN_PER_BUCKET) {
-            band += " Vorsicht: kleine Buckets (n=" + nHigh + " bzw. n=" + nLow
-                    + "), die Quoten sind entsprechend wackelig.";
+            band += " Caution: small buckets (n=" + nHigh + " and n=" + nLow
+                    + "), the rates are accordingly shaky.";
         }
         return band;
     }
 
     private static String bucket(double rate, int n, double[] ci) {
-        return MathKit.fmt(rate * 100, 0) + " % (n=" + n + ", 90%-CI "
+        return MathKit.fmt(rate * 100, 0) + " % (n=" + n + ", 90% CI "
                 + MathKit.fmt(ci[0], 2) + "-" + MathKit.fmt(ci[1], 2) + ")";
     }
 

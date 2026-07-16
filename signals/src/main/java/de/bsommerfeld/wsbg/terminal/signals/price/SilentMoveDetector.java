@@ -6,44 +6,44 @@ import de.bsommerfeld.wsbg.terminal.signals.SignalReading;
 import java.util.Optional;
 
 /**
- * Stiller Move: Event-Study-Zerlegung der heutigen Rendite in Markt und Rest.
+ * Silent move: event-study decomposition of today's return into market and residual.
  *
- * <p><b>Methode:</b> Aus der gemeinsamen Historie wird per OLS das Beta des
- * Papiers gegen den Markt geschaetzt (Marktmodell der Event-Study-Literatur,
- * Fama/Fisher/Jensen/Roll 1969, kanonisch bei MacKinlay 1997). Die abnormale
- * Rendite ist die heutige Asset-Rendite minus Beta mal Markt-Rendite; sie wird
- * als z-Score gegen die historischen Residuen desselben Modells gestellt
- * ({@link MathKit#zScore}). Bleibt nach Abzug des Marktes ein grosser,
- * unerklaerter Rest UND gibt es keine Headline, die ihn attribuiert, handelt
- * jemand auf Information, die wir nicht haben.
+ * <p><b>Method:</b> From the joint history the instrument's beta against the
+ * market is estimated via OLS (market model of the event-study literature,
+ * Fama/Fisher/Jensen/Roll 1969, canonical in MacKinlay 1997). The abnormal
+ * return is today's asset return minus beta times the market return; it is
+ * z-scored against the historical residuals of the same model
+ * ({@link MathKit#zScore}). If a large unexplained residual remains after
+ * subtracting the market AND no headline attributes it, someone is trading
+ * on information we do not have.
  *
- * <p><b>Inputs im Terminal:</b> die Renditereihen kommen aus den
- * Kurs-Historien des Terminals (L&amp;S/Tradegate fuer das Papier, eine
- * Index-Reihe als Marktproxy), das Attributions-Flag aus der Ticker-Zuordnung
- * des Headline-Archivs zum aktuellen Tick.
+ * <p><b>Terminal inputs:</b> the return series come from the terminal's
+ * price histories (the instrument's venue quotes, an index series as market
+ * proxy), the attribution flag from the headline archive's ticker mapping
+ * for the current tick.
  */
 public final class SilentMoveDetector {
 
-    /** Unter dieser Historien-Laenge ist kein Beta belastbar. */
+    /** Below this history length no beta is reliable. */
     private static final int MIN_HISTORY = 30;
-    /** Unter dieser Historien-Laenge traegt die Deutung einen Vorsichts-Zusatz. */
+    /** Below this history length the interpretation carries a caution suffix. */
     private static final int COMFORTABLE_HISTORY = 60;
-    /** Ab diesem absoluten z-Score gilt der Rest als abnormal. */
+    /** At or above this absolute z-score the residual counts as abnormal. */
     private static final double Z_ABNORMAL = 2.5;
 
     private SilentMoveDetector() {
     }
 
     /**
-     * Misst, wie ungewoehnlich der marktbereinigte Rest der heutigen Rendite ist.
+     * Measures how unusual the market-adjusted residual of today's return is.
      *
-     * @param assetReturnsPct      historische Renditen des Papiers in Prozent
-     * @param marketReturnsPct     historische Renditen des Marktproxys in Prozent (gleiche Laenge)
-     * @param currentAssetReturnPct  heutige Rendite des Papiers in Prozent
-     * @param currentMarketReturnPct heutige Rendite des Marktproxys in Prozent
-     * @param attributableHeadline ob eine Headline vorliegt, die den Move erklaert
-     * @return Befund, oder empty bei ungleich langen Reihen, weniger als
-     *         {@value #MIN_HISTORY} Punkten oder degeneriertem Markt
+     * @param assetReturnsPct      historical returns of the instrument in percent
+     * @param marketReturnsPct     historical returns of the market proxy in percent (same length)
+     * @param currentAssetReturnPct  today's return of the instrument in percent
+     * @param currentMarketReturnPct today's return of the market proxy in percent
+     * @param attributableHeadline whether a headline exists that explains the move
+     * @return reading, or empty on mismatched series lengths, fewer than
+     *         {@value #MIN_HISTORY} points, or a degenerate market
      */
     public static Optional<SignalReading> measure(double[] assetReturnsPct,
             double[] marketReturnsPct, double currentAssetReturnPct,
@@ -80,32 +80,32 @@ public final class SilentMoveDetector {
 
         String interpretation;
         if (Math.abs(z) >= Z_ABNORMAL && !attributableHeadline) {
-            interpretation = "STILLER MOVE: nach Abzug des Marktes bleibt ein Rest, den keine "
-                    + "Headline erklärt - jemand handelt auf Information, die wir nicht haben. "
-                    + "Automatischer Rechercheauftrag: Quellen zu diesem Papier aktiv abgrasen.";
+            interpretation = "SILENT MOVE: after subtracting the market a residual remains that no "
+                    + "headline explains - someone is trading on information we do not have. "
+                    + "Automatic research order: actively sweep the sources on this instrument.";
         } else if (Math.abs(z) >= Z_ABNORMAL) {
-            interpretation = "Move ist attribuiert: eine Headline erklärt den abnormalen Rest - "
-                    + "jetzt die Stärke der Reaktion gegen die Basisrate des Ereignistyps prüfen.";
+            interpretation = "Move is attributed: a headline explains the abnormal residual - "
+                    + "now check the strength of the reaction against the event type's base rate.";
         } else {
-            interpretation = "Im Rahmen: der heutige Move ist durch Markt und normales Rauschen "
-                    + "gedeckt, kein unerklärter Rest.";
+            interpretation = "Within range: today's move is covered by the market and normal "
+                    + "noise, no unexplained residual.";
         }
-        interpretation += " Zerlegung: Beta " + MathKit.fmt(beta, 2)
-                + " gegen den Markt, abnormale Rendite " + MathKit.fmt(abnormalReturnPct, 2) + " %.";
+        interpretation += " Decomposition: beta " + MathKit.fmt(beta, 2)
+                + " against the market, abnormal return " + MathKit.fmt(abnormalReturnPct, 2) + " %.";
         if (n < COMFORTABLE_HISTORY) {
-            interpretation += " Vorsicht: nur " + n
-                    + " historische Punkte für Beta und Residuen - die Zerlegung ist entsprechend unsicher.";
+            interpretation += " Caution: only " + n
+                    + " historical points for beta and residuals - the decomposition is accordingly uncertain.";
         }
 
         return Optional.of(new SignalReading(
                 "silent-move-detector",
-                "Stiller Move (Event-Study-Attribution)",
+                "Silent move (event-study attribution)",
                 z,
-                MathKit.fmt(z, 2) + " (z-Score der abnormalen Rendite; abnormal "
-                        + MathKit.fmt(abnormalReturnPct, 2) + " %, Beta " + MathKit.fmt(beta, 2) + ")",
-                "Zerlegt die heutige Rendite nach dem Marktmodell der Event-Study in Beta mal "
-                        + "Markt plus Rest und misst, wie ungewöhnlich dieser Rest gegen die "
-                        + "eigenen historischen Residuen ist.",
+                MathKit.fmt(z, 2) + " (z-score of the abnormal return; abnormal "
+                        + MathKit.fmt(abnormalReturnPct, 2) + " %, beta " + MathKit.fmt(beta, 2) + ")",
+                "Decomposes today's return per the event-study market model into beta times "
+                        + "market plus residual and measures how unusual that residual is against "
+                        + "its own historical residuals.",
                 interpretation));
     }
 }

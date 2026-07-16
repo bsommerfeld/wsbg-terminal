@@ -6,43 +6,43 @@ import de.bsommerfeld.wsbg.terminal.signals.SignalReading;
 import java.util.Optional;
 
 /**
- * Bodenunruhe-Residuum: zeigt die Zivilschicht mehr Unruhe, als die
- * ueberregionale Presselage erklaert?
+ * Ground-unrest residual: does the civil layer show more unrest than the
+ * national press picture explains?
  *
- * <p><b>Methode:</b> Ueber die Historie (ohne den letzten Punkt) wird eine
- * einfache lineare Regression civil = a + b * press per Kleinste-Quadrate-
- * Methode (Legendre/Gauss, klassische OLS-Residualanalyse) geschaetzt. Aus
- * den historischen Residuen entsteht die Vergleichsverteilung; der
- * Signalwert ist der z-Score des aktuellen Residuums (letzter Punkt) gegen
- * diese Verteilung ({@link MathKit#zScore}). Positive Werte heissen: die
- * Zivilschicht ist unruhiger, als die Presselage hergibt.
+ * <p><b>Method:</b> over the history (excluding the last point) a simple
+ * linear regression civil = a + b * press is fitted via least squares
+ * (Legendre/Gauss, classic OLS residual analysis). The historical residuals
+ * form the reference distribution; the signal value is the z-score of the
+ * current residual (last point) against this distribution
+ * ({@link MathKit#zScore}). Positive values mean: the civil layer is more
+ * restless than the press picture accounts for.
  *
- * <p><b>Inputs im Terminal:</b> zwei taegliche Index-Reihen aus den
- * Fischernetz-Pegelstaenden der Welt-Kontext-Clients - die Zivilschicht
- * (Blaulicht, Streiks, Oeffis, Kliniken) als aggregierter Unruhe-Index gegen
- * einen aggregierten Index der ueberregionalen Presselage.
+ * <p><b>Terminal inputs:</b> two daily index series from the fishing-net
+ * gauge levels of the world-context clients - the civil layer (emergency
+ * services, strikes, transit, clinics) as an aggregated unrest index against
+ * an aggregated index of the national press picture.
  */
 public final class GroundUnrestResidual {
 
-    /** Unter dieser Tages-Zahl keine Messung. */
+    /** Below this day count no measurement. */
     private static final int MIN_DAYS = 30;
-    /** Unter dieser Tages-Zahl traegt die Deutung einen Vorsichts-Zusatz. */
+    /** Below this day count the interpretation carries a caution suffix. */
     private static final int COMFORTABLE_DAYS = 60;
-    /** Ab hier sind wir messbar frueh (sigma). */
+    /** From here we are measurably early (sigma). */
     private static final double EARLY = 2.0;
-    /** Ab hier leichte Voreile (sigma). */
+    /** From here a slight head start applies (sigma). */
     private static final double SLIGHT = 1.0;
 
     private GroundUnrestResidual() {
     }
 
     /**
-     * Misst die unerklärte Bodenunruhe als z-Score des aktuellen
-     * Regressions-Residuums.
+     * Measures the unexplained ground unrest as the z-score of the current
+     * regression residual.
      *
-     * @param civilIndexSeries Zivilschicht-Unruhe-Index pro Tag
-     * @param pressIndexSeries Presselage-Index pro Tag (gleiche Tage)
-     * @return Befund, oder empty bei ungleicher Laenge oder weniger als {@value #MIN_DAYS} Tagen
+     * @param civilIndexSeries civil-layer unrest index per day
+     * @param pressIndexSeries press-picture index per day (same days)
+     * @return reading, or empty on unequal lengths or fewer than {@value #MIN_DAYS} days
      */
     public static Optional<SignalReading> measure(double[] civilIndexSeries, double[] pressIndexSeries) {
         if (civilIndexSeries == null || pressIndexSeries == null
@@ -51,9 +51,9 @@ public final class GroundUnrestResidual {
             return Optional.empty();
         }
         int n = civilIndexSeries.length;
-        int h = n - 1; // Historie ohne den aktuellen (letzten) Punkt
+        int h = n - 1; // history without the current (last) point
 
-        // OLS civil = a + b * press ueber die Historie
+        // OLS civil = a + b * press over the history
         double meanPress = 0;
         double meanCivil = 0;
         for (int i = 0; i < h; i++) {
@@ -81,29 +81,29 @@ public final class GroundUnrestResidual {
 
         String interpretation;
         if (value >= EARLY) {
-            interpretation = "WIR SIND FRÜH: die Zivilschicht zeigt " + MathKit.fmt(value, 1)
-                    + " sigma mehr Unruhe, als die überregionale Presselage erklärt - die Story "
-                    + "ist noch lokal. Das Fenster schließt, sobald die Presse nachzieht, also "
-                    + "jetzt lokal nachrecherchieren.";
+            interpretation = "WE ARE EARLY: the civil layer shows " + MathKit.fmt(value, 1)
+                    + " sigma more unrest than the national press explains - ground unrest rising "
+                    + "while the national press is still quiet, the story is still local; the "
+                    + "window closes as soon as the press catches up, so dig in locally now.";
         } else if (value >= SLIGHT) {
-            interpretation = "Leichte Voreile: die Zivilschicht liegt etwas über dem, was die "
-                    + "Presselage erklärt - beobachten, noch kein belastbarer Vorsprung.";
+            interpretation = "Slight head start: the civil layer sits somewhat above what the "
+                    + "press picture explains - watch it, no robust edge yet.";
         } else {
-            interpretation = "Zivilschicht durch die Presselage gedeckt: keine unerklärte "
-                    + "Bodenunruhe, kein Informationsvorsprung.";
+            interpretation = "Civil layer covered by the press picture: no unexplained ground "
+                    + "unrest, no information edge.";
         }
         if (n < COMFORTABLE_DAYS) {
-            interpretation += " Vorsicht: nur " + n
-                    + " Tage Historie - die Residuen-Basis ist entsprechend schmal.";
+            interpretation += " Caution: only " + n
+                    + " days of history - the residual base is thin accordingly.";
         }
 
         return Optional.of(new SignalReading(
                 "ground-unrest-residual",
-                "Bodenunruhe-Residuum (Zivilschicht vs Presse)",
+                "Ground-unrest residual (civil layer vs press)",
                 value,
-                MathKit.fmt(value, 2) + " sigma (z-Score des aktuellen Regressions-Residuums)",
-                "Misst, ob die Zivilschicht heute mehr Unruhe zeigt, als die überregionale "
-                        + "Presselage erklärt - das messbare Netz-sieht-es-vor-der-Redaktion.",
+                MathKit.fmt(value, 2) + " sigma (z-score of the current regression residual)",
+                "Measures whether the civil layer shows more unrest today than the national "
+                        + "press picture explains - the measurable net-sees-it-before-the-newsroom.",
                 interpretation));
     }
 }

@@ -24,7 +24,7 @@ class SentimentDivergenceTest {
         Optional<SignalReading> reading = SentimentDivergence.measure(cage, constant(20, 50));
         assertTrue(reading.isPresent());
         assertTrue(reading.get().value() >= 1.5);
-        assertTrue(reading.get().interpretation().contains("KÄFIG GIERIG, WALL STREET ÄNGSTLICH"));
+        assertTrue(reading.get().interpretation().contains("CAGE GREEDY, WALL STREET FEARFUL"));
     }
 
     @Test
@@ -34,7 +34,7 @@ class SentimentDivergenceTest {
         Optional<SignalReading> reading = SentimentDivergence.measure(cage, constant(20, 50));
         assertTrue(reading.isPresent());
         assertTrue(reading.get().value() <= -1.5);
-        assertTrue(reading.get().interpretation().contains("KÄFIG ÄNGSTLICH, WALL STREET GIERIG"));
+        assertTrue(reading.get().interpretation().contains("CAGE FEARFUL, WALL STREET GREEDY"));
     }
 
     @Test
@@ -43,7 +43,7 @@ class SentimentDivergenceTest {
                 constant(25, 50), constant(25, 50));
         assertTrue(reading.isPresent());
         assertEquals(0.0, reading.get().value(), 1e-12);
-        assertTrue(reading.get().interpretation().contains("im Einklang"));
+        assertTrue(reading.get().interpretation().contains("in sync"));
     }
 
     @Test
@@ -58,7 +58,7 @@ class SentimentDivergenceTest {
         Optional<SignalReading> reading = SentimentDivergence.measure(cage, constant(30, 50));
         assertTrue(reading.isPresent());
         assertTrue(reading.get().interpretation()
-                .contains("frischer Umschwung der Divergenz seit kurzem"));
+                .contains("fresh shift of the divergence just recently"));
     }
 
     @Test
@@ -66,7 +66,7 @@ class SentimentDivergenceTest {
         Optional<SignalReading> reading = SentimentDivergence.measure(
                 constant(25, 50), constant(25, 50));
         assertTrue(reading.isPresent());
-        assertTrue(reading.get().interpretation().contains("Vorsicht"));
+        assertTrue(reading.get().interpretation().contains("Caution"));
     }
 
     @Test

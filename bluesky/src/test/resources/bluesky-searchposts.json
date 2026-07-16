@@ -1,0 +1,193 @@
+{
+  "posts": [
+    {
+      "uri": "at://did:plc:v6ktaqawvwl54hpnyyoua7rd/app.bsky.feed.post/3mqrbirlhp42e",
+      "cid": "bafyreidnm3wa5oxielw2c5xtcfsped4a3fbr55f74gpabn4bvc5aggkayu",
+      "author": {
+        "did": "did:plc:v6ktaqawvwl54hpnyyoua7rd",
+        "handle": "polaronfinance.bsky.social",
+        "displayName": "Polaron Finance"
+      },
+      "record": {
+        "$type": "app.bsky.feed.post",
+        "createdAt": "2026-07-16T12:49:04.833190+00:00",
+        "facets": [],
+        "text": "$NVDA powers Sharon AI's $1.32B cloud deal | @yahoofinance.com"
+      },
+      "replyCount": 0,
+      "repostCount": 0,
+      "likeCount": 0,
+      "quoteCount": 0,
+      "indexedAt": "2026-07-16T12:49:05.550Z",
+      "labels": []
+    },
+    {
+      "uri": "at://did:plc:cjwfakyhbgwpleo4pmcpev7v/app.bsky.feed.post/3mqraj3vh5g2u",
+      "cid": "bafyreibb65s3fufbhqfoc4ah62z74uqdpf7ybcebbh7qobm6xfkewemca4",
+      "author": {
+        "did": "did:plc:cjwfakyhbgwpleo4pmcpev7v",
+        "handle": "kapualabs.bsky.social",
+        "displayName": "KAPUALabs"
+      },
+      "record": {
+        "$type": "app.bsky.feed.post",
+        "createdAt": "2026-07-16T12:31:21.924112+00:00",
+        "facets": [
+          {
+            "$type": "app.bsky.richtext.facet",
+            "features": [
+              {
+                "$type": "app.bsky.richtext.facet#link",
+                "uri": "https://post.kapualabs.com/2p82xefr"
+              }
+            ],
+            "index": {
+              "$type": "app.bsky.richtext.facet#byteSlice",
+              "byteEnd": 228,
+              "byteStart": 193
+            }
+          }
+        ],
+        "langs": [
+          "en"
+        ],
+        "text": "Hyperscalers are pouring $700B into AI infrastructure, and $NVDA is at the center. But with capex outpacing earnings, is this boom sustainable? We break down the trillion-dollar demand engine. https://post.kapualabs.com/2p82xefr 📊 #AI #NVIDIA #Capex #Hyperscalers"
+      },
+      "replyCount": 0,
+      "repostCount": 0,
+      "likeCount": 0,
+      "quoteCount": 0,
+      "indexedAt": "2026-07-16T12:31:22.771Z",
+      "labels": []
+    },
+    {
+      "uri": "at://did:plc:d33nllryum5jlnpygzieh5bv/app.bsky.feed.post/3mqr6tis3bv2g",
+      "cid": "bafyreihslxbkotcujnclatsypn6wb3fsfh3rutsztn4askdjxbbdhw43kq",
+      "author": {
+        "did": "did:plc:d33nllryum5jlnpygzieh5bv",
+        "handle": "continentsentinel.bsky.social",
+        "displayName": "Continent Sentinel"
+      },
+      "record": {
+        "$type": "app.bsky.feed.post",
+        "createdAt": "2026-07-16T12:01:22+00:00",
+        "facets": [
+          {
+            "features": [
+              {
+                "$type": "app.bsky.richtext.facet#link",
+                "uri": "https://www.europesays.com/3134032/"
+              }
+            ],
+            "index": {
+              "byteEnd": 121,
+              "byteStart": 86
+            }
+          }
+        ],
+        "langs": [
+          "en-US",
+          "en"
+        ],
+        "text": "Rheinmetall, Space Norway Expand Space-Based Maritime Domain Awareness Partnership \n\nhttps://www.europesays.com/3134032/\n\n\r \r Rheinmetall and Space Norway are expanding their collaboration on space-based capabilities, covering the maritime domain through…"
+      },
+      "replyCount": 0,
+      "repostCount": 0,
+      "likeCount": 0,
+      "quoteCount": 0,
+      "indexedAt": "2026-07-16T12:01:24.172Z",
+      "labels": []
+    },
+    {
+      "uri": "at://did:plc:meiz3kma33nrwe6bliagav37/app.bsky.feed.post/3mqrbcfszp32t",
+      "cid": "bafyreiczpqigwnike3fbanwapkhlabn7kwbuegs7fjdd4yuiwzmhsghzou",
+      "author": {
+        "did": "did:plc:meiz3kma33nrwe6bliagav37",
+        "handle": "se-nyheter.bsky.social",
+        "displayName": ""
+      },
+      "record": {
+        "$type": "app.bsky.feed.post",
+        "createdAt": "2026-07-16T12:45:29+00:00",
+        "facets": [
+          {
+            "features": [
+              {
+                "$type": "app.bsky.richtext.facet#link",
+                "uri": "https://www.europesays.com/se/307125/"
+              }
+            ],
+            "index": {
+              "byteEnd": 82,
+              "byteStart": 45
+            }
+          }
+        ],
+        "langs": [
+          "sv-SE",
+          "sv"
+        ],
+        "text": "Analytiker: Därför backar ABB på börsen\n\nhttps://www.europesays.com/se/307125/\n\nABB-aktien backar tydligt på torsdagen efter ännu en rapportkross där bolaget levererar både rekordhög orderingång och försäljning. Danske…"
+      },
+      "replyCount": 0,
+      "repostCount": 0,
+      "likeCount": 0,
+      "quoteCount": 0,
+      "indexedAt": "2026-07-16T12:45:31.872Z",
+      "labels": []
+    },
+    {
+      "uri": "at://did:plc:fgiv6357p42w3yl66ljv4ych/app.bsky.feed.post/3mqrbuujkys2o",
+      "cid": "bafyreiau3n2gnuled6d7aialdruhjuyyhjumgpzgiowvi4kziwoxqgnowq",
+      "author": {
+        "did": "did:plc:fgiv6357p42w3yl66ljv4ych",
+        "handle": "janskudlarek.bsky.social",
+        "displayName": "Jan Skudlarek"
+      },
+      "record": {
+        "$type": "app.bsky.feed.post",
+        "createdAt": "2026-07-16T12:55:50.616Z",
+        "langs": [
+          "de"
+        ],
+        "reply": {
+          "parent": {
+            "cid": "bafyreicxn4wrkjadvxe32udyh6o4fjo7dn3zv43lt46ek5t6oakmxmv7uy",
+            "uri": "at://did:plc:hi7j24lqu3pedwulikmdnwdr/app.bsky.feed.post/3mqrboaigy225"
+          },
+          "root": {
+            "cid": "bafyreiasdqwllpbka5zepe3nxqjro5r7w4f6bcnhh7wno5k3x7o62iitay",
+            "uri": "at://did:plc:fgiv6357p42w3yl66ljv4ych/app.bsky.feed.post/3mopp7w3mfc2s"
+          }
+        },
+        "text": "Es gibt sicherlich eine halbwegs vernünftige und entspannte Art und Weise mit Aktien umzugehen, nicht jeder ist süchtig oder hat ein problematisches Verhältnis, manche gucken auch nur alle paar Wochen mal rein (auch ich habe mein Erspartes in Aktien/ETFs und \"zocke\" nicht, sondern lasse es liegen)"
+      },
+      "replyCount": 1,
+      "repostCount": 0,
+      "likeCount": 0,
+      "quoteCount": 0,
+      "indexedAt": "2026-07-16T12:55:45.868Z",
+      "labels": []
+    },
+    {
+      "uri": "at://did:plc:empjqd66qnuzjesut6yhsux4/app.bsky.feed.post/3mqr7ag5wc4q2",
+      "cid": "bafyreidwuldikgnueswkbn5h7ky2kz7ry52qj5yiyvwq7jochh4srq3roi",
+      "author": {
+        "did": "did:plc:empjqd66qnuzjesut6yhsux4",
+        "handle": "ad-hoc-news.de.web.brid.gy",
+        "displayName": "NEWS & AKTIENKURSE | AD HOC NEWS [Unofficial]"
+      },
+      "record": {
+        "$type": "app.bsky.feed.post",
+        "createdAt": "2026-07-16T12:06:54.000Z",
+        "text": ""
+      },
+      "replyCount": 0,
+      "repostCount": 0,
+      "likeCount": 0,
+      "quoteCount": 0,
+      "indexedAt": "2026-07-16T12:08:38.766Z",
+      "labels": []
+    }
+  ]
+}

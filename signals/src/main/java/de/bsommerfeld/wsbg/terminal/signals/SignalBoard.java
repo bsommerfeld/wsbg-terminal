@@ -11,11 +11,10 @@ import java.util.stream.Collectors;
 public final class SignalBoard {
 
     private static final String HEADER =
-            "QUANTITATIVE SIGNALE (im Code berechnet, nicht geschaetzt). "
-                    + "Nutze sie als Prior und Kontext, zitiere die Zahl wenn du dich "
-                    + "auf sie stuetzt, und widersprich ihnen ausdruecklich, wenn die "
-                    + "inhaltliche Lage etwas anderes sagt - ein Signal ist ein Indiz, "
-                    + "kein Urteil.";
+            "QUANT SIGNALS (house-computed in code, never guessed). Use them as "
+                    + "priors and context, cite the number when you lean on it, and "
+                    + "contradict them EXPLICITLY when the material says otherwise - "
+                    + "a signal is a clue, never a verdict.";
 
     private SignalBoard() {
     }

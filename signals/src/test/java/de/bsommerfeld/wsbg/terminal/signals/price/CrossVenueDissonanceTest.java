@@ -49,7 +49,7 @@ class CrossVenueDissonanceTest {
                 pricesFromDifferences(d), flatPrices(50), VENUE_A, VENUE_B);
         assertTrue(reading.isPresent());
         assertTrue(reading.get().value() >= 2.0, "z-Score muss ueber der Dissonanz-Schwelle liegen");
-        assertTrue(reading.get().interpretation().contains("VENUE-DISSONANZ"));
+        assertTrue(reading.get().interpretation().contains("VENUE DISSONANCE"));
         assertTrue(reading.get().interpretation().contains(VENUE_A),
                 "positive Differenz muss Platz A benennen");
         assertEquals("cross-venue-dissonance", reading.get().id());
@@ -65,7 +65,7 @@ class CrossVenueDissonanceTest {
                 pricesFromDifferences(d), flatPrices(50), VENUE_A, VENUE_B);
         assertTrue(reading.isPresent());
         assertTrue(reading.get().value() <= -2.0, "Richtung muss im Vorzeichen stehen");
-        assertTrue(reading.get().interpretation().contains("VENUE-DISSONANZ"));
+        assertTrue(reading.get().interpretation().contains("VENUE DISSONANCE"));
         assertTrue(reading.get().interpretation().contains(VENUE_B),
                 "negative Differenz muss Platz B benennen");
     }
@@ -81,8 +81,8 @@ class CrossVenueDissonanceTest {
                 pricesFromDifferences(d), flatPrices(50), VENUE_A, VENUE_B);
         assertTrue(reading.isPresent());
         assertTrue(reading.get().value() >= 2.0);
-        assertTrue(reading.get().interpretation().contains("Stale Quote"));
-        assertFalse(reading.get().interpretation().contains("VENUE-DISSONANZ"));
+        assertTrue(reading.get().interpretation().contains("stale quote"));
+        assertFalse(reading.get().interpretation().contains("VENUE DISSONANCE"));
     }
 
     @Test
@@ -92,7 +92,7 @@ class CrossVenueDissonanceTest {
                 pricesFromDifferences(d), flatPrices(50), VENUE_A, VENUE_B);
         assertTrue(reading.isPresent());
         assertTrue(Math.abs(reading.get().value()) < 2.0);
-        assertTrue(reading.get().interpretation().contains("Einklang"));
+        assertTrue(reading.get().interpretation().contains("harmony"));
         assertTrue(reading.get().interpretation().contains(VENUE_A));
         assertTrue(reading.get().interpretation().contains(VENUE_B));
     }
@@ -103,7 +103,7 @@ class CrossVenueDissonanceTest {
         Optional<SignalReading> reading = CrossVenueDissonance.measure(
                 pricesFromDifferences(d), flatPrices(40), VENUE_A, VENUE_B);
         assertTrue(reading.isPresent());
-        assertTrue(reading.get().interpretation().contains("Vorsicht"));
+        assertTrue(reading.get().interpretation().contains("Caution"));
     }
 
     @Test
@@ -134,7 +134,7 @@ class CrossVenueDissonanceTest {
         Optional<SignalReading> reading = CrossVenueDissonance.measure(
                 pricesFromDifferences(d), flatPrices(50), VENUE_A, VENUE_B);
         assertTrue(reading.isPresent());
-        assertTrue(reading.get().formattedValue().contains("Persistenz"));
+        assertTrue(reading.get().formattedValue().contains("persistence"));
         assertTrue(reading.get().formattedValue().contains(VENUE_A));
     }
 }

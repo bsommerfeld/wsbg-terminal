@@ -32,9 +32,9 @@ class WorldAnomalyIndexTest {
                 .measure(history2d(), new double[]{10, 5}, NAMES_2D)
                 .orElseThrow();
         assertTrue(reading.value() < 1.5);
-        assertTrue(reading.interpretation().contains("ruhig"));
+        assertTrue(reading.interpretation().contains("quiet"));
         // 40 Tage sind unter der Komfort-Schwelle -> Vorsichts-Zusatz
-        assertTrue(reading.interpretation().contains("Vorsicht"));
+        assertTrue(reading.interpretation().contains("Caution"));
         assertEquals("world-anomaly-index", reading.id());
     }
 
@@ -44,7 +44,7 @@ class WorldAnomalyIndexTest {
                 .measure(history2d(), new double[]{12.2, 7.2}, NAMES_2D)
                 .orElseThrow();
         assertTrue(reading.value() >= 1.5 && reading.value() < 3.0);
-        assertTrue(reading.interpretation().contains("Weltspannung"));
+        assertTrue(reading.interpretation().contains("world tension"));
     }
 
     @Test
@@ -53,7 +53,7 @@ class WorldAnomalyIndexTest {
                 .measure(history2d(), new double[]{16, 11}, NAMES_2D)
                 .orElseThrow();
         assertTrue(reading.value() >= 3.0);
-        assertTrue(reading.interpretation().contains("AUSNAHMEZUSTAND"));
+        assertTrue(reading.interpretation().contains("EXCEPTIONAL STATE"));
     }
 
     @Test

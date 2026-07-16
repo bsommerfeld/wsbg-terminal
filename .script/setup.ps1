@@ -5,6 +5,7 @@
 # 1. Installs our OWN, isolated Ollama binary under <appData>\ollama (pinned).
 # 2. Starts a private Ollama server (own port + own model store).
 # 3. Downloads the AI models into that isolated store.
+# 3b. Installs the OCR traineddata (Tesseract) under <appData>\tesseract.
 # 4. Pre-installs JCEF + fonts and scaffolds the config.
 #
 # Full isolation: we never touch a user's existing Ollama (binary, models, or
@@ -301,6 +302,49 @@ if (Test-Path $ollamaExe) {
     }
 } else {
     Write-Warn "Isolated Ollama binary missing -- skipping model install."
+}
+
+# ------------------------------------------------------------------------------
+# 3b. Install the OCR traineddata (Tesseract) into the isolated container
+# ------------------------------------------------------------------------------
+# The terminal reads Reddit images mechanically (OCR). On Windows the native
+# Tesseract DLLs ship inside the tess4j jar (JNA self-extracts them) -- only
+# the traineddata (eng+osd+deu) is needed, and the engine probes
+# <appData>\tesseract\tessdata first. Every app release carries the asset
+# (release.yml, job tesseract_bundle); /releases/latest/download always
+# resolves. Fully optional: on any failure the terminal runs without image text.
+$tessDir = [System.IO.Path]::Combine($configDir, "tesseract")
+$tessDataMarker = [System.IO.Path]::Combine($tessDir, "tessdata", "eng.traineddata")
+
+if (Test-Path $tessDataMarker) {
+    Write-Host "[*] OCR runtime already installed." -ForegroundColor Gray
+} else {
+    Write-Host "[*] Installing OCR traineddata into $tessDir ..." -ForegroundColor Cyan
+    $tessUrl = "https://github.com/bsommerfeld/wsbg-terminal/releases/latest/download/tesseract-tessdata.tar.gz"
+    $tmpTess = Join-Path $env:TEMP "tess-data-$PID.tar.gz"
+    try {
+        if (-not (Test-Path $tessDir)) { New-Item -ItemType Directory -Force -Path $tessDir | Out-Null }
+        # curl.exe + tar.exe like the Ollama download above (streamed, fast).
+        & curl.exe -fL --retry 3 --retry-delay 2 -o $tmpTess $tessUrl
+        if ($LASTEXITCODE -eq 35) {
+            Write-Warn "OCR download hit a TLS revocation-check failure -- retrying without revocation check."
+            & curl.exe -fL --ssl-no-revoke --retry 3 --retry-delay 2 -o $tmpTess $tessUrl
+        }
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warn "OCR traineddata download failed (curl exit $LASTEXITCODE) -- images are skipped, the terminal still runs."
+        } else {
+            & tar.exe -xzf $tmpTess -C $tessDir
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warn "OCR traineddata extract failed (tar exit $LASTEXITCODE) -- images are skipped, the terminal still runs."
+            } else {
+                Write-Host "    OCR runtime ready at $tessDir" -ForegroundColor Green
+            }
+        }
+        Remove-Item $tmpTess -Force -ErrorAction SilentlyContinue
+    } catch {
+        Write-Warn "OCR traineddata install failed: $_ -- images are skipped, the terminal still runs."
+        Remove-Item $tmpTess -Force -ErrorAction SilentlyContinue
+    }
 }
 
 # ------------------------------------------------------------------------------

@@ -51,8 +51,8 @@ class MarketRegimeHmmTest {
                 MarketRegimeHmm.measure(concat(stress(40), normal(40), calm(40)));
         assertTrue(reading.isPresent());
         assertEquals(0.0, reading.get().value(), "RUHE muss Index 0 tragen");
-        assertTrue(reading.get().formattedValue().startsWith("RUHE"));
-        assertTrue(reading.get().interpretation().contains("sie sind hier selten"));
+        assertTrue(reading.get().formattedValue().startsWith("CALM"));
+        assertTrue(reading.get().interpretation().contains("they are rare here"));
         assertEquals("market-regime-hmm", reading.get().id());
     }
 
@@ -63,7 +63,7 @@ class MarketRegimeHmmTest {
         assertTrue(reading.isPresent());
         assertEquals(1.0, reading.get().value(), "NORMAL muss Index 1 tragen");
         assertTrue(reading.get().formattedValue().startsWith("NORMAL"));
-        assertTrue(reading.get().interpretation().contains("Standardbasisraten gelten"));
+        assertTrue(reading.get().interpretation().contains("standard base rates apply"));
     }
 
     @Test
@@ -73,7 +73,7 @@ class MarketRegimeHmmTest {
         assertTrue(reading.isPresent());
         assertEquals(2.0, reading.get().value(), "STRESS muss Index 2 tragen");
         assertTrue(reading.get().formattedValue().startsWith("STRESS"));
-        assertTrue(reading.get().interpretation().contains("Korrelationen springen auf 1"));
+        assertTrue(reading.get().interpretation().contains("correlations jump to 1"));
     }
 
     @Test
@@ -82,7 +82,7 @@ class MarketRegimeHmmTest {
                 MarketRegimeHmm.measure(concat(stress(40), normal(40), calm(40)));
         assertTrue(reading.isPresent());
         assertTrue(reading.get().interpretation()
-                .contains("Alle anderen Signale in diesem Regime lesen"));
+                .contains("Read every other signal conditioned on this regime"));
     }
 
     @Test
@@ -98,7 +98,7 @@ class MarketRegimeHmmTest {
         Optional<SignalReading> reading =
                 MarketRegimeHmm.measure(concat(stress(20), normal(20), calm(20)));
         assertTrue(reading.isPresent());
-        assertTrue(reading.get().interpretation().contains("Vorsicht"));
+        assertTrue(reading.get().interpretation().contains("Caution"));
     }
 
     @Test

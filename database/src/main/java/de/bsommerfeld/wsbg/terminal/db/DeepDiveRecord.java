@@ -21,6 +21,10 @@ package de.bsommerfeld.wsbg.terminal.db;
  *                       generation time so UI and PDF show the SAME picture);
  *                       may be null on records from before the chart layer —
  *                       read through {@link #chartsOrEmpty()}
+ * @param signals        the house-computed quant signals that fed the material,
+ *                       frozen as numbers so report runs form a time series;
+ *                       null on records from before the signal layer — read
+ *                       through {@link #signalsOrEmpty()}
  */
 public record DeepDiveRecord(
         String id,
@@ -35,11 +39,26 @@ public record DeepDiveRecord(
         int evidenceCount,
         int newsCount,
         long durationMs,
-        java.util.List<ChartFigure> charts) {
+        java.util.List<ChartFigure> charts,
+        java.util.List<SignalValue> signals) {
 
     /** Pre-chart archive lines deserialize with {@code charts == null}. */
     public java.util.List<ChartFigure> chartsOrEmpty() {
         return charts == null ? java.util.List.of() : charts;
+    }
+
+    /** Pre-signal archive lines deserialize with {@code signals == null}. */
+    public java.util.List<SignalValue> signalsOrEmpty() {
+        return signals == null ? java.util.List.of() : signals;
+    }
+
+    /** Pre-signal shape — keeps existing positional call sites compiling. */
+    public DeepDiveRecord(String id, String subject, String canonicalName, String ticker,
+            String isin, long createdAtEpoch, String report, Double priceAtTime,
+            String priceCurrency, int evidenceCount, int newsCount, long durationMs,
+            java.util.List<ChartFigure> charts) {
+        this(id, subject, canonicalName, ticker, isin, createdAtEpoch, report, priceAtTime,
+                priceCurrency, evidenceCount, newsCount, durationMs, charts, null);
     }
 
     /**

@@ -6,20 +6,19 @@ import de.bsommerfeld.wsbg.terminal.signals.SignalReading;
 import java.util.Optional;
 
 /**
- * Publikations-Verspaetung als Distress-Signal: misst, wie spaet ein
- * Pflichtdokument gegen das eigene historische Einreichverhalten kommt.
+ * Publication delay as a distress signal: measures how late a mandatory
+ * document arrives against the issuer's own historical filing behaviour.
  *
- * <p><b>Methode:</b> z-Score des aktuellen Delays (in Tagen) gegen Mittelwert
- * und Standardabweichung der eigenen historischen Delays, ergaenzt um das
- * empirische Perzentil. Literaturanker: verspaetete Abschluesse als
- * Distress-Praediktor in der Bilanzforschung (Whittred/Zimmer 1984; "late
- * filings" und 12b-25-NT-Meldungen als Negativ-Signal, Bartov/Konchitchki
- * 2017) - das Nicht-Erscheinen ist selbst das Datum.
+ * <p><b>Method:</b> z-score of the current delay (in days) against mean and
+ * standard deviation of the issuer's own historical delays, complemented by
+ * the empirical percentile. Literature anchor: late financial statements as a
+ * distress predictor in the accounting literature (Whittred/Zimmer 1984;
+ * "late filings" and 12b-25 NT notices as a negative signal,
+ * Bartov/Konchitchki 2017) - the non-appearance is itself the datum.
  *
- * <p><b>Inputs im Terminal:</b> Publikations- und Faelligkeitstermine aus dem
- * Bundesanzeiger (Jahres-/Konzernabschluesse), BaFin-Veroeffentlichungen,
- * EDGAR-Filings und dem Kalender-Briefing (angekuendigte vs. tatsaechliche
- * Berichtstermine).
+ * <p><b>Terminal inputs:</b> publication and due dates from the
+ * Bundesanzeiger (annual/consolidated statements), BaFin publications, EDGAR
+ * filings and the calendar briefing (announced vs. actual reporting dates).
  */
 public final class FilingDelayDistress {
 
@@ -30,10 +29,10 @@ public final class FilingDelayDistress {
     }
 
     /**
-     * @param ownHistoricalDelaysDays eigene historische Verspaetungen in Tagen
-     *                                (mindestens {@value #MIN_HISTORY} Werte)
-     * @param currentDelayDays        aktuelle Verspaetung in Tagen
-     * @return Befund, oder empty bei zu duenner Historie
+     * @param ownHistoricalDelaysDays own historical delays in days
+     *                                (at least {@value #MIN_HISTORY} values)
+     * @param currentDelayDays        current delay in days
+     * @return reading, or empty on too thin a history
      */
     public static Optional<SignalReading> measure(double[] ownHistoricalDelaysDays, double currentDelayDays) {
         if (ownHistoricalDelaysDays == null || ownHistoricalDelaysDays.length < MIN_HISTORY) {
@@ -44,34 +43,34 @@ public final class FilingDelayDistress {
         double percentile = MathKit.empiricalPercentile(currentDelayDays, ownHistoricalDelaysDays);
 
         String formatted = "z=" + MathKit.fmt(z, 2)
-                + " (aktuell " + MathKit.fmt(currentDelayDays, 1) + " Tage, Perzentil "
+                + " (current " + MathKit.fmt(currentDelayDays, 1) + " days, percentile "
                 + MathKit.fmt(percentile * 100, 0) + "%, n=" + n + ")";
 
         String interpretation;
         if (z >= 1.5) {
-            interpretation = "VERSPAETUNGS-FLAG: signifikant spaeter als je zuvor ueblich"
-                    + " - Distress-Hypothese aufnehmen und nach Begleitindizien suchen"
-                    + " (Wirtschaftspruefer, Refinanzierung).";
+            interpretation = "DELAY FLAG: significantly later than ever usual"
+                    + " - open a distress hypothesis and look for corroborating signs"
+                    + " (auditor, refinancing).";
         } else if (z >= 0) {
-            interpretation = "Im eigenen Rahmen: die Verspaetung liegt innerhalb des historischen"
-                    + " Einreichverhaltens - kein eigenstaendiges Signal.";
+            interpretation = "Within own range: the delay sits inside the issuer's historical"
+                    + " filing behaviour - no standalone signal.";
         } else {
-            interpretation = "Frueher als ueblich: das Dokument kommt vor dem eigenen historischen"
-                    + " Rhythmus - eher Entwarnung, Management liefert.";
+            interpretation = "Earlier than usual: the document arrives ahead of the issuer's own"
+                    + " historical rhythm - rather reassuring, management delivers.";
         }
         if (n <= THIN_HISTORY) {
-            interpretation += " Vorsicht: nur n=" + n + " historische Einreichungen"
-                    + " - duenne Datenbasis, z-Score mit Zurueckhaltung lesen.";
+            interpretation += " Caution: only n=" + n + " historical filings"
+                    + " - thin data, read the z-score with restraint.";
         }
 
         return Optional.of(new SignalReading(
                 "filing-delay-distress",
-                "Publikations-Verspaetung (Distress-Signal)",
+                "Publication delay (distress signal)",
                 z,
                 formatted,
-                "Misst die Verspaetung eines Pflichtdokuments gegen das eigene historische"
-                        + " Einreichverhalten - in der Bilanzforschung ein validierter Distress-Praediktor;"
-                        + " das Nicht-Erscheinen ist selbst das Datum.",
+                "Measures how late a mandatory document arrives against the issuer's own historical"
+                        + " filing behaviour - a validated distress predictor in the accounting"
+                        + " literature; the non-appearance is itself the datum.",
                 interpretation));
     }
 }

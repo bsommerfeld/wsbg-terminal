@@ -87,6 +87,38 @@
         </dependency>
         <dependency>
             <groupId>de.bsommerfeld</groupId>
+            <artifactId>ariva</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>bluesky</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>tradingview</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>telegram</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>hackernews</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>comdirect</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>lemmy</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>fourchan</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
             <artifactId>prnewswire</artifactId>
         </dependency>
         <dependency>
@@ -204,6 +236,10 @@
                 <configuration>
                     <executable>java</executable>
                     <arguments>
+                        <!-- The Metal Java2D pipeline SIGSEGVs in the Queue Flusher
+                             (MTLContext dealloc over-releases, JDK bug) after ~1-2h;
+                             the OSR blit is plain BufferedImage work, OpenGL is fine. -->
+                        <argument>-Dsun.java2d.metal=false</argument>
                         <argument>--enable-native-access=ALL-UNNAMED</argument>
                         <argument>--add-opens=java.desktop/sun.awt=ALL-UNNAMED</argument>
                         <argument>--add-opens=java.desktop/sun.lwawt=ALL-UNNAMED</argument>

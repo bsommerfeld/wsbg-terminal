@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class FilingSequenceSurpriseTest {
 
-    /** 5x [ADHOC, SR] und 5x [SR, ADHOC] - symmetrische Melde-Grammatik. */
+    /** 5x [ADHOC, SR] and 5x [SR, ADHOC] - symmetric filing grammar. */
     private static List<List<String>> history() {
         List<List<String>> h = new ArrayList<>();
         for (int i = 0; i < 5; i++) h.add(List.of("ADHOC", "SR"));
@@ -24,7 +24,7 @@ class FilingSequenceSurpriseTest {
         Optional<SignalReading> r = FilingSequenceSurprise.measure(history(), List.of("ADHOC", "SR"));
         assertTrue(r.isPresent());
         assertTrue(r.get().value() <= 1.1);
-        assertTrue(r.get().interpretation().contains("Typische Kette"));
+        assertTrue(r.get().interpretation().contains("Typical chain"));
         assertTrue(r.get().interpretation().contains("ADHOC→SR"));
     }
 
@@ -33,18 +33,18 @@ class FilingSequenceSurpriseTest {
         Optional<SignalReading> r = FilingSequenceSurprise.measure(
                 history(), List.of("ADHOC", "SR", "ADHOC", "SR", "SR"));
         assertTrue(r.isPresent());
-        // Ratio ~1.46: ueber 1.1, unter 1.5.
+        // Ratio ~1.46: above 1.1, below 1.5.
         assertTrue(r.get().value() > 1.1 && r.get().value() < 1.5);
-        assertTrue(r.get().interpretation().contains("Leicht erhoehte"));
+        assertTrue(r.get().interpretation().contains("Mildly elevated"));
     }
 
     @Test
     void unusualSequenceIsFlagged() {
         Optional<SignalReading> r = FilingSequenceSurprise.measure(history(), List.of("SR", "SR"));
         assertTrue(r.isPresent());
-        // Ratio ~3.1: klar ueber 1.5.
+        // Ratio ~3.1: clearly above 1.5.
         assertTrue(r.get().value() >= 1.5);
-        assertTrue(r.get().interpretation().contains("UNTYPISCHE MELDEKETTE"));
+        assertTrue(r.get().interpretation().contains("ATYPICAL FILING CHAIN"));
         assertTrue(r.get().interpretation().contains("SR→SR"));
     }
 
@@ -52,9 +52,9 @@ class FilingSequenceSurpriseTest {
     void thinHistoryCarriesCautionNote() {
         Optional<SignalReading> r = FilingSequenceSurprise.measure(history(), List.of("ADHOC", "SR"));
         assertTrue(r.isPresent());
-        // 10 Ketten < 15 -> Vorsichts-Zusatz.
-        assertTrue(r.get().interpretation().contains("Vorsicht"));
-        assertTrue(r.get().interpretation().contains("duenne Datenbasis"));
+        // 10 chains < 15 -> caution note.
+        assertTrue(r.get().interpretation().contains("Caution"));
+        assertTrue(r.get().interpretation().contains("thin data"));
     }
 
     @Test

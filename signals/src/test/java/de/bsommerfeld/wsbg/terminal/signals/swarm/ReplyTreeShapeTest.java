@@ -20,13 +20,13 @@ class ReplyTreeShapeTest {
         }
         SignalReading reading = ReplyTreeShape.measure(comments).orElseThrow();
         assertTrue(reading.value() < 0.5, "value=" + reading.value());
-        assertTrue(reading.interpretation().contains("Zustimmungs-Echo"), reading.interpretation());
-        assertTrue(reading.interpretation().contains("Vorsicht"), reading.interpretation());
+        assertTrue(reading.interpretation().contains("AGREEMENT ECHO"), reading.interpretation());
+        assertTrue(reading.interpretation().contains("Caution"), reading.interpretation());
     }
 
     @Test
     void mediumChainsAreMixed() {
-        // 4 Ketten der Tiefe 3: mittlere Blatt-Tiefe 3 bei n=12 -> Index ~0.81.
+        // 4 chains of depth 3: mean leaf depth 3 at n=12 -> index ~0.81.
         List<Comment> comments = new ArrayList<>();
         for (int k = 0; k < 4; k++) {
             comments.add(new Comment("root" + k, null));
@@ -35,7 +35,7 @@ class ReplyTreeShapeTest {
         }
         SignalReading reading = ReplyTreeShape.measure(comments).orElseThrow();
         assertTrue(reading.value() > 0.5 && reading.value() <= 1.0, "value=" + reading.value());
-        assertTrue(reading.interpretation().contains("emischt"), reading.interpretation());
+        assertTrue(reading.interpretation().contains("MIXED"), reading.interpretation());
     }
 
     @Test
@@ -47,7 +47,7 @@ class ReplyTreeShapeTest {
         }
         SignalReading reading = ReplyTreeShape.measure(comments).orElseThrow();
         assertTrue(reading.value() > 1.0, "value=" + reading.value());
-        assertTrue(reading.interpretation().contains("mkämpft"), reading.interpretation());
+        assertTrue(reading.interpretation().contains("CONTESTED"), reading.interpretation());
     }
 
     @Test
@@ -56,13 +56,13 @@ class ReplyTreeShapeTest {
         for (int i = 0; i < 20; i++) {
             comments.add(new Comment("c" + i, null));
         }
-        // Waisen mit unbekanntem Parent gelten als Wurzeln, nicht als Fehler.
+        // Orphans with an unknown parent count as roots, not as errors.
         for (int i = 0; i < 5; i++) {
             comments.add(new Comment("o" + i, "missing" + i));
         }
         SignalReading reading = ReplyTreeShape.measure(comments).orElseThrow();
         assertTrue(reading.value() < 0.5, "value=" + reading.value());
-        assertFalse(reading.interpretation().contains("Vorsicht"), reading.interpretation());
+        assertFalse(reading.interpretation().contains("Caution"), reading.interpretation());
     }
 
     @Test

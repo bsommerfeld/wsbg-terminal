@@ -7,31 +7,30 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Schätzungs-Fächer: relative Änderung der Streuung der Mehrjahres-Schätzungen
- * zwischen zwei Snapshots.
+ * Estimate fan: relative change of the dispersion of multi-year estimates
+ * between two snapshots.
  *
- * <p>Numerik: pro Snapshot wird über die Jahres-Schätzungen der
- * Variationskoeffizient CV = std / |mean| gebildet (Stichproben-Std, n-1;
- * der CV als skalenfreies Streuungsmaß geht auf Pearson 1896 zurück), der
- * Signalwert ist die relative Änderung (cvJetzt - cvVorher) / cvVorher.
- * War der Fächer vorher komplett geschlossen (cvVorher = 0) und öffnet sich,
- * wird das als +1 gewertet. Gemessen wird damit, ob der Fächer der
- * Mehrjahres-Schätzungen sich öffnet (steiler, unsicherer Wachstumspfad)
- * oder kollabiert - die Änderung markiert den Moment, in dem Analysten die
- * Equity-Story umschreiben, bevor es eine Headline gibt.
+ * <p>Numerics: per snapshot the coefficient of variation CV = std / |mean| is
+ * computed over the yearly estimates (sample std, n-1; the CV as a scale-free
+ * dispersion measure goes back to Pearson 1896); the signal value is the
+ * relative change (cvNow - cvPrev) / cvPrev. If the fan was fully closed
+ * before (cvPrev = 0) and opens, that counts as +1. What is measured is
+ * whether the fan of multi-year estimates opens (steeper, more uncertain
+ * growth path) or collapses - the change marks the moment analysts rewrite
+ * the equity story before there is a headline.
  *
- * <p>Input im Terminal: zwei zeitversetzte Consorsbank-KeyFigures-Snapshots
- * derselben Aktie mit Konsens-Schätzwerten je Jahr (z.B. EPS bis 2029).
+ * <p>Terminal input: two time-shifted Consorsbank KeyFigures snapshots of the
+ * same stock with consensus estimates per year (e.g. EPS up to 2029).
  */
 public final class EstimateFanDivergence {
 
     private static final String ID = "estimate-fan-divergence";
-    private static final String TITLE = "Schätzungs-Fächer (Mehrjahres-Divergenz)";
+    private static final String TITLE = "Estimate fan (multi-year divergence)";
     private static final String DEFINITION =
-            "Misst, ob der Fächer der Mehrjahres-Schätzungen sich seit dem letzten"
-                    + " Snapshot öffnet (Pfad wird unsicherer) oder kollabiert (Pfad"
-                    + " wird planbar) - als relative Änderung des"
-                    + " Variationskoeffizienten über die Schätzjahre.";
+            "Measures whether the fan of multi-year estimates has opened since"
+                    + " the last snapshot (path becomes more uncertain) or collapsed"
+                    + " (path becomes plannable) - as the relative change of the"
+                    + " coefficient of variation across the estimate years.";
 
     private static final int MIN_YEARS = 3;
     private static final int THIN_YEARS = 4;
@@ -42,12 +41,12 @@ public final class EstimateFanDivergence {
     }
 
     /**
-     * Berechnet die relative Änderung des Schätzungs-Fächers. Beide Snapshots
-     * brauchen mindestens {@value #MIN_YEARS} Schätzjahre und einen Mittelwert
-     * != 0, sonst {@link Optional#empty()}.
+     * Computes the relative change of the estimate fan. Both snapshots need
+     * at least {@value #MIN_YEARS} estimate years and a mean != 0, otherwise
+     * {@link Optional#empty()}.
      *
-     * @param currentByYear  Schätzwerte je Jahr aus dem aktuellen Snapshot
-     * @param previousByYear Schätzwerte je Jahr aus dem vorherigen Snapshot
+     * @param currentByYear  estimates per year from the current snapshot
+     * @param previousByYear estimates per year from the previous snapshot
      */
     public static Optional<SignalReading> measure(
             Map<Integer, Double> currentByYear,
@@ -65,14 +64,14 @@ public final class EstimateFanDivergence {
         }
         int minYears = Math.min(currentByYear.size(), previousByYear.size());
 
-        String formatted = fmtSigned(value) + " relative Fächer-Änderung (CV jetzt "
-                + MathKit.fmt(cvNow, 3) + ", vorher " + MathKit.fmt(cvPrev, 3) + ")";
+        String formatted = fmtSigned(value) + " relative fan change (CV now "
+                + MathKit.fmt(cvNow, 3) + ", before " + MathKit.fmt(cvPrev, 3) + ")";
         return Optional.of(new SignalReading(
                 ID, TITLE, value, formatted, DEFINITION,
                 interpret(value, cvNow, cvPrev, minYears)));
     }
 
-    /** CV = std/|mean| über die Jahreswerte, NaN bei zu dünner Lage oder Mittelwert 0. */
+    /** CV = std/|mean| over the yearly values, NaN on too-thin data or zero mean. */
     private static double cvOrNaN(Map<Integer, Double> byYear) {
         if (byYear == null || byYear.size() < MIN_YEARS) {
             return Double.NaN;
@@ -93,24 +92,24 @@ public final class EstimateFanDivergence {
     }
 
     private static String interpret(double value, double cvNow, double cvPrev, int minYears) {
-        String cvs = " (CV jetzt " + MathKit.fmt(cvNow, 3) + " gegen vorher "
+        String cvs = " (CV now " + MathKit.fmt(cvNow, 3) + " against before "
                 + MathKit.fmt(cvPrev, 3) + ")";
         String band;
         if (value >= OPEN_THRESHOLD) {
-            band = "FÄCHER ÖFFNET SICH: die Unsicherheit über den Mehrjahres-Pfad"
-                    + " steigt" + cvs + " - das Papier wird zur Story-Aktie, das"
-                    + " Bewertungs-Multiple wird verwundbarer.";
+            band = "FAN OPENING: uncertainty about the multi-year path is"
+                    + " rising" + cvs + " - the stock is turning into a story"
+                    + " stock, the valuation multiple becomes more vulnerable.";
         } else if (value <= COLLAPSE_THRESHOLD) {
-            band = "FÄCHER KOLLABIERT: die Schätzungen konvergieren zur Substanz"
-                    + cvs + " - die Story wird planbar, der Pfad verliert"
-                    + " Überraschungspotenzial in beide Richtungen.";
+            band = "FAN COLLAPSING: the estimates are converging to substance"
+                    + cvs + " - the story becomes plannable, the path loses"
+                    + " surprise potential in both directions.";
         } else {
-            band = "Der Fächer ist stabil" + cvs + " - die Unsicherheit über den"
-                    + " Mehrjahres-Pfad hat sich nicht nennenswert verändert.";
+            band = "The fan is stable" + cvs + " - uncertainty about the"
+                    + " multi-year path has not changed notably.";
         }
         if (minYears < THIN_YEARS) {
-            band += " Vorsicht: nur " + minYears + " Schätzjahre im kleineren"
-                    + " Snapshot, der Variationskoeffizient ist entsprechend wackelig.";
+            band += " Caution: only " + minYears + " estimate years in the smaller"
+                    + " snapshot, the coefficient of variation is accordingly shaky.";
         }
         return band;
     }

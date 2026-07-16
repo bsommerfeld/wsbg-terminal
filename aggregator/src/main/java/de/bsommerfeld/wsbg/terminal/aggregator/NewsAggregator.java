@@ -82,6 +82,7 @@ public class NewsAggregator {
         List<RawNewsItem> out = new java.util.ArrayList<>();
         java.util.Set<String> seen = new java.util.HashSet<>();
         for (NewsSource source : sources) {
+            if (source.socialSentiment()) continue; // the archive is a press leg
             try {
                 for (RawNewsItem item : source.newsForNameWindow(
                         name, isin, fromIsoDate, toIsoDateExclusive, limit)) {
@@ -105,7 +106,7 @@ public class NewsAggregator {
             return List.of();
         }
         Map<String, RawNewsItem> byId =
-                gather(haveSymbol, haveName, haveIsin, symbol, name, isin, limit);
+                gather(haveSymbol, haveName, haveIsin, symbol, name, isin, limit, false);
         return byId.values().stream()
                 .sorted(NewsRelevanceRanker.forName(name))
                 .limit(limit)
@@ -113,17 +114,47 @@ public class NewsAggregator {
     }
 
     /**
-     * Fans the symbol/name/ISIN queries across every source with per-source
-     * error isolation, merging into an id-keyed map. {@code putIfAbsent} keeps
-     * the first occurrence of a given id; iteration order of the source set is
-     * the tie-break (load-bearing dedup semantics — first-seen id wins).
+     * The SENTIMENT fan: the same symbol/name/ISIN triangulation, but across
+     * the {@link NewsSource#socialSentiment() social} sources ONLY — forum
+     * posts and social chatter, room opinion rather than reported news. Kept
+     * strictly apart from {@link #newsFor}: the press loom never sees these
+     * items, and this fan never sees articles. Ordered by pure recency (a
+     * forum post's relevance IS its freshness — title-naming tiers don't
+     * apply to posts that rarely name the company), capped at {@code limit}.
+     *
+     * @return matching items, or an empty list — never {@code null}
+     */
+    public List<RawNewsItem> sentimentFor(String symbol, String name, String isin, int limit) {
+        boolean haveSymbol = symbol != null && !symbol.isBlank();
+        boolean haveName = name != null && !name.isBlank();
+        boolean haveIsin = isin != null && !isin.isBlank();
+        if ((!haveSymbol && !haveName && !haveIsin) || limit <= 0) {
+            return List.of();
+        }
+        Map<String, RawNewsItem> byId =
+                gather(haveSymbol, haveName, haveIsin, symbol, name, isin, limit, true);
+        return byId.values().stream()
+                .sorted(java.util.Comparator.comparing(RawNewsItem::publishedAt,
+                        java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder())))
+                .limit(limit)
+                .toList();
+    }
+
+    /**
+     * Fans the symbol/name/ISIN queries across every source of the requested
+     * kind ({@code social} splits press from sentiment sources) with
+     * per-source error isolation, merging into an id-keyed map.
+     * {@code putIfAbsent} keeps the first occurrence of a given id; iteration
+     * order of the source set is the tie-break (load-bearing dedup semantics
+     * — first-seen id wins).
      */
     private Map<String, RawNewsItem> gather(boolean haveSymbol, boolean haveName,
                                             boolean haveIsin, String symbol, String name,
-                                            String isin, int limit) {
+                                            String isin, int limit, boolean social) {
         Map<String, RawNewsItem> byId = new LinkedHashMap<>();
         Set<String> seenStories = new java.util.HashSet<>();
         for (NewsSource src : sources) {
+            if (src.socialSentiment() != social) continue;
             try {
                 if (haveSymbol) collect(byId, seenStories, src.newsFor(symbol, limit));
                 if (haveName) collect(byId, seenStories, src.newsForName(name, limit));

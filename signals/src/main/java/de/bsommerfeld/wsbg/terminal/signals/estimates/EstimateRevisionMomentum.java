@@ -8,30 +8,30 @@ import java.util.Optional;
 import java.util.TreeMap;
 
 /**
- * Schätzungs-Revisions-Momentum: mittlere prozentuale Revision der
- * Analysten-Schätzungen zwischen zwei Snapshots, normiert auf 30 Tage.
+ * Estimate revision momentum: mean percentage revision of analyst estimates
+ * between two snapshots, normalized to 30 days.
  *
- * <p>Numerik: pro gemeinsamem Schätzjahr wird die relative Revision
- * (neu - alt) / |alt| * 100 gebildet, darüber der Mittelwert, anschließend
- * lineare Skalierung auf ein 30-Tage-Fenster (Wert * 30 / Tage zwischen den
- * Snapshots). Gemessen wird bewusst NICHT das Niveau der Schätzung (das ist
- * eingepreist), sondern ihre Änderungsrate - Estimate-Revisions-Momentum ist
- * einer der robustesten dokumentierten Kapitalmarkt-Faktoren aus der
- * PEAD-Familie (Post-Earnings-Announcement-Drift, Ball/Brown 1968; Chan,
- * Jegadeesh, Lakonishok 1996 zu Earnings-Revision-Strategien).
+ * <p>Numerics: per common estimate year the relative revision
+ * (new - old) / |old| * 100 is computed, then averaged, then linearly scaled
+ * to a 30-day window (value * 30 / days between snapshots). Deliberately
+ * measured is NOT the level of the estimate (that is priced in) but its rate
+ * of change - estimate revision momentum is one of the most robust documented
+ * capital-market factors of the PEAD family (post-earnings-announcement
+ * drift, Ball/Brown 1968; Chan, Jegadeesh, Lakonishok 1996 on earnings
+ * revision strategies).
  *
- * <p>Input im Terminal: zwei zeitversetzte Consorsbank-KeyFigures-Snapshots
- * derselben Aktie (Schätzjahr zu Konsens-Schätzwert, z.B. EPS je Jahr bis
- * 2029) plus der Tagesabstand der Snapshots.
+ * <p>Terminal input: two time-shifted Consorsbank KeyFigures snapshots of the
+ * same stock (estimate year to consensus estimate, e.g. EPS per year up to
+ * 2029) plus the day gap between the snapshots.
  */
 public final class EstimateRevisionMomentum {
 
     private static final String ID = "estimate-revision-momentum";
-    private static final String TITLE = "Schätzungs-Revisions-Momentum";
+    private static final String TITLE = "Estimate revision momentum";
     private static final String DEFINITION =
-            "Misst, wie stark die Analysten ihre Schätzungen zuletzt nach oben oder"
-                    + " unten geschrieben haben (mittlere Revision in % je 30 Tage) -"
-                    + " nicht das Niveau, sondern die Änderungsrate der Story.";
+            "Measures how strongly analysts have recently written their estimates"
+                    + " up or down (mean revision in % per 30 days) - not the level,"
+                    + " but the rate of change of the story.";
 
     private static final double MIN_DAYS = 7;
     private static final double UP_THRESHOLD = 1.0;
@@ -42,13 +42,13 @@ public final class EstimateRevisionMomentum {
     }
 
     /**
-     * Berechnet die auf 30 Tage skalierte mittlere Schätzungs-Revision.
-     * Mindestens 1 gemeinsames Schätzjahr mit altem Wert != 0 und ein
-     * Snapshot-Abstand von mindestens 7 Tagen, sonst {@link Optional#empty()}.
+     * Computes the mean estimate revision scaled to 30 days. Requires at
+     * least 1 common estimate year with old value != 0 and a snapshot gap of
+     * at least 7 days, otherwise {@link Optional#empty()}.
      *
-     * @param oldEstimatesByYear   Schätzwerte je Jahr aus dem älteren Snapshot
-     * @param newEstimatesByYear   Schätzwerte je Jahr aus dem neueren Snapshot
-     * @param daysBetweenSnapshots Tage zwischen den beiden Snapshots
+     * @param oldEstimatesByYear   estimates per year from the older snapshot
+     * @param newEstimatesByYear   estimates per year from the newer snapshot
+     * @param daysBetweenSnapshots days between the two snapshots
      */
     public static Optional<SignalReading> measure(
             Map<Integer, Double> oldEstimatesByYear,
@@ -76,9 +76,9 @@ public final class EstimateRevisionMomentum {
         }
         double value = (sum / years) * (30.0 / daysBetweenSnapshots);
 
-        String formatted = fmtSigned(value) + " %/30 Tage (über " + years
-                + " gemeinsame(s) Schätzjahr(e), Snapshot-Abstand "
-                + MathKit.fmt(daysBetweenSnapshots, 0) + " Tage)";
+        String formatted = fmtSigned(value) + " %/30 days (over " + years
+                + " common estimate year(s), snapshot gap "
+                + MathKit.fmt(daysBetweenSnapshots, 0) + " days)";
         return Optional.of(new SignalReading(
                 ID, TITLE, value, formatted, DEFINITION, interpret(value, years)));
     }
@@ -86,23 +86,23 @@ public final class EstimateRevisionMomentum {
     private static String interpret(double value, int years) {
         String band;
         if (value >= UP_THRESHOLD) {
-            band = "AUFWÄRTS-MOMENTUM: die Analysten schreiben die Story gerade hoch ("
-                    + fmtSigned(value) + " % je 30 Tage über " + years
-                    + " Schätzjahr(e)) - historisch setzt sich so eine Revisionswelle"
-                    + " im Kurs über Wochen fort.";
+            band = "UPWARD MOMENTUM: analysts are currently writing the story up ("
+                    + fmtSigned(value) + " % per 30 days over " + years
+                    + " estimate year(s)) - historically such a revision wave"
+                    + " keeps feeding into the price for weeks.";
         } else if (value <= DOWN_THRESHOLD) {
-            band = "ABWÄRTS-MOMENTUM: die Story wird gerade heruntergeschrieben ("
-                    + fmtSigned(value) + " % je 30 Tage über " + years
-                    + " Schätzjahr(e)) - historisch driftet der Kurs solchen"
-                    + " Abwärtsrevisionen über Wochen hinterher.";
+            band = "DOWNWARD MOMENTUM: the story is currently being written down ("
+                    + fmtSigned(value) + " % per 30 days over " + years
+                    + " estimate year(s)) - historically the price drifts after"
+                    + " such downward revisions for weeks.";
         } else {
-            band = "Keine nennenswerte Revision (" + fmtSigned(value)
-                    + " % je 30 Tage über " + years + " Schätzjahr(e)) - die"
-                    + " Analysten-Story steht still, das Signal ist neutral.";
+            band = "No notable revision (" + fmtSigned(value)
+                    + " % per 30 days over " + years + " estimate year(s)) - the"
+                    + " analyst story stands still, the signal is neutral.";
         }
         if (years < THIN_YEARS) {
-            band += " Vorsicht: nur " + years + " gemeinsames Schätzjahr in beiden"
-                    + " Snapshots, der Mittelwert steht auf dünnem Eis.";
+            band += " Caution: only " + years + " common estimate year in both"
+                    + " snapshots, the mean stands on thin ice.";
         }
         return band;
     }

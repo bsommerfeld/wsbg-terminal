@@ -227,6 +227,35 @@ final class DeepDiveCharts {
         return new ChartFigure(SEC_OUTLOOK, title, "Consorsbank", svg.toString());
     }
 
+    /**
+     * The quant-signal board — one row per house-computed signal (title +
+     * formatted value), section Lage. The strip mirrors the material's QUANT
+     * SIGNALS block so the reader sees the same numbers the author saw; the
+     * time-series charts over these values come later from the archived
+     * {@code signals} components of past reports.
+     */
+    ChartFigure signalsFigure(List<de.bsommerfeld.wsbg.terminal.db.SignalValue> signals) {
+        if (signals == null || signals.isEmpty()) return null;
+        List<de.bsommerfeld.wsbg.terminal.db.SignalValue> rows =
+                signals.size() > 8 ? signals.subList(0, 8) : signals;
+        int rowH = 24, padT = 10;
+        int h = padT + rows.size() * rowH;
+        StringBuilder svg = open(h);
+        for (int i = 0; i < rows.size(); i++) {
+            var s = rows.get(i);
+            double y = padT + i * rowH + 14;
+            svg.append("<rect x=\"4\" y=\"").append(r1(y - 12))
+                    .append("\" width=\"3\" height=\"16\" rx=\"1.5\" fill=\"")
+                    .append(S1).append("\"/>");
+            text(svg, 16, y, "start", 11, INK, truncate(s.title(), 38), false);
+            text(svg, W - 8, y, "end", 11, MUTE, truncate(s.formattedValue(), 44), false);
+        }
+        svg.append("</svg>");
+        String title = de ? "Quant-Signale (im Code berechnet)" : "Quant signals (house-computed)";
+        return new ChartFigure(SEC_SITUATION, title,
+                de ? "Haus-Statistik" : "house statistics", svg.toString());
+    }
+
     private String isoToDe(java.time.Instant instant) {
         java.time.LocalDate date = java.time.LocalDate.ofInstant(instant, java.time.ZoneId.systemDefault());
         return de

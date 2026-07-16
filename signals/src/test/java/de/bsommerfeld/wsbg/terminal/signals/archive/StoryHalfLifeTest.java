@@ -22,7 +22,7 @@ class StoryHalfLifeTest {
 
         assertTrue(reading.isPresent());
         assertTrue(reading.get().value() > 0.9, "erwartet Perzentil > 0.9, war " + reading.get().value());
-        assertTrue(reading.get().interpretation().contains("STRUKTURELL"));
+        assertTrue(reading.get().interpretation().contains("STRUCTURAL"));
         assertEquals("story-half-life", reading.get().id());
     }
 
@@ -33,7 +33,7 @@ class StoryHalfLifeTest {
         assertTrue(reading.isPresent());
         assertTrue(reading.get().value() >= 0.5 && reading.get().value() <= 0.9,
                 "erwartet Perzentil in [0.5, 0.9], war " + reading.get().value());
-        assertTrue(reading.get().interpretation().contains("Reif"));
+        assertTrue(reading.get().interpretation().contains("Mature"));
     }
 
     @Test
@@ -42,7 +42,7 @@ class StoryHalfLifeTest {
 
         assertTrue(reading.isPresent());
         assertTrue(reading.get().value() < 0.5, "erwartet Perzentil < 0.5, war " + reading.get().value());
-        assertTrue(reading.get().interpretation().contains("Episodisch"));
+        assertTrue(reading.get().interpretation().contains("Episodically"));
     }
 
     @Test
@@ -52,7 +52,7 @@ class StoryHalfLifeTest {
         assertTrue(reading.isPresent());
         assertTrue(reading.get().interpretation().contains("k="));
         assertTrue(reading.get().interpretation().contains("lambda="));
-        assertTrue(reading.get().interpretation().contains("Vorsicht"));
+        assertTrue(reading.get().interpretation().contains("Caution"));
     }
 
     @Test

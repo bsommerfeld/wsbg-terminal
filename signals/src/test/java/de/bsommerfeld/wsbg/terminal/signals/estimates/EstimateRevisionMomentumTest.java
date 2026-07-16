@@ -19,7 +19,7 @@ class EstimateRevisionMomentumTest {
                 30.0);
         assertTrue(reading.isPresent());
         assertTrue(reading.get().value() >= 1.0);
-        assertTrue(reading.get().interpretation().contains("AUFWÄRTS-MOMENTUM"));
+        assertTrue(reading.get().interpretation().contains("UPWARD MOMENTUM"));
     }
 
     @Test
@@ -30,7 +30,7 @@ class EstimateRevisionMomentumTest {
                 30.0);
         assertTrue(reading.isPresent());
         assertTrue(reading.get().value() <= -1.0);
-        assertTrue(reading.get().interpretation().contains("ABWÄRTS-MOMENTUM"));
+        assertTrue(reading.get().interpretation().contains("DOWNWARD MOMENTUM"));
     }
 
     @Test
@@ -41,7 +41,7 @@ class EstimateRevisionMomentumTest {
                 30.0);
         assertTrue(reading.isPresent());
         assertTrue(Math.abs(reading.get().value()) < 1.0);
-        assertTrue(reading.get().interpretation().contains("Keine nennenswerte Revision"));
+        assertTrue(reading.get().interpretation().contains("No notable revision"));
     }
 
     @Test
@@ -51,7 +51,7 @@ class EstimateRevisionMomentumTest {
                 Map.of(2026, 1.2),
                 30.0);
         assertTrue(reading.isPresent());
-        assertTrue(reading.get().interpretation().contains("Vorsicht"));
+        assertTrue(reading.get().interpretation().contains("Caution"));
         assertEquals("estimate-revision-momentum", reading.get().id());
     }
 

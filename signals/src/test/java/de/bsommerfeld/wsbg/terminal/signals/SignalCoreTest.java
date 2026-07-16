@@ -26,7 +26,7 @@ class SignalCoreTest {
         SignalReading a = new SignalReading("a", "A", 1, "1", "d", "i");
         SignalReading b = new SignalReading("b", "B", 2, "2", "d", "i");
         String block = SignalBoard.render(List.of(a, b));
-        assertTrue(block.startsWith("QUANTITATIVE SIGNALE"));
+        assertTrue(block.startsWith("QUANT SIGNALS"));
         assertEquals(3, block.split("\n").length);
     }
 

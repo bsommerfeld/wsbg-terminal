@@ -29,6 +29,14 @@
         <module>bundesanzeiger</module>
         <module>bafin</module>
         <module>google-news</module>
+        <module>ariva</module>
+        <module>bluesky</module>
+        <module>tradingview</module>
+        <module>telegram</module>
+        <module>hackernews</module>
+        <module>comdirect</module>
+        <module>lemmy</module>
+        <module>fourchan</module>
         <module>prnewswire</module>
         <module>fool</module>
         <module>fn-news</module>
@@ -169,6 +177,46 @@
             <dependency>
                 <groupId>de.bsommerfeld</groupId>
                 <artifactId>google-news</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>ariva</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>bluesky</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>tradingview</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>telegram</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>hackernews</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>comdirect</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>lemmy</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>fourchan</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

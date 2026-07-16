@@ -6,48 +6,49 @@ import de.bsommerfeld.wsbg.terminal.signals.SignalReading;
 import java.util.Optional;
 
 /**
- * Basisrate mit Belastbarkeits-Einstufung: Anteilsschätzung mit
- * Jeffreys-90%-Intervall und expliziter Aussagekraft-Klasse.
+ * Base rate with confidence grade: proportion estimate with a Jeffreys 90%
+ * interval and an explicit reliability class.
  *
- * <p>Numerik: Rate = Erfolge / n, dazu das Jeffreys-Intervall
- * (Beta(s+0.5, n-s+0.5)-Quantile; Brown/Cai/DasGupta 2001 empfehlen es als
- * Standard-Intervall für Binomial-Anteile). Einstufung: BELASTBAR bei
- * n &gt;= 50 und Intervallbreite &lt;= 0.15, INDIKATIV bei n &gt;= 15,
- * sonst ANEKDOTISCH. Die Einstufung verhindert selbstbewusste Statistik auf
- * dünnem Eis - eine Basisrate ohne Belastbarkeits-Angabe ist im Prompt
- * wertlos bis gefährlich.
+ * <p>Numerics: rate = successes / n, plus the Jeffreys interval
+ * (Beta(s+0.5, n-s+0.5) quantiles; Brown/Cai/DasGupta 2001 recommend it as
+ * the standard interval for binomial proportions). Grading: ROBUST at
+ * n &gt;= 50 and interval width &lt;= 0.15, INDICATIVE at n &gt;= 15,
+ * otherwise ANECDOTAL. The grade prevents confident statistics on thin ice -
+ * a base rate without a reliability grade is worthless to dangerous in a
+ * prompt.
  *
- * <p>Input im Terminal: Event-Basisraten aus dem Markt-Gedächtnis
- * (Ereignis-Label, Trefferzahl, Fallzahl).
+ * <p>Terminal input: event base rates from the market memory (event label,
+ * success count, case count).
  */
 public final class BaseRateConfidence {
 
     private static final String ID = "base-rate-confidence";
-    private static final String TITLE = "Basisrate mit Belastbarkeits-Einstufung";
+    private static final String TITLE = "Base rate with confidence grade";
     private static final String DEFINITION =
-            "Misst die historische Basisrate eines Ereignisses aus dem"
-                    + " Markt-Gedächtnis und stuft ein, wie statistisch belastbar"
-                    + " diese Rate ist (Jeffreys-90%-Intervall).";
+            "Measures the historical base rate of an event from the market"
+                    + " memory and grades how statistically reliable that rate is"
+                    + " (Jeffreys 90% interval).";
 
     static final double CI_LEVEL = 0.90;
     static final int ROBUST_MIN_N = 50;
     static final double ROBUST_MAX_WIDTH = 0.15;
     static final int INDICATIVE_MIN_N = 15;
 
-    static final String ROBUST = "BELASTBAR";
-    static final String INDICATIVE = "INDIKATIV";
-    static final String ANECDOTAL = "ANEKDOTISCH";
+    static final String ROBUST = "ROBUST";
+    static final String INDICATIVE = "INDICATIVE";
+    static final String ANECDOTAL = "ANECDOTAL";
 
     private BaseRateConfidence() {
     }
 
     /**
-     * Berechnet Basisrate, Jeffreys-90%-Intervall und Einstufung.
-     * n &gt;= 1 und Erfolge in [0, n], sonst {@link Optional#empty()}.
+     * Computes base rate, Jeffreys 90% interval and grade.
+     * Requires n &gt;= 1 and successes in [0, n], otherwise
+     * {@link Optional#empty()}.
      *
-     * @param eventLabel Bezeichnung des Ereignisses (nur zur Anzeige)
-     * @param successes  Zahl der Treffer
-     * @param n          Zahl der Fälle
+     * @param eventLabel label of the event (display only)
+     * @param successes  number of hits
+     * @param n          number of cases
      */
     public static Optional<SignalReading> measure(String eventLabel, int successes, int n) {
         if (eventLabel == null || n < 1 || successes < 0 || successes > n) {
@@ -57,16 +58,16 @@ public final class BaseRateConfidence {
         double[] ci = MathKit.jeffreysInterval(successes, n, CI_LEVEL);
         String grade = grade(n, ci);
 
-        String formatted = MathKit.fmt(rate * 100, 1) + " % (n=" + n + ", 90%-CI "
+        String formatted = MathKit.fmt(rate * 100, 1) + " % (n=" + n + ", 90% CI "
                 + MathKit.fmt(ci[0], 2) + "-" + MathKit.fmt(ci[1], 2) + ", " + grade + ")";
-        String interpretation = "Basisrate für '" + eventLabel + "': "
-                + MathKit.fmt(rate * 100, 1) + " % bei n=" + n + " Fällen, 90%-CI "
+        String interpretation = "Base rate for '" + eventLabel + "': "
+                + MathKit.fmt(rate * 100, 1) + " % over n=" + n + " cases, 90% CI "
                 + MathKit.fmt(ci[0], 2) + "-" + MathKit.fmt(ci[1], 2)
-                + ", Einstufung " + grade + " - " + gradeAdvice(grade);
+                + ", grade " + grade + " - " + gradeAdvice(grade);
         return Optional.of(new SignalReading(ID, TITLE, rate, formatted, DEFINITION, interpretation));
     }
 
-    /** Belastbarkeits-Einstufung aus Fallzahl und Intervallbreite (wird auch regime-konditional wiederverwendet). */
+    /** Confidence grade from case count and interval width (also reused regime-conditionally). */
     static String grade(int n, double[] ci) {
         if (n >= ROBUST_MIN_N && (ci[1] - ci[0]) <= ROBUST_MAX_WIDTH) {
             return ROBUST;
@@ -77,13 +78,13 @@ public final class BaseRateConfidence {
         return ANECDOTAL;
     }
 
-    /** Handlungsanweisung je Einstufung (wird auch regime-konditional wiederverwendet). */
+    /** Handling advice per grade (also reused regime-conditionally). */
     static String gradeAdvice(String grade) {
         return switch (grade) {
-            case ROBUST -> "die Rate ist als Prior zitierfähig.";
-            case INDICATIVE -> "als Tendenz nutzbar, nicht als Beweis.";
-            default -> "praktisch wertlos, NICHT als Beleg zitieren, höchstens"
-                    + " als Hypothese behandeln - Vorsicht, extrem dünne Datenlage.";
+            case ROBUST -> "the rate is citable as a prior.";
+            case INDICATIVE -> "usable as a tendency, not as proof.";
+            default -> "practically worthless, do NOT cite as evidence, treat"
+                    + " as hypothesis at most - Caution: extremely thin data.";
         };
     }
 }

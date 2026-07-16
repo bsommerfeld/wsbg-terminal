@@ -13,31 +13,30 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * PR-Sprachinflation: forensische Sprach- und Zahlenanalyse ueber die
- * chronologische PR-Historie eines Absenders.
+ * PR tone inflation: forensic language and number analysis over an issuer's
+ * chronological PR history.
  *
- * <p><b>Methode:</b> zwei klassische Forensik-Werkzeuge, zu einem Kompositscore
- * in [0,1] verschmolzen. (a) Benfords Gesetz (Benford 1938; als Betrugs- und
- * Kosmetik-Detektor etabliert durch Nigrini, "Benford's Law", 2012): die
- * fuehrenden Ziffern aller in den Texten gefundenen Zahlen werden per
- * Chi-Quadrat-Statistik gegen die erwartete Verteilung log10(1+1/d) getestet;
- * gewertet wird nur ab 30 gefundenen Zahlen. (b) Wortschatz-Trend: die
- * Type-Token-Ratio (lexikalische Diversitaet im Sinne von Herdan) pro Text ueber
- * die ersten 200 Token, darueber eine OLS-Regressionsgerade ueber den Text-Index
- * - eine fallende TTR heisst formelhaftere, heissere Werbesprache. Kompositscore:
- * 0.5*min(1, Chi²/20) + 0.5*min(1, max(0, -Steigung)*10).
+ * <p><b>Method:</b> two classic forensics tools, fused into a composite score in
+ * [0,1]. (a) Benford's law (Benford 1938; established as a fraud and cosmetics
+ * detector by Nigrini, "Benford's Law", 2012): the leading digits of all numbers
+ * found in the texts are tested via chi-square statistic against the expected
+ * distribution log10(1+1/d); scored only from 30 found numbers upward. (b)
+ * Vocabulary trend: the type-token ratio (lexical diversity in Herdan's sense)
+ * per text over the first 200 tokens, then an OLS regression line over the text
+ * index - a falling TTR means more formulaic, hotter promotional language.
+ * Composite score: 0.5*min(1, Chi²/20) + 0.5*min(1, max(0, -slope)*10).
  *
- * <p><b>Inputs im Terminal:</b> die PR-Volltexte, die die Quellen-Clients aus
- * den Pressemeldungs-Schienen ziehen, chronologisch aufsteigend sortiert und
- * auf einen Absender gefiltert - das Signal profiliert den Absender, nicht die
- * einzelne Meldung.
+ * <p><b>Inputs in the terminal:</b> the PR full texts that the source clients
+ * pull from the press-release rails, sorted chronologically ascending and
+ * filtered to one issuer - the signal profiles the issuer, not the single
+ * release.
  */
 public final class PrToneForensics {
 
-    /** Stabiler Maschinen-Schluessel dieses Signals. */
+    /** Stable machine key of this signal. */
     public static final String ID = "pr-tone-forensics";
 
-    private static final String TITLE = "PR-Sprachinflation (Benford + Wortschatz-Trend)";
+    private static final String TITLE = "PR tone forensics (Benford + vocabulary trend)";
 
     private static final int MIN_TEXTS = 5;
     private static final int COMFORTABLE_TEXTS = 8;
@@ -51,14 +50,14 @@ public final class PrToneForensics {
     }
 
     /**
-     * @param prTextsChronological PR-Volltexte eines Absenders, chronologisch aufsteigend
+     * @param prTextsChronological PR full texts of one issuer, chronologically ascending
      */
     public static Optional<SignalReading> measure(List<String> prTextsChronological) {
         if (prTextsChronological == null || prTextsChronological.size() < MIN_TEXTS) {
             return Optional.empty();
         }
 
-        // (a) Benford: fuehrende Ziffern aller Zahlen ueber alle Texte.
+        // (a) Benford: leading digits of all numbers across all texts.
         int[] leadingDigitCounts = new int[10];
         int numberCount = 0;
         for (String text : prTextsChronological) {
@@ -84,7 +83,7 @@ public final class PrToneForensics {
             }
         }
 
-        // (b) Wortschatz-Trend: TTR pro Text, OLS-Steigung ueber den Text-Index.
+        // (b) Vocabulary trend: TTR per text, OLS slope over the text index.
         List<Double> ttrSeries = new ArrayList<>();
         for (String text : prTextsChronological) {
             double ttr = typeTokenRatio(text);
@@ -99,37 +98,37 @@ public final class PrToneForensics {
         double value = 0.5 * benfordComponent + 0.5 * ttrComponent;
 
         String benfordText = benfordScored
-                ? "Benford-Chi² " + MathKit.fmt(chiSquare, 2) + " über " + numberCount + " Zahlen"
-                : "Benford ungewertet (nur " + numberCount + " Zahlen gefunden, Komponente 0)";
-        String slopeText = "TTR-Steigung " + MathKit.fmt(slope, 4) + " pro Meldung";
+                ? "Benford chi-square " + MathKit.fmt(chiSquare, 2) + " over " + numberCount + " numbers"
+                : "Benford unscored (only " + numberCount + " numbers found, component 0)";
+        String slopeText = "TTR slope " + MathKit.fmt(slope, 4) + " per release";
 
         String interpretation;
         if (value >= 0.6) {
-            interpretation = "PROMOTIONS-MUSTER: die PR-Sprache dieses Absenders wird über die Zeit"
-                    + " heißer und/oder seine Zahlen sind Benford-auffällig (" + benfordText + "; "
-                    + slopeText + ") - klassisches Muster von Zahlenkosmetik und Werbesprache."
-                    + " Meldungen dieses Absenders als Werbung lesen, nicht als Information.";
+            interpretation = "PROMOTION PATTERN: this issuer's PR language grows hotter over time"
+                    + " and/or its numbers are Benford-anomalous (" + benfordText + "; "
+                    + slopeText + ") - the classic pattern of number cosmetics and promotional"
+                    + " language. Read this issuer's releases as advertising, not information.";
         } else if (value >= 0.3) {
-            interpretation = "Leicht erhöht (" + benfordText + "; " + slopeText
-                    + ") - noch kein klares Muster, aber den Absender beobachten.";
+            interpretation = "Slightly elevated (" + benfordText + "; " + slopeText
+                    + ") - no clear pattern yet, but keep watching the issuer.";
         } else {
-            interpretation = "Unauffällig (" + benfordText + "; " + slopeText
-                    + ") - weder Zahlenbild noch Sprachtrend deuten auf Aufhübschung.";
+            interpretation = "Unremarkable (" + benfordText + "; " + slopeText
+                    + ") - neither the number picture nor the language trend points to dressing-up.";
         }
         if (prTextsChronological.size() < COMFORTABLE_TEXTS || !benfordScored) {
-            interpretation += " Vorsicht: dünne Datenlage (wenige Texte bzw. zu wenige Zahlen)"
-                    + " - Befund nur als schwaches Indiz lesen.";
+            interpretation += " Caution: only thin data (few texts or too few numbers)"
+                    + " - read the finding as a weak hint only.";
         }
 
-        String formattedValue = MathKit.fmt(value, 2) + " (Skala 0-1)";
-        String definition = "Kompositscore aus Benford-Abweichung der führenden Ziffern (Chi²)"
-                + " und fallendem Type-Token-Ratio-Trend über die PR-Texte eines Absenders"
-                + " - misst Zahlenkosmetik und heißer werdende Werbesprache.";
+        String formattedValue = MathKit.fmt(value, 2) + " (scale 0-1)";
+        String definition = "Composite score of Benford deviation of leading digits (chi-square)"
+                + " and a falling type-token-ratio trend over an issuer's PR texts"
+                + " - measures number cosmetics and promotional language heating up.";
 
         return Optional.of(new SignalReading(ID, TITLE, value, formattedValue, definition, interpretation));
     }
 
-    /** Erste signifikante Ziffer einer Zahl (Tausender-Trenner toleriert, fuehrende Nullen ignoriert); 0 wenn keine. */
+    /** First significant digit of a number (thousands separators tolerated, leading zeros ignored); 0 if none. */
     private static int leadingDigit(String raw) {
         for (int i = 0; i < raw.length(); i++) {
             char c = raw.charAt(i);
@@ -140,7 +139,7 @@ public final class PrToneForensics {
         return 0;
     }
 
-    /** Type-Token-Ratio ueber die ersten min(200, alle) Wort-Token; -1 wenn der Text keine Token hat. */
+    /** Type-token ratio over the first min(200, all) word tokens; -1 if the text has no tokens. */
     private static double typeTokenRatio(String text) {
         if (text == null) {
             return -1;
@@ -158,7 +157,7 @@ public final class PrToneForensics {
         return (double) types.size() / tokens;
     }
 
-    /** OLS-Steigung von ys ueber den Index 0..n-1; 0 bei weniger als 2 Punkten. */
+    /** OLS slope of ys over the index 0..n-1; 0 with fewer than 2 points. */
     private static double olsSlope(List<Double> ys) {
         int n = ys.size();
         if (n < 2) {

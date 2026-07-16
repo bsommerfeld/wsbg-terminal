@@ -1659,11 +1659,11 @@ class WeatherStatsCollector {
 
     /**
      * Fresh press on the day's TOP tickers through the house's FULL news
-     * triangulation — the same 7-source aggregator (Yahoo, wallstreet-online,
-     * Google News, Fool, PR Newswire, finanznachrichten, Nasdaq RSS) the KI-DD
-     * and the wire read, same singleton, same caches (a story pulled for the
-     * DD is never fetched twice). Today-only, timestamped items route into
-     * their day-part window.
+     * triangulation — the same aggregator the KI-DD and the wire read (every
+     * bound press source; the aggregator's news fan excludes the forum/social
+     * sentiment sources by contract since 2026-07-16), same singleton, same
+     * caches (a story pulled for the DD is never fetched twice). Today-only,
+     * timestamped items route into their day-part window.
      */
     private List<de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.TickerNewsStat> tickerNews(
             List<TickerStat> topTickers, List<HeadlineRecord> headlines, Instant dayStart) {

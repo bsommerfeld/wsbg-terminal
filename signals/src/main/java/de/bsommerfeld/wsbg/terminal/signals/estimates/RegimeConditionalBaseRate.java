@@ -8,43 +8,42 @@ import java.util.Optional;
 import java.util.TreeMap;
 
 /**
- * Regime-konditionale Basisrate: dieselbe Ereignis-Basisrate, aber getrennt
- * nach Marktregime geschätzt und nur für das AKTUELLE Regime ausgegeben.
+ * Regime-conditional base rate: the same event base rate, but estimated
+ * separately per market regime and reported for the CURRENT regime only.
  *
- * <p>Numerik: pro Regime wird die Rate mit Jeffreys-90%-Intervall geschätzt
- * (Beta(s+0.5, n-s+0.5)-Quantile, Brown/Cai/DasGupta 2001; dieselbe Logik
- * wie in {@link BaseRateConfidence}, deren Einstufung hier wiederverwendet
- * wird). Der Signalwert ist die Rate im aktuellen Regime; die Raten der
- * anderen Regime werden kontrastierend mit ausgegeben. Hintergrund ist die
- * Regime-Switching-Literatur (Hamilton 1989): bedingte Wahrscheinlichkeiten
- * wechseln mit dem Regime, eine unkonditionale Basisrate mittelt Regime
- * zusammen, die am Markt nie gleichzeitig gelten.
+ * <p>Numerics: per regime the rate is estimated with a Jeffreys 90% interval
+ * (Beta(s+0.5, n-s+0.5) quantiles, Brown/Cai/DasGupta 2001; the same logic as
+ * in {@link BaseRateConfidence}, whose grading is reused here). The signal
+ * value is the rate in the current regime; the rates of the other regimes
+ * are reported as contrast. Background is the regime-switching literature
+ * (Hamilton 1989): conditional probabilities switch with the regime, an
+ * unconditional base rate averages regimes together that never hold in the
+ * market at the same time.
  *
- * <p>Input im Terminal: Event-Basisraten aus dem Markt-Gedächtnis, nach dem
- * HMM-Regime-Label zum Ereignis-Zeitpunkt gebucketet, plus das aktuelle
- * HMM-Regime.
+ * <p>Terminal input: event base rates from the market memory, bucketed by
+ * the HMM regime label at event time, plus the current HMM regime.
  */
 public final class RegimeConditionalBaseRate {
 
     private static final String ID = "regime-conditional-base-rate";
-    private static final String TITLE = "Regime-konditionale Basisrate";
+    private static final String TITLE = "Regime-conditional base rate";
     private static final String DEFINITION =
-            "Misst die Basisrate eines Ereignisses getrennt nach Marktregime und"
-                    + " gibt die Rate des aktuellen Regimes aus - dieselbe Basisrate"
-                    + " gilt nicht regimeübergreifend.";
+            "Measures the base rate of an event separately per market regime and"
+                    + " reports the rate of the current regime - the same base rate"
+                    + " does not hold across regimes.";
 
     private RegimeConditionalBaseRate() {
     }
 
     /**
-     * Berechnet die Basisrate im aktuellen Regime mit Jeffreys-90%-Intervall
-     * und kontrastiert die übrigen Regime. Das aktuelle Regime muss in der
-     * Map liegen und dort n &gt;= 1 mit gültigen Zählern haben, sonst
+     * Computes the base rate in the current regime with a Jeffreys 90%
+     * interval and contrasts the remaining regimes. The current regime must
+     * be present in the map with n &gt;= 1 and valid counters, otherwise
      * {@link Optional#empty()}.
      *
-     * @param eventLabel            Bezeichnung des Ereignisses (nur zur Anzeige)
-     * @param successesAndNByRegime je Regime {Treffer, Fallzahl}
-     * @param currentRegime         Label des aktuellen HMM-Regimes
+     * @param eventLabel            label of the event (display only)
+     * @param successesAndNByRegime per regime {hits, case count}
+     * @param currentRegime         label of the current HMM regime
      */
     public static Optional<SignalReading> measure(
             String eventLabel,
@@ -70,21 +69,21 @@ public final class RegimeConditionalBaseRate {
             }
             int s = entry.getValue()[0];
             int m = entry.getValue()[1];
-            contrast.append(" Im Regime '").append(entry.getKey()).append("' dagegen ")
+            contrast.append(" In regime '").append(entry.getKey()).append("' by contrast ")
                     .append(MathKit.fmt((double) s / m * 100, 1))
                     .append(" % (n=").append(m).append(").");
         }
 
-        String formatted = MathKit.fmt(rate * 100, 1) + " % im Regime '" + currentRegime
-                + "' (n=" + n + ", 90%-CI " + MathKit.fmt(ci[0], 2) + "-"
+        String formatted = MathKit.fmt(rate * 100, 1) + " % in regime '" + currentRegime
+                + "' (n=" + n + ", 90% CI " + MathKit.fmt(ci[0], 2) + "-"
                 + MathKit.fmt(ci[1], 2) + ", " + grade + ")";
-        String interpretation = "Basisrate für '" + eventLabel + "' im aktuellen Regime '"
-                + currentRegime + "': " + MathKit.fmt(rate * 100, 1) + " % bei n=" + n
-                + " Fällen, 90%-CI " + MathKit.fmt(ci[0], 2) + "-" + MathKit.fmt(ci[1], 2)
-                + ", Einstufung " + grade + " - " + BaseRateConfidence.gradeAdvice(grade)
+        String interpretation = "Base rate for '" + eventLabel + "' in the current regime '"
+                + currentRegime + "': " + MathKit.fmt(rate * 100, 1) + " % over n=" + n
+                + " cases, 90% CI " + MathKit.fmt(ci[0], 2) + "-" + MathKit.fmt(ci[1], 2)
+                + ", grade " + grade + " - " + BaseRateConfidence.gradeAdvice(grade)
                 + contrast
-                + " Kernsatz: dieselbe Basisrate gilt NICHT regimeübergreifend -"
-                + " nur die Zahl des aktuellen Regimes verwenden.";
+                + " Core rule: the same base rate does NOT hold across regimes -"
+                + " use only the number of the current regime.";
         return Optional.of(new SignalReading(ID, TITLE, rate, formatted, DEFINITION, interpretation));
     }
 

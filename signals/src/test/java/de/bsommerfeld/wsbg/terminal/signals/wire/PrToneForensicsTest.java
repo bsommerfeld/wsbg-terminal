@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PrToneForensicsTest {
 
-    /** Deterministisches Buchstaben-Wort fuer Index i (nur \p{L}-Zeichen). */
+    /** Deterministic letter word for index i (only \p{L} characters). */
     private static String word(int i) {
         StringBuilder sb = new StringBuilder("q");
         int v = i;
@@ -23,7 +23,7 @@ class PrToneForensicsTest {
         return sb.toString();
     }
 
-    /** Text mit exakt 100 Wort-Token, davon {@code distinct} verschiedene (TTR = distinct/100). */
+    /** Text with exactly 100 word tokens, {@code distinct} of them different (TTR = distinct/100). */
     private static String textWithTtr(int distinct) {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < distinct; i++) {
@@ -47,8 +47,8 @@ class PrToneForensicsTest {
         assertTrue(reading.isPresent());
         assertEquals("pr-tone-forensics", reading.get().id());
         assertTrue(reading.get().value() < 0.3);
-        assertTrue(reading.get().interpretation().contains("Unauffällig"));
-        assertTrue(reading.get().interpretation().contains("Vorsicht"),
+        assertTrue(reading.get().interpretation().contains("Unremarkable"));
+        assertTrue(reading.get().interpretation().contains("Caution"),
                 "unscored Benford component must carry a caution note");
     }
 
@@ -63,14 +63,14 @@ class PrToneForensicsTest {
         assertTrue(reading.isPresent());
         assertTrue(reading.get().value() >= 0.3 && reading.get().value() < 0.6,
                 "TTR component alone caps the composite at 0.5");
-        assertTrue(reading.get().interpretation().contains("Leicht erhöht"));
-        assertTrue(reading.get().interpretation().contains("TTR-Steigung"));
-        assertTrue(reading.get().interpretation().contains("Vorsicht"));
+        assertTrue(reading.get().interpretation().contains("Slightly elevated"));
+        assertTrue(reading.get().interpretation().contains("TTR slope"));
+        assertTrue(reading.get().interpretation().contains("Caution"));
     }
 
     @Test
     void hotLanguagePlusBenfordAnomalyIsPromotionPattern() {
-        // Fallende TTR plus 40 Zahlen, die alle mit 9 beginnen (massiv Benford-widrig).
+        // Falling TTR plus 40 numbers that all start with 9 (massively Benford-adverse).
         String nines = " 91 92 93 94 95 96 9,100 9.200";
         List<String> texts = List.of(
                 textWithTtr(100) + nines, textWithTtr(90) + nines, textWithTtr(80) + nines,
@@ -80,8 +80,8 @@ class PrToneForensicsTest {
 
         assertTrue(reading.isPresent());
         assertTrue(reading.get().value() >= 0.6);
-        assertTrue(reading.get().interpretation().contains("PROMOTIONS-MUSTER"));
-        assertTrue(reading.get().interpretation().contains("Benford-Chi²"));
+        assertTrue(reading.get().interpretation().contains("PROMOTION PATTERN"));
+        assertTrue(reading.get().interpretation().contains("Benford chi-square"));
     }
 
     @Test

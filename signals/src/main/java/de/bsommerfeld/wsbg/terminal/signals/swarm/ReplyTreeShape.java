@@ -14,34 +14,34 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * Reply-Baum-Topologie: klassifiziert die Wuchsform eines Kommentar-Waldes.
- * Flach-breit gewachsene Threads sind Zuruf/Zustimmung, tief-schmal gewachsene
- * Threads sind Schlagabtausch - die Unterscheidung folgt der Kaskaden-Analyse
- * von Diskussionsbäumen (strukturelle Viralität, Goel/Anderson/Hofman/Watts
- * 2016: breite vs. tiefe Diffusionsbäume).
+ * Reply-tree topology: classifies the growth form of a comment forest.
+ * Flat-broad threads are shout-along/agreement, deep-narrow threads are
+ * back-and-forth argument - the distinction follows the cascade analysis of
+ * discussion trees (structural virality, Goel/Anderson/Hofman/Watts 2016:
+ * broad vs deep diffusion trees).
  *
- * <p>Numerik: aus den parentId-Kanten wird der Wald aufgebaut (Kommentare mit
- * unbekanntem oder fehlendem Parent gelten als Wurzeln), per
- * Breitensuche werden Tiefen bestimmt (Wurzel = Tiefe 1). Der Konflikt-Index
- * ist die mittlere Blatt-Tiefe geteilt durch log2(n+1) - den Erwartungsmaßstab
- * eines balancierten Binärbaums; Werte deutlich darüber heißen: der Thread
- * wächst in Argument-Ketten statt in die Breite.
+ * <p>Numerics: the forest is built from the parentId edges (comments with an
+ * unknown or missing parent count as roots), depths are determined via BFS
+ * (root = depth 1). The conflict index is the mean leaf depth divided by
+ * log2(n+1) - the expectation yardstick of a balanced binary tree; values
+ * clearly above it mean the thread grows in argument chains instead of
+ * spreading in breadth.
  *
- * <p>Input im Terminal: die Kommentar-IDs samt parentId aus dem
- * Reddit-Scraper (der Reply-Baum, den RSS nicht sehen kann - OAuth/.json-Pfad
- * liefert ihn, ReportBuilder nutzt ihn bereits für die Zuordnung).
+ * <p>Terminal input: the comment ids with parentId from the Reddit scraper
+ * (the reply tree RSS cannot see - the OAuth/.json path delivers it,
+ * ReportBuilder already uses it for attribution).
  */
 public final class ReplyTreeShape {
 
-    /** Ein Kommentar als Kante im Reply-Wald; parentId null = Top-Level. */
+    /** A comment as an edge in the reply forest; parentId null = top-level. */
     public record Comment(String id, String parentId) {
     }
 
     private static final String ID = "reply-tree-shape";
-    private static final String TITLE = "Reply-Baum-Topologie (Konflikt-Index)";
+    private static final String TITLE = "Reply-tree topology (conflict index)";
     private static final String DEFINITION =
-            "Misst, ob ein Thread flach-breit (Zuruf/Zustimmung) oder tief-schmal"
-                    + " (Schlagabtausch) gewachsen ist.";
+            "Measures whether a thread grew flat-broad (shout-along/agreement)"
+                    + " or deep-narrow (back-and-forth argument).";
 
     private static final int MIN_COMMENTS = 10;
     private static final int THIN_COMMENTS = 20;
@@ -50,8 +50,8 @@ public final class ReplyTreeShape {
     }
 
     /**
-     * Berechnet den Konflikt-Index über den Kommentar-Wald.
-     * Mindestens {@value #MIN_COMMENTS} Kommentare, sonst {@link Optional#empty()}.
+     * Computes the conflict index over the comment forest.
+     * At least {@value #MIN_COMMENTS} comments, otherwise {@link Optional#empty()}.
      */
     public static Optional<SignalReading> measure(List<Comment> comments) {
         if (comments == null || comments.size() < MIN_COMMENTS) {
@@ -76,11 +76,11 @@ public final class ReplyTreeShape {
             }
         }
         if (roots.isEmpty()) {
-            // Nur zyklische/defekte Kanten - keine auswertbare Baumstruktur.
+            // Only cyclic/broken edges - no evaluable tree structure.
             return Optional.empty();
         }
 
-        // Breitensuche ab den Wurzeln (Wurzel = Tiefe 1); besuchte Menge schützt vor defekten Kanten.
+        // BFS from the roots (root = depth 1); the visited set guards against broken edges.
         Map<String, Integer> depth = new HashMap<>();
         Deque<String> queue = new ArrayDeque<>();
         for (String root : roots) {
@@ -114,26 +114,26 @@ public final class ReplyTreeShape {
 
         String interpretation = interpret(value, n);
         String formatted = MathKit.fmt(value, 2)
-                + " (Konflikt-Index = mittlere Blatt-Tiefe / log2(n+1); max. Tiefe " + maxDepth
-                + ", " + (int) rootBreadth + " Top-Level-Äste)";
+                + " (conflict index = mean leaf depth / log2(n+1); max depth " + maxDepth
+                + ", " + (int) rootBreadth + " top-level branches)";
         return Optional.of(new SignalReading(ID, TITLE, value, formatted, DEFINITION, interpretation));
     }
 
     private static String interpret(double value, int commentCount) {
         String band;
         if (value < 0.5) {
-            band = "Zustimmungs-Echo: viele rufen dasselbe in den Raum, hoher Konsens,"
-                    + " wenig neue Information.";
+            band = "AGREEMENT ECHO: many shouting the same thing into the room,"
+                    + " high consensus, little new information.";
         } else if (value <= 1.0) {
-            band = "Gemischte Wuchsform: teils Zuruf in die Breite, teils echte"
-                    + " Antwort-Ketten.";
+            band = "MIXED growth form: partly broad shout-along, partly genuine"
+                    + " reply chains.";
         } else {
-            band = "Umkämpft: tiefe Argument-Ketten, echter Dissens über die Position -"
-                    + " Volatilitätskandidat, die Story ist nicht ausgemacht.";
+            band = "CONTESTED: deep argument chains, genuine dissent over the position -"
+                    + " volatility candidate, the story is not settled.";
         }
         if (commentCount < THIN_COMMENTS) {
-            band += " Vorsicht: nur " + commentCount + " Kommentare, die Baumform kann"
-                    + " noch kippen.";
+            band += " Caution: only n=" + commentCount + " comments - the tree shape"
+                    + " can still flip.";
         }
         return band;
     }

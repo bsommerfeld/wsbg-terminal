@@ -16,11 +16,11 @@ class BaseRateConfidenceTest {
         assertTrue(reading.isPresent());
         assertEquals(0.5, reading.get().value(), 1e-12);
         String interpretation = reading.get().interpretation();
-        assertTrue(interpretation.contains("BELASTBAR"));
-        assertTrue(interpretation.contains("zitierfähig"));
+        assertTrue(interpretation.contains("ROBUST"));
+        assertTrue(interpretation.contains("citable as a prior"));
         assertTrue(interpretation.contains("Zins-Event"));
         assertTrue(interpretation.contains("n=200"));
-        assertTrue(interpretation.contains("90%-CI"));
+        assertTrue(interpretation.contains("90% CI"));
     }
 
     @Test
@@ -28,8 +28,8 @@ class BaseRateConfidenceTest {
         Optional<SignalReading> reading = BaseRateConfidence.measure("Zins-Event", 10, 20);
         assertTrue(reading.isPresent());
         assertEquals(0.5, reading.get().value(), 1e-12);
-        assertTrue(reading.get().interpretation().contains("INDIKATIV"));
-        assertTrue(reading.get().interpretation().contains("Tendenz"));
+        assertTrue(reading.get().interpretation().contains("INDICATIVE"));
+        assertTrue(reading.get().interpretation().contains("tendency"));
     }
 
     @Test
@@ -38,10 +38,10 @@ class BaseRateConfidenceTest {
         assertTrue(reading.isPresent());
         assertEquals(0.4, reading.get().value(), 1e-12);
         String interpretation = reading.get().interpretation();
-        assertTrue(interpretation.contains("ANEKDOTISCH"));
-        assertTrue(interpretation.contains("praktisch wertlos"));
-        assertTrue(interpretation.contains("NICHT als Beleg"));
-        assertTrue(interpretation.contains("Vorsicht"));
+        assertTrue(interpretation.contains("ANECDOTAL"));
+        assertTrue(interpretation.contains("practically worthless"));
+        assertTrue(interpretation.contains("do NOT cite as evidence"));
+        assertTrue(interpretation.contains("Caution"));
     }
 
     @Test
