@@ -24,7 +24,7 @@ set -e
 # To upgrade: set the new version here. On the next launch the isolated binary
 # under <appData>/ollama is re-downloaded automatically (downloaded models kept).
 #   Releases: https://github.com/ollama/ollama/releases
-OLLAMA_VERSION="0.24.0"
+OLLAMA_VERSION="0.32.0"
 
 # Models reconciled into our ISOLATED store (<appData>/ollama/models): section 3
 # installs/updates these to the latest registry build and removes anything else.

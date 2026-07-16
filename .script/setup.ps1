@@ -19,7 +19,7 @@
 # Pinned Ollama version = the GitHub release tag WITHOUT the leading "v".
 # Bump -> the isolated binary under <appData>\ollama re-downloads on next launch
 # (downloaded models are kept). Releases: https://github.com/ollama/ollama/releases
-$OllamaVersion = "0.24.0"
+$OllamaVersion = "0.32.0"
 
 # Models reconciled into our ISOLATED store (<appData>\ollama\models): section 3
 # installs/updates these to the latest registry build and removes anything else.
