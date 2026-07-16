@@ -42,6 +42,7 @@ final class LauncherI18n {
             Map.entry("Installing AI platform", "KI-Plattform installieren"),
             Map.entry("Installing AI models", "KI-Modelle installieren"),
             Map.entry("Installing browser runtime", "Browser-Runtime installieren"),
+            Map.entry("Installing OCR runtime", "Texterkennung installieren"),
             Map.entry("Installing fonts", "Schriftarten installieren"),
             Map.entry("Cleaning up old models", "Räume Altlasten weg"),
             Map.entry("Error", "Fehler"),

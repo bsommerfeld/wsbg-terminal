@@ -176,6 +176,18 @@ final class ScriptOutputClassifier {
             return;
         }
 
+        if (installingOcr) {
+            // Same shape as the browser phase: the ready line ends it, anything
+            // else is curl transfer progress riding under the OCR label.
+            if (line.contains("OCR runtime ready")) {
+                installingOcr = false;
+                return;
+            }
+            String detail = parseDownloadDetail(line);
+            consumer.accept("Installing OCR runtime", detail);
+            return;
+        }
+
         consumer.accept("Setting up environment", line);
     }
 
@@ -255,6 +267,7 @@ final class ScriptOutputClassifier {
         if (OLLAMA_INSTALL_PATTERN.matcher(line).find()) {
             installingOllama = true;
             installingBrowser = false;
+            installingOcr = false;
             consumer.accept("Installing AI platform", null);
             return true;
         }
@@ -271,6 +284,7 @@ final class ScriptOutputClassifier {
         if (JCEF_INSTALL_PATTERN.matcher(line).find()) {
             installingBrowser = true;
             installingOllama = false;
+            installingOcr = false;
             consumer.accept("Installing browser runtime", null);
             return true;
         }
@@ -285,7 +299,25 @@ final class ScriptOutputClassifier {
         if (FONTS_INSTALL_PATTERN.matcher(line).find()) {
             installingOllama = false;
             installingBrowser = false;
+            installingOcr = false;
             consumer.accept("Installing fonts", null);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Activates the OCR-runtime (Tesseract) download phase when the script
+     * announces "[*] Installing OCR ...". A 13-40 MB download — small next to
+     * the browser runtime, but big enough that its curl progress deserves its
+     * own label instead of raw meter lines under "Setting up environment".
+     */
+    private boolean tryEmitOcrInstall(String line, BiConsumer<String, String> consumer) {
+        if (OCR_INSTALL_PATTERN.matcher(line).find()) {
+            installingOcr = true;
+            installingOllama = false;
+            installingBrowser = false;
+            consumer.accept("Installing OCR runtime", null);
             return true;
         }
         return false;
@@ -302,6 +334,7 @@ final class ScriptOutputClassifier {
         if (CLEANUP_PATTERN.matcher(line).find()) {
             installingOllama = false;
             installingBrowser = false;
+            installingOcr = false;
             consumer.accept("Cleaning up old models", null);
             return true;
         }
