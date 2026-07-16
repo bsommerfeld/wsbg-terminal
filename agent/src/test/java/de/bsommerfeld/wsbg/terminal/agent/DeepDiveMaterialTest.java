@@ -267,6 +267,16 @@ class DeepDiveMaterialTest {
         assertFalse(shelves[DeepDiveService.SEC_CATALYSTS].contains("Großauftrag"));
     }
 
+    /** BEWERTUNG is the fourth triage route - analyst reasoning reaches the valuation shelf. */
+    @Test
+    void bewertungRoutedNewsReachesTheValuationShelf() {
+        DeepDiveService.Material m = fullMaterial();
+        m.newsTargets = Map.of("uuid-1", "BEWERTUNG");
+        String[] shelves = DeepDiveService.sectionMaterials(m);
+        assertTrue(shelves[DeepDiveService.SEC_VALUATION].contains("Großauftrag"));
+        assertFalse(shelves[DeepDiveService.SEC_SITUATION].contains("Großauftrag"));
+    }
+
     /**
      * An empty room yields NO shelf — the section then gets its honest literal
      * without any model call, so an empty room can never be hallucinated into
@@ -373,9 +383,14 @@ class DeepDiveMaterialTest {
         assertTrue(DeepDiveService.sourcesSection(m, true).contains("- [8]"));
     }
 
-    /** The claim sentence extraction feeding the editor's thesis shelf. */
+    /**
+     * The editor's thesis shelf carries the STANDING SECTIONS IN FULL plus the
+     * key data (2026-07-16 zoom-out: the old claim-sentence proxy bred layered
+     * fixes - price-led claims, primacy reordering, red-thread echoes; the
+     * full report fits the window-scaled editor pass).
+     */
     @Test
-    void thesisMaterialCarriesKeyDataAndClaimSentences() {
+    void thesisMaterialCarriesKeyDataAndFullSections() {
         DeepDiveService.Material m = fullMaterial();
         String[] bodies = new String[DeepDiveService.SECTION_COUNT];
         bodies[DeepDiveService.SEC_ABOUT] = "Der Konzern ist der größte deutsche Rüstungsbauer [4]."
@@ -384,13 +399,9 @@ class DeepDiveMaterialTest {
         String shelf = DeepDiveService.thesisMaterial(DeepDiveService.SECTIONS_DE, bodies, m);
         assertContains(shelf, "KEY DATA (verified):");
         assertContains(shelf, "consensus target 1720.00 EUR");
-        // The profile section's claim is the company's self-description — with
-        // primacy it became the thesis opener verbatim (live SAP 2026-07-14),
-        // so it deliberately stays OFF the thesis shelf.
-        assertFalse(shelf.contains("Der Konzern ist der größte deutsche Rüstungsbauer"),
-                "the About claim must not feed the thesis");
-        assertContains(shelf, "Lage: Der Kurs notiert bei 992,10 EUR [1].");
-        assertFalse(shelf.contains("Ein zweiter Satz"), "only the CLAIM sentence rides");
+        assertContains(shelf, "## Worum es geht");
+        assertContains(shelf, "Ein zweiter Satz mit Details.");
+        assertContains(shelf, "Der Kurs notiert bei 992,10 EUR [1].");
     }
 
     @Test
@@ -433,7 +444,7 @@ class DeepDiveMaterialTest {
     }
 
     /**
-     * The room speaks name AND ticker (user mandate 2026-07-13): roomBlocks
+     * The room speaks name AND ticker (user mandate 2026-07-13): roomBlock
      * draws from the UNION of every matching unit — a "name:outlook" unit's
      * chatter belongs to the OTLK DD — with shared mentions riding only once.
      */
@@ -449,8 +460,8 @@ class DeepDiveMaterialTest {
                 "bin long Outlook", "reddit", 1_700_000_100L));
         tickerUnit.addHeadline("OTLK: Käfig wettet auf die FDA", "BULLISH");
 
-        String joined = String.join("", DeepDiveService.roomBlocks(
-                List.of(tickerUnit, nameUnit), java.util.Map.of("room", 9)));
+        String joined = DeepDiveService.roomBlock(
+                List.of(tickerUnit, nameUnit), java.util.Map.of("room", 9), true);
         assertTrue(joined.contains("bin long Outlook"), "the name unit's own mention is missing");
         assertTrue(joined.indexOf("Outlook läuft heiß") == joined.lastIndexOf("Outlook läuft heiß"),
                 "a shared mention must ride exactly once");

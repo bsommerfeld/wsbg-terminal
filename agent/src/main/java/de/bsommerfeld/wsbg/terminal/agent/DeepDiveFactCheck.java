@@ -156,6 +156,19 @@ final class DeepDiveFactCheck {
      */
     static List<Objection> inspect(String draft, String material, Set<Integer> allowedMarkers,
             boolean germanText, boolean mixedLocaleMaterial) {
+        return inspect(draft, material, allowedMarkers, germanText, mixedLocaleMaterial,
+                MIN_SECTION_CHARS, MAX_SECTION_CHARS);
+    }
+
+    /**
+     * Inspect variant with CALLER-OWNED length bounds - the weather's
+     * one-short-paragraph contract differs from the DD's only by these two
+     * numbers, and hard-coding them here forced the weather to delete and
+     * re-create the LENGTH finding (zoom-out 2026-07-16: one examiner, one
+     * length regime, parameterized).
+     */
+    static List<Objection> inspect(String draft, String material, Set<Integer> allowedMarkers,
+            boolean germanText, boolean mixedLocaleMaterial, int minChars, int maxChars) {
         List<Objection> out = new ArrayList<>();
         if (draft == null || draft.isBlank()) {
             out.add(new Objection("", germanText ? "leerer Entwurf" : "empty draft",
@@ -163,13 +176,13 @@ final class DeepDiveFactCheck {
             return out;
         }
         String text = draft.strip();
-        if (text.length() < MIN_SECTION_CHARS) {
+        if (text.length() < minChars) {
             out.add(new Objection(head(text), germanText
                     ? "Entwurf unter dem Substanzminimum (" + text.length() + " Zeichen)"
                     : "draft below the substance minimum (" + text.length() + " chars)",
                     Objection.Kind.LENGTH));
         }
-        if (text.length() > MAX_SECTION_CHARS) {
+        if (text.length() > maxChars) {
             out.add(new Objection(head(text), germanText
                     ? "Entwurf missachtet den Längenvertrag (" + text.length() + " Zeichen)"
                     : "draft ignored its length contract (" + text.length() + " chars)",

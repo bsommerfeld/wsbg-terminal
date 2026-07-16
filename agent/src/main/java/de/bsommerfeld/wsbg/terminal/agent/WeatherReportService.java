@@ -944,19 +944,11 @@ public class WeatherReportService {
      */
     static List<DeepDiveFactCheck.Objection> inspectSection(String body, String material,
             boolean de) {
-        List<DeepDiveFactCheck.Objection> out = new ArrayList<>(
-                DeepDiveFactCheck.inspect(body, material, Set.of(), de, true));
-        out.removeIf(o -> o.kind() == DeepDiveFactCheck.Objection.Kind.LENGTH);
-        if (body != null && body.strip().length() > MAX_SECTION_CHARS) {
-            out.add(new DeepDiveFactCheck.Objection(headOf(body),
-                    de ? "Sektion über dem Ein-kurzer-Absatz-Kontrakt ("
-                            + body.strip().length()
-                            + " Zeichen) - auf die tragende Geschichte kürzen"
-                    : "section over the one-short-paragraph contract ("
-                            + body.strip().length() + " chars) — cut to the load-bearing story",
-                    DeepDiveFactCheck.Objection.Kind.LENGTH));
-        }
-        return out;
+        // The shared examiner with the forecast's own bounds - the old fork
+        // deleted the DD's LENGTH finding and re-created a parallel one
+        // (zoom-out 2026-07-16: one examiner, parameterized).
+        return DeepDiveFactCheck.inspect(body, material, Set.of(), de, true,
+                MIN_SECTION_CHARS, MAX_SECTION_CHARS);
     }
 
     private List<String> challenge(ChatModel model, String challengeSys, String header,

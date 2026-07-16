@@ -160,10 +160,8 @@ public class DeepDiveService {
     private static final int MAX_BALANCE_YEARS = 4;
     private static final int MAX_EVENTS = 4;
     private static final int MAX_WIRE_LINES = 6;
-    /** Room chunking inside {@link #roomBlocks} — two chunks join into ONE author material. */
+    /** Base char budget for the room's evidence block (window-scaled, newest kept). */
     private static final int ROOM_PACKET_CHARS_BASE = 2400;
-    /** How many room chunks ride the section material (newest evidence kept when over). */
-    private static final int MAX_ROOM_PACKETS = 2;
     /**
      * The TradingCentral comment prose is attributed context, not the star —
      * capped, but at a SENTENCE boundary: a mid-sentence cut leaves the
@@ -878,7 +876,7 @@ public class DeepDiveService {
         // chronicle falls back to the classic seed path.
         String chronicleNote = chronicleSeed && !shelf.newsBlocks().isEmpty()
                 ? chronicleNote(model, prompts, subject, header, shelf.newsBlocks(),
-                        progressLabel, de)
+                        m, progressLabel, de)
                 : null;
         boolean rawFed = !isBlank(chronicleNote);
         String fed;
@@ -1487,10 +1485,25 @@ public class DeepDiveService {
      * seed path, never blocks on the note.
      */
     private String chronicleNote(ChatModel model, Prompts prompts, String subject,
-            String header, List<String> blocks, String progressLabel, boolean de) {
+            String header, List<String> blocks, Material m, String progressLabel, boolean de) {
         try {
             eventBus.post(new DeepDiveProgressEvent(subject, "sections",
                     progressLabel + " · " + (de ? "Chronik" : "chronicle")));
+            // The chronicle spans the WHOLE press picture, not just the routed
+            // 30-day pool (zoom-out 2026-07-16: timeline, multi-year history
+            // and routed news were three parallel headline lists for one
+            // section - the chronicle is where they become ONE arc). The
+            // archive lines ride as additional dated sources into the first
+            // batch; the shelf keeps the raw blocks as the examiner's
+            // yardstick.
+            StringBuilder archive = new StringBuilder(1024);
+            Map<String, Integer> nums = sourceNumbers(m);
+            appendPressTimeline(archive, m.pressTimeline, nums);
+            appendPressHistory(archive, m, nums);
+            if (archive.length() > 0) {
+                blocks = new ArrayList<>(blocks);
+                blocks.add(0, archive.toString());
+            }
             int budget = Math.max(2000, inputBudgetChars() - prompts.chronicle().length()
                     - header.length() - 400);
             List<String> batches = new ArrayList<>();
@@ -1980,7 +1993,7 @@ public class DeepDiveService {
      * legacy single-"target" form.
      */
     private static final Pattern TRIAGE_TARGET = Pattern.compile(
-            "\"(LAGE|SITUATION|KATALYSATOR\\w*|CATALYST\\w*|AUSBLICK|OUTLOOK)\"",
+            "\"(LAGE|SITUATION|KATALYSATOR\\w*|CATALYST\\w*|AUSBLICK|OUTLOOK|BEWERTUNG|VALUATION)\"",
             Pattern.CASE_INSENSITIVE);
     private static final Pattern ALIAS_ITEM = Pattern.compile("\"([^\"]{2,40})\"");
     private static final int TRIAGE_BATCH = 6;
@@ -2125,7 +2138,9 @@ public class DeepDiveService {
                             String norm = t.startsWith("KATALYSATOR") || t.startsWith("CATALYST")
                                     ? "KATALYSATOR"
                                     : t.startsWith("AUSBLICK") || t.startsWith("OUTLOOK")
-                                            ? "AUSBLICK" : "LAGE";
+                                            ? "AUSBLICK"
+                                            : t.startsWith("BEWERTUNG") || t.startsWith("VALUATION")
+                                                    ? "BEWERTUNG" : "LAGE";
                             if (targets.indexOf(norm) < 0) {
                                 if (targets.length() > 0) targets.append(',');
                                 targets.append(norm);
@@ -3429,7 +3444,7 @@ public class DeepDiveService {
         appendUsInstitutional(sb, m.usStats, nums);
         appendHedgeFunds(sb, m.hedgeFunds, nums);
         appendPeers(sb, m.deepDive, nums);
-        out[SEC_VALUATION] = new Shelf(take(sb), List.of());
+        out[SEC_VALUATION] = new Shelf(take(sb), newsBlocksFor(m, "BEWERTUNG", nums));
 
         appendInsider(sb, m.insiderDealings, nums);
         appendUsInsiders(sb, m.usStats, nums);
@@ -3546,23 +3561,19 @@ public class DeepDiveService {
      */
     static String thesisMaterial(List<String> headings, String[] bodies, Material m) {
         Map<String, Integer> nums = sourceNumbers(m);
-        StringBuilder sb = new StringBuilder(1536);
-        // CLAIMS FIRST, key data behind them: a 4B anchors on the material's
-        // opening line, and with the price line up front the thesis opened as
-        // a price recitation instead of a stance (live runs 8 AND 9, despite
-        // the prompt's explicit opener rule) — primacy is the stronger lever.
-        sb.append("CLAIM SENTENCES OF THE STANDING SECTIONS:\n");
+        StringBuilder sb = new StringBuilder(8192);
+        // The editor reads the STANDING SECTIONS IN FULL (2026-07-16 zoom-out:
+        // the old claim-sentence proxy - first sentence per section - bred a
+        // whole rabbit hole of layered fixes: price-led claims, primacy
+        // reordering, red-thread echoes, verbatim copies. Since the window
+        // scales with the machine, the whole report fits the editor's pass;
+        // a typical report is ~11k chars, so even the 8k floor's input budget
+        // rarely trims - and when it does, the cut takes the tail).
+        sb.append("THE STANDING SECTIONS (the report the reader sees below the thesis):\n");
         for (int i = 0; i < SECTION_COUNT; i++) {
             if (i == SEC_THESIS || bodies[i] == null) continue;
-            // The profile section's claim is the company's SELF-DESCRIPTION
-            // ("bezeichnet sich als weltweit führend …") — with primacy it
-            // became the thesis opener verbatim (live SAP run 2026-07-14).
-            // A stance draws from Lage/Bewertung/Katalysatoren/Ausblick/Raum;
-            // what the company does is context the thesis reader already has.
-            if (i == SEC_ABOUT) continue;
-            String claim = firstSentence(bodies[i]);
-            if (claim.isEmpty()) continue;
-            sb.append("  - ").append(headings.get(i)).append(": ").append(claim).append('\n');
+            sb.append("## ").append(headings.get(i)).append('\n')
+                    .append(bodies[i].strip()).append("\n\n");
         }
         appendKeyData(sb, m, nums);
         return sb.toString();
@@ -3625,14 +3636,6 @@ public class DeepDiveService {
             sb.append("VALUATION CONTEXT (house arithmetic on the verified figures)")
                     .append(mark(nums, "consors")).append(": ").append(context).append('\n');
         }
-    }
-
-    /** The first sentence of a section body — its claim sentence by contract. */
-    static String firstSentence(String body) {
-        if (body == null || body.isBlank()) return "";
-        String firstPara = body.strip().split("\n\\s*\n")[0];
-        List<String> sentences = DeepDiveFactCheck.sentences(firstPara);
-        return sentences.isEmpty() ? firstPara.strip() : sentences.get(0).strip();
     }
 
     /**
@@ -5243,7 +5246,7 @@ public class DeepDiveService {
     }
 
     /**
-     * The room's material as ONE text (chunked internally by {@link #roomBlocks},
+     * The room's material as ONE text ({@link #roomBlock},
      * newest evidence kept): price anchor first, evidence chronological, the
      * already-published wire lines last. Returns {@code null} when the room has
      * genuinely nothing — the section then gets its honest literal WITHOUT any
@@ -5255,29 +5258,30 @@ public class DeepDiveService {
         if (!roomHasContent(m)) return null;
         List<SubjectUnit> units = !m.roomUnits.isEmpty() ? m.roomUnits
                 : m.unit != null ? List.of(m.unit) : List.of();
-        return String.join("", roomBlocks(units, nums));
+        // ONE wire representation on the shelf: the house archive when it
+        // delivered, the units' session headlines only as its fallback (the
+        // two blocks duplicated each other, zoom-out 2026-07-16).
+        return roomBlock(units, nums, m.wireHistory.isEmpty());
     }
 
     /**
-     * The room's material as one or more chunk texts (≤ {@link #roomPacketChars()}
-     * each, at most {@link #MAX_ROOM_PACKETS}): the first carries the price
-     * anchor, the last carries the already-published wire lines, evidence runs
-     * CHRONOLOGICALLY through all of them so the retelling can follow the
-     * narrative. Draws from the UNION of every matching unit (the room speaks
-     * name AND ticker — "Outlook" chatter belongs to the OTLK DD), deduplicated
-     * by mention identity. Newest evidence is kept when the total budget is
-     * exceeded.
+     * The room's material as ONE block: the price anchor, the deduped
+     * evidence union of every matching unit (chronological, newest kept
+     * within the window-scaled budget) and - as archive fallback - the
+     * session's published wire lines. The multi-packet chunking retired
+     * 2026-07-16 (zoom-out): it served the retold room of the old section
+     * definition; the AGGREGATE section reads one shelf, and the only
+     * caller re-joined the chunks into one string anyway.
      */
-    static List<String> roomBlocks(List<SubjectUnit> units, Map<String, Integer> nums) {
+    static String roomBlock(List<SubjectUnit> units, Map<String, Integer> nums,
+            boolean includeWireLines) {
         String head = "ROOM EVIDENCE (r/wallstreetbetsGER, unverified)" + mark(nums, "room");
         if (units == null || units.isEmpty()) {
-            return List.of(head + ":\n  (the room has not taken this subject up)\n");
+            return head + ":\n  (the room has not taken this subject up)\n";
         }
         SubjectUnit primary = units.get(0);
-        List<StringBuilder> chunks = new ArrayList<>();
-        StringBuilder cur = new StringBuilder(roomPacketChars() + 256);
+        StringBuilder cur = new StringBuilder(roomPacketChars() * 2 + 256);
         cur.append(head).append(":\n");
-        chunks.add(cur);
         // The primary unit's price anchor: since-first-mention is the room's own scoreboard.
         if (primary.firstPrice() != null && primary.firstPrice() > 0 && primary.firstPriceAt() != null) {
             cur.append("  First mentioned ").append(STAMP.format(primary.firstPriceAt()), 0, 10)
@@ -5301,7 +5305,7 @@ public class DeepDiveService {
         evidence.sort(java.util.Comparator.comparingLong(SubjectUnit.EvidenceRef::addedAtEpoch));
         if (evidence.isEmpty()) cur.append("  (none in the current window)\n");
         int start = evidence.size();
-        int budget = roomPacketChars() * MAX_ROOM_PACKETS;
+        int budget = roomPacketChars() * 2;
         while (start > 0 && budget - evidence.get(start - 1).snippet().length() - 24 >= 0) {
             start--;
             budget -= evidence.get(start).snippet().length() + 24;
@@ -5311,33 +5315,23 @@ public class DeepDiveService {
             // Date-only stamps: the room section is an AGGREGATE - clock
             // times invited the model to retell single posts ("um 03:22 Uhr",
             // live Wave-1 smoke) instead of drawing the mood picture.
-            String line = "  - [" + STAMP.format(Instant.ofEpochSecond(ref.addedAtEpoch()))
-                    .substring(0, 10) + "] " + ref.snippet() + "\n";
-            if (cur.length() + line.length() > roomPacketChars()) {
-                cur = new StringBuilder(roomPacketChars() + 256);
-                cur.append(head).append(" (continued):\n");
-                chunks.add(cur);
-            }
-            cur.append(line);
+            cur.append("  - [").append(STAMP.format(Instant.ofEpochSecond(ref.addedAtEpoch())), 0, 10)
+                    .append("] ").append(ref.snippet()).append('\n');
         }
-        // Wire lines: union over all units, chronological, newest MAX_WIRE_LINES.
-        List<SubjectUnit.UnitHeadline> headlines = new ArrayList<>();
-        for (SubjectUnit u : units) headlines.addAll(u.headlines());
-        headlines.sort(java.util.Comparator.comparingLong(SubjectUnit.UnitHeadline::atEpoch));
-        if (!headlines.isEmpty()) {
-            cur.append("WIRE LINES ALREADY PUBLISHED FOR THIS SUBJECT:\n");
-            int from = Math.max(0, headlines.size() - MAX_WIRE_LINES);
-            for (SubjectUnit.UnitHeadline h : headlines.subList(from, headlines.size())) {
-                // Date only - the aggregate room needs no minutes, and a clock
-                // time in the material leaks into prose ("um 06:37 Uhr",
-                // live smoke 2026-07-16).
-                cur.append("  - [").append(STAMP.format(Instant.ofEpochSecond(h.atEpoch())), 0, 10)
-                        .append("] ").append(h.text()).append('\n');
+        if (includeWireLines) {
+            List<SubjectUnit.UnitHeadline> headlines = new ArrayList<>();
+            for (SubjectUnit u : units) headlines.addAll(u.headlines());
+            headlines.sort(java.util.Comparator.comparingLong(SubjectUnit.UnitHeadline::atEpoch));
+            if (!headlines.isEmpty()) {
+                cur.append("WIRE LINES ALREADY PUBLISHED FOR THIS SUBJECT:\n");
+                int from = Math.max(0, headlines.size() - MAX_WIRE_LINES);
+                for (SubjectUnit.UnitHeadline h : headlines.subList(from, headlines.size())) {
+                    cur.append("  - [").append(STAMP.format(Instant.ofEpochSecond(h.atEpoch())), 0, 10)
+                            .append("] ").append(h.text()).append('\n');
+                }
             }
         }
-        List<String> out = new ArrayList<>(chunks.size());
-        for (StringBuilder c : chunks) out.add(c.toString());
-        return out;
+        return cur.toString();
     }
 
     // -- the typesetter (deterministic assembly + gates) --
