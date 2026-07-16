@@ -163,6 +163,26 @@
   stroke-linecap: round;
 }
 
+/* The rough ETA: a thin fill track + the minutes chip (estimate, never a promise). */
+.dd-progress-track {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--line-soft);
+  overflow: hidden;
+  margin: 6px 0 2px;
+}
+.dd-progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--amber);
+  transition: width .6s ease;
+}
+.dd-eta {
+  font-family: "JetBrains Mono", monospace;
+  font-size: .68em;
+  color: var(--mute);
+}
+
 .dd-progress-foot {
   display: flex;
   align-items: center;

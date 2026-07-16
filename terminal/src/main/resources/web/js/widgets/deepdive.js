@@ -96,6 +96,22 @@ export function initDeepDive(socket) {
   render();
 }
 
+/* The ETA chip ticks locally between pushes - the payload carries the
+   bridge's estimate, receivedAt anchors the local countdown. */
+let etaReceivedAt = 0;
+setInterval(() => {
+  if (!state || !state.busy || !(state.etaSeconds > 0) || !progressEl) return;
+  const chip = progressEl.querySelector('.dd-eta');
+  if (chip) chip.textContent = etaText();
+}, 15000);
+
+function etaText() {
+  const drift = Math.round((Date.now() - etaReceivedAt) / 1000);
+  const left = Math.max(0, (state.etaSeconds || 0) - drift);
+  if (left < 90) return t('dd.eta.soon');
+  return t('dd.eta').replace('{m}', String(Math.round(left / 60)));
+}
+
 /** `deepdive` payload → list/progress state. */
 export function renderDeepDive(payload) {
   if (!payload) return;
@@ -105,8 +121,11 @@ export function renderDeepDive(payload) {
     stage: payload.stage || null,
     stageDetail: payload.stageDetail || null,
     subject: payload.subject || null,
+    progress: typeof payload.progress === 'number' ? payload.progress : -1,
+    etaSeconds: typeof payload.etaSeconds === 'number' ? payload.etaSeconds : 0,
     reports: Array.isArray(payload.reports) ? payload.reports : [],
   };
+  etaReceivedAt = Date.now();
   // The one-shot cancel resets on any busy edge: a NEW run gets a fresh
   // button, and a finished/cancelled run drops the pending state.
   if (wasBusy !== state.busy) cancelSent = false;
@@ -399,6 +418,12 @@ function progressHtml() {
       </button>
     </span>
     <span class="dd-progress-stage">${escapeHtml(label)}</span>
+    ${state.progress >= 0 && state.etaSeconds > 0 ? `
+    <div class="dd-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+         aria-valuenow="${state.progress}">
+      <div class="dd-progress-fill" style="width:${Math.max(2, state.progress)}%"></div>
+    </div>
+    <span class="dd-eta">${escapeHtml(etaText())}</span>` : ''}
     ${journalPane}
     <div class="dd-progress-foot">
       <div class="dd-progress-steps">${steps}</div>

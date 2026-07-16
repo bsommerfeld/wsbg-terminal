@@ -54,6 +54,9 @@ public final class DeepDiveBridge {
 
     /** The stage the running generation is in (null = idle) — for late-joining clients. */
     private volatile String stage;
+    /** Run start (ms) and the monotonic progress fraction — the UI's rough ETA. */
+    private volatile long runStartMs;
+    private volatile double fraction;
     /** In-stage narration (integrate passes: "2/5 · Analysten & Insider"), null when none. */
     private volatile String stageDetail;
     private volatile String subject;
@@ -88,6 +91,8 @@ public final class DeepDiveBridge {
         subject = event.subject();
         stage = "collect";
         stageDetail = null;
+        runStartMs = System.currentTimeMillis();
+        fraction = 0.0;
         journal.clear();
         push();
     }
@@ -118,6 +123,7 @@ public final class DeepDiveBridge {
         subject = event.subject();
         stage = event.stage();
         stageDetail = event.detail();
+        fraction = Math.max(fraction, estimateFraction(event.stage(), event.detail()));
         push();
     }
 
@@ -189,11 +195,100 @@ public final class DeepDiveBridge {
         hub.broadcastSafe("deepdive", this::statePayload);
     }
 
+    // ---- the rough, self-correcting ETA (presentation-side estimation) ----
+
+    /**
+     * Progress fraction from the pipeline's own narration ("3/8 · Lage",
+     * "… · Quelle 12/34") - an ESTIMATE for the user's patience, never a
+     * contract. The weights mirror the measured time shares of full-pool
+     * runs (2026-07-16: the Lage carries ~60% of the wall clock); the ETA
+     * self-corrects because it divides real elapsed time by the fraction.
+     */
+    private static double estimateFraction(String stage, String detail) {
+        if (stage == null) return 0.0;
+        // Cumulative [start, end) fractions per section NUMBER in the
+        // narration ("<n>/8 · <name>"), reflecting the run's ACTUAL order
+        // (the thesis, 2/8, is written last).
+        double[][] bySection = {
+                {0.08, 0.10}, // 1/8 Worum es geht
+                {0.92, 0.95}, // 2/8 These (written last)
+                {0.10, 0.70}, // 3/8 Lage (the weave bulk)
+                {0.70, 0.73}, // 4/8 Fundamentale Entwicklung
+                {0.73, 0.78}, // 5/8 Bewertung und Wettbewerb
+                {0.78, 0.86}, // 6/8 Katalysatoren und Risiken
+                {0.86, 0.90}, // 7/8 Ausblick
+                {0.90, 0.92}, // 8/8 Der Raum
+        };
+        switch (stage) {
+            case "collect" -> { return 0.01; }
+            case "triage" -> { return 0.05; }
+            case "these" -> { return 0.92; }
+            case "finish" -> { return 0.96; }
+            case "sections" -> {
+                if (detail == null) return 0.08;
+                java.util.regex.Matcher sec =
+                        java.util.regex.Pattern.compile("^(\\d)/8").matcher(detail);
+                if (!sec.find()) return 0.08;
+                int idx = Integer.parseInt(sec.group(1)) - 1;
+                if (idx < 0 || idx >= bySection.length) return 0.08;
+                double start = bySection[idx][0];
+                double span = bySection[idx][1] - start;
+                java.util.regex.Matcher step = java.util.regex.Pattern
+                        .compile("(?:Quelle|source) (\\d+)/(\\d+)").matcher(detail);
+                if (step.find()) {
+                    double inner = Double.parseDouble(step.group(1))
+                            / Math.max(1.0, Double.parseDouble(step.group(2)));
+                    return start + span * (0.10 + 0.80 * inner);
+                }
+                if (detail.contains("Anfechtung") || detail.contains("challenge")
+                        || detail.contains("Revision") || detail.contains("revision")
+                        || detail.contains("Lektorat") || detail.contains("copy edit")) {
+                    return start + span * 0.92;
+                }
+                return start; // author/chronicle opening the section
+            }
+            default -> { return 0.0; }
+        }
+    }
+
+    /**
+     * Remaining seconds: early in the run the median of the archived runs'
+     * durations anchors the guess; once enough of the run is measured, the
+     * elapsed/fraction ratio takes over and self-corrects every push.
+     */
+    private long etaSeconds() {
+        long elapsed = System.currentTimeMillis() - runStartMs;
+        double f = fraction;
+        long eta;
+        if (f >= 0.12) {
+            eta = (long) (elapsed * (1.0 - f) / Math.max(f, 0.01)) / 1000;
+        } else {
+            long baseline = baselineDurationMs();
+            eta = Math.max((baseline - elapsed) / 1000, 120);
+        }
+        return Math.max(30, Math.min(eta, 3 * 3600));
+    }
+
+    /** Median duration of the recent archived runs, or a 30-min default. */
+    private long baselineDurationMs() {
+        List<Long> durations = new ArrayList<>();
+        for (DeepDiveRecord r : service.recent(5)) {
+            if (r.durationMs() > 0) durations.add(r.durationMs());
+        }
+        if (durations.isEmpty()) return 30 * 60_000L;
+        java.util.Collections.sort(durations);
+        return durations.get(durations.size() / 2);
+    }
+
     private Map<String, Object> statePayload() {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("busy", service.isBusy());
         if (stage != null) m.put("stage", stage);
         if (stageDetail != null) m.put("stageDetail", stageDetail);
+        if (service.isBusy() && runStartMs > 0) {
+            m.put("progress", (int) Math.round(fraction * 100));
+            m.put("etaSeconds", etaSeconds());
+        }
         if (subject != null) m.put("subject", subject);
         synchronized (journal) {
             if (!journal.isEmpty()) m.put("journal", new ArrayList<>(journal));
