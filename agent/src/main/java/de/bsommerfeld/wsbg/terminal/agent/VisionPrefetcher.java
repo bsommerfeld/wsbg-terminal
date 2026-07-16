@@ -13,22 +13,21 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Owns the vision pre-fetch pool and all image cache-warming (extracted from
- * {@link PassiveMonitorService}). Vision is the slowest step in the pipeline
- * (~5-25 s per call on gemma4); a single background worker warms the per-URL cache
- * on {@link AgentBrain} so the editorial reports read cache-only and never block on
- * cold images. Vision is currently HARD-DISABLED ({@link #analyzeImages()} always
- * answers {@code false}, regardless of {@code headlines.analyze-images}) — images
- * are ignored wire-wide until the feature returns.
+ * Owns the image pre-fetch pool and all image cache-warming (extracted from
+ * {@link PassiveMonitorService}). Images are read MECHANICALLY (Tesseract OCR,
+ * ~1-2 s per image incl. download) since the vision model's retirement; a single
+ * background worker warms the per-URL cache on {@link AgentBrain} so the editorial
+ * reports read cache-only and never block on cold images. The gate is
+ * {@link #analyzeImages()}: on when a system Tesseract was found, off otherwise —
+ * the old {@code headlines.analyze-images} config key stays ignored.
  */
 final class VisionPrefetcher {
 
     /**
-     * Vision pre-fetch pool — a single worker. Vision shares the editorial agent's
-     * model + num_ctx, so both hit ONE Ollama runner with {@code NUM_PARALLEL=2}
-     * request slots. Keeping vision to one worker leaves the second slot free for
-     * the latency-sensitive editorial calls — vision is background cache-warming, so
-     * serialising it is the right trade.
+     * Image pre-fetch pool — a single worker. OCR no longer competes for Ollama
+     * slots, but one worker stays right: it keeps the Reddit CDN traffic polite,
+     * bounds CPU, and at ~1-2 s per image the queue drains far faster than the
+     * old model reads ever did.
      */
     private final ExecutorService visionExecutor = Executors.newFixedThreadPool(1, r -> {
         Thread t = new Thread(r, "vision-prefetch");
@@ -165,12 +164,12 @@ final class VisionPrefetcher {
     }
 
     /**
-     * The vision gate. HARD-DISABLED: always {@code false}, deliberately ignoring
-     * {@code headlines.analyze-images} — the UI toggle was removed and images stay
-     * out of the pipeline no matter what an old {@code config.toml} says. The config
-     * key survives only for a possible future re-activation.
+     * The image gate: on exactly when the mechanical read is usable (a system
+     * Tesseract was found), off otherwise — no half-warmed caches on machines
+     * without it. Still deliberately ignores {@code headlines.analyze-images};
+     * that UI toggle is gone and the key survives only as a config relic.
      */
     private boolean analyzeImages() {
-        return false;
+        return brain.imageReadingAvailable();
     }
 }

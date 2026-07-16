@@ -94,6 +94,30 @@ final class ImageFetcher {
         return new ImagePayload(Base64.getEncoder().encodeToString(bytes), mimeType);
     }
 
+    /**
+     * Fetches the image at FULL resolution for the mechanical OCR read — no
+     * downscale, no re-encode. The 1024px standardisation above was tuned for the
+     * (retired) vision model's payload; small UI glyphs (WKNs, percentages) don't
+     * survive it, and OCR needs every pixel the source has.
+     */
+    BufferedImage fetchFullResolution(String url) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .timeout(java.time.Duration.ofSeconds(20))
+                .header("User-Agent", userAgent).GET().build();
+
+        byte[] bytes = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray()).body();
+        if (isTextResponse(bytes)) {
+            throw new RuntimeException("Fetched content is not an image (HTML/JSON/Text detected).");
+        }
+        BufferedImage image = ImageIO.read(new ByteArrayInputStream(bytes));
+        if (image == null) {
+            // ImageIO has no stock WebP reader — a webp CDN variant lands here.
+            throw new RuntimeException("Undecodable image format (" + detectMimeType(bytes) + ").");
+        }
+        return image;
+    }
+
     /** Constrains dimensions to maxDim and aligns to alignment boundary. */
     int[] constrainAndAlign(int w, int h, int maxDim, int alignment) {
         if (w > maxDim || h > maxDim) {

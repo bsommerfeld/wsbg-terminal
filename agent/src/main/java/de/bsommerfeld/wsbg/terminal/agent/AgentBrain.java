@@ -34,6 +34,8 @@ public class AgentBrain {
 
     private final ImageFetcher imageFetcher = new ImageFetcher();
     private final VisionCache visionCache = new VisionCache();
+    /** Mechanical image read (Tesseract) — fills the same per-URL cache the vision model used to. */
+    private final OcrEngine ocrEngine = new OcrEngine();
     private final OllamaModelFactory modelFactory = new OllamaModelFactory(OLLAMA_BASE_URL);
 
     private ChatModel visionModel;
@@ -88,15 +90,47 @@ public class AgentBrain {
     // -- Public API --
 
     /**
-     * Cache-backed vision call. Returns the description for {@code url},
-     * computing it via {@link #see} on first hit and reusing the result
-     * thereafter. Failed analyses are cached too — a broken image is
-     * not re-tried within the session.
+     * Cache-backed image read. Returns the text for {@code url}, computing it
+     * via {@link #readImageText} (mechanical OCR — the vision model is retired)
+     * on first hit and reusing the result thereafter. Failed reads are cached
+     * too — a broken image is not re-tried within the session.
      *
-     * @return description text, or empty string when the URL is null/blank
+     * @return raw OCR text, or empty string when the URL is null/blank
      */
     public String describeImage(String url) {
-        return visionCache.describe(url, this::see);
+        return visionCache.describe(url, this::readImageText);
+    }
+
+    /**
+     * Whether the mechanical image read is usable on this system (a native
+     * Tesseract install was found). Gates all image cache-warming.
+     */
+    public boolean imageReadingAvailable() {
+        return ocrEngine.available();
+    }
+
+    /**
+     * Mechanical OCR read of an image URL: fetch at FULL resolution (the 1024px
+     * model-payload downscale would destroy small UI glyphs), Tesseract, raw
+     * text. Any failure (fetch, undecodable format, OCR) reads as "" so the
+     * cache remembers the miss and downstream readers simply skip the image —
+     * never an error string that could leak into a report.
+     */
+    private String readImageText(String imageUrl) {
+        if (!ocrEngine.available()) return "";
+        try {
+            java.awt.image.BufferedImage image = imageFetcher.fetchFullResolution(imageUrl);
+            String text = ocrEngine.read(image);
+            if (text == null || text.isBlank()) {
+                LOG.info("OCR read nothing from {} (image fetched OK — likely a photo/meme without text)", imageUrl);
+                return "";
+            }
+            LOG.info("OCR read {} chars from {}", text.length(), imageUrl);
+            return text.trim();
+        } catch (Exception e) {
+            LOG.warn("OCR failure (fetch/read) for {}: {}", imageUrl, e.getMessage());
+            return "";
+        }
     }
 
     /**
@@ -123,9 +157,9 @@ public class AgentBrain {
     }
 
     /**
-     * Snapshot of the per-URL vision cache for persistence. Restoring this on a
-     * quick restart means the (slow, ~15-25 s each) image analyses the model
-     * already did don't have to be recomputed.
+     * Snapshot of the per-URL image-text cache for persistence. Restoring this on
+     * a quick restart means already-done reads (and remembered failures) don't
+     * have to be re-fetched and re-OCRed.
      */
     public java.util.Map<String, String> exportVisionCache() {
         return visionCache.export();
@@ -136,7 +170,12 @@ public class AgentBrain {
         visionCache.importAll(cache);
     }
 
-    /** Performs blocking vision analysis on the given image URL. */
+    /**
+     * RETIRED: blocking vision-model analysis of an image URL. No longer wired —
+     * {@link #describeImage} reads mechanically via {@link #readImageText} instead.
+     * Kept (with the vision prompt + model slot) only for a possible future return
+     * of true scene understanding on stronger hardware.
+     */
     public String see(String imageUrl) {
         if (visionModel == null)
             return "Vision Brain not ready.";
