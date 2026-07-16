@@ -210,6 +210,12 @@ class FoolNewsClientTest {
         List<RawNewsItem> capped = client.newsForName("Social Security", 1);
         assertEquals(1, capped.size(), "limit caps");
 
+        List<RawNewsItem> teaserOnly = client.newsForName("Chipmaker Inc", 10);
+        assertEquals(1, teaserOnly.size(),
+                "a name only the TEASER carries still matches — roundup titles "
+                        + "name the companies in the body (mandate 2026-07-16)");
+        assertTrue(teaserOnly.get(0).title().startsWith("Prediction"));
+
         List<RawNewsItem> pep = client.newsFor("PEP", 10);
         assertEquals(1, pep.size(), "the transcript leg answers the ticker query too");
         assertTrue(pep.get(0).title().endsWith("Earnings Call Transcript"));

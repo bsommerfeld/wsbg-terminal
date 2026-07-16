@@ -125,6 +125,26 @@ class HackerNewsClientTest {
     }
 
     @Test
+    void selfPostBodyCarriesTheMatchButAUrlNeverDoes() {
+        // Ask-HN self posts ship their body as story_text — a company named
+        // only there still counts (mandate 2026-07-16); a URL match alone
+        // stays rejected.
+        String json = """
+                {"hits":[
+                  {"objectID":"1","title":"Ask HN: which defense stocks are you watching?",
+                   "story_text":"<p>Rheinmetall is printing money this year.</p>",
+                   "points":42,"num_comments":17,"created_at":"2026-07-16T10:00:00Z"},
+                  {"objectID":"2","title":"A completely unrelated post",
+                   "url":"https://example.com/rheinmetall-teardown",
+                   "points":3,"num_comments":0,"created_at":"2026-07-16T09:00:00Z"}
+                ]}""";
+        List<RawNewsItem> items = HackerNewsClient.parse(json, Set.of("rheinmetall"));
+        assertEquals(1, items.size(),
+                "the self-post body matches, the URL-only hit is still dropped");
+        assertTrue(items.get(0).title().startsWith("Ask HN"));
+    }
+
+    @Test
     void perQueryCacheAnswersABurstWithOneFetch() {
         FakeFetcher fetcher = new FakeFetcher(ok());
         HackerNewsClient client = new HackerNewsClient(fetcher);

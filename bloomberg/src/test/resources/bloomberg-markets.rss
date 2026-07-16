@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?><rss xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:atom="http://www.w3.org/2005/Atom" version="2.0" xmlns:media="http://search.yahoo.com/mrss/">
+    <channel>
+        <title><![CDATA[Bloomberg Markets]]></title>
+        <description><![CDATA[Bloomberg Markets]]></description>
+        <link>http://bloomberg.com/markets/</link>
+        <image>
+            <url>http://www.bloomberg.com/feeds/static/images/bloomberg_logo_blue.png</url>
+            <title>Bloomberg Markets</title>
+            <link>http://bloomberg.com/markets/</link>
+        </image>
+        <generator>RSS for Node</generator>
+        <lastBuildDate>Thu, 16 Jul 2026 17:02:57 GMT</lastBuildDate>
+        <atom:link href="https://www.bloomberg.com/feeds/markets/news.rss" rel="self" type="application/rss+xml"/>
+        <copyright><![CDATA[Copyright 2026 BLOOMBERG L.P. ALL RIGHTS RESERVED]]></copyright>
+        <language><![CDATA[en]]></language>
+        <item>
+            <title><![CDATA[Oil Traders Crowd Around Cheap TACO Hedge as Iran War Escalates]]></title>
+            <description><![CDATA[An unusual options trade is becoming a favored hedge against the risks of sudden U-turns in US President Donald Trump’s stance on Iran, a dynamic that has repeatedly whipsawed markets in recent months.]]></description>
+            <link>https://www.bloomberg.com/news/articles/2026-07-16/oil-traders-crowd-around-cheap-taco-hedge-as-iran-war-escalates</link>
+            <guid isPermaLink="false">TI87UTKIUPTU00</guid>
+            <dc:creator><![CDATA[Mia Gindis, Alex Longley and David Marino]]></dc:creator>
+            <pubDate>Thu, 16 Jul 2026 16:40:16 GMT</pubDate>
+        </item>
+<item>
+            <title><![CDATA[Citi Traders Pitch Shorting French Shipping Giant CMA CGM Bonds]]></title>
+            <description><![CDATA[Citigroup’s credit traders and analysts are recommending their hedge fund clients short bonds issued by French shipping giant CMA CGM Group, according to people familiar with the matter.]]></description>
+            <link>https://www.bloomberg.com/news/articles/2026-07-16/citi-traders-pitch-shorting-french-shipping-giant-cma-cgm-bonds</link>
+            <guid isPermaLink="false">TI9LXET96OSK00</guid>
+            <dc:creator><![CDATA[Edward Clark]]></dc:creator>
+            <pubDate>Thu, 16 Jul 2026 16:01:05 GMT</pubDate>
+        </item>
+<item>
+            <title><![CDATA[Chevron to Sign Oil Investment Accords With Iraq on Friday]]></title>
+            <description><![CDATA[Chevron Corp. expects to sign accords with Iraq on Friday that will advance its negotiations about investing in large oil fields, according to a senior company executive.]]></description>
+            <link>https://www.bloomberg.com/news/articles/2026-07-16/chevron-to-sign-oil-investment-accords-with-iraq-on-friday</link>
+            <guid isPermaLink="false">TI8FFEKJH6V400</guid>
+            <dc:creator><![CDATA[Kevin Crowley]]></dc:creator>
+            <pubDate>Thu, 16 Jul 2026 15:52:26 GMT</pubDate>
+        </item>
+<item>
+            <title><![CDATA[Ladbrokes Owner Entain to Cut 2% of Staff as UK Taxes Hit]]></title>
+            <description><![CDATA[Entain Plc will cut 500 jobs, or about 2% of its global workforce, as the gambling industry grapples with higher UK taxes, tighter regulation and growing competition from prediction markets.]]></description>
+            <link>https://www.bloomberg.com/news/articles/2026-07-16/ladbrokes-owner-entain-to-cut-2-of-workforce-as-uk-taxes-bite</link>
+            <guid isPermaLink="false">TI9NVUKJH6V500</guid>
+            <dc:creator><![CDATA[Louise Moon]]></dc:creator>
+            <pubDate>Thu, 16 Jul 2026 15:01:44 GMT</pubDate>
+        </item>
+    </channel>
+</rss>

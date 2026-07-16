@@ -108,7 +108,14 @@ class PrNewswireUkClientTest {
         List<RawNewsItem> lucara = client.newsForName("Lucara Diamond Corp.", 10);
         assertEquals(1, lucara.size());
         assertTrue(lucara.get(0).title().contains("LUCARA"),
-                "the match is against the TITLE, case-insensitively");
+                "the match is against title AND teaser, case-insensitively");
+
+        List<RawNewsItem> teaserOnly = client.newsForName("Vancouver Resources", 10);
+        assertEquals(1, teaserOnly.size(),
+                "a name only the TEASER carries still matches — the release "
+                        + "body counts (mandate 2026-07-16)");
+        assertTrue(teaserOnly.get(0).title().contains("LUCARA"),
+                "'VANCOUVER' sits only in Lucara's dateline, never in a title");
 
         assertEquals(1, client.newsForName("Universal Music Group N.V.", 10).size(),
                 "generic legal words (Group, N.V.) never carry the match — "

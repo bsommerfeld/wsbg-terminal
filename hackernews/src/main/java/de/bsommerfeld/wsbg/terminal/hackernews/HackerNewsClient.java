@@ -208,8 +208,14 @@ public class HackerNewsClient implements NewsSource {
             String title = hit.path("title").asText("").trim();
             if (id.isEmpty() || title.isEmpty()) continue;
             // Precision over recall: Algolia also matches on the story URL —
-            // only a title that names the company counts.
-            if (!titleMatches(title, nameWords)) continue;
+            // the delivered TEXT must name the company: the title, or for
+            // self-posts (Ask HN) the post body Algolia ships as story_text
+            // (mandate 2026-07-16: scan everything a source hands over). A
+            // bare URL match still never counts.
+            String storyText = hit.path("story_text").asText("")
+                    .replaceAll("<[^>]+>", " ");
+            if (!titleMatches(title, nameWords)
+                    && !titleMatches(storyText, nameWords)) continue;
             String url = hit.path("url").asText("").trim();
             // Self posts (Ask HN etc.) carry no url — the HN thread IS the item.
             String link = url.isEmpty() ? HN_ITEM_URL + id : url;

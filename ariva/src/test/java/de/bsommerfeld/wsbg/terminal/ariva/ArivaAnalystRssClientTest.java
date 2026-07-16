@@ -117,6 +117,10 @@ class ArivaAnalystRssClientTest {
                 "the accent-bearing legal name still matches via 'richemont'");
         assertEquals(1, client.newsForName("Airbus Group", 10).size(),
                 "generic legal words (Group) never carry the match — 'Airbus' does");
+        assertEquals(1, client.newsForName("Privatbank Metzler", 10).size(),
+                "a name only the study TEASER carries still matches — the "
+                        + "analyst's reasoning counts (mandate 2026-07-16): "
+                        + "'Privatbank' sits only in the Berenberg teaser");
         assertTrue(client.newsForName("Rheinmetall AG", 10).isEmpty(),
                 "a company the feed doesn't carry yields nothing");
         assertTrue(client.newsForName("AG", 10).isEmpty(),

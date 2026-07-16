@@ -133,7 +133,12 @@ public class ArivaAnalystRssClient implements NewsSource {
         if (words.isEmpty()) return List.of();
         List<RawNewsItem> out = new ArrayList<>();
         for (RawNewsItem item : currentPool()) {
-            if (titleMatches(item.title(), words)) {
+            // Title AND study teaser: the headline carries the rating verb,
+            // the teaser the analyst's reasoning — a name can sit in either
+            // (mandate 2026-07-16: scan everything a source hands over).
+            String search = item.summary() == null
+                    ? item.title() : item.title() + " " + item.summary();
+            if (titleMatches(search, words)) {
                 out.add(item);
                 if (out.size() >= limit) break;
             }

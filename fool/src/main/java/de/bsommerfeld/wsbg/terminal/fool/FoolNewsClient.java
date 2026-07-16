@@ -139,14 +139,21 @@ public class FoolNewsClient implements NewsSource {
                 .toList();
     }
 
-    /** By name, title-relevance matched over the whole pool (precision over recall). */
+    /**
+     * By name, relevance-matched against title AND teaser over the whole
+     * pool (precision over recall) — the teaser counts because Fool's
+     * roundup-style headlines ("3 Growth Stocks to Buy Now") name the
+     * companies only in the body text (mandate 2026-07-16: scan everything
+     * a source hands over).
+     */
     @Override
     public List<RawNewsItem> newsForName(String companyName, int limit) {
         if (companyName == null || companyName.isBlank() || limit <= 0) return List.of();
         Set<String> words = significantWords(companyName);
         if (words.isEmpty()) return List.of();
         return pool().stream()
-                .filter(it -> titleMatches(it.title(), words))
+                .filter(it -> titleMatches(it.summary() == null
+                        ? it.title() : it.title() + " " + it.summary(), words))
                 .sorted(BY_RECENCY)
                 .limit(limit)
                 .toList();
