@@ -37,6 +37,7 @@
         <module>wallstreet-online</module>
         <module>source-api</module>
         <module>instrument-corpus</module>
+        <module>signals</module>
         <module>aggregator</module>
 
         <module>agent</module>
@@ -207,6 +208,11 @@
             <dependency>
                 <groupId>de.bsommerfeld</groupId>
                 <artifactId>source-api</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>signals</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
