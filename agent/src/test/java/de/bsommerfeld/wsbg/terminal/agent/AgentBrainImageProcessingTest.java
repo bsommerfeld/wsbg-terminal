@@ -8,8 +8,8 @@ import java.nio.charset.StandardCharsets;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Tests {@link ImageFetcher}'s image-processing utilities (header sniffing,
- * dimension math) directly. These were extracted from {@code AgentBrain}; the
+ * Tests {@link ImageFetcher}'s image-processing utilities (header sniffing)
+ * directly. These were extracted from {@code AgentBrain}; the
  * {@link ImageFetcher} carries no Ollama coupling, so it is instantiated plainly
  * and the package-private helpers are called without reflection.
  */
@@ -20,58 +20,6 @@ class AgentBrainImageProcessingTest {
     @BeforeAll
     static void setUp() {
         fetcher = new ImageFetcher();
-    }
-
-    // -- constrainAndAlign --
-
-    @Test
-    void constrainAndAlign_shouldNoOpForSmallImage() {
-        int[] result = fetcher.constrainAndAlign(100, 100, 1024, 32);
-        // 100 / 32 * 32 = 96
-        assertEquals(96, result[0]);
-        assertEquals(96, result[1]);
-    }
-
-    @Test
-    void constrainAndAlign_shouldConstrainWideLandscape() {
-        int[] result = fetcher.constrainAndAlign(2048, 1024, 1024, 32);
-        assertEquals(1024, result[0]);
-        assertEquals(512, result[1]);
-    }
-
-    @Test
-    void constrainAndAlign_shouldConstrainTallPortrait() {
-        int[] result = fetcher.constrainAndAlign(512, 2048, 1024, 32);
-        assertEquals(256, result[0]);
-        assertEquals(1024, result[1]);
-    }
-
-    @Test
-    void constrainAndAlign_shouldAlignToMultiple() {
-        int[] result = fetcher.constrainAndAlign(33, 33, 1024, 32);
-        assertEquals(32, result[0]);
-        assertEquals(32, result[1]);
-    }
-
-    @Test
-    void constrainAndAlign_shouldGuaranteeMinimumAlignment() {
-        int[] result = fetcher.constrainAndAlign(1, 1, 1024, 32);
-        assertEquals(32, result[0]);
-        assertEquals(32, result[1]);
-    }
-
-    @Test
-    void constrainAndAlign_shouldHandleExactMaxDim() {
-        int[] result = fetcher.constrainAndAlign(1024, 1024, 1024, 32);
-        assertEquals(1024, result[0]);
-        assertEquals(1024, result[1]);
-    }
-
-    @Test
-    void constrainAndAlign_shouldHandleSquareOversize() {
-        int[] result = fetcher.constrainAndAlign(2000, 2000, 1024, 32);
-        assertEquals(1024, result[0]);
-        assertEquals(1024, result[1]);
     }
 
     // -- isTextResponse --

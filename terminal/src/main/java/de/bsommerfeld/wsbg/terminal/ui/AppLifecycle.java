@@ -143,7 +143,7 @@ final class AppLifecycle {
     void shutdownServices() {
         if (!servicesDown.compareAndSet(false, true)) return;
         LOG.info("Shutting down services...");
-        // Stop the scan loop first so no fresh embedding/vision/cluster work is
+        // Stop the scan loop first so no fresh OCR/cluster work is
         // submitted while the services it depends on are torn down below.
         safeStop(() -> injector.getInstance(PassiveMonitorService.class).shutdown(), "PassiveMonitorService");
         safeStop(() -> injector.getInstance(WeatherReportService.class).shutdown(), "WeatherReportService");

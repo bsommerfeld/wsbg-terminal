@@ -10,8 +10,8 @@ import de.bsommerfeld.jshepherd.annotation.Key;
 public class AgentConfig {
 
     @Key("agent.editorial-model")
-    @Comment("Editorial agent reasoning model. REASONING_POWER (gemma4:e4b) — a single "
-            + "multimodal model that also serves vision, so only one model stays resident. "
+    @Comment("Editorial agent reasoning model. REASONING_POWER (gemma4:e4b) — the one "
+            + "model serving the whole editorial pipeline, so only one model stays resident. "
             + "The model choice is managed centrally; this stays fixed.")
     private String editorialModel = "REASONING_POWER";
 
@@ -100,8 +100,8 @@ public class AgentConfig {
      * 2026-07-16: no maintained knob; the machine decides). The 8k floor was
      * sized for 16 GB end-user machines with OLLAMA_KV_CACHE_TYPE=q8_0 +
      * flash attention; a bigger window buys headroom per pass, not a
-     * different pipeline. Agent and vision share the value so they share one
-     * Ollama runner (num_ctx is a load-time parameter).
+     * different pipeline. Every model variant shares the value so they share
+     * one Ollama runner (num_ctx is a load-time parameter).
      */
     public int resolveContextTokens() {
         return contextTokensFor(totalPhysicalMemoryBytes());

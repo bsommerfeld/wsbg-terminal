@@ -19,12 +19,12 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Builds the three Ollama {@link ChatModel} instances the {@link AgentBrain} runs
- * on (extracted from {@code AgentBrain.initialize}). All three are the same resident
+ * Builds the Ollama {@link ChatModel} instances the {@link AgentBrain} runs on
+ * (extracted from {@code AgentBrain.initialize}). All of them are the same resident
  * gemma4 (same model name + num_ctx, so ONE loaded runner): the agent model
  * (subject extraction + judge calls), the schema-constrained compose model, and the
- * multimodal vision model. Also resolves the model name against the live Ollama tag
- * list, falling back to any installed model of the same family.
+ * prose/dossier/deep-dive variants. Also resolves the model name against the live
+ * Ollama tag list, falling back to any installed model of the same family.
  */
 final class OllamaModelFactory {
 
@@ -41,40 +41,34 @@ final class OllamaModelFactory {
     }
 
     /** The built models plus the resolved model names (for the init log line). */
-    record Models(ChatModel agentModel, ChatModel composeModel, ChatModel visionModel,
-            ChatModel proseModel, ChatModel dossierModel, ChatModel deepDiveModel,
-            String activeAgentModel, String visionModelName) {
+    record Models(ChatModel agentModel, ChatModel composeModel, ChatModel proseModel,
+            ChatModel dossierModel, ChatModel deepDiveModel, String activeAgentModel) {
     }
 
     /**
      * Stands up all model instances on the ONE resident gemma4. The concrete tag
      * comes from {@link AgentConfig#resolveModelTag()} — the user's hardware-based
      * choice (gemma4:e2b..31b, -mlx twins on Apple Silicon) or the managed default
-     * gemma4:e4b — and the same multimodal model serves both the editorial agent
-     * and vision. Sharing the same model name AND the same num_ctx means Ollama
-     * keeps a single runner resident instead of two.
+     * gemma4:e4b. All variants share the same model name AND the same num_ctx, so
+     * Ollama keeps a single runner resident.
      */
     Models build(AgentConfig config) {
         Model agentModelEnum = config.resolveEditorialModel();
         String agentName = resolveModel(config.resolveModelTag(), agentModelEnum.getFamilyPrefix());
 
-        // One multimodal model serves vision too — never a second tag.
-        String visionName = agentName;
-
         // All non-streaming — the full response is returned as String.
         // Generous timeouts: the agent + tool-use can take a minute per round
-        // on a busy machine, and vision calls on gemma4 routinely push past
-        // the LangChain4j default of 60s. Set to 5 min across the board.
+        // on a busy machine, routinely pushing past the LangChain4j default
+        // of 60s. Set to 5 min across the board.
         java.time.Duration timeout = java.time.Duration.ofMinutes(5);
 
         // Context window (num_ctx): Ollama silently caps at 4096 unless told
-        // otherwise. Vision uses the SAME num_ctx on purpose: num_ctx is a
-        // load-time parameter, so matching it (with the same model name) lets
-        // agent + vision share one Ollama runner instead of spawning a second
-        // weight copy. The per-request sampling params (temperature, numPredict)
-        // can still differ freely — those don't fork the runner.
+        // otherwise. Every variant uses the SAME num_ctx on purpose: num_ctx is a
+        // load-time parameter, so matching it (with the same model name) keeps
+        // ONE Ollama runner instead of spawning a second weight copy. The
+        // per-request sampling params (temperature, numPredict) can still differ
+        // freely — those don't fork the runner.
         int ctxTokens = config.resolveContextTokens();
-        int visionCtxTokens = ctxTokens;
         LOG.info("[models] context window auto-scaled to {} tokens for this machine's memory.",
                 ctxTokens);
 
@@ -123,23 +117,6 @@ final class OllamaModelFactory {
                 .timeout(timeout)
                 .build();
 
-        // Vision — image description. Low temperature is critical: the agent trusts
-        // these numbers (percent moves, € amounts, price levels), so a hallucinated
-        // figure poisons the headline. numPredict 512: vision was the throughput
-        // killer — a full multi-chart transcription ran 30–60s and, since vision
-        // shares the model with the editorial composes, starved them. 512 holds a
-        // typical broker view but caps the runaway multi-asset paragraphs, so each
-        // image is ~5–10s. think=false matters doubly here: with the 512 numPredict
-        // cap, hidden thinking could consume the entire budget and return an EMPTY
-        // transcript.
-        ChatModel visionModel = OllamaChatModel.builder()
-                .baseUrl(baseUrl).modelName(visionName)
-                .temperature(0.2).topP(0.9).topK(40)
-                .numCtx(visionCtxTokens).numPredict(512)
-                .think(think)
-                .timeout(timeout)
-                .maxRetries(1).build();
-
         // Prose model — the SAME gemma4 (same name + num_ctx, still ONE runner),
         // but FREE-FORM output: no responseFormat at all. Used by the daily
         // Wetterbericht map-reduce, whose two stages (digest lines, final report
@@ -186,8 +163,8 @@ final class OllamaModelFactory {
                 .timeout(timeout)
                 .build();
 
-        return new Models(agentModel, composeModel, visionModel, proseModel, dossierModel,
-                deepDiveModel, agentName, visionName);
+        return new Models(agentModel, composeModel, proseModel, dossierModel,
+                deepDiveModel, agentName);
     }
 
     /**

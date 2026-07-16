@@ -53,7 +53,7 @@ public final class ReportBuilder {
 
     /**
      * Builds a structured text block containing cluster metadata, thread content,
-     * comments, and vision analysis for up to 3 source threads. This is the raw
+     * comments, and image text (OCR) for up to 3 source threads. This is the raw
      * evidence the AI uses to assess the cluster.
      *
      * <p>

@@ -5,9 +5,6 @@ import de.bsommerfeld.wsbg.terminal.core.config.AgentConfig;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.core.config.UserLanguage;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
-import dev.langchain4j.data.message.ImageContent;
-import dev.langchain4j.data.message.TextContent;
-import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.ChatModel;
 import jakarta.inject.Inject;
 import org.slf4j.Logger;
@@ -15,11 +12,11 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Central AI brain managing Ollama model interactions. Coordinates the reasoning,
- * compose and vision pipelines. All responses are blocking — gemma4 handles both
+ * compose pipelines. All responses are blocking — gemma4 handles both
  * reasoning and language-appropriate output natively via system prompt injection.
  *
- * <p>The model construction lives in {@link OllamaModelFactory}, the per-URL vision
- * cache in {@link VisionCache}, and the image fetch/standardise IO in
+ * <p>The model construction lives in {@link OllamaModelFactory}, the per-URL
+ * image-text cache in {@link VisionCache}, and the image fetch IO in
  * {@link ImageFetcher}; this class is the runtime facade holding the three built
  * models and the shared LLM concurrency gate.
  */
@@ -34,11 +31,10 @@ public class AgentBrain {
 
     private final ImageFetcher imageFetcher = new ImageFetcher();
     private final VisionCache visionCache = new VisionCache();
-    /** Mechanical image read (Tesseract) — fills the same per-URL cache the vision model used to. */
+    /** Mechanical image read (Tesseract) — fills the per-URL image-text cache. */
     private final OcrEngine ocrEngine = new OcrEngine();
     private final OllamaModelFactory modelFactory = new OllamaModelFactory(OLLAMA_BASE_URL);
 
-    private ChatModel visionModel;
     private ChatModel agentModel;
     /** Same gemma4 model as {@link #agentModel}, but a TIGHT numPredict — for headline composition. */
     private ChatModel composeModel;
@@ -52,7 +48,7 @@ public class AgentBrain {
 
     private final GlobalConfig config;
     private final OllamaServerManager serverManager;
-    /** The ONE shared gemma4 concurrency gate — vision acquires the same permit the composes do. */
+    /** The ONE shared gemma4 concurrency gate for all model calls. */
     private final LlmGate llmGate;
     private UserLanguage userLanguage;
 
@@ -70,21 +66,20 @@ public class AgentBrain {
 
     /**
      * Initializes all Ollama model instances via {@link OllamaModelFactory}. All
-     * three are the resident gemma4:e4b (agent, compose, vision).
+     * are the resident gemma4:e4b (agent, compose, prose, dossier, deep-dive).
      */
     public void initialize(AgentConfig config) {
         OllamaModelFactory.Models models = modelFactory.build(config);
         this.agentModel = models.agentModel();
         this.composeModel = models.composeModel();
-        this.visionModel = models.visionModel();
         this.proseModel = models.proseModel();
         this.dossierModel = models.dossierModel();
         this.deepDiveModel = models.deepDiveModel();
         this.activeAgentModel = models.activeAgentModel();
         this.userLanguage = this.config.getUser().getUserLanguage();
 
-        LOG.info("Initializing AgentBrain -- Agent: {}, Vision: {}, Language: {}",
-                models.activeAgentModel(), models.visionModelName(), userLanguage.displayName());
+        LOG.info("Initializing AgentBrain -- Agent: {}, Language: {}",
+                models.activeAgentModel(), userLanguage.displayName());
     }
 
     // -- Public API --
@@ -135,10 +130,10 @@ public class AgentBrain {
 
     /**
      * Lookup-only cache read for the report-builder path. Returns the
-     * description if vision has already been computed for {@code url},
-     * otherwise empty string — does <b>not</b> trigger vision analysis.
+     * text if the image has already been read for {@code url},
+     * otherwise empty string — does <b>not</b> trigger a fresh read.
      *
-     * <p>Used for comment images: the heavy vision lift happens
+     * <p>Used for comment images: the fetch+OCR work happens
      * asynchronously in {@code PassiveMonitorService} so the editorial
      * agent never blocks on cold images.
      */
@@ -150,7 +145,7 @@ public class AgentBrain {
      * Returns {@code true} if {@code url} has already been described,
      * regardless of whether the description is empty (failed analyses
      * are cached too). Useful for deciding whether a prefetch submission
-     * would be redundant work for the vision pool.
+     * would be redundant work for the prefetch pool.
      */
     public boolean isImageCached(String url) {
         return visionCache.isCached(url);
@@ -165,75 +160,9 @@ public class AgentBrain {
         return visionCache.export();
     }
 
-    /** Restores a persisted vision cache without clobbering live entries. */
+    /** Restores a persisted image-text cache without clobbering live entries. */
     public void importVisionCache(java.util.Map<String, String> cache) {
         visionCache.importAll(cache);
-    }
-
-    /**
-     * RETIRED: blocking vision-model analysis of an image URL. No longer wired —
-     * {@link #describeImage} reads mechanically via {@link #readImageText} instead.
-     * Kept (with the vision prompt + model slot) only for a possible future return
-     * of true scene understanding on stronger hardware.
-     */
-    public String see(String imageUrl) {
-        if (visionModel == null)
-            return "Vision Brain not ready.";
-        try {
-            LOG.debug("Vision analyzing: {}", imageUrl);
-            ImageFetcher.ImagePayload payload = imageFetcher.fetchAndOptimize(imageUrl);
-
-            UserMessage msg = UserMessage.from(
-                    TextContent.from(PromptLoader.loadLocalized("vision", userLanguage.code())),
-                    ImageContent.from(payload.base64(), payload.mimeType()));
-
-            // Vision shares the one gemma4 model with the editorial composes, so it acquires
-            // the SAME LLM gate — vision can no longer over-subscribe Ollama and starve the
-            // wire (it now waits its turn behind a compose instead of blocking the slot).
-            llmGate.acquire();
-            String result;
-            try {
-                result = visionModel.chat(msg).aiMessage().text();
-            } finally {
-                llmGate.release();
-            }
-            // Some model builds (notably the MLX gemma4 variant) silently
-            // drop the multimodal payload and respond with a templated
-            // "I need the image" / "Please provide the image" / "No image
-            // provided" string. Detect those and return empty so the
-            // editorial agent's report context isn't poisoned.
-            if (result == null) result = "";
-            String norm = result.toLowerCase(java.util.Locale.ROOT).trim();
-            boolean noImage = norm.contains("need the image")
-                    || norm.contains("need an image")
-                    || norm.contains("please provide the image")
-                    || norm.contains("no image provided")
-                    || norm.contains("no image was provided")
-                    || norm.contains("cannot describe the image as it was not provided")
-                    || norm.startsWith("[please provide");
-            if (noImage) {
-                LOG.warn("Vision model returned no-image placeholder for {}: {}", imageUrl, result);
-                return "";
-            }
-            if (norm.isBlank()) {
-                // Image fetched fine (no exception, not the no-image placeholder) but
-                // the model produced NOTHING. Distinguish this from a fetch failure so
-                // an empty Vision result isn't a mystery: log that the bytes arrived and
-                // how many — a tiny payload hints a bad/placeholder image, a large one
-                // points at the model simply returning empty for that picture.
-                LOG.warn("Vision model returned an EMPTY description for {} — image fetched OK "
-                        + "(~{} KB {}); NOT a fetch failure. Likely an unreadable/placeholder image "
-                        + "or the model declined this one.", imageUrl,
-                        payload.base64().length() * 3 / 4 / 1024, payload.mimeType());
-                return "";
-            }
-            LOG.info("Vision result: {}", result);
-            return result;
-        } catch (Exception e) {
-            LOG.warn("Vision failure (fetch/analyze) for {}: {}", imageUrl, e.getMessage());
-            return "[SYSTEM ERROR: Image retrieval failed (" + e.getMessage()
-                    + "). THE IMAGE IS INVISIBLE. DO NOT HALLUCINATE OR GUESS ITS CONTENT.]";
-        }
     }
 
     /**

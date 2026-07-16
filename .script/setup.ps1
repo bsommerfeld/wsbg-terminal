@@ -23,13 +23,12 @@ $OllamaVersion = "0.24.0"
 
 # Models reconciled into our ISOLATED store (<appData>\ollama\models): section 3
 # installs/updates these to the latest registry build and removes anything else.
-# ONE multimodal gemma4 tag serves agent + vision -- the single deployed model.
+# ONE gemma4 tag serves the whole editorial pipeline -- the single deployed model.
 # The launcher passes the resolved tag via WSBG_REASONING_MODEL (hardware check
 # + the user's config.toml choice live in ModelSelection there; valid tiers are
 # gemma4:e2b..31b -- MLX twins are macOS-only, so they never apply here). The
 # fallback below only applies to standalone script runs without the launcher.
 $ReasoningModel = if ($env:WSBG_REASONING_MODEL) { $env:WSBG_REASONING_MODEL } else { "gemma4:e4b" }
-$VisionModel    = $ReasoningModel          # same model serves vision
 
 # Private endpoint -- our instance binds here, NEVER the user's default 11434.
 $OllamaPort = "11500"
@@ -198,9 +197,6 @@ if (Test-Path $ollamaExe) {
 # next setup run, on every OS, with no per-release one-shot cleanup code and no
 # reliance on the user having seen the intervening release. (Mirrors setup.sh.)
 $desiredModels = @($ReasoningModel)
-# Agent and vision share the one gemma4 tag -- only add a distinct vision model
-# if a future config ever diverges them. (Mirrors setup.sh.)
-if ($VisionModel -ne $ReasoningModel) { $desiredModels += $VisionModel }
 
 Write-Host "[*] Models (isolated store: $aiModels):" -ForegroundColor Gray
 foreach ($m in $desiredModels) { Write-Host "    - $m" -ForegroundColor Gray }
@@ -481,8 +477,8 @@ if (!(Test-Path $configFile)) {
         "ui-reddit-visible = true",
         "",
         "[agent]",
-        "# Editorial agent reasoning model. REASONING_POWER (gemma4) - one",
-        "# multimodal model serving agent + vision. Managed centrally; leave as-is.",
+        "# Editorial agent reasoning model. REASONING_POWER (gemma4) - the one",
+        "# model serving the whole editorial pipeline. Managed centrally; leave as-is.",
         "agent.editorial-model = `"REASONING_POWER`"",
         "# Ollama model tag override (gemma4:e2b..31b). Empty = managed default.",
         "# Set by the future model-choice UI; the launcher reads it and installs",

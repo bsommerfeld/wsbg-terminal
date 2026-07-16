@@ -1,32 +1,22 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
 import de.bsommerfeld.wsbg.terminal.core.util.BrowserUserAgent;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import javax.imageio.ImageIO;
-import java.awt.Color;
-import java.awt.Graphics2D;
-import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 
 /**
- * Image IO for the vision pipeline (extracted from {@link AgentBrain}): fetches an
- * image URL, standardises it (resize + align + JPEG re-encode) and returns a
- * base64 {@link ImagePayload} ready to hand to the multimodal model. Has no Ollama
- * coupling — pure network + pixel work, independently testable.
+ * Image IO for the mechanical image read (extracted from {@link AgentBrain}):
+ * fetches an image URL at full resolution for the OCR engine. Has no Ollama
+ * coupling — pure network work, independently testable.
  */
 final class ImageFetcher {
-
-    private static final Logger LOG = LoggerFactory.getLogger(ImageFetcher.class);
 
     /**
      * A random, realistic browser User-Agent chosen once per process for image
@@ -37,68 +27,15 @@ final class ImageFetcher {
 
     private final HttpClient httpClient = HttpClient.newBuilder()
             .followRedirects(HttpClient.Redirect.NORMAL)
-            // Bound the connect phase: image fetches run on the single vision-prefetch
-            // worker, so a hung CDN connection would otherwise stall ALL vision warming.
+            // Bound the connect phase: image fetches run on the single prefetch
+            // worker, so a hung CDN connection would otherwise stall ALL cache warming.
             .connectTimeout(java.time.Duration.ofSeconds(10))
             .build();
 
-    /** A fetched + standardised image ready for the model. */
-    record ImagePayload(String base64, String mimeType) {
-    }
-
-    ImagePayload fetchAndOptimize(String url) throws Exception {
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                // Hard read deadline so a slow/stalled image host can't pin the
-                // single vision-prefetch worker indefinitely.
-                .timeout(java.time.Duration.ofSeconds(20))
-                .header("User-Agent", userAgent).GET().build();
-
-        byte[] bytes = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray()).body();
-        boolean converted = false;
-
-        try {
-            BufferedImage original = ImageIO.read(new ByteArrayInputStream(bytes));
-            if (original != null) {
-                int[] dims = constrainAndAlign(original.getWidth(), original.getHeight(), 1024, 32);
-                BufferedImage resized = new BufferedImage(dims[0], dims[1], BufferedImage.TYPE_INT_RGB);
-                Graphics2D g = resized.createGraphics();
-                g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-                g.setColor(Color.WHITE);
-                g.fillRect(0, 0, dims[0], dims[1]);
-                g.drawImage(original, 0, 0, dims[0], dims[1], null);
-                g.dispose();
-
-                ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                ImageIO.write(resized, "jpg", baos);
-                bytes = baos.toByteArray();
-                converted = true;
-            }
-        } catch (Exception e) {
-            LOG.warn("Image standardization failed, using original bytes: {}", e.getMessage());
-        }
-
-        String mimeType;
-        if (converted) {
-            mimeType = "image/jpeg";
-        } else {
-            if (isTextResponse(bytes)) {
-                throw new RuntimeException("Fetched content is not an image (HTML/JSON/Text detected).");
-            }
-            mimeType = detectMimeType(bytes);
-            if (mimeType == null) {
-                throw new RuntimeException("Unrecognized image format (no valid JPEG/PNG/WebP header).");
-            }
-        }
-
-        return new ImagePayload(Base64.getEncoder().encodeToString(bytes), mimeType);
-    }
-
     /**
      * Fetches the image at FULL resolution for the mechanical OCR read — no
-     * downscale, no re-encode. The 1024px standardisation above was tuned for the
-     * (retired) vision model's payload; small UI glyphs (WKNs, percentages) don't
-     * survive it, and OCR needs every pixel the source has.
+     * downscale, no re-encode. Small UI glyphs (WKNs, percentages) don't survive
+     * resizing; OCR needs every pixel the source has.
      */
     BufferedImage fetchFullResolution(String url) throws Exception {
         HttpRequest request = HttpRequest.newBuilder()
@@ -116,23 +53,6 @@ final class ImageFetcher {
             throw new RuntimeException("Undecodable image format (" + detectMimeType(bytes) + ").");
         }
         return image;
-    }
-
-    /** Constrains dimensions to maxDim and aligns to alignment boundary. */
-    int[] constrainAndAlign(int w, int h, int maxDim, int alignment) {
-        if (w > maxDim || h > maxDim) {
-            double ratio = (double) w / h;
-            if (w > h) {
-                w = maxDim;
-                h = (int) (maxDim / ratio);
-            } else {
-                h = maxDim;
-                w = (int) (maxDim * ratio);
-            }
-        }
-        w = Math.max((w / alignment) * alignment, alignment);
-        h = Math.max((h / alignment) * alignment, alignment);
-        return new int[] { w, h };
     }
 
     boolean isTextResponse(byte[] data) {

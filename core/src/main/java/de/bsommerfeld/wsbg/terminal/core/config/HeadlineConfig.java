@@ -14,10 +14,10 @@ public class HeadlineConfig {
     private boolean enabled = true;
 
     @Key("analyze-images")
-    @Comment("DEAD KEY (2026-07-14): image/vision analysis is hard-disabled in the pipeline "
-            + "(VisionPrefetcher ignores this value) and the UI toggle was removed - images are "
-            + "ignored wire-wide regardless of this setting. The key survives only so old "
-            + "config.toml files keep loading and a future re-activation has its slot.")
+    @Comment("DEAD KEY (2026-07-14): the vision-model toggle this once gated is gone - images "
+            + "are read mechanically (OCR) whenever a Tesseract install is found, regardless of "
+            + "this setting (VisionPrefetcher ignores the value; the UI toggle was removed). The "
+            + "key survives only so old config.toml files keep loading.")
     private boolean analyzeImages = false;
 
     @Key("news-coverage-enabled")
