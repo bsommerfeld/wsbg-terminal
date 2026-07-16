@@ -547,8 +547,11 @@
          has-grid-thumb: the grid card shows the DEDICATED .grid-thumb tile
          (report date + prose excerpt + market chips, or the big countdown)
          instead of a miniature of the real view — nav arrows and the stats
-         sections read as noise at card scale. -->
-    <section class="widget has-grid-thumb" id="widget-weather">
+         sections read as noise at card scale.
+         HELD BACK: hidden + no ORDER slot in grid-layout.js, and the
+         WeatherReportService daily schedule is HELD_BACK. Remove the attribute +
+         re-add the ORDER slot + flip WeatherReportService.HELD_BACK to ship it. -->
+    <section class="widget has-grid-thumb" id="widget-weather" hidden>
       <header class="widget-head">
         <div class="ident"><span class="glyph glyph-weather" aria-hidden="true"><svg viewBox="0 0 24 24"><defs><linearGradient id="wxh-sun" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffd75e"/><stop offset="1" stop-color="#eda21f"/></linearGradient><linearGradient id="wxh-cloud" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f3f8fd"/><stop offset="1" stop-color="#b4c8dc"/></linearGradient></defs><g stroke="#f0b23c" stroke-width="1.7" stroke-linecap="round"><line x1="17.2" y1="0.9" x2="17.2" y2="2.6"/><line x1="22.8" y1="6.4" x2="21.1" y2="6.4"/><line x1="21.2" y1="2.5" x2="20" y2="3.7"/><line x1="13.2" y1="2.5" x2="14.4" y2="3.7"/></g><circle cx="17.2" cy="6.4" r="3.3" fill="url(#wxh-sun)"/><path d="M17.5 18.5H7a4 4 0 0 1-.4-7.98 5.5 5.5 0 0 1 10.8-1.02 4.25 4.25 0 0 1 .1 9z" transform="translate(-1.9 3.9) scale(.92)" fill="url(#wxh-cloud)" stroke="#8ba3ba" stroke-width="1.1" stroke-linejoin="round" stroke-linecap="round"/></svg></span><span data-i18n="widget.weather.title">Wetterbericht</span><button type="button" class="ki-badge js-ai-notice"
                   aria-haspopup="dialog"

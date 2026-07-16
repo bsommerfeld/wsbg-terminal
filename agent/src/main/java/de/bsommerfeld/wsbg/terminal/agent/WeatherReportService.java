@@ -166,6 +166,14 @@ public class WeatherReportService {
         this.fearGreedHistory = archive;
     }
 
+    /**
+     * Feature held back (2026-07-16): the widget is hidden from the grid and the daily
+     * schedule must not arm — no report generation, no LLM runs. The service stays
+     * constructible (the bridge still answers the socket; the hidden widget never asks).
+     * Flip to false + re-add the ORDER slot + un-hide the section in index.html to ship.
+     */
+    private static final boolean HELD_BACK = true;
+
     private final AtomicBoolean started = new AtomicBoolean(false);
     private ScheduledFuture<?> pending;
     private long nextRunAtMs;
@@ -187,6 +195,10 @@ public class WeatherReportService {
 
     /** Arms the daily schedule. Called from AppMain once the window is up; idempotent. */
     public void start() {
+        if (HELD_BACK) {
+            LOG.info("WeatherReportService held back: daily schedule not armed.");
+            return;
+        }
         if (!started.compareAndSet(false, true)) return;
         armSchedule();
     }

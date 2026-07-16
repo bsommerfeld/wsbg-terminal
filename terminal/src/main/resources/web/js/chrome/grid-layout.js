@@ -25,12 +25,12 @@ const TAG_MIN_SCALE = 0.68;     // readability floor: the pill never shrinks bel
 
 // Fixed slot order: the two live panes lead, the AI tools complete the top
 // row, the compact market/report tiles fill the second row.
-// 'widget-watchlist' is held back for a later release (its section is hidden
-// in index.html and its backend loop is disabled) — re-add it here to restore
-// the card.
+// 'widget-watchlist' and 'widget-weather' are held back for a later release
+// (their sections are hidden in index.html and their backend loops are
+// disabled) — re-add them here to restore the cards.
 const ORDER = [
   'widget-reddit', 'widget-fj', 'widget-deepdive',
-  'widget-fg', 'widget-eurusd', 'widget-weather',
+  'widget-fg', 'widget-eurusd',
 ];
 
 let main = null;
