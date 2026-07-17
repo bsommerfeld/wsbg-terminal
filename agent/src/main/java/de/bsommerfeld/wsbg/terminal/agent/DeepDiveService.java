@@ -567,7 +567,7 @@ public class DeepDiveService {
 
     /** The loaded prompt set of one run. */
     private record Prompts(String section, String these, String revise, String challenge,
-            String weave, String polish, String arbiter, String samestory,
+            String weave, String polish, String arbiter,
             String consistency, String diffcheck, String chronicle, String covered,
             String reclaim) {
     }
@@ -702,7 +702,6 @@ public class DeepDiveService {
                 PromptLoader.loadLocalized("deepdive-weave", lang).replace("{{LANGUAGE}}", langName),
                 PromptLoader.loadLocalized("deepdive-polish", lang).replace("{{LANGUAGE}}", langName),
                 PromptLoader.loadLocalized("deepdive-arbiter", lang),
-                PromptLoader.loadLocalized("deepdive-samestory", lang),
                 PromptLoader.loadLocalized("deepdive-consistency", lang),
                 PromptLoader.loadLocalized("deepdive-diffcheck", lang)
                         .replace("{{LANGUAGE}}", langName),
@@ -745,13 +744,14 @@ public class DeepDiveService {
         }
 
         eventBus.post(new DeepDiveProgressEvent(subject, "these"));
+        eventBus.post(new DeepDiveProgressEvent(subject, "these"));
         // The thesis' length contract (400-900) lived only in its prompt - with
         // full-section input the editor provably overflows it (live 2026-07-16:
         // an 8-paragraph thesis opening with a copied profile). One condense
         // call, then the house scissors, both loud.
         bodies[SEC_THESIS] = writeSection(model, new Prompts(prompts.these(), prompts.these(),
                         prompts.revise(), prompts.challenge(), prompts.weave(), prompts.polish(),
-                        prompts.arbiter(), prompts.samestory(), prompts.consistency(),
+                        prompts.arbiter(), prompts.consistency(),
                         prompts.diffcheck(), prompts.chronicle(), prompts.covered(),
                         prompts.reclaim()),
                 subject, header,
@@ -804,11 +804,29 @@ public class DeepDiveService {
             // review re-runs after its own fixes until it stands - demand as
             // many corrections as it takes; the backstop is the runaway net,
             // never a working limit.
+            // The final instance carries the same convergence arbiter as the
+            // section grilling (empiric 2026-07-17: it ran into its 4-round
+            // backstop with 4 near-identical objections per round - the
+            // repetition judge was missing exactly here).
+            List<String> consistencyHistory = new ArrayList<>();
+            ChatModel convergenceArbiter = brain.getAgentModel();
             for (int round = 1; round <= CONSISTENCY_ROUNDS_BACKSTOP; round++) {
+                List<String> roundObjections = new ArrayList<>();
                 if (!crossSectionConsistency(model, prompts, subject, headings, bodies,
-                        shelves, m, de, header)) {
+                        shelves, m, de, header, roundObjections)) {
                     break;
                 }
+                String problems = roundObjections.stream()
+                        .map(DeepDiveService::objectionProblem)
+                        .collect(java.util.stream.Collectors.joining("\n"));
+                if (!consistencyHistory.isEmpty() && arbiterSaysRepetitive(convergenceArbiter,
+                        prompts.arbiter(), de ? "Gesamtbericht" : "whole report",
+                        consistencyHistory, problems)) {
+                    LOG.info("[DEEPDIVE] '{}' final instance: arbiter ruled round {} "
+                            + "repetitive - the report stands as reviewed.", subject, round);
+                    break;
+                }
+                consistencyHistory.add(problems);
                 if (round == CONSISTENCY_ROUNDS_BACKSTOP) {
                     LOG.warn("[DEEPDIVE] '{}' consistency review hit the runaway backstop ({}).",
                             subject, CONSISTENCY_ROUNDS_BACKSTOP);
@@ -992,40 +1010,37 @@ public class DeepDiveService {
             // the same story re-spun (content farms mint fresh titles over
             // identical auto-notes) or carries its own news value. A skipped
             // group earns no marker, so the register never lists its members.
-            String suspect = mostSimilarWoven(block, wovenBlocks);
-            if (suspect != null && sameStoryVerdict(arbiter, prompts.samestory(), suspect, block)) {
-                LOG.info("[DEEPDIVE] '{}' section '{}' weave step {}: arbiter ruled the story "
-                        + "group ({} source(s)) a re-spin of an already woven one — skipped.",
-                        subject, heading, step, group.size());
-                // The re-spin's SUBSTANCE stands via its twin - its CITATION
-                // must too (2026-07-16: the skip used to drop the markers, so
-                // the register omitted a source whose story the report tells).
-                String cited = attachMarkers(body, block);
-                if (!cited.equals(body)) {
-                    body = cited;
-                    journalDiff(subject, shown, body);
-                    shown = body;
+            // THE ONE WEAVE GATE (empiric merge 2026-07-17: the same-story
+            // arbiter and the materiality judge read the same pair and asked
+            // near-identical questions - 23 re-spin catches + 51 materiality
+            // skips per run, up to two calls per step; now ONE call carries
+            // both verdicts). material → weave; told-but-immaterial → the
+            // story's markers attach to its paragraph (cited - the substance
+            // stands); neither → the honest sighted-only register line.
+            // Doubt and whiffs stay material (fail-open).
+            if (rawFed) {
+                WeaveVerdict verdict = weaveVerdict(arbiter, prompts.covered(), body, block);
+                if (!verdict.material()) {
+                    if (verdict.told()) {
+                        String cited = attachMarkers(body, block);
+                        if (!cited.equals(body)) {
+                            body = cited;
+                            journalDiff(subject, shown, body);
+                            shown = body;
+                        }
+                        journalNotes(subject, List.of((de
+                                ? "Bereits erzählt - Marker ergänzt: "
+                                : "Already told - markers attached: ") + firstLine(block)));
+                    } else {
+                        m.sightedOnly.addAll(markersIn(block));
+                        journalNotes(subject, List.of((de
+                                ? "Gesichtet, ändert die Lesart nicht: "
+                                : "Sighted, does not change the read: ") + firstLine(block)));
+                    }
+                    wovenBlocks.add(block);
+                    coveredSteps++;
+                    continue;
                 }
-                journalNotes(subject, group.stream().map(DeepDiveService::firstLine).toList());
-                continue;
-            }
-            // MATERIALITY SHORT-CUT (user decision 2026-07-16): the length
-            // contract already forces the section to carry only the load-
-            // bearing ~20 statements - weaving all 70+ stories pays the full
-            // call for substance the fold then discards anyway. A tiny judge
-            // asks the honest early question instead: would this story CHANGE
-            // the section's read? Immaterial stories are skipped WITHOUT a
-            // text citation (no fake markers) and listed in the register
-            // under their own sighted-only label - read, chronicled, visible,
-            // just not load-bearing. Doubt or whiff = material = full weave.
-            if (rawFed && !storyMaterial(arbiter, prompts.covered(), body, block)) {
-                m.sightedOnly.addAll(markersIn(block));
-                journalNotes(subject, List.of((de
-                        ? "Gesichtet, ändert die Lesart nicht: "
-                        : "Sighted, does not change the read: ") + firstLine(block)));
-                wovenBlocks.add(block);
-                coveredSteps++;
-                continue;
             }
             eventBus.post(new DeepDiveProgressEvent(subject, "sections",
                     progressLabel + " · " + (de ? "Quelle " : "source ") + step + "/" + total));
@@ -1055,7 +1070,7 @@ public class DeepDiveService {
             // one-word direction inversion provably slipped the full-view
             // challenger, live smoke 4: a BaFin SALE narrated as a buy).
             body = diffJudgeStep(model, prompts, subject, header, heading, beforeStep,
-                    body, block, fed, de);
+                    body, block, fed, de, m);
             // RE-KNOCK (user mandate 2026-07-14): a HARD finding on a group
             // step whose members were never full-text-read means the desk may
             // be missing exactly the source that carries the figure — the
@@ -1251,39 +1266,6 @@ public class DeepDiveService {
         return tail.strip();
     }
 
-    /**
-     * The already-woven block most similar to the candidate — null when none
-     * crosses the suspicion threshold (then no arbiter call is spent).
-     */
-    private static String mostSimilarWoven(String candidate, List<String> wovenBlocks) {
-        String best = null;
-        double bestScore = 0;
-        for (String prior : wovenBlocks) {
-            double s = tokenSimilarity(candidate, prior);
-            if (s > bestScore) {
-                bestScore = s;
-                best = prior;
-            }
-        }
-        return bestScore >= WEAVE_SUSPICION_SIMILARITY ? best : null;
-    }
-
-    /**
-     * The arbiter's same-story verdict on a suspicious weave candidate.
-     * Fail-open: a whiffed call weaves the source (losing coverage is the
-     * worse error).
-     */
-    private boolean sameStoryVerdict(ChatModel arbiter, String prompt, String woven,
-            String candidate) {
-        if (arbiter == null) return false;
-        try {
-            String reply = chatGateway.chat(arbiter, prompt,
-                    "WOVEN SOURCE:\n" + woven + "\n\nNEW CANDIDATE:\n" + candidate);
-            return reply != null && DUPLICATE_TRUE.matcher(reply).find();
-        } catch (Exception e) {
-            return false;
-        }
-    }
 
     /**
      * The arbiter's repetition verdict on the newest challenge round against
@@ -1632,23 +1614,32 @@ public class DeepDiveService {
      * and a whiff answers false so the story weaves normally (fail-open,
      * nothing is ever lost to a broken call).
      */
-    private boolean storyMaterial(ChatModel judge, String prompt, String body, String block) {
+    /** The weave gate's twin verdict: must the text change, and is the story already told? */
+    record WeaveVerdict(boolean material, boolean told) {
+    }
+
+    private WeaveVerdict weaveVerdict(ChatModel judge, String prompt, String body, String block) {
         try {
             String reply = chatGateway.chat(judge, prompt,
                     "STANDING TEXT:\n" + body + "\n\nSTORY:\n" + block);
-            if (reply == null) return true;
-            Matcher m = MATERIAL_VERDICT.matcher(reply);
-            // Fail-open: no parseable verdict means the story weaves normally
-            // - a whiffed judge must never cost substance.
-            return !m.find() || Boolean.parseBoolean(m.group(1));
+            if (reply == null) return new WeaveVerdict(true, false);
+            Matcher mMat = MATERIAL_VERDICT.matcher(reply);
+            Matcher mTold = TOLD_VERDICT.matcher(reply);
+            // Fail-open: no parseable material verdict weaves normally - a
+            // whiffed judge must never cost substance.
+            boolean material = !mMat.find() || Boolean.parseBoolean(mMat.group(1));
+            boolean told = mTold.find() && Boolean.parseBoolean(mTold.group(1));
+            return new WeaveVerdict(material, told);
         } catch (Exception e) {
-            LOG.debug("[DEEPDIVE] materiality judge whiffed: {}", e.getMessage());
-            return true;
+            LOG.debug("[DEEPDIVE] weave gate whiffed: {}", e.getMessage());
+            return new WeaveVerdict(true, false);
         }
     }
 
     private static final Pattern MATERIAL_VERDICT =
             Pattern.compile("\"material\"\\s*:\\s*(true|false)");
+    private static final Pattern TOLD_VERDICT =
+            Pattern.compile("\"told\"\\s*:\\s*(true|false)");
 
     /**
      * Attaches a covered story's markers to the paragraph most similar to it
@@ -2009,7 +2000,7 @@ public class DeepDiveService {
                         headings.get(sec), before + "\n" + block, markersIn(before + block),
                         de, wovenBody.strip()).body();
                 repaired = diffJudgeStep(model, prompts, subject, header, headings.get(sec),
-                        before, repaired, block, before + "\n" + block, de);
+                        before, repaired, block, before + "\n" + block, de, m);
                 journalDiff(subject, before, repaired);
                 bodies[sec] = repaired;
             }
@@ -2032,7 +2023,7 @@ public class DeepDiveService {
      */
     private boolean crossSectionConsistency(ChatModel model, Prompts prompts, String subject,
             List<String> headings, String[] bodies, Shelf[] shelves, Material m, boolean de,
-            String header) {
+            String header, List<String> objectionsOut) {
         StringBuilder report = new StringBuilder(8192);
         for (int i = 0; i < SECTION_COUNT; i++) {
             if (bodies[i] == null) continue;
@@ -2048,6 +2039,14 @@ public class DeepDiveService {
                 fixed + budgeted(report.toString(),
                         prompts.consistency().length() + fixed.length()));
         List<String> objections = new ArrayList<>();
+        // Standing diff-judge objections get their re-hearing here - the one
+        // instance still ahead of them (drained: each is heard exactly once).
+        for (Map.Entry<String, List<String>> e : m.standingObjections.entrySet()) {
+            for (String obj : e.getValue()) {
+                objections.add("S: " + e.getKey() + " — " + obj);
+            }
+        }
+        m.standingObjections.clear();
         if (reply != null) {
             for (String line : reply.split("\n")) {
                 String s = line.strip();
@@ -2060,6 +2059,7 @@ public class DeepDiveService {
             return false;
         }
         journalNotes(subject, objections);
+        objectionsOut.addAll(objections);
         Map<Integer, List<String>> bySection = new LinkedHashMap<>();
         for (String objection : objections) {
             int idx = owningSection(bodies, quotedSpan(objection));
@@ -2135,45 +2135,68 @@ public class DeepDiveService {
      */
     private String diffJudgeStep(ChatModel model, Prompts prompts, String subject,
             String header, String heading, String before, String after, String block,
-            String fed, boolean de) {
+            String fed, boolean de, Material m) {
+        String objection = diffJudgeObjection(model, prompts, header, heading, before,
+                after, block);
+        if (objection == null) return after;
+        journalNotes(subject, List.of(objection));
+        LOG.info("[DEEPDIVE] '{}' section '{}': diff-judge raised an objection on the step.",
+                subject, heading, objection);
+        String revised = revise(model, prompts, header, heading, after, fed, objection);
+        if (isBlank(revised)) return after;
+        String repaired = examineAndRepair(model, prompts, subject, header, heading, fed,
+                markersIn(fed), de, revised.strip()).body();
+        // Changes-requested closes the loop (user ask 2026-07-17): the judge
+        // re-reads its own delta ONCE after the rework. A standing objection
+        // is journaled and left to the section grilling - a forced approval
+        // here would livelock the same way the old challenge loop did.
+        String standing = diffJudgeObjection(model, prompts, header, heading, before,
+                repaired, block);
+        if (standing != null) {
+            // The grilling already ran when the weave starts - the only
+            // instance still ahead is the final one, so the objection is
+            // seeded THERE (live 2026-07-17: a wrong quarterly date survived
+            // its rework and stood in print because nothing downstream knew).
+            m.standingObjections.computeIfAbsent(heading, k -> new ArrayList<>()).add(standing);
+            journalNotes(subject, List.of((de
+                    ? "Einwand steht nach Überarbeitung - geht an die Schluss-Instanz: "
+                    : "Objection stands after rework - seeded to the final instance: ") + standing));
+            LOG.info("[DEEPDIVE] '{}' section '{}': diff-judge objection stands after rework.",
+                    subject, heading);
+        }
+        return repaired;
+    }
+
+    /** The step examiner's single valid objection on the delta - or null (approved). */
+    private String diffJudgeObjection(ChatModel model, Prompts prompts, String header,
+            String heading, String before, String after, String block) {
         List<String> delta = addedSentences(before, after);
-        if (delta.isEmpty()) return after;
+        if (delta.isEmpty()) return null;
         String message = header + "SECTION: ## " + heading
                 + "\n\nNEW SOURCE (this step's only material):\n" + block
                 + "\nDELTA (only the sentences this step added or reworked):\n  - "
                 + String.join("\n  - ", delta);
         String reply = chatGateway.chat(model, prompts.diffcheck(),
                 budgeted(message, prompts.diffcheck().length()));
-        List<String> objections = new ArrayList<>();
-        if (reply != null) {
-            String deltaNorm = String.join(" ", delta);
-            for (String line : reply.split("\n")) {
-                String s = line.strip();
-                if (!s.startsWith("E:")) continue;
-                // Judge-output validity: an objection whose quote does not
-                // appear in the delta is the judge hallucinating a defect -
-                // it verifies nothing and would only churn a revision (live
-                // smoke 2026-07-16: 53 objections over ~16 steps, Lage alone
-                // 22 minutes). ONE valid objection max - the step examiner is
-                // a tripwire, not a second challenger.
-                String quote = quotedSpan(s).replaceAll("\\s+", " ");
-                if (quote.length() < 12 || !deltaNorm.contains(quote)) {
-                    LOG.debug("[DEEPDIVE] diff-judge objection dropped (quote not in delta).");
-                    continue;
-                }
-                objections.add(s);
-                break;
+        if (reply == null) return null;
+        String deltaNorm = String.join(" ", delta);
+        for (String line : reply.split("\n")) {
+            String s = line.strip();
+            if (!s.startsWith("E:")) continue;
+            // Judge-output validity: an objection whose quote does not
+            // appear in the delta is the judge hallucinating a defect -
+            // it verifies nothing and would only churn a revision (live
+            // smoke 2026-07-16: 53 objections over ~16 steps, Lage alone
+            // 22 minutes). ONE valid objection max - the step examiner is
+            // a tripwire, not a second challenger.
+            String quote = quotedSpan(s).replaceAll("\\s+", " ");
+            if (quote.length() < 12 || !deltaNorm.contains(quote)) {
+                LOG.debug("[DEEPDIVE] diff-judge objection dropped (quote not in delta).");
+                continue;
             }
+            return s;
         }
-        if (objections.isEmpty()) return after;
-        journalNotes(subject, objections);
-        LOG.info("[DEEPDIVE] '{}' section '{}': diff-judge raised {} objection(s) on the step.",
-                subject, heading, objections.size());
-        String revised = revise(model, prompts, header, heading, after, fed,
-                String.join("\n", objections));
-        if (isBlank(revised)) return after;
-        return examineAndRepair(model, prompts, subject, header, heading, fed,
-                markersIn(fed), de, revised.strip()).body();
+        return null;
     }
 
     /** The sentences of {@code after} that {@code before} does not carry (normalized). */
@@ -2926,6 +2949,8 @@ public class DeepDiveService {
     /** Everything the collect step gathered — nulls/empties where a leg had nothing. */
     /** Package-private for the material-completeness test. */
     static final class Material {
+        /** Diff-judge objections that survived their rework - the final instance re-hears them. */
+        final Map<String, List<String>> standingObjections = new LinkedHashMap<>();
         String canonicalName;
         String ticker;
         String isin;
