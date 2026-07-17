@@ -1214,6 +1214,59 @@ class DeepDiveMaterialTest {
         assertEquals(2, DeepDiveService.addedSentences(null, before).size());
     }
 
+    /** The house splices the patch: replace the 1-based locus, or append. */
+    @Test
+    void splicePatchReplacesTheLocusOrAppends() {
+        String body = "Erster Absatz. [1]\n\nZweiter Absatz. [2]";
+        assertEquals("Erster Absatz. [1]\n\nNeuer zweiter Absatz. [2] [7]",
+                DeepDiveService.splicePatch(body, 2, "Neuer zweiter Absatz. [2] [7]\n"));
+        assertEquals(body + "\n\nDritter Absatz. [7]",
+                DeepDiveService.splicePatch(body, 0, "Dritter Absatz. [7]"));
+        // out-of-range locus falls open to append - nothing standing is touched
+        assertEquals(body + "\n\nDritter Absatz. [7]",
+                DeepDiveService.splicePatch(body, 9, "Dritter Absatz. [7]"));
+        assertEquals("Einziger Absatz.", DeepDiveService.splicePatch("", 0, "Einziger Absatz."));
+    }
+
+    /** The gate reads the standing text with copyable [Pn] labels. */
+    @Test
+    void numberedParagraphsLabelsEveryParagraph() {
+        assertEquals("[P1] Erster Absatz. [1]\n\n[P2] Zweiter Absatz. [2]",
+                DeepDiveService.numberedParagraphs("Erster Absatz. [1]\n\nZweiter Absatz. [2]"));
+        assertEquals("", DeepDiveService.numberedParagraphs(null));
+    }
+
+    /**
+     * The diff-judge's jurisdiction: a rephrased standing sentence whose
+     * markers are all foreign to the step's source is not the judge's case -
+     * he never holds that source, so "invented" would be a false verdict.
+     */
+    @Test
+    void jurisdictionDeltaDropsSentencesCitingOnlyForeignMarkers() {
+        String target = "SAP baut Stellen ab, um KI-Ressourcen zu bündeln. [99]";
+        String patch = "Um KI-Ressourcen zu bündeln, baut SAP Stellen ab. [99] "
+                + "Jefferies hebt das Kursziel auf 240 EUR an. [130] "
+                + "Der Schritt folgt auf den Konzernumbau.";
+        List<String> delta = DeepDiveService.jurisdictionDelta(target, patch,
+                java.util.Set.of(130));
+        // the reworked [99] sentence is out; the [130] sentence and the
+        // marker-less connective stay in
+        assertEquals(List.of(
+                "Jefferies hebt das Kursziel auf 240 EUR an. [130]",
+                "Der Schritt folgt auf den Konzernumbau."), delta);
+        // a contradiction sentence carrying BOTH markers stays in
+        assertEquals(1, DeepDiveService.jurisdictionDelta(target,
+                "SAP baut Stellen ab [99], laut Jefferies aber weniger als geplant. [130]",
+                java.util.Set.of(130)).size());
+    }
+
+    /** replaceOnce swaps the first verbatim occurrence and nothing else. */
+    @Test
+    void replaceOnceSwapsTheFirstOccurrence() {
+        assertEquals("a X c", DeepDiveService.replaceOnce("a b c", "b", "X"));
+        assertEquals("a b c", DeepDiveService.replaceOnce("a b c", "z", "X"));
+    }
+
     private static int occurrences(String s, String needle) {
         int n = 0;
         for (int i = s.indexOf(needle); i >= 0; i = s.indexOf(needle, i + 1)) n++;

@@ -1017,77 +1017,97 @@ public class DeepDiveService {
             // both verdicts). material → weave; told-but-immaterial → the
             // story's markers attach to its paragraph (cited - the substance
             // stands); neither → the honest sighted-only register line.
-            // Doubt and whiffs stay material (fail-open).
-            if (rawFed) {
-                WeaveVerdict verdict = weaveVerdict(arbiter, prompts.covered(), body, block);
-                if (!verdict.material()) {
-                    if (verdict.told()) {
-                        String cited = attachMarkers(body, block);
-                        if (!cited.equals(body)) {
-                            body = cited;
-                            journalDiff(subject, shown, body);
-                            shown = body;
-                        }
-                        journalNotes(subject, List.of((de
-                                ? "Bereits erzählt - Marker ergänzt: "
-                                : "Already told - markers attached: ") + firstLine(block)));
-                    } else {
-                        m.sightedOnly.addAll(markersIn(block));
-                        journalNotes(subject, List.of((de
-                                ? "Gesichtet, ändert die Lesart nicht: "
-                                : "Sighted, does not change the read: ") + firstLine(block)));
+            // Doubt and whiffs stay material (fail-open). Since the patch cut
+            // the gate is ALSO the patch dispatcher (conflict + paragraph),
+            // so it runs on the classic-seed path too - its material/told
+            // verdicts keep gating only on the chronicle-seeded path.
+            WeaveVerdict verdict = weaveVerdict(arbiter, prompts.covered(), body, block);
+            if (rawFed && !verdict.material()) {
+                if (verdict.told()) {
+                    String cited = attachMarkers(body, block);
+                    if (!cited.equals(body)) {
+                        body = cited;
+                        journalDiff(subject, shown, body);
+                        shown = body;
                     }
-                    wovenBlocks.add(block);
-                    coveredSteps++;
-                    continue;
+                    journalNotes(subject, List.of((de
+                            ? "Bereits erzählt - Marker ergänzt: "
+                            : "Already told - markers attached: ") + firstLine(block)));
+                } else {
+                    m.sightedOnly.addAll(markersIn(block));
+                    journalNotes(subject, List.of((de
+                            ? "Gesichtet, ändert die Lesart nicht: "
+                            : "Sighted, does not change the read: ") + firstLine(block)));
                 }
+                wovenBlocks.add(block);
+                coveredSteps++;
+                continue;
             }
             eventBus.post(new DeepDiveProgressEvent(subject, "sections",
                     progressLabel + " · " + (de ? "Quelle " : "source ") + step + "/" + total));
             if (!rawFed) fed = fed + "\n" + newsHeader + block;
-            String woven = cleanReport(chatGateway.chat(model, prompts.weave(),
-                    weaveMessage(header, heading, body, block, prompts.weave().length(),
-                            group.size())));
-            if (isBlank(woven)) {
+            // LOCUS (patch cut, user GO 2026-07-17): the worker delivers ONE
+            // paragraph, the house splices - the section is never re-emitted,
+            // so standing sentences can no longer be mangled in transit and
+            // the diff-judge's delta is the patch by construction. The gate's
+            // paragraph is trusted when it exists; past the tighten budget a
+            // "new paragraph" verdict is redirected into the most similar
+            // standing paragraph - growth by appending is what the old
+            // re-emission's tighten note used to bound.
+            String[] paras = paragraphsOf(body);
+            int target = verdict.paragraph() >= 1 && verdict.paragraph() <= paras.length
+                    ? verdict.paragraph() : 0;
+            boolean tighten = false;
+            if (target == 0 && paras.length > 0 && body.length() > WEAVE_TIGHTEN_FROM) {
+                target = mostSimilarParagraph(block, paras) + 1;
+                tighten = true;
+            }
+            String targetPara = target > 0 ? paras[target - 1] : null;
+            String patch = cleanReport(chatGateway.chat(model, prompts.weave(),
+                    weavePatchMessage(header, heading, body, targetPara, verdict.conflict(),
+                            tighten, block, prompts.weave().length(), group.size())));
+            if (isBlank(patch)) {
                 LOG.warn("[DEEPDIVE] '{}' section '{}' weave step {} whiffed — story skipped.",
                         subject, heading, step);
                 continue;
             }
             // The UNCHANGED sentinel (2026-07-15): a pass-case answers one
-            // word instead of re-emitting the whole section, and an unchanged
-            // body needs no examiner pass — the single biggest weave saving.
-            if (WeatherReportService.isUnchangedSentinel(woven)
-                    || woven.strip().equals(body.strip())) {
+            // word, and a patch identical to its target needs no examiner.
+            if (WeatherReportService.isUnchangedSentinel(patch)
+                    || (targetPara != null && patch.strip().equals(targetPara.strip()))) {
                 continue;
             }
-            String beforeStep = body;
             RepairOutcome out = examineAndRepair(model, prompts, subject, header, heading, fed,
-                    markersIn(fed), de, woven.strip());
-            body = out.body();
+                    markersIn(fed), de, patch.strip());
+            patch = out.body();
+            if (isBlank(patch)) continue;
             // DIFF-JUDGE (user design 2026-07-16): the step examiner reads
-            // ONLY the delta this weave produced beside the ONE new source -
+            // ONLY the delta this step produced beside the ONE new source -
             // concentrated attention instead of a whole-section pass (a
             // one-word direction inversion provably slipped the full-view
             // challenger, live smoke 4: a BaFin SALE narrated as a buy).
-            body = diffJudgeStep(model, prompts, subject, header, heading, beforeStep,
-                    body, block, fed, de, m);
+            patch = diffJudgePatch(model, prompts, subject, header, heading, targetPara,
+                    patch, block, fed, de, m);
+            body = splicePatch(body, target, patch);
             // RE-KNOCK (user mandate 2026-07-14): a HARD finding on a group
             // step whose members were never full-text-read means the desk may
             // be missing exactly the source that carries the figure — the
             // group digest only read the representative. Fetch the missing
-            // digests NOW (session cache makes repeats free) and weave the
+            // digests NOW (session cache makes repeats free) and patch the
             // story ONCE more with the enriched material. Bounded: one
             // re-knock per group, at most MAX_REKNOCK_DIGESTS reads.
             if (out.hadHard()) {
                 String extra = reknockDigests(subject, group, m);
                 if (!extra.isEmpty()) {
                     fed = fed + "\n" + extra;
-                    String rewoven = cleanReport(chatGateway.chat(model, prompts.weave(),
-                            weaveMessage(header, heading, body, block + extra,
-                                    prompts.weave().length(), group.size())));
-                    if (!isBlank(rewoven)) {
-                        body = examineAndRepair(model, prompts, subject, header, heading,
-                                fed, markersIn(fed), de, rewoven.strip()).body();
+                    String repatch = cleanReport(chatGateway.chat(model, prompts.weave(),
+                            weavePatchMessage(header, heading, body, patch, verdict.conflict(),
+                                    tighten, block + extra, prompts.weave().length(),
+                                    group.size())));
+                    if (!isBlank(repatch) && !WeatherReportService.isUnchangedSentinel(repatch)) {
+                        String reworked = examineAndRepair(model, prompts, subject, header,
+                                heading, fed, markersIn(fed), de, repatch.strip()).body();
+                        if (!isBlank(reworked)) body = replaceOnce(body, patch, reworked);
                     }
                 }
             }
@@ -1614,25 +1634,37 @@ public class DeepDiveService {
      * and a whiff answers false so the story weaves normally (fail-open,
      * nothing is ever lost to a broken call).
      */
-    /** The weave gate's twin verdict: must the text change, and is the story already told? */
-    record WeaveVerdict(boolean material, boolean told) {
+    /**
+     * The weave gate's verdicts: must the text change, is the story already
+     * told - and, since the patch cut (Locus 1, user GO 2026-07-17), WHERE the
+     * patch lands: the numbered standing paragraph the story extends or
+     * contradicts (0 = a genuinely new angle, the patch becomes a new
+     * paragraph) plus the conflict flag the worker needs to print source
+     * against source.
+     */
+    record WeaveVerdict(boolean material, boolean told, boolean conflict, int paragraph) {
     }
 
     private WeaveVerdict weaveVerdict(ChatModel judge, String prompt, String body, String block) {
         try {
             String reply = chatGateway.chat(judge, prompt,
-                    "STANDING TEXT:\n" + body + "\n\nSTORY:\n" + block);
-            if (reply == null) return new WeaveVerdict(true, false);
+                    "STANDING TEXT:\n" + numberedParagraphs(body) + "\n\nSTORY:\n" + block);
+            if (reply == null) return new WeaveVerdict(true, false, false, 0);
             Matcher mMat = MATERIAL_VERDICT.matcher(reply);
             Matcher mTold = TOLD_VERDICT.matcher(reply);
+            Matcher mConf = CONFLICT_VERDICT.matcher(reply);
+            Matcher mPara = PARAGRAPH_VERDICT.matcher(reply);
             // Fail-open: no parseable material verdict weaves normally - a
-            // whiffed judge must never cost substance.
+            // whiffed judge must never cost substance. An unparseable locus
+            // falls open to 0 (new paragraph) - nothing standing is touched.
             boolean material = !mMat.find() || Boolean.parseBoolean(mMat.group(1));
             boolean told = mTold.find() && Boolean.parseBoolean(mTold.group(1));
-            return new WeaveVerdict(material, told);
+            boolean conflict = mConf.find() && Boolean.parseBoolean(mConf.group(1));
+            int paragraph = mPara.find() ? Integer.parseInt(mPara.group(1)) : 0;
+            return new WeaveVerdict(material, told, conflict, paragraph);
         } catch (Exception e) {
             LOG.debug("[DEEPDIVE] weave gate whiffed: {}", e.getMessage());
-            return new WeaveVerdict(true, false);
+            return new WeaveVerdict(true, false, false, 0);
         }
     }
 
@@ -1640,6 +1672,64 @@ public class DeepDiveService {
             Pattern.compile("\"material\"\\s*:\\s*(true|false)");
     private static final Pattern TOLD_VERDICT =
             Pattern.compile("\"told\"\\s*:\\s*(true|false)");
+    private static final Pattern CONFLICT_VERDICT =
+            Pattern.compile("\"conflict\"\\s*:\\s*(true|false)");
+    private static final Pattern PARAGRAPH_VERDICT =
+            Pattern.compile("\"paragraph\"\\s*:\\s*\"?P?(\\d+)");
+
+    /** The body's paragraphs (blank-line separated), or an empty array. */
+    static String[] paragraphsOf(String body) {
+        if (body == null || body.isBlank()) return new String[0];
+        return body.strip().split("\n\\s*\n");
+    }
+
+    /** The gate's view of the standing text: every paragraph [Pn]-labeled. */
+    static String numberedParagraphs(String body) {
+        String[] paras = paragraphsOf(body);
+        StringBuilder sb = new StringBuilder(body == null ? 16 : body.length() + paras.length * 6);
+        for (int i = 0; i < paras.length; i++) {
+            if (i > 0) sb.append("\n\n");
+            sb.append("[P").append(i + 1).append("] ").append(paras[i]);
+        }
+        return sb.toString();
+    }
+
+    /** The index (0-based) of the paragraph most similar to the block. */
+    static int mostSimilarParagraph(String block, String[] paras) {
+        int bestIdx = 0;
+        double best = -1;
+        for (int i = 0; i < paras.length; i++) {
+            double sim = tokenSimilarity(block, paras[i]);
+            if (sim > best) {
+                best = sim;
+                bestIdx = i;
+            }
+        }
+        return bestIdx;
+    }
+
+    /**
+     * Splices a patch into the standing body: replaces the 1-based target
+     * paragraph, or appends the patch as a new paragraph (target 0 or out of
+     * range). The house splices deterministically - the worker never re-emits
+     * the section (Locus cut 1).
+     */
+    static String splicePatch(String body, int target, String patch) {
+        String[] paras = paragraphsOf(body);
+        if (target >= 1 && target <= paras.length) {
+            paras[target - 1] = patch.strip();
+            return String.join("\n\n", paras);
+        }
+        String standing = body == null ? "" : body.strip();
+        return standing.isEmpty() ? patch.strip() : standing + "\n\n" + patch.strip();
+    }
+
+    /** Replaces the first occurrence of {@code find} verbatim, or returns {@code body}. */
+    static String replaceOnce(String body, String find, String replacement) {
+        int i = body.indexOf(find);
+        if (i < 0) return body;
+        return body.substring(0, i) + replacement + body.substring(i + find.length());
+    }
 
     /**
      * Attaches a covered story's markers to the paragraph most similar to it
@@ -1653,16 +1743,8 @@ public class DeepDiveService {
             if (!already.contains(n)) fresh.add(n);
         }
         if (fresh.isEmpty()) return body;
-        String[] paras = body.strip().split("\n\\s*\n");
-        int bestIdx = 0;
-        double best = -1;
-        for (int i = 0; i < paras.length; i++) {
-            double sim = tokenSimilarity(block, paras[i]);
-            if (sim > best) {
-                best = sim;
-                bestIdx = i;
-            }
-        }
+        String[] paras = paragraphsOf(body);
+        int bestIdx = mostSimilarParagraph(block, paras);
         StringBuilder marks = new StringBuilder();
         for (Integer n : fresh) marks.append('[').append(n).append(']');
         paras[bestIdx] = paras[bestIdx].stripTrailing() + " " + marks;
@@ -1684,34 +1766,49 @@ public class DeepDiveService {
     }
 
     /**
-     * The weaver's user message: standing text + exactly ONE new STORY — a
-     * single source, or a grouped bundle of several sources reporting the same
-     * event (then the label says so and demands EVERY marker be cited on the
-     * statements it supports; no member may silently vanish).
+     * The patch worker's user message (Locus cut 1): the full standing text as
+     * read-only context, the TARGET (the one paragraph this step reworks, or
+     * the new-paragraph license), the conflict note when the gate saw fact
+     * against fact, and exactly ONE new STORY — a single source, or a grouped
+     * bundle of several sources reporting the same event (then the label says
+     * so and demands EVERY marker be cited on the statements it supports; no
+     * member may silently vanish).
      */
-    private String weaveMessage(String header, String heading, String body, String block,
+    private String weavePatchMessage(String header, String heading, String body,
+            String targetPara, boolean conflict, boolean tighten, String block,
             int promptChars, int groupSize) {
         String label = groupSize > 1
                 ? "NEW SOURCES (" + groupSize + " reports of ONE story - the same event "
                         + "may arrive via several sources; work the story in ONCE and cite "
                         + "EVERY marker below on the statements it supports):\n"
                 : "NEW SOURCE:\n";
-        // Prevention beats scissors (user mandate 2026-07-15 "NICHTS darf
-        // wegfallen"): once the standing text nears its contract, every
-        // further weave must integrate by TIGHTENING — merge and compress the
-        // weaker sentences to make room — instead of appending; the house cut
-        // stays the last resort, not the plan.
-        String budgetNote = "";
-        if (body != null && body.length() > WEAVE_TIGHTEN_FROM) {
-            budgetNote = "\n\nLENGTH BUDGET: the standing text has " + body.length()
-                    + " of at most " + DeepDiveFactCheck.MAX_SECTION_CHARS
-                    + " characters. Integrate the new material by TIGHTENING - merge "
-                    + "overlapping statements, compress wordy ones, keep every fact, "
-                    + "figure and marker. The result must NOT be longer than the "
-                    + "standing text.";
+        StringBuilder targetNote = new StringBuilder(128);
+        if (targetPara != null) {
+            targetNote.append("TARGET PARAGRAPH (the ONE paragraph this step reworks - "
+                    + "answer with its replacement):\n").append(targetPara.strip());
+            if (conflict) {
+                targetNote.append("\n\nCONFLICT: the story contradicts this paragraph - "
+                        + "name the contradiction, source against source, both markers.");
+            }
+            // Prevention beats scissors (user mandate 2026-07-15 "NICHTS darf
+            // wegfallen"): near the section contract the patch must integrate
+            // by TIGHTENING its own paragraph; the house cut stays the last
+            // resort, not the plan.
+            if (tighten) {
+                targetNote.append("\n\nLENGTH BUDGET: the section is near its "
+                        + DeepDiveFactCheck.MAX_SECTION_CHARS + "-character contract - "
+                        + "integrate by TIGHTENING: merge overlapping statements, compress "
+                        + "wordy ones, keep every fact, figure and marker. The replacement "
+                        + "must NOT be longer than the target paragraph.");
+            }
+        } else {
+            targetNote.append("TARGET: no standing paragraph carries this story - "
+                    + "answer with ONE NEW paragraph.");
         }
-        String fixed = header + "SECTION: ## " + heading + "\n\nSTANDING TEXT:\n" + body
-                + budgetNote + "\n\n" + label;
+        String fixed = header + "SECTION: ## " + heading
+                + "\n\nSTANDING TEXT (read-only context - answer ONLY with the patch "
+                + "paragraph):\n" + body
+                + "\n\n" + targetNote + "\n\n" + label;
         return fixed + budgeted(block, promptChars + fixed.length());
     }
 
@@ -1989,20 +2086,39 @@ public class DeepDiveService {
                     default -> SEC_SITUATION;
                 };
                 if (bodies[sec] == null) continue;
-                String wovenBody = cleanReport(chatGateway.chat(model, prompts.weave(),
-                        weaveMessage(header, headings.get(sec), bodies[sec], block,
+                // Reclaim rides the same patch mechanics as the weave loop:
+                // the gate dispatches the locus (its material/told verdicts
+                // are moot here - the re-triage already earned the window),
+                // the worker delivers ONE paragraph, the house splices.
+                String before = bodies[sec];
+                WeaveVerdict verdict = weaveVerdict(brain.getAgentModel(), prompts.covered(),
+                        before, block);
+                String[] paras = paragraphsOf(before);
+                int locus = verdict.paragraph() >= 1 && verdict.paragraph() <= paras.length
+                        ? verdict.paragraph() : 0;
+                boolean tighten = false;
+                if (locus == 0 && paras.length > 0 && before.length() > WEAVE_TIGHTEN_FROM) {
+                    locus = mostSimilarParagraph(block, paras) + 1;
+                    tighten = true;
+                }
+                String targetPara = locus > 0 ? paras[locus - 1] : null;
+                String patch = cleanReport(chatGateway.chat(model, prompts.weave(),
+                        weavePatchMessage(header, headings.get(sec), before, targetPara,
+                                verdict.conflict(), tighten, block,
                                 prompts.weave().length(), 1)));
-                if (isBlank(wovenBody) || WeatherReportService.isUnchangedSentinel(wovenBody)) {
+                if (isBlank(patch) || WeatherReportService.isUnchangedSentinel(patch)
+                        || (targetPara != null && patch.strip().equals(targetPara.strip()))) {
                     continue;
                 }
-                String before = bodies[sec];
-                String repaired = examineAndRepair(model, prompts, subject, header,
-                        headings.get(sec), before + "\n" + block, markersIn(before + block),
-                        de, wovenBody.strip()).body();
-                repaired = diffJudgeStep(model, prompts, subject, header, headings.get(sec),
-                        before, repaired, block, before + "\n" + block, de, m);
-                journalDiff(subject, before, repaired);
-                bodies[sec] = repaired;
+                String material = before + "\n" + block;
+                patch = examineAndRepair(model, prompts, subject, header,
+                        headings.get(sec), material, markersIn(before + block),
+                        de, patch.strip()).body();
+                if (isBlank(patch)) continue;
+                patch = diffJudgePatch(model, prompts, subject, header, headings.get(sec),
+                        targetPara, patch, block, material, de, m);
+                bodies[sec] = splicePatch(before, locus, patch);
+                journalDiff(subject, before, bodies[sec]);
             }
             woven++;
             journalNotes(subject, List.of((de ? "Nachlese: " : "Reclaimed: ") + item.title()));
@@ -2126,31 +2242,33 @@ public class DeepDiveService {
     }
 
     /**
-     * The DIFF-JUDGE of one weave step (user design 2026-07-16): the examiner
-     * sees ONLY the sentences this step added or reworked, beside the step's
-     * ONE source block - the concentrated view in which a direction inversion
-     * or a mislabeled value cannot hide. At most one revision per step; the
-     * section-end challenge and the cross-section review stay the final
-     * instances for everything a delta view cannot see.
+     * The DIFF-JUDGE of one patch step (user design 2026-07-16, patch form
+     * 2026-07-17): the examiner sees ONLY this step's patch beside the step's
+     * ONE source block - the delta IS the patch by construction, the
+     * concentrated view in which a direction inversion or a mislabeled value
+     * cannot hide. At most one revision per step; the section-end challenge
+     * and the cross-section review stay the final instances for everything a
+     * delta view cannot see.
      */
-    private String diffJudgeStep(ChatModel model, Prompts prompts, String subject,
-            String header, String heading, String before, String after, String block,
+    private String diffJudgePatch(ChatModel model, Prompts prompts, String subject,
+            String header, String heading, String targetPara, String patch, String block,
             String fed, boolean de, Material m) {
-        String objection = diffJudgeObjection(model, prompts, header, heading, before,
-                after, block);
-        if (objection == null) return after;
+        String objection = diffJudgeObjection(model, prompts, header, heading, targetPara,
+                patch, block);
+        if (objection == null) return patch;
         journalNotes(subject, List.of(objection));
         LOG.info("[DEEPDIVE] '{}' section '{}': diff-judge raised an objection on the step.",
                 subject, heading, objection);
-        String revised = revise(model, prompts, header, heading, after, fed, objection);
-        if (isBlank(revised)) return after;
+        String revised = revise(model, prompts, header, heading, patch, fed, objection);
+        if (isBlank(revised)) return patch;
         String repaired = examineAndRepair(model, prompts, subject, header, heading, fed,
                 markersIn(fed), de, revised.strip()).body();
+        if (isBlank(repaired)) return patch;
         // Changes-requested closes the loop (user ask 2026-07-17): the judge
         // re-reads its own delta ONCE after the rework. A standing objection
         // is journaled and left to the section grilling - a forced approval
         // here would livelock the same way the old challenge loop did.
-        String standing = diffJudgeObjection(model, prompts, header, heading, before,
+        String standing = diffJudgeObjection(model, prompts, header, heading, targetPara,
                 repaired, block);
         if (standing != null) {
             // The grilling already ran when the weave starts - the only
@@ -2167,10 +2285,10 @@ public class DeepDiveService {
         return repaired;
     }
 
-    /** The step examiner's single valid objection on the delta - or null (approved). */
+    /** The step examiner's single valid objection on the patch - or null (approved). */
     private String diffJudgeObjection(ChatModel model, Prompts prompts, String header,
-            String heading, String before, String after, String block) {
-        List<String> delta = addedSentences(before, after);
+            String heading, String targetPara, String patch, String block) {
+        List<String> delta = jurisdictionDelta(targetPara, patch, markersIn(block));
         if (delta.isEmpty()) return null;
         String message = header + "SECTION: ## " + heading
                 + "\n\nNEW SOURCE (this step's only material):\n" + block
@@ -2197,6 +2315,57 @@ public class DeepDiveService {
             return s;
         }
         return null;
+    }
+
+    /**
+     * The patch sentences within this step's jurisdiction: everything the
+     * target paragraph did not already carry verbatim, MINUS sentences whose
+     * source markers are ALL foreign to this step's source. Such a sentence is
+     * standing substance the patch merely rephrased - its own step already
+     * judged it, and this judge never holds its source (live 2026-07-17: a
+     * standing [99] claim was struck as "invented" against the step's [130]
+     * source, which by construction cannot carry it).
+     */
+    static List<String> jurisdictionDelta(String targetPara, String patch,
+            Set<Integer> stepMarkers) {
+        Set<String> standing = new java.util.HashSet<>();
+        if (targetPara != null && !targetPara.isBlank()) {
+            for (String s : markerFaithfulSentences(targetPara)) {
+                standing.add(s.replaceAll("\\s+", " "));
+            }
+        }
+        List<String> out = new ArrayList<>();
+        for (String s : markerFaithfulSentences(patch)) {
+            String norm = s.replaceAll("\\s+", " ");
+            if (norm.isEmpty() || standing.contains(norm)) continue;
+            Set<Integer> cited = markersIn(norm);
+            if (cited.isEmpty() || !java.util.Collections.disjoint(cited, stepMarkers)) {
+                out.add(norm);
+            }
+        }
+        return out;
+    }
+
+    private static final Pattern LEADING_MARKERS = Pattern.compile("^(?:\\[\\d+]\\s*)+");
+
+    /**
+     * The block's sentences with each trailing source marker re-attached to
+     * the sentence it closes: house style sets markers AFTER the period
+     * ("... ab. [99]"), which the splitter hands to the NEXT sentence - and a
+     * per-sentence marker attribution would blame the wrong sentence.
+     */
+    static List<String> markerFaithfulSentences(String text) {
+        List<String> out = new ArrayList<>();
+        for (String raw : DeepDiveFactCheck.sentences(text)) {
+            String sentence = raw.strip();
+            Matcher lead = LEADING_MARKERS.matcher(sentence);
+            if (lead.find() && !out.isEmpty()) {
+                out.set(out.size() - 1, out.get(out.size() - 1) + " " + lead.group().strip());
+                sentence = sentence.substring(lead.end()).strip();
+            }
+            if (!sentence.isEmpty()) out.add(sentence);
+        }
+        return out;
     }
 
     /** The sentences of {@code after} that {@code before} does not carry (normalized). */
