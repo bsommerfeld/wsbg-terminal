@@ -111,6 +111,18 @@ public class NewsAggregator {
     }
 
     public List<RawNewsItem> newsFor(String symbol, String name, String isin, int limit) {
+        return newsFor(symbol, name, isin, limit, null);
+    }
+
+    /**
+     * The STREAMING variant: {@code onItem} fires for every item the moment
+     * its source delivers it (post-dedupe, pre-ranking) — the live view lists
+     * finds WHILE the fan still runs instead of after the last source. The
+     * returned list stays the ranked, capped pool; a streamed item may not
+     * survive the cap, so callers reconcile against the return value.
+     */
+    public List<RawNewsItem> newsFor(String symbol, String name, String isin, int limit,
+            java.util.function.Consumer<RawNewsItem> onItem) {
         boolean haveSymbol = symbol != null && !symbol.isBlank();
         boolean haveName = name != null && !name.isBlank();
         boolean haveIsin = isin != null && !isin.isBlank();
@@ -118,7 +130,7 @@ public class NewsAggregator {
             return List.of();
         }
         Map<String, RawNewsItem> byId =
-                gather(haveSymbol, haveName, haveIsin, symbol, name, isin, limit, false);
+                gather(haveSymbol, haveName, haveIsin, symbol, name, isin, limit, false, onItem);
         return byId.values().stream()
                 .sorted(NewsRelevanceRanker.forName(name))
                 .limit(limit)
@@ -144,7 +156,7 @@ public class NewsAggregator {
             return List.of();
         }
         Map<String, RawNewsItem> byId =
-                gather(haveSymbol, haveName, haveIsin, symbol, name, isin, limit, true);
+                gather(haveSymbol, haveName, haveIsin, symbol, name, isin, limit, true, null);
         return byId.values().stream()
                 .sorted(java.util.Comparator.comparing(RawNewsItem::publishedAt,
                         java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder())))
@@ -162,15 +174,16 @@ public class NewsAggregator {
      */
     private Map<String, RawNewsItem> gather(boolean haveSymbol, boolean haveName,
                                             boolean haveIsin, String symbol, String name,
-                                            String isin, int limit, boolean social) {
+                                            String isin, int limit, boolean social,
+                                            java.util.function.Consumer<RawNewsItem> onItem) {
         Map<String, RawNewsItem> byId = new LinkedHashMap<>();
         Set<String> seenStories = new java.util.HashSet<>();
         for (NewsSource src : sources) {
             if (src.socialSentiment() != social) continue;
             try {
-                if (haveSymbol) collect(byId, seenStories, src.newsFor(symbol, limit));
-                if (haveName) collect(byId, seenStories, src.newsForName(name, limit));
-                if (haveIsin) collect(byId, seenStories, src.newsForIsin(isin, limit));
+                if (haveSymbol) collect(byId, seenStories, src.newsFor(symbol, limit), onItem);
+                if (haveName) collect(byId, seenStories, src.newsForName(name, limit), onItem);
+                if (haveIsin) collect(byId, seenStories, src.newsForIsin(isin, limit), onItem);
             } catch (Exception e) {
                 LOG.warn("news source {} failed for '{}'/'{}': {}",
                         safeName(src), symbol, name, e.getMessage());
@@ -180,7 +193,8 @@ public class NewsAggregator {
     }
 
     private static void collect(Map<String, RawNewsItem> byId, Set<String> seenStories,
-                                List<RawNewsItem> items) {
+                                List<RawNewsItem> items,
+                                java.util.function.Consumer<RawNewsItem> onItem) {
         if (items == null) return;
         for (RawNewsItem it : items) {
             if (it == null) continue;
@@ -190,7 +204,14 @@ public class NewsAggregator {
             // normalized title + publisher = same story, keep the first.
             String story = storyKey(it);
             if (story != null && !seenStories.add(story)) continue;
-            byId.putIfAbsent(dedupKey(it), it);
+            if (byId.putIfAbsent(dedupKey(it), it) == null && onItem != null) {
+                // A listener must never kill the fan — announce best-effort.
+                try {
+                    onItem.accept(it);
+                } catch (Exception e) {
+                    LOG.debug("news stream listener failed: {}", e.getMessage());
+                }
+            }
         }
     }
 

@@ -369,6 +369,11 @@ function srcRowEl(s) {
   return li;
 }
 
+/* A collect wave lands as one burst of entries — a small incremental delay
+   per row lets the list visibly RUN IN instead of popping wholesale. */
+let srcBurstAt = 0;
+let srcBurstN = 0;
+
 function addSrcRow(s, animate) {
   const doc = docEl();
   if (!doc) return;
@@ -381,7 +386,13 @@ function addSrcRow(s, animate) {
     return;
   }
   const li = srcRowEl(s);
-  if (animate) li.classList.add('is-new');
+  if (animate) {
+    const now = Date.now();
+    if (now - srcBurstAt > 600) srcBurstN = 0;
+    srcBurstAt = now;
+    li.classList.add('is-new');
+    li.style.animationDelay = Math.min(srcBurstN++ * 35, 900) + 'ms';
+  }
   list.appendChild(li);
   updateSrcCounts();
 }

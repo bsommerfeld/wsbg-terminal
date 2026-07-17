@@ -3077,11 +3077,22 @@ public class DeepDiveService {
         // never discards.
         try {
             if (newsAggregator != null) {
+                // Every find goes to the live triage board the MOMENT its
+                // source delivers it — the list grows while the fan still
+                // runs (user ask 2026-07-17 "sobald ein Artikel steht").
+                Map<String, RawNewsItem> streamed = new LinkedHashMap<>();
+                java.util.function.Consumer<RawNewsItem> onItem = item -> {
+                    String key = newsKey(item);
+                    if (m.srcAnnounced.add(key)) {
+                        streamed.put(key, item);
+                        liveSrc(ticker, "src", item, "collect");
+                    }
+                };
                 // The full triangulation: symbol + name + ISIN per source —
                 // the ISIN is the key that never chases a wrong twin and finds
                 // the disclosure-grade documents (EQS prints it verbatim).
                 List<RawNewsItem> pooled = new ArrayList<>(newsAggregator.newsFor(
-                        m.ticker, m.canonicalName, m.isin, MAX_NEWS_CANDIDATES));
+                        m.ticker, m.canonicalName, m.isin, MAX_NEWS_CANDIDATES, onItem));
                 // Yahoo indexes news under the BASE symbol: q=SAP answers the
                 // real company stories (restructuring, antitrust — live-probed),
                 // q=SAP.DE answers an unrelated firehose. The resolver upgrades
@@ -3092,18 +3103,24 @@ public class DeepDiveService {
                     Set<String> seen = new HashSet<>();
                     for (RawNewsItem item : pooled) seen.add(newsKey(item));
                     for (RawNewsItem item : newsAggregator.newsFor(base, m.canonicalName,
-                            MAX_NEWS_CANDIDATES)) {
+                            null, MAX_NEWS_CANDIDATES, onItem)) {
                         if (seen.add(newsKey(item))) pooled.add(item);
                     }
                 }
                 if (!pooled.isEmpty()) m.news = pooled;
+                // Streamed finds the ranked cap dropped are struck off the
+                // board — an announced row must never hang pending forever.
+                Set<String> standing = new HashSet<>();
+                for (RawNewsItem n : m.news) standing.add(newsKey(n));
+                for (Map.Entry<String, RawNewsItem> en : streamed.entrySet()) {
+                    if (!standing.contains(en.getKey())) {
+                        liveSrc(ticker, "src-out", en.getValue(), "collect");
+                    }
+                }
             }
         } catch (Exception e) {
             LOG.debug("[DEEPDIVE] news failed: {}", e.getMessage());
         }
-        // Each collect wave announces its finds to the live triage board the
-        // moment it lands — the list grows WHILE the desk still gathers.
-        announceSrc(ticker, m, "collect");
         // Multi-year press HISTORY (2026-07-16): one windowed archive query
         // per past calendar year - headlines only, never triaged or digested
         // (context for the long-term arc, not weave material; the freshness
