@@ -6,7 +6,8 @@ import java.nio.file.Path;
 import java.util.Locale;
 
 /**
- * Hardware check + model choice — the backend of the future model-selection UI.
+ * Hardware check + model choice — the backend behind the launcher's
+ * model-choice screen ({@link ModelChoicePanel}).
  *
  * <p>
  * Probes the machine ({@link HardwareProbe}), grades every gemma4 tier
@@ -14,7 +15,7 @@ import java.util.Locale;
  * the user's explicit choice from {@code config.toml} ({@code agent.model-tag})
  * when present, else the managed default. <strong>The recommendation itself is
  * advisory only</strong> — it is computed, logged, and persisted to
- * {@code hardware-recommendation.json} for a future UI to render, but it never
+ * {@code hardware-recommendation.json} for UIs to render, but it never
  * silently switches an install; only a user decision (the config key) does.
  *
  * <p>
@@ -27,7 +28,7 @@ final class ModelSelection {
     /** Env var carrying the resolved tag into setup.sh / setup.ps1. */
     static final String MODEL_ENV = "WSBG_REASONING_MODEL";
 
-    /** Machine-readable probe result for the future model-choice UI. */
+    /** Machine-readable probe result for model-choice UIs (e.g. terminal settings). */
     static final String RECOMMENDATION_FILE = "hardware-recommendation.json";
 
     /** Only the one deployed family is installable — anything else is a typo. */
@@ -37,8 +38,11 @@ final class ModelSelection {
      * @param effectiveTag   the tag the setup script installs and the runtime uses
      * @param recommendedTag the hardware recommendation (platform-specific)
      * @param userChosen     whether effectiveTag came from config.toml
+     * @param totalRamGb     probed machine RAM (0 = unprobeable)
+     * @param appleSilicon   whether the MLX twins apply on this machine
      */
-    record Result(String effectiveTag, String recommendedTag, boolean userChosen) {
+    record Result(String effectiveTag, String recommendedTag, boolean userChosen,
+            long totalRamGb, boolean appleSilicon) {
     }
 
     private ModelSelection() {
@@ -68,7 +72,7 @@ final class ModelSelection {
 
         writeRecommendationFile(appDir, hw, ramGb, mlx, recommendedTag, configured, effectiveTag, log);
 
-        return new Result(effectiveTag, recommendedTag, userChosen);
+        return new Result(effectiveTag, recommendedTag, userChosen, ramGb, mlx);
     }
 
     /**
@@ -102,8 +106,8 @@ final class ModelSelection {
 
     /**
      * Persists the probe + per-tier verdicts as JSON beside the config, so the
-     * future model-choice UI (launcher dialog or terminal settings) only has to
-     * render it. Regenerated every launcher run — never stale, never load-bearing:
+     * model-choice UIs (the launcher screen today, terminal settings later)
+     * only have to render it. Regenerated every launcher run — never stale, never load-bearing:
      * a write failure is logged and ignored.
      */
     private static void writeRecommendationFile(Path appDir, HardwareProbe hw, long ramGb,
@@ -126,6 +130,8 @@ final class ModelSelection {
                     .append("\", \"diskGb\": ").append(tier.diskGbFor(mlx))
                     .append(", \"minRamGb\": ").append(tier.minRamGb())
                     .append(", \"recommendedRamGb\": ").append(tier.recommendedRamGb())
+                    .append(", \"quality\": ").append(tier.quality())
+                    .append(", \"speed\": ").append(tier.speed())
                     .append(", \"fit\": \"").append(tier.fitFor(ramGb))
                     .append("\", \"recommended\": ").append(tier.tagFor(mlx).equals(recommendedTag))
                     .append('}').append(i < tiers.length - 1 ? "," : "").append('\n');

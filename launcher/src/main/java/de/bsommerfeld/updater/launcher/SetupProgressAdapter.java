@@ -126,6 +126,10 @@ final class SetupProgressAdapter implements BiConsumer<String, String> {
         // means there is nothing downloading right now, so the speed readout
         // is cleared rather than left showing a stale "0 B/s".
         int pct = SetupDetailParser.parsePercent(detail);
+        // Downloaded/total figures ride verbatim next to the bar; null (no
+        // figures in this detail) clears the readout rather than leaving a
+        // stale position on screen.
+        window.setByteFigures(pct < 0 ? null : SetupDetailParser.parseByteFigures(detail));
         if (pct < 0) {
             // The browser-runtime step has long stretches with no percentage at
             // all (unzip + tar extraction emit nothing), so drive the bar into

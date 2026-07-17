@@ -49,6 +49,27 @@ final class SetupDetailParser {
     }
 
     /**
+     * Extracts the verbatim "downloaded / total" half of a rich
+     * "NN% — 739 MB / 3.3 GB" detail for direct display next to the progress
+     * bar, or {@code null} when the detail carries no byte figures (or no
+     * total — a lone figure reads as a size, not as progress). Verbatim on
+     * purpose: the script's own formatting can't drift from what we show.
+     */
+    static String parseByteFigures(String detail) {
+        if (detail == null) return null;
+        int dashIdx = detail.indexOf('—');
+        if (dashIdx <= 0) return null;
+        String figures = detail.substring(dashIdx + 1).strip();
+        if (!figures.contains("/")) return null;
+        try {
+            ByteSizes.parse(figures.split("/")[0].strip());
+            return figures;
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /**
      * Parses the downloaded-bytes figure from a rich "NN% — downloaded / total"
      * detail, or {@code -1} when the detail has no byte figures (e.g. curl's
      * {@code --progress-bar} output, which is a bar + percent only).

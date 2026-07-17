@@ -115,6 +115,67 @@ class ModelSelectionTest {
         }
         assertTrue(json.contains("\"recommendedTag\""));
         assertTrue(json.contains("\"fit\""));
+        assertTrue(json.contains("\"quality\""));
+        assertTrue(json.contains("\"speed\""));
+    }
+
+    // ------------------------------------------------------------------
+    // Quality/speed scales: the non-technical parameter translation
+    // ------------------------------------------------------------------
+
+    @Test
+    void qualityClimbsTheLadderMonotonically() {
+        ModelCatalog[] tiers = ModelCatalog.values();
+        for (int i = 1; i < tiers.length; i++) {
+            assertTrue(tiers[i].quality() > tiers[i - 1].quality(),
+                    "quality must climb with the tier: " + tiers[i]);
+        }
+    }
+
+    @Test
+    void speedFollowsActiveParamsNotSize() {
+        // The non-obvious fact the scale exists to convey: the 26B MoE (4B
+        // active) outruns the smaller dense 12B; the dense 31B is slowest.
+        assertTrue(ModelCatalog.B26.speed() > ModelCatalog.B12.speed());
+        assertTrue(ModelCatalog.E2B.speed() > ModelCatalog.E4B.speed());
+        for (ModelCatalog tier : ModelCatalog.values()) {
+            assertTrue(tier.speed() > ModelCatalog.B31.speed()
+                    || tier == ModelCatalog.B31);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // ModelConfigWriter: persisting the UI choice
+    // ------------------------------------------------------------------
+
+    @Test
+    void writerReplacesAnExistingKeyInPlace(@TempDir Path dir) throws IOException {
+        writeConfig(dir, "# comment stays", "[agent]",
+                "agent.model-tag = \"\"", "agent.identity-desk = true");
+        assertTrue(ModelConfigWriter.write(dir, "gemma4:26b-mlx", new SessionLog(dir)));
+        String config = Files.readString(dir.resolve("config.toml"));
+        assertTrue(config.contains("agent.model-tag = \"gemma4:26b-mlx\""));
+        assertTrue(config.contains("# comment stays"));
+        assertTrue(config.contains("agent.identity-desk = true"));
+        assertEquals("gemma4:26b-mlx", ModelSelection.configuredModelTag(dir));
+    }
+
+    @Test
+    void writerInsertsUnderTheAgentSectionWhenTheKeyIsMissing(@TempDir Path dir)
+            throws IOException {
+        writeConfig(dir, "[agent]", "agent.identity-desk = true", "", "[user]",
+                "language = \"de\"");
+        assertTrue(ModelConfigWriter.write(dir, "gemma4:e2b", new SessionLog(dir)));
+        assertEquals("gemma4:e2b", ModelSelection.configuredModelTag(dir));
+        String config = Files.readString(dir.resolve("config.toml"));
+        // Must land inside [agent], never under a later section.
+        assertTrue(config.indexOf("agent.model-tag") < config.indexOf("[user]"));
+    }
+
+    @Test
+    void writerCreatesAMinimalConfigWhenNoneExists(@TempDir Path dir) {
+        assertTrue(ModelConfigWriter.write(dir, "gemma4:e4b-mlx", new SessionLog(dir)));
+        assertEquals("gemma4:e4b-mlx", ModelSelection.configuredModelTag(dir));
     }
 
     private static void writeConfig(Path dir, String... lines) throws IOException {

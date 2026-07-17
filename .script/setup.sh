@@ -496,7 +496,7 @@ ui-reddit-visible = true
 # model serving the whole editorial pipeline. Managed centrally; leave as-is.
 agent.editorial-model = "REASONING_POWER"
 # Ollama model tag override (gemma4:e2b..31b, -mlx twins on Apple Silicon).
-# Empty = managed default. Set by the future model-choice UI; the launcher
+# Empty = managed default. Set by the launcher's model-choice screen; the launcher
 # reads it and installs the matching model on the next start.
 agent.model-tag = ""
 

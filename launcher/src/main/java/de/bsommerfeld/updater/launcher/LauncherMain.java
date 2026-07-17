@@ -50,6 +50,14 @@ public final class LauncherMain {
         // Must be set before any AWT/JavaFX class touches the system.
         System.setProperty("apple.awt.application.name", "WSBG Terminal");
 
+        // Render the launcher via OpenGL instead of Metal on macOS. Java2D's
+        // Metal pipeline presents the per-pixel-translucent splash window's
+        // surface empty under animation load — the whole window blinks away
+        // to the desktop (visually confirmed during the model-choice morph;
+        // the same pipeline also carries the known flusher SIGSEGV). Must be
+        // set before AWT initializes; other platforms ignore the key.
+        System.setProperty("sun.java2d.metal", "false");
+
         Path appDir = StorageResolver.resolve();
 
         if (!ensureDirectories(appDir))
@@ -101,10 +109,9 @@ public final class LauncherMain {
         LauncherWindow window = new LauncherWindow();
         EnvironmentSetup envSetup = new EnvironmentSetup(appDir);
 
-        // Hardware check + model choice (backend only, no UI yet): probes the
-        // machine, logs + persists the recommendation for a future model-choice
-        // UI, and resolves the tag the setup script installs — the user's
-        // config.toml choice (agent.model-tag) or the managed default.
+        // Hardware check + model choice: probes the machine, persists the
+        // recommendation, and resolves the tag the setup script installs — the
+        // user's config.toml choice (agent.model-tag) or the managed default.
         ModelSelection.Result modelChoice = ModelSelection.resolve(appDir, log);
         envSetup.setReasoningModelTag(modelChoice.effectiveTag());
 
@@ -117,6 +124,14 @@ public final class LauncherMain {
 
         Thread.ofVirtual().name("update-thread").start(() -> {
             try {
+                // No explicit model choice on record yet: morph the window into
+                // the choice list and wait for the user's pick. One OK persists
+                // the key, so this shows exactly once per install.
+                if (!modelChoice.userChosen()) {
+                    String chosen = runModelChoicePhase(window, i18n, modelChoice, log);
+                    ModelConfigWriter.write(appDir, chosen, log);
+                    envSetup.setReasoningModelTag(chosen);
+                }
                 int downloadSteps = runUpdatePhase(updateClient, window, log, firstRun, i18n,
                         autoUpdate, forceUpdate, ENVIRONMENT_STEPS);
                 // Launcher self-update rides the same phase, quietly (log-only,
@@ -135,6 +150,47 @@ public final class LauncherMain {
     // =====================================================================
     // Pipeline Phases
     // =====================================================================
+
+    /**
+     * Blocks until the user has picked a model tier in the morphing choice
+     * list. The tiers are translated for a non-technical audience: quality and
+     * speed on a 0–10 scale plus a plain-language fit verdict — never RAM
+     * figures or parameter counts. The hardware recommendation arrives
+     * preselected, so confirming the default is a single click.
+     */
+    private static String runModelChoicePhase(LauncherWindow window, LauncherI18n i18n,
+            ModelSelection.Result modelChoice, SessionLog log) throws Exception {
+        java.util.List<ModelChoicePanel.Row> rows = new java.util.ArrayList<>();
+        for (ModelCatalog tier : ModelCatalog.values()) {
+            String tag = tier.tagFor(modelChoice.appleSilicon());
+            boolean recommended = tag.equals(modelChoice.recommendedTag());
+            ModelCatalog.Fit fit = modelChoice.totalRamGb() <= 0
+                    ? ModelCatalog.Fit.COMFORTABLE
+                    : tier.fitFor(modelChoice.totalRamGb());
+            String verdict = i18n.get(switch (fit) {
+                case COMFORTABLE -> recommended ? "Recommended" : "Good fit";
+                case TIGHT -> "Tight fit";
+                case TOO_LARGE -> "Too large";
+            });
+            String size = String.format(
+                    "de".equals(i18n.language()) ? java.util.Locale.GERMAN : java.util.Locale.ROOT,
+                    "%.1f GB", tier.diskGbFor(modelChoice.appleSilicon()));
+            rows.add(new ModelChoicePanel.Row(tag, tier.quality(), tier.speed(),
+                    size, fit, recommended, verdict));
+        }
+
+        ModelChoicePanel.Labels labels = new ModelChoicePanel.Labels(
+                i18n.get("Choose your AI model"),
+                i18n.get("Quality"),
+                i18n.get("Speed"),
+                i18n.get("The recommendation fits your machine"),
+                i18n.get("OK"));
+
+        log.log("Model choice UI shown (no explicit choice on record)");
+        String chosen = window.showModelChoice(rows, modelChoice.recommendedTag(), labels).get();
+        log.log("Model choice confirmed: " + chosen);
+        return chosen;
+    }
 
     /**
      * Checks for updates and downloads them if available. On any failure —

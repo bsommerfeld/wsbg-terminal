@@ -21,7 +21,7 @@ public class AgentConfig {
             + "as gemma4:e4b-mlx on Apple Silicon. The launcher reads this key too and "
             + "installs the matching model on the next start, so runtime and installed model "
             + "stay in sync. Only gemma4-family tags are honored; anything else degrades to "
-            + "the default. Written by the future model-choice UI — the hardware "
+            + "the default. Written by the launcher's model-choice screen — the hardware "
             + "recommendation lives in the launcher's hardware-recommendation.json.")
     private String modelTag = "";
 
