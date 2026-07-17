@@ -6547,9 +6547,11 @@ public class DeepDiveService {
             case "history":
                 return de
                         ? "Presse-/Disclosure-Archiv - mehrjährige Historie in Jahresfenstern "
-                                + "(Google News, onvista, EQS-News, GDELT)"
+                                + "(Google News, onvista, EQS-News, GDELT; sharedeals.de = "
+                                + "Meinungs-/Chartanalyse-Portal, keine Fakten)"
                         : "Press/disclosure archive - multi-year history in yearly windows "
-                                + "(Google News, onvista, EQS-News, GDELT)";
+                                + "(Google News, onvista, EQS-News, GDELT; sharedeals.de = "
+                                + "opinion/chart-analysis venue, not facts)";
             case "whispers":
                 return "EarningsWhispers" + (de
                         ? " - Konsensschätzungen zum nächsten Bericht"

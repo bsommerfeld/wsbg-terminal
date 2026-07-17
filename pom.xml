@@ -36,6 +36,7 @@
         <module>hackernews</module>
         <module>comdirect</module>
         <module>lemmy</module>
+        <module>sharedeals</module>
         <module>fourchan</module>
         <module>stocktwits</module>
         <module>yahoo-conversations</module>
@@ -217,6 +218,11 @@
             <dependency>
                 <groupId>de.bsommerfeld</groupId>
                 <artifactId>lemmy</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>sharedeals</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

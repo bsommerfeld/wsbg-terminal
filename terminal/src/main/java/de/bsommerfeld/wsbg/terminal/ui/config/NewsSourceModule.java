@@ -118,6 +118,17 @@ final class NewsSourceModule extends AbstractModule {
         // the conversation JSON re-pins against the first live answer.
         newsSources.addBinding().to(
                 de.bsommerfeld.wsbg.terminal.yahooconversations.YahooConversationsClient.class);
+        // sharedeals.de: German retail OPINION - daily chart analyses and
+        // "Kurspotenzial" pieces from a promoter-adjacent community venue,
+        // via the site's own open wp-json (keyless, no wall, full-text
+        // search + exact date windows; probed 2026-07-17). Coverage cadence
+        // IS the signal; NOT a facts desk, so it rides the sentiment fan.
+        // Name-addressed with the house TITLE-precision cut (the server
+        // search matches full text and over-returns passing mentions).
+        // Doubles as a multi-year ARCHIVE leg: 18.9k posts back to 2010 -
+        // deep German small-cap opinion history (newsForNameWindow).
+        newsSources.addBinding().to(
+                de.bsommerfeld.wsbg.terminal.sharedeals.SharedealsClient.class);
         // 4chan /biz/: raw US retail sentiment (the closest cultural relative
         // to WSB — /smg/ and the ticker generals) via the official read-only
         // JSON API, ONE catalog fetch per 5-min TTL (the 1-req/s API rule is

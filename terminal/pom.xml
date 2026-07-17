@@ -107,6 +107,10 @@
         </dependency>
         <dependency>
             <groupId>de.bsommerfeld</groupId>
+            <artifactId>sharedeals</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
             <artifactId>comdirect</artifactId>
         </dependency>
         <dependency>
