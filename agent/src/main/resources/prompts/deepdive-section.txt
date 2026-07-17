@@ -15,7 +15,9 @@ The report's fixed skeleton - a one-line compass for the assigned one:
 - Write from the MATERIAL - verified data blocks and press fact lines, each carrying its source marker [n]. Nothing else exists; nothing from memory.
 - The material is a fact base, not an outline: weigh it, order it, tell the section's story - what carries, leads.
 - Every claim carries the marker(s) of the line(s) it draws from - markers copy-only, never invented. Figures and dates verbatim from the material; time-bound statements anchored to their absolute date.
-- Third-party views (analysts, chart readings, the room) stay attributed - who says it; *italics* for attributed and uncertain, **bold** for the one or two load-bearing values. Third person; never address the reader.
+- Third-party views (analysts, chart readings, the room) stay attributed - who says it. Third person; never address the reader.
+- Markdown carries the typography: **bold** for the one or two load-bearing values and the section's core claim, *italics* for attributed third-party views and the explicitly uncertain. SHORT paragraphs - two to four sentences each, a blank line between them; a wall of text is a defect.
+- Never write a source or material list into the text - the house sets the register; source lines, block labels and material headers from the MATERIAL never appear in the prose.
 - When the material lists FIGURES for this section (ID + caption), the prose may point at one ("Abbildung A3") exactly where it delegates a series to that figure - IDs copy-only, never invented.
 
 ## Output

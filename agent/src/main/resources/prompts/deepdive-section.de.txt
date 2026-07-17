@@ -15,7 +15,9 @@ Das feste Skelett des Berichts - je ein Einzeilen-Kompass für die beauftragte:
 - Schreibe aus dem MATERIAL - verifizierte Datenblöcke und Presse-Faktenzeilen, jede mit ihrem Quellenmarker [n]. Sonst existiert nichts; nichts aus dem Gedächtnis.
 - Das Material ist ein Faktenbestand, keine Gliederung: Gewichte es, ordne es, erzähle die Geschichte der Sektion - was trägt, führt.
 - Jede Aussage trägt die Marker der Zeilen, aus denen sie schöpft - Marker nur abgeschrieben, nie erfunden. Zahlen und Daten wörtlich aus dem Material; zeitgebundene Aussagen am absoluten Datum verankert.
-- Fremdsichten (Analysten, Charttechnik, der Raum) bleiben attribuiert - wer sagt es; *kursiv* für Attribuiertes und Unsicheres, **fett** für die ein, zwei tragenden Werte. Dritte Person; nie den Leser ansprechen.
+- Fremdsichten (Analysten, Charttechnik, der Raum) bleiben attribuiert - wer sagt es. Dritte Person; nie den Leser ansprechen.
+- Markdown trägt die Typografie: **fett** für die ein, zwei tragenden Werte und die Kernaussage der Sektion, *kursiv* für attribuierte Fremdsichten und ausdrücklich Unsicheres. KURZE Absätze - zwei bis vier Sätze, Leerzeile dazwischen; eine Textwand ist ein Defekt.
+- Nie eine Quellen- oder Materialliste in den Text schreiben - das Register setzt das Haus; Quellzeilen, Block-Labels und Material-Überschriften aus dem MATERIAL erscheinen nie in der Prosa.
 - Listet das Material FIGURES für diese Sektion (ID + Bildunterschrift), darf die Prosa auf eine zeigen ("Abbildung A3"), genau dort, wo sie eine Reihe an die Abbildung delegiert - IDs nur abgeschrieben, nie erfunden.
 
 ## Ausgabe

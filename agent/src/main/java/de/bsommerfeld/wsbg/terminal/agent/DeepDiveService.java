@@ -645,9 +645,10 @@ public class DeepDiveService {
         checkCancelled();
         pressSweep(subject, m);
         checkCancelled();
-        // The triage board: the whole collected pool appears on the live
-        // view's list before the judge works through it item by item.
-        for (RawNewsItem item : m.news) liveSrc(subject, "src", item);
+        // Triage-board catch-all: whatever the collect waves and the press
+        // sweep gathered without announcing (each wave announces itself)
+        // joins the live list before the judge works through it.
+        announceSrc(subject, m, "collect");
         triageNews(subject, m, lang, langName);
         checkCancelled();
         aliasFollowUp(subject, m, lang, langName);
@@ -1123,17 +1124,31 @@ public class DeepDiveService {
     }
 
     /**
-     * One triage-board move: a collected source appears ({@code src}), earns
-     * its seat ({@code src-ok}) or is struck ({@code src-out}). The item's
-     * stable key rides as ref so the verdict finds its row.
+     * One triage-board move: a collected source appears ({@code src}, already
+     * DURING the collect waves), earns its seat ({@code src-ok}) or is struck
+     * ({@code src-out}). The item's stable key rides as ref so the verdict
+     * finds its row; {@code phase} tells the board whether the desk is still
+     * collecting or already judging.
      */
-    private void liveSrc(String subject, String kind, RawNewsItem item) {
+    private void liveSrc(String subject, String kind, RawNewsItem item, String phase) {
         String label = item.title() == null ? "" : item.title().strip();
         if (item.publisher() != null && !item.publisher().isEmpty()) {
             label = label.isEmpty() ? item.publisher() : label + " · " + item.publisher();
         }
         eventBus.post(new DeepDiveLiveEvent(subject, new DeepDiveLiveEvent.Entry(
-                kind, "triage", "triage", -1, 0, label, List.of(), newsKey(item))));
+                kind, phase, "triage", -1, 0, label, List.of(), newsKey(item))));
+    }
+
+    /**
+     * Announces every news candidate the board has not seen yet — called
+     * after each collect wave (aggregator pool, web sweep, disclosure legs,
+     * press sweep), so the live list GROWS while the desk still gathers
+     * instead of appearing wholesale at triage time.
+     */
+    private void announceSrc(String subject, Material m, String phase) {
+        for (RawNewsItem item : m.news) {
+            if (m.srcAnnounced.add(newsKey(item))) liveSrc(subject, "src", item, phase);
+        }
     }
 
     /**
@@ -1148,9 +1163,9 @@ public class DeepDiveService {
             String verdict = verdicts.get(newsKey(item));
             boolean judgedOut = verdict != null && verdict.isEmpty();
             if (earned.contains(newsKey(item))) {
-                if (verdict == null) liveSrc(subject, "src-ok", item);
+                if (verdict == null) liveSrc(subject, "src-ok", item, "triage");
             } else if (!judgedOut) {
-                liveSrc(subject, "src-out", item);
+                liveSrc(subject, "src-out", item, "triage");
             }
         }
     }
@@ -1554,9 +1569,20 @@ public class DeepDiveService {
                         prompts.consistency().length() + fixed.length()));
         List<String> objections = new ArrayList<>();
         if (reply != null) {
+            // Judge-output validity (live 2026-07-17, OTLK run): the final
+            // instance provably emits E lines that quote nothing standing
+            // ("was konsistent ist") - an objection whose quote is not in the
+            // report verifies nothing and only churns a revision.
+            String reportNorm = report.toString().replaceAll("\\s+", " ");
             for (String line : reply.split("\n")) {
                 String s = line.strip();
-                if (s.startsWith("E:")) objections.add(s);
+                if (!s.startsWith("E:")) continue;
+                String quote = quotedSpan(s).replaceAll("\\s+", " ");
+                if (quote.length() < 12 || !reportNorm.contains(quote)) {
+                    LOG.debug("[DEEPDIVE] final-instance objection dropped (quote not in report).");
+                    continue;
+                }
+                objections.add(s);
                 if (objections.size() >= 4) break;
             }
         }
@@ -1722,9 +1748,10 @@ public class DeepDiveService {
     private void einarbeiten(String subject, Material m, ChatModel model, Prompts prompts,
             boolean de) {
         EditorialAgent agent = editorialAgent;
-        if (agent == null || m.news.isEmpty()) return;
+        if (agent == null || (m.news.isEmpty() && m.pressHistory.isEmpty())) return;
         Map<String, String> notes = new java.util.concurrent.ConcurrentHashMap<>();
         List<Runnable> tasks = new ArrayList<>();
+        Set<String> queued = new HashSet<>();
         java.util.concurrent.atomic.AtomicInteger done = new java.util.concurrent.atomic.AtomicInteger();
         for (RawNewsItem item : m.news) {
             if (tasks.size() >= MAX_EXTRACTED_ARTICLES) {
@@ -1732,9 +1759,33 @@ public class DeepDiveService {
                         MAX_EXTRACTED_ARTICLES);
                 break;
             }
-            if (item.link() == null || item.link().isBlank()) continue;
+            if (item.link() == null || item.link().isBlank()
+                    || !queued.add(item.link().trim())) {
+                continue;
+            }
             tasks.add(() -> {
                 // Cancel must bite BETWEEN articles.
+                checkCancelled();
+                eventBus.post(new DeepDiveProgressEvent(subject, "triage",
+                        (de ? "Einarbeiten " : "intake ") + done.incrementAndGet()
+                                + "/" + tasks.size()));
+                String facts = extractVerifiedFacts(subject, m, model, prompts, item, de);
+                if (!facts.isEmpty()) notes.put(item.link().trim(), facts);
+            });
+        }
+        // THE ARCHIVE INTAKE (user GO 2026-07-17, "keine Cap"): the multi-year
+        // press history runs through the SAME read-extract-verify lane - the
+        // long arc's WHY ($10 → $1) lives in old article bodies, never in
+        // their headlines, and the long-term dossier must be able to tell it.
+        // Uncapped by mandate; the session text cache, the walled-host fast
+        // misses and the two-wide gate keep it civil, and every fact line
+        // carries its date so the author can place it on the arc.
+        for (RawNewsItem item : m.pressHistory) {
+            if (item.link() == null || item.link().isBlank()
+                    || !queued.add(item.link().trim())) {
+                continue;
+            }
+            tasks.add(() -> {
                 checkCancelled();
                 eventBus.post(new DeepDiveProgressEvent(subject, "triage",
                         (de ? "Einarbeiten " : "intake ") + done.incrementAndGet()
@@ -1747,6 +1798,40 @@ public class DeepDiveService {
         m.factNotes = new LinkedHashMap<>(notes);
         LOG.info("[DEEPDIVE] '{}' intake: {} of {} article(s) yielded verified facts.",
                 subject, notes.size(), tasks.size());
+        // Fail-open seats must EARN their seat here (user GO 2026-07-17): an
+        // item nobody ever explicitly judged relevant that ALSO yields not
+        // one verified fact about the subject is name-collision bycatch (the
+        // OTLK board's "Outlook" login pages) — it loses seat, board row and
+        // register entry. Deterministic: the intake's own result is the
+        // second opinion, no extra judge call.
+        if (!m.failOpenSeats.isEmpty()) {
+            List<RawNewsItem> kept = new ArrayList<>(m.news.size());
+            Map<String, String> targets = new LinkedHashMap<>(m.newsTargets);
+            int struck = 0;
+            for (RawNewsItem item : m.news) {
+                String key = newsKey(item);
+                String facts = item.link() == null ? null
+                        : m.factNotes.get(item.link().trim());
+                if (m.failOpenSeats.contains(key) && isBlank(facts)) {
+                    targets.remove(key);
+                    liveSrc(subject, "src-out", item, "triage");
+                    struck++;
+                    continue;
+                }
+                kept.add(item);
+            }
+            if (struck > 0) {
+                m.news = kept;
+                m.newsTargets = targets;
+                journalNotes(subject, List.of((de
+                        ? "Einarbeitung strich " + struck + " ungeprüfte(n) Fund(e) ohne "
+                                + "einen verifizierten Fakt zum Subjekt"
+                        : "Intake struck " + struck + " unjudged find(s) without a "
+                                + "verified fact about the subject")));
+                LOG.info("[DEEPDIVE] '{}' intake struck {} fail-open seat(s) without a "
+                        + "verified fact.", subject, struck);
+            }
+        }
     }
 
     /**
@@ -1769,8 +1854,11 @@ public class DeepDiveService {
                     ? " (" + (de ? "Teil " : "part ") + (p + 1) + "/" + parts.size() + ")"
                     : "";
             String message = "SUBJECT: " + aboutLine(m)
-                    + "\n\nARTICLE" + label + ": "
-                    + (item.title() == null ? "" : item.title())
+                    + "\n\nARTICLE" + label
+                    + (item.publishedAt() == null ? ""
+                            : " [published " + STAMP.format(item.publishedAt())
+                                    .substring(0, 10) + "]")
+                    + ": " + (item.title() == null ? "" : item.title())
                     + "\n" + parts.get(p);
             String reply;
             try {
@@ -1971,8 +2059,9 @@ public class DeepDiveService {
                         ? "LAGE" : verdict);
                 if (verdict == null) {
                     unjudged.add(item.title());
+                    m.failOpenSeats.add(newsKey(item));
                     // Fail-open seat: the board row never saw a verdict.
-                    liveSrc(subject, "src-ok", item);
+                    liveSrc(subject, "src-ok", item, "triage");
                 }
             } else {
                 dropped.add(item.title());
@@ -1999,7 +2088,7 @@ public class DeepDiveService {
                 targets.remove(newsKey(lost));
                 droppedItems.add(lost);
                 // The ceiling flips an earlier ok — the board strikes the row.
-                liveSrc(subject, "src-out", lost);
+                liveSrc(subject, "src-out", lost, "triage");
             }
             kept = new ArrayList<>(kept.subList(0, MAX_NEWS));
         }
@@ -2108,7 +2197,7 @@ public class DeepDiveService {
                         out.put(newsKey(batch.get(i - 1)), relevant ? targets.toString() : "");
                         // The verdict goes to the live triage board the moment
                         // it lands — the user watches the judge work the list.
-                        liveSrc(subject, relevant ? "src-ok" : "src-out", batch.get(i - 1));
+                        liveSrc(subject, relevant ? "src-ok" : "src-out", batch.get(i - 1), "triage");
                         parsed++;
                     }
                 } catch (Exception e) {
@@ -2220,7 +2309,9 @@ public class DeepDiveService {
             }
             if (fresh.isEmpty()) return;
             // The finds join the live triage board before the judge reads them.
-            for (RawNewsItem item : fresh) liveSrc(subject, "src", item);
+            for (RawNewsItem item : fresh) {
+                if (m.srcAnnounced.add(newsKey(item))) liveSrc(subject, "src", item, "triage");
+            }
             Map<String, String> verdicts = judgeNews(subject, fresh, aboutLine(m), lang, langName, judge);
             List<RawNewsItem> merged = new ArrayList<>(m.news);
             Map<String, String> targets = new LinkedHashMap<>(m.newsTargets);
@@ -2231,6 +2322,7 @@ public class DeepDiveService {
                 if (verdict != null && verdict.isEmpty()) continue; // judged off-subject
                 merged.add(item);
                 earned.add(newsKey(item));
+                if (verdict == null) m.failOpenSeats.add(newsKey(item));
                 targets.put(newsKey(item), verdict == null ? "LAGE" : verdict);
             }
             reconcileSrcBoard(subject, fresh, verdicts, earned);
@@ -2337,7 +2429,9 @@ public class DeepDiveService {
                 return;
             }
             // The finds join the live triage board before the judge reads them.
-            for (RawNewsItem item : fresh) liveSrc(subject, "src", item);
+            for (RawNewsItem item : fresh) {
+                if (m.srcAnnounced.add(newsKey(item))) liveSrc(subject, "src", item, "triage");
+            }
             Map<String, String> verdicts = judgeNews(subject, fresh, aboutLine(m), lang, langName, judge);
             // Research finds ride FIRST: they are the substance carriers the
             // firehose drowned — they must reach the article-read slots.
@@ -2351,6 +2445,7 @@ public class DeepDiveService {
                 if (verdict != null && verdict.isEmpty()) continue; // judged off-subject
                 merged.add(item);
                 earned.add(newsKey(item));
+                if (verdict == null) m.failOpenSeats.add(newsKey(item));
                 targets.put(newsKey(item), verdict == null ? "LAGE" : verdict);
                 added++;
             }
@@ -2515,6 +2610,14 @@ public class DeepDiveService {
     /** Everything the collect step gathered — nulls/empties where a leg had nothing. */
     /** Package-private for the material-completeness test. */
     static final class Material {
+        /** News keys already announced to the live triage board (grow-as-collected). */
+        final Set<String> srcAnnounced = new HashSet<>();
+        /**
+         * News keys admitted WITHOUT an explicit relevant-verdict (the judge
+         * skipped them; fail-open kept them). Such a seat must EARN itself at
+         * the intake: zero verified facts about the subject strikes it.
+         */
+        final Set<String> failOpenSeats = new HashSet<>();
         String canonicalName;
         String ticker;
         String isin;
@@ -2998,6 +3101,9 @@ public class DeepDiveService {
         } catch (Exception e) {
             LOG.debug("[DEEPDIVE] news failed: {}", e.getMessage());
         }
+        // Each collect wave announces its finds to the live triage board the
+        // moment it lands — the list grows WHILE the desk still gathers.
+        announceSrc(ticker, m, "collect");
         // Multi-year press HISTORY (2026-07-16): one windowed archive query
         // per past calendar year - headlines only, never triaged or digested
         // (context for the long-term arc, not weave material; the freshness
@@ -3057,6 +3163,7 @@ public class DeepDiveService {
                     LOG.info("[DEEPDIVE] '{}' web sweep added {} candidate(s).",
                             m.ticker, added);
                     m.news = merged;
+                    announceSrc(ticker, m, "collect");
                 }
             }
         } catch (Exception e) {
@@ -3066,11 +3173,22 @@ public class DeepDiveService {
         // tagged — an exact join, zero ambiguity — and the analyst-action feed
         // carries the rating stories WITH their house names.
         appendFnLegs(m);
+        announceSrc(ticker, m, "collect");
         Instant cutoff = Instant.now().minus(java.time.Duration.ofDays(NEWS_MAX_AGE_DAYS));
+        List<RawNewsItem> beforeCut = m.news;
         m.news = m.news.stream()
                 .filter(n -> n.publishedAt() == null || !n.publishedAt().isBefore(cutoff))
                 .limit(MAX_NEWS_CANDIDATES)
                 .toList();
+        // The freshness/ceiling cut strikes its victims off the board too —
+        // an announced row must never hang pending forever.
+        if (beforeCut.size() != m.news.size()) {
+            Set<String> standing = new HashSet<>();
+            for (RawNewsItem n : m.news) standing.add(newsKey(n));
+            for (RawNewsItem n : beforeCut) {
+                if (!standing.contains(newsKey(n))) liveSrc(ticker, "src-out", n, "collect");
+            }
+        }
         if (!m.news.isEmpty()) {
             journalNotes(ticker, List.of(journalGerman()
                     ? "News-Pool — " + m.news.size()
@@ -3476,8 +3594,10 @@ public class DeepDiveService {
     private static void appendPressHistory(StringBuilder sb, Material m,
             Map<String, Integer> nums) {
         if (m.pressHistory.isEmpty()) return;
-        sb.append("PRESS HISTORY (multi-year, headlines only - the name's longer arc; ")
-                .append("windowed archive search)").append(mark(nums, "history")).append(":\n");
+        sb.append("PRESS HISTORY (multi-year - the name's longer arc; windowed archive ")
+                .append("search, entries read in FULL at the intake where a text was ")
+                .append("retrievable - their verified fact lines ride indented)")
+                .append(mark(nums, "history")).append(":\n");
         for (RawNewsItem item : m.pressHistory) {
             sb.append("  - ");
             if (item.publishedAt() != null) {
@@ -3488,6 +3608,12 @@ public class DeepDiveService {
                 sb.append(" · ").append(item.publisher());
             }
             sb.append('\n');
+            String facts = item.link() == null ? null : m.factNotes.get(item.link().trim());
+            if (facts != null && !facts.isBlank()) {
+                for (String line : facts.split("\n")) {
+                    if (!line.isBlank()) sb.append("      ").append(line.strip()).append('\n');
+                }
+            }
         }
     }
 

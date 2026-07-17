@@ -1049,6 +1049,21 @@ class DeepDiveMaterialTest {
                 .contains("[2024-03-14] Rheinmetall verdoppelt Munitionskapazität · Handelsblatt"));
     }
 
+    /** Archive intake: a history entry's verified fact lines ride indented under it. */
+    @Test
+    void pressHistoryCarriesItsVerifiedFactLines() {
+        DeepDiveService.Material m = fullMaterial();
+        m.pressHistory = List.of(new RawNewsItem("h1",
+                "Rheinmetall verdoppelt Munitionskapazität", "Handelsblatt",
+                "https://example.org/rhm-munition",
+                java.time.Instant.parse("2024-03-14T09:00:00Z"), List.of()));
+        m.factNotes = Map.of("https://example.org/rhm-munition",
+                "- 2024-03-14 Munitionskapazität wird verdoppelt");
+        String[] shelves = DeepDiveService.sectionMaterials(m);
+        assertTrue(shelves[DeepDiveService.SEC_SITUATION]
+                .contains("      - 2024-03-14 Munitionskapazität wird verdoppelt"));
+    }
+
     /** The first-party IR archive rides fundamentals in full, the outlook future-only. */
     @Test
     void irArchiveRidesFundamentalsAndOutlookShelves() {

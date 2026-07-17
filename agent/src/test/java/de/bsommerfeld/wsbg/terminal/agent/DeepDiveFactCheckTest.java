@@ -538,4 +538,5 @@ class DeepDiveFactCheckTest {
         String tableCut = DeepDiveFactCheck.cutToLength(withTable, 90);
         org.junit.jupiter.api.Assertions.assertEquals(s80, tableCut);
     }
+
 }
