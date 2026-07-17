@@ -126,6 +126,70 @@ final class ChatGateway {
     /** Backoff ladder for a transiently unreachable server — ~45 s total patience. */
     private static final long[] CONNECT_RETRY_BACKOFF_MS = {3_000, 12_000, 30_000};
 
+    /** Shared HTTP client for the raw tool lane. */
+    private static final java.net.http.HttpClient RAW_HTTP = java.net.http.HttpClient.newBuilder()
+            .connectTimeout(java.time.Duration.ofSeconds(5)).build();
+
+    /**
+     * The RAW TOOL lane: one {@code /api/chat} round with tool definitions,
+     * spoken directly to the managed Ollama — the langchain4j binding carries
+     * no tool surface for our loop, and the question lives in Ollama's native
+     * protocol anyway. Same semaphore bracket, same connect-retry ladder as
+     * {@link #chat}; the caller builds and parses the JSON body. Thinking
+     * stays ON for tool rounds (measured 2026-07-17 against the live server:
+     * with {@code think=false} gemma4:e4b answers prose instead of a
+     * tool_call, 3/3 — thinking is load-bearing exactly here, while every
+     * non-tool call keeps the proven {@code think=false} speedup).
+     */
+    String rawToolChat(String requestBody) {
+        RuntimeException lastConnectFailure = null;
+        for (int attempt = 0; attempt <= CONNECT_RETRY_BACKOFF_MS.length; attempt++) {
+            if (attempt > 0) {
+                if (appShutdown) throw lastConnectFailure;
+                long backoff = CONNECT_RETRY_BACKOFF_MS[attempt - 1];
+                LOG.warn("[LLM] Ollama unreachable (tool lane) — retry {}/{} in {} ms",
+                        attempt, CONNECT_RETRY_BACKOFF_MS.length, backoff);
+                try {
+                    Thread.sleep(backoff);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw lastConnectFailure;
+                }
+            }
+            long t0 = System.nanoTime();
+            if (INTERACTIVE.get()) llmGate.acquireInteractive();
+            else llmGate.acquire();
+            long tAcq = System.nanoTime();
+            try {
+                java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
+                        .uri(java.net.URI.create(AgentBrain.OLLAMA_BASE_URL + "/api/chat"))
+                        .timeout(java.time.Duration.ofMinutes(5))
+                        .header("Content-Type", "application/json")
+                        .POST(java.net.http.HttpRequest.BodyPublishers.ofString(requestBody))
+                        .build();
+                java.net.http.HttpResponse<String> response = RAW_HTTP.send(
+                        request, java.net.http.HttpResponse.BodyHandlers.ofString());
+                if (response.statusCode() != 200) {
+                    throw new IllegalStateException("Ollama /api/chat answered HTTP "
+                            + response.statusCode() + ": " + response.body());
+                }
+                LOG.info("[LLM] tool round gate-wait={}ms round={}ms",
+                        (tAcq - t0) / 1_000_000, (System.nanoTime() - tAcq) / 1_000_000);
+                return response.body();
+            } catch (java.net.ConnectException | java.net.http.HttpConnectTimeoutException e) {
+                lastConnectFailure = new RuntimeException(e);
+            } catch (java.io.IOException e) {
+                throw new RuntimeException(e);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException(e);
+            } finally {
+                llmGate.release();
+            }
+        }
+        throw lastConnectFailure;
+    }
+
     /** True when the failure is connection-level (server down/restarting), not a model error. */
     private static boolean isConnectFailure(Throwable t) {
         for (Throwable c = t; c != null; c = c.getCause() == c ? null : c.getCause()) {

@@ -44,6 +44,8 @@ public class AgentBrain {
     private ChatModel dossierModel;
     /** Same gemma4 model, free-form with the roomiest numPredict — for KI-DD report passes. */
     private ChatModel deepDiveModel;
+    /** Same gemma4 model, free-form, THINKING ON — for the few-call verdict judges. */
+    private ChatModel deliberateModel;
     private String activeAgentModel;
 
     private final GlobalConfig config;
@@ -75,6 +77,7 @@ public class AgentBrain {
         this.proseModel = models.proseModel();
         this.dossierModel = models.dossierModel();
         this.deepDiveModel = models.deepDiveModel();
+        this.deliberateModel = models.deliberateModel();
         this.activeAgentModel = models.activeAgentModel();
         this.userLanguage = this.config.getUser().getUserLanguage();
 
@@ -209,6 +212,17 @@ public class AgentBrain {
      */
     public ChatModel getDeepDiveModel() {
         return deepDiveModel;
+    }
+
+    /**
+     * The DELIBERATE judge model: same gemma4, free-form, thinking ON.
+     * Reserved for the few-call VERDICT judges (formcheck, final instance,
+     * reclaim) where thinking measurably flips the verdict quality
+     * (2026-07-17 A/B) — never for the mass lanes, whose think=false speedup
+     * is the wire's documented throughput fix.
+     */
+    public ChatModel getDeliberateModel() {
+        return deliberateModel != null ? deliberateModel : deepDiveModel;
     }
 
     /** Returns the resolved Ollama model name used by {@link #getAgentModel()}. */

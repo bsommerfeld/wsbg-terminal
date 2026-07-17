@@ -42,7 +42,8 @@ final class OllamaModelFactory {
 
     /** The built models plus the resolved model names (for the init log line). */
     record Models(ChatModel agentModel, ChatModel composeModel, ChatModel proseModel,
-            ChatModel dossierModel, ChatModel deepDiveModel, String activeAgentModel) {
+            ChatModel dossierModel, ChatModel deepDiveModel, ChatModel deliberateModel,
+            String activeAgentModel) {
     }
 
     /**
@@ -163,8 +164,27 @@ final class OllamaModelFactory {
                 .timeout(timeout)
                 .build();
 
+        // Deliberate judge model — the SAME gemma4 (same name + num_ctx, one
+        // runner), free-form, but with THINKING ON. Measured 2026-07-17 (A/B
+        // against the live server, house prompts): the VERDICT-class judges
+        // flip from useless to clean with thinking — the formcheck missed a
+        // 12%-vs-8% figure drift 0/4 without and caught it 4/4 with; the
+        // final instance wrote contradiction objections about CONSISTENT
+        // values 4/4 without ("steht im Widerspruch ... 0,2 Mrd. vs 0,2
+        // Mrd.", the OTLK live failure verbatim) and answered STANDS 4/4
+        // with. Cost ~+10 s per call — spent ONLY on the few-call judge
+        // lanes, never on the mass lanes (extract/factcheck stay think=false:
+        // measured 4/4 correct without thinking at 1.2 s/call).
+        ChatModel deliberateModel = OllamaChatModel.builder()
+                .baseUrl(baseUrl).modelName(agentName)
+                .temperature(agentModelEnum.getTemperature()).topP(0.9).topK(40)
+                .numCtx(ctxTokens).numPredict(3584)
+                .think(true)
+                .timeout(timeout)
+                .build();
+
         return new Models(agentModel, composeModel, proseModel, dossierModel,
-                deepDiveModel, agentName);
+                deepDiveModel, deliberateModel, agentName);
     }
 
     /**

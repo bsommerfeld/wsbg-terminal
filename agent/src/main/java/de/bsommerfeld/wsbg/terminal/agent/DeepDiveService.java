@@ -146,10 +146,16 @@ public class DeepDiveService {
     private static final int MAX_IR_ENTRIES = 12;
     /** The thesis' machine ceiling - its 400-900 prompt contract plus slack. */
     private static final int THESIS_MAX_CHARS = 1000;
-    /** Past calendar years the press-history leg sweeps (one window each). */
-    private static final int PRESS_HISTORY_YEARS = 3;
+    /**
+     * Past calendar years the press-history leg sweeps (one window each) -
+     * PLUS the current year, which closes the hole between the 30-day news
+     * window and January (user mandate 2026-07-17 "breite Vergangenheits-
+     * abdeckung": the long arc's WHY may sit years back; sharedeals reaches
+     * 2010, EQS 2018 - windows past a source's depth answer empty for free).
+     */
+    private static final int PRESS_HISTORY_YEARS = 10;
     /** Headlines kept per history year - an arc marker, never a second firehose. */
-    private static final int PRESS_HISTORY_PER_YEAR = 6;
+    private static final int PRESS_HISTORY_PER_YEAR = 10;
     private static final int MAX_MACRO_ACTUALS = 4;
     private static final int MAX_MACRO_DOCKET = 4;
     /** Wire-archive lines fed to the room shelf: the first N + the newest M. */
@@ -253,6 +259,7 @@ public class DeepDiveService {
     private volatile de.bsommerfeld.wsbg.terminal.core.price.OrderBookSource orderBookSource;
     private volatile de.bsommerfeld.wsbg.terminal.db.MarketEventArchive marketEventArchive;
     private volatile de.bsommerfeld.wsbg.terminal.db.FearGreedHistoryArchive fearGreedHistory;
+    private volatile de.bsommerfeld.wsbg.terminal.db.WeatherReportArchive weatherArchive;
     private volatile TradingViewCalendarClient tvCalendar;
     private volatile EconCalendarClient econCalendar;
     private volatile CentralBankCalendarClient cbCalendar;
@@ -413,6 +420,11 @@ public class DeepDiveService {
     @com.google.inject.Inject(optional = true)
     void setFearGreedHistoryArchive(de.bsommerfeld.wsbg.terminal.db.FearGreedHistoryArchive archive) {
         this.fearGreedHistory = archive;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setWeatherReportArchive(de.bsommerfeld.wsbg.terminal.db.WeatherReportArchive archive) {
+        this.weatherArchive = archive;
     }
 
     /** Browser UA for the first-party press scout's plain page fetches. */
@@ -1040,7 +1052,10 @@ public class DeepDiveService {
                 + "\n\nMATERIAL (the verified fact base — the only admissible evidence):\n";
         String reply;
         try {
-            reply = chatGateway.chat(model, prompts.formcheck(),
+            // Deliberate lane (measured 2026-07-17): without thinking the
+            // formcheck missed a plain figure drift 0/4 and broke its own
+            // E-format - with thinking 4/4 clean. Verdict judges think.
+            reply = chatGateway.chat(brain.getDeliberateModel(), prompts.formcheck(),
                     fixed + budgeted(material, prompts.formcheck().length() + fixed.length()));
         } catch (Exception e) {
             return List.of();
@@ -1434,6 +1449,169 @@ public class DeepDiveService {
     /** Reclaimed articles woven per run - a runaway net, never a working limit. */
     private static final int MAX_RECLAIMED = 8;
 
+    // -- the final instance's tool lane: artikel(marker), evidence on demand --
+
+    /** Tool rounds the final instance may spend before it must speak. */
+    private static final int CONSISTENCY_TOOL_ROUNDS = 6;
+
+    /**
+     * The final instance with its ONE tool (first agentic cut, user GO
+     * 2026-07-17, Fels-verdict from ToolCallSmokeIT): {@code artikel(marker)}
+     * answers the source behind a cited [n] — source line, verified facts,
+     * article text — so the whole-report review can VERIFY a suspicion before
+     * it writes an objection, instead of judging evidence-blind against KEY
+     * DATA alone (the OTLK run's provable failure mode). Runs on the raw
+     * Ollama tool protocol with thinking ON (measured: tool calls need it);
+     * several calls per round are answered in order. Any failure on this lane
+     * falls back to the plain evidence-less pass — the review never dies of
+     * its new capability.
+     */
+    private String consistencyWithLookups(ChatModel model, Prompts prompts, String subject,
+            Material m, String userMessage, boolean de) {
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper mapper =
+                    new com.fasterxml.jackson.databind.ObjectMapper();
+            com.fasterxml.jackson.databind.node.ArrayNode messages = mapper.createArrayNode();
+            com.fasterxml.jackson.databind.node.ObjectNode sys = messages.addObject();
+            sys.put("role", "system");
+            sys.put("content", prompts.consistency());
+            com.fasterxml.jackson.databind.node.ObjectNode usr = messages.addObject();
+            usr.put("role", "user");
+            usr.put("content", userMessage);
+
+            com.fasterxml.jackson.databind.node.ArrayNode tools = mapper.createArrayNode();
+            com.fasterxml.jackson.databind.node.ObjectNode fn = mapper.createObjectNode();
+            fn.put("name", "artikel");
+            fn.put("description", "Liefert die Quelle hinter dem Quellenmarker [n]: "
+                    + "Quellzeile, verifizierte Fakten und Artikeltext.");
+            com.fasterxml.jackson.databind.node.ObjectNode params = fn.putObject("parameters");
+            params.put("type", "object");
+            com.fasterxml.jackson.databind.node.ObjectNode prop =
+                    params.putObject("properties").putObject("marker");
+            prop.put("type", "integer");
+            prop.put("description", "Der Quellenmarker aus dem Bericht, z. B. 7 für [7]");
+            params.putArray("required").add("marker");
+            com.fasterxml.jackson.databind.node.ObjectNode tool = tools.addObject();
+            tool.put("type", "function");
+            tool.set("function", fn);
+
+            for (int round = 1; round <= CONSISTENCY_TOOL_ROUNDS; round++) {
+                checkCancelled();
+                com.fasterxml.jackson.databind.node.ObjectNode body = mapper.createObjectNode();
+                body.put("model", brain.getAgentModelName());
+                body.set("messages", messages);
+                body.set("tools", tools);
+                body.put("stream", false);
+                body.put("think", true);
+                com.fasterxml.jackson.databind.node.ObjectNode options = body.putObject("options");
+                options.put("num_ctx", brain.contextTokens());
+                options.put("num_predict", DD_NUM_PREDICT);
+                options.put("temperature", 0.1);
+                com.fasterxml.jackson.databind.JsonNode message = mapper
+                        .readTree(chatGateway.rawToolChat(mapper.writeValueAsString(body)))
+                        .path("message");
+                com.fasterxml.jackson.databind.node.ObjectNode assistant =
+                        (com.fasterxml.jackson.databind.node.ObjectNode) message;
+                // The deliberation goes to the workshop view (user mandate
+                // 2026-07-17 "Worker live diskutieren sehen") - then it is
+                // spent; feeding it back to the model only burns context.
+                String thinking = message.path("thinking").asText("");
+                if (!thinking.isBlank()) {
+                    String shown = thinking.strip();
+                    if (shown.length() > 600) shown = shown.substring(0, 600) + "…";
+                    liveChat(subject, "consistency", "final", -1,
+                            (de ? "Überlegung: " : "Deliberation: ") + shown, null);
+                }
+                assistant.remove("thinking");
+                messages.add(assistant);
+                com.fasterxml.jackson.databind.JsonNode calls = message.path("tool_calls");
+                if (calls.isArray() && !calls.isEmpty()) {
+                    for (com.fasterxml.jackson.databind.JsonNode call : calls) {
+                        int marker = call.path("function").path("arguments")
+                                .path("marker").asInt(-1);
+                        String result = artikelLookup(m, marker);
+                        String note = (de
+                                ? "Schluss-Instanz zog Quelle [" + marker + "] nach"
+                                : "Final instance pulled source [" + marker + "]");
+                        journalNotes(subject, List.of(note));
+                        liveChat(subject, "consistency", "final", -1, note, null);
+                        LOG.info("[DEEPDIVE] '{}' final instance pulled source [{}].",
+                                subject, marker);
+                        com.fasterxml.jackson.databind.node.ObjectNode toolMsg =
+                                messages.addObject();
+                        toolMsg.put("role", "tool");
+                        toolMsg.put("tool_name", "artikel");
+                        toolMsg.put("content", result);
+                    }
+                    continue;
+                }
+                return message.path("content").asText("");
+            }
+            LOG.warn("[DEEPDIVE] '{}' final instance spent {} tool rounds without a "
+                    + "verdict — treating as STANDS.", subject, CONSISTENCY_TOOL_ROUNDS);
+            return "";
+        } catch (java.util.concurrent.CancellationException e) {
+            throw e;
+        } catch (Exception e) {
+            LOG.warn("[DEEPDIVE] '{}' final-instance tool lane failed ({}) — "
+                    + "evidence-less fallback pass.", subject, e.getMessage());
+            return chatGateway.chat(brain.getDeliberateModel(), prompts.consistency(),
+                    userMessage);
+        }
+    }
+
+    /**
+     * The tool's answer: the source behind marker [n] — its source line, its
+     * verified fact lines and (where the session holds a text) the article
+     * body. Pure lookup, never a model call; unknown markers and data-leg
+     * markers answer honestly instead of erroring.
+     */
+    private String artikelLookup(Material m, int marker) {
+        if (marker < 0) return "ERROR: no usable marker argument.";
+        Map<String, Integer> nums = sourceNumbers(m);
+        String key = null;
+        for (Map.Entry<String, Integer> e : nums.entrySet()) {
+            if (e.getValue() == marker) {
+                key = e.getKey();
+                break;
+            }
+        }
+        if (key == null) return "ERROR: no source [" + marker + "] in the register.";
+        RawNewsItem item = null;
+        if (key.startsWith("news:")) {
+            int idx = Integer.parseInt(key.substring(5));
+            if (idx >= 0 && idx < m.news.size()) item = m.news.get(idx);
+        }
+        if (item == null) {
+            return "[" + marker + "] is a data block (" + key + "), not a single article - "
+                    + "its figures stand in the section material and the KEY DATA.";
+        }
+        StringBuilder sb = new StringBuilder(512);
+        sb.append("SOURCE [").append(marker).append("]: ");
+        if (item.publishedAt() != null) {
+            sb.append('[').append(STAMP.format(item.publishedAt()), 0, 10).append("] ");
+        }
+        sb.append(item.title() == null ? "" : item.title());
+        if (item.publisher() != null && !item.publisher().isEmpty()) {
+            sb.append(" · ").append(item.publisher());
+        }
+        sb.append('\n');
+        String facts = item.link() == null ? null : m.factNotes.get(item.link().trim());
+        if (facts != null && !facts.isBlank()) {
+            sb.append("VERIFIED FACTS:\n");
+            for (String line : facts.split("\n")) {
+                if (!line.isBlank()) sb.append("  ").append(line.strip()).append('\n');
+            }
+        }
+        EditorialAgent agent = editorialAgent;
+        String text = agent == null || item.link() == null || item.link().isBlank()
+                ? "" : agent.newsDigester().articleTextNow(item.link());
+        if (!isBlank(text)) {
+            sb.append("ARTICLE TEXT:\n").append(text).append('\n');
+        }
+        return sb.toString();
+    }
+
     /**
      * The NACHLESE (Aufarbeiten): the triage's set-aside pool, judged ONCE
      * MORE against the LEDGER's picture — the verified facts license
@@ -1473,7 +1651,7 @@ public class DeepDiveService {
         String message = fixed + budgeted(ledger.toString(),
                 prompts.reclaim().length() + fixed.length() + list.length() + 16)
                 + "\nITEMS:\n" + list;
-        String reply = chatGateway.chat(model, prompts.reclaim(), message);
+        String reply = chatGateway.chat(brain.getDeliberateModel(), prompts.reclaim(), message);
         if (reply == null) return;
         liveChat(subject, "reclaim", "reclaim", -1, reply, null);
         // Same verdict grammar as the triage — i, relevant, quoted section tokens.
@@ -1564,9 +1742,9 @@ public class DeepDiveService {
         StringBuilder keyData = new StringBuilder(512);
         appendKeyData(keyData, m, nums);
         String fixed = "KEY DATA (verified):\n" + keyData + "\nREPORT:\n";
-        String reply = chatGateway.chat(model, prompts.consistency(),
-                fixed + budgeted(report.toString(),
-                        prompts.consistency().length() + fixed.length()));
+        String userMessage = fixed + budgeted(report.toString(),
+                prompts.consistency().length() + fixed.length());
+        String reply = consistencyWithLookups(model, prompts, subject, m, userMessage, de);
         List<String> objections = new ArrayList<>();
         if (reply != null) {
             // Judge-output validity (live 2026-07-17, OTLK run): the final
@@ -2316,14 +2494,23 @@ public class DeepDiveService {
             List<RawNewsItem> merged = new ArrayList<>(m.news);
             Map<String, String> targets = new LinkedHashMap<>(m.newsTargets);
             Set<String> earned = new HashSet<>();
+            List<RawNewsItem> judgedOff = new ArrayList<>();
             for (RawNewsItem item : fresh) {
                 if (merged.size() >= MAX_NEWS) break;
                 String verdict = verdicts.get(newsKey(item));
-                if (verdict != null && verdict.isEmpty()) continue; // judged off-subject
+                if (verdict != null && verdict.isEmpty()) {
+                    judgedOff.add(item); // set aside - the reclaim re-hears it
+                    continue;
+                }
                 merged.add(item);
                 earned.add(newsKey(item));
                 if (verdict == null) m.failOpenSeats.add(newsKey(item));
                 targets.put(newsKey(item), verdict == null ? "LAGE" : verdict);
+            }
+            if (!judgedOff.isEmpty()) {
+                List<RawNewsItem> disc = new ArrayList<>(m.newsDiscarded);
+                disc.addAll(judgedOff);
+                m.newsDiscarded = disc;
             }
             reconcileSrcBoard(subject, fresh, verdicts, earned);
             LOG.info("[DEEPDIVE] '{}' alias follow-up added {} relevant item(s).",
@@ -2439,15 +2626,24 @@ public class DeepDiveService {
             Map<String, String> targets = new LinkedHashMap<>(m.newsTargets);
             Set<String> earned = new HashSet<>();
             int added = 0;
+            List<RawNewsItem> judgedOff = new ArrayList<>();
             for (RawNewsItem item : fresh) {
                 if (added >= MAX_NEWS_RESEARCHED - Math.min(m.news.size(), MAX_NEWS)) break;
                 String verdict = verdicts.get(newsKey(item));
-                if (verdict != null && verdict.isEmpty()) continue; // judged off-subject
+                if (verdict != null && verdict.isEmpty()) {
+                    judgedOff.add(item); // set aside - the reclaim re-hears it
+                    continue;
+                }
                 merged.add(item);
                 earned.add(newsKey(item));
                 if (verdict == null) m.failOpenSeats.add(newsKey(item));
                 targets.put(newsKey(item), verdict == null ? "LAGE" : verdict);
                 added++;
+            }
+            if (!judgedOff.isEmpty()) {
+                List<RawNewsItem> disc = new ArrayList<>(m.newsDiscarded);
+                disc.addAll(judgedOff);
+                m.newsDiscarded = disc;
             }
             reconcileSrcBoard(subject, fresh, verdicts, earned);
             for (RawNewsItem item : m.news) {
@@ -3121,22 +3317,35 @@ public class DeepDiveService {
         } catch (Exception e) {
             LOG.debug("[DEEPDIVE] news failed: {}", e.getMessage());
         }
-        // Multi-year press HISTORY (2026-07-16): one windowed archive query
-        // per past calendar year - headlines only, never triaged or digested
-        // (context for the long-term arc, not weave material; the freshness
-        // cut on m.news must not touch it).
+        // Multi-year press HISTORY (2026-07-16, widened 2026-07-17): one
+        // windowed archive query per calendar year INCLUDING the current one
+        // (the old sweep stopped at January, and the freshness cut on m.news
+        // starts 30 days back - everything between fell into a hole).
+        // Deliberately NEVER model-judged: no triage verdict touches the
+        // archive, only an exact-title dedupe against the pool keeps the
+        // same story from riding twice. The intake reads every entry in full.
         try {
             if (newsAggregator != null && m.canonicalName != null) {
                 int year = java.time.LocalDate.now().getYear();
+                Set<String> knownTitles = new HashSet<>();
+                for (RawNewsItem n : m.news) {
+                    if (n.title() != null && !n.title().isBlank()) {
+                        knownTitles.add(n.title().strip().toLowerCase(Locale.ROOT));
+                    }
+                }
                 List<RawNewsItem> history = new ArrayList<>();
-                for (int y = year - PRESS_HISTORY_YEARS; y < year; y++) {
-                    history.addAll(newsAggregator.historyFor(m.canonicalName, m.isin,
-                            y + "-01-01", (y + 1) + "-01-01", PRESS_HISTORY_PER_YEAR));
+                for (int y = year - PRESS_HISTORY_YEARS; y <= year; y++) {
+                    for (RawNewsItem item : newsAggregator.historyFor(m.canonicalName, m.isin,
+                            y + "-01-01", (y + 1) + "-01-01", PRESS_HISTORY_PER_YEAR)) {
+                        String t = item.title() == null ? ""
+                                : item.title().strip().toLowerCase(Locale.ROOT);
+                        if (!t.isEmpty() && knownTitles.add(t)) history.add(item);
+                    }
                 }
                 if (!history.isEmpty()) {
                     m.pressHistory = history;
-                    LOG.info("[DEEPDIVE] '{}' press history: {} headline(s) across {} year(s).",
-                            ticker, history.size(), PRESS_HISTORY_YEARS);
+                    LOG.info("[DEEPDIVE] '{}' press history: {} headline(s) across {} year "
+                            + "window(s).", ticker, history.size(), PRESS_HISTORY_YEARS + 1);
                 }
             }
         } catch (Exception e) {
@@ -3217,17 +3426,49 @@ public class DeepDiveService {
         // (wire archive, room evidence, daily closes, sector proxy, earnings
         // date) and answer as finished reading lines (number + definition +
         // reading instruction). Statistics in code, the model only reads;
-        // a data-starved kernel costs its line, never the block.
+        // a data-starved kernel costs its line, never the block. Besides the
+        // instrument-scoped kernels the AMBIENT levels ride along (user
+        // mandate 2026-07-17 "alles ist relevant, auch nicht instrumenten-
+        // bezogen"): the market-wide cage readings and the fishing net's
+        // world statistics — routed to their own shelves as context, never
+        // as instrument evidence.
         try {
             List<HeadlineRecord> recentArchive = headlineArchive != null
-                    ? headlineArchive.recent(java.time.Duration.ofDays(60)) : List.of();
-            m.signalReadings = SignalDesk.forInstrument(m.ticker, m.wireHistory,
-                    recentArchive, m.roomUnits, m.snapshot, m.sectorEtf,
-                    m.earningsEstimateDateIso, !m.news.isEmpty(), Instant.now());
-            if (!m.signalReadings.isEmpty()) {
-                LOG.info("[DEEPDIVE] '{}' quant signals: {} reading(s).",
-                        ticker, m.signalReadings.size());
+                    ? headlineArchive.recent(java.time.Duration.ofDays(61)) : List.of();
+            List<de.bsommerfeld.wsbg.terminal.signals.SignalReading> readings =
+                    new ArrayList<>(SignalDesk.forInstrument(m.ticker, m.wireHistory,
+                            recentArchive, m.roomUnits, m.snapshot, m.sectorEtf,
+                            m.earningsEstimateDateIso, !m.news.isEmpty(), Instant.now()));
+            int instrumentCount = readings.size();
+            java.time.ZoneId zone = java.time.ZoneId.systemDefault();
+            java.time.LocalDate today = java.time.LocalDate.now(zone);
+            try {
+                readings.addAll(SignalDesk.forMarket(recentArchive,
+                        fearGreedByDate(today), today, zone));
+            } catch (Exception e) {
+                LOG.debug("[DEEPDIVE] market signals failed: {}", e.getMessage());
             }
+            try {
+                var weather = weatherArchive;
+                readings.addAll(SignalDesk.forWorld(
+                        weather != null ? weather.recent(WORLD_GAUGE_DAYS) : List.of(),
+                        m.worldSignals, today));
+            } catch (Exception e) {
+                LOG.debug("[DEEPDIVE] world signals (quant) failed: {}", e.getMessage());
+            }
+            m.signalReadings = List.copyOf(readings);
+            int ambientCount = readings.size() - instrumentCount;
+            LOG.info("[DEEPDIVE] '{}' quant signals: {} instrument, {} ambient reading(s).",
+                    ticker, instrumentCount, ambientCount);
+            journalNotes(ticker, List.of(journalGerman()
+                    ? "Signalwerk — " + instrumentCount + " Instrument-Lesung(en), "
+                            + ambientCount + " Umfeld-Lesung(en)"
+                            + (readings.isEmpty()
+                                    ? " (Datenlage zu dünn - Kernels brauchen eigene Historie)" : "")
+                    : "Signal desk — " + instrumentCount + " instrument reading(s), "
+                            + ambientCount + " ambient reading(s)"
+                            + (readings.isEmpty()
+                                    ? " (data too thin - kernels need own history)" : "")));
         } catch (Exception e) {
             LOG.debug("[DEEPDIVE] quant signals failed: {}", e.getMessage());
         }
@@ -3502,6 +3743,7 @@ public class DeepDiveService {
         appendTrading(sb, m.venueStats, m.facts, nums);
         appendStructure(sb, m, nums);
         appendSignals(sb, m, nums, SIGNALS_SITUATION);
+        appendAmbientSignals(sb, m, nums, SIGNALS_WORLD);
         out[SEC_SITUATION] = new Shelf(take(sb), newsBlocksFor(m, "LAGE", nums));
 
         appendIrArchive(sb, m, nums, false);
@@ -3553,6 +3795,7 @@ public class DeepDiveService {
         if (outsideRooms != null) roomParts.add(outsideRooms);
         StringBuilder roomSignals = new StringBuilder();
         appendSignals(roomSignals, m, nums, SIGNALS_ROOM);
+        appendAmbientSignals(roomSignals, m, nums, SIGNALS_MARKET);
         if (roomSignals.length() > 0) roomParts.add(roomSignals.toString());
         out[SEC_ROOM] = new Shelf(
                 roomParts.isEmpty() ? null : String.join("\n", roomParts), List.of());
@@ -4599,24 +4842,32 @@ public class DeepDiveService {
             "XLI", Set.of("STORM", "AVIATION"),
             "XLB", Set.of("STORM"),
             "XLP", Set.of("STORM"),
-            "XLU", Set.of("STORM", "QUAKE"));
+            "XLU", Set.of("STORM", "QUAKE"),
+            "XLRE", Set.of("STORM", "QUAKE"));
 
     /**
      * Which fishing-net world signals a sector proxy TRADES ON — the same
      * conservative doctrine as {@link #SECTOR_HAZARD_EXPOSURE}: energy on US
-     * oil stocks and tanker routes, industrials/logistics on chokepoints and
-     * container freight, materials on chokepoints and power input costs,
-     * staples on supply-chain routes, utilities on power and geomagnetic
-     * storms (grid), tech on actively exploited vulnerabilities. No mapping,
-     * NOTHING.
+     * oil stocks and tanker routes, industrials/logistics and consumer
+     * importers on chokepoints and container freight, materials on
+     * chokepoints and power input costs, staples on supply-chain routes,
+     * utilities on power and geomagnetic storms (grid), tech AND
+     * communication on exploited vulnerabilities and space weather
+     * (satellites, GPS timing, data-center power — user mandate 2026-07-17),
+     * financials on cyber (prime targets), health care on the public-health
+     * gauges. No mapping, NOTHING.
      */
     static final Map<String, Set<String>> SECTOR_WORLD_EXPOSURE = Map.of(
             "XLE", Set.of("OIL", "CHOKEPOINTS"),
             "XLI", Set.of("CHOKEPOINTS", "FREIGHT"),
             "XLB", Set.of("CHOKEPOINTS", "POWER"),
             "XLP", Set.of("CHOKEPOINTS"),
+            "XLY", Set.of("CHOKEPOINTS", "FREIGHT"),
             "XLU", Set.of("POWER", "SPACEWX"),
-            "XLK", Set.of("CYBER"));
+            "XLK", Set.of("CYBER", "SPACEWX"),
+            "XLC", Set.of("CYBER", "SPACEWX"),
+            "XLF", Set.of("CYBER"),
+            "XLV", Set.of("HEALTH"));
 
     /** The weather docket rule: high impact anywhere, medium only for US/DE/EU. */
     private static boolean relevantMacro(int importance, String country) {
@@ -4693,7 +4944,9 @@ public class DeepDiveService {
                 appendOilLine(line, "; SPR", o.sprMb(), o.sprDeltaMb());
                 appendOilLine(line, "; gasoline", o.gasolineMb(), o.gasolineDeltaMb());
                 appendOilLine(line, "; distillates", o.distillateMb(), o.distillateDeltaMb());
-                out.add(line + hint(worldHints.contains("OIL")));
+                out.add(line + affects("energy producers and refiners, chemicals (feedstock), "
+                        + "airlines and logistics (fuel cost)")
+                        + hint(worldHints.contains("OIL")));
             }
             for (var c : s.chokepoints()) {
                 if (c.transits() == null) continue;
@@ -4705,7 +4958,9 @@ public class DeepDiveService {
                             c.weekDeltaPercent()));
                 }
                 line.append(')');
-                out.add(line + hint(worldHints.contains("CHOKEPOINTS")));
+                out.add(line + affects("shipping and logistics, industrials, autos, "
+                        + "retail and consumer importers, oil (tanker routes)")
+                        + hint(worldHints.contains("CHOKEPOINTS")));
             }
             if (s.freight() != null && s.freight().harpex() != null) {
                 var f = s.freight();
@@ -4716,7 +4971,9 @@ public class DeepDiveService {
                     line.append(String.format(Locale.ROOT, " (prior week %.0f)",
                             f.harpexWeekAgo()));
                 }
-                out.add(line + hint(worldHints.contains("FREIGHT")));
+                out.add(line + affects("shipping lines and logistics, retail and consumer "
+                        + "importers (freight cost)")
+                        + hint(worldHints.contains("FREIGHT")));
             }
             if (s.power() != null && s.power().currentEurMwh() != null) {
                 var p = s.power();
@@ -4730,7 +4987,9 @@ public class DeepDiveService {
                 if (p.avgEurMwh() != null) {
                     line.append(String.format(Locale.ROOT, ", day average %.2f", p.avgEurMwh()));
                 }
-                out.add(line + hint(worldHints.contains("POWER")));
+                out.add(line + affects("utilities, energy-intensive industry (chemicals, "
+                        + "steel), data-center and cloud operators")
+                        + hint(worldHints.contains("POWER")));
             }
             var wx = s.spaceWeather();
             if (wx != null && (level(wx.r()) > 0 || level(wx.s()) > 0 || level(wx.g()) > 0
@@ -4740,12 +4999,17 @@ public class DeepDiveService {
                         + "/G" + level(wx.g()) + " today, 3-day maximum G"
                         + level(wx.forecastMaxG())
                         + " (geomagnetic storms stress power grids and satellites)"
+                        + affects("utilities (grid), satellite and telecom operators, tech "
+                                + "and software (GPS timing, data centers, cloud "
+                                + "reliability), airlines (polar routes, radio)")
                         + hint(worldHints.contains("SPACEWX")));
             }
             for (var k : s.cyber()) {
                 out.add("Actively exploited vulnerability (CISA KEV"
                         + (k.dateAdded() == null ? "" : ", listed " + k.dateAdded()) + "): "
                         + k.cve() + " " + k.vendorProduct()
+                        + affects("the named vendor and its customers, software and tech, "
+                                + "financials (prime targets), cyber insurers")
                         + hint(worldHints.contains("CYBER")));
             }
             for (var p : s.policy()) {
@@ -4777,15 +5041,24 @@ public class DeepDiveService {
                             h.areWeek() == null ? "" : ", " + h.areWeek()));
                     any = true;
                 }
-                if (any) out.add(line.toString());
+                if (any) {
+                    out.add(line + affects("pharma and diagnostics, health insurers, "
+                            + "travel and events")
+                            + hint(worldHints.contains("HEALTH")));
+                }
                 for (String outbreak : h.outbreaks()) {
-                    out.add("WHO disease outbreak notice: " + outbreak);
+                    out.add("WHO disease outbreak notice: " + outbreak
+                            + affects("pharma and vaccine makers, diagnostics, travel "
+                                    + "and airlines")
+                            + hint(worldHints.contains("HEALTH")));
                 }
             }
             for (var c : s.conflicts()) {
                 out.add("Armed conflict/attack (Wikipedia Current Events, attributed): "
                         + c.text()
-                        + (c.country() == null ? "" : " [region: " + c.country() + "]"));
+                        + (c.country() == null ? "" : " [region: " + c.country() + "]")
+                        + affects("defense, energy and oil (region-dependent), shipping "
+                                + "and marine insurers"));
             }
             for (String fixture : s.sportsTomorrow()) {
                 out.add("German football tomorrow: " + fixture);
@@ -4810,9 +5083,22 @@ public class DeepDiveService {
             String text = h.text() == null ? "" : h.text().strip();
             if (text.length() > 160) text = text.substring(0, 160) + "…";
             out.add("World hazard [" + h.kind() + ", " + h.severity() + "]: " + text
+                    + affects(hazardAffects(h.kind()))
                     + hint(h.kind() != null && hazardHints.contains(h.kind())));
         }
         return out;
+    }
+
+    /** The transmission anchor per hazard kind (STORM / QUAKE / AVIATION). */
+    private static String hazardAffects(String kind) {
+        return switch (kind == null ? "" : kind) {
+            case "STORM" -> "insurers, energy (Gulf platforms and refineries), utilities "
+                    + "(grid), airlines and logistics, agriculture";
+            case "QUAKE" -> "insurers and reinsurers, real estate, regional supply chains "
+                    + "(fabs, ports)";
+            case "AVIATION" -> "airlines, logistics and freight, travel";
+            default -> "insurers, logistics, regional supply chains";
+        };
     }
 
     /** The exposure maps as judge context — information, never a filter. */
@@ -4820,6 +5106,18 @@ public class DeepDiveService {
         return exposed
                 ? " [hint: the instrument's sector proxy is known to trade on this signal class]"
                 : "";
+    }
+
+    /**
+     * The standing transmission anchor per signal class — which sectors
+     * typically trade on it, on EVERY line regardless of the instrument's own
+     * sector (user mandate 2026-07-17: the judge must see the cross-sector
+     * path — space weather matters to a software name via satellites and
+     * data centers, not only to utilities). Judge information like the hint,
+     * never a filter, stripped before the shelf.
+     */
+    private static String affects(String sectors) {
+        return " [affects: " + sectors + "]";
     }
 
     private static int level(Integer scale) {
@@ -4922,9 +5220,11 @@ public class DeepDiveService {
         }
     }
 
-    /** The judge hint never reaches the shelf - it exists for the judge alone. */
+    /** The judge annotations never reach the shelf - they exist for the judge alone. */
     private static String stripHint(String line) {
-        int idx = line.indexOf(" [hint:");
+        int idx = line.indexOf(" [affects:");
+        int hintIdx = line.indexOf(" [hint:");
+        if (idx < 0 || (hintIdx >= 0 && hintIdx < idx)) idx = hintIdx;
         return idx < 0 ? line : line.substring(0, idx);
     }
 
@@ -4957,6 +5257,21 @@ public class DeepDiveService {
     static final int VOLUME_PROFILE_RANGE_DAYS = 180;
     /** Newest register events carried verbatim into the memory block. */
     private static final int MEMORY_EVENTS_TAIL = 8;
+
+    /**
+     * ISO date → archived Fear&amp;Greed score over the divergence window —
+     * the market-kernel input (the Wetterbericht's twin helper).
+     */
+    private Map<String, Double> fearGreedByDate(java.time.LocalDate today) {
+        de.bsommerfeld.wsbg.terminal.db.FearGreedHistoryArchive history = fearGreedHistory;
+        if (history == null) return Map.of();
+        Map<String, Double> out = new HashMap<>();
+        for (int back = 61; back >= 0; back--) {
+            String iso = today.minusDays(back).toString();
+            history.byDate(iso).ifPresent(r -> out.put(iso, r.score()));
+        }
+        return out;
+    }
 
     /** The current F&G band (yesterday's settled reading), or null. */
     private String currentRegimeBand() {
@@ -5116,20 +5431,42 @@ public class DeepDiveService {
      */
     private static void appendSignals(StringBuilder sb, Material m,
             Map<String, Integer> nums, Set<String> ids) {
+        appendSignals(sb, m, nums, ids,
+                "QUANT SIGNALS (house-computed in code, never guessed)",
+                "discipline: a signal is a clue, never a verdict - cite the number "
+                        + "when you lean on it, and contradict it explicitly when the material "
+                        + "says otherwise");
+    }
+
+    /**
+     * The AMBIENT readings (market-wide cage weather, world gauge statistics)
+     * — deliberately framed as surroundings, never instrument evidence: the
+     * author may color the read with them, but a connection to the name must
+     * come from the material, not from the ambience.
+     */
+    private static void appendAmbientSignals(StringBuilder sb, Material m,
+            Map<String, Integer> nums, Set<String> ids) {
+        appendSignals(sb, m, nums, ids,
+                "AMBIENT SIGNALS (house-computed context - market-wide/world, "
+                        + "NOT about this instrument)",
+                "discipline: ambience colors the read, it never carries a claim about "
+                        + "the name - connect it to the instrument ONLY where the material "
+                        + "shows the exposure");
+    }
+
+    private static void appendSignals(StringBuilder sb, Material m,
+            Map<String, Integer> nums, Set<String> ids, String header, String discipline) {
         if (m.signalReadings.isEmpty()) return;
         List<de.bsommerfeld.wsbg.terminal.signals.SignalReading> picked = new ArrayList<>();
         for (var r : m.signalReadings) {
             if (ids.contains(r.id())) picked.add(r);
         }
         if (picked.isEmpty()) return;
-        sb.append("QUANT SIGNALS (house-computed in code, never guessed)")
-                .append(mark(nums, "signals")).append(":\n");
+        sb.append(header).append(mark(nums, "signals")).append(":\n");
         for (var r : picked) {
             sb.append("  - ").append(r.toContextLine()).append('\n');
         }
-        sb.append("  - discipline: a signal is a clue, never a verdict - cite the number "
-                + "when you lean on it, and contradict it explicitly when the material "
-                + "says otherwise\n");
+        sb.append("  - ").append(discipline).append('\n');
     }
 
     /** Which signal ids ride which section shelf. */
@@ -5138,6 +5475,14 @@ public class DeepDiveService {
             "silent-move-detector", "market-regime-hmm");
     private static final Set<String> SIGNALS_OUTLOOK = Set.of("expectation-vacuum");
     private static final Set<String> SIGNALS_ROOM = Set.of("hawkes-endogeneity");
+    /** Ambient world statistics (fishing-net gauge kernels) — Lage context. */
+    private static final Set<String> SIGNALS_WORLD = Set.of(
+            "world-anomaly-index", "supply-chain-lag", "ground-unrest-residual");
+    /** Ambient market-wide cage readings — room-weather context. */
+    private static final Set<String> SIGNALS_MARKET = Set.of(
+            "attention-entropy", "cage-mood-index", "sentiment-divergence");
+    /** Evening editions consulted for the world gauge table (days). */
+    private static final int WORLD_GAUGE_DAYS = 120;
 
     /** ROOT-locale integer with SPACE grouping (the house material convention). */
     private static String grouped(long v) {
@@ -6065,6 +6410,14 @@ public class DeepDiveService {
                 return "EarningsWhispers" + (de
                         ? " - Konsensschätzungen zum nächsten Bericht"
                         : " - consensus estimates for the next report");
+            case "signals":
+                return de
+                        ? "Signalwerk - hausgerechnete Statistik-Kernels über den eigenen "
+                                + "Archiven (Instrument, Markt und Weltlage; Zahlen aus Code, "
+                                + "nie geschätzt)"
+                        : "Signal desk - house-computed statistics kernels over the own "
+                                + "archives (instrument, market and world level; numbers from "
+                                + "code, never guessed)";
             case "room":
                 return "r/wallstreetbetsGER" + (de ? " - Diskussion im Käfig (unverifiziert)"
                         : " - the room's discussion (unverified)");
