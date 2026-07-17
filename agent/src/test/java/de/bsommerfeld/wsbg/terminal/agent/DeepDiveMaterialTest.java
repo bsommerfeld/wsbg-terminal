@@ -1181,6 +1181,21 @@ class DeepDiveMaterialTest {
         assertEquals(0, DeepDiveService.paragraphOfQuote(body, null));
     }
 
+    /**
+     * The register names the signal desk: the "signals" key must resolve to
+     * its own label, never fall through to the news default branch (which
+     * parses the key as an index and would throw on the first material that
+     * actually carries readings).
+     */
+    @Test
+    void registerCarriesSignalDeskLeg() {
+        DeepDiveService.Material m = fullMaterial();
+        m.signalReadings = List.of(new de.bsommerfeld.wsbg.terminal.signals.SignalReading(
+                "novelty-score", "Novelty", 0.5, "0.50", "def", "read"));
+        assertContains(DeepDiveService.sourcesSection(m, true), "Signalwerk");
+        assertContains(DeepDiveService.sourcesSection(m, false), "Signal desk");
+    }
+
     private static void assertContains(String brief, String needle) {
         assertTrue(brief.contains(needle),
                 "missing: \"" + needle + "\"\n---\n" + brief);

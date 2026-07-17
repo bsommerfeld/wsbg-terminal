@@ -4,6 +4,7 @@ import de.bsommerfeld.wsbg.terminal.db.HeadlineRecord;
 import de.bsommerfeld.wsbg.terminal.db.HeadlineSentiment;
 import de.bsommerfeld.wsbg.terminal.db.HeadlineSubject;
 import de.bsommerfeld.wsbg.terminal.db.SignalValue;
+import de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord;
 import de.bsommerfeld.wsbg.terminal.signals.SignalReading;
 import org.junit.jupiter.api.Test;
 
@@ -329,5 +330,85 @@ class SignalDeskTest {
         Optional<SignalReading> reading = SignalDesk.hawkes(List.of(restored));
         assertTrue(reading.isPresent());
         assertEquals("hawkes-endogeneity", reading.get().id());
+    }
+
+    // ---- world level: the frozen evening editions ARE the gauge table ----
+
+    private static WeatherReportRecord.WorldSignals worldSignals(double chokeDelta,
+            double crudeDelta, double harpex, double powerAvg, int g, int civic, int cyber,
+            int conflicts, int policy) {
+        List<WeatherReportRecord.PolicyStat> policyList = new ArrayList<>();
+        for (int i = 0; i < policy; i++) {
+            policyList.add(new WeatherReportRecord.PolicyStat("FED", "p" + i, null));
+        }
+        List<WeatherReportRecord.CivicStat> civicList = new ArrayList<>();
+        for (int i = 0; i < civic; i++) {
+            civicList.add(new WeatherReportRecord.CivicStat("blaulicht", "office", "c" + i, null));
+        }
+        List<WeatherReportRecord.CyberStat> cyberList = new ArrayList<>();
+        for (int i = 0; i < cyber; i++) {
+            cyberList.add(new WeatherReportRecord.CyberStat("CVE-" + i, "x", "2026-07-01"));
+        }
+        List<WeatherReportRecord.ConflictStat> conflictList = new ArrayList<>();
+        for (int i = 0; i < conflicts; i++) {
+            conflictList.add(new WeatherReportRecord.ConflictStat("X", "t", "s", null, null));
+        }
+        return new WeatherReportRecord.WorldSignals(
+                List.of(new WeatherReportRecord.ChokepointStat("Suez", "2026-07-01", 50, chokeDelta)),
+                new WeatherReportRecord.OilStockStat("2026-07-01", 400.0, crudeDelta,
+                        350.0, 0.0, 220.0, 0.0, 120.0, 0.0),
+                new WeatherReportRecord.FreightStat(harpex, harpex, "2026-07-01"),
+                new WeatherReportRecord.PowerStat(powerAvg, powerAvg, powerAvg, powerAvg,
+                        50.0, "wind"),
+                new WeatherReportRecord.SpaceWxStat(0, 0, g, g),
+                policyList, List.of(), civicList, null, cyberList, List.of(), null,
+                conflictList);
+    }
+
+    private static WeatherReportRecord edition(LocalDate day,
+            WeatherReportRecord.WorldSignals ws) {
+        WeatherReportRecord.WorldStats world = new WeatherReportRecord.WorldStats(
+                null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, ws);
+        return new WeatherReportRecord(day.toString(), 0L, "t", "de", 0, 0,
+                List.of(), List.of(), List.of(), null, world, List.of(), List.of());
+    }
+
+    @Test
+    void worldKernelsReadTheFrozenEditions() {
+        LocalDate today = LocalDate.of(2026, 7, 17);
+        List<WeatherReportRecord> editions = new ArrayList<>();
+        for (int back = 45; back >= 1; back--) {
+            LocalDate day = today.minusDays(back);
+            // mild daily wobble; the chokepoint delta leads the harpex level
+            double choke = Math.sin(back / 5.0) * 2;
+            double harpex = 1000 + Math.sin((back + 3) / 5.0) * 20;
+            editions.add(edition(day, worldSignals(choke, -1.2 + (back % 3), harpex,
+                    80 + (back % 7), back % 3, 3 + (back % 4), back % 2,
+                    1 + (back % 2), 2 + (back % 3))));
+        }
+        // a loud world day across every gauge
+        WeatherReportRecord.WorldSignals today0 =
+                worldSignals(9.0, -8.0, 1200, 240, 4, 30, 5, 6, 8);
+        List<SignalReading> out = SignalDesk.forWorld(editions, today0, today);
+        List<String> ids = out.stream().map(SignalReading::id).toList();
+        assertTrue(ids.contains("world-anomaly-index"), ids.toString());
+        assertTrue(ids.contains("supply-chain-lag"), ids.toString());
+        assertTrue(ids.contains("ground-unrest-residual"), ids.toString());
+    }
+
+    @Test
+    void thinWorldArchiveCostsReadingsNeverTheCaller() {
+        assertTrue(SignalDesk.forWorld(List.of(), null, LocalDate.of(2026, 7, 17)).isEmpty());
+        // a handful of editions is below every kernel's day floor
+        List<WeatherReportRecord> few = new ArrayList<>();
+        for (int back = 5; back >= 1; back--) {
+            few.add(edition(LocalDate.of(2026, 7, 17).minusDays(back),
+                    worldSignals(1, 1, 1000, 80, 0, 2, 0, 1, 2)));
+        }
+        assertTrue(SignalDesk.forWorld(few, worldSignals(1, 1, 1000, 80, 0, 2, 0, 1, 2),
+                LocalDate.of(2026, 7, 17)).isEmpty());
     }
 }
