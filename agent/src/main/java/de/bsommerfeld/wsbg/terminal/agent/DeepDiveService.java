@@ -4851,11 +4851,13 @@ public class DeepDiveService {
      * oil stocks and tanker routes, industrials/logistics and consumer
      * importers on chokepoints and container freight, materials on
      * chokepoints and power input costs, staples on supply-chain routes,
-     * utilities on power and geomagnetic storms (grid), tech AND
-     * communication on exploited vulnerabilities and space weather
-     * (satellites, GPS timing, data-center power — user mandate 2026-07-17),
-     * financials on cyber (prime targets), health care on the public-health
-     * gauges. No mapping, NOTHING.
+     * utilities on power and geomagnetic storms (grid), tech on exploited
+     * vulnerabilities, communication on cyber AND space weather (satellite/
+     * telecom operators — the documented Starlink-loss channel; researched
+     * 2026-07-17: tech/software itself has NO documented space-weather
+     * exposure, so XLK deliberately does NOT carry SPACEWX), financials on
+     * cyber (documented hardest-hit on data loss), health care on the
+     * public-health gauges. No mapping, NOTHING.
      */
     static final Map<String, Set<String>> SECTOR_WORLD_EXPOSURE = Map.of(
             "XLE", Set.of("OIL", "CHOKEPOINTS"),
@@ -4864,7 +4866,7 @@ public class DeepDiveService {
             "XLP", Set.of("CHOKEPOINTS"),
             "XLY", Set.of("CHOKEPOINTS", "FREIGHT"),
             "XLU", Set.of("POWER", "SPACEWX"),
-            "XLK", Set.of("CYBER", "SPACEWX"),
+            "XLK", Set.of("CYBER"),
             "XLC", Set.of("CYBER", "SPACEWX"),
             "XLF", Set.of("CYBER"),
             "XLV", Set.of("HEALTH"));
@@ -4944,8 +4946,10 @@ public class DeepDiveService {
                 appendOilLine(line, "; SPR", o.sprMb(), o.sprDeltaMb());
                 appendOilLine(line, "; gasoline", o.gasolineMb(), o.gasolineDeltaMb());
                 appendOilLine(line, "; distillates", o.distillateMb(), o.distillateDeltaMb());
-                out.add(line + affects("energy producers and refiners, chemicals (feedstock), "
-                        + "airlines and logistics (fuel cost)")
+                out.add(line + affects("oil futures react to inventory SURPRISES (documented); "
+                        + "energy producers and oilfield services via the price move; "
+                        + "refiners via product stocks and crack spreads; airlines and "
+                        + "chemicals react to sustained fuel levels, NOT this weekly print")
                         + hint(worldHints.contains("OIL")));
             }
             for (var c : s.chokepoints()) {
@@ -4958,8 +4962,11 @@ public class DeepDiveService {
                             c.weekDeltaPercent()));
                 }
                 line.append(')');
-                out.add(line + affects("shipping and logistics, industrials, autos, "
-                        + "retail and consumer importers, oil (tanker routes)")
+                out.add(line + affects("container liners and tankers BENEFIT from disruption "
+                        + "(rerouting spikes rates - documented); autos and retail importers "
+                        + "suffer component and delivery delays; oil and LNG when the strait "
+                        + "carries them; war-risk insurers reprice; air freight gains from "
+                        + "modal shift")
                         + hint(worldHints.contains("CHOKEPOINTS")));
             }
             if (s.freight() != null && s.freight().harpex() != null) {
@@ -4971,8 +4978,9 @@ public class DeepDiveService {
                     line.append(String.format(Locale.ROOT, " (prior week %.0f)",
                             f.harpexWeekAgo()));
                 }
-                out.add(line + affects("shipping lines and logistics, retail and consumer "
-                        + "importers (freight cost)")
+                out.add(line + affects("shipping lines and charter owners profit directly "
+                        + "(documented rate-profit link); freight forwarders on volatility; "
+                        + "retail importers feel margin pressure only at sustained extremes")
                         + hint(worldHints.contains("FREIGHT")));
             }
             if (s.power() != null && s.power().currentEurMwh() != null) {
@@ -4987,8 +4995,11 @@ public class DeepDiveService {
                 if (p.avgEurMwh() != null) {
                     line.append(String.format(Locale.ROOT, ", day average %.2f", p.avgEurMwh()));
                 }
-                out.add(line + affects("utilities, energy-intensive industry (chemicals, "
-                        + "steel), data-center and cloud operators")
+                out.add(line + affects("energy-intensive industry - chemicals, steel, "
+                        + "aluminum, paper, cement (documented curtailments at sustained "
+                        + "highs); utilities in BOTH directions (procurement squeeze vs "
+                        + "generation windfall); sustained regimes matter, single days "
+                        + "rarely")
                         + hint(worldHints.contains("POWER")));
             }
             var wx = s.spaceWeather();
@@ -4999,32 +5010,49 @@ public class DeepDiveService {
                         + "/G" + level(wx.g()) + " today, 3-day maximum G"
                         + level(wx.forecastMaxG())
                         + " (geomagnetic storms stress power grids and satellites)"
-                        + affects("utilities (grid), satellite and telecom operators, tech "
-                                + "and software (GPS timing, data centers, cloud "
-                                + "reliability), airlines (polar routes, radio)")
+                        + affects("power grids and utilities (documented transformer "
+                                + "damage), satellite and LEO-constellation operators "
+                                + "(documented storm-drag satellite losses), GPS-dependent "
+                                + "operations (precision agriculture, surveying), airlines "
+                                + "on polar routes; data-center/software impact is NOT "
+                                + "documented - connect it only through a concrete "
+                                + "satellite or GPS tie in the themes")
                         + hint(worldHints.contains("SPACEWX")));
             }
             for (var k : s.cyber()) {
                 out.add("Actively exploited vulnerability (CISA KEV"
                         + (k.dateAdded() == null ? "" : ", listed " + k.dateAdded()) + "): "
                         + k.cve() + " " + k.vendorProduct()
-                        + affects("the named vendor and its customers, software and tech, "
-                                + "financials (prime targets), cyber insurers")
+                        + affects("the exploited product's vendor (documented double-digit "
+                                + "drawdowns) and its customer base; breached firms show "
+                                + "small persistent abnormal returns, financial-data losses "
+                                + "hit hardest; cybersecurity vendors BENEFIT; a listing "
+                                + "alone rarely moves prices - active exploitation news does")
                         + hint(worldHints.contains("CYBER")));
             }
             for (var p : s.policy()) {
                 out.add("Policy wire [" + p.source() + "]"
-                        + (p.time() == null ? "" : " " + p.time()) + ": " + p.title());
+                        + (p.time() == null ? "" : " " + p.time()) + ": " + p.title()
+                        + affects(policyAffects(p.source())));
             }
             for (var p : s.polls()) {
                 out.add("German election poll " + p.parliament() + " (" + p.institute()
-                        + ", " + p.dateIso() + "): " + p.topline());
+                        + ", " + p.dateIso() + "): " + p.topline()
+                        + affects("sectors reprice on election RESULTS, coalition deals and "
+                                + "fiscal packages (real estate on rent policy, defense and "
+                                + "construction on spending programs - documented); a poll "
+                                + "release itself has no documented effect - background "
+                                + "drift only"));
             }
             for (var c : s.civic()) {
                 out.add("Civic wire [" + c.channel() + "]"
                         + (c.time() == null ? "" : " " + c.time()) + ": "
                         + (c.office() == null || c.office().isBlank() ? "" : c.office() + ": ")
-                        + c.title());
+                        + c.title()
+                        + affects("tradeable mainly when a LISTED operator is hit - "
+                                + "airline/airport strike days, refinery or plant "
+                                + "incidents (documented intraday moves); generic "
+                                + "police/fire/road items are equity noise"));
             }
             if (s.health() != null) {
                 var h = s.health();
@@ -5042,14 +5070,15 @@ public class DeepDiveService {
                     any = true;
                 }
                 if (any) {
-                    out.add(line + affects("pharma and diagnostics, health insurers, "
-                            + "travel and events")
+                    out.add(line + affects("routine surveillance levels rarely move "
+                            + "equities outside an active crisis - context, not a trigger")
                             + hint(worldHints.contains("HEALTH")));
                 }
                 for (String outbreak : h.outbreaks()) {
                     out.add("WHO disease outbreak notice: " + outbreak
-                            + affects("pharma and vaccine makers, diagnostics, travel "
-                                    + "and airlines")
+                            + affects("pure-play vaccine makers and diagnostics move on "
+                                    + "DISCRETE outbreak/emergency declarations "
+                                    + "(documented); travel inverse only in escalation")
                             + hint(worldHints.contains("HEALTH")));
                 }
             }
@@ -5057,25 +5086,38 @@ public class DeepDiveService {
                 out.add("Armed conflict/attack (Wikipedia Current Events, attributed): "
                         + c.text()
                         + (c.country() == null ? "" : " [region: " + c.country() + "]")
-                        + affects("defense, energy and oil (region-dependent), shipping "
-                                + "and marine insurers"));
+                        + affects("defense (documented re-ratings on escalation), oil and "
+                                + "gas when supply routes are touched, gold/safe-haven "
+                                + "flows, airlines on airspace closures and fuel, European "
+                                + "utilities and energy-intensive industry when gas is the "
+                                + "channel; sector-wide insurer effects are weakly "
+                                + "evidenced"));
             }
             for (String fixture : s.sportsTomorrow()) {
-                out.add("German football tomorrow: " + fixture);
+                out.add("German football tomorrow: " + fixture
+                        + affects("a LISTED club moves on result-vs-odds surprises "
+                                + "(documented); broad-market mood effects are fragile; "
+                                + "sponsors trade seasonally, not per fixture"));
             }
             if (s.holidays() != null) {
                 var h = s.holidays();
+                String holidayAffects = affects("a liquidity/regime flag - thin pre-holiday "
+                        + "volume, reopen volatility (documented anomaly, faded in large "
+                        + "caps); demand effects are anticipated, rarely tradeable");
                 if (h.tomorrowIsHoliday()) {
                     out.add("TOMORROW is a nationwide German public holiday: "
-                            + h.nextHolidayName() + " (" + h.nextHolidayDateIso() + ")");
+                            + h.nextHolidayName() + " (" + h.nextHolidayDateIso() + ")"
+                            + holidayAffects);
                 } else if (h.nextHolidayName() != null) {
                     out.add("Next German public holiday: " + h.nextHolidayName()
-                            + " on " + h.nextHolidayDateIso());
+                            + " on " + h.nextHolidayDateIso() + holidayAffects);
                 }
                 if (!h.schoolHolidayStates().isEmpty()) {
                     out.add("German school holidays currently in "
                             + h.schoolHolidayStates().size() + " states ("
-                            + String.join(", ", h.schoolHolidayStates()) + ")");
+                            + String.join(", ", h.schoolHolidayStates()) + ")"
+                            + affects("seasonal travel demand, fully anticipated - no "
+                                    + "documented equity effect; context only"));
                 }
             }
         }
@@ -5087,6 +5129,25 @@ public class DeepDiveService {
                     + hint(h.kind() != null && hazardHints.contains(h.kind())));
         }
         return out;
+    }
+
+    /**
+     * The transmission anchor per policy desk — central-bank wires carry the
+     * documented rate-sensitivity ranking, executive/regulatory desks the
+     * documented decision episodes; routine rulemaking is honestly flagged.
+     */
+    private static String policyAffects(String source) {
+        String s = source == null ? "" : source.toUpperCase(Locale.ROOT);
+        if (s.contains("FED") && !s.contains("FEDERAL_REGISTER") || s.contains("EZB")
+                || s.contains("ECB")) {
+            return "rate SURPRISES move equities broadly (documented, ~+1% per unexpected "
+                    + "25bp cut); most rate-sensitive: banks (margins), REITs/real estate, "
+                    + "utilities and telecom (bond proxies), long-duration tech; scheduled "
+                    + "statements without surprise move little";
+        }
+        return "only headline-level decisions move the TARGETED sector (documented: drug "
+                + "pricing orders vs pharma, antitrust/DMA vs big tech, emissions rules vs "
+                + "autos); routine rulemaking has no documented sector effect";
     }
 
     /** The transmission anchor per hazard kind (STORM / QUAKE / AVIATION). */

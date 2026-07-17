@@ -74,6 +74,49 @@ class DeepDiveWorldSignalsTest {
         assertTrue(c.stream().anyMatch(l -> l.startsWith("World hazard [STORM")));
         // Without a sector proxy no line carries a hint.
         assertTrue(c.stream().noneMatch(l -> l.contains("[hint:")), c.toString());
+        // The transmission anchors ride on EVERY line regardless of the
+        // instrument's sector (researched 2026-07-17): space weather names the
+        // documented paths (grid, satellites, GPS) and honestly flags the
+        // undocumented software link; policy, polls, civic, sports and holiday
+        // lines carry anchors too — no world line goes to the judge naked.
+        String spaceWx = c.stream().filter(l -> l.contains("Space weather"))
+                .findFirst().orElseThrow();
+        assertTrue(spaceWx.contains("[affects:"), spaceWx);
+        assertTrue(spaceWx.contains("satellite"), spaceWx);
+        assertTrue(spaceWx.contains("NOT documented"), spaceWx);
+        assertTrue(c.stream().filter(l -> l.startsWith("World hazard"))
+                .allMatch(l -> l.contains("[affects:")), c.toString());
+        for (String prefix : List.of("Policy wire", "German election poll",
+                "Civic wire", "German football tomorrow", "Next German public holiday")) {
+            assertTrue(c.stream().filter(l -> l.startsWith(prefix))
+                    .allMatch(l -> l.contains("[affects:")), prefix + ":\n" + c);
+        }
+    }
+
+    /**
+     * Researched exposure (2026-07-17): communication carries the documented
+     * satellite space-weather channel; tech carries cyber but deliberately NOT
+     * space weather (no documented episode).
+     */
+    @Test
+    void sectorHintsFollowTheEvidence() {
+        DeepDiveService.Material m = new DeepDiveService.Material();
+        m.canonicalName = "Software AG";
+        m.sectorEtfSymbol = "XLK";
+        m.worldSignals = fullSignals();
+        List<String> c = DeepDiveService.worldSignalCandidateLines(m);
+        String spaceWx = c.stream().filter(l -> l.contains("Space weather"))
+                .findFirst().orElseThrow();
+        String cyber = c.stream().filter(l -> l.contains("CVE-2026-1234"))
+                .findFirst().orElseThrow();
+        assertFalse(spaceWx.contains("[hint:"), spaceWx);
+        assertTrue(cyber.contains("[hint:"), cyber);
+
+        m.sectorEtfSymbol = "XLC";
+        List<String> comm = DeepDiveService.worldSignalCandidateLines(m);
+        String commSpaceWx = comm.stream().filter(l -> l.contains("Space weather"))
+                .findFirst().orElseThrow();
+        assertTrue(commSpaceWx.contains("[hint:"), commSpaceWx);
     }
 
     @Test
