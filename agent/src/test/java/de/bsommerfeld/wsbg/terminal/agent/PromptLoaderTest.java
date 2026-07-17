@@ -22,10 +22,10 @@ class PromptLoaderTest {
      */
     @Test
     void load_shouldResolveIncludesLanguageMatched() {
-        String en = PromptLoader.load("deepdive-weave");
+        String en = PromptLoader.load("deepdive-revise");
         assertTrue(en.contains("WIRE REGISTER"), "EN core spliced");
         assertFalse(en.contains("{{include:"), "no raw include token");
-        String de = PromptLoader.loadLocalized("deepdive-weave", "de");
+        String de = PromptLoader.loadLocalized("deepdive-revise", "de");
         assertTrue(de.contains("WIRE-REGISTER"), "DE core spliced");
         assertFalse(de.contains("{{include:"), "no raw include token");
     }

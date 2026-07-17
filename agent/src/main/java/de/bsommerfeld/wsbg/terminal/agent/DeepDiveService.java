@@ -3,6 +3,9 @@ package de.bsommerfeld.wsbg.terminal.agent;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.agent.event.DeepDiveFinishedEvent;
+import de.bsommerfeld.wsbg.terminal.agent.event.DeepDiveJournalEvent;
+import de.bsommerfeld.wsbg.terminal.agent.event.DeepDiveLiveChartsEvent;
+import de.bsommerfeld.wsbg.terminal.agent.event.DeepDiveLiveEvent;
 import de.bsommerfeld.wsbg.terminal.briefing.CentralBankCalendarClient;
 import de.bsommerfeld.wsbg.terminal.briefing.EconCalendarClient;
 import de.bsommerfeld.wsbg.terminal.briefing.TradingViewCalendarClient;
@@ -130,14 +133,6 @@ public class DeepDiveService {
     private static final int RESEARCH_QUERY_LIMIT = 25;
     /** Pre-triage CANDIDATE pool backstop — the judge sorts, the pool stays open. */
     private static final int MAX_NEWS_CANDIDATES = 300;
-    /**
-     * Digest backstop: EVERY triage-relevant article is read + distilled
-     * inline (one small model call each, body capped by the reader) — after
-     * triage, so no read is wasted on a rejected item.
-     */
-    private static final int MAX_DIGESTED_ARTICLES = 150;
-    /** Per-article digest cap inside a material block (mirrors the wire brief's cap). */
-    private static final int MAX_DIGEST_CHARS_BASE = 500;
     private static final int MAX_INSIDER_DEALS = 8;
     private static final int MAX_SHORT_POSITIONS = 8;
     /** NASDAQ tab caps — material stays model-sized, the tabs carry hundreds of rows. */
@@ -200,7 +195,6 @@ public class DeepDiveService {
     }
 
     private static int sectionMaterialChars() { return scaled(SECTION_MATERIAL_CHARS_BASE); }
-    private static int maxDigestChars() { return scaled(MAX_DIGEST_CHARS_BASE); }
     private static int roomPacketChars() { return scaled(ROOM_PACKET_CHARS_BASE); }
     private static int sentimentPacketChars() { return scaled(SENTIMENT_PACKET_CHARS_BASE); }
     private static int maxTechnicalCommentChars() { return scaled(MAX_TECHNICAL_COMMENT_CHARS_BASE); }
@@ -474,32 +468,53 @@ public class DeepDiveService {
         if (!busy.compareAndSet(false, true)) return false;
         cancelRequested = false;
         worker.execute(() -> {
+            runThread = Thread.currentThread();
             try {
                 run(ticker);
             } catch (java.util.concurrent.CancellationException e) {
                 LOG.info("[DEEPDIVE] generation for '{}' cancelled by the user.", ticker);
                 finish(ticker, false, null);
-            } catch (Exception e) {
-                LOG.warn("[DEEPDIVE] generation for '{}' failed: {}", ticker, e.getMessage());
+            } catch (Throwable e) {
+                // Throwable, not Exception: an Error slipping through would skip
+                // finish() and latch busy=true for the session — every later
+                // generate() would be silently rejected ("nothing happens").
+                if (cancelRequested) {
+                    // The cancel interrupt surfaces as whatever the in-flight
+                    // call throws (HTTP abort, wrapped InterruptedException) —
+                    // that is the abort landing, not a failure.
+                    LOG.info("[DEEPDIVE] generation for '{}' cancelled by the user.", ticker);
+                } else {
+                    LOG.warn("[DEEPDIVE] generation for '{}' failed: {}", ticker, e.getMessage());
+                }
                 finish(ticker, false, null);
             } finally {
-                busy.set(false); // safety net — finish() already dropped it
+                runThread = null;
+                Thread.interrupted(); // the single worker thread is reused — drop a late interrupt
+                // NO busy.set(false) here: finish() runs on every exit path
+                // above, and a blanket reset would clobber the busy=true of a
+                // NEXT run accepted in the finish()→finally window (the run
+                // would execute with the UI showing idle).
             }
         });
         return true;
     }
 
-    /** A user-requested abort of the RUNNING generation (checked between steps). */
+    /** A user-requested abort of the RUNNING generation (flag + interrupt). */
     private volatile boolean cancelRequested;
 
+    /** The live run's worker thread — the cancel interrupt target. */
+    private volatile Thread runThread;
+
     /**
-     * Requests the running generation to stop — honored at the next step
-     * boundary (a model call in flight finishes first, so the abort lands
-     * within seconds). No-op when idle.
+     * Aborts the running generation NOW: the flag covers the step boundaries,
+     * the interrupt rips the in-flight blocking call (a gemma generation runs
+     * minutes — waiting it out is not "cancel"). No-op when idle.
      */
     public boolean cancelCurrent() {
         if (!busy.get()) return false;
         cancelRequested = true;
+        Thread t = runThread;
+        if (t != null) t.interrupt();
         LOG.info("[DEEPDIVE] cancel requested for the running generation.");
         return true;
     }
@@ -566,28 +581,29 @@ public class DeepDiveService {
             "Valuation and competition", "Catalysts and risks", "Outlook", "The room");
 
     /** The loaded prompt set of one run. */
-    private record Prompts(String section, String these, String revise, String challenge,
-            String weave, String polish, String arbiter,
-            String consistency, String diffcheck, String chronicle, String covered,
-            String reclaim) {
+    private record Prompts(String section, String these, String revise, String formcheck,
+            String consistency, String reclaim, String extract, String factcheck) {
     }
 
     /**
      * One section's shelf: the BASE material (the data legs' blocks) and the
-     * news blocks as SEPARATE steps — the author writes from the base, then
-     * WEAVES the articles in one at a time, each held against the standing
-     * text (the single source of truth). Tiny steps, never a bulk context.
+     * press LEDGER blocks (per routed article: its source line plus its
+     * verified fact lines from the intake). The author forms the section ONCE
+     * from the combined view - the whole verified picture, never a
+     * story-by-story weave.
      */
     record Shelf(String base, List<String> newsBlocks) {
         boolean isEmpty() {
             return (base == null || base.isBlank()) && newsBlocks.isEmpty();
         }
 
-        /** The full admissible evidence — what the challenger and final checks see. */
+        /** The full admissible evidence — what the author and every check see. */
         String combined() {
             if (newsBlocks.isEmpty()) return base;
             StringBuilder sb = new StringBuilder(base == null ? "" : base);
-            sb.append("NEWS (verified, last ").append(NEWS_MAX_AGE_DAYS).append(" days):\n");
+            sb.append("PRESS FACTS (last ").append(NEWS_MAX_AGE_DAYS)
+                    .append(" days; per article: its source line, then its fact lines "
+                            + "verified against the article text):\n");
             for (String b : newsBlocks) sb.append(b);
             return sb.toString();
         }
@@ -629,18 +645,58 @@ public class DeepDiveService {
         checkCancelled();
         pressSweep(subject, m);
         checkCancelled();
+        // The triage board: the whole collected pool appears on the live
+        // view's list before the judge works through it item by item.
+        for (RawNewsItem item : m.news) liveSrc(subject, "src", item);
         triageNews(subject, m, lang, langName);
         checkCancelled();
         aliasFollowUp(subject, m, lang, langName);
         checkCancelled();
         researchFollowUp(subject, m, lang, langName);
         checkCancelled();
-        digestArticles(subject, m);
+
+        // A third UI language writes its prose in that language but keeps the
+        // English heading literals — the skeleton is ours, not the model's.
+        List<String> headings = de ? SECTIONS_DE : SECTIONS_EN;
+        String header = header(subject, m);
+
+        Prompts prompts = new Prompts(
+                PromptLoader.loadLocalized("deepdive-section", lang).replace("{{LANGUAGE}}", langName),
+                PromptLoader.loadLocalized("deepdive-these", lang).replace("{{LANGUAGE}}", langName),
+                PromptLoader.loadLocalized("deepdive-revise", lang).replace("{{LANGUAGE}}", langName),
+                PromptLoader.loadLocalized("deepdive-formcheck", lang),
+                PromptLoader.loadLocalized("deepdive-consistency", lang),
+                PromptLoader.loadLocalized("deepdive-reclaim", lang),
+                PromptLoader.loadLocalized("deepdive-extract", lang).replace("{{LANGUAGE}}", langName),
+                PromptLoader.loadLocalized("deepdive-factcheck", lang));
+
+        // -- EINARBEITEN (four-phase desk, user GO 2026-07-17): every routed
+        // article read in FULL, its facts extracted and EACH fact verified
+        // against its own text - the report's only press substance is this
+        // verified ledger; no digest, no chronicle, no weave. --
         checkCancelled();
-        // World signals are judged LAST in the triage phase, when the report's
-        // THEME LANDSCAPE (the accepted press titles) is known — a wild-but-
-        // real connection (a satellite deal in the news pool licensing space
-        // weather) is only visible from here, never at collect time.
+        einarbeiten(subject, m, model, prompts, de);
+
+        // -- NACHLESE (Aufarbeiten): the set-aside pool re-judged against the
+        // LEDGER's picture while everything is still facts - a reclaimed
+        // article simply joins the ledger before any prose exists. --
+        checkCancelled();
+        try {
+            nachlese(model, prompts, subject, m, de, header);
+        } catch (java.util.concurrent.CancellationException e) {
+            throw e;
+        } catch (Exception e) {
+            LOG.warn("[DEEPDIVE] '{}' reclaim pass failed: {}", subject, e.getMessage());
+        }
+
+        // World signals are judged AFTER the intake and the reclaim (user
+        // mandate 2026-07-17 "die Nachlese zeigt, ob etwas JETZT reinpasst"):
+        // the judge still sees EVERY signal of the day - the exposure maps
+        // stay hints, never filters - but its THEME LANDSCAPE is now the
+        // final pool including the reclaimed articles, the richest picture
+        // the run will ever have. A wild-but-real connection (a satellite
+        // deal licensing space weather) is only visible from here.
+        checkCancelled();
         judgeWorldSignals(subject, m, lang);
         checkCancelled();
 
@@ -668,6 +724,14 @@ public class DeepDiveService {
                         .add("A" + (ci + 1) + ": " + fig.title());
             }
             m.figureCaptions = captions;
+            if (!m.charts.isEmpty()) {
+                eventBus.post(new DeepDiveLiveChartsEvent(subject, m.charts));
+                liveChat(subject, "figures", "typesetter", -1, (de
+                        ? m.charts.size() + " Abbildungen aus dem verifizierten Material "
+                                + "gebaut - die Prosa referiert per ID."
+                        : m.charts.size() + " figures built from the verified material "
+                                + "- the prose refers by ID."), null);
+            }
         } catch (Exception e) {
             LOG.warn("[DEEPDIVE] '{}' figure build failed - report continues without "
                     + "figure pointers: {}", subject, e.getMessage());
@@ -675,10 +739,6 @@ public class DeepDiveService {
 
         Map<String, Integer> nums = sourceNumbers(m);
         Set<Integer> validNums = new HashSet<>(nums.values());
-        // A third UI language writes its prose in that language but keeps the
-        // English heading literals — the skeleton is ours, not the model's.
-        List<String> headings = de ? SECTIONS_DE : SECTIONS_EN;
-        String header = header(subject, m);
         Shelf[] shelves = sectionShelves(m);
         LOG.info("[DEEPDIVE] '{}' material collected: {} chars across {} sections "
                         + "(isin={}, ticker={}, news={}, evidence={})",
@@ -694,48 +754,26 @@ public class DeepDiveService {
             return;
         }
 
-        Prompts prompts = new Prompts(
-                PromptLoader.loadLocalized("deepdive-section", lang).replace("{{LANGUAGE}}", langName),
-                PromptLoader.loadLocalized("deepdive-these", lang).replace("{{LANGUAGE}}", langName),
-                PromptLoader.loadLocalized("deepdive-revise", lang).replace("{{LANGUAGE}}", langName),
-                PromptLoader.loadLocalized("deepdive-challenge", lang).replace("{{LANGUAGE}}", langName),
-                PromptLoader.loadLocalized("deepdive-weave", lang).replace("{{LANGUAGE}}", langName),
-                PromptLoader.loadLocalized("deepdive-polish", lang).replace("{{LANGUAGE}}", langName),
-                PromptLoader.loadLocalized("deepdive-arbiter", lang),
-                PromptLoader.loadLocalized("deepdive-consistency", lang),
-                PromptLoader.loadLocalized("deepdive-diffcheck", lang)
-                        .replace("{{LANGUAGE}}", langName),
-                PromptLoader.loadLocalized("deepdive-chronicle", lang)
-                        .replace("{{LANGUAGE}}", langName),
-                PromptLoader.loadLocalized("deepdive-covered", lang),
-                PromptLoader.loadLocalized("deepdive-reclaim", lang));
-
-        // -- the section workspace: author → weave sources one at a time →
-        // examine → challenge → revise, one section at a time; "These" (the
-        // editor's page-1 read) comes last. --
+        // -- the section workspace: FORMEN - each section written ONCE from
+        // its verified material (base blocks + press fact ledger), then
+        // reviewed for source coverage; "These" (the editor's page-1 read)
+        // comes last. Sections do not reference each other (SRP, user mandate
+        // 2026-07-17) - the red thread emerges from the material. --
         String[] bodies = new String[SECTION_COUNT];
         int[] order = {SEC_ABOUT, SEC_SITUATION, SEC_FUNDAMENTALS, SEC_VALUATION,
                 SEC_CATALYSTS, SEC_OUTLOOK, SEC_ROOM};
         int written = 0;
-        String previousThought = null;
-        Set<String> dropWords = storyDropWords(m.canonicalName, m.ticker);
         for (int idx : order) {
             checkCancelled();
             String label = (idx + 1) + "/" + SECTION_COUNT + " · " + headings.get(idx);
             eventBus.post(new DeepDiveProgressEvent(subject, "sections", label));
             long tSec = System.currentTimeMillis();
-            bodies[idx] = writeSection(model, prompts, subject,
-                    headerWithThought(header, previousThought), headings.get(idx),
-                    shelves[idx], de, label, dropWords, m, idx == SEC_SITUATION);
+            bodies[idx] = formSection(model, prompts, subject, header, headings.get(idx),
+                    shelves[idx], de, label, m, idx);
             LOG.info("[DEEPDIVE] '{}' section '{}' {} in {} s.", subject, headings.get(idx),
                     bodies[idx] != null ? "stands" : "empty (honest literal)",
                     (System.currentTimeMillis() - tSec) / 1000);
-            if (bodies[idx] != null) {
-                written++;
-                // The red thread: the next section's author sees where the
-                // previous one ENDED and can pick the narrative up.
-                previousThought = lastSentence(bodies[idx]);
-            }
+            if (bodies[idx] != null) written++;
         }
         if (written == 0) {
             LOG.warn("[DEEPDIVE] '{}' every section whiffed — aborting.", subject);
@@ -749,19 +787,18 @@ public class DeepDiveService {
         // full-section input the editor provably overflows it (live 2026-07-16:
         // an 8-paragraph thesis opening with a copied profile). One condense
         // call, then the house scissors, both loud.
-        bodies[SEC_THESIS] = writeSection(model, new Prompts(prompts.these(), prompts.these(),
-                        prompts.revise(), prompts.challenge(), prompts.weave(), prompts.polish(),
-                        prompts.arbiter(), prompts.consistency(),
-                        prompts.diffcheck(), prompts.chronicle(), prompts.covered(),
-                        prompts.reclaim()),
-                subject, header,
-                headings.get(SEC_THESIS), new Shelf(thesisMaterial(headings, bodies, m), List.of()),
+        bodies[SEC_THESIS] = formSection(model, new Prompts(prompts.these(), prompts.these(),
+                        prompts.revise(), prompts.formcheck(), prompts.consistency(),
+                        prompts.reclaim(), prompts.extract(), prompts.factcheck()),
+                subject, header, headings.get(SEC_THESIS),
+                new Shelf(thesisMaterial(headings, bodies, m), List.of()),
                 de, (SEC_THESIS + 1) + "/" + SECTION_COUNT + " · " + headings.get(SEC_THESIS),
-                dropWords, m, false);
+                m, SEC_THESIS);
         if (bodies[SEC_THESIS] != null) {
             written++;
             String thesis = bodies[SEC_THESIS].strip();
             if (thesis.length() > THESIS_MAX_CHARS) {
+                String overlong = thesis;
                 String condensed = condense(model, prompts, header,
                         headings.get(SEC_THESIS), thesis);
                 if (!isBlank(condensed) && condensed.strip().length() < thesis.length()) {
@@ -773,23 +810,10 @@ public class DeepDiveService {
                     thesis = DeepDiveFactCheck.cutToLength(thesis, THESIS_MAX_CHARS);
                 }
                 bodies[SEC_THESIS] = thesis;
+                liveMutation(subject, "these", "polisher", SEC_THESIS, thesis, overlong, thesis);
             }
         }
 
-        // -- the RECLAIM pass (user design 2026-07-16): the report stands -
-        // re-judge the triage-discarded articles against ITS picture. An
-        // article with no visible relevance at triage time may be the cause,
-        // consequence or missing piece of a thread the report now carries
-        // ("um 2 Ecken denken"); the reclaimed few are digested and woven
-        // into their sections BEFORE the final instance reviews the whole. --
-        checkCancelled();
-        try {
-            reclaimPass(model, prompts, subject, headings, bodies, m, de, header);
-        } catch (java.util.concurrent.CancellationException e) {
-            throw e;
-        } catch (Exception e) {
-            LOG.warn("[DEEPDIVE] '{}' reclaim pass failed: {}", subject, e.getMessage());
-        }
 
         // -- cross-section consistency: the ONE review that sees the whole
         // report at once (live finding run 10: Bewertung said "no revisions"
@@ -804,29 +828,12 @@ public class DeepDiveService {
             // review re-runs after its own fixes until it stands - demand as
             // many corrections as it takes; the backstop is the runaway net,
             // never a working limit.
-            // The final instance carries the same convergence arbiter as the
-            // section grilling (empiric 2026-07-17: it ran into its 4-round
-            // backstop with 4 near-identical objections per round - the
-            // repetition judge was missing exactly here).
-            List<String> consistencyHistory = new ArrayList<>();
-            ChatModel convergenceArbiter = brain.getAgentModel();
             for (int round = 1; round <= CONSISTENCY_ROUNDS_BACKSTOP; round++) {
                 List<String> roundObjections = new ArrayList<>();
                 if (!crossSectionConsistency(model, prompts, subject, headings, bodies,
                         shelves, m, de, header, roundObjections)) {
                     break;
                 }
-                String problems = roundObjections.stream()
-                        .map(DeepDiveService::objectionProblem)
-                        .collect(java.util.stream.Collectors.joining("\n"));
-                if (!consistencyHistory.isEmpty() && arbiterSaysRepetitive(convergenceArbiter,
-                        prompts.arbiter(), de ? "Gesamtbericht" : "whole report",
-                        consistencyHistory, problems)) {
-                    LOG.info("[DEEPDIVE] '{}' final instance: arbiter ruled round {} "
-                            + "repetitive - the report stands as reviewed.", subject, round);
-                    break;
-                }
-                consistencyHistory.add(problems);
                 if (round == CONSISTENCY_ROUNDS_BACKSTOP) {
                     LOG.warn("[DEEPDIVE] '{}' consistency review hit the runaway backstop ({}).",
                             subject, CONSISTENCY_ROUNDS_BACKSTOP);
@@ -844,9 +851,21 @@ public class DeepDiveService {
         // built deterministically from the verified legs AFTER every model pass
         // — the model never writes these, so they need no examination.
         Map<String, Integer> tableNums = sourceNumbers(m);
+        String valuationBefore = bodies[SEC_VALUATION];
         appendTypesetTable(bodies, SEC_VALUATION, actionsTable(m, tableNums, de));
         appendTypesetTable(bodies, SEC_VALUATION, peerTable(m, tableNums, de));
+        String outlookBefore = bodies[SEC_OUTLOOK];
         appendTypesetTable(bodies, SEC_OUTLOOK, scenarioTable(m, tableNums, de));
+        // The typesetter's tables slide into the live mirror as body updates
+        // (deterministic, no chat voice - the diff channel stays prose-only).
+        if (bodies[SEC_VALUATION] != null && !bodies[SEC_VALUATION].equals(valuationBefore)) {
+            live(subject, "body", "typeset", "typesetter", SEC_VALUATION, 0,
+                    bodies[SEC_VALUATION], null);
+        }
+        if (bodies[SEC_OUTLOOK] != null && !bodies[SEC_OUTLOOK].equals(outlookBefore)) {
+            live(subject, "body", "typeset", "typesetter", SEC_OUTLOOK, 0,
+                    bodies[SEC_OUTLOOK], null);
+        }
         String report = assemble(headings, bodies, de);
         report = scrubUnknownSourceMarkers(report, validNums);
         report = scrubUnknownFigureRefs(report, m.charts.size());
@@ -900,79 +919,43 @@ public class DeepDiveService {
 
     // -- the per-section writing loop (author → weave → examiner → challenger) --
 
+    // -- FORMEN: the section written once from the verified ledger, then
+    // reviewed for source coverage (the four-phase desk, user GO 2026-07-17) --
+
     /**
-     * Produces one section body through the desk's full loop, or {@code null}
-     * when the shelf carries nothing (the typesetter then sets the honest
-     * literal — no model call ever writes ON nothing, which is what used to
-     * hallucinate a room discussion out of an empty unit).
-     *
-     * <p>The flow keeps every step TINY (user mandate): the author writes from
-     * the BASE blocks, then each STORY (the routed articles grouped by
-     * normalized-title similarity — one story often arrives via many re-spins)
-     * is WOVEN in as its own small call — the standing text is the single
-     * source of truth, and every new source is held against it (confirm → add
-     * marker; contradict → source against source; new → integrate). Only then
-     * the challenger grills the section against the FULL shelf.
+     * Formcheck runaway net per section - NEVER a working limit (user mandate
+     * 2026-07-17): the loop's real exits are the judge's approval, a rework
+     * that changes nothing, and a whiffed call; the counter only stops a
+     * judge that circles forever. Mirrors the retired challenge backstop.
      */
-    private String writeSection(ChatModel model, Prompts prompts, String subject, String header,
-            String heading, Shelf shelf, boolean de, String progressLabel,
-            Set<String> storyDropWords, Material m, boolean chronicleSeed) {
+    private static final int FORM_REVIEW_ROUNDS = 10;
+
+    /**
+     * Produces one section body through the FORMEN step, or {@code null} when
+     * the shelf carries nothing (the typesetter then sets the honest literal).
+     * The author writes ONCE from the full verified material - base blocks
+     * plus the press fact ledger, the whole picture instead of a story-by-
+     * story weave - and the review authority (the Anfechter, repositioned)
+     * judges the ONE reviewable question: is every claim covered by the
+     * material? Each objection round earns one rework and a renewed reading.
+     * Style, weighing and order stay the author's (user mandate 2026-07-17:
+     * frame and sources, no steering); the norm lives with the judge and the
+     * mechanical gates.
+     */
+    private String formSection(ChatModel model, Prompts prompts, String subject, String header,
+            String heading, Shelf shelf, boolean de, String progressLabel, Material m,
+            int sectionIdx) {
         if (shelf == null || shelf.isEmpty()) return null;
-        String newsHeader = "NEWS (verified, last " + NEWS_MAX_AGE_DAYS + " days):\n";
-
-        // STORY GROUPING (deterministic, before any model call): the routed
-        // sources are largely re-spins of the SAME story — German content
-        // farms re-report one event daily under fresh titles (live OTLK run:
-        // 50 routed sources on Lage, most the same FDA date) — and each
-        // re-spin used to cost a full weave re-emission or at least an
-        // arbiter call. One weave step per STORY now; every member's source
-        // line (and marker) still rides into the step, so no source is ever
-        // silently dropped (user mandate: every source contributes).
-        List<List<String>> groups = groupStoryBlocks(shelf.newsBlocks(), storyDropWords);
-        if (groups.size() < shelf.newsBlocks().size()) {
-            LOG.info("[DEEPDIVE] '{}' section '{}': {} routed source(s) grouped into {} "
-                    + "story step(s).", subject, heading, shelf.newsBlocks().size(),
-                    groups.size());
-        }
-
-        // Seed: the base blocks — or, base-less, the first story group.
-        String seed = shelf.base();
-        List<String> seedGroup = null;
-        // THE PRESS CHRONICLE (scratchpad pilot, user mandate 2026-07-16):
-        // for the chronicle-seeded section the desk first DISTILLS the whole
-        // routed press into a dated fact note - facts as facts, nothing
-        // dropped, no relevance filter - and the author writes the section's
-        // ARC from it instead of discovering the story weave by weave (the
-        // litany's root). The EXAMINER'S yardstick stays the RAW press: a
-        // figure the chronicle invented dies at the first inspection, so the
-        // note can never launder into the material. Fail-open: a whiffed
-        // chronicle falls back to the classic seed path.
-        String chronicleNote = chronicleSeed && !shelf.newsBlocks().isEmpty()
-                ? chronicleNote(model, prompts, subject, header, shelf.newsBlocks(),
-                        m, progressLabel, de)
-                : null;
-        boolean rawFed = !isBlank(chronicleNote);
-        String fed;
-        if (rawFed) {
-            String raw = newsHeader + String.join("", shelf.newsBlocks());
-            fed = isBlank(seed) ? raw : seed + "\n" + raw;
-            seed = (isBlank(seed) ? "" : seed)
-                    + "PRESS CHRONICLE (the desk's own dated fact note, distilled from the "
-                    + "routed press - the section's ARC; every line carries its markers):\n"
-                    + chronicleNote;
-        } else {
-            if (isBlank(seed) && !groups.isEmpty()) {
-                seedGroup = groups.remove(0);
-                seed = newsHeader + String.join("", seedGroup);
-            }
-            fed = seed;
-        }
+        String phase = sectionIdx == SEC_THESIS ? "these" : "sections";
+        String material = shelf.combined();
+        Set<Integer> allowedMarkers = markersIn(material);
 
         // Author. One retry — an aborted section over a single hiccup is waste.
+        livePending(subject, phase, "author", sectionIdx, 0);
         String body = null;
         for (int attempt = 1; attempt <= 2 && body == null; attempt++) {
             String raw = cleanReport(chatGateway.chat(model, prompts.section(),
-                    authorMessage(header, heading, seed, prompts.section().length())));
+                    authorMessage(header, heading, material, prompts.section().length())));
             if (raw != null && raw.strip().length() >= DeepDiveFactCheck.MIN_SECTION_CHARS / 2) {
                 body = raw.strip();
             } else {
@@ -980,247 +963,59 @@ public class DeepDiveService {
                         subject, heading, attempt, raw == null ? 0 : raw.length());
             }
         }
-        if (body == null) return null;
-        body = examineAndRepair(model, prompts, subject, header, heading, fed,
-                markersIn(fed), de, body).body();
-        // The desk journal shows every mutation as a sentence diff against
-        // what the pane last showed — pure effect, never narration.
+        if (body == null) {
+            liveSettled(subject, phase, sectionIdx);
+            return null;
+        }
+        body = examineAndRepair(model, prompts, subject, header, heading, material,
+                allowedMarkers, de, body);
         String shown = "";
-        journalDiff(subject, shown, body);
+        liveMutation(subject, phase, "author", sectionIdx, body, shown, body);
         shown = body;
 
-        // The weave loop: EVERY story its own step, held against the standing
-        // text — no bundling cap (user mandate 2026-07-13 "Iterationscap
-        // entfernen"); the queue is naturally bounded by the triaged pool. A
-        // step's material carries ALL of its story's source lines, so every
-        // marker can be cited.
-        int total = groups.size();
-        int step = 0;
-        int coveredSteps = 0;
-        ChatModel arbiter = brain.getAgentModel();
-        List<String> wovenBlocks = new ArrayList<>();
-        if (seedGroup != null) wovenBlocks.add(String.join("", seedGroup));
-        for (List<String> group : groups) {
+        // The review authority: approve or concrete objections, the author
+        // reworks, renewed reading — the code-review loop at the section.
+        for (int round = 1; round <= FORM_REVIEW_ROUNDS; round++) {
             checkCancelled();
-            String block = String.join("", group);
-            step++;
-            // Same-story gate, AI-first (user mandate 2026-07-13 "Konflikt-
-            // löser"): token similarity is only the SUSPICION trigger — the
-            // arbiter reads both sources and decides whether the candidate is
-            // the same story re-spun (content farms mint fresh titles over
-            // identical auto-notes) or carries its own news value. A skipped
-            // group earns no marker, so the register never lists its members.
-            // THE ONE WEAVE GATE (empiric merge 2026-07-17: the same-story
-            // arbiter and the materiality judge read the same pair and asked
-            // near-identical questions - 23 re-spin catches + 51 materiality
-            // skips per run, up to two calls per step; now ONE call carries
-            // both verdicts). material → weave; told-but-immaterial → the
-            // story's markers attach to its paragraph (cited - the substance
-            // stands); neither → the honest sighted-only register line.
-            // Doubt and whiffs stay material (fail-open). Since the patch cut
-            // the gate is ALSO the patch dispatcher (conflict + paragraph),
-            // so it runs on the classic-seed path too - its material/told
-            // verdicts keep gating only on the chronicle-seeded path.
-            WeaveVerdict verdict = weaveVerdict(arbiter, prompts.covered(), body, block);
-            if (rawFed && !verdict.material()) {
-                if (verdict.told()) {
-                    String cited = attachMarkers(body, block);
-                    if (!cited.equals(body)) {
-                        body = cited;
-                        journalDiff(subject, shown, body);
-                        shown = body;
-                    }
-                    journalNotes(subject, List.of((de
-                            ? "Bereits erzählt - Marker ergänzt: "
-                            : "Already told - markers attached: ") + firstLine(block)));
-                } else {
-                    m.sightedOnly.addAll(markersIn(block));
-                    journalNotes(subject, List.of((de
-                            ? "Gesichtet, ändert die Lesart nicht: "
-                            : "Sighted, does not change the read: ") + firstLine(block)));
-                }
-                wovenBlocks.add(block);
-                coveredSteps++;
-                continue;
-            }
-            eventBus.post(new DeepDiveProgressEvent(subject, "sections",
-                    progressLabel + " · " + (de ? "Quelle " : "source ") + step + "/" + total));
-            if (!rawFed) fed = fed + "\n" + newsHeader + block;
-            // LOCUS (patch cut, user GO 2026-07-17): the worker delivers ONE
-            // paragraph, the house splices - the section is never re-emitted,
-            // so standing sentences can no longer be mangled in transit and
-            // the diff-judge's delta is the patch by construction. The gate's
-            // paragraph is trusted when it exists; past the tighten budget a
-            // "new paragraph" verdict is redirected into the most similar
-            // standing paragraph - growth by appending is what the old
-            // re-emission's tighten note used to bound.
-            String[] paras = paragraphsOf(body);
-            int target = verdict.paragraph() >= 1 && verdict.paragraph() <= paras.length
-                    ? verdict.paragraph() : 0;
-            boolean tighten = false;
-            if (target == 0 && paras.length > 0 && body.length() > WEAVE_TIGHTEN_FROM) {
-                target = mostSimilarParagraph(block, paras) + 1;
-                tighten = true;
-            }
-            String targetPara = target > 0 ? paras[target - 1] : null;
-            String patch = cleanReport(chatGateway.chat(model, prompts.weave(),
-                    weavePatchMessage(header, heading, body, targetPara, verdict.conflict(),
-                            tighten, block, prompts.weave().length(), group.size())));
-            if (isBlank(patch)) {
-                LOG.warn("[DEEPDIVE] '{}' section '{}' weave step {} whiffed — story skipped.",
-                        subject, heading, step);
-                continue;
-            }
-            // The UNCHANGED sentinel (2026-07-15): a pass-case answers one
-            // word, and a patch identical to its target needs no examiner.
-            if (WeatherReportService.isUnchangedSentinel(patch)
-                    || (targetPara != null && patch.strip().equals(targetPara.strip()))) {
-                continue;
-            }
-            RepairOutcome out = examineAndRepair(model, prompts, subject, header, heading, fed,
-                    markersIn(fed), de, patch.strip());
-            patch = out.body();
-            if (isBlank(patch)) continue;
-            // DIFF-JUDGE (user design 2026-07-16): the step examiner reads
-            // ONLY the delta this step produced beside the ONE new source -
-            // concentrated attention instead of a whole-section pass (a
-            // one-word direction inversion provably slipped the full-view
-            // challenger, live smoke 4: a BaFin SALE narrated as a buy).
-            patch = diffJudgePatch(model, prompts, subject, header, heading, targetPara,
-                    patch, block, fed, de, m);
-            body = splicePatch(body, target, patch);
-            // RE-KNOCK (user mandate 2026-07-14): a HARD finding on a group
-            // step whose members were never full-text-read means the desk may
-            // be missing exactly the source that carries the figure — the
-            // group digest only read the representative. Fetch the missing
-            // digests NOW (session cache makes repeats free) and patch the
-            // story ONCE more with the enriched material. Bounded: one
-            // re-knock per group, at most MAX_REKNOCK_DIGESTS reads.
-            if (out.hadHard()) {
-                String extra = reknockDigests(subject, group, m);
-                if (!extra.isEmpty()) {
-                    fed = fed + "\n" + extra;
-                    String repatch = cleanReport(chatGateway.chat(model, prompts.weave(),
-                            weavePatchMessage(header, heading, body, patch, verdict.conflict(),
-                                    tighten, block + extra, prompts.weave().length(),
-                                    group.size())));
-                    if (!isBlank(repatch) && !WeatherReportService.isUnchangedSentinel(repatch)) {
-                        String reworked = examineAndRepair(model, prompts, subject, header,
-                                heading, fed, markersIn(fed), de, repatch.strip()).body();
-                        if (!isBlank(reworked)) body = replaceOnce(body, patch, reworked);
-                    }
-                }
-            }
-            wovenBlocks.add(block);
-            journalDiff(subject, shown, body);
-            shown = body;
-        }
-        if (coveredSteps > 0) {
-            LOG.info("[DEEPDIVE] '{}' section '{}': materiality short-cut skipped {} of {} "
-                    + "story step(s) - sighted-only, weave calls saved.",
-                    subject, heading, coveredSteps, total);
-        }
-
-        // Challenger (the desk's grilling) against the FULL shelf, each round
-        // answered by a revision. NO fixed round count — the loop runs until
-        // the section STANDS, the ARBITER rules the grilling repetitive, or a
-        // revision no longer changes the text. Convergence is an AI judgment
-        // (user mandate 2026-07-13 "Konfliktlöser", AI-first): the arbiter
-        // reads the objection history — problems only, since the quote half
-        // changes with every revision by construction — and decides whether
-        // the newest round still carries new substance. Fail-open: an arbiter
-        // whiff lets the grilling continue; the backstop stays the runaway net.
-        String material = shelf.combined();
-        Set<Integer> allowedMarkers = markersIn(material);
-        List<String> objectionHistory = new ArrayList<>();
-        for (int round = 1; round <= CHALLENGE_ROUNDS_BACKSTOP; round++) {
-            checkCancelled();
-            eventBus.post(new DeepDiveProgressEvent(subject, "sections",
-                    progressLabel + " · " + (de ? "Anfechtung" : "challenge") + " " + round));
-            List<String> objections = challenge(model, prompts, header, heading, body, material);
+            eventBus.post(new DeepDiveProgressEvent(subject, phase,
+                    progressLabel + " · " + (de ? "Prüfung" : "review") + " " + round));
+            List<String> objections = formcheckObjections(model, prompts, header, heading,
+                    body, material);
             if (objections.isEmpty()) {
-                LOG.info("[DEEPDIVE] '{}' section '{}' stands after {} challenge round(s).",
+                LOG.info("[DEEPDIVE] '{}' section '{}' stands after {} review round(s).",
                         subject, heading, round - 1);
                 break;
             }
-            String problems = objections.stream()
-                    .map(DeepDiveService::objectionProblem)
-                    .collect(java.util.stream.Collectors.joining("\n"));
-            if (!objectionHistory.isEmpty()
-                    && arbiterSaysRepetitive(arbiter, prompts.arbiter(), heading,
-                            objectionHistory, problems)) {
-                LOG.info("[DEEPDIVE] '{}' section '{}': arbiter ruled round {} repetitive — "
-                        + "no new substance, section stands as reviewed.",
-                        subject, heading, round);
-                break;
-            }
-            objectionHistory.add(problems);
             journalNotes(subject, objections);
-            LOG.info("[DEEPDIVE] '{}' section '{}' challenged ({} objection(s), round {}).",
+            for (String objection : objections) {
+                liveNote(subject, phase, "challenger", sectionIdx,
+                        paragraphOfQuote(body, quotedSpan(objection)), objection);
+            }
+            LOG.info("[DEEPDIVE] '{}' section '{}' reviewed ({} objection(s), round {}).",
                     subject, heading, objections.size(), round);
-            eventBus.post(new DeepDiveProgressEvent(subject, "sections",
-                    progressLabel + " · " + (de ? "Revision" : "revision")));
+            livePending(subject, phase, "reviser", sectionIdx, 0);
             String revised = revise(model, prompts, header, heading, body, material,
                     String.join("\n", objections));
             if (isBlank(revised)) {
-                LOG.warn("[DEEPDIVE] '{}' section '{}' revision whiffed — keeping the "
+                LOG.warn("[DEEPDIVE] '{}' section '{}' rework whiffed — keeping the "
                         + "standing draft.", subject, heading);
+                liveSettled(subject, phase, sectionIdx);
                 break;
             }
             String before = body.strip();
             body = examineAndRepair(model, prompts, subject, header, heading, material,
-                    allowedMarkers, de, revised.strip()).body();
-            journalDiff(subject, shown, body);
+                    allowedMarkers, de, revised.strip());
+            liveMutation(subject, phase, "reviser", sectionIdx, revised, shown, body);
             shown = body;
             if (body.strip().equals(before)) {
-                LOG.info("[DEEPDIVE] '{}' section '{}': revision changed nothing — "
+                LOG.info("[DEEPDIVE] '{}' section '{}': rework changed nothing — "
                         + "converged after {} round(s).", subject, heading, round);
                 break;
             }
-            if (round == CHALLENGE_ROUNDS_BACKSTOP) {
-                LOG.warn("[DEEPDIVE] '{}' section '{}' hit the challenge runaway backstop ({}).",
-                        subject, heading, CHALLENGE_ROUNDS_BACKSTOP);
+            if (round == FORM_REVIEW_ROUNDS) {
+                LOG.warn("[DEEPDIVE] '{}' section '{}' hit the review backstop ({}).",
+                        subject, heading, FORM_REVIEW_ROUNDS);
             }
-        }
-
-        // The copy editor (user mandate 2026-07-13 STRONG PRIORITY): one pass
-        // for rhythm, emphasis and scanability — the content is mechanically
-        // frozen by the acceptance gate below. The number wall is ITS brief
-        // (not the revision loop's — a revision provably never reduces the
-        // count): over the density line the message says so explicitly, and
-        // the gate permits cutting figures while forbidding any alteration.
-        eventBus.post(new DeepDiveProgressEvent(subject, "sections",
-                progressLabel + " · " + (de ? "Lektorat" : "copy edit")));
-        int figures = DeepDiveFactCheck.figureCount(body, de);
-        String densityNote = figures > DeepDiveFactCheck.MAX_FIGURES_PER_SECTION
-                ? "\n\nDENSITY: the text carries " + figures + " figures — a number wall. "
-                        + "Cut the recited series down to the load-bearing two or three "
-                        + "values per paragraph (drop the whole clause with its figure); "
-                        + "the charts carry the series."
-                : "";
-        // The gate's rejection reason goes BACK to the editor for one retry —
-        // the desk-realistic feedback loop (live: half of all copy edits died
-        // at the gate, mostly a lost marker or an over-cut, and with them the
-        // report's typography).
-        String rejection = null;
-        for (int attempt = 1; attempt <= 2; attempt++) {
-            String feedback = rejection == null ? ""
-                    : "\n\nREJECTED PREVIOUS EDIT (" + rejection + "): every source marker "
-                            + "and every kept figure must survive VERBATIM, and the section "
-                            + "must not shrink below half its length. Edit more conservatively.";
-            String polished = cleanReport(chatGateway.chat(model, prompts.polish(),
-                    header + "SECTION: ## " + heading + densityNote + feedback
-                            + "\n\nTEXT:\n" + body));
-            rejection = polishRejection(body, polished, de);
-            if (rejection == null) {
-                body = DeepDiveFactCheck.splitLongParagraphs(
-                        DeepDiveFactCheck.scrubResidue(polished.strip()));
-                journalDiff(subject, shown, body);
-                break;
-            }
-            LOG.info("[DEEPDIVE] '{}' section '{}': copy edit attempt {} rejected ({}){}",
-                    subject, heading, attempt, rejection,
-                    attempt == 2 ? " — keeping the reviewed draft." : " — one retry with the reason.");
         }
 
         if (body.strip().length() < DeepDiveFactCheck.MIN_SECTION_CHARS) {
@@ -1232,87 +1027,40 @@ public class DeepDiveService {
     }
 
     /**
-     * The copy editor's UNTOUCHABILITY gate: every figure that SURVIVES must
-     * already exist in the original (subset — cutting a recited series is the
-     * editor's densest tool, per the polish prompt's own rules; altering or
-     * inventing one is content drift), the source markers must be IDENTICAL
-     * (attribution never thins), no protocol residue sneaked in, and the
-     * length stayed within cutting-not-gutting bounds.
+     * The review authority's objection lines on a formed section — each
+     * validated the cheap way (the quote must actually stand in the draft; a
+     * judge quoting text that is not there verifies nothing). The judge's
+     * frame is SOURCE COVERAGE only (user mandate 2026-07-17): never
+     * true/false in the world, only "does the material carry it".
      */
-    static boolean polishAcceptable(String before, String after, boolean de) {
-        return polishRejection(before, after, de) == null;
-    }
-
-    /** The gate's verdict with its reason — null when the polish is acceptable. */
-    static String polishRejection(String before, String after, boolean de) {
-        if (after == null || after.isBlank() || before == null) return "empty reply";
-        String a = after.strip();
-        String b = before.strip();
-        if (a.length() < b.length() * 0.5) {
-            return "gutted: " + b.length() + " -> " + a.length() + " chars";
-        }
-        if (a.length() > b.length() * 1.35) {
-            return "bloated: " + b.length() + " -> " + a.length() + " chars";
-        }
-        if (a.contains("## ") || a.contains("<<<") || a.contains("```")) {
-            return "protocol residue";
-        }
-        Set<Double> beforeNums = DeepDiveFactCheck.numberSet(b, de);
-        Set<Double> afterNums = DeepDiveFactCheck.numberSet(a, de);
-        if (!beforeNums.containsAll(afterNums)) {
-            afterNums.removeAll(beforeNums);
-            return "figure(s) not in the reviewed draft: " + afterNums;
-        }
-        if (!markersIn(b).equals(markersIn(a))) {
-            return "marker set changed: " + markersIn(b) + " -> " + markersIn(a);
-        }
-        return null;
-    }
-
-    /**
-     * The PROBLEM half of a challenge line ({@code E: "<Zitat>" — <Problem>}):
-     * everything after the last dash separator outside the quote. Falls back
-     * to the whole line when the format is loose.
-     */
-    static String objectionProblem(String line) {
-        if (line == null) return "";
-        int quoteEnd = Math.max(line.lastIndexOf('"'), line.lastIndexOf('“'));
-        String tail = quoteEnd >= 0 && quoteEnd < line.length() - 1
-                ? line.substring(quoteEnd + 1) : line;
-        for (String dash : new String[]{" — ", " – ", " - "}) {
-            int i = tail.indexOf(dash);
-            if (i >= 0) return tail.substring(i + dash.length()).strip();
-        }
-        return tail.strip();
-    }
-
-
-    /**
-     * The arbiter's repetition verdict on the newest challenge round against
-     * the round history. Fail-open: a whiff lets the grilling continue (the
-     * runaway backstop stays the net).
-     */
-    private boolean arbiterSaysRepetitive(ChatModel arbiter, String prompt, String heading,
-            List<String> history, String newest) {
-        if (arbiter == null) return false;
-        StringBuilder sb = new StringBuilder(1024);
-        sb.append("SECTION: ").append(heading).append("\n\nEARLIER ROUNDS:\n");
-        for (int i = 0; i < history.size(); i++) {
-            sb.append("Round ").append(i + 1).append(":\n").append(history.get(i)).append('\n');
-        }
-        sb.append("\nNEWEST ROUND:\n").append(newest);
+    private List<String> formcheckObjections(ChatModel model, Prompts prompts, String header,
+            String heading, String body, String material) {
+        String fixed = header + "SECTION: ## " + heading + "\n\nDRAFT:\n" + body
+                + "\n\nMATERIAL (the verified fact base — the only admissible evidence):\n";
+        String reply;
         try {
-            String reply = chatGateway.chat(arbiter, prompt, sb.toString());
-            return reply != null && REPETITIVE_TRUE.matcher(reply).find();
+            reply = chatGateway.chat(model, prompts.formcheck(),
+                    fixed + budgeted(material, prompts.formcheck().length() + fixed.length()));
         } catch (Exception e) {
-            return false;
+            return List.of();
         }
+        if (reply == null) return List.of();
+        String bodyNorm = body.replaceAll("\\s+", " ");
+        List<String> out = new ArrayList<>();
+        for (String line : reply.split("\n")) {
+            String s = line.strip();
+            if (!s.startsWith("E:")) continue;
+            String quote = quotedSpan(s).replaceAll("\\s+", " ");
+            if (quote.length() < 12 || !bodyNorm.contains(quote)) {
+                LOG.debug("[DEEPDIVE] formcheck objection dropped (quote not in draft).");
+                continue;
+            }
+            out.add(s);
+            if (out.size() >= 4) break;
+        }
+        return out;
     }
 
-    private static final Pattern DUPLICATE_TRUE =
-            Pattern.compile("\"duplicate\"\\s*:\\s*true");
-    private static final Pattern REPETITIVE_TRUE =
-            Pattern.compile("\"repetitive\"\\s*:\\s*true");
 
     // ---- the desk journal: the live review pane's diff stream (user mandate
     // 2026-07-14 "nur DIFF — rot, grün, orange"; effect, never narration) ----
@@ -1341,12 +1089,99 @@ public class DeepDiveService {
         }
     }
 
-    private void journalDiff(String subject, String before, String after) {
-        var lines = sentenceDiff(before, after);
-        if (!lines.isEmpty()) {
-            eventBus.post(new de.bsommerfeld.wsbg.terminal.agent.event
-                    .DeepDiveJournalEvent(subject, lines));
+    // ---- the live workspace feed ("Blick in die Box", 2026-07-17): the
+    // richer sibling of the desk journal — full texts (never clipped), the
+    // acting participant and the report locus, so the UI can mirror the
+    // report in the making, cover reworked spots and show every voice ----
+
+    private void live(String subject, String kind, String phase, String participant,
+            int section, int paragraph, String text, List<DeepDiveJournalEvent.Line> diff) {
+        eventBus.post(new DeepDiveLiveEvent(subject, new DeepDiveLiveEvent.Entry(
+                kind, phase, participant, section, paragraph,
+                text == null ? "" : text.strip(), diff == null ? List.of() : diff)));
+    }
+
+    private void liveChat(String subject, String phase, String participant, int section,
+            String text, List<DeepDiveJournalEvent.Line> diff) {
+        if (isBlank(text)) return;
+        live(subject, "chat", phase, participant, section, 0, text, diff);
+    }
+
+    private void liveNote(String subject, String phase, String participant, int section,
+            int paragraph, String text) {
+        if (isBlank(text)) return;
+        live(subject, "note", phase, participant, section, paragraph, text, null);
+    }
+
+    private void livePending(String subject, String phase, String participant, int section,
+            int paragraph) {
+        live(subject, "pending", phase, participant, section, paragraph, "", null);
+    }
+
+    private void liveSettled(String subject, String phase, int section) {
+        live(subject, "settled", phase, null, section, 0, "", null);
+    }
+
+    /**
+     * One triage-board move: a collected source appears ({@code src}), earns
+     * its seat ({@code src-ok}) or is struck ({@code src-out}). The item's
+     * stable key rides as ref so the verdict finds its row.
+     */
+    private void liveSrc(String subject, String kind, RawNewsItem item) {
+        String label = item.title() == null ? "" : item.title().strip();
+        if (item.publisher() != null && !item.publisher().isEmpty()) {
+            label = label.isEmpty() ? item.publisher() : label + " · " + item.publisher();
         }
+        eventBus.post(new DeepDiveLiveEvent(subject, new DeepDiveLiveEvent.Entry(
+                kind, "triage", "triage", -1, 0, label, List.of(), newsKey(item))));
+    }
+
+    /**
+     * The board's end-of-sweep truth for a follow-up wave: a fail-open find
+     * that earned its seat turns green late; a find without a seat (cap cut,
+     * or fail-open past the ceiling) is struck. Judged-off rows were already
+     * struck the moment their verdict landed and stay untouched.
+     */
+    private void reconcileSrcBoard(String subject, List<RawNewsItem> fresh,
+            Map<String, String> verdicts, Set<String> earned) {
+        for (RawNewsItem item : fresh) {
+            String verdict = verdicts.get(newsKey(item));
+            boolean judgedOut = verdict != null && verdict.isEmpty();
+            if (earned.contains(newsKey(item))) {
+                if (verdict == null) liveSrc(subject, "src-ok", item);
+            } else if (!judgedOut) {
+                liveSrc(subject, "src-out", item);
+            }
+        }
+    }
+
+    /**
+     * One report mutation, published on BOTH channels: the desk journal keeps
+     * its clipped diff hunk, the live feed carries the participant's chat
+     * entry (full message + the diff as its attachment) and the section's new
+     * standing text (the report mirror). A no-change mutation settles the
+     * locus instead (any announced {@code pending} cover lifts).
+     */
+    private void liveMutation(String subject, String phase, String participant, int section,
+            String message, String before, String after) {
+        var lines = sentenceDiff(before, after);
+        if (lines.isEmpty()) {
+            liveSettled(subject, phase, section);
+            return;
+        }
+        eventBus.post(new DeepDiveJournalEvent(subject, clipLines(lines)));
+        liveChat(subject, phase, participant, section, message, lines);
+        live(subject, "body", phase, participant, section, 0, after, lines);
+    }
+
+    /** The journal channel's clipped copy of diff lines (the live feed rides unclipped). */
+    private static List<DeepDiveJournalEvent.Line> clipLines(List<DeepDiveJournalEvent.Line> lines) {
+        List<DeepDiveJournalEvent.Line> out = new ArrayList<>(lines.size());
+        for (DeepDiveJournalEvent.Line l : lines) {
+            out.add(new DeepDiveJournalEvent.Line(
+                    l.kind(), clipJournal(l.text()), l.oldLine(), l.newLine()));
+        }
+        return out;
     }
 
     /**
@@ -1429,8 +1264,11 @@ public class DeepDiveService {
             }
             inGap = false;
             Op op = ops.get(k);
+            // Whitespace-normalized but NEVER length-clipped — the live feed
+            // shows these verbatim; the journal channel clips its own copy.
             out.add(new de.bsommerfeld.wsbg.terminal.agent.event.DeepDiveJournalEvent.Line(
-                    op.kind(), clipJournal(op.text()), op.oldNo(), op.newNo()));
+                    op.kind(), op.text().strip().replaceAll("\\s+", " "),
+                    op.oldNo(), op.newNo()));
         }
         return out;
     }
@@ -1448,313 +1286,15 @@ public class DeepDiveService {
         return (nl < 0 ? block : block.substring(0, nl)).strip();
     }
 
-    /** Token-set Jaccard similarity of two texts — the rephrase detector. */
-    static double tokenSimilarity(String a, String b) {
-        Set<String> ta = tokenSet(a);
-        Set<String> tb = tokenSet(b);
-        if (ta.isEmpty() || tb.isEmpty()) return 0;
-        Set<String> intersection = new HashSet<>(ta);
-        intersection.retainAll(tb);
-        Set<String> union = new HashSet<>(ta);
-        union.addAll(tb);
-        return (double) intersection.size() / union.size();
-    }
-
-    private static Set<String> tokenSet(String s) {
-        Set<String> out = new HashSet<>();
-        for (String t : s.toLowerCase(Locale.ROOT).split("[^\\p{L}\\p{N}]+")) {
-            if (t.length() >= 3) out.add(t);
-        }
-        return out;
-    }
-
     // -- story grouping (the weave-churn brake) --
 
-    /** Title token-Jaccard at or above this = the same story re-reported. */
-    private static final double STORY_GROUP_SIMILARITY = 0.5;
     /** Tokens every finance title carries — they say nothing about the story. */
     private static final Set<String> GENERIC_STORY_TOKENS = Set.of("aktie", "aktien");
-
-    /**
-     * Deterministic STORY GROUPING of routed news blocks by normalized-title
-     * similarity: German content farms re-report the same event daily under
-     * fresh titles (live OTLK run: 50 routed sources on one section, most the
-     * same FDA story — each a full weave re-emission or an arbiter call).
-     * Greedy with transitive chaining: a block joins the first group where any
-     * member's significant-title-token Jaccard reaches
-     * {@value #STORY_GROUP_SIMILARITY}. Order is preserved (oldest-first block
-     * order; a group sits at its first member's position) and NO member is
-     * ever dropped — every source line rides into its group's weave step so
-     * its marker can be cited (user mandate: every source contributes).
-     */
-    static List<List<String>> groupStoryBlocks(List<String> blocks, Set<String> dropWords) {
-        List<List<String>> groups = new ArrayList<>();
-        List<List<Set<String>>> groupTokens = new ArrayList<>();
-        for (String block : blocks) {
-            Set<String> tokens = storyTokens(block, dropWords);
-            int home = -1;
-            outer:
-            for (int g = 0; g < groups.size(); g++) {
-                for (Set<String> member : groupTokens.get(g)) {
-                    if (setJaccard(tokens, member) >= STORY_GROUP_SIMILARITY) {
-                        home = g;
-                        break outer;
-                    }
-                }
-            }
-            if (home < 0) {
-                groups.add(new ArrayList<>(List.of(block)));
-                groupTokens.add(new ArrayList<>(List.of(tokens)));
-            } else {
-                groups.get(home).add(block);
-                groupTokens.get(home).add(tokens);
-            }
-        }
-        return groups;
-    }
-
-    /**
-     * The significant title tokens of one news block: the head line minus its
-     * bullet, markers, timestamp bracket and "· Publisher" tail — lowercased,
-     * umlauts/diacritics stripped, punctuation split, words shorter than three
-     * chars, the subject's own name words and generic finance tokens dropped
-     * (they would glue EVERY title about the subject together).
-     */
-    static Set<String> storyTokens(String block, Set<String> dropWords) {
-        String line = firstLine(block)
-                .replaceFirst("^[-–—•]\\s*", "")
-                .replaceAll("\\[[^\\]]*]", " ");
-        int pub = line.lastIndexOf(" · ");
-        if (pub > 0) line = line.substring(0, pub);
-        Set<String> out = new HashSet<>();
-        for (String t : normalizeStoryText(line).split("[^\\p{L}\\p{N}]+")) {
-            if (t.length() >= 3 && !dropWords.contains(t) && !GENERIC_STORY_TOKENS.contains(t)) {
-                out.add(t);
-            }
-        }
-        return out;
-    }
-
-    /** The subject's own name/ticker words — dropped from story tokens. */
-    static Set<String> storyDropWords(String canonicalName, String ticker) {
-        Set<String> out = new HashSet<>(GENERIC_STORY_TOKENS);
-        if (ticker != null) {
-            for (String t : normalizeStoryText(ticker).split("[^\\p{L}\\p{N}]+")) {
-                if (!t.isEmpty()) out.add(t);
-            }
-        }
-        if (canonicalName != null) {
-            for (String t : normalizeStoryText(canonicalName).split("[^\\p{L}\\p{N}]+")) {
-                if (t.length() >= 3) out.add(t);
-            }
-        }
-        return out;
-    }
-
-    /** Lowercase + diacritics stripped (ä→a) — the story tokens' normal form. */
-    private static String normalizeStoryText(String s) {
-        return java.text.Normalizer.normalize(s.toLowerCase(Locale.ROOT),
-                java.text.Normalizer.Form.NFD).replaceAll("\\p{M}", "");
-    }
-
-    private static double setJaccard(Set<String> a, Set<String> b) {
-        if (a.isEmpty() || b.isEmpty()) return 0;
-        Set<String> inter = new HashSet<>(a);
-        inter.retainAll(b);
-        Set<String> union = new HashSet<>(a);
-        union.addAll(b);
-        return (double) inter.size() / union.size();
-    }
-
-    /**
-     * Distills the routed press of one section into the dated FACT CHRONICLE
-     * - the scratchpad note the author writes the section's arc from. Pure
-     * restatement (facts as facts, no relevance judgment, nothing dropped),
-     * batched under the context budget when the press outsizes one call.
-     * Returns {@code null} on a whiff - the caller falls back to the classic
-     * seed path, never blocks on the note.
-     */
-    private String chronicleNote(ChatModel model, Prompts prompts, String subject,
-            String header, List<String> blocks, Material m, String progressLabel, boolean de) {
-        try {
-            eventBus.post(new DeepDiveProgressEvent(subject, "sections",
-                    progressLabel + " · " + (de ? "Chronik" : "chronicle")));
-            // The chronicle spans the WHOLE press picture, not just the routed
-            // 30-day pool (zoom-out 2026-07-16: timeline, multi-year history
-            // and routed news were three parallel headline lists for one
-            // section - the chronicle is where they become ONE arc). The
-            // archive lines ride as additional dated sources into the first
-            // batch; the shelf keeps the raw blocks as the examiner's
-            // yardstick.
-            StringBuilder archive = new StringBuilder(1024);
-            Map<String, Integer> nums = sourceNumbers(m);
-            appendPressTimeline(archive, m.pressTimeline, nums);
-            appendPressHistory(archive, m, nums);
-            if (archive.length() > 0) {
-                blocks = new ArrayList<>(blocks);
-                blocks.add(0, archive.toString());
-            }
-            int budget = Math.max(2000, inputBudgetChars() - prompts.chronicle().length()
-                    - header.length() - 400);
-            List<String> batches = new ArrayList<>();
-            StringBuilder batch = new StringBuilder();
-            for (String b : blocks) {
-                if (batch.length() > 0 && batch.length() + b.length() > budget) {
-                    batches.add(batch.toString());
-                    batch.setLength(0);
-                }
-                batch.append(b);
-            }
-            if (batch.length() > 0) batches.add(batch.toString());
-            StringBuilder note = new StringBuilder();
-            for (String b : batches) {
-                checkCancelled();
-                String reply = cleanReport(chatGateway.chat(model, prompts.chronicle(),
-                        header + "SOURCES:\n" + b));
-                if (!isBlank(reply)) note.append(reply.strip()).append('\n');
-            }
-            if (note.length() == 0) return null;
-            LOG.info("[DEEPDIVE] '{}' press chronicle: {} source block(s) distilled to "
-                            + "{} chars in {} batch(es).", subject, blocks.size(),
-                    note.length(), batches.size());
-            return note.toString();
-        } catch (java.util.concurrent.CancellationException e) {
-            throw e;
-        } catch (Exception e) {
-            LOG.warn("[DEEPDIVE] '{}' press chronicle failed - classic seed path: {}",
-                    subject, e.getMessage());
-            return null;
-        }
-    }
-
-    /**
-     * The coverage judge of one weave step: does the STANDING TEXT already
-     * carry this story's load-bearing substance? One tiny JSON verdict -
-     * skipping the weave is an AI judgment (never a similarity threshold),
-     * and a whiff answers false so the story weaves normally (fail-open,
-     * nothing is ever lost to a broken call).
-     */
-    /**
-     * The weave gate's verdicts: must the text change, is the story already
-     * told - and, since the patch cut (Locus 1, user GO 2026-07-17), WHERE the
-     * patch lands: the numbered standing paragraph the story extends or
-     * contradicts (0 = a genuinely new angle, the patch becomes a new
-     * paragraph) plus the conflict flag the worker needs to print source
-     * against source.
-     */
-    record WeaveVerdict(boolean material, boolean told, boolean conflict, int paragraph) {
-    }
-
-    private WeaveVerdict weaveVerdict(ChatModel judge, String prompt, String body, String block) {
-        try {
-            String reply = chatGateway.chat(judge, prompt,
-                    "STANDING TEXT:\n" + numberedParagraphs(body) + "\n\nSTORY:\n" + block);
-            if (reply == null) return new WeaveVerdict(true, false, false, 0);
-            Matcher mMat = MATERIAL_VERDICT.matcher(reply);
-            Matcher mTold = TOLD_VERDICT.matcher(reply);
-            Matcher mConf = CONFLICT_VERDICT.matcher(reply);
-            Matcher mPara = PARAGRAPH_VERDICT.matcher(reply);
-            // Fail-open: no parseable material verdict weaves normally - a
-            // whiffed judge must never cost substance. An unparseable locus
-            // falls open to 0 (new paragraph) - nothing standing is touched.
-            boolean material = !mMat.find() || Boolean.parseBoolean(mMat.group(1));
-            boolean told = mTold.find() && Boolean.parseBoolean(mTold.group(1));
-            boolean conflict = mConf.find() && Boolean.parseBoolean(mConf.group(1));
-            int paragraph = mPara.find() ? Integer.parseInt(mPara.group(1)) : 0;
-            return new WeaveVerdict(material, told, conflict, paragraph);
-        } catch (Exception e) {
-            LOG.debug("[DEEPDIVE] weave gate whiffed: {}", e.getMessage());
-            return new WeaveVerdict(true, false, false, 0);
-        }
-    }
-
-    private static final Pattern MATERIAL_VERDICT =
-            Pattern.compile("\"material\"\\s*:\\s*(true|false)");
-    private static final Pattern TOLD_VERDICT =
-            Pattern.compile("\"told\"\\s*:\\s*(true|false)");
-    private static final Pattern CONFLICT_VERDICT =
-            Pattern.compile("\"conflict\"\\s*:\\s*(true|false)");
-    private static final Pattern PARAGRAPH_VERDICT =
-            Pattern.compile("\"paragraph\"\\s*:\\s*\"?P?(\\d+)");
 
     /** The body's paragraphs (blank-line separated), or an empty array. */
     static String[] paragraphsOf(String body) {
         if (body == null || body.isBlank()) return new String[0];
         return body.strip().split("\n\\s*\n");
-    }
-
-    /** The gate's view of the standing text: every paragraph [Pn]-labeled. */
-    static String numberedParagraphs(String body) {
-        String[] paras = paragraphsOf(body);
-        StringBuilder sb = new StringBuilder(body == null ? 16 : body.length() + paras.length * 6);
-        for (int i = 0; i < paras.length; i++) {
-            if (i > 0) sb.append("\n\n");
-            sb.append("[P").append(i + 1).append("] ").append(paras[i]);
-        }
-        return sb.toString();
-    }
-
-    /** The index (0-based) of the paragraph most similar to the block. */
-    static int mostSimilarParagraph(String block, String[] paras) {
-        int bestIdx = 0;
-        double best = -1;
-        for (int i = 0; i < paras.length; i++) {
-            double sim = tokenSimilarity(block, paras[i]);
-            if (sim > best) {
-                best = sim;
-                bestIdx = i;
-            }
-        }
-        return bestIdx;
-    }
-
-    /**
-     * Splices a patch into the standing body: replaces the 1-based target
-     * paragraph, or appends the patch as a new paragraph (target 0 or out of
-     * range). The house splices deterministically - the worker never re-emits
-     * the section (Locus cut 1).
-     */
-    static String splicePatch(String body, int target, String patch) {
-        String[] paras = paragraphsOf(body);
-        if (target >= 1 && target <= paras.length) {
-            paras[target - 1] = patch.strip();
-            return String.join("\n\n", paras);
-        }
-        String standing = body == null ? "" : body.strip();
-        return standing.isEmpty() ? patch.strip() : standing + "\n\n" + patch.strip();
-    }
-
-    /** Replaces the first occurrence of {@code find} verbatim, or returns {@code body}. */
-    static String replaceOnce(String body, String find, String replacement) {
-        int i = body.indexOf(find);
-        if (i < 0) return body;
-        return body.substring(0, i) + replacement + body.substring(i + find.length());
-    }
-
-    /**
-     * Attaches a covered story's markers to the paragraph most similar to it
-     * - the substance already stands there, so the citation belongs there
-     * (deterministic; markers the body already cites are not repeated).
-     */
-    static String attachMarkers(String body, String block) {
-        Set<Integer> already = markersIn(body);
-        List<Integer> fresh = new ArrayList<>();
-        for (Integer n : markersIn(block)) {
-            if (!already.contains(n)) fresh.add(n);
-        }
-        if (fresh.isEmpty()) return body;
-        String[] paras = paragraphsOf(body);
-        int bestIdx = mostSimilarParagraph(block, paras);
-        StringBuilder marks = new StringBuilder();
-        for (Integer n : fresh) marks.append('[').append(n).append(']');
-        paras[bestIdx] = paras[bestIdx].stripTrailing() + " " + marks;
-        return String.join("\n\n", paras);
-    }
-
-    /** The letterhead plus the previous section's closing thought (the red thread). */
-    private static String headerWithThought(String header, String previousThought) {
-        if (previousThought == null || previousThought.isBlank()) return header;
-        return header + "PREVIOUS SECTION ENDED WITH: " + previousThought.strip() + "\n\n";
     }
 
     /** The final sentence of a body — where the narrative currently stands. */
@@ -1765,103 +1305,7 @@ public class DeepDiveService {
         return sentences.isEmpty() ? "" : sentences.get(sentences.size() - 1).strip();
     }
 
-    /**
-     * The patch worker's user message (Locus cut 1): the full standing text as
-     * read-only context, the TARGET (the one paragraph this step reworks, or
-     * the new-paragraph license), the conflict note when the gate saw fact
-     * against fact, and exactly ONE new STORY — a single source, or a grouped
-     * bundle of several sources reporting the same event (then the label says
-     * so and demands EVERY marker be cited on the statements it supports; no
-     * member may silently vanish).
-     */
-    private String weavePatchMessage(String header, String heading, String body,
-            String targetPara, boolean conflict, boolean tighten, String block,
-            int promptChars, int groupSize) {
-        String label = groupSize > 1
-                ? "NEW SOURCES (" + groupSize + " reports of ONE story - the same event "
-                        + "may arrive via several sources; work the story in ONCE and cite "
-                        + "EVERY marker below on the statements it supports):\n"
-                : "NEW SOURCE:\n";
-        StringBuilder targetNote = new StringBuilder(128);
-        if (targetPara != null) {
-            targetNote.append("TARGET PARAGRAPH (the ONE paragraph this step reworks - "
-                    + "answer with its replacement):\n").append(targetPara.strip());
-            if (conflict) {
-                targetNote.append("\n\nCONFLICT: the story contradicts this paragraph - "
-                        + "name the contradiction, source against source, both markers.");
-            }
-            // Prevention beats scissors (user mandate 2026-07-15 "NICHTS darf
-            // wegfallen"): near the section contract the patch must integrate
-            // by TIGHTENING its own paragraph; the house cut stays the last
-            // resort, not the plan.
-            if (tighten) {
-                targetNote.append("\n\nLENGTH BUDGET: the section is near its "
-                        + DeepDiveFactCheck.MAX_SECTION_CHARS + "-character contract - "
-                        + "integrate by TIGHTENING: merge overlapping statements, compress "
-                        + "wordy ones, keep every fact, figure and marker. The replacement "
-                        + "must NOT be longer than the target paragraph.");
-            }
-        } else {
-            targetNote.append("TARGET: no standing paragraph carries this story - "
-                    + "answer with ONE NEW paragraph.");
-        }
-        String fixed = header + "SECTION: ## " + heading
-                + "\n\nSTANDING TEXT (read-only context - answer ONLY with the patch "
-                + "paragraph):\n" + body
-                + "\n\n" + targetNote + "\n\n" + label;
-        return fixed + budgeted(block, promptChars + fixed.length());
-    }
-
-    /** Weave calls carry the tighten instruction from this standing-text length on. */
-    private static final int WEAVE_TIGHTEN_FROM =
-            (int) (DeepDiveFactCheck.MAX_SECTION_CHARS * 0.8);
-
-    /**
-     * The deterministic examiner cycle: inspect, let the author fix, re-inspect,
-     * and SURGICALLY remove what still fails the hard figure/date checks — the
-     * fact-checking end state is "every claim sourced or out", never "archived
-     * anyway". Residue lines (protocol tokens) are scrubbed mechanically.
-     */
-    /** The examiner pass's outcome: the repaired body plus whether HARD findings fell. */
-    private record RepairOutcome(String body, boolean hadHard) {
-    }
-
-    /** At most this many full texts are fetched when the desk re-knocks on a group. */
-    private static final int MAX_REKNOCK_DIGESTS = 3;
-
-    /**
-     * The desk knocks again (user mandate 2026-07-14): fetches the full-text
-     * digests of a story group's members that were NOT read by the group
-     * digest (only the representative was). Returns a material block with the
-     * new digests, or {@code ""} when nothing was missing or readable.
-     */
-    private String reknockDigests(String subject, List<String> group, Material m) {
-        EditorialAgent agent = editorialAgent;
-        if (agent == null || m == null || m.newsLinksByBlock.isEmpty()) return "";
-        StringBuilder extra = new StringBuilder(256);
-        int fetched = 0;
-        for (String memberBlock : group) {
-            if (fetched >= MAX_REKNOCK_DIGESTS) break;
-            String link = m.newsLinksByBlock.get(memberBlock);
-            if (link == null || !isBlank(m.digests.get(link))) continue;
-            checkCancelled();
-            String digest = agent.newsDigester().digestNow(link);
-            if (isBlank(digest)) continue;
-            if (!(m.digests instanceof LinkedHashMap)) m.digests = new LinkedHashMap<>(m.digests);
-            m.digests.put(link.trim(), digest);
-            extra.append("  - ").append(digest.replace('\n', ' ').strip()).append('\n');
-            fetched++;
-        }
-        if (extra.length() == 0) return "";
-        journalNotes(subject, List.of(journalGerman()
-                ? "Digest nachgefordert — " + fetched + " Volltext(e) für diese Story gelesen"
-                : "Digest requested — " + fetched + " full text(s) read for this story"));
-        LOG.info("[DEEPDIVE] '{}' re-knock: {} missing full text(s) fetched for a story group.",
-                subject, fetched);
-        return "REQUESTED FULL-TEXT DIGESTS (the desk asked for the missing sources):\n" + extra;
-    }
-
-    private RepairOutcome examineAndRepair(ChatModel model, Prompts prompts, String subject,
+    private String examineAndRepair(ChatModel model, Prompts prompts, String subject,
             String header, String heading, String material, Set<Integer> allowedMarkers,
             boolean de, String body) {
         // Raw source-list lines ("- [19] [2026-07-12 09:26] Titel · Börse
@@ -1908,8 +1352,7 @@ public class DeepDiveService {
                 DeepDiveFactCheck.inspect(body, material, allowedMarkers, de).stream()
                         .filter(o -> o.kind() != DeepDiveFactCheck.Objection.Kind.DENSITY)
                         .toList();
-        if (objections.isEmpty()) return new RepairOutcome(body, false);
-        boolean hadHard = objections.stream().anyMatch(DeepDiveFactCheck.Objection::hard);
+        if (objections.isEmpty()) return body;
         LOG.info("[DEEPDIVE] '{}' section '{}': examiner raised {} objection(s): {}",
                 subject, heading, objections.size(),
                 objections.stream().map(o -> o.kind() + " " + o.problem()).toList());
@@ -1926,7 +1369,6 @@ public class DeepDiveService {
                     DeepDiveFactCheck.inspect(body, material, allowedMarkers, de).stream()
                             .filter(DeepDiveFactCheck.Objection::hard).toList();
             if (hard.isEmpty()) break;
-            hadHard = true;
             String cut = DeepDiveFactCheck.removeOffendingSentences(body, hard);
             LOG.info("[DEEPDIVE] '{}' section '{}': {} unverifiable figure sentence(s) "
                             + "removed after revision ({} -> {} chars).",
@@ -1938,9 +1380,7 @@ public class DeepDiveService {
         // objection never converged — every weave re-emission flattened the
         // breaks again): walls of text split deterministically at sentence
         // boundaries.
-        return new RepairOutcome(
-                DeepDiveFactCheck.splitLongParagraphs(DeepDiveFactCheck.scrubResidue(body)),
-                hadHard);
+        return DeepDiveFactCheck.splitLongParagraphs(DeepDiveFactCheck.scrubResidue(body));
     }
 
     /**
@@ -1980,25 +1420,30 @@ public class DeepDiveService {
     private static final int MAX_RECLAIMED = 8;
 
     /**
-     * The RECLAIM pass: the triage's set-aside pool, judged ONCE MORE against
-     * the STANDING report - the finished picture licenses two-corner
-     * connections the blind first triage could not see. Reclaimed articles
-     * are digested and woven into their target sections through the normal
-     * gauntlet (weave + examiner + diff-judge), and they join the news pool
-     * APPENDED so every already-assigned source number stays stable.
+     * The NACHLESE (Aufarbeiten): the triage's set-aside pool, judged ONCE
+     * MORE against the LEDGER's picture — the verified facts license
+     * two-corner connections the blind first triage could not see. A
+     * reclaimed article simply runs through the intake and joins the ledger
+     * BEFORE any prose exists (no weave mechanics, no patching a standing
+     * text); it joins the news pool APPENDED so every already-assigned
+     * source number stays stable.
      */
-    private void reclaimPass(ChatModel model, Prompts prompts, String subject,
-            List<String> headings, String[] bodies, Material m, boolean de, String header) {
+    private void nachlese(ChatModel model, Prompts prompts, String subject, Material m,
+            boolean de, String header) {
         if (m.newsDiscarded.isEmpty()) return;
-        eventBus.post(new DeepDiveProgressEvent(subject, "finish",
+        eventBus.post(new DeepDiveProgressEvent(subject, "triage",
                 de ? "Nachlese" : "reclaim"));
-        StringBuilder report = new StringBuilder(8192);
-        for (int i = 0; i < SECTION_COUNT; i++) {
-            if (bodies[i] == null) continue;
-            report.append("## ").append(headings.get(i)).append('\n')
-                    .append(bodies[i]).append("\n\n");
+        StringBuilder ledger = new StringBuilder(4096);
+        for (RawNewsItem item : m.news) {
+            String facts = item.link() == null ? null : m.factNotes.get(item.link().trim());
+            ledger.append("- ").append(item.title() == null ? "" : item.title()).append('\n');
+            if (facts != null && !facts.isBlank()) {
+                for (String f : facts.split("\n")) {
+                    ledger.append("  ").append(f).append('\n');
+                }
+            }
         }
-        if (report.isEmpty()) return;
+        if (ledger.isEmpty()) return;
         StringBuilder list = new StringBuilder(1024);
         List<RawNewsItem> pool = m.newsDiscarded;
         for (int i = 0; i < pool.size(); i++) {
@@ -2009,14 +1454,14 @@ public class DeepDiveService {
             }
             list.append('\n');
         }
-        String fixed = header + "REPORT:\n";
-        String message = fixed + budgeted(report.toString(),
+        String fixed = header + "LEDGER:\n";
+        String message = fixed + budgeted(ledger.toString(),
                 prompts.reclaim().length() + fixed.length() + list.length() + 16)
                 + "\nITEMS:\n" + list;
         String reply = chatGateway.chat(model, prompts.reclaim(), message);
         if (reply == null) return;
-        // Same verdict grammar as the triage - i, relevant, quoted section tokens.
-        List<int[]> reclaimed = new ArrayList<>(); // [poolIdx] with targets resolved below
+        liveChat(subject, "reclaim", "reclaim", -1, reply, null);
+        // Same verdict grammar as the triage — i, relevant, quoted section tokens.
         Map<Integer, String> targetsByIdx = new LinkedHashMap<>();
         Matcher obj = TRIAGE_OBJ.matcher(reply);
         while (obj.find()) {
@@ -2045,86 +1490,39 @@ public class DeepDiveService {
         }
         if (targetsByIdx.isEmpty()) {
             LOG.info("[DEEPDIVE] '{}' reclaim pass: none of {} set-aside item(s) earned a "
-                    + "window - the first triage stands.", subject, pool.size());
+                    + "window — the first triage stands.", subject, pool.size());
             return;
         }
-        int woven = 0;
-        EditorialAgent digestAgent = editorialAgent;
+        int reclaimed = 0;
         for (Map.Entry<Integer, String> entry : targetsByIdx.entrySet()) {
-            if (woven >= MAX_RECLAIMED) {
+            if (reclaimed >= MAX_RECLAIMED) {
                 LOG.warn("[DEEPDIVE] '{}' reclaim hit the runaway net ({}).", subject,
                         MAX_RECLAIMED);
                 break;
             }
             checkCancelled();
             RawNewsItem item = pool.get(entry.getKey());
-            // Join the pool APPENDED - source numbering is order-stable.
+            // Join the pool APPENDED — source numbering is order-stable.
             List<RawNewsItem> news = new ArrayList<>(m.news);
             news.add(item);
             m.news = news;
             Map<String, String> targets = new LinkedHashMap<>(m.newsTargets);
             targets.put(newsKey(item), entry.getValue());
             m.newsTargets = targets;
-            if (digestAgent != null && item.link() != null && !item.link().isBlank()
-                    && isBlank(m.digests.get(item.link().trim()))) {
-                String digest = digestAgent.newsDigester().digestNow(item.link());
-                if (!isBlank(digest)) {
-                    if (!(m.digests instanceof LinkedHashMap)) {
-                        m.digests = new LinkedHashMap<>(m.digests);
-                    }
-                    m.digests.put(item.link().trim(), digest);
+            String facts = extractVerifiedFacts(subject, m, model, prompts, item, de);
+            if (!facts.isEmpty() && item.link() != null && !item.link().isBlank()) {
+                if (!(m.factNotes instanceof LinkedHashMap)) {
+                    m.factNotes = new LinkedHashMap<>(m.factNotes);
                 }
+                m.factNotes.put(item.link().trim(), facts);
             }
-            Map<String, Integer> nums = sourceNumbers(m);
-            String block = newsItemBlock(item, m.digests,
-                    mark(nums, "news:" + (m.news.size() - 1)));
-            for (String target : entry.getValue().split(",")) {
-                int sec = switch (target.trim()) {
-                    case "KATALYSATOR" -> SEC_CATALYSTS;
-                    case "AUSBLICK" -> SEC_OUTLOOK;
-                    case "BEWERTUNG" -> SEC_VALUATION;
-                    default -> SEC_SITUATION;
-                };
-                if (bodies[sec] == null) continue;
-                // Reclaim rides the same patch mechanics as the weave loop:
-                // the gate dispatches the locus (its material/told verdicts
-                // are moot here - the re-triage already earned the window),
-                // the worker delivers ONE paragraph, the house splices.
-                String before = bodies[sec];
-                WeaveVerdict verdict = weaveVerdict(brain.getAgentModel(), prompts.covered(),
-                        before, block);
-                String[] paras = paragraphsOf(before);
-                int locus = verdict.paragraph() >= 1 && verdict.paragraph() <= paras.length
-                        ? verdict.paragraph() : 0;
-                boolean tighten = false;
-                if (locus == 0 && paras.length > 0 && before.length() > WEAVE_TIGHTEN_FROM) {
-                    locus = mostSimilarParagraph(block, paras) + 1;
-                    tighten = true;
-                }
-                String targetPara = locus > 0 ? paras[locus - 1] : null;
-                String patch = cleanReport(chatGateway.chat(model, prompts.weave(),
-                        weavePatchMessage(header, headings.get(sec), before, targetPara,
-                                verdict.conflict(), tighten, block,
-                                prompts.weave().length(), 1)));
-                if (isBlank(patch) || WeatherReportService.isUnchangedSentinel(patch)
-                        || (targetPara != null && patch.strip().equals(targetPara.strip()))) {
-                    continue;
-                }
-                String material = before + "\n" + block;
-                patch = examineAndRepair(model, prompts, subject, header,
-                        headings.get(sec), material, markersIn(before + block),
-                        de, patch.strip()).body();
-                if (isBlank(patch)) continue;
-                patch = diffJudgePatch(model, prompts, subject, header, headings.get(sec),
-                        targetPara, patch, block, material, de, m);
-                bodies[sec] = splicePatch(before, locus, patch);
-                journalDiff(subject, before, bodies[sec]);
-            }
-            woven++;
-            journalNotes(subject, List.of((de ? "Nachlese: " : "Reclaimed: ") + item.title()));
+            reclaimed++;
+            String noteReclaimed = (de ? "Nachlese: " : "Reclaimed: ") + item.title();
+            journalNotes(subject, List.of(noteReclaimed));
+            liveChat(subject, "reclaim", "reclaim", -1, noteReclaimed, null);
         }
         LOG.info("[DEEPDIVE] '{}' reclaim pass: {} of {} set-aside item(s) earned a window "
-                + "and were woven.", subject, woven, pool.size());
+                + "and joined the ledger.", subject, reclaimed, pool.size());
     }
 
     /**
@@ -2155,14 +1553,6 @@ public class DeepDiveService {
                 fixed + budgeted(report.toString(),
                         prompts.consistency().length() + fixed.length()));
         List<String> objections = new ArrayList<>();
-        // Standing diff-judge objections get their re-hearing here - the one
-        // instance still ahead of them (drained: each is heard exactly once).
-        for (Map.Entry<String, List<String>> e : m.standingObjections.entrySet()) {
-            for (String obj : e.getValue()) {
-                objections.add("S: " + e.getKey() + " — " + obj);
-            }
-        }
-        m.standingObjections.clear();
         if (reply != null) {
             for (String line : reply.split("\n")) {
                 String s = line.strip();
@@ -2179,7 +1569,15 @@ public class DeepDiveService {
         Map<Integer, List<String>> bySection = new LinkedHashMap<>();
         for (String objection : objections) {
             int idx = owningSection(bodies, quotedSpan(objection));
-            if (idx >= 0) bySection.computeIfAbsent(idx, k -> new ArrayList<>()).add(objection);
+            if (idx >= 0) {
+                bySection.computeIfAbsent(idx, k -> new ArrayList<>()).add(objection);
+                liveNote(subject, "consistency", "final", idx,
+                        paragraphOfQuote(bodies[idx], quotedSpan(objection)), objection);
+            } else {
+                // An objection whose quote no section carries anchors nowhere
+                // — it still belongs in the chat pane, never silently dropped.
+                liveChat(subject, "consistency", "final", -1, objection, null);
+            }
         }
         LOG.info("[DEEPDIVE] '{}' cross-section review: {} objection(s) across {} section(s).",
                 subject, objections.size(), bySection.size());
@@ -2191,13 +1589,17 @@ public class DeepDiveService {
                     ? thesisMaterial(headings, bodies, m)
                     : shelves[idx].combined();
             if (material == null || material.isBlank()) continue;
+            livePending(subject, "consistency", "reviser", idx, 0);
             String revised = revise(model, prompts, header, headings.get(idx), bodies[idx],
                     material, String.join("\n", entry.getValue()));
-            if (isBlank(revised)) continue;
+            if (isBlank(revised)) {
+                liveSettled(subject, "consistency", idx);
+                continue;
+            }
             String repaired = examineAndRepair(model, prompts, subject, header,
-                    headings.get(idx), material, markersIn(material), de, revised.strip()).body();
+                    headings.get(idx), material, markersIn(material), de, revised.strip());
             if (!repaired.strip().equals(bodies[idx].strip())) applied = true;
-            journalDiff(subject, bodies[idx], repaired);
+            liveMutation(subject, "consistency", "reviser", idx, revised, bodies[idx], repaired);
             bodies[idx] = repaired;
         }
         return applied;
@@ -2230,6 +1632,22 @@ public class DeepDiveService {
         return close > open ? line.substring(open + 1, close).strip() : "";
     }
 
+    /**
+     * The 1-based paragraph of {@code body} carrying the quote (whitespace-
+     * normalized), or 0 — the live view's margin-note anchor: a quote too
+     * short to be unique (or no longer standing) leaves the note unanchored
+     * rather than pinned to the wrong spot.
+     */
+    static int paragraphOfQuote(String body, String quote) {
+        if (body == null || quote == null || quote.length() < 12) return 0;
+        String needle = quote.replaceAll("\\s+", " ");
+        String[] paras = paragraphsOf(body);
+        for (int i = 0; i < paras.length; i++) {
+            if (paras[i].replaceAll("\\s+", " ").contains(needle)) return i + 1;
+        }
+        return 0;
+    }
+
     /** The section whose body carries the quote (whitespace-normalized), or -1. */
     static int owningSection(String[] bodies, String quote) {
         if (quote == null || quote.length() < 12) return -1;
@@ -2239,167 +1657,6 @@ public class DeepDiveService {
             if (bodies[i].replaceAll("\\s+", " ").contains(needle)) return i;
         }
         return -1;
-    }
-
-    /**
-     * The DIFF-JUDGE of one patch step (user design 2026-07-16, patch form
-     * 2026-07-17): the examiner sees ONLY this step's patch beside the step's
-     * ONE source block - the delta IS the patch by construction, the
-     * concentrated view in which a direction inversion or a mislabeled value
-     * cannot hide. At most one revision per step; the section-end challenge
-     * and the cross-section review stay the final instances for everything a
-     * delta view cannot see.
-     */
-    private String diffJudgePatch(ChatModel model, Prompts prompts, String subject,
-            String header, String heading, String targetPara, String patch, String block,
-            String fed, boolean de, Material m) {
-        String objection = diffJudgeObjection(model, prompts, header, heading, targetPara,
-                patch, block);
-        if (objection == null) return patch;
-        journalNotes(subject, List.of(objection));
-        LOG.info("[DEEPDIVE] '{}' section '{}': diff-judge raised an objection on the step.",
-                subject, heading, objection);
-        String revised = revise(model, prompts, header, heading, patch, fed, objection);
-        if (isBlank(revised)) return patch;
-        String repaired = examineAndRepair(model, prompts, subject, header, heading, fed,
-                markersIn(fed), de, revised.strip()).body();
-        if (isBlank(repaired)) return patch;
-        // Changes-requested closes the loop (user ask 2026-07-17): the judge
-        // re-reads its own delta ONCE after the rework. A standing objection
-        // is journaled and left to the section grilling - a forced approval
-        // here would livelock the same way the old challenge loop did.
-        String standing = diffJudgeObjection(model, prompts, header, heading, targetPara,
-                repaired, block);
-        if (standing != null) {
-            // The grilling already ran when the weave starts - the only
-            // instance still ahead is the final one, so the objection is
-            // seeded THERE (live 2026-07-17: a wrong quarterly date survived
-            // its rework and stood in print because nothing downstream knew).
-            m.standingObjections.computeIfAbsent(heading, k -> new ArrayList<>()).add(standing);
-            journalNotes(subject, List.of((de
-                    ? "Einwand steht nach Überarbeitung - geht an die Schluss-Instanz: "
-                    : "Objection stands after rework - seeded to the final instance: ") + standing));
-            LOG.info("[DEEPDIVE] '{}' section '{}': diff-judge objection stands after rework.",
-                    subject, heading);
-        }
-        return repaired;
-    }
-
-    /** The step examiner's single valid objection on the patch - or null (approved). */
-    private String diffJudgeObjection(ChatModel model, Prompts prompts, String header,
-            String heading, String targetPara, String patch, String block) {
-        List<String> delta = jurisdictionDelta(targetPara, patch, markersIn(block));
-        if (delta.isEmpty()) return null;
-        String message = header + "SECTION: ## " + heading
-                + "\n\nNEW SOURCE (this step's only material):\n" + block
-                + "\nDELTA (only the sentences this step added or reworked):\n  - "
-                + String.join("\n  - ", delta);
-        String reply = chatGateway.chat(model, prompts.diffcheck(),
-                budgeted(message, prompts.diffcheck().length()));
-        if (reply == null) return null;
-        String deltaNorm = String.join(" ", delta);
-        for (String line : reply.split("\n")) {
-            String s = line.strip();
-            if (!s.startsWith("E:")) continue;
-            // Judge-output validity: an objection whose quote does not
-            // appear in the delta is the judge hallucinating a defect -
-            // it verifies nothing and would only churn a revision (live
-            // smoke 2026-07-16: 53 objections over ~16 steps, Lage alone
-            // 22 minutes). ONE valid objection max - the step examiner is
-            // a tripwire, not a second challenger.
-            String quote = quotedSpan(s).replaceAll("\\s+", " ");
-            if (quote.length() < 12 || !deltaNorm.contains(quote)) {
-                LOG.debug("[DEEPDIVE] diff-judge objection dropped (quote not in delta).");
-                continue;
-            }
-            return s;
-        }
-        return null;
-    }
-
-    /**
-     * The patch sentences within this step's jurisdiction: everything the
-     * target paragraph did not already carry verbatim, MINUS sentences whose
-     * source markers are ALL foreign to this step's source. Such a sentence is
-     * standing substance the patch merely rephrased - its own step already
-     * judged it, and this judge never holds its source (live 2026-07-17: a
-     * standing [99] claim was struck as "invented" against the step's [130]
-     * source, which by construction cannot carry it).
-     */
-    static List<String> jurisdictionDelta(String targetPara, String patch,
-            Set<Integer> stepMarkers) {
-        Set<String> standing = new java.util.HashSet<>();
-        if (targetPara != null && !targetPara.isBlank()) {
-            for (String s : markerFaithfulSentences(targetPara)) {
-                standing.add(s.replaceAll("\\s+", " "));
-            }
-        }
-        List<String> out = new ArrayList<>();
-        for (String s : markerFaithfulSentences(patch)) {
-            String norm = s.replaceAll("\\s+", " ");
-            if (norm.isEmpty() || standing.contains(norm)) continue;
-            Set<Integer> cited = markersIn(norm);
-            if (cited.isEmpty() || !java.util.Collections.disjoint(cited, stepMarkers)) {
-                out.add(norm);
-            }
-        }
-        return out;
-    }
-
-    private static final Pattern LEADING_MARKERS = Pattern.compile("^(?:\\[\\d+]\\s*)+");
-
-    /**
-     * The block's sentences with each trailing source marker re-attached to
-     * the sentence it closes: house style sets markers AFTER the period
-     * ("... ab. [99]"), which the splitter hands to the NEXT sentence - and a
-     * per-sentence marker attribution would blame the wrong sentence.
-     */
-    static List<String> markerFaithfulSentences(String text) {
-        List<String> out = new ArrayList<>();
-        for (String raw : DeepDiveFactCheck.sentences(text)) {
-            String sentence = raw.strip();
-            Matcher lead = LEADING_MARKERS.matcher(sentence);
-            if (lead.find() && !out.isEmpty()) {
-                out.set(out.size() - 1, out.get(out.size() - 1) + " " + lead.group().strip());
-                sentence = sentence.substring(lead.end()).strip();
-            }
-            if (!sentence.isEmpty()) out.add(sentence);
-        }
-        return out;
-    }
-
-    /** The sentences of {@code after} that {@code before} does not carry (normalized). */
-    static List<String> addedSentences(String before, String after) {
-        Set<String> old = new java.util.HashSet<>();
-        if (before != null && !before.isBlank()) {
-            for (String s : DeepDiveFactCheck.sentences(before)) {
-                old.add(s.strip().replaceAll("\\s+", " "));
-            }
-        }
-        List<String> added = new ArrayList<>();
-        if (after != null && !after.isBlank()) {
-            for (String s : DeepDiveFactCheck.sentences(after)) {
-                String norm = s.strip().replaceAll("\\s+", " ");
-                if (!norm.isEmpty() && !old.contains(norm)) added.add(norm);
-            }
-        }
-        return added;
-    }
-
-    private List<String> challenge(ChatModel model, Prompts prompts, String header,
-            String heading, String body, String material) {
-        String fixed = header + "SECTION: ## " + heading + "\n\nDRAFT:\n" + body
-                + "\n\nMATERIAL (the only admissible evidence):\n";
-        String reply = chatGateway.chat(model, prompts.challenge(),
-                fixed + budgeted(material, prompts.challenge().length() + fixed.length()));
-        List<String> out = new ArrayList<>();
-        if (reply == null) return out;
-        for (String line : reply.split("\n")) {
-            String s = line.strip();
-            if (s.startsWith("E:")) out.add(s);
-            if (out.size() >= 4) break;
-        }
-        return out;
     }
 
     private String revise(ChatModel model, Prompts prompts, String header, String heading,
@@ -2445,6 +1702,229 @@ public class DeepDiveService {
         return (int) ((brain.contextTokens() - DD_NUM_PREDICT) * CHARS_PER_TOKEN);
     }
 
+    // -- EINARBEITEN: full-text read, fact extraction, per-fact verification
+    // (the four-phase desk's intake, user GO 2026-07-17) --
+
+    /** Chunk size for one extraction call over a long article part. */
+    static final int EXTRACT_CHUNK_CHARS = 7000;
+
+    /** Intake runaway net over the whole run — never a working limit. */
+    private static final int MAX_EXTRACTED_ARTICLES = 150;
+
+    /**
+     * The EINARBEITEN phase: every triaged article is read in FULL (no digest
+     * — the extraction replaces it), split into labeled parts when it outruns
+     * one call (parts of the SAME source: chunking is logistics, summarizing
+     * would lose substance), its facts extracted line by line and EACH line
+     * verified against the article text it came from. Only what survives
+     * enters the ledger the report is formed from.
+     */
+    private void einarbeiten(String subject, Material m, ChatModel model, Prompts prompts,
+            boolean de) {
+        EditorialAgent agent = editorialAgent;
+        if (agent == null || m.news.isEmpty()) return;
+        Map<String, String> notes = new java.util.concurrent.ConcurrentHashMap<>();
+        List<Runnable> tasks = new ArrayList<>();
+        java.util.concurrent.atomic.AtomicInteger done = new java.util.concurrent.atomic.AtomicInteger();
+        for (RawNewsItem item : m.news) {
+            if (tasks.size() >= MAX_EXTRACTED_ARTICLES) {
+                LOG.warn("[DEEPDIVE] '{}' intake hit the runaway net ({}).", subject,
+                        MAX_EXTRACTED_ARTICLES);
+                break;
+            }
+            if (item.link() == null || item.link().isBlank()) continue;
+            tasks.add(() -> {
+                // Cancel must bite BETWEEN articles.
+                checkCancelled();
+                eventBus.post(new DeepDiveProgressEvent(subject, "triage",
+                        (de ? "Einarbeiten " : "intake ") + done.incrementAndGet()
+                                + "/" + tasks.size()));
+                String facts = extractVerifiedFacts(subject, m, model, prompts, item, de);
+                if (!facts.isEmpty()) notes.put(item.link().trim(), facts);
+            });
+        }
+        runTwoWide(tasks);
+        m.factNotes = new LinkedHashMap<>(notes);
+        LOG.info("[DEEPDIVE] '{}' intake: {} of {} article(s) yielded verified facts.",
+                subject, notes.size(), tasks.size());
+    }
+
+    /**
+     * One article through the intake: full text (session-cached fetch, no
+     * model call), chunked into labeled parts, facts extracted per part and
+     * each verified against exactly the part it came from. Returns the
+     * article's verified fact lines, or "" (the block then stays title-only).
+     */
+    private String extractVerifiedFacts(String subject, Material m, ChatModel model,
+            Prompts prompts, RawNewsItem item, boolean de) {
+        EditorialAgent agent = editorialAgent;
+        if (agent == null || item.link() == null || item.link().isBlank()) return "";
+        String text = agent.newsDigester().articleTextNow(item.link());
+        if (isBlank(text)) return "";
+        List<String> parts = chunkText(text, EXTRACT_CHUNK_CHARS);
+        List<String> kept = new ArrayList<>();
+        for (int p = 0; p < parts.size(); p++) {
+            checkCancelled();
+            String label = parts.size() > 1
+                    ? " (" + (de ? "Teil " : "part ") + (p + 1) + "/" + parts.size() + ")"
+                    : "";
+            String message = "SUBJECT: " + aboutLine(m)
+                    + "\n\nARTICLE" + label + ": "
+                    + (item.title() == null ? "" : item.title())
+                    + "\n" + parts.get(p);
+            String reply;
+            try {
+                reply = chatGateway.chat(model, prompts.extract(), message);
+            } catch (Exception e) {
+                LOG.debug("[DEEPDIVE] fact extraction failed for {}: {}", item.link(),
+                        e.getMessage());
+                continue;
+            }
+            List<String> factLines = parseFactLines(reply);
+            if (factLines.isEmpty()) continue;
+            kept.addAll(verifyFacts(subject, prompts, parts.get(p), factLines, de));
+        }
+        return String.join("\n", kept);
+    }
+
+    /** The extraction's "- " fact lines; NONE or prose-only replies yield none. */
+    static List<String> parseFactLines(String reply) {
+        List<String> out = new ArrayList<>();
+        if (reply == null) return out;
+        for (String line : reply.split("\n")) {
+            String s = line.strip();
+            if (s.startsWith("- ") && s.length() > 4) out.add(s);
+        }
+        return out;
+    }
+
+    /**
+     * Splits a long article at sentence-friendly boundaries into parts of at
+     * most {@code chunkChars} — chunking, never summarizing (user mandate:
+     * nothing is lost; the parts stay parts of the SAME source).
+     */
+    static List<String> chunkText(String text, int chunkChars) {
+        List<String> out = new ArrayList<>();
+        String rest = text == null ? "" : text.strip();
+        while (rest.length() > chunkChars) {
+            int cut = chunkChars;
+            int period = rest.lastIndexOf(". ", chunkChars);
+            if (period > chunkChars / 2) cut = period + 1;
+            out.add(rest.substring(0, cut).strip());
+            rest = rest.substring(cut).strip();
+        }
+        if (!rest.isEmpty()) out.add(rest);
+        return out;
+    }
+
+    private static final Pattern FACT_COVERED =
+            Pattern.compile("\"covered\"\\s*:\\s*(true|false)");
+
+    /**
+     * The fact examiner: every extracted line judged "does the article itself
+     * state this?" against the exact part it came from — the only judge
+     * question of the intake, never true/false in the world. An explicit
+     * covered:false drops the line; a line the judge never mentioned and a
+     * fully whiffed call keep theirs (fail-open — a broken call must never
+     * cost substance; the formcheck still measures the prose downstream).
+     */
+    private List<String> verifyFacts(String subject, Prompts prompts, String part,
+            List<String> factLines, boolean de) {
+        ChatModel judge = brain.getAgentModel();
+        if (judge == null) return factLines;
+        StringBuilder numbered = new StringBuilder(256);
+        for (int i = 0; i < factLines.size(); i++) {
+            numbered.append(i + 1).append(". ").append(factLines.get(i)).append('\n');
+        }
+        String reply;
+        try {
+            reply = chatGateway.chat(judge, prompts.factcheck(),
+                    "ARTICLE:\n" + part + "\n\nFACTS:\n" + numbered);
+        } catch (Exception e) {
+            return factLines;
+        }
+        if (reply == null) return factLines;
+        Set<Integer> dropped = new HashSet<>();
+        boolean any = false;
+        Matcher obj = TRIAGE_OBJ.matcher(reply);
+        while (obj.find()) {
+            String o = obj.group();
+            Matcher iM = TRIAGE_I.matcher(o);
+            Matcher cM = FACT_COVERED.matcher(o);
+            if (!iM.find() || !cM.find()) continue;
+            any = true;
+            if (!Boolean.parseBoolean(cM.group(1))) {
+                dropped.add(Integer.parseInt(iM.group(1)));
+            }
+        }
+        if (!any) return factLines; // judge whiffed entirely — keep the lines
+        List<String> kept = new ArrayList<>();
+        for (int i = 0; i < factLines.size(); i++) {
+            if (!dropped.contains(i + 1)) kept.add(factLines.get(i));
+        }
+        if (!dropped.isEmpty()) {
+            journalNotes(subject, List.of((de
+                    ? "Faktenprüfung strich " + dropped.size() + " von " + factLines.size()
+                            + " Zeile(n) — nicht vom Artikel gedeckt"
+                    : "Fact check struck " + dropped.size() + " of " + factLines.size()
+                            + " line(s) — not covered by the article")));
+        }
+        return kept;
+    }
+
+    // -- AUFARBEITEN: the deterministic ledger pass (logistics, never judgment) --
+
+    /**
+     * Merges duplicate fact lines across a section's ledger blocks: the FIRST
+     * occurrence keeps the line and collects the later blocks' markers (a
+     * confirmation is a marker, not a retelling); later occurrences drop out
+     * of their blocks. Contradictions are NOT resolved here — only lines
+     * equal after normalization merge; conflicting figures stand adjacent in
+     * the ledger for the author and the review to see.
+     */
+    static List<String> dedupeFactLines(List<String> blocks) {
+        Map<String, int[]> seen = new LinkedHashMap<>();
+        List<List<String>> split = new ArrayList<>(blocks.size());
+        for (String block : blocks) {
+            split.add(new ArrayList<>(java.util.Arrays.asList(block.split("\n"))));
+        }
+        for (int b = 0; b < split.size(); b++) {
+            List<String> blockLines = split.get(b);
+            Set<Integer> blockMarkers = markersIn(blockLines.isEmpty() ? "" : blockLines.get(0));
+            for (int l = 0; l < blockLines.size(); l++) {
+                String line = blockLines.get(l);
+                if (line == null || !line.startsWith("      - ")) continue;
+                String norm = line.strip().toLowerCase(Locale.ROOT).replaceAll("\\s+", " ");
+                int[] first = seen.get(norm);
+                if (first == null) {
+                    seen.put(norm, new int[]{b, l});
+                    continue;
+                }
+                if (first[0] != b) {
+                    List<String> firstLines = split.get(first[0]);
+                    String keptLine = firstLines.get(first[1]);
+                    for (int marker : blockMarkers) {
+                        if (!keptLine.contains("[" + marker + "]")) {
+                            keptLine = keptLine + " [" + marker + "]";
+                        }
+                    }
+                    firstLines.set(first[1], keptLine);
+                }
+                blockLines.set(l, null);
+            }
+        }
+        List<String> out = new ArrayList<>(split.size());
+        for (List<String> blockLines : split) {
+            StringBuilder sb = new StringBuilder(128);
+            for (String line : blockLines) {
+                if (line != null && !line.isEmpty()) sb.append(line).append('\n');
+            }
+            if (sb.length() > 0) out.add(sb.toString());
+        }
+        return out;
+    }
+
+
     // -- news triage (the relevance judge) and the alias follow-up --
 
     private static final Pattern TRIAGE_OBJ = Pattern.compile("\\{[^{}]*}");
@@ -2476,7 +1956,7 @@ public class DeepDiveService {
         ChatModel judge = brain.getAgentModel();
         if (judge == null) return;
         Map<String, String> verdicts =
-                judgeNews(m.news, aboutLine(m), lang, langName, judge);
+                judgeNews(subject, m.news, aboutLine(m), lang, langName, judge);
         if (verdicts.isEmpty()) return; // judge whiffed entirely — keep the pool
         List<RawNewsItem> kept = new ArrayList<>();
         Map<String, String> targets = new LinkedHashMap<>();
@@ -2489,7 +1969,11 @@ public class DeepDiveService {
                 kept.add(item);
                 targets.put(newsKey(item), verdict == null || verdict.isEmpty()
                         ? "LAGE" : verdict);
-                if (verdict == null) unjudged.add(item.title());
+                if (verdict == null) {
+                    unjudged.add(item.title());
+                    // Fail-open seat: the board row never saw a verdict.
+                    liveSrc(subject, "src-ok", item);
+                }
             } else {
                 dropped.add(item.title());
                 droppedItems.add(item);
@@ -2514,6 +1998,8 @@ public class DeepDiveService {
             for (RawNewsItem lost : kept.subList(MAX_NEWS, kept.size())) {
                 targets.remove(newsKey(lost));
                 droppedItems.add(lost);
+                // The ceiling flips an earlier ok — the board strikes the row.
+                liveSrc(subject, "src-out", lost);
             }
             kept = new ArrayList<>(kept.subList(0, MAX_NEWS));
         }
@@ -2531,13 +2017,13 @@ public class DeepDiveService {
      * judged off-subject, no entry when the judge never mentioned it (treated
      * as relevant — fail-open, a lost judgement must not lose a real story).
      */
-    private Map<String, String> judgeNews(List<RawNewsItem> items, String about,
+    private Map<String, String> judgeNews(String subject, List<RawNewsItem> items, String about,
             String lang, String langName, ChatModel judge) {
         // Concurrent: the batches run two-wide through the gate.
         Map<String, String> out = new java.util.concurrent.ConcurrentHashMap<>();
         String prompt = PromptLoader.loadLocalized("deepdive-triage", lang)
                 .replace("{{LANGUAGE}}", langName);
-        judgeBatches(items, about, prompt, judge, out);
+        judgeBatches(subject, items, about, prompt, judge, out);
         // The judge routinely SKIPS single items inside an otherwise-parsed
         // batch (live: 4-10 items per run passed fail-open with no verdict) —
         // one follow-up sweep over exactly the unmentioned items closes it.
@@ -2546,12 +2032,12 @@ public class DeepDiveService {
             if (!out.containsKey(newsKey(item))) unjudged.add(item);
         }
         if (!unjudged.isEmpty() && unjudged.size() < items.size()) {
-            judgeBatches(unjudged, about, prompt, judge, out);
+            judgeBatches(subject, unjudged, about, prompt, judge, out);
         }
         return out;
     }
 
-    private void judgeBatches(List<RawNewsItem> items, String about, String prompt,
+    private void judgeBatches(String subject, List<RawNewsItem> items, String about, String prompt,
             ChatModel judge, Map<String, String> out) {
         // The batches are INDEPENDENT judge calls — run them two-wide, matching
         // Ollama's NUM_PARALLEL (2026-07-15 performance pass; verdicts land in a
@@ -2559,12 +2045,12 @@ public class DeepDiveService {
         List<Runnable> tasks = new ArrayList<>();
         for (int from = 0; from < items.size(); from += TRIAGE_BATCH) {
             List<RawNewsItem> batch = items.subList(from, Math.min(items.size(), from + TRIAGE_BATCH));
-            tasks.add(() -> judgeOneBatch(batch, about, prompt, judge, out));
+            tasks.add(() -> judgeOneBatch(subject, batch, about, prompt, judge, out));
         }
         runTwoWide(tasks);
     }
 
-    private void judgeOneBatch(List<RawNewsItem> batch, String about, String prompt,
+    private void judgeOneBatch(String subject, List<RawNewsItem> batch, String about, String prompt,
             ChatModel judge, Map<String, String> out) {
         {
             // An uncapped pool means up to ~50 judge batches — cancel bites here too.
@@ -2620,6 +2106,9 @@ public class DeepDiveService {
                         }
                         if (targets.length() == 0) targets.append("LAGE");
                         out.put(newsKey(batch.get(i - 1)), relevant ? targets.toString() : "");
+                        // The verdict goes to the live triage board the moment
+                        // it lands — the user watches the judge work the list.
+                        liveSrc(subject, relevant ? "src-ok" : "src-out", batch.get(i - 1));
                         parsed++;
                     }
                 } catch (Exception e) {
@@ -2675,8 +2164,9 @@ public class DeepDiveService {
             throw new RuntimeException(e.getCause());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            checkCancelled(); // the user's abort lands here mid-wait — don't run on
         } finally {
-            pool.shutdownNow();
+            pool.shutdownNow(); // rips the judge threads' in-flight calls on cancel
         }
     }
 
@@ -2729,16 +2219,21 @@ public class DeepDiveService {
                 }
             }
             if (fresh.isEmpty()) return;
-            Map<String, String> verdicts = judgeNews(fresh, aboutLine(m), lang, langName, judge);
+            // The finds join the live triage board before the judge reads them.
+            for (RawNewsItem item : fresh) liveSrc(subject, "src", item);
+            Map<String, String> verdicts = judgeNews(subject, fresh, aboutLine(m), lang, langName, judge);
             List<RawNewsItem> merged = new ArrayList<>(m.news);
             Map<String, String> targets = new LinkedHashMap<>(m.newsTargets);
+            Set<String> earned = new HashSet<>();
             for (RawNewsItem item : fresh) {
                 if (merged.size() >= MAX_NEWS) break;
                 String verdict = verdicts.get(newsKey(item));
                 if (verdict != null && verdict.isEmpty()) continue; // judged off-subject
                 merged.add(item);
+                earned.add(newsKey(item));
                 targets.put(newsKey(item), verdict == null ? "LAGE" : verdict);
             }
+            reconcileSrcBoard(subject, fresh, verdicts, earned);
             LOG.info("[DEEPDIVE] '{}' alias follow-up added {} relevant item(s).",
                     subject, merged.size() - m.news.size());
             m.news = merged;
@@ -2841,20 +2336,25 @@ public class DeepDiveService {
                 LOG.info("[DEEPDIVE] '{}' research round found nothing new.", subject);
                 return;
             }
-            Map<String, String> verdicts = judgeNews(fresh, aboutLine(m), lang, langName, judge);
+            // The finds join the live triage board before the judge reads them.
+            for (RawNewsItem item : fresh) liveSrc(subject, "src", item);
+            Map<String, String> verdicts = judgeNews(subject, fresh, aboutLine(m), lang, langName, judge);
             // Research finds ride FIRST: they are the substance carriers the
             // firehose drowned — they must reach the article-read slots.
             List<RawNewsItem> merged = new ArrayList<>();
             Map<String, String> targets = new LinkedHashMap<>(m.newsTargets);
+            Set<String> earned = new HashSet<>();
             int added = 0;
             for (RawNewsItem item : fresh) {
                 if (added >= MAX_NEWS_RESEARCHED - Math.min(m.news.size(), MAX_NEWS)) break;
                 String verdict = verdicts.get(newsKey(item));
                 if (verdict != null && verdict.isEmpty()) continue; // judged off-subject
                 merged.add(item);
+                earned.add(newsKey(item));
                 targets.put(newsKey(item), verdict == null ? "LAGE" : verdict);
                 added++;
             }
+            reconcileSrcBoard(subject, fresh, verdicts, earned);
             for (RawNewsItem item : m.news) {
                 if (merged.size() >= MAX_NEWS_RESEARCHED) break;
                 merged.add(item);
@@ -3012,114 +2512,9 @@ public class DeepDiveService {
         return sb.toString();
     }
 
-    /**
-     * Reads the articles BEHIND the relevant headlines, one at a time: each is
-     * fetched, capped (~6k chars) and distilled in its own small model call —
-     * a long article can never overload the model. Runs AFTER triage, so no
-     * read is wasted on rejected items. Cache shared with the wire's
-     * background digest lane.
-     */
-    private void digestArticles(String subject, Material m) {
-        EditorialAgent digestAgent = editorialAgent;
-        if (digestAgent == null || m.news.isEmpty()) return;
-        // GROUP DIGEST (user mandate 2026-07-14 "alles umsetzen"): the weave
-        // already works per STORY — the digest now does too. Ten re-spins of
-        // one event used to cost ten full-text reads (live SAP run: 133
-        // digests, the run\'s largest single cost); now only each story\'s
-        // REPRESENTATIVE is read (the earliest publication — usually the
-        // original release), the other members keep title + marker and still
-        // get cited by the weave. The safety net is the RE-KNOCK: a hard
-        // examiner finding on a group whose members went unread fetches the
-        // missing digests on demand and re-weaves once.
-        // TWO-WIDE (2026-07-16 tempo queue): the representatives are
-        // independent fetch+digest tasks - run them at Ollama's NUM_PARALLEL
-        // like the judge batches; the gate still governs every model call.
-        Map<String, String> digests = new java.util.concurrent.ConcurrentHashMap<>();
-        List<List<RawNewsItem>> groups = groupStories(m.news,
-                storyDropWords(m.canonicalName, m.ticker));
-        if (groups.size() < m.news.size()) {
-            LOG.info("[DEEPDIVE] '{}' group digest: {} article(s) → {} story "
-                    + "representative(s) to read.", subject, m.news.size(), groups.size());
-        }
-        List<Runnable> tasks = new ArrayList<>();
-        java.util.concurrent.atomic.AtomicInteger done = new java.util.concurrent.atomic.AtomicInteger();
-        for (List<RawNewsItem> group : groups) {
-            if (tasks.size() >= MAX_DIGESTED_ARTICLES) break;
-            RawNewsItem rep = representativeOf(group);
-            if (rep == null) continue;
-            tasks.add(() -> {
-                // Cancel must bite BETWEEN articles (live 2026-07-14: 20
-                // cancel clicks, the generation kept running).
-                checkCancelled();
-                eventBus.post(new DeepDiveProgressEvent(subject, "triage",
-                        "Artikel " + done.incrementAndGet() + "/" + tasks.size()));
-                try {
-                    String digest = digestAgent.newsDigester().digestNow(rep.link());
-                    if (!digest.isBlank()) digests.put(rep.link().trim(), digest);
-                } catch (Exception e) {
-                    LOG.debug("[DEEPDIVE] article digest failed for {}: {}",
-                            rep.link(), e.getMessage());
-                }
-            });
-        }
-        runTwoWide(tasks);
-                m.digests = new LinkedHashMap<>(digests);
-    }
-
-    /**
-     * Groups the triaged pool into stories with the SAME similarity rule the
-     * weave uses — one mechanism, two consumers. Greedy with transitive
-     * chaining; order preserved; no item is ever dropped.
-     */
-    static List<List<RawNewsItem>> groupStories(List<RawNewsItem> items, Set<String> dropWords) {
-        List<List<RawNewsItem>> groups = new ArrayList<>();
-        List<Set<String>> groupTokens = new ArrayList<>();
-        for (RawNewsItem item : items) {
-            Set<String> tokens = storyTokens(item.title() == null ? "" : item.title(), dropWords);
-            boolean joined = false;
-            for (int g = 0; g < groups.size() && !joined; g++) {
-                if (setJaccard(tokens, groupTokens.get(g)) >= STORY_GROUP_SIMILARITY) {
-                    groups.get(g).add(item);
-                    groupTokens.get(g).addAll(tokens);
-                    joined = true;
-                }
-            }
-            if (!joined) {
-                List<RawNewsItem> fresh = new ArrayList<>();
-                fresh.add(item);
-                groups.add(fresh);
-                groupTokens.add(new HashSet<>(tokens));
-            }
-        }
-        return groups;
-    }
-
-    /**
-     * The story\'s representative to full-text-read: the EARLIEST publication
-     * with a link — re-spins come later than the original release. Undated
-     * members lose to dated ones; an all-undated group takes its first.
-     */
-    static RawNewsItem representativeOf(List<RawNewsItem> group) {
-        RawNewsItem best = null;
-        for (RawNewsItem item : group) {
-            if (item.link() == null || item.link().isBlank()) continue;
-            if (best == null) {
-                best = item;
-                continue;
-            }
-            if (item.publishedAt() != null
-                    && (best.publishedAt() == null || item.publishedAt().isBefore(best.publishedAt()))) {
-                best = item;
-            }
-        }
-        return best;
-    }
-
     /** Everything the collect step gathered — nulls/empties where a leg had nothing. */
     /** Package-private for the material-completeness test. */
     static final class Material {
-        /** Diff-judge objections that survived their rework - the final instance re-hears them. */
-        final Map<String, List<String>> standingObjections = new LinkedHashMap<>();
         String canonicalName;
         String ticker;
         String isin;
@@ -3191,11 +2586,6 @@ public class DeepDiveService {
         /** Triage-discarded articles - kept for the RECLAIM pass (re-judged
          * against the STANDING report, where a window may have opened). */
         List<RawNewsItem> newsDiscarded = List.of();
-        /** Markers of stories judged IMMATERIAL at the weave (sighted, read,
-         * chronicled - but they would not change the section's read; listed
-         * honestly in the register under their own label, never as fake
-         * in-text citations). */
-        Set<Integer> sightedOnly = java.util.Collections.synchronizedSet(new java.util.TreeSet<>());
         /** The figure layer, built BEFORE the prose (pure function of the legs). */
         List<DeepDiveRecord.ChartFigure> charts = List.of();
         /**
@@ -3207,10 +2597,8 @@ public class DeepDiveService {
         List<de.bsommerfeld.wsbg.terminal.signals.SignalReading> signalReadings = List.of();
         /** Per section ordinal: the figure IDs + captions the prose may point at. */
         Map<Integer, List<String>> figureCaptions = Map.of();
-        /** link -> key-fact digest of the FULL article, read after triage. */
-        Map<String, String> digests = Map.of();
-        /** exact news-block text -> article link (the re-knock's way back to the URL). */
-        Map<String, String> newsLinksByBlock = new HashMap<>();
+        /** link -> the article's VERIFIED fact lines, read + examined at intake. */
+        Map<String, String> factNotes = Map.of();
         SubjectUnit unit;
         /**
          * EVERY registry unit that belongs to this subject — the room speaks
@@ -4103,7 +3491,7 @@ public class DeepDiveService {
         }
     }
 
-    /** One weave step per routed article: the item block WITH its digest. */
+    /** One ledger block per routed article: its source line WITH its verified facts. */
     private static List<String> newsBlocksFor(Material m, String target,
             Map<String, Integer> nums) {
         List<String> out = new ArrayList<>();
@@ -4111,13 +3499,9 @@ public class DeepDiveService {
             RawNewsItem item = m.news.get(i);
             String route = m.newsTargets.getOrDefault(newsKey(item), "LAGE");
             if (!routeCovers(route, target)) continue;
-            String block = newsItemBlock(item, m.digests, mark(nums, "news:" + i));
-            if (item.link() != null && !item.link().isBlank()) {
-                m.newsLinksByBlock.put(block, item.link().trim());
-            }
-            out.add(block);
+            out.add(newsItemBlock(item, m.factNotes, mark(nums, "news:" + i)));
         }
-        return out;
+        return dedupeFactLines(out);
     }
 
     /** Whether a comma-joined triage route covers the shelf's target section. */
@@ -4298,7 +3682,7 @@ public class DeepDiveService {
     }
 
     /** One news item as a material block: marker, date, title, publisher, and the article's key-fact digest underneath. */
-    private static String newsItemBlock(RawNewsItem item, Map<String, String> digests, String mark) {
+    private static String newsItemBlock(RawNewsItem item, Map<String, String> factNotes, String mark) {
         StringBuilder sb = new StringBuilder(160);
         sb.append("  -").append(mark).append(' ');
         if (item.publishedAt() != null) sb.append('[').append(STAMP.format(item.publishedAt())).append("] ");
@@ -4307,11 +3691,11 @@ public class DeepDiveService {
             sb.append(" · ").append(item.publisher());
         }
         sb.append('\n');
-        String digest = item.link() == null ? null : digests.get(item.link().trim());
-        if (digest != null && !digest.isBlank()) {
-            String dg = digest.replace('\n', ' ').strip();
-            if (dg.length() > maxDigestChars()) dg = dg.substring(0, maxDigestChars()) + "…";
-            sb.append("      ").append(dg).append('\n');
+        String facts = item.link() == null ? null : factNotes.get(item.link().trim());
+        if (facts != null && !facts.isBlank()) {
+            for (String line : facts.split("\n")) {
+                if (!line.isBlank()) sb.append("      ").append(line.strip()).append('\n');
+            }
         }
         return sb.toString();
     }
@@ -5304,11 +4688,12 @@ public class DeepDiveService {
 
     /**
      * The subject-scoped relevance judge over the fishing-net's FULL catch —
-     * run at the END of the triage phase, when the report's THEME LANDSCAPE
-     * (the accepted press titles) is on the table: only from there is the
-     * wild-but-real connection visible (a satellite story in the pool
-     * licenses space weather for a software name). FAIL-CLOSED per unjudged
-     * signal: the catch is broad by mandate, the shelf stays guarded.
+     * run AFTER the intake and the reclaim (2026-07-17), when the report's
+     * THEME LANDSCAPE (the accepted press titles, reclaimed articles
+     * included) is complete: only from there is the wild-but-real connection
+     * visible (a satellite story in the pool licenses space weather for a
+     * software name). FAIL-CLOSED per unjudged signal: the catch is broad by
+     * mandate, the shelf stays guarded.
      */
     private void judgeWorldSignals(String subject, Material m, String lang) {
         List<String> candidates = worldSignalCandidateLines(m);
@@ -6440,31 +5825,12 @@ public class DeepDiveService {
         StringBuilder sb = new StringBuilder(512);
         sb.append("## ").append(de ? "Quellen" : "Sources").append('\n');
         for (Map.Entry<String, Integer> e : nums.entrySet()) {
-            boolean sightedOnly = e.getKey().startsWith("news:")
-                    && m.sightedOnly.contains(e.getValue())
-                    && (cited == null || !cited.contains(e.getValue()));
-            if (sightedOnly) continue; // listed below under their own label
             if (cited != null && e.getKey().startsWith("news:")
                     && !cited.contains(e.getValue())) {
                 continue;
             }
             sb.append("- [").append(e.getValue()).append("] ")
                     .append(sourceLabel(m, e.getKey(), de)).append('\n');
-        }
-        // The sighted-only sources: read and chronicled, judged not to change
-        // the section's read - listed honestly under their own label, never
-        // as fake in-text citations and never silently dropped.
-        StringBuilder sighted = new StringBuilder();
-        for (Map.Entry<String, Integer> e : nums.entrySet()) {
-            if (!e.getKey().startsWith("news:")) continue;
-            if (!m.sightedOnly.contains(e.getValue())) continue;
-            if (cited != null && cited.contains(e.getValue())) continue;
-            sighted.append("- [").append(e.getValue()).append("] ")
-                    .append(sourceLabel(m, e.getKey(), de)).append('\n');
-        }
-        if (sighted.length() > 0) {
-            sb.append(de ? "Gesichtet, ohne eigenständigen Beitrag zur Lesart:\n"
-                    : "Sighted, no standalone contribution to the read:\n").append(sighted);
         }
         return sb.toString();
     }

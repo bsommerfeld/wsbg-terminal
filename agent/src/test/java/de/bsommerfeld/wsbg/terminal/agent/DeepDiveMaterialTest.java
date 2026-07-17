@@ -145,7 +145,7 @@ class DeepDiveMaterialTest {
         assertContains(brief, "bid/ask 991.90/992.50");
 
         // News with title and publisher.
-        assertContains(brief, "NEWS (verified, last 30 days):");
+        assertContains(brief, "PRESS FACTS (last 30 days");
         assertContains(brief, "[8] ");
         assertContains(brief, "Rheinmetall gewinnt Großauftrag · WELT");
 
@@ -573,36 +573,6 @@ class DeepDiveMaterialTest {
     }
 
     /**
-     * The copy editor's untouchability gate: wording may change and a recited
-     * figure may be CUT (the density licence — never altered, never invented),
-     * markers must survive, and gutting or bloating the section is a rejection.
-     */
-    @Test
-    void polishGateFreezesFiguresAndMarkers() {
-        String before = "Der Konzern steigert den Umsatz auf 36,8 Mrd. EUR und die Marge "
-                + "auf 28,79 % [4]. Die Analysten rufen 202,50 EUR auf [4].";
-        String reworded = "**36,8 Mrd. EUR Umsatz** bei 28,79 % Marge - der Konzern skaliert [4]. "
-                + "Die Street hält dagegen: *202,50 EUR Konsensziel* [4].";
-        assertTrue(DeepDiveService.polishAcceptable(before, reworded, true));
-        // A changed figure is content drift.
-        assertFalse(DeepDiveService.polishAcceptable(before,
-                reworded.replace("36,8", "38,6"), true));
-        // An invented figure is content drift.
-        assertFalse(DeepDiveService.polishAcceptable(before,
-                reworded + " Das KGV liegt bei 41,2 [4].", true));
-        // A CUT figure is the density licence — surviving values verbatim.
-        assertTrue(DeepDiveService.polishAcceptable(before,
-                "Der Konzern skaliert, die Marge liegt bei 28,79 % [4]. "
-                        + "Die Street ruft 202,50 EUR auf [4].", true));
-        // A dropped marker is content drift.
-        assertFalse(DeepDiveService.polishAcceptable(before,
-                reworded.replace(" [4]", ""), true));
-        // Gutting is a rejection even with identical figures.
-        assertFalse(DeepDiveService.polishAcceptable(before,
-                "36,8 28,79 202,50 [4]", true));
-    }
-
-    /**
      * The typesetter's locale belt: a ROOT-formatted material money token the
      * model copied verbatim renders German; values stay untouched.
      */
@@ -615,24 +585,6 @@ class DeepDiveMaterialTest {
         // Already-German prose passes untouched.
         assertEquals("bei 36,8 Mrd. EUR.",
                 DeepDiveService.germanizeMoneyUnits("bei 36,8 Mrd. EUR."));
-    }
-
-    /**
-     * The stalemate detector compares the PROBLEM half of a challenge line —
-     * the quote half changes with every revision by construction, so two
-     * rounds raising the same problem against fresh wording must still match.
-     */
-    @Test
-    void objectionProblemStripsTheQuoteHalf() {
-        assertEquals("die Zahl fehlt im Material",
-                DeepDiveService.objectionProblem(
-                        "E: \"Der Umsatz steigt auf 36,8 Mrd. EUR\" — die Zahl fehlt im Material"));
-        assertEquals("Attribution fehlt",
-                DeepDiveService.objectionProblem(
-                        "E: \"Analysten sehen Potenzial\" - Attribution fehlt"));
-        // Loose format falls back to the whole line.
-        assertEquals("kein Zitat, nur Prosa",
-                DeepDiveService.objectionProblem("kein Zitat, nur Prosa"));
     }
 
     /**
@@ -712,42 +664,6 @@ class DeepDiveMaterialTest {
         assertEquals("XETRA", DeepDiveService.venueName("GER"));
         assertEquals("L&S Exchange", DeepDiveService.venueName("LSX"));
         assertEquals(null, DeepDiveService.venueName("XX"));
-    }
-
-    /**
-     * The weave-churn brake (live OTLK run: 50 routed sources on one section,
-     * most re-spins of the same FDA story): routed news blocks group by
-     * normalized-title similarity BEFORE the weave loop — re-spins bundle into
-     * ONE story step, distinct stories stay their own, order is preserved and
-     * NO member is ever dropped (every marker must ride into its step; user
-     * mandate "every source contributes"). The subject's own name words and
-     * generic tokens ("Aktie") are dropped so they never glue distinct
-     * stories together.
-     */
-    @Test
-    void storyGroupingBundlesReSpinsAndNeverDropsAMember() {
-        String a = "  - [16] [2026-07-12 09:26] Outlook Therapeutics Aktie: "
-                + "FDA-Entscheidung zu ONS-5010 am 29. Juli · Börse Express\n";
-        String b = "  - [17] [2026-07-13 14:24] Outlook Therapeutics Aktie: "
-                + "FDA-Entscheidung zu ONS-5010 rückt näher · sharedeals\n";
-        String c = "  - [18] [2026-07-13 08:00] Outlook Therapeutics: "
-                + "Kapitalerhöhung über 25 Millionen Dollar · Börse Express\n";
-        var dropWords = DeepDiveService.storyDropWords("Outlook Therapeutics, Inc.", "OTLK");
-        assertTrue(dropWords.contains("outlook") && dropWords.contains("therapeutics")
-                && dropWords.contains("otlk") && dropWords.contains("aktie"),
-                String.valueOf(dropWords));
-
-        var groups = DeepDiveService.groupStoryBlocks(List.of(a, b, c), dropWords);
-        assertEquals(2, groups.size(), String.valueOf(groups));
-        assertEquals(List.of(a, b), groups.get(0), "the FDA re-spins bundle, oldest first");
-        assertEquals(List.of(c), groups.get(1), "the capital raise is its own story");
-        assertEquals(3, groups.stream().mapToInt(List::size).sum(),
-                "no member may ever be dropped");
-        // Umlauts normalize: a re-spin differing only in diacritics still groups.
-        var umlaut = DeepDiveService.groupStoryBlocks(List.of(
-                "  - [1] Kapitalerhöhung über 25 Millionen Dollar geplant · A\n",
-                "  - [2] Kapitalerhohung: uber 25 Millionen Dollar geplant · B\n"), dropWords);
-        assertEquals(1, umlaut.size(), String.valueOf(umlaut));
     }
 
     /** Weave splice residue ",." is tidied at assembly; decimals survive. */
@@ -1046,35 +962,6 @@ class DeepDiveMaterialTest {
     }
 
     @Test
-    void groupDigestReadsOnlyTheStoryRepresentative() {
-        java.util.Set<String> drop = DeepDiveService.storyDropWords("Outlook Therapeutics, Inc.", "OTLK");
-        RawNewsItem original = new RawNewsItem("u1",
-                "FDA akzeptiert Zulassungsantrag für Lytenava",
-                "GlobeNewswire", "https://example.org/original",
-                Instant.now().minusSeconds(7200), List.of(), null, null, false, null);
-        RawNewsItem respin = new RawNewsItem("u2",
-                "Outlook Therapeutics Aktie: FDA akzeptiert Lytenava-Zulassungsantrag",
-                "Börse Express", "https://example.org/respin",
-                Instant.now().minusSeconds(600), List.of(), null, null, false, null);
-        RawNewsItem other = new RawNewsItem("u3",
-                "600-Millionen-Aktien-Plan zur Abstimmung gestellt",
-                "Börse Global", "https://example.org/dilution",
-                Instant.now().minusSeconds(300), List.of(), null, null, false, null);
-
-        var groups = DeepDiveService.groupStories(List.of(respin, original, other), drop);
-        assertEquals(2, groups.size(), "re-spins group, distinct stories do not: " + groups);
-        // The representative is the EARLIEST publication — the original release.
-        var fdaGroup = groups.stream().filter(g -> g.size() == 2).findFirst().orElseThrow();
-        assertEquals("https://example.org/original",
-                DeepDiveService.representativeOf(fdaGroup).link());
-        // An undated member loses to a dated one.
-        RawNewsItem undated = new RawNewsItem("u4", "FDA akzeptiert Lytenava Antrag",
-                "web", "https://example.org/undated", null, List.of(), null, null, false, null);
-        assertEquals("https://example.org/original", DeepDiveService.representativeOf(
-                List.of(undated, original)).link());
-    }
-
-    @Test
     void typesetterTablesBuildFromVerifiedLegsOnly() {
         DeepDiveService.Material m = fullMaterial();
         var nums = DeepDiveService.sourceNumbers(m);
@@ -1177,100 +1064,106 @@ class DeepDiveMaterialTest {
         assertFalse(shelves[DeepDiveService.SEC_OUTLOOK].contains("Quartalsmitteilung Q1 2026"));
     }
 
-    /** Immaterial-skipped sources appear under their own honest register label. */
+    // -- the four-phase intake's pure helpers (Einarbeiten/Aufarbeiten) --
+
+    /** Chunking is logistics: sentence-friendly cuts, nothing lost, order kept. */
     @Test
-    void sightedOnlySourcesGetTheirOwnRegisterLine() {
-        DeepDiveService.Material m = fullMaterial();
-        // uuid-1 is news:0 - mark it sighted-only and cite nothing.
-        java.util.Map<String, Integer> nums = DeepDiveService.sourceNumbers(m);
-        int newsNum = nums.entrySet().stream()
-                .filter(e -> e.getKey().equals("news:0")).findFirst().orElseThrow().getValue();
-        m.sightedOnly.add(newsNum);
-        String register = DeepDiveService.sourcesSection(m, true, java.util.Set.of());
-        assertContains(register, "Gesichtet, ohne eigenständigen Beitrag zur Lesart:");
-        assertContains(register, "- [" + newsNum + "] ");
+    void chunkTextSplitsAtSentenceBoundariesAndLosesNothing() {
+        String text = ("Der Umsatz stieg deutlich. " .repeat(40)).strip();
+        List<String> parts = DeepDiveService.chunkText(text, 300);
+        assertTrue(parts.size() > 1, "long text must split");
+        for (String part : parts) {
+            assertTrue(part.length() <= 300, "part over the chunk budget: " + part.length());
+        }
+        String rejoined = String.join(" ", parts).replaceAll("\\s+", " ");
+        assertEquals(text.replaceAll("\\s+", " "), rejoined, "chunking must not lose text");
     }
 
-    /** A covered story's markers land on the most similar paragraph, deduped. */
     @Test
-    void attachMarkersTargetsTheMostSimilarParagraph() {
-        String body = "Die UBS senkte das Kursziel auf 164 EUR. [3]\n\n"
-                + "Der Vorstand verkaufte Anteile im Juni. [5]";
-        String block = "  - [9] UBS kappt Kursziel - bleibt trotzdem Käufer · Investing.com\n";
-        String out = DeepDiveService.attachMarkers(body, block);
-        assertTrue(out.startsWith("Die UBS senkte das Kursziel auf 164 EUR. [3] [9]"), out);
-        // already-cited markers never repeat
-        assertEquals(out, DeepDiveService.attachMarkers(out, block));
+    void chunkTextKeepsAShortTextWhole() {
+        assertEquals(List.of("Kurzer Text."), DeepDiveService.chunkText("Kurzer Text.", 300));
+        assertTrue(DeepDiveService.chunkText("   ", 300).isEmpty());
     }
 
-    /** The diff-judge sees only the step's delta - the sentence set difference. */
+    /** Only "- " lines are facts; NONE and prose stay out. */
     @Test
-    void addedSentencesReturnsOnlyTheDelta() {
-        String before = "Der Vorstand verkaufte Anteile. Die Marge stieg 2025.";
-        String after = before + " UBS senkte das Ziel auf 164 EUR.";
-        assertEquals(List.of("UBS senkte das Ziel auf 164 EUR."),
-                DeepDiveService.addedSentences(before, after));
-        assertTrue(DeepDiveService.addedSentences(after, after).isEmpty());
-        assertEquals(2, DeepDiveService.addedSentences(null, before).size());
-    }
-
-    /** The house splices the patch: replace the 1-based locus, or append. */
-    @Test
-    void splicePatchReplacesTheLocusOrAppends() {
-        String body = "Erster Absatz. [1]\n\nZweiter Absatz. [2]";
-        assertEquals("Erster Absatz. [1]\n\nNeuer zweiter Absatz. [2] [7]",
-                DeepDiveService.splicePatch(body, 2, "Neuer zweiter Absatz. [2] [7]\n"));
-        assertEquals(body + "\n\nDritter Absatz. [7]",
-                DeepDiveService.splicePatch(body, 0, "Dritter Absatz. [7]"));
-        // out-of-range locus falls open to append - nothing standing is touched
-        assertEquals(body + "\n\nDritter Absatz. [7]",
-                DeepDiveService.splicePatch(body, 9, "Dritter Absatz. [7]"));
-        assertEquals("Einziger Absatz.", DeepDiveService.splicePatch("", 0, "Einziger Absatz."));
-    }
-
-    /** The gate reads the standing text with copyable [Pn] labels. */
-    @Test
-    void numberedParagraphsLabelsEveryParagraph() {
-        assertEquals("[P1] Erster Absatz. [1]\n\n[P2] Zweiter Absatz. [2]",
-                DeepDiveService.numberedParagraphs("Erster Absatz. [1]\n\nZweiter Absatz. [2]"));
-        assertEquals("", DeepDiveService.numberedParagraphs(null));
+    void parseFactLinesKeepsOnlyDashLines() {
+        List<String> lines = DeepDiveService.parseFactLines(
+                "- 2026-07-15 Umsatz 1,2 Mrd. EUR\nNONE\nDazu eine Erklärung.\n- Vorstand kauft Aktien\n- x");
+        assertEquals(List.of("- 2026-07-15 Umsatz 1,2 Mrd. EUR", "- Vorstand kauft Aktien"), lines);
+        assertTrue(DeepDiveService.parseFactLines("NONE").isEmpty());
+        assertTrue(DeepDiveService.parseFactLines(null).isEmpty());
     }
 
     /**
-     * The diff-judge's jurisdiction: a rephrased standing sentence whose
-     * markers are all foreign to the step's source is not the judge's case -
-     * he never holds that source, so "invented" would be a false verdict.
+     * The ledger dedupe merges only NORMALIZED-EQUAL fact lines: the kept
+     * line collects the confirming block's marker, the duplicate drops out of
+     * its block - and a conflicting figure is NOT a duplicate, it stands.
      */
     @Test
-    void jurisdictionDeltaDropsSentencesCitingOnlyForeignMarkers() {
-        String target = "SAP baut Stellen ab, um KI-Ressourcen zu bündeln. [99]";
-        String patch = "Um KI-Ressourcen zu bündeln, baut SAP Stellen ab. [99] "
-                + "Jefferies hebt das Kursziel auf 240 EUR an. [130] "
-                + "Der Schritt folgt auf den Konzernumbau.";
-        List<String> delta = DeepDiveService.jurisdictionDelta(target, patch,
-                java.util.Set.of(130));
-        // the reworked [99] sentence is out; the [130] sentence and the
-        // marker-less connective stay in
-        assertEquals(List.of(
-                "Jefferies hebt das Kursziel auf 240 EUR an. [130]",
-                "Der Schritt folgt auf den Konzernumbau."), delta);
-        // a contradiction sentence carrying BOTH markers stays in
-        assertEquals(1, DeepDiveService.jurisdictionDelta(target,
-                "SAP baut Stellen ab [99], laut Jefferies aber weniger als geplant. [130]",
-                java.util.Set.of(130)).size());
-    }
-
-    /** replaceOnce swaps the first verbatim occurrence and nothing else. */
-    @Test
-    void replaceOnceSwapsTheFirstOccurrence() {
-        assertEquals("a X c", DeepDiveService.replaceOnce("a b c", "b", "X"));
-        assertEquals("a b c", DeepDiveService.replaceOnce("a b c", "z", "X"));
+    void dedupeFactLinesMergesDuplicatesAndKeepsConflicts() {
+        String a = "  -[7] [2026-07-15 09:00] Umsatzmeldung · Reuters\n"
+                + "      - Umsatz stieg auf 1,2 Mrd. EUR\n"
+                + "      - Marge bei 8 %\n";
+        String b = "  -[9] [2026-07-15 10:00] Umsatz bestätigt · dpa\n"
+                + "      - Umsatz stieg auf 1,2 Mrd. EUR\n"
+                + "      - Marge bei 9 %\n";
+        List<String> out = DeepDiveService.dedupeFactLines(List.of(a, b));
+        assertEquals(2, out.size());
+        assertTrue(out.get(0).contains("- Umsatz stieg auf 1,2 Mrd. EUR [9]"),
+                "kept line must collect the confirming marker:\n" + out.get(0));
+        assertFalse(out.get(1).contains("Umsatz stieg"), "duplicate must drop out of its block");
+        assertTrue(out.get(1).contains("- Marge bei 9 %"), "a conflicting figure is no duplicate");
+        assertTrue(out.get(0).contains("- Marge bei 8 %"));
     }
 
     private static int occurrences(String s, String needle) {
         int n = 0;
         for (int i = s.indexOf(needle); i >= 0; i = s.indexOf(needle, i + 1)) n++;
         return n;
+    }
+
+    /**
+     * The live feed shows diff sentences VERBATIM — the 240-char journal clip
+     * must never reach the sentence diff itself (the journal channel clips
+     * its own copy at emission).
+     */
+    @Test
+    void sentenceDiffNeverClipsLongSentences() {
+        String longSentence = "Die Gesellschaft meldet für das abgelaufene Quartal "
+                + "einen Umsatz von 4,82 Milliarden Euro bei einer bereinigten "
+                + "operativen Marge von 11,3 Prozent und hebt zugleich die "
+                + "Jahresprognose für den freien Mittelzufluss auf mindestens "
+                + "1,1 Milliarden Euro an, während der Auftragsbestand mit "
+                + "9,7 Milliarden Euro einen neuen Höchststand erreicht und die "
+                + "Nettoverschuldung auf das 1,4-Fache des EBITDA sinkt.";
+        var lines = DeepDiveService.sentenceDiff("", longSentence);
+        assertEquals(1, lines.size());
+        assertEquals("add", lines.get(0).kind());
+        assertEquals(longSentence.replaceAll("\\s+", " "), lines.get(0).text());
+        assertTrue(lines.get(0).text().length() > 300);
+    }
+
+    /**
+     * The live view's margin-note anchor: the 1-based paragraph carrying the
+     * quote, whitespace-tolerant; short or absent quotes stay unanchored (0)
+     * rather than pinned to the wrong spot.
+     */
+    @Test
+    void paragraphOfQuoteAnchorsWhitespaceTolerantOrNotAtAll() {
+        String body = "Der Konzern wächst zweistellig. Die Marge hält bei 11 Prozent.\n\n"
+                + "Die UBS senkt ihr Kursziel auf 164 Euro und bleibt bei Kaufen.\n\n"
+                + "Der Vorstand kauft eigene Aktien zu.";
+        assertEquals(2, DeepDiveService.paragraphOfQuote(body,
+                "senkt ihr  Kursziel auf\n164 Euro"));
+        assertEquals(3, DeepDiveService.paragraphOfQuote(body,
+                "kauft eigene Aktien zu"));
+        // Too short to be unique, or simply not standing: unanchored.
+        assertEquals(0, DeepDiveService.paragraphOfQuote(body, "Die Marge"));
+        assertEquals(0, DeepDiveService.paragraphOfQuote(body,
+                "Dieser Satz steht nirgendwo im Text."));
+        assertEquals(0, DeepDiveService.paragraphOfQuote(null, "kauft eigene Aktien zu"));
+        assertEquals(0, DeepDiveService.paragraphOfQuote(body, null));
     }
 
     private static void assertContains(String brief, String needle) {

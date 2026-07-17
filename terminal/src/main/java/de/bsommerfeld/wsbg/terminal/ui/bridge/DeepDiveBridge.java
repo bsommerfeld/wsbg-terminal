@@ -6,6 +6,8 @@ import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.agent.DeepDiveService;
 import de.bsommerfeld.wsbg.terminal.agent.event.DeepDiveFinishedEvent;
 import de.bsommerfeld.wsbg.terminal.agent.event.DeepDiveJournalEvent;
+import de.bsommerfeld.wsbg.terminal.agent.event.DeepDiveLiveChartsEvent;
+import de.bsommerfeld.wsbg.terminal.agent.event.DeepDiveLiveEvent;
 import de.bsommerfeld.wsbg.terminal.agent.event.DeepDiveProgressEvent;
 import de.bsommerfeld.wsbg.terminal.agent.event.DeepDiveStartedEvent;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
@@ -75,6 +77,21 @@ public final class DeepDiveBridge {
             java.util.Collections.synchronizedList(new ArrayList<>());
     private static final int JOURNAL_MAX_GROUPS = 400;
 
+    /**
+     * The live workspace feed ("Blick in die Box"): every entry of the
+     * running generation with FULL texts — increments ride the
+     * {@code deepdive-live} topic; the whole backlog is served only on
+     * request (command {@code live}), so a box opened mid-run replays the
+     * run so far without the frequent state pushes carrying the weight.
+     * Cleared when the next run starts.
+     */
+    private final List<Map<String, Object>> live =
+            java.util.Collections.synchronizedList(new ArrayList<>());
+    private volatile List<Map<String, Object>> liveCharts = List.of();
+    private final java.util.concurrent.atomic.AtomicLong liveSeq =
+            new java.util.concurrent.atomic.AtomicLong();
+    private static final int LIVE_MAX_ENTRIES = 6000;
+
     @Inject
     public DeepDiveBridge(DeepDiveService service, DeepDivePdfExporter pdfExporter,
             PushHub hub, ApplicationEventBus eventBus) {
@@ -94,7 +111,28 @@ public final class DeepDiveBridge {
         runStartMs = System.currentTimeMillis();
         fraction = 0.0;
         journal.clear();
+        live.clear();
+        liveCharts = List.of();
+        liveSeq.set(0);
         push();
+    }
+
+    @Subscribe
+    public void onLive(DeepDiveLiveEvent event) {
+        Map<String, Object> entry = liveJson(event.entry(), liveSeq.incrementAndGet());
+        synchronized (live) {
+            live.add(entry);
+            while (live.size() > LIVE_MAX_ENTRIES) live.remove(0);
+        }
+        hub.broadcastSafe("deepdive-live", () -> Map.of("entry", entry));
+    }
+
+    @Subscribe
+    public void onLiveCharts(DeepDiveLiveChartsEvent event) {
+        List<Map<String, Object>> charts = new ArrayList<>(event.charts().size());
+        for (var fig : event.charts()) charts.add(chartJson(fig));
+        liveCharts = charts;
+        hub.broadcastSafe("deepdive-live", () -> Map.of("charts", charts));
     }
 
     @Subscribe
@@ -146,6 +184,7 @@ public final class DeepDiveBridge {
                 }
                 case "cancel" -> service.cancelCurrent(); // finish event pushes the idle state
                 case "list" -> push();
+                case "live" -> hub.broadcastSafe("deepdive-live-backlog", this::liveBacklog);
                 case "get" -> service.byId(Payloads.str(payload.get("id"))).ifPresent(r ->
                         hub.broadcastSafe("deepdive-report", () -> Map.of("item", itemJson(r, true))));
                 case "delete" -> {
@@ -193,6 +232,44 @@ public final class DeepDiveBridge {
 
     private void push() {
         hub.broadcastSafe("deepdive", this::statePayload);
+    }
+
+    /** The live view's replay: the whole feed so far plus the figure layer. */
+    private Map<String, Object> liveBacklog() {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("busy", service.isBusy());
+        if (subject != null) m.put("subject", subject);
+        synchronized (live) {
+            m.put("entries", new ArrayList<>(live));
+        }
+        if (!liveCharts.isEmpty()) m.put("charts", liveCharts);
+        return m;
+    }
+
+    /** One live entry as compact wire JSON (empties omitted, seq for ordering). */
+    static Map<String, Object> liveJson(DeepDiveLiveEvent.Entry e, long seq) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("seq", seq);
+        m.put("k", e.kind());
+        if (e.phase() != null) m.put("ph", e.phase());
+        if (e.participant() != null) m.put("who", e.participant());
+        if (e.section() >= 0) m.put("sec", e.section());
+        if (e.paragraph() > 0) m.put("par", e.paragraph());
+        if (e.ref() != null && !e.ref().isEmpty()) m.put("ref", e.ref());
+        if (e.text() != null && !e.text().isEmpty()) m.put("t", e.text());
+        if (e.diff() != null && !e.diff().isEmpty()) {
+            List<Map<String, Object>> diff = new ArrayList<>(e.diff().size());
+            for (DeepDiveJournalEvent.Line line : e.diff()) {
+                Map<String, Object> lm = new LinkedHashMap<>();
+                lm.put("k", line.kind());
+                lm.put("t", line.text());
+                if (line.oldLine() > 0) lm.put("o", line.oldLine());
+                if (line.newLine() > 0) lm.put("n", line.newLine());
+                diff.add(lm);
+            }
+            m.put("diff", diff);
+        }
+        return m;
     }
 
     // ---- the rough, self-correcting ETA (presentation-side estimation) ----
@@ -328,18 +405,21 @@ public final class DeepDiveBridge {
             m.put("report", r.report());
             if (!r.chartsOrEmpty().isEmpty()) {
                 List<Map<String, Object>> charts = new ArrayList<>();
-                for (var fig : r.chartsOrEmpty()) {
-                    Map<String, Object> fm = new LinkedHashMap<>();
-                    fm.put("section", fig.section());
-                    fm.put("title", fig.title());
-                    if (fig.note() != null) fm.put("note", fig.note());
-                    fm.put("svg", fig.svg());
-                    charts.add(fm);
-                }
+                for (var fig : r.chartsOrEmpty()) charts.add(chartJson(fig));
                 m.put("charts", charts);
             }
         }
         return m;
+    }
+
+    /** One figure as wire JSON — the live feed and the final report share the shape. */
+    private static Map<String, Object> chartJson(DeepDiveRecord.ChartFigure fig) {
+        Map<String, Object> fm = new LinkedHashMap<>();
+        fm.put("section", fig.section());
+        fm.put("title", fig.title());
+        if (fig.note() != null) fm.put("note", fig.note());
+        fm.put("svg", fig.svg());
+        return fm;
     }
 
     /** Prose word count for the reading-time badge — the list payload carries

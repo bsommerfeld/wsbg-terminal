@@ -8,6 +8,9 @@
 .dd-detail {
   display: flex;
   flex-direction: column;
+  /* Full height of the scroller: the home view is a STAGE — the orb floats
+     at a third of the free space (see the .dd-void ratio below). */
+  min-height: 100%;
   padding: 16px 0 24px;
 }
 
@@ -25,6 +28,7 @@
 .dd-home:not([hidden]) { animation: dd-view-back .18s ease both; }
 
 .dd-home {
+  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -34,12 +38,133 @@
    visible list (live-observed 2026-07-13). Same guard as .dd-detail-view. */
 .dd-home[hidden] { display: none; }
 
-/* ---- the composer (ticker in, DD out) ---- */
+/* The stage voids: free space splits 1:2 around orb + list, which floats
+   the orb at roughly ONE THIRD of the view. When the list grows past the
+   viewport the voids collapse to a floor and the page simply scrolls. */
+.dd-void-top { flex: 1 0 28px; }
+.dd-void-bottom { flex: 2 0 20px; }
 
-.dd-form {
-  display: flex;
-  gap: 10px;
+/* ---- the ORB: one floating container with two lives. Idle it is the
+   ticker pill; while a run lives it morphs into the progress card — the
+   node persists across renders, so width/radius/padding/surface TRANSITION
+   (the "liquid" morph) instead of jumping.
+   The WRAP owns the width morph and carries the halo BEHIND the orb (the
+   orb clips its children via overflow:hidden, so the glow cannot live
+   inside it). ---- */
+
+.dd-orb-wrap {
+  position: relative;
   flex-shrink: 0;
+  width: 100%;
+  max-width: 600px;
+  margin-inline: auto;
+  transition: max-width .6s cubic-bezier(.45, .05, .15, 1);
+}
+.dd-orb-wrap.is-card { max-width: 800px; }
+
+/* The ORBITING glow (user mandate 2026-07-17 "umkreisen"): an amber light
+   spot that travels once around the card's edge — a conic gradient hugging
+   the card silhouette, its start angle animated via a registered custom
+   property (Chromium interpolates registered <angle> props; without
+   @property support the halo simply stands still — never breaks). */
+@property --dd-halo {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+@keyframes dd-orb-orbit {
+  to { --dd-halo: 360deg; }
+}
+.dd-orb-wrap::before {
+  content: '';
+  position: absolute;
+  inset: -14px;
+  border-radius: 34px;
+  background: conic-gradient(from var(--dd-halo),
+    transparent 0% 70%,
+    color-mix(in oklch, var(--amber) 20%, transparent) 82%,
+    color-mix(in oklch, var(--amber) 45%, transparent) 91%,
+    transparent 100%);
+  filter: blur(13px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .5s ease;
+}
+.dd-orb-wrap.is-card::before {
+  opacity: 1;
+  animation: dd-orb-orbit 5s linear infinite;
+}
+
+.dd-orb {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  box-shadow: 0 12px 32px -14px color-mix(in oklch, var(--mute-2) 45%, transparent);
+  overflow: hidden;
+  /* ONE long, calm curve for every morphing property — geometry, surface and
+     the content heights below all ride the same clock, so the pill⇄card
+     change reads as a single fluid motion. */
+  transition:
+    border-radius .6s cubic-bezier(.45, .05, .15, 1),
+    border-color .45s ease,
+    box-shadow .45s ease;
+}
+.dd-orb:focus-within:not(.is-card) {
+  border-color: var(--amber);
+  box-shadow: 0 12px 32px -14px color-mix(in oklch, var(--mute-2) 45%, transparent),
+              0 0 0 3px color-mix(in oklch, var(--amber) 12%, transparent);
+}
+.dd-orb.is-card {
+  border-radius: 16px;
+  border-color: color-mix(in oklch, var(--amber) 22%, var(--line-soft));
+  box-shadow: 0 12px 32px -14px color-mix(in oklch, var(--mute-2) 45%, transparent),
+              0 0 30px -10px color-mix(in oklch, var(--amber) 18%, transparent);
+}
+
+/* The progress host: grid-rows 0fr→1fr animates the card's HEIGHT open and
+   closed (the one CSS way to transition to auto height) — paired with a
+   directional fade: in late (content appears once the card has room), out
+   fast (the pill never shows stale text). The stale content is left in the
+   DOM on morph-back precisely so this collapse has something to animate. */
+.dd-progress-host {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  pointer-events: none;
+  transition: grid-template-rows .6s cubic-bezier(.45, .05, .15, 1),
+              opacity .18s ease;
+}
+.dd-orb.is-card .dd-progress-host {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  pointer-events: auto;
+  transition: grid-template-rows .6s cubic-bezier(.45, .05, .15, 1),
+              opacity .4s ease .18s;
+}
+
+/* The composer life: borderless input; the go-arrow stays folded away and
+   slides out only while there is text to send (.has-text). A starting run
+   folds the whole form (.is-gone) while the progress card fades in. */
+.dd-compose {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-height: 64px;
+  padding: 6px 6px 6px 16px;
+  opacity: 1;
+  transition: max-height .6s cubic-bezier(.45, .05, .15, 1), opacity .3s ease .15s,
+              padding .6s cubic-bezier(.45, .05, .15, 1);
+}
+.dd-compose.is-gone {
+  max-height: 0;
+  padding-block: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: max-height .6s cubic-bezier(.45, .05, .15, 1), opacity .18s ease,
+              padding .6s cubic-bezier(.45, .05, .15, 1);
 }
 .dd-input {
   flex: 1;
@@ -49,16 +174,10 @@
   text-transform: uppercase;
   letter-spacing: .06em;
   color: var(--txt);
-  background: var(--bg-1);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 9px 14px;
+  background: none;
+  border: none;
+  padding: 7px 0;
   outline: none;
-  transition: border-color .15s, box-shadow .15s;
-}
-.dd-input:focus {
-  border-color: var(--amber);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--amber) 12%, transparent);
 }
 .dd-input::placeholder {
   font-family: "Inter", sans-serif;
@@ -66,77 +185,118 @@
   letter-spacing: normal;
   color: var(--mute);
 }
-.dd-btn {
-  font-family: "Inter", sans-serif;
-  font-weight: 600;
-  font-size: var(--font-chrome);
-  letter-spacing: .04em;
+.dd-go {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 0;
+  height: 30px;
+  padding: 0;
   color: var(--amber);
   background: color-mix(in oklch, var(--amber) 8%, transparent);
-  border: 1px solid color-mix(in oklch, var(--amber) 35%, transparent);
-  border-radius: 10px;
-  padding: 9px 18px;
+  border: 0 solid color-mix(in oklch, var(--amber) 30%, transparent);
+  border-radius: 50%;
+  opacity: 0;
+  transform: translateX(8px) scale(.7);
   cursor: pointer;
-  transition: border-color .15s, background .15s, opacity .15s;
+  transition: width .28s cubic-bezier(.32, .9, .3, 1), opacity .2s ease,
+              transform .28s cubic-bezier(.32, .9, .3, 1),
+              border-color .15s, background .15s;
 }
-.dd-btn:hover:not(:disabled) {
+.dd-compose.has-text .dd-go {
+  width: 30px;
+  border-width: 1px;
+  opacity: 1;
+  transform: none;
+}
+.dd-go:hover {
   border-color: var(--amber);
   background: color-mix(in oklch, var(--amber) 14%, transparent);
 }
-.dd-btn:disabled { opacity: .45; cursor: default; }
-
-.dd-empty {
-  color: var(--mute);
-  font-size: .9em;
-  line-height: 1.6;
-  padding: 18px 4px;
+.dd-go svg {
+  width: 14px; height: 14px;
+  stroke: currentColor; stroke-width: 2; fill: none;
+  stroke-linecap: round; stroke-linejoin: round;
 }
 
-/* ---- progress: the passes, narrated (shown while a run is live) ---- */
+/* Empty state: centered, quiet — the thumb's magnifier doc at pane size. */
+.dd-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 26px 18px 12px;
+  text-align: center;
+}
+.dd-empty svg {
+  width: 34px; height: 34px;
+  color: var(--mute);
+  stroke: currentColor; stroke-width: 1.4; fill: none;
+  stroke-linecap: round; stroke-linejoin: round;
+  opacity: .7;
+}
+.dd-empty p {
+  max-width: 46ch;
+  color: var(--mute);
+  font-size: .88em;
+  line-height: 1.65;
+}
+
+/* ---- progress: the orb's card life — header (subject + % + cancel) over
+   the thin fill track, then the five passes as a vertical checklist joined
+   by a rail. The SURFACE belongs to the orb; this is content only — and it
+   carries NO entry animation: the host re-renders it on every progress push,
+   an animation here would restart (= flicker) each time. The morph feel
+   comes from the orb geometry + the folding composer. ---- */
 
 .dd-progress {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 14px 16px;
-  background: var(--bg-1);
-  border: 1px solid var(--line-soft);
-  border-radius: 12px;
+  gap: 12px;
+  padding: 20px 24px 16px;
+  /* The card runs a size up (user ask: ~25% more volume than the pill). */
+  font-size: 1.06em;
+  /* Grid item of the 0fr⇄1fr host: without these the collapsed row would
+     not clip its content. */
+  min-height: 0;
+  overflow: hidden;
+  transition: padding .6s cubic-bezier(.45, .05, .15, 1);
+}
+/* Back in pill life the stale content's PADDING must collapse too — with
+   border-box sizing the 0fr trick can't shrink below the padding sum, which
+   left the pill one line too tall after a cancel (live 2026-07-17). */
+.dd-orb:not(.is-card) .dd-progress {
+  padding-block: 0;
+}
+.dd-progress-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 .dd-progress-subject {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: "JetBrains Mono", monospace;
   font-weight: 600;
   font-size: 1em;
   letter-spacing: .04em;
 }
-.dd-progress-stage {
-  color: var(--txt-2);
-  font-size: .92em;
+.dd-progress-pct {
+  flex-shrink: 0;
+  font-family: "JetBrains Mono", monospace;
+  font-size: .74em;
+  color: var(--amber);
+  font-variant-numeric: tabular-nums;
 }
-.dd-progress-steps {
-  display: flex;
-  gap: 8px;
-  margin-top: 4px;
-}
-.dd-step {
-  flex: 1;
-  height: 3px;
-  border-radius: 2px;
-  background: var(--line);
-}
-.dd-step.done { background: var(--amber); }
-.dd-step.live { background: color-mix(in oklch, var(--amber) 45%, transparent); }
-
-/* The desk journal: the run's work as a PURE diff below the pass bars —
-   editor look (mono, line tints), green added / red removed / orange
-   annotated. The toggle sits right of the bars; the pane is a bounded inner
-   scroller (an explicitly wanted exception — capped height, wheel-local). */
-.dd-progress-subject .dd-cancel {
-  float: right;
+.dd-cancel {
+  flex-shrink: 0;
   display: grid;
   place-items: center;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   padding: 0;
   border: none;
   border-radius: 5px;
@@ -144,17 +304,16 @@
   color: var(--mute);
   cursor: pointer;
 }
-.dd-progress-subject .dd-cancel.is-cancelling,
-.dd-progress-subject .dd-cancel:disabled {
+.dd-cancel.is-cancelling,
+.dd-cancel:disabled {
   opacity: 0.35;
   pointer-events: none;
 }
-
-.dd-progress-subject .dd-cancel:hover {
+.dd-cancel:hover {
   color: var(--red);
   background: color-mix(in oklch, var(--red) 10%, transparent);
 }
-.dd-progress-subject .dd-cancel svg {
+.dd-cancel svg {
   width: 11px;
   height: 11px;
   fill: none;
@@ -163,13 +322,12 @@
   stroke-linecap: round;
 }
 
-/* The rough ETA: a thin fill track + the minutes chip (estimate, never a promise). */
+/* The rough ETA fill (estimate, never a promise). */
 .dd-progress-track {
   height: 3px;
   border-radius: 2px;
   background: var(--line-soft);
   overflow: hidden;
-  margin: 6px 0 2px;
 }
 .dd-progress-fill {
   height: 100%;
@@ -177,221 +335,222 @@
   background: var(--amber);
   transition: width .6s ease;
 }
-.dd-eta {
-  font-family: "JetBrains Mono", monospace;
-  font-size: .68em;
-  color: var(--mute);
-}
 
-.dd-progress-foot {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 4px;
-}
-.dd-progress-foot .dd-progress-steps { flex: 1; margin-top: 0; }
-.dd-journal-toggle {
-  flex: 0 0 auto;
-  display: grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
+/* The stage checklist: done = filled amber check, live = ring + narration,
+   upcoming = hollow dot; a hairline rail joins the dots. */
+.dd-stages {
+  list-style: none;
+  margin: 2px 0 0;
   padding: 0;
-  border: none;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--mute);
-  cursor: pointer;
+  display: flex;
+  flex-direction: column;
 }
-.dd-journal-toggle:hover { color: var(--txt); background: color-mix(in oklch, var(--txt) 8%, transparent); }
-.dd-journal-toggle svg {
-  width: 12px;
-  height: 12px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  transition: transform 0.18s ease;
-}
-.dd-progress.journal-open .dd-journal-toggle svg { transform: rotate(180deg); }
-
-/* The scroll viewport: capped height, the reader owns the scroll position
-   (anchored-at-bottom readers stay anchored; nobody gets yanked). */
-.dd-journal {
-  margin-top: 6px;
-  margin-bottom: 2px;
-  max-height: 240px;
-  overflow-y: auto;
-  border-top: 1px solid var(--line-soft);
-  border-bottom: 1px solid var(--line-soft);
-  padding: 8px 0 8px 0;
-}
-
-/* The track carries the Reddit-thread rail on the left; every hunk anchors
-   to it with a short connector tick. */
-.dd-journal-track {
+.dd-stage {
   position: relative;
-  padding-left: 14px;
+  display: flex;
+  gap: 12px;
+  padding: 4px 0;
 }
-.dd-journal-track::before {
+.dd-stage::before {
   content: '';
   position: absolute;
-  left: 4px;
-  top: 2px;
-  bottom: 2px;
+  left: 7px;
+  top: 24px;
+  bottom: -6px;
   width: 2px;
   border-radius: 1px;
-  background: var(--line);
-}
-
-/* One hunk = one pipeline step, GitHub-style container. */
-.dd-hunk {
-  position: relative;
-  border: 1px solid var(--line-soft);
-  border-radius: 6px;
-  overflow: hidden;
-  background: color-mix(in oklch, var(--txt) 2%, transparent);
-}
-.dd-hunk + .dd-hunk {
-  margin-top: 10px;
-}
-.dd-hunk + .dd-hunk::after {
-  content: '';
-  position: absolute;
-  left: -14px;
-  right: -0px;
-  top: -6px;
-  height: 1px;
   background: var(--line-soft);
 }
-.dd-hunk::before {
-  content: '';
-  position: absolute;
-  left: -10px;
-  top: 12px;
-  width: 10px;
-  height: 2px;
-  background: var(--line);
-}
-
-/* Diff rows: dual line-number gutter, change glyph, text. */
-.dd-j {
+.dd-stage:last-child::before { display: none; }
+.dd-stage.done::before { background: color-mix(in oklch, var(--amber) 45%, transparent); }
+.dd-stage-dot {
+  flex-shrink: 0;
   display: grid;
-  grid-template-columns: 22px 22px 14px 1fr;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  border-radius: 50%;
+  border: 1.5px solid var(--line);
+  background: var(--bg-1);
+}
+.dd-stage.done .dd-stage-dot {
+  border-color: var(--amber);
+  background: var(--amber);
+}
+.dd-stage.done .dd-stage-dot svg {
+  width: 9px; height: 9px;
+  stroke: var(--bg); stroke-width: 3.2; fill: none;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.dd-stage.live .dd-stage-dot {
+  border-color: var(--amber);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--amber) 15%, transparent);
+}
+.dd-stage.live .dd-stage-dot::after {
+  content: '';
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--amber);
+}
+.dd-stage-body {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 4px;
+}
+.dd-stage-name {
+  display: flex;
   align-items: baseline;
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  font-size: 11.5px;
-  line-height: 1.6;
-  padding: 1px 8px 1px 0;
-}
-.dd-j-no {
-  text-align: right;
-  padding-right: 6px;
-  font-size: 10px;
+  gap: 10px;
+  font-family: "Inter", sans-serif;
+  font-weight: 600;
+  font-size: .82em;
+  letter-spacing: .04em;
   color: var(--mute);
-  opacity: 0.75;
-  user-select: none;
 }
-.dd-j-glyph {
-  text-align: center;
-  user-select: none;
-  opacity: 0.8;
+.dd-stage.done .dd-stage-name { color: var(--txt-2); }
+.dd-stage.live .dd-stage-name { color: var(--txt); }
+.dd-eta {
+  font-family: "JetBrains Mono", monospace;
+  font-size: .82em;
+  font-weight: 400;
+  color: var(--mute);
 }
-.dd-j-text {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.dd-j-ctx { color: var(--mute); }
-.dd-j-gap { color: var(--mute); opacity: 0.6; }
-.dd-j-add {
-  color: color-mix(in oklch, var(--green) 75%, var(--txt));
-  background: color-mix(in oklch, var(--green) 10%, transparent);
-}
-.dd-j-add .dd-j-no { background: color-mix(in oklch, var(--green) 8%, transparent); }
-.dd-j-del {
-  color: color-mix(in oklch, var(--red) 75%, var(--txt));
-  background: color-mix(in oklch, var(--red) 9%, transparent);
-}
-.dd-j-del .dd-j-text {
-  text-decoration: line-through;
-  text-decoration-thickness: 1px;
-  text-decoration-color: color-mix(in oklch, var(--red) 45%, transparent);
-}
-.dd-j-del .dd-j-no { background: color-mix(in oklch, var(--red) 8%, transparent); }
-.dd-j-note {
-  color: color-mix(in oklch, var(--amber) 70%, var(--txt));
-  background: color-mix(in oklch, var(--amber) 9%, transparent);
+.dd-stage-detail {
+  color: var(--txt-2);
+  font-size: .82em;
+  line-height: 1.5;
 }
 
-/* ---- the report cards (newest first, armed two-tap delete) ---- */
+/* ---- the reports: one-line rows, five per page — a touch NARROWER than
+   the orb, so the floating bar leads the composition ---- */
 
+.dd-list {
+  width: 100%;
+  max-width: 580px;
+  margin-inline: auto;
+}
+
+.dd-ticker {
+  flex-shrink: 0;
+  font-family: "JetBrains Mono", monospace;
+  font-weight: 500;
+  font-size: .62em;
+  letter-spacing: .06em;
+  color: color-mix(in oklch, var(--amber) 80%, var(--txt));
+  background: color-mix(in oklch, var(--amber) 8%, transparent);
+  border: 1px solid color-mix(in oklch, var(--amber) 25%, transparent);
+  border-radius: 5px;
+  padding: 1px 6px;
+  transform: translateY(-2px);
+}
+
+/* Earlier reports: calm one-liners, hairline-divided, hover lifts the row. */
 .dd-cards {
   list-style: none;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
 }
 .dd-card {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 11px 14px;
-  background: var(--bg-1);
-  border: 1px solid var(--line-soft);
-  border-radius: 12px;
+  padding: 9px 10px;
+  border-radius: 9px;
+  border-bottom: 1px solid var(--line-soft);
   cursor: pointer;
-  transition: border-color .15s, transform .15s;
+  transition: background .15s, border-color .15s;
 }
+.dd-card:last-child { border-bottom-color: transparent; }
 .dd-card:hover {
-  border-color: var(--amber);
-  transform: translateX(2px);
-}
-.dd-card-main {
-  min-width: 0;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
+  background: var(--bg-1);
+  border-bottom-color: transparent;
 }
 .dd-card-name {
   display: flex;
   align-items: baseline;
   gap: 8px;
   min-width: 0;
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: "Inter", sans-serif;
-  font-weight: 600;
+  font-weight: 550;
+  font-size: .92em;
 }
-.dd-ticker {
+.dd-card-name .dd-ticker { font-size: .68em; transform: translateY(-1px); }
+.dd-card-date {
   flex-shrink: 0;
   font-family: "JetBrains Mono", monospace;
-  font-weight: 500;
-  font-size: .68em;
-  letter-spacing: .06em;
+  font-size: .72em;
   color: var(--mute);
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  padding: 1px 6px;
-  transform: translateY(-1px);
+  font-variant-numeric: tabular-nums;
 }
-.dd-card-meta {
+
+/* A finished, still-unopened report: amber ring, softly pulsing until the
+   first open (persisted across restarts). The DELIBERATE exception to the
+   no-loop OSR rule — user mandate 2026-07-17; kept cheap (border/shadow on
+   one small row). If live paint cost bites, fall back to a standing ring. */
+@keyframes dd-unread-pulse {
+  0%, 100% {
+    border-color: var(--amber);
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--amber) 22%, transparent);
+  }
+  50% {
+    border-color: color-mix(in oklch, var(--amber) 30%, transparent);
+    box-shadow: 0 0 0 5px transparent;
+  }
+}
+.dd-card.unread {
+  border: 1px solid var(--amber);
+  border-radius: 10px;
+  animation: dd-unread-pulse 1.8s ease-in-out infinite;
+}
+.dd-card.unread .dd-card-name { color: var(--txt); }
+
+/* The pager: ‹ 1 / 3 › — quiet, centered under the rows. */
+.dd-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+.dd-pager-num {
   font-family: "JetBrains Mono", monospace;
-  font-size: .74em;
+  font-size: .72em;
   color: var(--mute);
+  font-variant-numeric: tabular-nums;
+  min-width: 52px;
+  text-align: center;
 }
-.dd-card-chevron {
-  flex-shrink: 0;
-  width: 14px; height: 14px;
+.dd-page-prev, .dd-page-next {
+  display: grid;
+  place-items: center;
+  width: 24px; height: 24px;
+  padding: 0;
   color: var(--mute);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+.dd-page-prev:hover:not(:disabled), .dd-page-next:hover:not(:disabled) {
+  color: var(--txt);
+  border-color: var(--line);
+}
+.dd-page-prev:disabled, .dd-page-next:disabled { opacity: .3; cursor: default; }
+.dd-page-prev svg, .dd-page-next svg {
+  width: 13px; height: 13px;
   stroke: currentColor; stroke-width: 2; fill: none;
   stroke-linecap: round; stroke-linejoin: round;
-  transition: color .15s, transform .15s;
 }
-.dd-card:hover .dd-card-chevron { color: var(--amber); transform: translateX(2px); }
 
 .dd-del {
   flex-shrink: 0;
@@ -409,7 +568,7 @@
   opacity: 0;
   transition: opacity .15s, color .15s, border-color .15s;
 }
-.dd-card:hover .dd-del, .dd-del.armed { opacity: 1; }
+.dd-card:hover .dd-del, .dd-hero:hover .dd-del, .dd-del.armed { opacity: 1; }
 .dd-del:hover { color: var(--red); }
 .dd-del svg {
   width: 14px; height: 14px;
@@ -802,7 +961,8 @@ html[data-theme="light"] .dd-figure {
   color: var(--mute);
   text-align: right;
 }
-/* The pass bars, tile-sized (the .dd-step grammar scaled up). */
+/* The pass bars, tile-sized (segments only — the tile has no room for the
+   focus view's stage timeline). */
 .dd-thumb-steps {
   display: flex;
   gap: 16px;
@@ -868,3 +1028,514 @@ html[data-theme="light"] .dd-figure {
 .dd-figure figcaption.fh-jump:hover .dd-figure-title { color: var(--amber); }
 .dd-figure figcaption.fh-jump:focus-visible { outline: 1px solid var(--amber); outline-offset: 2px; }
 .dd-report h2 { scroll-margin-top: 8px; }
+
+/* ==== the live workshop view ("Blick in die Box"): the running report
+   opened mid-generation. View-only preview — subtly amber-marked so it never
+   reads as the finished page; typing/fades are finite; the only loop is the
+   sanctioned skeleton shimmer on covers/ghosts (exists only while the desk
+   works). ==== */
+
+.dd-live-view {
+  display: flex;
+  flex-direction: column;
+}
+.dd-live-view[hidden] { display: none; }
+.dd-live-view:not([hidden]) { animation: dd-view-in .22s ease both; }
+
+.dd-live {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ---- head: back arrow, subject + preview badge, chat toggle ---- */
+
+.dd-live-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.dd-live-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.dd-live-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 650;
+  font-size: 1.05em;
+}
+.dd-live-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dd-live-badge {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border: 1px solid color-mix(in oklch, var(--amber) 55%, transparent);
+  border-radius: 999px;
+  color: var(--amber);
+  font-size: .62em;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  transition: opacity .5s ease;
+}
+.dd-live-sub {
+  font-size: .74em;
+  color: var(--mute);
+}
+.dd-chat-toggle {
+  flex-shrink: 0;
+  width: 34px; height: 34px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--mute);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  cursor: pointer;
+}
+.dd-chat-toggle svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; }
+.dd-chat-toggle.is-on {
+  color: var(--amber);
+  border-color: color-mix(in oklch, var(--amber) 45%, transparent);
+}
+
+/* ---- the handover banner (one-shot, shown when the report stands) ---- */
+
+.dd-live-done {
+  text-align: center;
+  color: var(--amber);
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  font-size: .8em;
+  animation: dd-fig-in .4s ease both;
+}
+
+/* ---- stage: report mirror beside the collapsible desk chat ---- */
+
+.dd-live-stage {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.dd-live-report {
+  /* Positioned: the note rail anchors to it and paragraphs' offsetTop
+     measure against it. */
+  position: relative;
+  flex: 2 1 380px;
+  min-width: 0;
+  padding: 14px 18px 18px;
+  border: 1px dashed color-mix(in oklch, var(--amber) 30%, transparent);
+  border-radius: 12px;
+  background: color-mix(in oklch, var(--amber) 3%, transparent);
+}
+
+/* Paragraph wrapper: the mirror's atomic block (anchor for covers/notes). */
+.dd-para { transition: opacity .35s ease; }
+.dd-para.dd-out { opacity: 0; }
+.dd-para.dd-typing {
+  font-family: inherit;
+  white-space: pre-wrap;
+  margin-bottom: 1em;
+}
+
+/* The typing caret — visible only while a span is being filled. */
+.dd-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background: var(--amber);
+  vertical-align: -0.15em;
+  margin-left: 1px;
+}
+
+/* Word-level rework at the changed spot. */
+.dd-w-del {
+  color: var(--red);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in oklch, var(--red) 55%, transparent);
+  opacity: .85;
+  transition: opacity .3s ease;
+}
+.dd-w-del.out { opacity: 0; }
+.dd-w-add { color: color-mix(in oklch, var(--amber) 45%, var(--txt)); }
+
+/* ---- the AI cover: the doubted locus blurred under the shimmer ---- */
+
+.dd-cover {
+  position: relative;
+  filter: blur(4px);
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+}
+.dd-cover::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 15%, var(--amber) 50%, transparent 85%);
+  opacity: .18;
+  transform: translateX(-120%);
+  animation: eurusd-skeleton 1.5s ease-in-out infinite;
+}
+
+/* ---- margin notes: the judges' objections, teacher-on-an-exam — on a
+   rail OUTSIDE the report page (absolute, so the report's layout never
+   shifts), each note pinned beside its paragraph. The rail shows only
+   while the chat is folded: both want the right edge, and the reader
+   focuses on one. .has-notes reserves the margin for the rail. ---- */
+
+.dd-note-rail {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 100%;
+  width: 200px;
+  margin-left: 14px;
+  pointer-events: none;
+}
+.dd-live.chat-open .dd-note-rail { display: none; }
+.dd-live.has-notes:not(.chat-open) .dd-live-stage { padding-right: 216px; }
+
+.dd-note {
+  position: absolute;
+  left: 0;
+  width: 200px;
+  padding: 7px 10px;
+  border-left: 2px solid var(--amber);
+  border-radius: 0 8px 8px 0;
+  background: color-mix(in oklch, var(--amber) 8%, transparent);
+  font-size: .74em;
+  line-height: 1.45;
+  font-style: italic;
+  color: var(--txt-2);
+  transition: opacity .5s ease;
+}
+.dd-note-who {
+  display: block;
+  margin-bottom: 2px;
+  font-style: normal;
+  font-weight: 700;
+  font-size: .85em;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--amber);
+}
+
+/* ---- figures slide into their section the moment the layer exists ---- */
+
+@keyframes dd-fig-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+.dd-figure.dd-fig-in { animation: dd-fig-in .45s ease both; }
+
+/* ---- the workshop's empty state: blurred ghost lines ---- */
+
+.dd-live-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px 0 16px;
+}
+.dd-live-empty-note {
+  font-size: .82em;
+  color: var(--mute);
+  margin-bottom: 6px;
+}
+.dd-ghost {
+  position: relative;
+  height: .9em;
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--mute-2) 32%, transparent);
+  filter: blur(3px);
+  overflow: hidden;
+}
+.dd-ghost::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 15%, var(--txt-2) 50%, transparent 85%);
+  opacity: .25;
+  transform: translateX(-120%);
+  animation: eurusd-skeleton 1.5s ease-in-out infinite;
+}
+
+/* ---- the desk chat: every voice, nothing trimmed ---- */
+
+.dd-live-chat {
+  flex: 1 1 280px;
+  min-width: 260px;
+  max-width: 360px;
+  position: sticky;
+  top: 8px;
+  display: flex;
+  flex-direction: column;
+  max-height: 78vh;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg-1);
+  transition: opacity .5s ease;
+}
+.dd-live-chat[hidden] { display: none; }
+.dd-chat-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.dd-chat-title {
+  font-weight: 600;
+  font-size: .8em;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--txt-2);
+}
+.dd-chat-phase {
+  font-size: .74em;
+  color: var(--amber);
+}
+.dd-chat-list {
+  overflow-y: auto;
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 120px;
+}
+.dd-msg { font-size: .8em; line-height: 1.5; }
+.dd-msg-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+.dd-msg-who {
+  font-weight: 700;
+  font-size: .85em;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--txt-2);
+}
+.dd-msg.is-note .dd-msg-who { color: var(--amber); }
+.dd-msg-sec, .dd-msg-phase { font-size: .78em; color: var(--mute); }
+.dd-msg-phase { margin-left: auto; }
+.dd-msg-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--txt-2);
+}
+.dd-msg.is-note .dd-msg-text {
+  font-style: italic;
+  color: color-mix(in oklch, var(--amber) 45%, var(--txt));
+}
+
+/* The diff attachment: folded by default, unfolds like a file attachment. */
+.dd-attach {
+  margin: 4px 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: color-mix(in oklch, var(--bg-hover) 60%, transparent);
+}
+.dd-attach-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  font-size: .78em;
+  color: var(--txt-2);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.dd-attach-head svg { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-width: 2; flex-shrink: 0; }
+.dd-attach-stat {
+  margin-left: auto;
+  font-family: "JetBrains Mono", monospace;
+  font-size: .95em;
+  color: var(--mute);
+}
+.dd-attach-chev { transition: transform .2s ease; }
+.dd-attach.is-open .dd-attach-chev { transform: rotate(180deg); }
+.dd-attach-body {
+  border-top: 1px solid var(--line-soft);
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+/* display:flex beats the UA's [hidden] rule — without this the attachment
+   could never fold back (same guard as .dd-home[hidden]). */
+.dd-attach-body[hidden] { display: none; }
+.dd-dl {
+  display: flex;
+  gap: 8px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: .78em;
+  line-height: 1.45;
+}
+.dd-dl-g {
+  min-width: 1.6em;
+  text-align: right;
+  font-family: "JetBrains Mono", monospace;
+  color: var(--mute-2);
+  flex-shrink: 0;
+}
+.dd-dl-t { overflow-wrap: anywhere; }
+.dd-dl-add { background: color-mix(in oklch, var(--green) 12%, transparent); }
+.dd-dl-del {
+  background: color-mix(in oklch, var(--red) 12%, transparent);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in oklch, var(--red) 45%, transparent);
+}
+.dd-dl-ctx { color: var(--mute); }
+.dd-dl-note { color: var(--amber); font-style: italic; }
+.dd-dl-gap { justify-content: center; color: var(--mute-2); }
+
+/* ---- the peek button on the progress card ---- */
+
+.dd-peek {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px dashed color-mix(in oklch, var(--amber) 45%, transparent);
+  border-radius: 10px;
+  background: none;
+  color: var(--amber);
+  font-size: .82em;
+  font-weight: 600;
+  letter-spacing: .03em;
+  cursor: pointer;
+}
+.dd-peek:hover { background: color-mix(in oklch, var(--amber) 10%, transparent); }
+.dd-peek svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 2; flex-shrink: 0; }
+
+/* ---- handover: the workshop clears, then the finished page takes over.
+   None of the preview survives — annotations, covers and chat fade in one
+   one-shot pass (transitions on the elements above). ---- */
+
+.dd-finalizing .dd-note,
+.dd-finalizing .dd-live-chat,
+.dd-finalizing .dd-live-badge { opacity: 0; }
+.dd-finalizing .dd-cover { filter: none; }
+.dd-finalizing .dd-cover::after { display: none; }
+.dd-finalizing .dd-live-report {
+  border-color: transparent;
+  background: transparent;
+  transition: border-color .5s ease, background .5s ease;
+}
+
+/* ---- the triage board: the collected sources under the judge's pen.
+   Rows slide in as found; a verdict paints the green check or strikes the
+   row through, slides it out left and the list closes the gap (max-height
+   collapse). All one-shot; the board itself fades once the report starts. ---- */
+
+.dd-triage { transition: opacity .4s ease; }
+.dd-triage.is-done { opacity: 0; }
+.dd-triage-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.dd-triage-title {
+  font-weight: 600;
+  font-size: .82em;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--txt-2);
+}
+.dd-triage-count {
+  font-size: .74em;
+  color: var(--mute);
+  font-family: "JetBrains Mono", monospace;
+}
+.dd-triage-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+@keyframes dd-src-in {
+  from { opacity: 0; transform: translateX(10px); }
+  to   { opacity: 1; transform: none; }
+}
+.dd-src {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 4px;
+  max-height: 4.5em;
+  font-size: .84em;
+  line-height: 1.45;
+  color: var(--txt-2);
+  border-radius: 6px;
+  transition: opacity .4s ease, transform .4s ease, max-height .4s ease,
+              padding .4s ease, color .3s ease;
+}
+.dd-src.is-new { animation: dd-src-in .3s ease both; }
+.dd-src-dot {
+  flex-shrink: 0;
+  width: 14px; height: 14px;
+  align-self: center;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: transparent;
+  transition: border-color .3s ease, background .3s ease, color .3s ease;
+}
+.dd-src-dot svg { width: 9px; height: 9px; stroke: currentColor; fill: none; stroke-width: 3; }
+.dd-src-title { overflow-wrap: anywhere; }
+
+/* Seat earned: the dot fills green, the check appears. */
+.dd-src.is-ok .dd-src-dot {
+  border-color: transparent;
+  background: color-mix(in oklch, var(--green) 24%, transparent);
+  color: var(--green);
+}
+
+/* Struck: readable strike-through first… */
+.dd-src.is-out {
+  color: var(--mute);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in oklch, var(--red) 60%, transparent);
+}
+.dd-src.is-out .dd-src-dot {
+  border-color: color-mix(in oklch, var(--red) 45%, transparent);
+  background: color-mix(in oklch, var(--red) 14%, transparent);
+  color: transparent; /* the strike-through carries the verdict, not the check */
+}
+/* …then the slide-out left, fade and collapse (JS pins max-height first). */
+.dd-src.is-gone {
+  opacity: 0;
+  transform: translateX(-28px);
+  max-height: 0 !important;
+  padding-top: 0;
+  padding-bottom: 0;
+}

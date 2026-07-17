@@ -64,6 +64,15 @@ final class ArticleReader {
      *         (network, non-200, nothing readable extracted).
      */
     Optional<String> fetchArticleText(String url) {
+        return fetchArticleText(url, ARTICLE_MAX_CHARS);
+    }
+
+    /**
+     * Same fetch with a caller-chosen length cap - the DD's fact extraction
+     * reads the WHOLE article (chunked downstream), while the wire's digest
+     * keeps the tight default.
+     */
+    Optional<String> fetchArticleText(String url, int maxChars) {
         if (url == null || url.isBlank()) return Optional.empty();
         try {
             Map<String, String> headers = new LinkedHashMap<>();
@@ -78,7 +87,7 @@ final class ArticleReader {
                 LOG.debug("[NEWS] article fetch '{}' hit the consent shell — no article", url);
                 return Optional.empty();
             }
-            String text = extractReadableText(resp.body());
+            String text = extractReadableText(resp.body(), maxChars);
             return text.isEmpty() ? Optional.empty() : Optional.of(text);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -96,6 +105,10 @@ final class ArticleReader {
      * whitespace, and caps length. Pure function — unit-tested.
      */
     static String extractReadableText(String html) {
+        return extractReadableText(html, ARTICLE_MAX_CHARS);
+    }
+
+    static String extractReadableText(String html, int maxChars) {
         if (html == null || html.isBlank()) return "";
         String cleaned = SCRIPT_STYLE.matcher(html).replaceAll(" ");
 
@@ -109,8 +122,8 @@ final class ArticleReader {
 
         String text = paras.length() >= 200 ? paras.toString() : stripTags(cleaned);
         text = unescapeEntities(text).replaceAll("\\s+", " ").trim();
-        if (text.length() > ARTICLE_MAX_CHARS) {
-            text = text.substring(0, ARTICLE_MAX_CHARS).trim() + "…";
+        if (text.length() > maxChars) {
+            text = text.substring(0, maxChars).trim() + "…";
         }
         return text;
     }

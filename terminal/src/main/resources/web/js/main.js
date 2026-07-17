@@ -26,7 +26,8 @@ import { renderFearGreed } from './widgets/fear-greed.js';
 import { renderFearGreedDetail } from './widgets/fg-detail.js';
 import { initWatchlist, renderWatchlist, renderWatchlistSubjects } from './widgets/watchlist.js';
 import { initWeather, renderWeather } from './widgets/weather.js';
-import { initDeepDive, renderDeepDive, renderDeepDiveJournal, renderDeepDiveReport, renderDeepDiveSuggestions } from './widgets/deepdive.js';
+import { initDeepDive, renderDeepDive, renderDeepDiveReport } from './widgets/deepdive.js';
+import { onDeepDiveLive, onDeepDiveLiveBacklog } from './widgets/deepdive-live.js';
 import { setMarketCalendar } from './markets/state.js';
 import { t } from './i18n/i18n.js';
 
@@ -105,13 +106,15 @@ socket.on('archive-results', payload => {
 });
 
 // Watchlist add-suggestions (requested when the add input gains focus).
-socket.on('watchlist-subjects', p => { renderWatchlistSubjects(p); renderDeepDiveSuggestions(p); });
+socket.on('watchlist-subjects', renderWatchlistSubjects);
 
 // One full KI-DD report, requested from the history list.
 socket.on('deepdive-report', renderDeepDiveReport);
 
-// The KI-DD's live desk journal: diff-line appends for the review pane.
-socket.on('deepdive-journal', renderDeepDiveJournal);
+// The KI-DD workshop feed ("Blick in die Box"): live increments + the whole
+// backlog replay when the box opens mid-run.
+socket.on('deepdive-live', onDeepDiveLive);
+socket.on('deepdive-live-backlog', onDeepDiveLiveBacklog);
 
 // Live language switch: setLang() has already rewritten the static markup;
 // re-render the language-sensitive widgets from their last payload so their

@@ -52,6 +52,16 @@ final class NewsDigester {
     private final Map<String, String> byLink = new ConcurrentHashMap<>();
 
     /**
+     * Raw-article-text cache for the DD's fact extraction (link → readable text;
+     * "" = attempted and failed). Separate from the digest cache: the DD reads
+     * the WHOLE article, the wire keeps its compact digest lane.
+     */
+    private final Map<String, String> textByLink = new ConcurrentHashMap<>();
+
+    /** The DD's full-article cap - chunked downstream, never summarized. */
+    static final int FULL_ARTICLE_MAX_CHARS = 24_000;
+
+    /**
      * Boilerplate net: extracted-body hash → the first link it appeared under.
      * Real articles are never byte-identical across links, so the SAME body under
      * a second link is an interstitial shell (consent wall, error page) that
@@ -146,6 +156,31 @@ final class NewsDigester {
      * overload the model, and the session cache is shared with the wire's
      * background lane (a digest read here enriches the next compose too).
      */
+    /**
+     * Synchronous FULL-TEXT read for the KI-DD's fact extraction: fetches the
+     * article's readable body ({@link #FULL_ARTICLE_MAX_CHARS} cap) with NO
+     * model call - the extraction downstream replaces the digest. Session-
+     * cached including failures; consent-walled hosts are fast misses.
+     */
+    String articleTextNow(String link) {
+        if (link == null || link.isBlank() || articleReader == null || !readArticles()) return "";
+        String trimmed = link.trim();
+        String cached = textByLink.get(trimmed);
+        if (cached != null) return cached;
+        String host = hostOf(trimmed);
+        if (host != null && walledHosts.containsKey(host)) {
+            textByLink.put(trimmed, "");
+            return "";
+        }
+        String text = articleReader.fetchArticleText(trimmed, FULL_ARTICLE_MAX_CHARS).orElse("");
+        if (text.length() < MIN_ARTICLE_CHARS) text = "";
+        textByLink.put(trimmed, text);
+        if (!text.isEmpty()) {
+            LOG.info("[NEWS] article text read ({} chars): {}", text.length(), trimmed);
+        }
+        return text;
+    }
+
     String digestNow(String link) {
         if (link == null || link.isBlank() || articleReader == null || !readArticles()) return "";
         String trimmed = link.trim();
