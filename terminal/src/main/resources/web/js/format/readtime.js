@@ -10,7 +10,11 @@ const WORDS_PER_MINUTE = 200;
 
 export function readingMinutes(md) {
   if (!md) return 0;
-  const text = String(md)
+  let body = String(md);
+  // The source register at the tail is reference material, not reading matter.
+  const cut = Math.max(body.lastIndexOf('\n## Quellen\n'), body.lastIndexOf('\n## Sources\n'));
+  if (cut >= 0) body = body.slice(0, cut);
+  const text = body
       .replace(/```[\s\S]*?```/g, ' ')          // code fences
       .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')    // images
       .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')  // links → keep the label

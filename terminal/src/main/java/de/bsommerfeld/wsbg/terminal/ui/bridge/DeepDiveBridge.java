@@ -343,11 +343,15 @@ public final class DeepDiveBridge {
     }
 
     /** Prose word count for the reading-time badge — the list payload carries
-     *  no report text, so the count travels instead. Tokens without a letter
-     *  or digit (table pipes, heading markers, rules) are pure markdown
-     *  scaffolding, not words. */
+     *  no report text, so the count travels instead. The source register at the
+     *  tail is reference material, not reading matter, and stays out of the
+     *  count. Tokens without a letter or digit (table pipes, heading markers,
+     *  rules) are pure markdown scaffolding, not words. */
     private static int reportWords(String report) {
         if (report == null || report.isBlank()) return 0;
+        int cut = report.lastIndexOf("\n## Quellen\n");
+        if (cut < 0) cut = report.lastIndexOf("\n## Sources\n");
+        if (cut >= 0) report = report.substring(0, cut);
         int words = 0;
         for (String token : report.split("\\s+")) {
             if (token.codePoints().anyMatch(Character::isLetterOrDigit)) words++;
