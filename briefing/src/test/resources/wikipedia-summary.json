@@ -1,0 +1,26 @@
+{
+ "type": "standard",
+ "title": "SAP",
+ "displaytitle": "<span lang=\"de\" dir=\"ltr\"><span class=\"mw-page-title-main\">SAP</span></span>",
+ "namespace": {
+  "id": 0,
+  "text": ""
+ },
+ "wikibase_item": "Q552581",
+ "titles": {
+  "canonical": "SAP",
+  "normalized": "SAP",
+  "display": "<span lang=\"de\" dir=\"ltr\"><span class=\"mw-page-title-main\">SAP</span></span>"
+ },
+ "pageid": 45027,
+ "lang": "de",
+ "description": "deutscher Softwarehersteller",
+ "description_source": "central",
+ "extract": "SAP ist ein global tätiger deutscher Softwarekonzern mit Sitz in Walldorf, dessen Muttergesellschaft SAP SE im DAX notiert ist. Mit einer Marktkapitalisierung von rund 350 Milliarden Dollar gehört es 2025 zu den 30 wertvollsten börsennotierten Unternehmen der Welt.",
+ "extract_html": "<p><b>SAP</b> ist ein global tätiger deutscher Softwarekonzern mit Sitz in Walldorf, dessen Muttergesellschaft SAP SE im DAX notiert ist. Mit einer Marktkapitalisierung von rund 350 Milliarden Dollar gehört es 2025 zu den 30 wertvollsten börsennotierten Unternehmen der Welt.</p>",
+ "content_urls": {
+  "desktop": {
+   "page": "https://de.wikipedia.org/wiki/SAP"
+  }
+ }
+}

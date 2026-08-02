@@ -1,0 +1,36 @@
+{
+  "head" : {
+    "vars" : [ "isin", "lei", "employees", "revenue", "inception", "website" ]
+  },
+  "results" : {
+    "bindings" : [ {
+      "isin" : {
+        "type" : "literal",
+        "value" : "DE0007164600"
+      },
+      "lei" : {
+        "type" : "literal",
+        "value" : "529900D6BF99LW9R2E68"
+      },
+      "employees" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#decimal",
+        "type" : "literal",
+        "value" : "106043"
+      },
+      "revenue" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#decimal",
+        "type" : "literal",
+        "value" : "31207000000"
+      },
+      "inception" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#dateTime",
+        "type" : "literal",
+        "value" : "1972-04-01T00:00:00Z"
+      },
+      "website" : {
+        "type" : "uri",
+        "value" : "https://www.sap.com/"
+      }
+    } ]
+  }
+}

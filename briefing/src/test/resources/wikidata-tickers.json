@@ -1,0 +1,58 @@
+{
+ "head": {
+  "vars": [
+   "exchange",
+   "exchangeLabel",
+   "ticker"
+  ]
+ },
+ "results": {
+  "bindings": [
+   {
+    "ticker": {
+     "type": "literal",
+     "value": "SAP"
+    },
+    "exchange": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q13677"
+    },
+    "exchangeLabel": {
+     "xml:lang": "de",
+     "type": "literal",
+     "value": "New York Stock Exchange"
+    }
+   },
+   {
+    "ticker": {
+     "type": "literal",
+     "value": "SAP"
+    },
+    "exchange": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q151139"
+    },
+    "exchangeLabel": {
+     "xml:lang": "de",
+     "type": "literal",
+     "value": "B\u00f6rse Frankfurt"
+    }
+   },
+   {
+    "ticker": {
+     "type": "literal",
+     "value": "SAP"
+    },
+    "exchange": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q936563"
+    },
+    "exchangeLabel": {
+     "xml:lang": "de",
+     "type": "literal",
+     "value": "Borsa Italiana"
+    }
+   }
+  ]
+ }
+}

@@ -1,0 +1,50 @@
+[
+ {
+  "ID": 571892,
+  "title": "Crypto Updates: Binance Depreciates by 1.45%",
+  "description": "Today's cryptos market is characterized by modest daily movements, with Binance standing out as the frontrunner with a -1.45% decrease.",
+  "url": "/crypto",
+  "author": "CALCULATOR",
+  "country": "Crypto",
+  "category": "Crypto",
+  "image": null,
+  "importance": 1,
+  "date": "2026-08-01T13:30:18.733",
+  "expiration": "2026-08-02T01:30:00",
+  "html": "Today's cryptos market is characterized by modest daily movements, with <a class=\"stream-symbol-link\" href=\"/bnbusd:cur\">Binance</a> standing out as the frontrunner with a <span style=\"color: #F44336;\">-1.45%</span> decrease.",
+  "type": null,
+  "thumbnail": null
+ },
+ {
+  "ID": 571887,
+  "title": "Czech Republic Credit Ratings Affirm at AA- with Stable Outlook",
+  "description": "Fitch Ratings affirmed the Czech Republic\u2019s long-term foreign- and local-currency issuer default ratings at \u2018AA-\u2019 with a Stable Outlook, highlighting credible macroeconomic policies, strong institutions, and a solid external balance sheet. Fiscal deficits are set to widen under the new coalition\u2019s looser stance, but Fitch expects easing to remain contained, keeping debt below peer medians. Growth prospects are robust, supporting income convergence with richer EU members, though risks arise from the government\u2019s confrontational tone toward the EU on migration and climate policy. EU fund disbursements are not seen as jeopardized, and overall resilience persists despite fiscal pressures. Standard & Poor's credit rating for Czech Republic stands at AA- with stable outlook. Moody's credit rating for Czech Republic was last set at Aa3 with stable outlook, and DBRS' credit rating was last reported at AA with stable outlook.",
+  "url": "/czech-republic/rating",
+  "author": "Farida Husna",
+  "country": "Czech Republic",
+  "category": "Credit Rating",
+  "image": null,
+  "importance": 1,
+  "date": "2026-08-01T01:22:29.287",
+  "expiration": "2026-08-31T23:59:00",
+  "html": null,
+  "type": null,
+  "thumbnail": null
+ },
+ {
+  "ID": 571872,
+  "title": "South Korea Export Growth Above Forecasts",
+  "description": "Exports soared 62.8% yoy to USD 98.89 billion in July 2026, surpassing market estimates of 59.0%, though easing from a downwardly revised 70.7% surge in June. It was the second-highest figure on record after exports exceeded USD 100 billion for the first time in June, mainly driven by a surge in semiconductor shipments. Shipments rose for the 14th consecutive month, driven by strong demand for memory chips, with semiconductor exports surging 178.8% to a record USD 41.01 billion, surpassing USD 40 billion for the second consecutive month. Computer shipments also jumped 404.0%, while exports of wireless communication devices and ships rose 51.0% and 46.9%, respectively. Export growth was also recorded in petroleum products (34.1%), biohealth (30.4%), cosmetics (37.8%), and automobiles (7%). Shipments to China nearly doubled to USD 21.68 billion, while those to the US soared 67.8%, boosted by expanding investment in AI servers. Exports also increased to ASEAN (73.7%) and the EU (55.7%).",
+  "url": "/south-korea/exports-yoy",
+  "author": "Chusnul Chotimah",
+  "country": "South Korea",
+  "category": "Exports YoY",
+  "image": null,
+  "importance": 2,
+  "date": "2026-08-01T00:12:44.043",
+  "expiration": "2026-08-31T23:59:00",
+  "html": null,
+  "type": null,
+  "thumbnail": null
+ }
+]
