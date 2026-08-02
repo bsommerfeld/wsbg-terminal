@@ -93,6 +93,19 @@ public final class CefFetchClient {
      */
     private static final long WARMUP_BUDGET_MS = 2 * 60_000;
     private static final Duration WARMUP_FETCH_TIMEOUT = Duration.ofSeconds(15);
+    /**
+     * How long the warmup poller waits for the anchor's FIRST load event before
+     * probing anyway. Probing a browser whose document isn't up yet cannot
+     * succeed - {@code executeJavaScript} lands nowhere, nothing ever calls
+     * back, and the probe burns the full {@link #WARMUP_FETCH_TIMEOUT}. That
+     * was the standing ~15 s tax on every new host (2026-08-03): the first
+     * caller's {@link #ensureReady} kicks the warmup at browser-creation time,
+     * ~0.6 s before the anchor is through. Waiting for the document first turns
+     * "ready after 2 probe(s)" (~17.5 s) into "ready after 1 probe" (~1 s).
+     * Bounded, not blocking: a page that never loads still gets probed, and the
+     * warmup budget stays the real ceiling.
+     */
+    private static final long ANCHOR_LOAD_WAIT_MS = 20_000;
 
     private final AtomicBoolean started = new AtomicBoolean(false);
     /** Router handler + load listener registered exactly once — a failed browser
@@ -109,6 +122,12 @@ public final class CefFetchClient {
     /** Wall-clock of the last fetch begin — the LRU/idle-TTL eviction signal. */
     private volatile long lastUsedAt = System.currentTimeMillis();
     private final AtomicBoolean warmupRunning = new AtomicBoolean(false);
+    /**
+     * Counted down by the first load-end on our browser: from then on a probe
+     * has a document to run in. Never reset - a re-anchor reloads an existing
+     * document, it doesn't take the page away.
+     */
+    private final CountDownLatch anchorLoadedLatch = new CountDownLatch(1);
     private volatile CountDownLatch readyLatch = new CountDownLatch(1);
     private volatile boolean ready = false;
     /**
@@ -361,6 +380,7 @@ public final class CefFetchClient {
             try {
                 long deadline = System.currentTimeMillis() + WARMUP_BUDGET_MS;
                 long delay = WARMUP_POLL_MS;
+                awaitAnchorDocument();
                 for (int attempt = 1;
                         !ready && !closed.get() && System.currentTimeMillis() < deadline;
                         attempt++) {
@@ -408,6 +428,18 @@ public final class CefFetchClient {
         t.start();
     }
 
+    /**
+     * Holds the warmup poller until the anchor document exists (see
+     * {@link #ANCHOR_LOAD_WAIT_MS}). Bounded: on timeout we probe anyway, so a
+     * host that never fires load-end still runs its full budget rather than
+     * silently never verifying.
+     */
+    private void awaitAnchorDocument() throws InterruptedException {
+        if (anchorLoadedLatch.await(ANCHOR_LOAD_WAIT_MS, TimeUnit.MILLISECONDS)) return;
+        LOG.debug("[{}] anchor document still not loaded after {} ms — probing anyway",
+                label, ANCHOR_LOAD_WAIT_MS);
+    }
+
     private void start() {
         if (!started.compareAndSet(false, true)) return;
         registerHandlersOnce(); // forces CEF init — must precede the cookie seed
@@ -445,7 +477,9 @@ public final class CefFetchClient {
         // Don't trust this as "ready" — start the warmup poller, which confirms the
         // session is usable by fetching real data.
         loadEndListener = (b, status) -> {
-            if (b == browser && !ready) {
+            if (b != browser) return;
+            anchorLoadedLatch.countDown(); // a document exists — probes can land now
+            if (!ready) {
                 LOG.info("CEF fetch '{}' anchor page loaded (status {}); verifying session…", label, status);
                 kickWarmup();
             }
