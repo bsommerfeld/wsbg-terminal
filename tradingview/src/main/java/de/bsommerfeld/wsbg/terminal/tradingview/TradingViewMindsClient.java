@@ -162,6 +162,7 @@ public class TradingViewMindsClient implements NewsSource {
      */
     static List<String> tvSymbolCandidates(String house) {
         if (house.indexOf(':') >= 0) return List.of(house); // already TradingView-style
+        if (!isEquityShaped(house)) return List.of();
         int dot = house.indexOf('.');
         if (dot >= 0) {
             String base = house.substring(0, dot);
@@ -170,6 +171,36 @@ public class TradingViewMindsClient implements NewsSource {
             return List.of(); // .PA, .L, … — unproven mappings stay a no-op
         }
         return List.of("NASDAQ:" + house, "NYSE:" + house);
+    }
+
+    /**
+     * True when a house symbol denotes an instrument that CAN sit on an equity
+     * venue. The Yahoo symbol grammar marks the ones that structurally cannot,
+     * and hanging {@code NASDAQ:}/{@code NYSE:} on those produces a request the
+     * endpoint rejects with 422 every single time - no listing exists to find:
+     * <ul>
+     *   <li>{@code ^…} - an index ({@code ^DJI}, {@code ^TECDAX})</li>
+     *   <li>{@code …=X} / {@code …=F} - an FX pair or a future ({@code JPY=X},
+     *       {@code CL=F})</li>
+     *   <li>{@code BASE-QUOTE} with a 3-4 letter quote - a crypto pair
+     *       ({@code BTC-USD}); a US share class ({@code BRK-B}) carries a
+     *       one-letter tail and stays eligible</li>
+     * </ul>
+     * These live on TradingView's own venues ({@code CRYPTO:}, {@code FX:},
+     * indices), which this client does not vouch for - so the honest answer is
+     * a no-op, not a guessed venue. Package-private for tests.
+     */
+    static boolean isEquityShaped(String house) {
+        if (house == null || house.isBlank()) return false;
+        if (house.charAt(0) == '^' || house.indexOf('=') >= 0) return false;
+        int dash = house.lastIndexOf('-');
+        if (dash >= 0) {
+            String quote = house.substring(dash + 1);
+            if (quote.length() >= 3 && quote.length() <= 4 && quote.chars().allMatch(Character::isLetter)) {
+                return false; // BTC-USD, ETH-EUR … — a currency-quoted pair
+            }
+        }
+        return true;
     }
 
     /**
