@@ -34,7 +34,10 @@ public record WebResponse(int status, String body, Map<String, String> headers) 
      * direct-first chain would "fall through" every cache revalidation into the
      * browser joker and refetch a full 200, 2026-07-13 audit C1), and the
      * plain client errors that are about the REQUEST, not the client's
-     * fingerprint (404/400/405/410/451 — a real browser gets the same answer;
+     * fingerprint (404/400/405/410/422/451 — a real browser gets the same
+     * answer; 422 joined on 2026-08-03: a semantic rejection of the parameters
+     * is 400's twin, and treating it as rescuable had every unsupported symbol
+     * escalate into the browser joker and wait out its full readiness window;
      * 401 stays NON-definitive on purpose: Yahoo's crumb-locked endpoints
      * 401 a bare client but can answer a browser session). Wall-shaped
      * statuses (403/429/5xx) stay non-definitive so the joker can rescue them.
@@ -42,7 +45,7 @@ public record WebResponse(int status, String body, Map<String, String> headers) 
     public boolean isDefinitive() {
         return (status >= 200 && status < 300) || status == 304
                 || status == 404 || status == 400 || status == 405
-                || status == 410 || status == 451;
+                || status == 410 || status == 422 || status == 451;
     }
 
     /** Case-insensitive header lookup. */

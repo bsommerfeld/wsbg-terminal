@@ -57,4 +57,18 @@ class WebFetchChainCooldownTest {
                 Map.of(), Duration.ofSeconds(1)).status());
         assertEquals(1, healthy.get());
     }
+
+    @Test
+    void a422StopsTheChainInsteadOfEscalatingToTheJoker() throws Exception {
+        // A semantic rejection of the parameters is 400's twin: the browser gets
+        // the identical answer, so escalating only buys its readiness wait.
+        AtomicInteger direct = new AtomicInteger();
+        AtomicInteger joker = new AtomicInteger();
+        WebFetchChain chain = new WebFetchChain(
+                List.of(answering(422, direct), answering(200, joker)));
+        assertEquals(422, chain.fetch("https://definitive-422-host.invalid/x",
+                Map.of(), Duration.ofSeconds(1)).status());
+        assertEquals(1, direct.get());
+        assertEquals(0, joker.get(), "the second transport is never asked");
+    }
 }
