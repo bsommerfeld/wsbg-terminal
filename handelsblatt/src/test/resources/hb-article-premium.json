@@ -1,0 +1,60 @@
+{
+ "meta": {
+  "id": "100243249",
+  "type": "article",
+  "source": "ld-hb",
+  "classification": "PREMIUM",
+  "contentAccessCategory": "H_PLUS",
+  "subscriptionTags": [
+   "HB_DIGITALPASS_STANDARD"
+  ],
+  "contentCategories": [],
+  "audiohubProduction": true
+ },
+ "url": {
+  "href": "/technik/it-internet/kuenstliche-intelligenz-wie-metas-schulden-in-deutschen-sparpolicen-landen-koennten/100243249.html",
+  "attrs": []
+ },
+ "source": null,
+ "type": "storyDetailPage",
+ "header": {
+  "headline": "Wie Metas Schulden in deutschen Sparpolicen landen könnten",
+  "kicker": "Künstliche Intelligenz",
+  "leadText": "Finanzprofis finden immer neue Wege, KI-Milliardeninvestitionen aus den Bilanzen der Tech-Konzerne zu halten. Das Risiko trägt unter anderem die Allianz – und deren Kunden. Eine Rekonstruktion.",
+  "dates": {
+   "published": "2026-08-02T16:27:22.022Z",
+   "updated": "2026-08-02T16:27:22.022Z",
+   "republished": false
+  }
+ },
+ "elements": [
+  {
+   "content": "<p>Der Beignet ist Louisianas Antwort auf den Krapfen. Für die Spezialität der Partymetropole New Orleans backen sie Hefeteig in heißem Fett aus, bis er seine Größe verdoppelt. Dann noch Puderzucker drauf – fertig. Konsumiert wird das Süßgebäck besonders gern zu Karneval.</p>",
+   "type": "paragraphStorylineElement",
+   "isPaywalled": false,
+   "isValid": true,
+   "image": null
+  },
+  {
+   "content": "<p>Es war eine recht eigenwillige Entscheidung, einer Anleihe zur Finanzierung des Ausbaus der Künstlichen Intelligenz (KI) ausgerechnet den Namen eines mit Luft gefüllten Teilchens zu geben. Gebäck wie Finanzinstrument sind dabei eng mit Exzess verbunden: Die Zweckgesellschaft Beignet Investor LLC lud sich damit im Oktober Verbindlichkeiten in Höhe von 27,3 Milliarden Dollar auf. Es war die größte Einzelanleihe, die je begeben wurde.</p>",
+   "type": "paragraphStorylineElement",
+   "isPaywalled": false,
+   "isValid": true,
+   "image": null
+  },
+  {
+   "content": "<p>Mittlerweile gilt sie als Vorbild für eine ganze Reihe ähnlicher Papiere. Die Konstrukte helfen, zu verschleiern, wer sich das Geld am Ende wirklich leiht.</p>",
+   "type": "paragraphStorylineElement",
+   "isPaywalled": false,
+   "isValid": true,
+   "image": null
+  }
+ ],
+ "lazy": {
+  "hasPaywall": true,
+  "accessGrantingProduct": null
+ },
+ "summary": {
+  "status": "unavailable"
+ }
+}

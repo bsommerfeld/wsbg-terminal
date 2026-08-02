@@ -1,0 +1,37 @@
+{
+ "hasPaywall": false,
+ "accessGrantingProduct": null,
+ "elements": [
+  {
+   "content": "<p>Der US-Präsident gab in seinem Beitrag auf <a href=\"/boerse/isin/S117400\" class=\"vhb-stock-icon icon-link\">Truth Social</a> an, Israel schließe sich seinem Vorhaben an, den Krieg durch die Umsetzung der Waffenruhevereinbarung zu beenden. Israel äußerte sich nicht öffentlich zu der Ankündigung des US-Präsidenten. Wohl an die Vermittler gerichtet schob Trump hinterher: „Macht euch alle an die Arbeit und ERLEDIGT das.“ Weitere Einzelheiten zu dem angeblichen diplomatischen Durchbruch nannte Trump zunächst nicht.</p>",
+   "type": "paragraphStorylineElement",
+   "isPaywalled": false,
+   "isValid": true,
+   "image": null
+  },
+  {
+   "content": "<p>Aufgrund angeblicher Fortschritte bei den Bemühungen um eine diplomatische Einigung mit dem <a href=\"/themen/iran\" target=\"_self\" class=\"topic-link\">Iran</a> hat US-Präsident <a href=\"/themen/donald-trump\" target=\"_self\" class=\"topic-link\">Donald Trump</a> in der Nacht zu Sonntag eine neue Angriffswelle des Militärs vorerst abgesagt. Voraussetzung dafür sei, dass schnell eine Einigung erreicht werde, schrieb Trump <a target=\"_blank\" href=\"https://truthsocial.com/@realDonaldTrump/posts/117023461141824050\">in der Nacht auf seiner Plattform Truth Social</a>.</p>",
+   "type": "paragraphStorylineElement",
+   "isPaywalled": false,
+   "isValid": true,
+   "image": null
+  },
+  {
+   "content": "<p>Das US-Militär stehe mit all seiner Macht zu einem Angriff bereit, wie es ihn „seit dem Zweiten Weltkrieg nicht mehr gegeben hat“. Aber der Iran und andere Länder in der Region hätten darum gebeten, davon abzusehen, da es nun „Umrisse einer Einigung“ gebe.</p>",
+   "type": "paragraphStorylineElement",
+   "isPaywalled": false,
+   "isValid": true,
+   "image": null
+  },
+  {
+   "content": "<p>Dazu gehöre die „komplette“ Öffnung der Straße von Hormus und „ein Ende der vom Iran ausgehenden atomaren Bedrohung“, so Trump. Auch <a href=\"/themen/israel\" target=\"_self\" class=\"topic-link\">Israel</a> werde sich an die Vereinbarung halten, den Iran vorerst nicht wieder anzugreifen. Mehrere US-Medien hatten zuvor von einem bevorstehenden Großangriff auf Ziele im Iran berichtet, der auch Attacken auf Irans Energieinfrastruktur umfassen sollte.</p>",
+   "type": "paragraphStorylineElement",
+   "isPaywalled": false,
+   "isValid": true,
+   "image": null
+  }
+ ],
+ "summary": {
+  "status": "unavailable"
+ }
+}

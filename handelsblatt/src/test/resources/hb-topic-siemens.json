@@ -1,0 +1,237 @@
+{
+ "type": "topicSeriesPage",
+ "url": {
+  "href": "/themen/siemens",
+  "attrs": []
+ },
+ "seo": {
+  "title": "Siemens News: Aktuelle Nachrichten von heute zum Technologiekonzern"
+ },
+ "meta": {
+  "id": "19753440"
+ },
+ "header": {
+  "type": "defaultSeriesPageHeader",
+  "headline": "Siemens",
+  "leadText": "<p class=\"MsoNormal\">Die Siemens AG ist ein deutscher integrierter Technologiekonzern mit Doppelsitz in <a href=\"/themen/berlin\" target=\"_self\">Berlin</a> und München. Das Unternehmen ist in den vier "
+ },
+ "teasers": [
+  {
+   "authorsStyle": "full",
+   "contentAccessCategory": "H_PLUS",
+   "dates": {
+    "published": "2026-07-31T05:37:00.000Z",
+    "updated": "2026-07-31T05:37:00.000Z",
+    "republished": false
+   },
+   "headline": "Siemens Healthineers senkt Umsatzprognose",
+   "id": "100244193",
+   "kicker": "Medizintechnik",
+   "label": null,
+   "leadText": "Der Hersteller von Medizintechnik leidet unter dem Umbau des chinesischen Gesundheitssystems. Eine Sparte, die ausgegliedert werden soll, ist besonders betroffen.",
+   "topicIds": [],
+   "url": {
+    "href": "/unternehmen/industrie/quartalszahlen-siemens-healthineers-senkt-umsatzprognose/100244193.html",
+    "attrs": []
+   },
+   "type": "defaultTeaser",
+   "doctype": null,
+   "image": {
+    "id": "Ex-gIdEs23mz",
+    "type": "image",
+    "urlFriendlyTitle": "siemens-healthineers-experten-mit-quantenzaehlendem-ct-fuer-deutschen-zukunftspreis-nominiertinnen",
+    "caption": "Siemens Healthineers Experten mit quantenzählendem CT für Deutschen Zukunftspreis nominiert\r\n\r\nInnenleben eines Computerthomographen von Siemens Healthineers\r\n\r\nQuelle: Deutscher Zukunftspreis/Ansgar Pudenz",
+    "credits": "Foto: Siemens Healthineers",
+    "baseUrl": {
+     "href": "https://images.handelsblatt.com",
+     "attrs": []
+    },
+    "url": {
+     "href": "https://images.handelsblatt.com/do/not/use/this/url/siemens-healthineers-experten-mit-quantenzaehlendem-ct-fuer-deutschen-zukunftspreis-nominiertinnen.jpg",
+     "attrs": []
+    },
+    "fileExtension": "jpeg"
+   },
+   "authors": [
+    {
+     "firstName": "Axel",
+     "lastName": "Höpner"
+    }
+   ]
+  },
+  {
+   "authorsStyle": "full",
+   "contentAccessCategory": "NONE",
+   "dates": {
+    "published": "2026-07-31T02:03:02.531Z",
+    "updated": "2026-07-31T02:03:02.531Z",
+    "republished": false
+   },
+   "headline": "Innovationen – Wir brauchen ein Experimentierjahr für Gründer",
+   "id": "100240500",
+   "kicker": "Gastkommentar",
+   "label": null,
+   "leadText": "Die Deutschen sind risikoavers. Damit sie wagen, groß zu denken, brauchen sie finanzielle Absicherung. Für den Staat lohnt sich das auf jeden Fall, ist Investor Carsten Maschmeyer überzeugt.",
+   "topicIds": [],
+   "url": {
+    "href": "/meinung/gastbeitraege/gastkommentar-innovationen-wir-brauchen-ein-experimentierjahr-fuer-gruender/100240500.html",
+    "attrs": []
+   },
+   "type": "defaultTeaser",
+   "doctype": null,
+   "image": {
+    "id": "9GyzyeziTbRd",
+    "type": "image",
+    "urlFriendlyTitle": "145-gastkommentar-et-31.07.2026-carsten-maschmeyer",
+    "caption": "145, Gastkommentar, ET: 31.07.2026, Carsten Maschmeyer",
+    "credits": "Foto: IMAGO/Panama Pictures, Bloomberg",
+    "baseUrl": {
+     "href": "https://images.handelsblatt.com",
+     "attrs": []
+    },
+    "url": {
+     "href": "https://images.handelsblatt.com/do/not/use/this/url/145-gastkommentar-et-31.07.2026-carsten-maschmeyer.jpg",
+     "attrs": []
+    },
+    "fileExtension": "jpeg"
+   },
+   "authors": []
+  },
+  {
+   "authorsStyle": "full",
+   "contentAccessCategory": "H_PLUS",
+   "dates": {
+    "published": "2026-07-30T15:59:46.353Z",
+    "updated": "2026-07-30T15:59:46.353Z",
+    "republished": false
+   },
+   "headline": "Sechs Dax-Aktien, deren Gewinnprognosen aus der Reihe fallen – und was das für ihr Kurspotenzial bedeutet",
+   "id": "100243132",
+   "kicker": "Geldanlage",
+   "label": null,
+   "leadText": "Für vier Konzerne steigen seit April die Erwartungen der Analysten um mehr als zehn Prozent, für zwei fallen sie um mehr als zehn Prozent. Daraus ergeben sich neue Chancen für Anleger.",
+   "topicIds": [],
+   "url": {
+    "href": "/finanzen/anlagestrategie/geldanlage-auf-diese-sechs-dax-aktien-sollten-anleger-jetzt-achten/100243132.html",
+    "attrs": []
+   },
+   "type": "defaultTeaser",
+   "doctype": null,
+   "image": {
+    "id": "DYGfmsp198W0",
+    "type": "image",
+    "urlFriendlyTitle": "aktien-gewinnerwartungen",
+    "caption": "",
+    "credits": "Foto: Getty Images, PR [M]",
+    "baseUrl": {
+     "href": "https://images.handelsblatt.com",
+     "attrs": []
+    },
+    "url": {
+     "href": "https://images.handelsblatt.com/do/not/use/this/url/aktien-gewinnerwartungen.png",
+     "attrs": []
+    },
+    "fileExtension": "png"
+   },
+   "authors": [
+    {
+     "firstName": "Ulf",
+     "lastName": "Sommer"
+    }
+   ]
+  },
+  {
+   "authorsStyle": "hidden",
+   "contentAccessCategory": "NONE",
+   "dates": {
+    "published": "2026-07-30T11:11:27.000Z",
+    "updated": "2026-07-30T11:11:27.000Z",
+    "republished": false
+   },
+   "headline": "EU startet Milliardenprojekt für sieben KI-Gigafactories",
+   "id": "100243973",
+   "kicker": "Digitale Souveränität",
+   "label": null,
+   "leadText": "Knapp 10 Milliarden Euro Fördermittel stehen bereit – wer setzt sich im Rennen um Europas KI-Zukunft durch? Die Telekom, Schwarz Digits und Co. kämpfen um den Zuschlag für die neuen Gigafactories.",
+   "topicIds": [],
+   "url": {
+    "href": "/technik/it-internet/digitale-souveraenitaet-eu-startet-milliardenprojekt-fuer-sieben-ki-gigafactories/100243973.html",
+    "attrs": []
+   },
+   "type": "defaultTeaser",
+   "doctype": null,
+   "image": {
+    "id": "P-hZCTONDrWg",
+    "type": "image",
+    "urlFriendlyTitle": "rechenzentrum",
+    "caption": "Die EU möchte sich beim Thema KI aus der Abhängigkeit von den USA und China befreien. (Symbolbild)",
+    "credits": "Foto: Marijan Murat/dpa",
+    "baseUrl": {
+     "href": "https://images.handelsblatt.com",
+     "attrs": []
+    },
+    "url": {
+     "href": "https://images.handelsblatt.com/do/not/use/this/url/rechenzentrum.jpg",
+     "attrs": []
+    },
+    "fileExtension": "jpeg"
+   },
+   "authors": [
+    {
+     "firstName": "dpa",
+     "lastName": " "
+    }
+   ]
+  },
+  {
+   "authorsStyle": "full",
+   "contentAccessCategory": "H_PLUS",
+   "dates": {
+    "published": "2026-07-30T09:42:08.946Z",
+    "updated": "2026-07-30T09:42:08.946Z",
+    "republished": false
+   },
+   "headline": "Im Siemens-Vorstand deutet sich eine neue Machtverteilung an – Umbau verunsichert Belegschaft",
+   "id": "100243616",
+   "kicker": "Technologiekonzern ",
+   "label": null,
+   "leadText": "In Gesprächen mit Insidern konkretisiert sich die Unruhe, die die Umstrukturierung bei Siemens erzeugt. Besonders sensibel ist eine Nachfolgeregelung, die eigentlich noch gar nicht ansteht.",
+   "topicIds": [],
+   "url": {
+    "href": "/unternehmen/industrie/siemens-so-koennte-die-machtverteilung-im-vorstand-kuenftig-aussehen/100243616.html",
+    "attrs": []
+   },
+   "type": "defaultTeaser",
+   "doctype": null,
+   "image": {
+    "id": "wZrfUCUGed9z",
+    "type": "image",
+    "urlFriendlyTitle": "siemens",
+    "caption": "Siemens-Chef Busch (M.), Vorstände Neike (l.) und Körte:",
+    "credits": "Foto: Bloomberg, Dpa [M]",
+    "baseUrl": {
+     "href": "https://images.handelsblatt.com",
+     "attrs": []
+    },
+    "url": {
+     "href": "https://images.handelsblatt.com/do/not/use/this/url/siemens.png",
+     "attrs": []
+    },
+    "fileExtension": "png"
+   },
+   "authors": [
+    {
+     "firstName": "Axel",
+     "lastName": "Höpner"
+    }
+   ]
+  }
+ ],
+ "pagination": {
+  "totalPages": 6,
+  "currentPage": 1,
+  "itemsPerPage": 50,
+  "elementId": null
+ },
+ "relatedTopics": []
+}

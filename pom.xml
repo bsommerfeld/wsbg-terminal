@@ -48,6 +48,7 @@
         <module>cnbc</module>
         <module>welt</module>
         <module>kapitalmarktexperten</module>
+        <module>handelsblatt</module>
         <module>fn-news</module>
         <module>websearch</module>
         <module>briefing</module>
@@ -281,6 +282,11 @@
             <dependency>
                 <groupId>de.bsommerfeld</groupId>
                 <artifactId>kapitalmarktexperten</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>handelsblatt</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

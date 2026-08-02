@@ -1,0 +1,266 @@
+{
+ "count": 590,
+ "authors": [],
+ "sections": [],
+ "teasers": [
+  {
+   "authorsStyle": "full",
+   "contentAccessCategory": "H_PLUS",
+   "dates": {
+    "published": "2026-07-31T05:37:00.000Z",
+    "updated": "2026-07-31T05:37:00.000Z",
+    "republished": false
+   },
+   "headline": "Siemens Healthineers senkt Umsatzprognose",
+   "id": "100244193",
+   "kicker": "Medizintechnik",
+   "label": null,
+   "leadText": "Der Hersteller von Medizintechnik leidet unter dem Umbau des chinesischen Gesundheitssystems. Eine Sparte, die ausgegliedert werden soll, ist besonders betroffen.",
+   "topicIds": [],
+   "url": {
+    "href": "/unternehmen/industrie/quartalszahlen-siemens-healthineers-senkt-umsatzprognose/100244193.html",
+    "attrs": []
+   },
+   "type": "defaultTeaser",
+   "doctype": null,
+   "image": {
+    "id": "Ex-gIdEs23mz",
+    "type": "image",
+    "urlFriendlyTitle": "siemens-healthineers-experten-mit-quantenzaehlendem-ct-fuer-deutschen-zukunftspreis-nominiertinnen",
+    "caption": "Siemens Healthineers Experten mit quantenzählendem CT für Deutschen Zukunftspreis nominiert\r\n\r\nInnenleben eines Computerthomographen von Siemens Healthineers\r\n\r\nQuelle: Deutscher Zukunftspreis/Ansgar Pudenz",
+    "credits": "Foto: Siemens Healthineers",
+    "baseUrl": {
+     "href": "https://images.handelsblatt.com",
+     "attrs": []
+    },
+    "url": {
+     "href": "https://images.handelsblatt.com/do/not/use/this/url/siemens-healthineers-experten-mit-quantenzaehlendem-ct-fuer-deutschen-zukunftspreis-nominiertinnen.jpg",
+     "attrs": []
+    },
+    "fileExtension": "jpeg"
+   },
+   "authors": [
+    {
+     "firstName": "Axel",
+     "lastName": "Höpner"
+    }
+   ]
+  },
+  {
+   "authorsStyle": "full",
+   "contentAccessCategory": "NONE",
+   "dates": {
+    "published": "2026-07-31T05:14:04.473Z",
+    "updated": "2026-07-31T05:14:04.473Z",
+    "republished": false
+   },
+   "headline": "Wie viele Menschen braucht man noch in einer Fabrik voller Roboter, Artem Sokolov?",
+   "id": "100244140",
+   "kicker": "Disrupt",
+   "label": null,
+   "leadText": "Schaeffler, Bosch und Siemens testen die Roboter von Europas jüngster Robotik-Milliardenfirma bereits. Im Podcast spricht der Humanoid-CEO über die Disruption der Fabriken.",
+   "topicIds": [],
+   "url": {
+    "href": "/audio/disrupt-podcast/disrupt-wie-viele-menschen-braucht-man-noch-in-einer-roboterfabrik/100244140.html",
+    "attrs": []
+   },
+   "type": "podcastTeaser",
+   "image": {
+    "id": "gcrRyFwVJHpt",
+    "type": "image",
+    "urlFriendlyTitle": "dusrupt-podcast-teaser-2025",
+    "caption": "",
+    "credits": "Foto: Handelsblatt",
+    "baseUrl": {
+     "href": "https://images.handelsblatt.com",
+     "attrs": []
+    },
+    "url": {
+     "href": "https://images.handelsblatt.com/do/not/use/this/url/dusrupt-podcast-teaser-2025.jpg",
+     "attrs": []
+    },
+    "fileExtension": "jpeg"
+   },
+   "podcast": {
+    "id": "hb:podigee:920d1ca99a0fa8ad07d60e8197d0cb49",
+    "duration": 1566
+   },
+   "authors": []
+  },
+  {
+   "authorsStyle": "full",
+   "contentAccessCategory": "NONE",
+   "dates": {
+    "published": "2026-08-02T11:13:14.836Z",
+    "updated": "2026-08-02T11:13:14.836Z",
+    "republished": false
+   },
+   "headline": "Rebellische Maschinen – KI außer Kontrolle",
+   "id": "100244480",
+   "kicker": "Beyond the obvious",
+   "label": null,
+   "leadText": "KI braucht Ordnung und Regeln, wie die KI-Entgleisungen des Sommers 2026 zeigen.",
+   "topicIds": [],
+   "url": {
+    "href": "/audio/bto/beyond-the-obvious-rebellische-maschinen-ki-ausser-kontrolle/100244480.html",
+    "attrs": []
+   },
+   "type": "podcastTeaser",
+   "image": {
+    "id": "pKyBF6FlGqmf",
+    "type": "image",
+    "urlFriendlyTitle": "bto-podcast-teaser-2025",
+    "caption": "",
+    "credits": "Foto: Handelsblatt",
+    "baseUrl": {
+     "href": "https://images.handelsblatt.com",
+     "attrs": []
+    },
+    "url": {
+     "href": "https://images.handelsblatt.com/do/not/use/this/url/bto-podcast-teaser-2025.png",
+     "attrs": []
+    },
+    "fileExtension": "png"
+   },
+   "podcast": {
+    "id": "hb:podigee:6a6d6ebd88c5585c852d1e4f",
+    "duration": 4827
+   },
+   "authors": []
+  },
+  {
+   "authorsStyle": "full",
+   "contentAccessCategory": "H_PLUS",
+   "dates": {
+    "published": "2026-08-02T05:26:00.000Z",
+    "updated": "2026-08-02T05:26:00.000Z",
+    "republished": false
+   },
+   "headline": "„Zu meiner Freiheit gehört eben, dass ich ins Machen verliebt bin“",
+   "id": "100207915",
+   "kicker": "Christian Lindner ",
+   "label": null,
+   "leadText": "Seit mehr als einem halben Jahr ist der ehemalige Finanzminister Vorstandsvize bei Autoland. Das Handelsblatt hat ihn begleitet. Wie macht sich Christian Lindner in seinem neuen Job? ",
+   "topicIds": [],
+   "url": {
+    "href": "/unternehmen/mittelstand/familienunternehmer/christian-lindner-zu-meiner-freiheit-gehoert-dass-ich-ins-machen-verliebt-bin/100207915.html",
+    "attrs": []
+   },
+   "type": "longreadTeaser",
+   "image": {
+    "id": "nyfqc0-PJx0f",
+    "type": "image",
+    "urlFriendlyTitle": "christian-lindner",
+    "caption": "Christian Lindner",
+    "credits": "Foto: Autoland, Picture Alliance [M]",
+    "baseUrl": {
+     "href": "https://images.handelsblatt.com",
+     "attrs": []
+    },
+    "url": {
+     "href": "https://images.handelsblatt.com/do/not/use/this/url/christian-lindner.jpg",
+     "attrs": []
+    },
+    "fileExtension": "jpeg"
+   },
+   "authors": [
+    {
+     "firstName": "Christian",
+     "lastName": "Wermke"
+    }
+   ]
+  },
+  {
+   "authorsStyle": "full",
+   "contentAccessCategory": "H_PLUS",
+   "dates": {
+    "published": "2026-07-31T11:54:00.000Z",
+    "updated": "2026-07-31T15:43:36.617Z",
+    "republished": false
+   },
+   "headline": "Knapp gescheitert: Dax gibt Gewinne nach Rekordjagd ab – Wochenbilanz deutlich positiv",
+   "id": "100244194",
+   "kicker": "Dax aktuell",
+   "label": null,
+   "leadText": "Zum Ende einer gewinnträchtigen Woche näherte sich der Dax zwischenzeitlich einem neuen Allzeithoch. Doch dieses Niveau konnte der Leitindex nicht halten.",
+   "topicIds": [],
+   "url": {
+    "href": "/finanzen/maerkte/marktberichte/dax-aktuell-dax-gibt-gewinne-nach-rekordjagd-ab/100244194.html",
+    "attrs": []
+   },
+   "type": "defaultTeaser",
+   "doctype": null,
+   "image": {
+    "id": "O0jcVGGoDRuT",
+    "type": "image",
+    "urlFriendlyTitle": "graph-aktienkurs-aktienchart-dax-online-dax-bericht",
+    "caption": "Graph, Aktienkurs, Aktienchart, Dax, Online-Dax-Bericht",
+    "credits": "Foto: Getty Images, Montage",
+    "baseUrl": {
+     "href": "https://images.handelsblatt.com",
+     "attrs": []
+    },
+    "url": {
+     "href": "https://images.handelsblatt.com/do/not/use/this/url/graph-aktienkurs-aktienchart-dax-online-dax-bericht.jpg",
+     "attrs": []
+    },
+    "fileExtension": "jpeg"
+   },
+   "authors": [
+    {
+     "firstName": "Julius ",
+     "lastName": "Stockheim"
+    }
+   ]
+  },
+  {
+   "authorsStyle": "full",
+   "contentAccessCategory": "H_PLUS",
+   "dates": {
+    "published": "2026-07-31T13:50:00.000Z",
+    "updated": "2026-07-31T13:50:00.000Z",
+    "republished": false
+   },
+   "headline": "„Excel statt Exzellenz“: Drei Faktoren entscheiden, wer es in deutschen Firmen nach ganz oben schafft    ",
+   "id": "100147821",
+   "kicker": "Aufstiegschancen    ",
+   "label": null,
+   "leadText": "Viele Unternehmen befördern stets die gleichen Menschentypen und lassen die Belegschaft frustriert zurück. Experten erklären die entscheidenden Mechanismen – und was sich ändern muss.       ",
+   "topicIds": [],
+   "url": {
+    "href": "/karriere/fuehrungskraefte-diese-faktoren-entscheiden-ueber-den-aufstieg-in-unternehmen/100147821.html",
+    "attrs": []
+   },
+   "type": "defaultTeaser",
+   "doctype": null,
+   "image": {
+    "id": "ZefaJd0Yyq9P",
+    "type": "image",
+    "urlFriendlyTitle": "unternehmen",
+    "caption": "Karriereleiter: Die klassische Führungskräfte-Entwicklung ist nicht mehr ideal.",
+    "credits": "Foto: midjourney - Thomas Berger",
+    "baseUrl": {
+     "href": "https://images.handelsblatt.com",
+     "attrs": []
+    },
+    "url": {
+     "href": "https://images.handelsblatt.com/do/not/use/this/url/unternehmen.jpg",
+     "attrs": []
+    },
+    "fileExtension": "jpeg"
+   },
+   "authors": [
+    {
+     "firstName": "Claudia",
+     "lastName": "Obmann"
+    }
+   ]
+  }
+ ],
+ "pagination": {
+  "totalPages": 37,
+  "currentPage": 1,
+  "elementId": null,
+  "itemsPerPage": 16
+ }
+}

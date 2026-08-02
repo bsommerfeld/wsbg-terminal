@@ -64,6 +64,16 @@ final class NewsSourceModule extends AbstractModule {
         // all. WELT Plus pieces are marked pre-fetch (feed flag AND /plus URL).
         newsSources.addBinding().to(
                 de.bsommerfeld.wsbg.terminal.welt.WeltNewsClient.class);
+        // Handelsblatt + WirtschaftsWoche: one client, two brands on the same
+        // keyless JSON API (content.www.*, which answers without any headers
+        // at all). The precise instrument door is the TOPIC page machinery -
+        // 1411 HB / 937 WiWo editorially maintained entity slugs beat any
+        // full-text guess - and articles carry hand-tagged ISIN links.
+        // HOUSE RULE, deliberate: METERED counts as walled. The metering API
+        // would hand over the full body, but that is client-side metering we
+        // do not circumvent; headline, lead and ISINs only. Do not "fix" it.
+        newsSources.addBinding().to(
+                de.bsommerfeld.wsbg.terminal.handelsblatt.HandelsblattNewsClient.class);
         // Kapitalmarktexperten: an open wp-json with 19.460 full texts, an
         // ISIN as a TOP-LEVEL field per post (so the ISIN fan answers exactly,
         // not fuzzily) and date windows server-side - a genuine archive leg
