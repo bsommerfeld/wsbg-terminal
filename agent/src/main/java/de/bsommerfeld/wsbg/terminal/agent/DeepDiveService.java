@@ -141,6 +141,20 @@ public class DeepDiveService {
     private static final int MAX_US_HOLDERS = 5;
     private static final int MAX_US_SURPRISES = 4;
     private static final int MAX_ANALYST_ACTIONS = 10;
+    /** CNBC quarters asked for and rendered - the endpoint's own ceiling is eight. */
+    private static final int MAX_CNBC_QUARTERS = 8;
+    /**
+     * Rows scanned off boerse.de's GLOBAL directors'-dealings list before it is
+     * filtered down to this ISIN. One page fetch either way - the number only
+     * decides how far back into the global list the filter may reach.
+     */
+    private static final int BOERSE_INSIDER_SCAN = 400;
+    /** Directors' dealings rendered from the boerse.de leg (newest first). */
+    private static final int MAX_BOERSE_INSIDER_DEALS = 8;
+    /** Analyst calls kept from the ~340-entry boerse.de archive - an arc, not a firehose. */
+    private static final int MAX_BOERSE_ANALYST_CALLS = 10;
+    /** Fiscal years rendered from the boerse.de fundamental page (it serves eight). */
+    private static final int MAX_BOERSE_FUNDAMENTAL_YEARS = 8;
     private static final int MAX_ACTION_TABLE_ROWS = 8;
     /** First-party IR-archive entries kept (reports, calls, calendar). */
     private static final int MAX_IR_ENTRIES = 12;
@@ -157,6 +171,20 @@ public class DeepDiveService {
     /** Headlines kept per history year - an arc marker, never a second firehose. */
     private static final int PRESS_HISTORY_PER_YEAR = 10;
     private static final int MAX_MACRO_ACTUALS = 4;
+    /** Two working weeks ahead — far enough for the next report, cheap enough to sweep. */
+    private static final int WO_SWEEP_DAYS = 14;
+    /** The regulatory docket is context, not the report — keep it short. */
+    private static final int MAX_REG_DOCKET = 4;
+    /** Session breaks matter for the near docket, not for the annual outlook. */
+    private static final int TRADING_BREAK_HORIZON_DAYS = 30;
+    /** Nearest rate decisions worldwide — context, not a world tour. */
+    private static final int MAX_CB_DECISIONS = 6;
+    /** Starts where the traders' calendar stops publishing (about a week out). */
+    private static final int STATS_HORIZON_FROM_DAYS = 8;
+    private static final int STATS_HORIZON_TO_DAYS = 45;
+    private static final int MAX_STATS_DOCKET = 5;
+    /** Nordic filings per subject — the exact-ISIN join rarely needs more. */
+    private static final int MAX_MFN_ITEMS = 6;
     private static final int MAX_MACRO_DOCKET = 4;
     /** Wire-archive lines fed to the room shelf: the first N + the newest M. */
     private static final int WIRE_HISTORY_HEAD = 2;
@@ -262,6 +290,14 @@ public class DeepDiveService {
     private volatile de.bsommerfeld.wsbg.terminal.db.WeatherReportArchive weatherArchive;
     private volatile TradingViewCalendarClient tvCalendar;
     private volatile EconCalendarClient econCalendar;
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.FxStreetCalendarClient fxsCalendar;
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.EqsEventsClient eqsEvents;
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.WoCompanyCalendarClient woCalendar;
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.FederalRegisterClient fedRegister;
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.BorsaItalianaEventsClient euEvents;
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.TradingCalendarClient tradingCalendar;
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.StatsReleaseCalendarClient statsCalendar;
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.MfnDisclosureClient mfnDisclosures;
     private volatile CentralBankCalendarClient cbCalendar;
     private volatile HeadlineArchive headlineArchive;
     private volatile de.bsommerfeld.wsbg.terminal.aggregator.NewsAggregator newsAggregator;
@@ -273,6 +309,15 @@ public class DeepDiveService {
     // The fishing-net's ONE collection point (2026-07-15) — the full catch,
     // judged per subject, never pre-filtered.
     private volatile WorldSignalsCollector worldCollector;
+    // -- the 2026-08-02 source wave: MARKET/FACT clients (no NewsSource, so
+    // they never arrive through the aggregator and must be asked by name) --
+    private volatile de.bsommerfeld.wsbg.terminal.cnbc.CnbcQuoteClient cnbcQuotes;
+    private volatile de.bsommerfeld.wsbg.terminal.boersede.BoerseDeMarketClient boerseDeMarket;
+    private volatile de.bsommerfeld.wsbg.terminal.handelsblatt.HandelsblattMarketClient hbMarket;
+    private volatile de.bsommerfeld.wsbg.terminal.tradingview.TradingViewSymbolSearch tvSymbols;
+    private volatile de.bsommerfeld.wsbg.terminal.boersenmedien.BoersenmedienResolver bmResolver;
+    private volatile de.bsommerfeld.wsbg.terminal.tradersunion.TradersUnionMoversClient tuMovers;
+    private volatile de.bsommerfeld.wsbg.terminal.stocknear.StocknearClient stocknear;
 
     private final AtomicBoolean busy = new AtomicBoolean(false);
     private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
@@ -368,6 +413,53 @@ public class DeepDiveService {
     }
 
     @com.google.inject.Inject(optional = true)
+    void setMfnDisclosures(
+            de.bsommerfeld.wsbg.terminal.briefing.MfnDisclosureClient client) {
+        this.mfnDisclosures = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setStatsCalendar(
+            de.bsommerfeld.wsbg.terminal.briefing.StatsReleaseCalendarClient client) {
+        this.statsCalendar = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setTradingCalendar(
+            de.bsommerfeld.wsbg.terminal.briefing.TradingCalendarClient client) {
+        this.tradingCalendar = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setEuEvents(
+            de.bsommerfeld.wsbg.terminal.briefing.BorsaItalianaEventsClient client) {
+        this.euEvents = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setFederalRegister(
+            de.bsommerfeld.wsbg.terminal.briefing.FederalRegisterClient client) {
+        this.fedRegister = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setWoCalendar(
+            de.bsommerfeld.wsbg.terminal.briefing.WoCompanyCalendarClient client) {
+        this.woCalendar = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setEqsEvents(de.bsommerfeld.wsbg.terminal.briefing.EqsEventsClient client) {
+        this.eqsEvents = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setFxStreetCalendar(
+            de.bsommerfeld.wsbg.terminal.briefing.FxStreetCalendarClient client) {
+        this.fxsCalendar = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
     void setCentralBankCalendar(CentralBankCalendarClient client) {
         this.cbCalendar = client;
     }
@@ -405,6 +497,88 @@ public class DeepDiveService {
     @com.google.inject.Inject(optional = true)
     void setWorldCollector(WorldSignalsCollector collector) {
         this.worldCollector = collector;
+    }
+
+    /**
+     * CNBC's quote webservice: the QUARTERLY SURPRISE HISTORY (estimate AND
+     * actual for EPS, revenue and net income, up to eight quarters) plus the
+     * quote's fundamentals (P/E, EPS, beta, market cap, ROE, margins,
+     * debt/equity, next earnings date, ex-dividend). Keyless and multi-asset -
+     * the gap filler exactly where Yahoo's quoteSummary is crumb-locked.
+     */
+    @com.google.inject.Inject(optional = true)
+    void setCnbcQuoteClient(de.bsommerfeld.wsbg.terminal.cnbc.CnbcQuoteClient client) {
+        this.cnbcQuotes = client;
+    }
+
+    /**
+     * boerse.de: directors' dealings with the reporting person's REAL NAME,
+     * role and volume (complements the BaFin leg, never replaces it), the
+     * dpa-AFX analyst-call archive per ISIN, and eight fiscal years of P&amp;L,
+     * balance sheet and per-share figures - the long-arc context the
+     * context-first mandate asks for.
+     */
+    @com.google.inject.Inject(optional = true)
+    void setBoerseDeMarketClient(
+            de.bsommerfeld.wsbg.terminal.boersede.BoerseDeMarketClient client) {
+        this.boerseDeMarket = client;
+    }
+
+    /**
+     * Handelsblatt's ISIN master data: issuer name, WKN, ticker, sector,
+     * country and the 1W-5Y performance ladder in ONE keyless call - the
+     * identity/performance gap filler when the German legs stayed dark.
+     */
+    @com.google.inject.Inject(optional = true)
+    void setHandelsblattMarketClient(
+            de.bsommerfeld.wsbg.terminal.handelsblatt.HandelsblattMarketClient client) {
+        this.hbMarket = client;
+    }
+
+    /**
+     * TradingView's symbol search - the identity bridge: it carries the ISIN
+     * ITSELF ({@code found_by_isin}), so name → ISIN and ISIN → primary
+     * listing stop being guesses. The ISIN is this house's German join key;
+     * without it five data legs stay dark.
+     */
+    @com.google.inject.Inject(optional = true)
+    void setTradingViewSymbolSearch(
+            de.bsommerfeld.wsbg.terminal.tradingview.TradingViewSymbolSearch client) {
+        this.tvSymbols = client;
+    }
+
+    /**
+     * Boersenmedien's instrument resolver (name/ISIN/WKN → instrument) - the
+     * SECOND identity fallback behind TradingView, asked only when the ISIN is
+     * still missing.
+     */
+    @com.google.inject.Inject(optional = true)
+    void setBoersenmedienResolver(
+            de.bsommerfeld.wsbg.terminal.boersenmedien.BoersenmedienResolver client) {
+        this.bmResolver = client;
+    }
+
+    /**
+     * Traders Union's movers board (gainers/losers across seven asset
+     * classes). Held as AVAILABILITY only: a market-wide ranking answers no
+     * question this instrument-scoped report asks, and inventing a chapter for
+     * it would be exactly the kind of filler the desk rejects.
+     */
+    @com.google.inject.Inject(optional = true)
+    void setTradersUnionMovers(
+            de.bsommerfeld.wsbg.terminal.tradersunion.TradersUnionMoversClient client) {
+        this.tuMovers = client;
+    }
+
+    /**
+     * Stocknear's Reddit mention aggregate (five US subreddits). Held as
+     * AVAILABILITY only - by its own contract a low-frequency SECOND OPINION
+     * behind the house's own cage counter, and the DD's room shelf is the
+     * cage's, not a foreign tracker's.
+     */
+    @com.google.inject.Inject(optional = true)
+    void setStocknearClient(de.bsommerfeld.wsbg.terminal.stocknear.StocknearClient client) {
+        this.stocknear = client;
     }
 
     @com.google.inject.Inject(optional = true)
@@ -2756,6 +2930,23 @@ public class DeepDiveService {
         } catch (Exception e) {
             LOG.debug("[DEEPDIVE] fn analyst leg failed: {}", e.getMessage());
         }
+        // The Nordic (and British, and French …) half of the same exact-ISIN
+        // idea: MFN names the ISIN on every filing, so this joins as tightly as
+        // the German ad-hoc leg above and needs no name matching at all.
+        try {
+            var mfn = mfnDisclosures;
+            if (mfn != null && m.isin != null && !m.isin.isBlank()) {
+                for (var d : mfn.forIsin(m.isin, MAX_MFN_ITEMS)) {
+                    RawNewsItem item = new RawNewsItem(
+                            d.url().isBlank() ? d.title() : d.url(), d.title(),
+                            "Pflichtmitteilung (MFN)", d.url().isBlank() ? null : d.url(),
+                            d.publishedAt(), List.of());
+                    if (seen.add(newsKey(item))) extra.add(item);
+                }
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] mfn leg failed: {}", e.getMessage());
+        }
         if (extra.isEmpty()) return;
         LOG.info("[DEEPDIVE] '{}' finanznachrichten legs contributed {} item(s).",
                 m.ticker, extra.size());
@@ -2777,6 +2968,22 @@ public class DeepDiveService {
         if (dot <= 0) return null;
         String base = ticker.substring(0, dot);
         return base.isBlank() ? null : base;
+    }
+
+    /**
+     * The ticker in CNBC's own spelling: a venue suffix is written with a
+     * HYPHEN there ({@code SAP.DE} → {@code SAP-DE}, verified live 2026-08-02),
+     * a plain US symbol stays as it is. Index/FX/futures shapes ({@code ^},
+     * {@code =}) are NOT translated - CNBC spells those differently ({@code
+     * .SPX}, {@code EUR=}, {@code @CL.1}) and a guessed symbol would answer
+     * with a WRONG instrument, which is worse than no answer.
+     */
+    static String cnbcSymbol(String ticker) {
+        if (ticker == null || ticker.isBlank()) return null;
+        String t = ticker.trim().toUpperCase(Locale.ROOT);
+        if (t.indexOf('^') >= 0 || t.indexOf('=') >= 0 || t.indexOf('@') >= 0) return null;
+        if (!t.matches("[A-Z0-9]{1,6}(\\.[A-Z]{1,3})?")) return null;
+        return t.replace('.', '-');
     }
 
     /** Stable per-item key for triage verdicts (uuid, falling back to link/title). */
@@ -2831,6 +3038,31 @@ public class DeepDiveService {
         HedgeFundPopularity hedgeFunds;
         /** The dated analyst-action history + US short stats (MarketBeat). */
         AnalystActions analystActions;
+        /**
+         * The DELIVERY RECORD (CNBC, up to eight quarters): estimate AND
+         * actual for earnings per share, revenue and net income, newest
+         * first. The hardest citable answer to "does this company deliver
+         * what it promises" - the reason this leg was wired first.
+         */
+        List<de.bsommerfeld.wsbg.terminal.cnbc.CnbcQuoteClient.EarningsQuarter> cnbcEarnings
+                = List.of();
+        /**
+         * The CNBC quote's fundamentals - GAP FILLER: only rendered where the
+         * Consorsbank/onvista chain delivered nothing (typically US names,
+         * whose Yahoo quoteSummary is crumb-locked).
+         */
+        de.bsommerfeld.wsbg.terminal.cnbc.CnbcQuoteClient.Quote cnbcQuote;
+        /** Directors' dealings with real names, role and volume (boerse.de), this ISIN only. */
+        List<de.bsommerfeld.wsbg.terminal.boersede.BoerseDeMarketClient.InsiderDeal>
+                boerseInsiderDeals = List.of();
+        /** The dpa-AFX analyst-call archive for this ISIN (boerse.de), newest first. */
+        List<de.bsommerfeld.wsbg.terminal.boersede.BoerseDeMarketClient.AnalystCall>
+                boerseAnalystCalls = List.of();
+        /** Eight fiscal years of P&amp;L, balance sheet and per-share figures (boerse.de). */
+        List<de.bsommerfeld.wsbg.terminal.boersede.BoerseDeMarketClient.FundamentalYear>
+                boerseFundamentals = List.of();
+        /** Handelsblatt ISIN master data: WKN, ticker, sector, performance ladder. */
+        de.bsommerfeld.wsbg.terminal.handelsblatt.HandelsblattInstrument hbInstrument;
         /** The months-spanning dated press timeline (MarketBeat news tab) — "Was war" context. */
         de.bsommerfeld.wsbg.terminal.core.price.PressTimeline pressTimeline;
         /** House-computed volume profile (Yahoo hourly bars) — the structure layer's traded side. */
@@ -2859,6 +3091,42 @@ public class DeepDiveService {
         de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.WorldSignals worldSignals;
         /** The judge's survivors — finished ROOT-locale material lines for the Lage shelf. */
         List<String> worldSignalKeep = List.of();
+        /**
+         * Today's prints FXStreet carries and TradingView does not — plus every
+         * print whose PRIOR was revised, which is news even when both sources
+         * have the headline number.
+         */
+        List<de.bsommerfeld.wsbg.terminal.briefing.FxStreetCalendarClient.FxsEvent> macroOutcomes
+                = List.of();
+        /**
+         * Issuer-declared company dates for THIS ISIN (EQS) — reporting days,
+         * annual meetings, capital-measure deadlines. Exact join, never fuzzy:
+         * every EQS record carries the ISIN.
+         */
+        List<de.bsommerfeld.wsbg.terminal.briefing.EqsEventsClient.CorporateEvent> issuerEvents
+                = List.of();
+        /**
+         * Dated US regulatory events ahead — rules switching on, comment
+         * windows closing. Collected unfiltered (fishing net); which line
+         * matters for this subject is the model's call.
+         */
+        List<de.bsommerfeld.wsbg.terminal.briefing.FederalRegisterClient.DatedAction> regDocket
+                = List.of();
+        /** The same, from the Italian venue's ISIN-keyed calendar. */
+        List<de.bsommerfeld.wsbg.terminal.briefing.BorsaItalianaEventsClient.EuEvent> euEvents
+                = List.of();
+        /**
+         * The next German session interruptions — a closed day or an early
+         * close inside the docket window. Dates the outlook must not talk past.
+         */
+        List<de.bsommerfeld.wsbg.terminal.briefing.TradingCalendarClient.TradingBreak>
+                tradingBreaks = List.of();
+        /**
+         * The statistics offices' own schedule BEYOND the traders' calendar —
+         * the only dated ground an outlook four weeks out can stand on.
+         */
+        List<de.bsommerfeld.wsbg.terminal.briefing.StatsReleaseCalendarClient.Release> statsDocket
+                = List.of();
         /** Upcoming high-impact macro events the sector trades on (Ausblick anchors). */
         List<EconCalendarClient.EconEvent> macroDocket = List.of();
         /** The next central-bank rate decisions (EZB/Fed). */
@@ -2869,6 +3137,11 @@ public class DeepDiveService {
         de.bsommerfeld.wsbg.terminal.briefing.EarningsWhispersClient.EarningsEstimate earningsEstimate;
         /** ISO date the estimate belongs to (the report day the calendar answered for). */
         String earningsEstimateDateIso;
+        /**
+         * The next report with the street's estimate for a NON-US name — where
+         * EarningsWhispers does not reach. Carries the bell slot too.
+         */
+        de.bsommerfeld.wsbg.terminal.briefing.WoCompanyCalendarClient.CompanyDate woEstimate;
         List<RawNewsItem> news = List.of();
         /** item key -> target section ("LAGE"/"KATALYSATOR"/"AUSBLICK"), set by triage. */
         Map<String, String> newsTargets = Map.of();
@@ -2998,6 +3271,65 @@ public class DeepDiveService {
                     m.ticker, m.isin);
         }
 
+        // IDENTITY, second chance (2026-08-02): the ISIN is this house's join
+        // key - the German legs (Tradegate, onvista, Consorsbank, BaFin,
+        // Bundesanzeiger, boerse.de) are ALL ISIN-addressed and stay silently
+        // dark without it. TradingView's symbol search carries the ISIN itself
+        // (found_by_isin), so name -> ISIN stops being a guess; Boersenmedien's
+        // resolver stands behind it. Only ever asked when the ISIN is STILL
+        // missing after registry, resolver and price salvage - never a second
+        // opinion against an ISIN we already hold.
+        if (isBlank(m.isin) && !isBlank(m.canonicalName)) {
+            try {
+                var tv = tvSymbols;
+                if (tv != null) {
+                    tv.isinForName(m.canonicalName).ifPresent(found -> {
+                        m.isin = found;
+                        LOG.info("[DEEPDIVE] '{}' ISIN from TradingView symbol search: {}",
+                                m.ticker, found);
+                    });
+                }
+            } catch (Exception e) {
+                LOG.debug("[DEEPDIVE] tradingview identity failed: {}", e.getMessage());
+            }
+        }
+        if (isBlank(m.isin) && !isBlank(m.canonicalName)) {
+            try {
+                var bm = bmResolver;
+                if (bm != null) {
+                    for (var instrument : bm.search(m.canonicalName)) {
+                        if (isBlank(instrument.isin())) continue;
+                        m.isin = instrument.isin();
+                        LOG.info("[DEEPDIVE] '{}' ISIN from the Boersenmedien resolver: {}",
+                                m.ticker, m.isin);
+                        break;
+                    }
+                }
+            } catch (Exception e) {
+                LOG.debug("[DEEPDIVE] boersenmedien identity failed: {}", e.getMessage());
+            }
+        }
+        // The reverse direction: an ISIN without a usable ticker leaves every
+        // TICKER-addressed leg (NASDAQ, MarketBeat, Insider Monkey, CNBC, the
+        // volume profile) blind. TradingView names the PRIMARY listing.
+        if (!isBlank(m.isin) && (isBlank(m.ticker)
+                || m.ticker.equalsIgnoreCase(m.isin))) {
+            try {
+                var tv = tvSymbols;
+                if (tv != null) {
+                    tv.primaryListing(m.isin)
+                            .filter(hit -> !isBlank(hit.symbol()))
+                            .ifPresent(hit -> {
+                                m.ticker = hit.symbol();
+                                LOG.info("[DEEPDIVE] '{}' ticker from TradingView primary "
+                                        + "listing: {}", m.isin, m.ticker);
+                            });
+                }
+            } catch (Exception e) {
+                LOG.debug("[DEEPDIVE] tradingview listing failed: {}", e.getMessage());
+            }
+        }
+
         String isin = m.isin;
         if (isin != null && !isin.isBlank()) {
             checkCancelled();
@@ -3044,6 +3376,72 @@ public class DeepDiveService {
             } catch (Exception e) {
                 LOG.debug("[DEEPDIVE] insider dealings failed: {}", e.getMessage());
             }
+            // boerse.de (2026-08-02), three ISIN-addressed surfaces:
+            // (1) directors' dealings off the GLOBAL list, filtered to this
+            //     issuer - real names, role and volume BESIDE the BaFin leg,
+            //     never instead of it (two registers disagreeing is itself a
+            //     finding; each carries its own source number);
+            // (2) the dpa-AFX analyst-call archive - years of dated calls with
+            //     the house's own rating wording;
+            // (3) eight fiscal years of P&L, balance sheet and per-share
+            //     figures - the long arc the Consorsbank leg cuts short.
+            checkCancelled();
+            try {
+                var boerse = boerseDeMarket;
+                if (boerse != null) {
+                    List<de.bsommerfeld.wsbg.terminal.boersede.BoerseDeMarketClient.InsiderDeal>
+                            mine = new ArrayList<>();
+                    for (var deal : boerse.insiderDeals(BOERSE_INSIDER_SCAN)) {
+                        if (deal.isin() != null && isin.equalsIgnoreCase(deal.isin())) {
+                            mine.add(deal);
+                        }
+                    }
+                    m.boerseInsiderDeals = List.copyOf(mine);
+                }
+            } catch (Exception e) {
+                LOG.debug("[DEEPDIVE] boerse.de insider deals failed: {}", e.getMessage());
+            }
+            checkCancelled();
+            try {
+                var boerse = boerseDeMarket;
+                if (boerse != null) {
+                    m.boerseAnalystCalls = boerse.analystCalls(isin, MAX_BOERSE_ANALYST_CALLS);
+                }
+            } catch (Exception e) {
+                LOG.debug("[DEEPDIVE] boerse.de analyst calls failed: {}", e.getMessage());
+            }
+            checkCancelled();
+            try {
+                var boerse = boerseDeMarket;
+                if (boerse != null) m.boerseFundamentals = boerse.fundamentals(isin);
+            } catch (Exception e) {
+                LOG.debug("[DEEPDIVE] boerse.de fundamentals failed: {}", e.getMessage());
+            }
+            // Handelsblatt master data: one keyless call that maps the ISIN
+            // onto WKN, ticker, sector and a 1W-5Y performance ladder.
+            checkCancelled();
+            try {
+                var hb = hbMarket;
+                if (hb != null) m.hbInstrument = hb.byIsin(isin).orElse(null);
+            } catch (Exception e) {
+                LOG.debug("[DEEPDIVE] handelsblatt master data failed: {}", e.getMessage());
+            }
+        }
+        // CNBC (2026-08-02), TICKER-addressed: the quarterly SURPRISE HISTORY
+        // (estimate vs actual for earnings per share, revenue and net income)
+        // is the hardest citable answer to "does this company deliver what it
+        // promises" - and the quote beside it fills the fundamentals hole for
+        // US names, where Yahoo's quoteSummary is crumb-locked.
+        checkCancelled();
+        try {
+            var cnbc = cnbcQuotes;
+            String symbol = cnbcSymbol(m.ticker);
+            if (cnbc != null && symbol != null) {
+                m.cnbcEarnings = cnbc.earnings(symbol, MAX_CNBC_QUARTERS);
+                m.cnbcQuote = cnbc.quote(symbol);
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] cnbc leg failed: {}", e.getMessage());
         }
         // The US listing view (NASDAQ tabs): SEC Form-4 insiders, FINRA short
         // interest, 13F holders, street targets, surprise history — TICKER-
@@ -3159,10 +3557,51 @@ public class DeepDiveService {
             LOG.debug("[DEEPDIVE] macro actuals failed: {}", e.getMessage());
         }
         try {
+            var eqs = eqsEvents;
+            if (eqs != null && m.isin != null && !m.isin.isBlank()) {
+                List<de.bsommerfeld.wsbg.terminal.briefing.EqsEventsClient.CorporateEvent> mine
+                        = new ArrayList<>();
+                for (var e : eqs.upcoming()) {
+                    if (!m.isin.equalsIgnoreCase(e.isin())) continue;
+                    mine.add(e);
+                    if (mine.size() >= MAX_EVENTS) break;
+                }
+                m.issuerEvents = mine;
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] issuer events failed: {}", e.getMessage());
+        }
+        // The southern-European half of the same shelf: Borsa Italiana carries
+        // the ISIN on every row, so this joins exactly like the EQS leg does.
+        try {
+            var eu = euEvents;
+            if (eu != null && m.isin != null && !m.isin.isBlank()) {
+                java.time.LocalDate today = java.time.LocalDate.now();
+                List<de.bsommerfeld.wsbg.terminal.briefing.BorsaItalianaEventsClient.EuEvent> mine
+                        = de.bsommerfeld.wsbg.terminal.briefing.BorsaItalianaEventsClient
+                                .upcomingFor(eu.events(today, today.plusMonths(6), 500),
+                                        m.isin, Instant.now());
+                m.euEvents = mine.size() > MAX_EVENTS ? mine.subList(0, MAX_EVENTS) : mine;
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] eu events failed: {}", e.getMessage());
+        }
+        try {
+            var fxs = fxsCalendar;
+            if (fxs != null) {
+                java.time.ZoneId zone = java.time.ZoneId.systemDefault();
+                Instant dayStart = java.time.LocalDate.now(zone).atStartOfDay(zone).toInstant();
+                m.macroOutcomes = fxStreetAdditions(
+                        fxs.outcomes(dayStart, Instant.now()), m.macroActualsToday);
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] macro outcomes failed: {}", e.getMessage());
+        }
+        try {
             if (econCalendar != null) {
                 long now = Instant.now().getEpochSecond();
                 List<EconCalendarClient.EconEvent> docket = new ArrayList<>();
-                for (EconCalendarClient.EconEvent e : econCalendar.thisWeek()) {
+                for (EconCalendarClient.EconEvent e : econCalendar.docket()) {
                     if (e.whenEpochSeconds() <= now) continue;
                     if (e.impact() == null || !e.impact().toLowerCase(Locale.ROOT).contains("high")) continue;
                     docket.add(e);
@@ -3174,8 +3613,54 @@ public class DeepDiveService {
             LOG.debug("[DEEPDIVE] macro docket failed: {}", e.getMessage());
         }
         try {
+            var stats = statsCalendar;
+            if (stats != null) {
+                java.time.LocalDate today = java.time.LocalDate.now();
+                m.statsDocket = statsBeyondTraderHorizon(stats.upcoming(
+                        today.plusDays(STATS_HORIZON_FROM_DAYS),
+                        today.plusDays(STATS_HORIZON_TO_DAYS)));
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] stats docket failed: {}", e.getMessage());
+        }
+        try {
+            var cal = tradingCalendar;
+            if (cal != null) {
+                java.time.LocalDate today = java.time.LocalDate.now();
+                java.time.LocalDate horizon = today.plusDays(TRADING_BREAK_HORIZON_DAYS);
+                List<de.bsommerfeld.wsbg.terminal.briefing.TradingCalendarClient.TradingBreak>
+                        breaks = new ArrayList<>();
+                for (var b : cal.germanBreaks().values()) {
+                    if (b.date().isBefore(today) || b.date().isAfter(horizon)) continue;
+                    breaks.add(b);
+                }
+                m.tradingBreaks = breaks;
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] trading calendar failed: {}", e.getMessage());
+        }
+        try {
+            var fedReg = fedRegister;
+            if (fedReg != null) {
+                List<de.bsommerfeld.wsbg.terminal.briefing.FederalRegisterClient.DatedAction> reg
+                        = new ArrayList<>();
+                for (var action : fedReg.upcomingDates(java.time.LocalDate.now(), 12)) {
+                    reg.add(action);
+                    if (reg.size() >= MAX_REG_DOCKET) break;
+                }
+                m.regDocket = reg;
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] regulatory docket failed: {}", e.getMessage());
+        }
+        try {
             if (cbCalendar != null) {
-                m.cbDecisions = cbCalendar.upcomingDecisions(java.time.LocalDate.now(), 1);
+                // The calendar now answers for ~18 central banks; the docket
+                // wants the nearest few, not a world tour.
+                List<CentralBankCalendarClient.CbMeeting> cb =
+                        cbCalendar.upcomingDecisions(java.time.LocalDate.now(), 1);
+                m.cbDecisions = cb.size() > MAX_CB_DECISIONS
+                        ? List.copyOf(cb.subList(0, MAX_CB_DECISIONS)) : cb;
             }
         } catch (Exception e) {
             LOG.debug("[DEEPDIVE] central-bank calendar failed: {}", e.getMessage());
@@ -3235,6 +3720,21 @@ public class DeepDiveService {
             LOG.debug("[DEEPDIVE] market memory failed: {}", e.getMessage());
         }
         journalCollectedSources(ticker, m);
+
+        // The non-US half of the street's expectation. EarningsWhispers only
+        // answers for US symbols; wallstreet-online carries the estimate and
+        // the bell slot for JP/CA/GB/IT/CH/NL/FI names too (measured), so it is
+        // asked ONLY when the US leg came back empty — a day sweep is a quarter
+        // megabyte per day and must not run for nothing.
+        try {
+            var wo = woCalendar;
+            if (wo != null && m.earningsEstimate == null
+                    && m.canonicalName != null && !m.canonicalName.isBlank()) {
+                m.woEstimate = matchWoDate(wo.upcoming(WO_SWEEP_DAYS), m.canonicalName);
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] wo calendar failed: {}", e.getMessage());
+        }
 
         // The street's numbers for the NEXT report (EarningsWhispers day calendar,
         // US names): the Consorsbank leg delivers the dated events, the calendar
@@ -3553,6 +4053,37 @@ public class DeepDiveService {
                     + (bits.isEmpty() ? (de ? "US-Listing" : "US listing")
                     : String.join(", ", bits))));
         }
+        if (!m.cnbcEarnings.isEmpty() || m.cnbcQuote != null) {
+            List<String> bits = new ArrayList<>();
+            if (!m.cnbcEarnings.isEmpty()) {
+                bits.add(m.cnbcEarnings.size()
+                        + (de ? " Quartale Schätzung vs. Ist" : " quarters estimate vs actual"));
+            }
+            if (m.cnbcQuote != null) bits.add(de ? "Quote-Kennzahlen" : "quote fundamentals");
+            journalNotes(subject, List.of("CNBC — " + String.join(", ", bits)));
+        }
+        if (!m.boerseInsiderDeals.isEmpty() || !m.boerseAnalystCalls.isEmpty()
+                || !m.boerseFundamentals.isEmpty()) {
+            List<String> bits = new ArrayList<>();
+            if (!m.boerseInsiderDeals.isEmpty()) {
+                bits.add(m.boerseInsiderDeals.size()
+                        + (de ? " Directors' Dealings" : " directors' dealings"));
+            }
+            if (!m.boerseAnalystCalls.isEmpty()) {
+                bits.add(m.boerseAnalystCalls.size()
+                        + (de ? " Analystenstimmen" : " analyst calls"));
+            }
+            if (!m.boerseFundamentals.isEmpty()) {
+                bits.add(m.boerseFundamentals.size()
+                        + (de ? " Geschäftsjahre" : " fiscal years"));
+            }
+            journalNotes(subject, List.of("boerse.de — " + String.join(", ", bits)));
+        }
+        if (m.hbInstrument != null) {
+            journalNotes(subject, List.of("Handelsblatt — "
+                    + (de ? "Stammdaten" : "master data")
+                    + (m.hbInstrument.sector() == null ? "" : ": " + m.hbInstrument.sector())));
+        }
         if (m.hedgeFunds != null && !m.hedgeFunds.quarters().isEmpty()) {
             HedgeFundPopularity.QuarterPoint latest =
                     m.hedgeFunds.quarters().get(m.hedgeFunds.quarters().size() - 1);
@@ -3579,14 +4110,15 @@ public class DeepDiveService {
                     + m.pressTimeline.entries().size()
                     + (de ? " Schlagzeilen" : " headlines")));
         }
-        if (m.sectorEtf != null || !m.macroActualsToday.isEmpty() || !m.macroDocket.isEmpty()) {
+        if (m.sectorEtf != null || !m.macroActualsToday.isEmpty()
+                || !m.macroOutcomes.isEmpty() || !m.macroDocket.isEmpty()) {
             List<String> bits = new ArrayList<>();
             if (m.sectorEtf != null) {
                 bits.add((de ? "Sektor " : "sector ")
                         + m.sectorDisplayName + " (" + m.sectorEtfSymbol + ")");
             }
-            if (!m.macroActualsToday.isEmpty()) {
-                bits.add(m.macroActualsToday.size()
+            if (!m.macroActualsToday.isEmpty() || !m.macroOutcomes.isEmpty()) {
+                bits.add((m.macroActualsToday.size() + m.macroOutcomes.size())
                         + (de ? " Makro-Ist-Zahl(en) heute" : " macro actual(s) today"));
             }
             if (!m.macroDocket.isEmpty() || !m.cbDecisions.isEmpty()) {
@@ -3724,6 +4256,7 @@ public class DeepDiveService {
         StringBuilder sb = new StringBuilder(2048);
 
         appendProfile(sb, m, nums);
+        appendMasterData(sb, m, nums);
         appendUsListing(sb, m.usStats, nums);
         appendBoard(sb, m.deepDive, nums);
         out[SEC_ABOUT] = new Shelf(take(sb), List.of());
@@ -3751,11 +4284,17 @@ public class DeepDiveService {
         appendBalance(sb, m.deepDive, nums);
         appendShareCount(sb, m.deepDive, nums);
         appendUsSurprises(sb, m.usStats, nums);
+        // The delivery record LAST on this shelf but first in value: estimate
+        // vs actual over eight quarters is the section's hardest evidence.
+        appendCnbcSurprises(sb, m, nums);
+        appendBoerseFundamentals(sb, m, nums);
         out[SEC_FUNDAMENTALS] = new Shelf(take(sb), List.of());
 
         appendAnalystRatings(sb, m.analystView, nums);
         appendUsAnalysts(sb, m.usStats, nums);
         appendAnalystActions(sb, m.analystActions, nums);
+        appendBoerseAnalystCalls(sb, m, nums);
+        appendCnbcQuoteFacts(sb, m, nums);
         appendValuationContext(sb, m, nums);
         appendUsInstitutional(sb, m.usStats, nums);
         appendHedgeFunds(sb, m.hedgeFunds, nums);
@@ -3763,6 +4302,7 @@ public class DeepDiveService {
         out[SEC_VALUATION] = new Shelf(take(sb), newsBlocksFor(m, "BEWERTUNG", nums));
 
         appendInsider(sb, m.insiderDealings, nums);
+        appendBoerseInsider(sb, m, nums);
         appendUsInsiders(sb, m.usStats, nums);
         appendShorts(sb, m.shortInterest, nums);
         appendUsShortInterest(sb, m.usStats, nums);
@@ -3772,10 +4312,12 @@ public class DeepDiveService {
         appendMarketMemory(sb, m, nums);
         out[SEC_CATALYSTS] = new Shelf(take(sb), newsBlocksFor(m, "KATALYSATOR", nums));
 
-        appendUpcomingEvents(sb, m.analystView, nums);
+        appendUpcomingEvents(sb, m, nums);
+        appendCnbcDates(sb, m, nums);
         appendIrArchive(sb, m, nums, true);
         appendMacroDocket(sb, m, nums);
         appendEarningsConsensus(sb, m, nums);
+        appendWoConsensus(sb, m, nums);
         appendEstimatePath(sb, m.deepDive, nums);
         appendAnalystRatings(sb, m.analystView, nums);
         appendUsAnalysts(sb, m.usStats, nums);
@@ -4023,23 +4565,35 @@ public class DeepDiveService {
         if (m.snapshot != null && m.snapshot.hasPrice()) nums.put("price", ++n);
         if (m.venueStats != null) nums.put("venue", ++n);
         if (m.facts != null || m.fundFacts != null) nums.put("profile", ++n);
+        if (m.hbInstrument != null) nums.put("handelsblatt", ++n);
         if (m.deepDive != null || m.analystView != null) nums.put("consors", ++n);
+        if (!m.issuerEvents.isEmpty()) nums.put("issuer", ++n);
+        if (!m.euEvents.isEmpty()) nums.put("euevents", ++n);
         if (m.deepDive != null && m.deepDive.technicalView() != null) nums.put("tc", ++n);
         if (m.shortInterest != null) nums.put("shorts", ++n);
         if (m.insiderDealings != null) nums.put("insider", ++n);
+        if (!m.boerseInsiderDeals.isEmpty() || !m.boerseAnalystCalls.isEmpty()
+                || !m.boerseFundamentals.isEmpty()) {
+            nums.put("boersede", ++n);
+        }
         if (m.usStats != null) nums.put("nasdaq", ++n);
+        if (!m.cnbcEarnings.isEmpty() || m.cnbcQuote != null) nums.put("cnbc", ++n);
         if (m.hedgeFunds != null && !m.hedgeFunds.quarters().isEmpty()) nums.put("hedgefunds", ++n);
         if ((m.analystActions != null && (!m.analystActions.actions().isEmpty()
                 || m.analystActions.shortStats() != null))
                 || (m.pressTimeline != null && !m.pressTimeline.entries().isEmpty())) {
             nums.put("marketbeat", ++n);
         }
-        if (m.sectorEtf != null || !m.macroActualsToday.isEmpty()
+        if (m.sectorEtf != null || !m.macroActualsToday.isEmpty() || !m.macroOutcomes.isEmpty()
                 || !m.macroDocket.isEmpty() || !m.cbDecisions.isEmpty()) {
             nums.put("sector", ++n);
         }
         if (!m.worldSignalKeep.isEmpty()) nums.put("world", ++n);
         if (m.earningsEstimate != null) nums.put("whispers", ++n);
+        if (m.woEstimate != null) nums.put("wocal", ++n);
+        if (!m.regDocket.isEmpty()) nums.put("fedreg", ++n);
+        if (!m.tradingBreaks.isEmpty()) nums.put("tradingcal", ++n);
+        if (!m.statsDocket.isEmpty()) nums.put("statscal", ++n);
         if (!m.pressHistory.isEmpty()) nums.put("history", ++n);
         if (!m.irEntries.isEmpty()) nums.put("ir", ++n);
         if (m.volumeProfile != null || m.orderBook != null) nums.put("structure", ++n);
@@ -4460,22 +5014,50 @@ public class DeepDiveService {
     }
 
     /** The dated corporate events ahead — the Ausblick's hardest anchor. */
-    private static void appendUpcomingEvents(StringBuilder sb, AnalystView av, Map<String, Integer> nums) {
-        if (av == null) return;
+    private static void appendUpcomingEvents(StringBuilder sb, Material m, Map<String, Integer> nums) {
+        AnalystView av = m.analystView;
+        if (av == null && m.issuerEvents.isEmpty() && m.euEvents.isEmpty()) return;
         long nowEpoch = Instant.now().getEpochSecond();
         int n = 0;
         StringBuilder ev = new StringBuilder();
-        for (var event : av.events()) {
-            if (event.atEpochSeconds() < nowEpoch) continue;
-            if (++n > MAX_EVENTS) break;
+        Set<String> seen = new HashSet<>();
+        // The issuer's own announcement leads: it is the company's word on its
+        // own diary, and it carries the annual meeting the broker feed omits.
+        for (var e : m.issuerEvents) {
+            if (e.startDate() == null || e.startDate().getEpochSecond() < nowEpoch) continue;
+            String day = STAMP.format(e.startDate()).substring(0, 10);
+            if (!seen.add(day + '|' + eventKey(e.headline())) || ++n > MAX_EVENTS) continue;
             if (ev.length() > 0) ev.append("; ");
-            ev.append(STAMP.format(Instant.ofEpochSecond(event.atEpochSeconds())), 0, 10);
+            ev.append(day);
+            if (e.headline() != null) ev.append(' ').append(e.headline());
+        }
+        for (var e : m.euEvents) {
+            String day = e.date().toString();
+            if (!seen.add(day + '|' + eventKey(e.label())) || ++n > MAX_EVENTS) continue;
+            if (ev.length() > 0) ev.append("; ");
+            ev.append(day).append(' ').append(e.label());
+        }
+        for (var event : av == null ? List.<AnalystView.CorporateEvent>of() : av.events()) {
+            if (event.atEpochSeconds() < nowEpoch) continue;
+            String day = STAMP.format(Instant.ofEpochSecond(event.atEpochSeconds()))
+                    .substring(0, 10);
+            if (!seen.add(day + '|' + eventKey(event.title())) || ++n > MAX_EVENTS) continue;
+            if (ev.length() > 0) ev.append("; ");
+            ev.append(day);
             if (event.title() != null) ev.append(' ').append(event.title());
         }
         if (ev.length() > 0) {
-            sb.append("UPCOMING EVENTS (verified)").append(mark(nums, "consors"))
-                    .append(": ").append(ev).append('\n');
+            sb.append("UPCOMING EVENTS (verified)");
+            if (!m.issuerEvents.isEmpty()) sb.append(mark(nums, "issuer"));
+            if (!m.euEvents.isEmpty()) sb.append(mark(nums, "euevents"));
+            if (av != null) sb.append(mark(nums, "consors"));
+            sb.append(": ").append(ev).append('\n');
         }
+    }
+
+    /** Two feeds label the same diary entry differently — match on the bones. */
+    private static String eventKey(String label) {
+        return label == null ? "" : label.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
     }
 
     /** The street's consensus for the next report — the Ausblick's Konsensgröße anchor. */
@@ -4501,6 +5083,22 @@ public class DeepDiveService {
         }
         if (est.slot() != null) sb.append(" (").append(est.slot()).append(')');
         if (est.confirmed()) sb.append("; report date company-confirmed");
+        sb.append('\n');
+    }
+
+    /** The same anchor for the non-US names EarningsWhispers never answers for. */
+    private static void appendWoConsensus(StringBuilder sb, Material m, Map<String, Integer> nums) {
+        var wo = m.woEstimate;
+        if (wo == null) return;
+        sb.append("STREET CONSENSUS for the next report (verified, wallstreet-online)")
+                .append(mark(nums, "wocal")).append(": ")
+                .append(STAMP.format(Instant.ofEpochSecond(wo.whenEpochSeconds())), 0, 10);
+        if (!wo.event().isBlank()) sb.append(", ").append(wo.event());
+        if (wo.epsEstimate() != null) {
+            sb.append(String.format(Locale.ROOT, ", consensus earnings per share %.2f %s",
+                    wo.epsEstimate(), wo.currency().isBlank() ? "" : wo.currency()).stripTrailing());
+        }
+        if (!wo.slot().isBlank()) sb.append(" (").append(wo.slot()).append(')');
         sb.append('\n');
     }
 
@@ -4871,6 +5469,113 @@ public class DeepDiveService {
             "XLF", Set.of("CYBER"),
             "XLV", Set.of("HEALTH"));
 
+    /**
+     * What FXStreet adds on top of the prints TradingView already delivered:
+     * an event the other calendar never carried, or a print whose PRIOR was
+     * revised — the one fact a raw actual hides. Package-private for tests.
+     */
+    static List<de.bsommerfeld.wsbg.terminal.briefing.FxStreetCalendarClient.FxsEvent>
+            fxStreetAdditions(
+                    List<de.bsommerfeld.wsbg.terminal.briefing.FxStreetCalendarClient.FxsEvent> fxs,
+                    List<TradingViewCalendarClient.TvEvent> alreadyHave) {
+        Set<String> seen = new java.util.HashSet<>();
+        for (TradingViewCalendarClient.TvEvent e : alreadyHave) {
+            seen.add(macroKey(e.country(), e.title()));
+        }
+        List<de.bsommerfeld.wsbg.terminal.briefing.FxStreetCalendarClient.FxsEvent> out
+                = new ArrayList<>();
+        for (var e : fxs) {
+            // FXStreet calls the euro area EMU where the docket rule says EU.
+            String country = "EMU".equals(e.countryCode()) ? "EU" : e.countryCode();
+            if (!relevantMacro("HIGH".equalsIgnoreCase(e.volatility()) ? 1 : 0, country)) {
+                continue;
+            }
+            boolean known = !seen.add(macroKey(e.countryCode(), e.name()));
+            if (known && !e.priorRevised()) continue;
+            out.add(e);
+            if (out.size() >= MAX_MACRO_ACTUALS) break;
+        }
+        return out;
+    }
+
+    /**
+     * The same print rarely spells identically across two calendars — "Core CPI
+     * m/m" and "Core CPI (MoM)" are one number. Collapse to letters and digits,
+     * then shed the periodicity and revision-stage tails both houses append.
+     */
+    private static final List<String> MACRO_KEY_TAILS = List.of(
+            "preliminary", "prelim", "flash", "final", "revised",
+            "nsa", "sa", "mom", "yoy", "qoq", "mm", "yy", "qq");
+
+    private static String macroKey(String country, String title) {
+        String name = title == null ? "" : title.toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9]", "");
+        boolean shed = true;
+        while (shed) {
+            shed = false;
+            for (String tail : MACRO_KEY_TAILS) {
+                if (name.length() > tail.length() && name.endsWith(tail)) {
+                    name = name.substring(0, name.length() - tail.length());
+                    shed = true;
+                    break;
+                }
+            }
+        }
+        return (country == null ? "" : country.toUpperCase(Locale.ROOT)) + '|' + name;
+    }
+
+    /**
+     * The far-horizon statistics docket, thinned at the SHELF (never at
+     * ingestion): Eurostat's euro-indicator set and the BEA series are
+     * market-moving by construction, while the ONS feed is dominated by a long
+     * tail of national-accounts research nobody trades. That tail is admitted
+     * only when the office itself flags the date as postponed or cancelled —
+     * a statistic that slips its date is news in its own right.
+     * Package-private for tests.
+     */
+    static List<de.bsommerfeld.wsbg.terminal.briefing.StatsReleaseCalendarClient.Release>
+            statsBeyondTraderHorizon(
+                    List<de.bsommerfeld.wsbg.terminal.briefing.StatsReleaseCalendarClient.Release>
+                            releases) {
+        List<de.bsommerfeld.wsbg.terminal.briefing.StatsReleaseCalendarClient.Release> out
+                = new ArrayList<>();
+        for (var r : releases) {
+            if ("ONS".equals(r.office()) && !r.slipped()) continue;
+            out.add(r);
+            if (out.size() >= MAX_STATS_DOCKET) break;
+        }
+        return out;
+    }
+
+    /**
+     * The subject's own row in the day sweep. The calendar has no ISIN, so the
+     * join is by name — and it is deliberately strict: every significant word
+     * of the display name must appear in ours, which lets "Zalando" match
+     * "Zalando SE" but keeps "Deutsche Bank" off "Deutsche Lufthansa".
+     * Package-private for tests.
+     */
+    static de.bsommerfeld.wsbg.terminal.briefing.WoCompanyCalendarClient.CompanyDate matchWoDate(
+            List<de.bsommerfeld.wsbg.terminal.briefing.WoCompanyCalendarClient.CompanyDate> dates,
+            String canonicalName) {
+        Set<String> ours = NameMatcher.significantWords(canonicalName);
+        if (ours.isEmpty()) return null;
+        long nowEpoch = Instant.now().getEpochSecond();
+        de.bsommerfeld.wsbg.terminal.briefing.WoCompanyCalendarClient.CompanyDate best = null;
+        for (var d : dates) {
+            if (d.whenEpochSeconds() < nowEpoch) continue;
+            Set<String> theirs = NameMatcher.significantWords(d.company());
+            if (theirs.isEmpty() || !ours.containsAll(theirs)) continue;
+            // Earliest future report wins; a row carrying an estimate beats a
+            // bare date on the same day.
+            if (best == null || d.whenEpochSeconds() < best.whenEpochSeconds()
+                    || (d.whenEpochSeconds() == best.whenEpochSeconds()
+                            && best.epsEstimate() == null && d.epsEstimate() != null)) {
+                best = d;
+            }
+        }
+        return best;
+    }
+
     /** The weather docket rule: high impact anywhere, medium only for US/DE/EU. */
     private static boolean relevantMacro(int importance, String country) {
         if (importance >= 1) return true;
@@ -4887,7 +5592,7 @@ public class DeepDiveService {
      */
     private static void appendSectorContext(StringBuilder sb, Material m, Map<String, Integer> nums) {
         boolean hasSector = m.sectorEtf != null && Double.isFinite(m.sectorEtf.dayChangePercent());
-        if (!hasSector && m.macroActualsToday.isEmpty()) return;
+        if (!hasSector && m.macroActualsToday.isEmpty() && m.macroOutcomes.isEmpty()) return;
         sb.append("SECTOR & MACRO CONTEXT (verified)").append(mark(nums, "sector")).append(":\n");
         if (hasSector) {
             sb.append(String.format(Locale.ROOT, "  - US sector proxy %s (%s): %+.2f%% today",
@@ -4920,6 +5625,35 @@ public class DeepDiveService {
             }
             sb.append('\n');
         }
+        for (var e : m.macroOutcomes) {
+            sb.append("  - ").append(e.name());
+            if (!e.countryCode().isEmpty()) sb.append(" (").append(e.countryCode()).append(')');
+            sb.append(String.format(Locale.ROOT, ": actual %s%s", num(e.actual()),
+                    e.unit() == null ? "" : e.unit()));
+            if (e.consensus() != null) {
+                sb.append(" vs consensus ").append(num(e.consensus()));
+            }
+            if (e.previous() != null) {
+                sb.append(" (prior ").append(num(e.previous()));
+                // The correction of the PRIOR print — the fact a naked actual
+                // hides, and the reason this leg exists at all.
+                if (e.priorRevised()) sb.append(", since revised to ").append(num(e.revised()));
+                sb.append(')');
+            }
+            if (e.consensus() != null) {
+                double diff = e.actual() - e.consensus();
+                sb.append(" — ").append(Math.abs(diff) < 1e-9 ? "in line with"
+                        : diff > 0 ? "above" : "below").append(" consensus (house comparison)");
+            }
+            sb.append('\n');
+        }
+    }
+
+    /** Macro values print as they were measured — no forced decimals on an index level. */
+    private static String num(double v) {
+        return v == Math.rint(v) && Math.abs(v) < 1e15
+                ? String.valueOf((long) v)
+                : String.format(Locale.ROOT, "%.2f", v);
     }
 
     /**
@@ -5602,7 +6336,10 @@ public class DeepDiveService {
 
     /** The dated macro docket the sector trades on — Ausblick anchors. */
     private static void appendMacroDocket(StringBuilder sb, Material m, Map<String, Integer> nums) {
-        if (m.macroDocket.isEmpty() && m.cbDecisions.isEmpty()) return;
+        if (m.macroDocket.isEmpty() && m.cbDecisions.isEmpty() && m.regDocket.isEmpty()
+                && m.tradingBreaks.isEmpty() && m.statsDocket.isEmpty()) {
+            return;
+        }
         sb.append("UPCOMING MACRO DOCKET (verified — dated events the sector trades on)")
                 .append(mark(nums, "sector")).append(":\n");
         for (CentralBankCalendarClient.CbMeeting cb : m.cbDecisions) {
@@ -5613,12 +6350,42 @@ public class DeepDiveService {
             java.time.LocalDate day = java.time.LocalDate.ofInstant(
                     Instant.ofEpochSecond(e.whenEpochSeconds()), java.time.ZoneId.systemDefault());
             sb.append("  - [").append(day).append("] ").append(e.title());
-            if (e.country() != null) sb.append(" (").append(e.country()).append(')');
+            // The scope line names what the print hits, so it beats the bare
+            // currency wherever the calendar carries one.
+            String scope = e.instrument() != null && !e.instrument().isBlank()
+                    ? e.instrument() : e.country();
+            if (scope != null && !scope.isBlank()) sb.append(" (").append(scope).append(')');
             sb.append(", high impact");
             if (e.forecast() != null && !e.forecast().isBlank()) {
                 sb.append(", forecast ").append(e.forecast());
             }
+            // Prop firms bar trading through this print — an outside verdict on
+            // how violently the event is expected to move the tape.
+            if (e.restricted()) sb.append(", trading restricted around the release");
             sb.append('\n');
+        }
+        for (var r : m.statsDocket) {
+            sb.append("  - [").append(r.date()).append("] ").append(r.office())
+                    .append(": ").append(r.title());
+            if (!r.period().isBlank()) sb.append(" (").append(r.period()).append(')');
+            if (r.slipped()) sb.append(" — the office has POSTPONED or cancelled this date");
+            else if (r.provisional()) sb.append(" — date still provisional");
+            sb.append(mark(nums, "statscal")).append('\n');
+        }
+        for (var b : m.tradingBreaks) {
+            sb.append("  - [").append(b.date()).append("] ").append(b.label()).append(": ");
+            sb.append(b.closed()
+                    ? "no German trading that day"
+                    : "German trading ends early, at " + b.closesAtHour() + ":00 local");
+            sb.append(mark(nums, "tradingcal")).append('\n');
+        }
+        for (var r : m.regDocket) {
+            sb.append("  - [").append(r.date()).append("] ")
+                    .append(r.deadline() ? "comment deadline" : "rule takes effect");
+            if (r.agency() != null && !r.agency().isBlank()) {
+                sb.append(", ").append(r.agency());
+            }
+            sb.append(": ").append(r.title()).append(mark(nums, "fedreg")).append('\n');
         }
     }
 
@@ -5698,6 +6465,282 @@ public class DeepDiveService {
             }
             sb.append('\n');
         }
+    }
+
+    /**
+     * The DELIVERY RECORD (CNBC): up to eight quarters with the street's
+     * estimate BESIDE the reported actual - the citable answer to "does this
+     * company deliver what it promises", which no other leg in the house
+     * carries for non-US names.
+     *
+     * <p>The deviation is HOUSE-COMPUTED from the two numbers (CNBC's own
+     * {@code surprise} word rides along as the attributed verdict, never as
+     * the arithmetic). Earnings per share are per-share and therefore
+     * unit-safe; revenue and income keep CNBC's own scale and say so - the
+     * material never asserts a magnitude it did not verify (live lesson: a
+     * copied thousands-EUR figure misstated a revenue by three orders).
+     */
+    private static void appendCnbcSurprises(StringBuilder sb, Material m,
+            Map<String, Integer> nums) {
+        if (m.cnbcEarnings.isEmpty()) return;
+        sb.append("EARNINGS DELIVERY RECORD (verified, CNBC: consensus estimate vs reported ")
+                .append("actual per quarter, newest first; per-share figures in the reporting ")
+                .append("currency, revenue and income in CNBC's own scale - compare the two ")
+                .append("sides, never state an absolute magnitude)")
+                .append(mark(nums, "cnbc")).append(":\n");
+        int n = 0;
+        for (var q : m.cnbcEarnings) {
+            if (++n > MAX_CNBC_QUARTERS) break;
+            sb.append("  - ");
+            if (q.fiscalYear() > 0) sb.append("FY").append(q.fiscalYear());
+            if (q.quarter() > 0) sb.append(" Q").append(q.quarter());
+            if (q.announcedAt() != null) {
+                sb.append(" [").append(STAMP.format(q.announcedAt()), 0, 10)
+                        .append(q.beforeMarket() ? ", before the bell" : ", after the bell")
+                        .append(']');
+            }
+            sb.append(':');
+            Double epsActual = q.epsActualAdjusted() != null
+                    ? q.epsActualAdjusted() : q.epsActualGaap();
+            appendEstimateVsActual(sb, " earnings per share", q.epsEstimate(), epsActual, "");
+            appendEstimateVsActual(sb, "; revenue", q.revenueEstimate(), q.revenueActual(),
+                    " (CNBC scale)");
+            appendEstimateVsActual(sb, "; net income", q.incomeEstimate(), q.incomeActual(),
+                    " (CNBC scale)");
+            if (q.surprise() != null && !q.surprise().isBlank()) {
+                sb.append("; CNBC's own verdict: ").append(q.surprise());
+            }
+            sb.append('\n');
+        }
+    }
+
+    /** One "estimate X vs actual Y (house-computed deviation)" clause, silent when a side is missing. */
+    private static void appendEstimateVsActual(StringBuilder sb, String label,
+            Double estimate, Double actual, String scaleNote) {
+        if (estimate == null && actual == null) return;
+        sb.append(label);
+        if (estimate != null) sb.append(" estimate ").append(fmt2(estimate));
+        if (actual != null) sb.append(estimate != null ? " vs actual " : " actual ")
+                .append(fmt2(actual));
+        if (estimate != null && actual != null && Math.abs(estimate) > 1e-9) {
+            sb.append(String.format(Locale.ROOT, " (%+.1f%%)",
+                    (actual - estimate) / Math.abs(estimate) * 100.0));
+        }
+        sb.append(scaleNote);
+    }
+
+    /** The German labels boerse.de prints, in the order the material renders them. */
+    private record BoerseFigure(String label, String rendered, String suffix) {}
+
+    private static final List<BoerseFigure> BOERSE_FIGURES = List.of(
+            new BoerseFigure("Umsatz", "revenue", " (millions)"),
+            new BoerseFigure("Jahresüberschuss", "net income", " (millions)"),
+            new BoerseFigure("Eigenkapital", "equity", " (millions)"),
+            new BoerseFigure("Eigenkapitalquote", "equity ratio", "%"),
+            new BoerseFigure("Gewinn je Aktie (verwässert)", "earnings per share (diluted)", ""),
+            new BoerseFigure("Dividende je Aktie", "dividend per share", ""),
+            new BoerseFigure("KGV (Kurs-Gewinn-Verhältnis)", "P/E", ""),
+            new BoerseFigure("Eigenkapitalrendite", "return on equity", "%"),
+            new BoerseFigure("Umsatzrendite", "net margin", "%"),
+            new BoerseFigure("Personal am Jahresende", "employees at year end", ""));
+
+    /**
+     * Eight fiscal years off boerse.de - the LONG ARC beside the Consorsbank
+     * leg's shorter window (context-first mandate). Per-share values are
+     * spelled out, P&amp;L and balance figures carry the page's own million
+     * scale as a literal, ratios their percent sign; a year that reported
+     * nothing simply has no line.
+     */
+    private static void appendBoerseFundamentals(StringBuilder sb, Material m,
+            Map<String, Integer> nums) {
+        if (m.boerseFundamentals.isEmpty()) return;
+        List<String> lines = new ArrayList<>();
+        for (var year : m.boerseFundamentals) {
+            StringBuilder line = new StringBuilder(160);
+            for (BoerseFigure f : BOERSE_FIGURES) {
+                Double v = year.get(f.label());
+                if (v == null || !Double.isFinite(v)) continue;
+                if (line.length() > 0) line.append(", ");
+                line.append(f.rendered()).append(' ').append(fmt2(v)).append(f.suffix());
+            }
+            if (line.length() == 0) continue;
+            lines.add("  " + year.year() + ": " + line);
+        }
+        if (lines.isEmpty()) return;
+        int from = Math.max(0, lines.size() - MAX_BOERSE_FUNDAMENTAL_YEARS);
+        sb.append("FUNDAMENTAL HISTORY BY FISCAL YEAR (verified, boerse.de, oldest first; ")
+                .append("profit-and-loss and balance figures in millions of the reporting ")
+                .append("currency, per-share figures in currency units)")
+                .append(mark(nums, "boersede")).append(":\n");
+        for (String line : lines.subList(from, lines.size())) sb.append(line).append('\n');
+    }
+
+    /**
+     * The dpa-AFX analyst-call archive (boerse.de) - dated calls with the
+     * analysing house and its OWN rating wording, years deep. The Consorsbank
+     * distribution says where the street stands TODAY; this says how it got
+     * there.
+     */
+    private static void appendBoerseAnalystCalls(StringBuilder sb, Material m,
+            Map<String, Integer> nums) {
+        if (m.boerseAnalystCalls.isEmpty()) return;
+        sb.append("ANALYST CALL ARCHIVE (verified, boerse.de/dpa-AFX, newest first; the "
+                        + "rating is each house's own wording)")
+                .append(mark(nums, "boersede")).append(":\n");
+        int n = 0;
+        for (var call : m.boerseAnalystCalls) {
+            if (++n > MAX_BOERSE_ANALYST_CALLS) break;
+            sb.append("  - ");
+            if (call.date() != null) sb.append('[').append(call.date()).append("] ");
+            if (call.house() != null && !call.house().isBlank()) sb.append(call.house());
+            if (call.rating() != null && !call.rating().isBlank()) {
+                sb.append(": ").append(call.rating());
+            }
+            if (call.headline() != null && !call.headline().isBlank()) {
+                sb.append(" - ").append(call.headline().strip());
+            }
+            sb.append('\n');
+        }
+    }
+
+    /**
+     * Directors' dealings off boerse.de - real names, standing and volume.
+     * BESIDE the BaFin leg (which carries the same legal filings through a
+     * different register), never instead of it: each block carries its own
+     * source number, so a disagreement between the two is visible rather than
+     * silently merged away.
+     */
+    private static void appendBoerseInsider(StringBuilder sb, Material m,
+            Map<String, Integer> nums) {
+        if (m.boerseInsiderDeals.isEmpty()) return;
+        sb.append("DIRECTORS' DEALINGS (verified, boerse.de, newest first - a second "
+                        + "register beside the BaFin filings)")
+                .append(mark(nums, "boersede")).append(":\n");
+        int n = 0;
+        for (var deal : m.boerseInsiderDeals) {
+            if (++n > MAX_BOERSE_INSIDER_DEALS) break;
+            sb.append("  - ");
+            if (deal.date() != null) sb.append('[').append(deal.date()).append("] ");
+            if (deal.person() != null) sb.append(deal.person());
+            if (deal.role() != null && !deal.role().isBlank()) {
+                sb.append(" (").append(deal.role()).append(')');
+            }
+            if (deal.tradeType() != null && !deal.tradeType().isBlank()) {
+                sb.append(": ").append(deal.tradeType());
+            }
+            if (deal.volume() != null && Double.isFinite(deal.volume())) {
+                sb.append(' ').append(fmt2(deal.volume()));
+                if (deal.currency() != null && !deal.currency().isBlank()) {
+                    sb.append(' ').append(deal.currency());
+                }
+            }
+            sb.append('\n');
+        }
+    }
+
+    /**
+     * Handelsblatt's ISIN master data - identity that the German legs would
+     * otherwise leave dark (WKN, venue ticker, sector, country) plus the
+     * performance ladder, the latter ONLY when the Consorsbank leg missed:
+     * two performance blocks in one shelf are a duplicate, not a second
+     * opinion.
+     */
+    private static void appendMasterData(StringBuilder sb, Material m, Map<String, Integer> nums) {
+        var hb = m.hbInstrument;
+        if (hb == null) return;
+        StringBuilder line = new StringBuilder(200);
+        if (hb.companyName() != null) line.append("issuer ").append(hb.companyName()).append("; ");
+        if (hb.wkn() != null) line.append("WKN ").append(hb.wkn()).append("; ");
+        if (hb.ticker() != null) line.append("venue ticker ").append(hb.ticker()).append("; ");
+        if (hb.classification() != null) {
+            line.append("class ").append(hb.classification()).append("; ");
+        }
+        if (hb.sector() != null) line.append("sector ").append(hb.sector()).append("; ");
+        if (hb.country() != null) line.append("country ").append(hb.country()).append("; ");
+        if (hb.marketplace() != null) line.append("quoted on ").append(hb.marketplace()).append("; ");
+        if (line.length() > 0) {
+            sb.append("MASTER DATA (verified, Handelsblatt)").append(mark(nums, "handelsblatt"))
+                    .append(": ").append(line).append('\n');
+        }
+        if (m.deepDive != null) return; // the Consorsbank performance block already stands
+        StringBuilder perf = new StringBuilder(160);
+        appendPct(perf, "1w ", nz(hb.oneWeekPercent()));
+        appendPct(perf, ", 1m ", nz(hb.oneMonthPercent()));
+        appendPct(perf, ", 3m ", nz(hb.threeMonthPercent()));
+        appendPct(perf, ", 6m ", nz(hb.sixMonthPercent()));
+        appendPct(perf, ", 1y ", nz(hb.oneYearPercent()));
+        appendPct(perf, ", 5y ", nz(hb.fiveYearPercent()));
+        appendPct(perf, ", year to date ", nz(hb.yearToDatePercent()));
+        if (perf.length() > 0) {
+            sb.append("PERFORMANCE (verified, Handelsblatt)").append(mark(nums, "handelsblatt"))
+                    .append(": ").append(perf).append('\n');
+        }
+        StringBuilder figures = new StringBuilder(120);
+        appendFig(figures, "earnings per share ", nz(hb.eps()));
+        appendFig(figures, ", dividend per share ", nz(hb.dividend()));
+        appendPct(figures, ", dividend yield ", nz(hb.dividendYield()));
+        if (figures.length() > 0) {
+            sb.append("PER-SHARE FIGURES (verified, Handelsblatt)")
+                    .append(mark(nums, "handelsblatt")).append(": ").append(figures).append('\n');
+        }
+    }
+
+    /** A nullable upstream Double as the NaN the append helpers already skip. */
+    private static double nz(Double v) {
+        return v == null ? Double.NaN : v;
+    }
+
+    /**
+     * CNBC's quote fundamentals as a GAP FILLER: only rendered where the
+     * Consorsbank key figures AND the onvista facts both stayed empty - which
+     * is exactly the US case, where Yahoo's quoteSummary is crumb-locked.
+     * Never a second opinion against figures the house already verified.
+     */
+    private static void appendCnbcQuoteFacts(StringBuilder sb, Material m,
+            Map<String, Integer> nums) {
+        var q = m.cnbcQuote;
+        if (q == null) return;
+        if (m.deepDive != null && !m.deepDive.keyFigures().isEmpty()) return;
+        if (m.facts != null) return;
+        StringBuilder line = new StringBuilder(256);
+        appendFig(line, "P/E trailing ", nz(q.peTrailing()));
+        appendFig(line, ", P/E forward ", nz(q.peForward()));
+        appendFig(line, ", earnings per share trailing ", nz(q.epsTrailing()));
+        appendFig(line, ", earnings per share forward ", nz(q.epsForward()));
+        appendFig(line, ", beta ", nz(q.beta()));
+        if (q.marketCap() != null && Double.isFinite(q.marketCap())) {
+            line.append(String.format(Locale.ROOT, ", market cap %.1fB %s",
+                    q.marketCap() / 1e9, q.currency() == null ? "" : q.currency()).stripTrailing());
+        }
+        appendPct(line, ", return on equity ", nz(q.returnOnEquityPercent()));
+        appendPct(line, ", net profit margin ", nz(q.netProfitMarginPercent()));
+        appendPct(line, ", gross margin ", nz(q.grossMarginPercent()));
+        appendFig(line, ", debt/equity ", nz(q.debtToEquity()));
+        appendPct(line, ", dividend yield ", nz(q.dividendYieldPercent()));
+        if (line.length() == 0) return;
+        sb.append("QUOTE FUNDAMENTALS (verified, CNBC - this house's own chain carried none "
+                        + "for this listing)").append(mark(nums, "cnbc")).append(": ")
+                .append(line.charAt(0) == ',' ? line.substring(2) : line.toString()).append('\n');
+    }
+
+    /**
+     * The two dated anchors the CNBC quote carries for the Ausblick: the next
+     * reporting day and the ex-dividend day. Dates, never a forecast - exactly
+     * the kind of anchor a forward-looking sentence must hang on.
+     */
+    private static void appendCnbcDates(StringBuilder sb, Material m, Map<String, Integer> nums) {
+        var q = m.cnbcQuote;
+        if (q == null) return;
+        if (q.nextEarningsDate() == null && q.exDividendDate() == null) return;
+        sb.append("DATED ANCHORS (verified, CNBC)").append(mark(nums, "cnbc")).append(": ");
+        if (q.nextEarningsDate() != null) {
+            sb.append("next earnings ").append(q.nextEarningsDate());
+        }
+        if (q.exDividendDate() != null) {
+            if (q.nextEarningsDate() != null) sb.append("; ");
+            sb.append("ex-dividend ").append(q.exDividendDate());
+        }
+        sb.append('\n');
     }
 
     private static void appendTechnical(StringBuilder sb, CompanyDeepDive d, Map<String, Integer> nums) {
@@ -6402,6 +7445,38 @@ public class DeepDiveService {
                 return "Consorsbank Financial-Info" + (de
                         ? " - Kennzahlen, Bilanz, Analystenschätzungen, Termine"
                         : " - key figures, balance sheet, analyst estimates, corporate dates");
+            case "euevents":
+                return de
+                        ? "Borsa Italiana - Unternehmenstermine (ISIN-geführt)"
+                        : "Borsa Italiana - corporate dates (ISIN-keyed)";
+            case "statscal":
+                return de
+                        ? "Statistikämter - Veröffentlichungstermine (Eurostat, BEA, ONS)"
+                        : "Statistical offices - release schedules (Eurostat, BEA, ONS)";
+            case "tradingcal":
+                return de
+                        ? "Handelskalender - Xetra, Eurex und Tradegate "
+                                + "(Feiertage und verkürzte Handelstage)"
+                        : "Trading calendar - Xetra, Eurex and Tradegate "
+                                + "(holidays and shortened sessions)";
+            case "fedreg":
+                return de
+                        ? "US Federal Register - datierte Regulierungstermine "
+                                + "(Inkrafttreten, Kommentarfristen)"
+                        : "US Federal Register - dated regulatory events "
+                                + "(effective dates, comment deadlines)";
+            case "wocal":
+                return de
+                        ? "wallstreet-online - Unternehmenstermine mit Konsensschätzung "
+                                + "(nicht-US-Werte)"
+                        : "wallstreet-online - corporate dates with consensus estimate "
+                                + "(non-US names)";
+            case "issuer":
+                return de
+                        ? "EQS/DGAP - vom Emittenten gemeldete Unternehmenstermine "
+                                + "(Berichte, Hauptversammlung)"
+                        : "EQS/DGAP - issuer-declared corporate dates "
+                                + "(reports, annual general meeting)";
             case "tc":
                 return "TradingCentral (via Consorsbank)" + (de
                         ? " - charttechnische Einschätzung" : " - chart-technical view");
@@ -6413,10 +7488,10 @@ public class DeepDiveService {
                         : " - directors' dealings (art. 19 MAR)");
             case "sector": {
                 return (de
-                        ? "Sektor- und Makro-Kontext - Yahoo Sektor-ETFs, TradingView/ForexFactory-"
-                                + "Wirtschaftskalender, Notenbank-Termine"
-                        : "Sector and macro context - Yahoo sector ETFs, TradingView/ForexFactory "
-                                + "economic calendars, central-bank dates");
+                        ? "Sektor- und Makro-Kontext - Yahoo Sektor-ETFs, Wirtschaftskalender "
+                                + "(FTMO/ForexFactory, FXStreet, TradingView), Notenbank-Termine"
+                        : "Sector and macro context - Yahoo sector ETFs, economic calendars "
+                                + "(FTMO/ForexFactory, FXStreet, TradingView), central-bank dates");
             }
             case "world":
                 return de
@@ -6426,6 +7501,29 @@ public class DeepDiveService {
                         : "World signals - IMF PortWatch, EIA, Harpex, Energy-Charts, NOAA, CISA, "
                                 + "policy/civic wires, hazard picture (NOAA/USGS/FAA); "
                                 + "AI-judged per subject";
+            case "cnbc":
+                return "CNBC" + (de
+                        ? " - Quartalshistorie Schätzung vs. Ist (Gewinn je Aktie, Umsatz, "
+                                + "Ergebnis) und Quote-Kennzahlen (KGV, Beta, Marktkapitalisierung, "
+                                + "Eigenkapitalrendite, Marge, Verschuldung, nächster Bericht, "
+                                + "Ex-Dividende)"
+                        : " - quarterly estimate-vs-actual history (earnings per share, revenue, "
+                                + "income) and quote fundamentals (P/E, beta, market cap, return "
+                                + "on equity, margin, leverage, next report, ex-dividend)");
+            case "boersede":
+                return "boerse.de" + (de
+                        ? " - Directors' Dealings mit Klarnamen und Volumen, dpa-AFX-"
+                                + "Analystenarchiv, acht Geschäftsjahre GuV/Bilanz "
+                                + "(Kurse dort sind Schlusskurse Stuttgart)"
+                        : " - directors' dealings with real names and volumes, dpa-AFX analyst "
+                                + "archive, eight fiscal years of P&L and balance sheet "
+                                + "(prices there are Stuttgart end-of-day)");
+            case "handelsblatt":
+                return "Handelsblatt" + (de
+                        ? " - Instrument-Stammdaten zur ISIN (WKN, Ticker, Sektor, "
+                                + "Performance-Leiter)"
+                        : " - instrument master data for the ISIN (WKN, ticker, sector, "
+                                + "performance ladder)");
             case "marketbeat":
                 return "MarketBeat" + (de
                         ? " - Analysten-Aktionshistorie, US-Short-Quote und Presse-Zeitleiste"

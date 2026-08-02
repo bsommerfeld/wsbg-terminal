@@ -67,6 +67,40 @@
         </dependency>
         <dependency>
             <groupId>de.bsommerfeld</groupId>
+            <artifactId>tradingview</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>stocknear</artifactId>
+        </dependency>
+        <!-- The 2026-08-02 source wave's MARKET/FACT clients (no NewsSource, so
+             they never reach the DD through the aggregator): CNBC quotes +
+             earnings surprise history, boerse.de directors' dealings / analyst
+             archive / 8 fiscal years, Handelsblatt ISIN master data,
+             Boersenmedien instrument resolver, Traders Union movers. Compile
+             scope on purpose - DeepDiveService itself names these types. -->
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>cnbc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>boerse-de</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>handelsblatt</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>boersenmedien</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>tradersunion</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
             <artifactId>tradegate</artifactId>
             <scope>test</scope>
         </dependency>

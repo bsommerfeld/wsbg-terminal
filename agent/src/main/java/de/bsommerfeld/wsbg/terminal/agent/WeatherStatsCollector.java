@@ -957,7 +957,7 @@ class WeatherStatsCollector {
         EconCalendarClient client = econCalendarClient;
         if (client == null) return List.of();
         List<MacroStat> out = new ArrayList<>();
-        for (EconCalendarClient.EconEvent e : client.thisWeek()) {
+        for (EconCalendarClient.EconEvent e : client.docket()) {
             LocalDate day = Instant.ofEpochSecond(e.whenEpochSeconds()).atZone(zone).toLocalDate();
             if (!day.equals(today) || !relevantEvent(e)) continue;
             out.add(new MacroStat(e.title(), e.country(),
@@ -1387,8 +1387,8 @@ class WeatherStatsCollector {
         EconCalendarClient calendar = econCalendarClient;
         if (calendar != null) {
             for (EconCalendarClient.EconEvent e
-                    : guarded("ff this week",
-                            List.<EconCalendarClient.EconEvent>of(), calendar::thisWeek)) {
+                    : guarded("macro docket",
+                            List.<EconCalendarClient.EconEvent>of(), calendar::docket)) {
                 LocalDate day = Instant.ofEpochSecond(e.whenEpochSeconds())
                         .atZone(zone).toLocalDate();
                 if (!day.equals(tomorrow) || !relevantEvent(e) || econ >= MAX_OUTLOOK_ECON) {

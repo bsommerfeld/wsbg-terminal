@@ -1196,6 +1196,171 @@ class DeepDiveMaterialTest {
         assertContains(DeepDiveService.sourcesSection(m, false), "Signal desk");
     }
 
+    // ---- FXStreet as the second macro leg ----------------------------------
+
+    private static de.bsommerfeld.wsbg.terminal.briefing.FxStreetCalendarClient.FxsEvent fxs(
+            String name, String country, Double actual, Double consensus,
+            Double previous, Double revised) {
+        return new de.bsommerfeld.wsbg.terminal.briefing.FxStreetCalendarClient.FxsEvent(
+                "id-" + name, name, country, "USD", Instant.now().getEpochSecond(),
+                "HIGH", "%", actual, consensus, previous, revised, null, false, false, 0L);
+    }
+
+    @Test
+    void fxStreetLegDropsWhatTradingViewAlreadyHasUnlessThePriorWasRevised() {
+        var tv = List.of(new TradingViewCalendarClient.TvEvent(
+                "Core CPI m/m", "CPI", "US", "USD", Instant.now(), 1,
+                0.30, 0.20, 0.10, "%", "Jun", "tv"));
+
+        var additions = DeepDiveService.fxStreetAdditions(List.of(
+                // Same print, spelled differently, nothing new to say - out.
+                fxs("Core CPI (MoM)", "US", 0.3, 0.2, 0.1, null),
+                // Same print, but the PRIOR was corrected - that is news.
+                fxs("Core CPI m/m", "US", 0.3, 0.2, 0.1, 0.2),
+                // An event the other calendar never carried - in.
+                fxs("Trade Balance", "DE", -1.5, -2.0, -1.8, null),
+                // Below the docket bar: medium impact outside US/DE/EU.
+                new de.bsommerfeld.wsbg.terminal.briefing.FxStreetCalendarClient.FxsEvent(
+                        "x", "Building Permits", "NZ", "NZD", Instant.now().getEpochSecond(),
+                        "MEDIUM", "%", 1.0, null, null, null, null, false, false, 0L)),
+                tv);
+
+        assertEquals(2, additions.size());
+        assertEquals("Core CPI m/m", additions.get(0).name());
+        assertTrue(additions.get(0).priorRevised());
+        assertEquals("Trade Balance", additions.get(1).name());
+    }
+
+    @Test
+    void fxStreetOutcomesReachTheLageShelfWithTheRevisionSpelledOut() {
+        DeepDiveService.Material m = fullMaterial();
+        m.macroOutcomes = List.of(fxs("IFO Business Climate", "DE", 86.6, 86.1, 85.6, 85.7));
+
+        String lage = DeepDiveService.sectionMaterials(m)[DeepDiveService.SEC_SITUATION];
+        assertContains(lage, "IFO Business Climate (DE): actual 86.60%");
+        assertContains(lage, "vs consensus 86.10");
+        assertContains(lage, "(prior 85.60, since revised to 85.70)");
+        assertContains(lage, "above consensus (house comparison)");
+    }
+
+    // ---- wallstreet-online: the non-US consensus leg -----------------------
+
+    private static de.bsommerfeld.wsbg.terminal.briefing.WoCompanyCalendarClient.CompanyDate wo(
+            String company, long when, Double eps) {
+        return new de.bsommerfeld.wsbg.terminal.briefing.WoCompanyCalendarClient.CompanyDate(
+                when, "UD_1", company, "/aktien/x", "JP", "Quartalsmitteilung",
+                eps, "EUR", "nach Schluss");
+    }
+
+    @Test
+    void woNameJoinStaysStrictAndPrefersTheEarliestReportWithAnEstimate() {
+        long soon = Instant.now().getEpochSecond() + 86400;
+        var pick = DeepDiveService.matchWoDate(List.of(
+                // A different company that merely shares a word - must not match.
+                wo("Deutsche Bank", soon, 1.0),
+                // Past dates are no anchor for an outlook.
+                wo("Zalando", Instant.now().getEpochSecond() - 86400, 9.9),
+                // Bare date on the winning day...
+                wo("Zalando", soon, null),
+                // ...and the same day carrying the estimate - this one wins.
+                wo("Zalando", soon, 0.42),
+                wo("Zalando", soon + 86400, 0.99)), "Zalando SE");
+
+        assertEquals(soon, pick.whenEpochSeconds());
+        assertEquals(0.42, pick.epsEstimate());
+        assertNull(DeepDiveService.matchWoDate(List.of(wo("Deutsche Bank", soon, 1.0)),
+                "Deutsche Lufthansa AG"));
+    }
+
+    @Test
+    void woEstimateReachesTheOutlookShelfWithSlotAndCurrency() {
+        DeepDiveService.Material m = fullMaterial();
+        m.woEstimate = wo("Zalando", Instant.now().getEpochSecond() + 86400, 0.42);
+
+        String out = String.join("\n", DeepDiveService.sectionMaterials(m));
+        assertContains(out, "STREET CONSENSUS for the next report (verified, wallstreet-online)");
+        assertContains(out, "Quartalsmitteilung, consensus earnings per share 0.42 EUR");
+        assertContains(out, "(nach Schluss)");
+    }
+
+    // ---- Federal Register: the dated regulatory docket ----------------------
+
+    @Test
+    void regulatoryDatesReachTheDocketAndSayWhichKindOfDateTheyAre() {
+        DeepDiveService.Material m = fullMaterial();
+        m.regDocket = List.of(
+                new de.bsommerfeld.wsbg.terminal.briefing.FederalRegisterClient.DatedAction(
+                        java.time.LocalDate.of(2026, 8, 22), true, "Notice",
+                        "Initiation of Second Four-Year Review Process",
+                        "Trade Representative, Office of United States", "https://x"),
+                new de.bsommerfeld.wsbg.terminal.briefing.FederalRegisterClient.DatedAction(
+                        java.time.LocalDate.of(2026, 12, 15), false, "Rule",
+                        "Emergency Alert System; Wireless Emergency Alerts",
+                        "Federal Communications Commission", "https://y"));
+
+        String out = String.join("\n", DeepDiveService.sectionMaterials(m));
+        assertContains(out, "[2026-08-22] comment deadline, Trade Representative");
+        assertContains(out, "[2026-12-15] rule takes effect, Federal Communications Commission");
+    }
+
+    @Test
+    void euEventsJoinTheIsinExactShelfBesideTheIssuerLeg() {
+        DeepDiveService.Material m = fullMaterial();
+        m.euEvents = List.of(
+                new de.bsommerfeld.wsbg.terminal.briefing.BorsaItalianaEventsClient.EuEvent(
+                        java.time.LocalDate.of(2026, 9, 10), "IT0003188064",
+                        "BANCA IFIS S.p.A.", "Analyst Presentation"));
+
+        String out = String.join("\n", DeepDiveService.sectionMaterials(m));
+        assertContains(out, "UPCOMING EVENTS (verified)");
+        assertContains(out, "2026-09-10 Analyst Presentation");
+    }
+
+    @Test
+    void tradingBreaksTellTheOutlookWhenTheCageIsShutOrShort() {
+        DeepDiveService.Material m = fullMaterial();
+        m.tradingBreaks = List.of(
+                new de.bsommerfeld.wsbg.terminal.briefing.TradingCalendarClient.TradingBreak(
+                        java.time.LocalDate.of(2026, 12, 25), "Christmas Day", null),
+                new de.bsommerfeld.wsbg.terminal.briefing.TradingCalendarClient.TradingBreak(
+                        java.time.LocalDate.of(2026, 12, 30), "Last trading day of the year", 14));
+
+        String out = String.join("\n", DeepDiveService.sectionMaterials(m));
+        assertContains(out, "[2026-12-25] Christmas Day: no German trading that day");
+        assertContains(out, "[2026-12-30] Last trading day of the year: German trading ends early, at 14:00 local");
+    }
+
+    private static de.bsommerfeld.wsbg.terminal.briefing.StatsReleaseCalendarClient.Release rel(
+            String office, String title, boolean slipped) {
+        return new de.bsommerfeld.wsbg.terminal.briefing.StatsReleaseCalendarClient.Release(
+                java.time.LocalDate.of(2026, 9, 15), office, title, "August 2026", "",
+                false, slipped);
+    }
+
+    @Test
+    void statsShelfKeepsTheMarketMoversAndOnlyTheSlippedBritishOnes() {
+        var kept = DeepDiveService.statsBeyondTraderHorizon(List.of(
+                rel("Eurostat", "Industrial production", false),
+                rel("ONS", "Data centres and the UK National Accounts", false),
+                rel("ONS", "GDP first quarterly estimate", true),
+                rel("BEA", "Gross Domestic Product", false)));
+
+        assertEquals(3, kept.size());
+        assertEquals("Industrial production", kept.get(0).title());
+        assertEquals("GDP first quarterly estimate", kept.get(1).title());
+        assertEquals("Gross Domestic Product", kept.get(2).title());
+    }
+
+    @Test
+    void statsDocketSpellsOutAPostponedRelease() {
+        DeepDiveService.Material m = fullMaterial();
+        m.statsDocket = List.of(rel("ONS", "GDP first quarterly estimate", true));
+
+        String out = String.join("\n", DeepDiveService.sectionMaterials(m));
+        assertContains(out, "[2026-09-15] ONS: GDP first quarterly estimate (August 2026)");
+        assertContains(out, "the office has POSTPONED or cancelled this date");
+    }
+
     private static void assertContains(String brief, String needle) {
         assertTrue(brief.contains(needle),
                 "missing: \"" + needle + "\"\n---\n" + brief);
