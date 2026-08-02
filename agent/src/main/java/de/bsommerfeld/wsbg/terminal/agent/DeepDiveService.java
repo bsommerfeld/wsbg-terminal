@@ -144,6 +144,8 @@ public class DeepDiveService {
     private static final int MAX_ANALYST_ACTIONS = 10;
     /** CNBC quarters asked for and rendered - the endpoint's own ceiling is eight. */
     private static final int MAX_CNBC_QUARTERS = 8;
+    /** Sector rows rendered off the day's board - the standings, not the whole map. */
+    private static final int MAX_SECTOR_ROWS = 8;
     /** Days of the public-attention curve read - enough for a baseline and a spike. */
     private static final int ATTENTION_WINDOW_DAYS = 30;
     /** Peer target rows rendered - a yardstick, never the whole sector table. */
@@ -376,6 +378,13 @@ public class DeepDiveService {
     // shelf otherwise has to infer.
     private volatile de.bsommerfeld.wsbg.terminal.briefing.ApeWisdomClient apeWisdom;
     private volatile de.bsommerfeld.wsbg.terminal.briefing.WikidataClient wikidata;
+    // The Fool quote page's own profile figures - a SECOND independent gap
+    // filler beside the CNBC quote, for the US names where the German chain
+    // and Yahoo's crumb-locked summary both stay dark.
+    private volatile de.bsommerfeld.wsbg.terminal.fool.FoolNewsClient foolClient;
+    // The screener board. The service polls for a widget that does not exist
+    // yet; the DD asks it for ONE build on demand, which is one POST.
+    private volatile HeatmapService heatmapService;
 
     private final AtomicBoolean busy = new AtomicBoolean(false);
     private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
@@ -660,6 +669,16 @@ public class DeepDiveService {
     void setOnvistaFundamentals(
             de.bsommerfeld.wsbg.terminal.onvista.OnvistaFundamentalsClient client) {
         this.onvistaFacts = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setFoolClient(de.bsommerfeld.wsbg.terminal.fool.FoolNewsClient client) {
+        this.foolClient = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setHeatmapService(HeatmapService service) {
+        this.heatmapService = service;
     }
 
     @com.google.inject.Inject(optional = true)
@@ -3260,6 +3279,21 @@ public class DeepDiveService {
          * attention measured on the wrong article is worse than none.
          */
         List<de.bsommerfeld.wsbg.terminal.briefing.WikidataClient.PageviewPoint> attentionCurve = List.of();
+        /**
+         * The Fool quote page's profile figures - GAP FILLER, rendered only
+         * where the German chain AND the CNBC quote both came back empty.
+         */
+        de.bsommerfeld.wsbg.terminal.fool.FoolQuote foolQuote;
+        /**
+         * The day's sector standings from the screener board, cap-weighted.
+         * The sector ETF proxy answers for US sectors only and with one
+         * instrument; this is the whole market's money, sector by sector.
+         */
+        List<HeatmapService.Node> sectorBoard = List.of();
+        /** Which market the board was built for ("Deutschland"/"USA"). */
+        String sectorBoardUniverse;
+        /** The subject's own sector on that board, when it appears on it at all. */
+        String subjectSector;
         /** Structured entity facts (Wikidata), ISIN-pinned like the curve. */
         de.bsommerfeld.wsbg.terminal.briefing.WikidataClient.CompanyFacts entityFacts;
         /**
@@ -3775,6 +3809,42 @@ public class DeepDiveService {
             }
         } catch (Exception e) {
             LOG.debug("[DEEPDIVE] edgar 8-K leg failed: {}", e.getMessage());
+        }
+        // The Fool quote page, US-shaped tickers only: sector, industry,
+        // market cap, P/E, earnings per share and dividend yield off the same
+        // cached page the news leg already reads. A SECOND independent gap
+        // filler beside the CNBC quote - two sources disagreeing about a P/E
+        // is worth seeing, and for the small US names both are often the only
+        // ones that answer at all.
+        checkCancelled();
+        try {
+            var fool = foolClient;
+            String bare = usTicker(m.ticker);
+            if (fool != null && bare != null && m.deepDive == null && m.cnbcQuote == null) {
+                m.foolQuote = fool.quote(bare);
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] fool quote failed: {}", e.getMessage());
+        }
+        // The day's SECTOR STANDINGS off the screener board. The sector ETF
+        // proxy answers for US sectors only, through one instrument; this is
+        // the whole listed market's money, cap-weighted sector by sector, and
+        // it covers this house's home market too. One build, one POST - the
+        // service polls for a widget that does not exist yet.
+        checkCancelled();
+        try {
+            var heat = heatmapService;
+            if (heat != null) {
+                String universe = germanListing(m) ? "Deutschland" : "USA";
+                var map = heat.build(universe, "1D");
+                if (map != null && !map.nodes().isEmpty()) {
+                    m.sectorBoardUniverse = universe;
+                    m.sectorBoard = List.copyOf(map.nodes());
+                    m.subjectSector = sectorOfSubject(map.nodes(), m.ticker);
+                }
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] sector board failed: {}", e.getMessage());
         }
         // The retail rooms OUTSIDE our cage: where this ticker stands in the
         // cross-subreddit mention ranking, and which way it moved in a day.
@@ -4450,6 +4520,15 @@ public class DeepDiveService {
             }
             journalNotes(subject, List.of("finanzen.net — " + String.join(", ", bits)));
         }
+        if (m.foolQuote != null) {
+            journalNotes(subject, List.of("Motley Fool — "
+                    + (de ? "Profil-Kennzahlen" : "profile figures")));
+        }
+        if (!m.sectorBoard.isEmpty()) {
+            journalNotes(subject, List.of((de ? "Markt-Screener — Sektorstand "
+                    : "Market screener — sector standings ")
+                    + (m.sectorBoardUniverse == null ? "" : m.sectorBoardUniverse)));
+        }
         if (m.socialRank != null) {
             journalNotes(subject, List.of("ApeWisdom — "
                     + (de ? "Rang " : "rank ") + m.socialRank.rank() + ", "
@@ -4690,6 +4769,7 @@ public class DeepDiveService {
         // reaction follows"). The shelf now leads with the story context -
         // sector, world, press arc - and the trading tape closes as evidence.
         appendSectorContext(sb, m, nums);
+        appendSectorBoard(sb, m, nums);
         appendWorldSignals(sb, m, nums);
         appendPressTimeline(sb, m.pressTimeline, nums);
         appendPressHistory(sb, m, nums);
@@ -4712,6 +4792,7 @@ public class DeepDiveService {
         // vs actual over eight quarters is the section's hardest evidence.
         appendCnbcSurprises(sb, m, nums);
         appendFnEstimates(sb, m, nums);
+        appendFoolQuote(sb, m, nums);
         appendBoerseFundamentals(sb, m, nums);
         out[SEC_FUNDAMENTALS] = new Shelf(take(sb), List.of());
 
@@ -5012,6 +5093,8 @@ public class DeepDiveService {
                 || !m.fnVenues.isEmpty() || !m.fnTargets.isEmpty()) {
             nums.put("finanzennet", ++n);
         }
+        if (m.foolQuote != null) nums.put("foolquote", ++n);
+        if (!m.sectorBoard.isEmpty()) nums.put("sectorboard", ++n);
         if (m.deepDive != null || m.analystView != null) nums.put("consors", ++n);
         if (!m.issuerEvents.isEmpty()) nums.put("issuer", ++n);
         if (!m.euEvents.isEmpty()) nums.put("euevents", ++n);
@@ -7173,6 +7256,110 @@ public class DeepDiveService {
     }
 
     /**
+     * German listing? The screener board is per market, and asking the wrong
+     * one puts a German small cap next to the S&amp;P's giants. The ISIN's
+     * country prefix decides, with the venue suffix behind it.
+     */
+    static boolean germanListing(Material m) {
+        if (m.isin != null && m.isin.length() >= 2
+                && "DE".equalsIgnoreCase(m.isin.substring(0, 2))) {
+            return true;
+        }
+        return m.ticker != null && m.ticker.toUpperCase(Locale.ROOT).endsWith(".DE");
+    }
+
+    /**
+     * The subject's sector on the board, or null when it is not on it - the
+     * board carries the largest issuers, and a small cap simply is not there.
+     * A leaf's parent IS its sector container.
+     */
+    static String sectorOfSubject(List<HeatmapService.Node> nodes, String ticker) {
+        if (ticker == null || ticker.isBlank()) return null;
+        String base = ticker.trim().toUpperCase(Locale.ROOT);
+        int dot = base.indexOf('.');
+        String bare = dot > 0 ? base.substring(0, dot) : base;
+        for (HeatmapService.Node node : nodes) {
+            if (node.symbol() == null || node.parent() == null) continue;
+            String symbol = node.symbol().toUpperCase(Locale.ROOT);
+            if (symbol.equals(base) || symbol.equals(bare)) return node.parent();
+        }
+        return null;
+    }
+
+    /**
+     * The day's sector standings, cap-weighted (screener board). The sector
+     * proxy elsewhere on this shelf is ONE ETF and answers for US sectors
+     * only; this is the whole listed market's money, and it covers the home
+     * market too. The subject's own sector is marked where the board carries
+     * it - the board holds the largest issuers, so a small cap is simply not
+     * on it, and the block does not pretend otherwise.
+     */
+    private static void appendSectorBoard(StringBuilder sb, Material m,
+            Map<String, Integer> nums) {
+        if (m.sectorBoard.isEmpty()) return;
+        List<HeatmapService.Node> sectors = new ArrayList<>();
+        for (HeatmapService.Node node : m.sectorBoard) {
+            if (node.parent() == null && node.name() != null) sectors.add(node);
+        }
+        if (sectors.isEmpty()) return;
+        sectors.sort(Comparator.comparingDouble(HeatmapService.Node::performance).reversed());
+        sb.append("SECTOR STANDINGS TODAY (verified, market screener")
+                .append(m.sectorBoardUniverse == null ? "" : ", " + m.sectorBoardUniverse)
+                .append("; each sector's move WEIGHTED BY MARKET CAPITALISATION, so it is what "
+                        + "the sector's money did, not the average of its tickers)")
+                .append(mark(nums, "sectorboard")).append(":\n");
+        int n = 0;
+        for (HeatmapService.Node sector : sectors) {
+            if (++n > MAX_SECTOR_ROWS) break;
+            sb.append("  - ").append(sector.name()).append(": ")
+                    .append(signed(sector.performance())).append('%');
+            if (sector.name().equals(m.subjectSector)) sb.append("  <- this subject's sector");
+            sb.append('\n');
+        }
+        if (m.subjectSector == null) {
+            sb.append("  (this subject does not appear on the board - it carries the market's "
+                    + "largest issuers, so its own sector is not marked.)\n");
+        }
+    }
+
+    /**
+     * The Fool quote page's profile figures - the SECOND gap filler, rendered
+     * only where the German chain and the CNBC quote both stayed dark. For the
+     * small US names those two are frequently the only sources that answer at
+     * all, so a third independent one is coverage rather than repetition.
+     */
+    private static void appendFoolQuote(StringBuilder sb, Material m,
+            Map<String, Integer> nums) {
+        var q = m.foolQuote;
+        if (q == null) return;
+        List<String> bits = new ArrayList<>();
+        if (q.sector() != null && !q.sector().isBlank()) bits.add("sector " + q.sector());
+        if (q.industry() != null && !q.industry().isBlank()) bits.add("industry " + q.industry());
+        if (q.marketCap() != null && Double.isFinite(q.marketCap())) {
+            bits.add("market capitalisation " + fmt2(q.marketCap())
+                    + (q.currency() == null || q.currency().isBlank() ? "" : " " + q.currency()));
+        }
+        if (q.peRatio() != null && Double.isFinite(q.peRatio())) {
+            bits.add("P/E " + fmt2(q.peRatio()));
+        }
+        if (q.eps() != null && Double.isFinite(q.eps())) {
+            bits.add("earnings per share " + fmt2(q.eps()));
+        }
+        if (q.dividendYield() != null && Double.isFinite(q.dividendYield())) {
+            bits.add("dividend yield " + fmt2(q.dividendYield()) + "%");
+        }
+        if (q.week52Low() != null && q.week52High() != null
+                && Double.isFinite(q.week52Low()) && Double.isFinite(q.week52High())) {
+            bits.add("52-week range " + fmt2(q.week52Low()) + " to " + fmt2(q.week52High()));
+        }
+        if (bits.isEmpty()) return;
+        sb.append("PROFILE FIGURES (verified, Motley Fool quote page - stands in where the "
+                        + "house's own chain had nothing)")
+                .append(mark(nums, "foolquote")).append(": ")
+                .append(String.join(", ", bits)).append(".\n");
+    }
+
+    /**
      * MEASURED attention, from two places that have no opinion about the
      * stock: how loudly the retail rooms outside our cage are naming this
      * ticker (ApeWisdom's cross-subreddit ranking) and how often the public
@@ -8425,6 +8612,18 @@ public class DeepDiveService {
                         : "Measured attention - ApeWisdom (mentions across subreddits), "
                                 + "Wikimedia page views and Wikidata entity facts (the article "
                                 + "pinned to the company by ISIN)";
+            case "foolquote":
+                return de
+                        ? "Motley Fool (Kursseite) - Profil-Kennzahlen (Sektor, Branche, "
+                                + "Marktkapitalisierung, KGV, Gewinn je Aktie, Dividendenrendite)"
+                        : "Motley Fool (quote page) - profile figures (sector, industry, "
+                                + "market capitalisation, P/E, earnings per share, dividend yield)";
+            case "sectorboard":
+                return de
+                        ? "Markt-Screener - Sektor-Tagesstand des gesamten gelisteten Marktes, "
+                                + "nach Marktkapitalisierung gewichtet"
+                        : "Market screener - the day's sector standings across the whole listed "
+                                + "market, weighted by market capitalisation";
             case "finanzennet":
                 return "finanzen.net" + (de
                         ? " - Konsens-Verlauf über ein Jahr, Kursziele der Branchen-"

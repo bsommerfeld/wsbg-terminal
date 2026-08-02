@@ -102,6 +102,12 @@
             <groupId>de.bsommerfeld</groupId>
             <artifactId>tradersunion</artifactId>
         </dependency>
+        <!-- 2026-08-03: the quote page's own profile figures, a second
+             independent gap filler beside the CNBC quote. -->
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>fool</artifactId>
+        </dependency>
         <!-- 2026-08-03: the DD names finanzen.net's own market types (the
              year-long consensus trend, the peer target table, the estimate
              history with its surprises, the venue board). -->
