@@ -135,6 +135,17 @@ public final class LauncherMain {
 
         Thread.ofVirtual().name("update-thread").start(() -> {
             try {
+                // No language on record yet — a fresh install, or a launcher
+                // that was closed before the choice was made. Ask first, so
+                // everything after it (including the model choice) speaks the
+                // user's language. One OK persists the key, so this shows
+                // exactly once.
+                if (!i18n.explicit()) {
+                    String language = runLanguageChoicePhase(window, log);
+                    ConfigWriter.write(appDir, "[user]", "language", language, log);
+                    i18n.switchTo(language);
+                }
+
                 // A terminal is already up: either there is nothing to apply
                 // (then we are done — its window is already in front) or we
                 // close it first and run the normal pipeline over its install.
@@ -256,6 +267,36 @@ public final class LauncherMain {
             log.log("Update check failed (" + e.getMessage() + ") — treating as nothing pending.");
             return false;
         }
+    }
+
+    /**
+     * The app's primary language — preselected in the language choice, and
+     * what an unanswered choice keeps producing until one is made.
+     */
+    private static final String DEFAULT_LANGUAGE = "de";
+
+    /**
+     * Blocks until the user has picked a display language. The screen labels
+     * every option in its OWN language — the one screen that cannot assume a
+     * language is already known — and German arrives preselected, so
+     * confirming the default is a single click.
+     */
+    private static String runLanguageChoicePhase(LauncherWindow window, SessionLog log)
+            throws Exception {
+        java.util.List<LanguageChoicePanel.Row> rows = new java.util.ArrayList<>();
+        for (String code : LauncherI18n.LANGUAGES) {
+            rows.add(new LanguageChoicePanel.Row(code,
+                    java.util.Locale.forLanguageTag(code)
+                            .getDisplayLanguage(java.util.Locale.forLanguageTag(code)),
+                    LauncherI18n.translate("Choose your language", code),
+                    LauncherI18n.translate("You can change this later in the settings", code),
+                    LauncherI18n.translate("OK", code)));
+        }
+
+        log.log("Language choice UI shown (no explicit choice on record)");
+        String chosen = window.showLanguageChoice(rows, DEFAULT_LANGUAGE).get();
+        log.log("Language choice confirmed: " + chosen);
+        return chosen;
     }
 
     /**

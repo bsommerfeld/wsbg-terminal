@@ -54,19 +54,42 @@ final class LauncherI18n {
             Map.entry("Tight fit", "Passt knapp"),
             Map.entry("Too large", "Zu groß"),
             Map.entry("The recommendation fits your machine", "Die Empfehlung passt zu deinem Rechner"),
+            Map.entry("Choose your language", "Sprache wählen"),
+            Map.entry("You can change this later in the settings", "Später in den Einstellungen änderbar"),
             Map.entry("OK", "Ok"),
             Map.entry("Error", "Fehler"),
             Map.entry("Launcher failed", "Start fehlgeschlagen"),
             Map.entry("Cannot create app directory", "Anwendungsverzeichnis kann nicht erstellt werden")
     );
 
-    private final String language;
+    /** The languages the launcher and the terminal UI both speak. */
+    static final String[] LANGUAGES = {"de", "en"};
+
+    /**
+     * Volatile: the language-choice screen switches it mid-run, and the
+     * pipeline reads it from the update thread while the EDT paints.
+     */
+    private volatile String language;
+
+    /** Whether {@link #language} came from config.toml rather than a fallback. */
+    private final boolean explicit;
 
     LauncherI18n(Path appDir) {
-        language = resolveLanguage(appDir);
+        String configured = configuredLanguage(appDir);
+        explicit = !configured.isEmpty();
+        language = explicit ? configured : systemLanguage();
     }
 
     String get(String key) {
+        return translate(key, language);
+    }
+
+    /**
+     * Translation into an explicitly named language — for the language-choice
+     * screen, which has to label every option in its OWN language, not in the
+     * one currently active.
+     */
+    static String translate(String key, String language) {
         if ("de".equals(language)) {
             return DE.getOrDefault(key, key);
         }
@@ -78,31 +101,45 @@ final class LauncherI18n {
     }
 
     /**
-     * Reads the language from config.toml → falls back to system
-     * locale → falls back to "en".
+     * Whether the user's language is on record in config.toml. False means
+     * nothing was ever chosen (fresh install, or the launcher was closed
+     * before the choice) — the launcher then asks.
      */
-    private static String resolveLanguage(Path appDir) {
+    boolean explicit() {
+        return explicit;
+    }
+
+    /** Applies the language picked in the launcher's language-choice screen. */
+    void switchTo(String language) {
+        this.language = language;
+    }
+
+    /**
+     * Reads {@code language} from config.toml, or empty when the file or the
+     * key is missing.
+     */
+    private static String configuredLanguage(Path appDir) {
         Path configFile = appDir.resolve("config.toml");
-        if (Files.exists(configFile)) {
-            try {
-                for (String line : Files.readAllLines(configFile)) {
-                    String trimmed = line.strip();
-                    if (trimmed.startsWith("language")) {
-                        int eq = trimmed.indexOf('=');
-                        if (eq > 0) {
-                            String value = trimmed.substring(eq + 1).strip()
-                                    .replace("\"", "").replace("'", "");
-                            if (!value.isEmpty()) return value;
-                        }
+        if (!Files.exists(configFile)) return "";
+        try {
+            for (String line : Files.readAllLines(configFile)) {
+                String trimmed = line.strip();
+                if (trimmed.startsWith("language")) {
+                    int eq = trimmed.indexOf('=');
+                    if (eq > 0) {
+                        String value = trimmed.substring(eq + 1).strip()
+                                .replace("\"", "").replace("'", "");
+                        if (!value.isEmpty()) return value;
                     }
                 }
-            } catch (IOException ignored) {
             }
+        } catch (IOException ignored) {
         }
+        return "";
+    }
 
-        // Fall back to system locale
-        String systemLang = System.getProperty("user.language", "en");
-        if ("de".equals(systemLang)) return "de";
-        return "en";
+    /** Fallback while no choice is on record: the system locale, else English. */
+    private static String systemLanguage() {
+        return "de".equals(System.getProperty("user.language", "en")) ? "de" : "en";
     }
 }

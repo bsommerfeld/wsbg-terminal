@@ -47,6 +47,9 @@ final class LauncherWindow extends JFrame {
     // resize per frame stutters on macOS.
     private static final int CHOICE_WIDTH = 368;
     private static final int CHOICE_HEIGHT = 380;
+    // The language choice carries two rows instead of five — same width, so
+    // the two screens read as one flow, but only as tall as its content.
+    private static final int LANGUAGE_HEIGHT = 256;
     private static final int MORPH_MS = 450;
 
     /** The logo's top inset in the normal layout (the morph's start point). */
@@ -63,17 +66,20 @@ final class LauncherWindow extends JFrame {
     private final ProgressInfoLine infoLine;
     private final JLabel bytesLabel;
 
-    // Model-choice morph state. The choice view replaces the content pane
-    // wholesale and paints the (smaller) window body itself while morphing;
-    // the normal root returns after the collapse.
+    // Choice-morph state. A choice view replaces the content pane wholesale
+    // and paints the (smaller) window body itself while morphing; the normal
+    // root returns after the collapse.
     private final JComponent logoPanel = LogoRenderer.createPanel();
     private final JPanel normalRoot;
-    private ModelChoicePanel choicePanel;
+    private JComponent choicePanel;
+    private MorphView choiceView;
+    private int choiceWidth;
+    private int choiceHeight;
     private Timer morphTimer;
     private long morphStart;
     private boolean morphExpanding;
     private CompletableFuture<String> choiceFuture;
-    private String chosenTag;
+    private String chosenValue;
 
     // Remaining-time estimator. EDT-only — touched solely from
     // flush()/resetProgress(), both of which run on the Swing thread.
@@ -175,6 +181,18 @@ final class LauncherWindow extends JFrame {
     }
 
     /**
+     * Morphs the window into its language-choice state; the returned future
+     * completes with the chosen ISO language code. Safe to call from any
+     * thread; the caller blocks on the future.
+     */
+    CompletableFuture<String> showLanguageChoice(List<LanguageChoicePanel.Row> rows,
+            String preselectCode) {
+        return showChoice(CHOICE_WIDTH, LANGUAGE_HEIGHT, logo ->
+                new LanguageChoicePanel(rows, preselectCode, logo,
+                        WIDTH, HEIGHT, LOGO_TOP_NORMAL, this::onChoiceConfirmed));
+    }
+
+    /**
      * Morphs the window into its large model-choice state and shows the tier
      * list; the returned future completes with the chosen tag after the user
      * confirmed and the window has morphed back to its normal state. Safe to
@@ -182,6 +200,18 @@ final class LauncherWindow extends JFrame {
      */
     CompletableFuture<String> showModelChoice(List<ModelChoicePanel.Row> rows,
             String preselectTag, ModelChoicePanel.Labels labels) {
+        return showChoice(CHOICE_WIDTH, CHOICE_HEIGHT, logo ->
+                new ModelChoicePanel(rows, preselectTag, labels,
+                        logo, WIDTH, HEIGHT, LOGO_TOP_NORMAL, this::onChoiceConfirmed));
+    }
+
+    /**
+     * The shared morph-in for every choice screen: snapshots the splash logo,
+     * installs the view, and starts the expand clock.
+     */
+    private <T extends JComponent & MorphView> CompletableFuture<String> showChoice(
+            int targetWidth, int targetHeight,
+            java.util.function.Function<java.awt.image.BufferedImage, T> viewFactory) {
         CompletableFuture<String> future = new CompletableFuture<>();
         choiceFuture = future;
         SwingUtilities.invokeLater(() -> {
@@ -196,17 +226,20 @@ final class LauncherWindow extends JFrame {
             logoPanel.paint(lg);
             lg.dispose();
 
-            choicePanel = new ModelChoicePanel(rows, preselectTag, labels,
-                    logo, WIDTH, HEIGHT, LOGO_TOP_NORMAL, this::onModelChosen);
+            T view = viewFactory.apply(logo);
+            choicePanel = view;
+            choiceView = view;
+            choiceWidth = targetWidth;
+            choiceHeight = targetHeight;
 
             // Size and shape the frame to the target ONCE — top edge
             // anchored, horizontally centered. The newly claimed area is
             // still transparent at this instant, so nothing visibly jumps;
             // from here on the morph is pure synchronous painting (see the
-            // flicker discipline on ModelChoicePanel).
-            setBounds(getX() - (CHOICE_WIDTH - WIDTH) / 2, getY(),
-                    CHOICE_WIDTH, CHOICE_HEIGHT);
-            setShape(new RoundRectangle2D.Double(0, 0, CHOICE_WIDTH, CHOICE_HEIGHT,
+            // flicker discipline on MorphView).
+            setBounds(getX() - (targetWidth - WIDTH) / 2, getY(),
+                    targetWidth, targetHeight);
+            setShape(new RoundRectangle2D.Double(0, 0, targetWidth, targetHeight,
                     CORNER_ARC, CORNER_ARC));
             setContentPane(choicePanel);
             validate();
@@ -317,13 +350,13 @@ final class LauncherWindow extends JFrame {
     }
 
     // =====================================================================
-    // Model-choice morph
+    // Choice morph
     // =====================================================================
 
-    private void onModelChosen(String tag) {
-        chosenTag = tag;
+    private void onChoiceConfirmed(String value) {
+        chosenValue = value;
         // Back to the morphing surface: transparent outside the shrinking body.
-        choicePanel.setRested(false);
+        choiceView.setRested(false);
         startMorph(false);
     }
 
@@ -350,7 +383,7 @@ final class LauncherWindow extends JFrame {
         // Cubic ease-in-out — soft start, soft landing, no snap.
         float e = t < 0.5f ? 4 * t * t * t : 1 - (float) Math.pow(-2 * t + 2, 3) / 2;
 
-        choicePanel.setMorphT(e);
+        choiceView.setMorphT(e);
         choicePanel.paintImmediately(0, 0, choicePanel.getWidth(), choicePanel.getHeight());
 
         if (raw >= 1f) {
@@ -358,17 +391,19 @@ final class LauncherWindow extends JFrame {
             if (morphExpanding) {
                 // At rest the body fills the frame — flip opaque so ordinary
                 // hover repaints can never clear-bleed the desktop through.
-                choicePanel.setRested(true);
+                choiceView.setRested(true);
             } else {
-                setBounds(getX() + (CHOICE_WIDTH - WIDTH) / 2, getY(), WIDTH, HEIGHT);
+                setBounds(getX() + (choiceWidth - WIDTH) / 2, getY(), WIDTH, HEIGHT);
                 setShape(new RoundRectangle2D.Double(0, 0, WIDTH, HEIGHT,
                         CORNER_ARC, CORNER_ARC));
                 setContentPane(normalRoot);
                 validate();
                 repaint();
+                choicePanel = null;
+                choiceView = null;
                 CompletableFuture<String> future = choiceFuture;
                 choiceFuture = null;
-                if (future != null) future.complete(chosenTag);
+                if (future != null) future.complete(chosenValue);
             }
         }
     }
