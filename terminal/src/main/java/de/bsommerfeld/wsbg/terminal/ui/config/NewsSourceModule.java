@@ -96,6 +96,16 @@ final class NewsSourceModule extends AbstractModule {
         // client follows rel="next" instead of building page URLs.
         newsSources.addBinding().to(
                 de.bsommerfeld.wsbg.terminal.boersede.BoerseDeNewsClient.class);
+        // Börse Online + Der Aktionär: one client, because it is one CMS -
+        // both quote endpoints answer byte-identically and the article IDs
+        // share a global space (the same dpa-AFX piece is …-542040.html under
+        // both roofs), so dedupe runs on ID, not URL. Four ISIN-addressed
+        // legs; Der Aktionär reaches back to 2003 via its 131 sitemaps.
+        // Pagination gotcha: the lists never run empty, they CLAMP - page
+        // 5000 returns page 50's items forever, so the walk also breaks on a
+        // repeated first article ID.
+        newsSources.addBinding().to(
+                de.bsommerfeld.wsbg.terminal.boersenmedien.BoersenmedienNewsClient.class);
         // Ariva forum: the German retail FORUM-SENTIMENT leg — one keyless
         // community RSS firehose with authoritative <isin> tags per post
         // (multi-listing threads tag both share classes; probed 2026-07-16).

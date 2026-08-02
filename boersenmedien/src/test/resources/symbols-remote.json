@@ -1,0 +1,63 @@
+[
+ {
+  "instrument": {
+   "isin": "DE0007236101",
+   "wkn": "723610",
+   "name": "Siemens AG",
+   "shortName": "Siemens",
+   "ticker": "SIE",
+   "usTicker": "SMAWF",
+   "type": 3,
+   "logo": "https://images.boersenmedien.com/images/0350133a-5200-4c75-8a8c-3940cd68c114.svg",
+   "tradingVenues": [
+    {
+     "id": 8787,
+     "code": "TRADE",
+     "name": "Tradegate",
+     "opening": "08:00:00",
+     "closing": "22:00:00"
+    }
+   ],
+   "tradingVenueName": "Tradegate"
+  },
+  "quote": {
+   "currency": "EUR",
+   "last": 282.9,
+   "open": 282.35,
+   "high": 286.85,
+   "low": 280.0,
+   "ask": 283.3,
+   "bid": 282.45,
+   "volume": 8.0,
+   "date": "2026-07-31T20:02:55+00:00",
+   "previousPrice": 282.9,
+   "previousAsk": 283.3,
+   "previousBid": 282.45,
+   "previousVolume": 55127.0,
+   "previousDate": "2026-07-31T00:00:00",
+   "change": 1.5,
+   "changePercent": 0.5322,
+   "performance": {
+    "performanceCurrentYearAbsolute": 43.85,
+    "performanceCurrentYear": 20.824,
+    "performance1Day": 0.0,
+    "performance1Week": 4.218,
+    "performance1Month": 0.855,
+    "performance3Months": 12.15,
+    "performance6Months": 13.045,
+    "performance1Year": 28.598,
+    "performance2Years": 0.0,
+    "performance3Years": 96.245,
+    "performance5Years": 144.385,
+    "performance10Years": 311.885
+   },
+   "highLow": {
+    "high52Weeks": 286.85,
+    "low52Weeks": 196.02
+   }
+  },
+  "isin": "DE0007236101",
+  "wkn": "723610",
+  "name": "Siemens"
+ }
+]

@@ -1,0 +1,62 @@
+[
+ {
+  "isin": "DE000SHL1006",
+  "wkn": "SHL100",
+  "name": "Siemens Healthineers",
+  "typeId": 3,
+  "typeName": null,
+  "exchange": null,
+  "linkName": "siemenshealthineers",
+  "linkUrl": "/aktien/kurse/siemenshealthineers-de000shl1006.html"
+ },
+ {
+  "isin": "DE000ENER6Y0",
+  "wkn": "ENER6Y",
+  "name": "Siemens Energy",
+  "typeId": 3,
+  "typeName": null,
+  "exchange": null,
+  "linkName": "siemensenergy",
+  "linkUrl": "/aktien/kurse/siemensenergy-de000ener6y0.html"
+ },
+ {
+  "isin": "DE0007236101",
+  "wkn": "723610",
+  "name": "Siemens",
+  "typeId": 3,
+  "typeName": null,
+  "exchange": null,
+  "linkName": "siemens",
+  "linkUrl": "/aktien/kurse/siemens-de0007236101.html"
+ },
+ {
+  "isin": "CA82619D1024",
+  "wkn": "A40D85",
+  "name": "Siemens AG",
+  "typeId": 3,
+  "typeName": null,
+  "exchange": null,
+  "linkName": "siemensag",
+  "linkUrl": "/aktien/kurse/siemensag-ca82619d1024.html"
+ },
+ {
+  "isin": "US82622J1043",
+  "wkn": "SHL1AD",
+  "name": "Siemens Healthineers AG",
+  "typeId": 3,
+  "typeName": null,
+  "exchange": null,
+  "linkName": "siemenshealthineersag",
+  "linkUrl": "/aktien/kurse/siemenshealthineersag-us82622j1043.html"
+ },
+ {
+  "isin": "CA82620L1013",
+  "wkn": "A410XL",
+  "name": "Siemens AG",
+  "typeId": 3,
+  "typeName": null,
+  "exchange": null,
+  "linkName": "siemensag",
+  "linkUrl": "/aktien/kurse/siemensag-ca82620l1013.html"
+ }
+]

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <sitemap>
+    <loc>https://www.deraktionaer.de/sitemapsites.xml</loc>
+  </sitemap>
+  <sitemap>
+    <loc>https://www.deraktionaer.de/sitemapsymbols.xml</loc>
+  </sitemap>
+  <sitemap>
+    <loc>https://www.deraktionaer.de/sitemaparticles1.xml</loc>
+  </sitemap>
+  <sitemap>
+    <loc>https://www.deraktionaer.de/sitemaparticles2.xml</loc>
+  </sitemap>
+  <sitemap>
+    <loc>https://www.deraktionaer.de/sitemaparticles3.xml</loc>
+  </sitemap>
+  <sitemap>
+    <loc>https://www.deraktionaer.de/sitemaparticles130.xml</loc>
+  </sitemap>
+  <sitemap>
+    <loc>https://www.deraktionaer.de/sitemaparticles131.xml</loc>
+  </sitemap>
+</sitemapindex>
