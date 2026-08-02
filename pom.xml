@@ -49,6 +49,7 @@
         <module>welt</module>
         <module>kapitalmarktexperten</module>
         <module>handelsblatt</module>
+        <module>stocknear</module>
         <module>fn-news</module>
         <module>websearch</module>
         <module>briefing</module>
@@ -287,6 +288,11 @@
             <dependency>
                 <groupId>de.bsommerfeld</groupId>
                 <artifactId>handelsblatt</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>stocknear</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

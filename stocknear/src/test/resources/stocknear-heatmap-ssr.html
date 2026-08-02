@@ -1,0 +1,15 @@
+<!doctype html><html lang="en-US"><head><title>Heatmap</title></head><body>
+<div id="svelte">…markup…</div>
+<script>
+	{
+		__sveltekit_1a2b3c = { base: "", assets: "" };
+		const element = document.currentScript.parentElement;
+		Promise.all([import("/_app/immutable/entry/start.js")]).then(([kit, app]) => {
+			kit.start(app, element, {
+				node_ids: [0, 12],
+				data: [null,{"type":"data","data":{"getHeatmap":{"data":[{"id":"Technology","name":"Technology","value":3421000000000,"colorValue":1.42},{"id":"NVDA","name":"NVIDIA Corp","parent":"Technology","value":4512000000000,"colorValue":2.9276,"custom":{"symbol":"NVDA","performance":"2.93%","marketCap":4512000000000,"currentPrice":200.75,"referencePrice":195.04,"referenceDate":"2026-07-31","timePeriod":"1D"}},{"id":"AAPL","name":"Apple Inc","parent":"Technology","value":4537000000000,"colorValue":-7.3539,"custom":{"symbol":"AAPL","performance":"-7.35%","marketCap":4537000000000,"currentPrice":308.91,"referencePrice":333.43,"referenceDate":"2026-07-31","timePeriod":"1D"}},{"id":"Energy","name":"Energy","value":812000000000,"colorValue":-0.51}],"timePeriod":"1D","colorRange":8,"etfName":"SPY"}},"uses":{}}]
+			});
+		});
+	}
+</script>
+</body></html>
