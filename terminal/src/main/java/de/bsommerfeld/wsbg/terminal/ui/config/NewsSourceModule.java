@@ -64,6 +64,17 @@ final class NewsSourceModule extends AbstractModule {
         // all. WELT Plus pieces are marked pre-fetch (feed flag AND /plus URL).
         newsSources.addBinding().to(
                 de.bsommerfeld.wsbg.terminal.welt.WeltNewsClient.class);
+        // Kapitalmarktexperten: an open wp-json with 19.460 full texts, an
+        // ISIN as a TOP-LEVEL field per post (so the ISIN fan answers exactly,
+        // not fuzzily) and date windows server-side - a genuine archive leg
+        // for the German small-cap long tail. BUT the house generates ~60
+        // machine-written pieces a day from the very wires we tap directly,
+        // so every item ships under the publisher "Kapitalmarktexperten
+        // (KI-generiert)": it may inform a dossier, it must never pass as a
+        // first source. The archive fan is the main road, the name fan the
+        // side door.
+        newsSources.addBinding().to(
+                de.bsommerfeld.wsbg.terminal.kapitalmarktexperten.KapitalmarktexpertenClient.class);
         // Ariva forum: the German retail FORUM-SENTIMENT leg — one keyless
         // community RSS firehose with authoritative <isin> tags per post
         // (multi-listing threads tag both share classes; probed 2026-07-16).

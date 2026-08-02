@@ -1,0 +1,20 @@
+[
+ {
+  "id": 758,
+  "count": 92,
+  "name": "Siemens",
+  "slug": "siemens"
+ },
+ {
+  "id": 852,
+  "count": 178,
+  "name": "Siemens Energy",
+  "slug": "siemens-energy"
+ },
+ {
+  "id": 765,
+  "count": 38,
+  "name": "Siemens Healthineers",
+  "slug": "siemens-healthineers"
+ }
+]
