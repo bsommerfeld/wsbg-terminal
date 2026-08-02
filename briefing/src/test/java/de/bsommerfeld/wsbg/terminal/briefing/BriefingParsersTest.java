@@ -10,6 +10,7 @@ import java.util.Optional;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -78,6 +79,339 @@ class BriefingParsersTest {
         assertEquals("High", events.get(0).impact());
         assertEquals(Instant.parse("2026-07-14T12:30:00Z").getEpochSecond(),
                 events.get(0).whenEpochSeconds());
+    }
+
+    @Test
+    void ftmoCalendarCarriesActualRestrictionAndScope() {
+        String json = """
+                {"view":{"displayActualValue":true},"items":[
+                 {"title":"Core PCE m/m","impact":"high","instrument":"USD + US Indices + XAUUSD + DXY",
+                  "restriction":true,"date":"2026-08-05T14:30:00+02:00","forecast":"0.2 %",
+                  "previous":"0.3 %","actual":"0.1 %"},
+                 {"title":"Crude Oil Inventories","impact":"medium","instrument":"Crude Oil",
+                  "restriction":false,"date":"2026-08-06T16:30:00+02:00","forecast":"","previous":"",
+                  "actual":null},
+                 {"title":"broken","impact":"high","instrument":"EUR","date":"not-a-date"}]}""";
+        List<EconCalendarClient.EconEvent> events = EconCalendarClient.parseFtmo(json);
+        assertEquals(2, events.size());
+
+        EconCalendarClient.EconEvent pce = events.get(0);
+        // The lead code of a compound scope is the affected currency, and the
+        // capitalised rating is what the downstream shelves compare against.
+        assertEquals("USD", pce.country());
+        assertEquals("High", pce.impact());
+        assertEquals("USD + US Indices + XAUUSD + DXY", pce.instrument());
+        assertEquals("0.1 %", pce.actual());
+        assertTrue(pce.restricted());
+        assertEquals(Instant.parse("2026-08-05T12:30:00Z").getEpochSecond(),
+                pce.whenEpochSeconds());
+
+        // A scope without a currency leaves country empty rather than inventing one.
+        EconCalendarClient.EconEvent oil = events.get(1);
+        assertEquals("", oil.country());
+        assertEquals("Crude Oil", oil.instrument());
+        assertEquals("", oil.actual());
+        assertFalse(oil.restricted());
+    }
+
+    @Test
+    void ftmoGarbageYieldsEmptyList() {
+        assertTrue(EconCalendarClient.parseFtmo("<html>bot wall</html>").isEmpty());
+        assertTrue(EconCalendarClient.parseFtmo("{\"errorCode\":\"DATE_RANGE_VIOLATED\"}").isEmpty());
+        assertTrue(EconCalendarClient.parseFtmo(null).isEmpty());
+    }
+
+    // ---- FXStreet ----------------------------------------------------------
+
+    @Test
+    void fxStreetParsesTypedValuesAndSpotsThePriorRevision() {
+        String json = """
+                [{"id":"01e5739f","eventId":"9b7c0cb1","dateUtc":"2026-07-27T08:00:00Z",
+                  "actual":86.6,"revised":85.7,"consensus":86.1,"previous":85.6,
+                  "isBetterThanExpected":true,"name":"IFO - Business Climate","countryCode":"DE",
+                  "currencyCode":"EUR","unit":null,"volatility":"MEDIUM","isTentative":false,
+                  "isSpeech":false,"lastUpdated":1785139276},
+                 {"id":"aa","eventId":"bb","dateUtc":"2026-07-28T12:30:00Z","actual":null,
+                  "revised":null,"consensus":0.2,"previous":0.3,"name":"Core PCE","countryCode":"US",
+                  "currencyCode":"USD","unit":"%","volatility":"HIGH","lastUpdated":0},
+                 {"id":"cc","name":"broken","dateUtc":"not-a-date"}]""";
+        List<FxStreetCalendarClient.FxsEvent> events = FxStreetCalendarClient.parse(json);
+        assertEquals(2, events.size());
+
+        FxStreetCalendarClient.FxsEvent ifo = events.get(0);
+        assertEquals(86.6, ifo.actual());
+        assertEquals(85.6, ifo.previous());
+        // The prior print was corrected upwards - the fact a naked actual hides.
+        assertTrue(ifo.priorRevised());
+        assertTrue(ifo.released());
+        assertEquals(Boolean.TRUE, ifo.betterThanExpected());
+        assertEquals(Instant.parse("2026-07-27T08:00:00Z").getEpochSecond(),
+                ifo.whenEpochSeconds());
+
+        // Unreleased: numbers stay null rather than collapsing to zero.
+        FxStreetCalendarClient.FxsEvent pce = events.get(1);
+        assertFalse(pce.released());
+        assertNull(pce.actual());
+        assertFalse(pce.priorRevised());
+        assertNull(pce.betterThanExpected());
+    }
+
+    @Test
+    void fxStreetDetailStripsMarkupAndGarbageYieldsNothing() {
+        String json = """
+                {"urlSource":"https://www.ifo.de/en/survey","whyMatters":null,
+                 "description":"Released by the <a href=\\"http://x\\">CESifo Group</a>  and closely watched.",
+                 "source":"IFO Institute","nextReleaseDate":"2026-08-27T08:00:00Z"}""";
+        FxStreetCalendarClient.FxsDetail detail = FxStreetCalendarClient.parseDetail(json);
+        assertEquals("IFO Institute", detail.source());
+        assertEquals("2026-08-27T08:00:00Z", detail.nextReleaseDateIso());
+        assertTrue(detail.description().contains("CESifo Group"));
+        assertFalse(detail.description().contains("<a href"));
+
+        assertTrue(FxStreetCalendarClient.parse("<html>bot wall</html>").isEmpty());
+        assertTrue(FxStreetCalendarClient.parse(null).isEmpty());
+        assertNull(FxStreetCalendarClient.parseDetail("[]"));
+    }
+
+    // ---- wallstreet-online Unternehmenstermine ------------------------------
+
+    /**
+     * The real row markup, trimmed to one row. Kept as plain HTML and wrapped
+     * into the RPC envelope programmatically — hand-escaping it into a JSON
+     * literal is how you end up pinning a fixture that is not valid JSON.
+     */
+    private static final String WO_ROW = """
+            <h3>Termine</h3>
+            <div class="wrapper body mainRow mainRow0" rel="0">
+            <div  class="time  datetime item"><div class='span' ><span rel="2026-08-03 22:00:00">03.08.2026</span></div></div>
+            <div  class="country d-none inst_iso_2letterright  item"><div class='span' ><img alt="us" src="x" title="USA" /></div></div>
+            <div  class="instrument  instrument_display_name item"><div class='span' ><a href="/aktien/palantir-aktie" title="Palantir Aktie" >Palantir</a></div></div>
+            <div  class="  symbol item"><div class='span' ><span class="symbol"><span class="event_id none">UD_673638906</span><a href="/aktien/palantir-aktie">Quartalsmitteilung</a></span></div></div>
+            <div  class="  actual_plus item"><div class='span' ></div></div>
+            <div  class="  consensus_plus item"><div class='span' ><span class="d-inline-block d-sm-none">EPS Schätzung</span> 1.234,28<span class="curSymbol">$</span></div></div>
+            <div  class="  beforeAfterMarket item"><div class='span' >nach Schluss</div></div></div>
+            """;
+
+    @Test
+    void woCalendarParsesRowsAndGermanDecimalsWithCurrency() throws Exception {
+        var envelope = new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode();
+        envelope.put("status", 1).putObject("data").put("days", 1).put("html", WO_ROW);
+
+        List<WoCompanyCalendarClient.CompanyDate> dates =
+                WoCompanyCalendarClient.parse(envelope.toString());
+        assertEquals(1, dates.size());
+        WoCompanyCalendarClient.CompanyDate d = dates.get(0);
+        assertEquals("Palantir", d.company());
+        assertEquals("Quartalsmitteilung", d.event());
+        assertEquals("US", d.country());
+        assertEquals("UD_673638906", d.eventId());
+        assertEquals("/aktien/palantir-aktie", d.slug());
+        // German thousands and decimal separators, currency from the glyph.
+        assertEquals(1234.28, d.epsEstimate());
+        assertEquals("USD", d.currency());
+        assertEquals("nach Schluss", d.slot());
+        // Berlin wall-clock, not UTC.
+        assertEquals(Instant.parse("2026-08-03T20:00:00Z").getEpochSecond(),
+                d.whenEpochSeconds());
+    }
+
+    @Test
+    void woCalendarGarbageYieldsEmptyList() {
+        assertTrue(WoCompanyCalendarClient.parse("<html>bot wall</html>").isEmpty());
+        assertTrue(WoCompanyCalendarClient.parse("{\"status\":0,\"data\":{\"html\":\"\"}}").isEmpty());
+        assertTrue(WoCompanyCalendarClient.parse(null).isEmpty());
+    }
+
+    // ---- Borsa Italiana ------------------------------------------------------
+
+    @Test
+    void borsaItalianaReadsIsinOffTheLinkAndCutsTheRepeatedLabel() {
+        // The live row repeats company and label after the dated one, and the
+        // separating non-breaking spaces collapse - that repetition is the trap.
+        String html = """
+                <table><tr><th>Issuer</th></tr>
+                <tr><td><a href="/borsa/azioni/elenco-completo-eventi.html?isin=IT0003188064&lang=en">
+                BANCA IFIS S.p.A.</a>&nbsp;&nbsp;04.08.2026 - Half Year Report&nbsp;&nbsp;
+                BANCA IFIS S.p.A. Half Year Report</td><td>04.08.2026</td></tr>
+                <tr><td>no isin here 05.08.2026 - Whatever</td></tr>
+                <tr><td><a href="?isin=NL0011794037&lang=en">Some N.V.</a>&nbsp;03.08.2026 - Annual General Meeting&nbsp;</td></tr>
+                </table>""";
+        List<BorsaItalianaEventsClient.EuEvent> events = BorsaItalianaEventsClient.parse(html);
+        assertEquals(2, events.size());
+        // Chronological, so the Dutch row leads.
+        assertEquals("NL0011794037", events.get(0).isin());
+        assertEquals("Annual General Meeting", events.get(0).label());
+
+        BorsaItalianaEventsClient.EuEvent ifis = events.get(1);
+        assertEquals(LocalDate.of(2026, 8, 4), ifis.date());
+        assertEquals("IT0003188064", ifis.isin());
+        assertEquals("BANCA IFIS S.p.A.", ifis.company());
+        assertEquals("Half Year Report", ifis.label());
+    }
+
+    @Test
+    void borsaItalianaGarbageYieldsEmptyList() {
+        assertTrue(BorsaItalianaEventsClient.parse("<html>bot wall</html>").isEmpty());
+        assertTrue(BorsaItalianaEventsClient.parse(null).isEmpty());
+    }
+
+    // ---- Handelskalender -----------------------------------------------------
+
+    @Test
+    void tradingCalendarReadsClosuresFromXetraAndHalfDaysFromTradegate() {
+        String xetra = """
+                <table>
+                <tr><th></th><th>2026</th><th>2027</th></tr>
+                <tr><td>Karfreitag</td><td>Freitag03.04.2026</td><td>Freitag26.03.2027</td></tr>
+                <tr><td>@</td><td>31.07.2026</td><td></td></tr>
+                </table>""";
+        List<TradingCalendarClient.TradingBreak> xetraBreaks =
+                TradingCalendarClient.parseXetra(xetra);
+        // Both column dates land; the footnote row is not a holiday.
+        assertEquals(2, xetraBreaks.size());
+        assertEquals(LocalDate.of(2026, 4, 3), xetraBreaks.get(0).date());
+        assertTrue(xetraBreaks.get(0).closed());
+
+        String tradegate = """
+                <div>01/01/2026</div><div>New Year's Day: no trading</div>
+                <div>30/12/2026</div><div>Last trading day of the year: trading from 7:30 'til 2pm</div>
+                <div>14/05/2026</div><div>Ascension Day: trading from 7:30 'til 8pm</div>
+                <div>31/07/2026</div><div>@</div>""";
+        List<TradingCalendarClient.TradingBreak> tg = TradingCalendarClient.parseTradegate(tradegate);
+        assertEquals(3, tg.size());
+        assertTrue(tg.get(0).closed());
+        // "'til 2pm" is 14:00, not 2:00 - and the label loses its colon tail.
+        assertEquals(Integer.valueOf(14), tg.get(1).closesAtHour());
+        assertEquals("Last trading day of the year", tg.get(1).label());
+        assertEquals(Integer.valueOf(20), tg.get(2).closesAtHour());
+    }
+
+    @Test
+    void tradingCalendarReadsEurexCountryCalendars() {
+        String csv = """
+                Date,Day of Week,Calendar,Holiday Name,Type,Type of Holiday
+                01/01/2027,Friday,EXCH,New Year's Day,Global,T2 Holiday
+                03/26/2027,Friday,EXCH,Good Friday,Global,T2 Holiday
+                07/05/2027,Monday,TUSA,Independence Day observed,Local,
+                broken line without commas""";
+        Map<String, Set<LocalDate>> cals = TradingCalendarClient.parseEurex(csv);
+        assertEquals(Set.of("EXCH", "TUSA"), cals.keySet());
+        assertEquals(2, cals.get("EXCH").size());
+        // US dates are MM/dd/yyyy - 07/05 is the fifth of July, not the seventh of May.
+        assertEquals(LocalDate.of(2027, 7, 5), cals.get("TUSA").iterator().next());
+        assertTrue(TradingCalendarClient.parseEurex("<html>bot wall</html>").isEmpty());
+    }
+
+    // ---- Notenbanken der Welt (cbrates) --------------------------------------
+
+    @Test
+    void worldCentralBankTableCarriesTheYearInSeparatorRowsOnly() {
+        String html = """
+                <table>
+                <tr><td>Last update: 30 July 2026</td></tr>
+                <tr><td><img src="flags/japan.jpg"></td><td>Jul 31</td>                <td>Japan: Bank of Japan (BOJ)</td><td>Central Bank</td></tr>
+                <tr><td>December &nbsp;</td></tr>
+                <tr><td><img src="flags/tuerkei.jpg"></td><td>Dec 10</td>                <td>T\ufffdrkiye: Central Bank of T\ufffdrkiye (TCMB) / chart &amp; historical Rates</td>                <td>Central Bank</td></tr>
+                <tr><td>2027 &nbsp;</td></tr>
+                <tr><td><img src="flags/australien.jpg"></td><td>Feb 03</td>                <td>Australia: Reserve Bank of Australia (RBA)</td><td>Central Bank</td></tr>
+                <tr><td><img src="flags/eu.jpg"></td><td>Mar 11</td>                <td>Euro Area: European Central Bank (ECB)</td><td>Central Bank</td></tr>
+                </table>""";
+        List<CentralBankCalendarClient.CbMeeting> m = CentralBankCalendarClient.parseWorld(html);
+        // The ECB row is dropped - the primary leg owns that one.
+        assertEquals(3, m.size());
+        assertEquals(LocalDate.of(2026, 7, 31), m.get(0).date());
+        assertEquals("BOJ", m.get(0).bank());
+        assertEquals(LocalDate.of(2026, 12, 10), m.get(1).date());
+        // The navigation tail is cut and the undecodable letter does not survive.
+        assertEquals("TCMB", m.get(1).bank());
+        assertEquals("Central Bank of Trkiye (Trkiye)", m.get(1).title());
+        // The bare year row carries the following months into 2027.
+        assertEquals(LocalDate.of(2027, 2, 3), m.get(2).date());
+
+        assertTrue(CentralBankCalendarClient.parseWorld("<html>bot wall</html>").isEmpty());
+        assertTrue(CentralBankCalendarClient.parseWorld(null).isEmpty());
+    }
+
+    // ---- Statistikämter ------------------------------------------------------
+
+    @Test
+    void statsCalendarReadsAllThreeOfficesAndKeepsTheSlipFlag() {
+        String eurostat = """
+                [{"recordid":"22493738","period":"June 2026","euroind":true,
+                  "start":"2026-08-13T11:00Z","datasetCodes":"sts_inpr_m","title":"Industrial production"},
+                 {"recordid":"x","start":"not-a-date","title":"broken"}]""";
+        List<StatsReleaseCalendarClient.Release> eu =
+                StatsReleaseCalendarClient.parseEurostat(eurostat);
+        assertEquals(1, eu.size());
+        assertEquals(LocalDate.of(2026, 8, 13), eu.get(0).date());
+        assertEquals("sts_inpr_m", eu.get(0).datasets());
+        assertEquals("June 2026", eu.get(0).period());
+
+        // BEA ships every date of the year per series, past ones included.
+        String bea = """
+                {"Gross Domestic Product":{"release_dates":["2026-07-30T12:30:00+00:00",
+                 "2026-08-27T12:30:00+00:00"]}}""";
+        List<StatsReleaseCalendarClient.Release> us = StatsReleaseCalendarClient.parseBea(bea);
+        assertEquals(2, us.size());
+        assertEquals("Gross Domestic Product", us.get(0).title());
+
+        String ons = """
+                {"releases":[
+                 {"description":{"title":"GDP first quarterly estimate",
+                   "release_date":"2026-08-14T06:00:00.000Z","cancelled":false,
+                   "postponed":true,"finalised":true}},
+                 {"description":{"title":"Provisional one",
+                   "release_date":"2026-09-01T06:00:00.000Z","cancelled":false,
+                   "postponed":false,"finalised":false}}]}""";
+        List<StatsReleaseCalendarClient.Release> uk = StatsReleaseCalendarClient.parseOns(ons);
+        assertEquals(2, uk.size());
+        // A release that slips its date is the news, so the flag survives.
+        assertTrue(uk.get(0).slipped());
+        assertFalse(uk.get(0).provisional());
+        assertFalse(uk.get(1).slipped());
+        assertTrue(uk.get(1).provisional());
+
+        assertTrue(StatsReleaseCalendarClient.parseEurostat("<html>wall</html>").isEmpty());
+        assertTrue(StatsReleaseCalendarClient.parseBea(null).isEmpty());
+        assertTrue(StatsReleaseCalendarClient.parseOns("[]").isEmpty());
+    }
+
+    // ---- MFN (nordische Pflichtmitteilungen) ---------------------------------
+
+    @Test
+    void mfnKeepsOneReleasePerGroupAndPrefersEnglish() {
+        String json = """
+                {"version":"https://jsonfeed.org/version/1","items":[
+                 {"news_id":"a","group_id":"g1","url":"https://mfn.se/a/sv",
+                  "properties":{"lang":"sv","tags":[":regulatory","sub:report:interim"]},
+                  "subjects":[{"name":"WPTG","isins":["SE0020203271"],"tickers":["FNSE:WPTG B"]}],
+                  "content":{"title":"WPTG genomför riktad emission","publish_date":"2026-08-01T12:55:00Z",
+                   "text":"Svensk text"}},
+                 {"news_id":"b","group_id":"g1","url":"https://mfn.se/a/en",
+                  "properties":{"lang":"en","tags":[":regulatory"]},
+                  "subjects":[{"name":"WPTG","isins":["SE0020203271"],"tickers":["FNSE:WPTG B"]}],
+                  "content":{"title":"WPTG carries out directed issue","publish_date":"2026-08-01T12:55:00Z",
+                   "text":"English text"}},
+                 {"news_id":"c","group_id":"g2","url":"https://mfn.se/c",
+                  "properties":{"lang":"en","tags":["ext:nq"]},
+                  "subjects":[{"name":"Coor","isins":["SE0007158829"],"tickers":["XSTO:COOR"]}],
+                  "content":{"title":"Coor interim report","publish_date":"2026-08-02T09:41:21Z","text":"x"}},
+                 {"news_id":"d","group_id":"g3","content":{"title":"broken","publish_date":"nope"}}]}""";
+        List<MfnDisclosureClient.Disclosure> items = MfnDisclosureClient.parse(json);
+        // Two groups survive, the Swedish twin of g1 is dropped, the broken one too.
+        assertEquals(2, items.size());
+        // Newest first.
+        assertEquals("Coor interim report", items.get(0).title());
+        MfnDisclosureClient.Disclosure wptg = items.get(1);
+        assertEquals("WPTG carries out directed issue", wptg.title());
+        assertEquals("en", wptg.language());
+        assertEquals(List.of("SE0020203271"), wptg.isins());
+        assertEquals(List.of("FNSE:WPTG B"), wptg.tickers());
+        assertTrue(wptg.regulatory());
+        assertFalse(items.get(0).regulatory());
+
+        assertTrue(MfnDisclosureClient.parse("<html>wall</html>").isEmpty());
+        assertTrue(MfnDisclosureClient.parse(null).isEmpty());
     }
 
     // ---- Destatis / ifo ----------------------------------------------------

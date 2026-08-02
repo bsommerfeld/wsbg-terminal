@@ -34,6 +34,15 @@ import java.util.concurrent.ConcurrentHashMap;
  * Result shape pinned: {@code {count, results:[{title, type,
  * publication_date "YYYY-MM-DD", abstract|null, html_url}]}},
  * {@code order=newest}.
+ *
+ * <p>A third view was added 2026-08-03, and it is the one that looks FORWARD:
+ * {@code conditions[effective_date][gte]} lists rules by the day they start to
+ * bite, {@code conditions[comment_date][gte]} by the last day anyone can
+ * object. Both are unbounded into the future (effective dates run years out),
+ * so the register doubles as a dated regulatory docket. Deliberately NOT
+ * queried per company — a name search answers with consortium notices from
+ * years back, i.e. noise; which dated line matters for a subject is the
+ * model's call downstream.
  */
 @Singleton
 public class FederalRegisterClient {
@@ -47,6 +56,18 @@ public class FederalRegisterClient {
     private static final Duration CACHE_TTL = Duration.ofHours(1);
     /** The API caps per_page well above this; 50 covers any briefing use. */
     private static final int MAX_PER_PAGE = 50;
+    private static final String DATE_FIELDS = "&fields%5B%5D=title&fields%5B%5D=type"
+            + "&fields%5B%5D=effective_on&fields%5B%5D=comments_close_on"
+            + "&fields%5B%5D=agency_names&fields%5B%5D=html_url";
+
+    /**
+     * One scheduled regulatory date. {@code deadline} separates the two kinds:
+     * a comment window closing (the last day to object) reads differently from
+     * a rule switching on.
+     */
+    public record DatedAction(LocalDate date, boolean deadline, String type,
+            String title, String agency, String url) {
+    }
 
     /** One Federal Register document; {@code abstractText} null when the register carries none. */
     public record Doc(String title, String type, LocalDate publicationDate,
@@ -56,9 +77,13 @@ public class FederalRegisterClient {
     private record Cached(Instant at, List<Doc> docs) {
     }
 
+    private record CachedDates(Instant at, List<DatedAction> actions) {
+    }
+
     private final WebFetcher fetcher;
     private final Duration requestTimeout = Duration.ofSeconds(15);
     private final Map<String, Cached> cache = new ConcurrentHashMap<>();
+    private final Map<String, CachedDates> datedCache = new ConcurrentHashMap<>();
 
     /** Test/default: plain direct transport. */
     public FederalRegisterClient() {
@@ -83,6 +108,72 @@ public class FederalRegisterClient {
         int n = Math.min(Math.max(limit, 1), MAX_PER_PAGE);
         return cap(fetch(BASE + "?conditions%5Btype%5D%5B%5D=RULE&conditions%5Bsignificant%5D=1"
                 + "&order=newest&per_page=" + n + FIELDS), limit);
+    }
+
+    /**
+     * The dated docket from {@code from} on, earliest first: rules taking
+     * effect, then comment windows closing. Empty on any failure.
+     */
+    public List<DatedAction> upcomingDates(LocalDate from, int perLeg) {
+        if (from == null) return List.of();
+        int n = Math.min(Math.max(perLeg, 1), MAX_PER_PAGE);
+        List<DatedAction> out = new ArrayList<>();
+        out.addAll(fetchDated(BASE + "?conditions%5Beffective_date%5D%5Bgte%5D=" + from
+                + "&conditions%5Btype%5D%5B%5D=RULE&order=oldest&per_page=" + n + DATE_FIELDS,
+                false));
+        out.addAll(fetchDated(BASE + "?conditions%5Bcomment_date%5D%5Bgte%5D=" + from
+                + "&order=oldest&per_page=" + n + DATE_FIELDS, true));
+        out.removeIf(a -> a.date() == null || a.date().isBefore(from));
+        out.sort(java.util.Comparator.comparing(DatedAction::date));
+        return out;
+    }
+
+    private List<DatedAction> fetchDated(String url, boolean deadline) {
+        CachedDates hit = datedCache.get(url);
+        if (hit != null && hit.at().isAfter(Instant.now().minus(CACHE_TTL))) {
+            return hit.actions();
+        }
+        try {
+            WebResponse resp = fetcher.fetch(url,
+                    Map.of("Accept", "application/json"), requestTimeout);
+            if (resp != null && resp.status() == 200) {
+                List<DatedAction> actions = parseDated(resp.body(), deadline);
+                if (!actions.isEmpty()) {
+                    datedCache.put(url, new CachedDates(Instant.now(), actions));
+                }
+                return actions;
+            }
+            LOG.debug("[FedReg] {} answered status {}", url,
+                    resp == null ? "null" : resp.status());
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            LOG.debug("[FedReg] fetch {} failed: {}", url, e.getMessage());
+        }
+        return hit != null ? hit.actions() : List.of();
+    }
+
+    /** Package-private for tests: documents JSON → dated actions, network-free. */
+    static List<DatedAction> parseDated(String json, boolean deadline) {
+        if (json == null || json.isBlank()) return List.of();
+        List<DatedAction> out = new ArrayList<>();
+        try {
+            for (JsonNode n : JSON.readTree(json).path("results")) {
+                String title = n.path("title").asText("").strip();
+                if (title.isEmpty()) continue;
+                LocalDate date = parseDate(n.path(
+                        deadline ? "comments_close_on" : "effective_on").asText(""));
+                if (date == null) continue;
+                JsonNode agencies = n.path("agency_names");
+                out.add(new DatedAction(date, deadline,
+                        blankToNull(n.path("type").asText("")), title,
+                        agencies.isArray() && !agencies.isEmpty()
+                                ? agencies.get(0).asText("").strip() : null,
+                        blankToNull(n.path("html_url").asText(""))));
+            }
+        } catch (Exception e) {
+            LOG.debug("[FedReg] dated parse failed: {}", e.getMessage());
+        }
+        return out;
     }
 
     private List<Doc> fetch(String url) {
