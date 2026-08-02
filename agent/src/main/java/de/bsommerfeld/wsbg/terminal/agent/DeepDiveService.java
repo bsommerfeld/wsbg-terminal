@@ -144,6 +144,14 @@ public class DeepDiveService {
     private static final int MAX_ANALYST_ACTIONS = 10;
     /** CNBC quarters asked for and rendered - the endpoint's own ceiling is eight. */
     private static final int MAX_CNBC_QUARTERS = 8;
+    /** Peer target rows rendered - a yardstick, never the whole sector table. */
+    private static final int MAX_FN_PEERS = 5;
+    /** Estimate periods rendered per metric (the page carries reported AND forward). */
+    private static final int MAX_FN_ESTIMATES = 6;
+    /** Venue rows rendered off the 18-venue board - where it actually trades. */
+    private static final int MAX_FN_VENUES = 6;
+    /** Per-house targets rendered when this leg has to stand in for the street view. */
+    private static final int MAX_FN_TARGETS = 6;
     /** Named holders rendered from the ownership table - a structure, not a register. */
     private static final int MAX_SHAREHOLDERS = 6;
     /** Stakes the company itself holds, rendered - context, never a portfolio dump. */
@@ -353,6 +361,12 @@ public class DeepDiveService {
     // the street revised since its last count.
     private volatile de.bsommerfeld.wsbg.terminal.onvista.OnvistaEntityResolver onvistaResolver;
     private volatile de.bsommerfeld.wsbg.terminal.onvista.OnvistaFundamentalsClient onvistaFacts;
+    // finanzen.net behind its resolver: the news leg rides the aggregator, the
+    // MARKET surfaces had no caller at all. Wired for what no other leg carries
+    // - a YEAR-long consensus trend, the peers' targets beside this one's, the
+    // estimate history with its own surprises, and the venue board.
+    private volatile de.bsommerfeld.wsbg.terminal.finanzennet.FinanzenNetResolver fnResolver;
+    private volatile de.bsommerfeld.wsbg.terminal.finanzennet.FinanzenNetMarketClient fnMarket;
 
     private final AtomicBoolean busy = new AtomicBoolean(false);
     private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
@@ -637,6 +651,16 @@ public class DeepDiveService {
     void setOnvistaFundamentals(
             de.bsommerfeld.wsbg.terminal.onvista.OnvistaFundamentalsClient client) {
         this.onvistaFacts = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setFinanzenNetResolver(de.bsommerfeld.wsbg.terminal.finanzennet.FinanzenNetResolver client) {
+        this.fnResolver = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setFinanzenNetMarket(de.bsommerfeld.wsbg.terminal.finanzennet.FinanzenNetMarketClient client) {
+        this.fnMarket = client;
     }
 
     @com.google.inject.Inject(optional = true)
@@ -3185,6 +3209,32 @@ public class DeepDiveService {
          */
         de.bsommerfeld.wsbg.terminal.onvista.OnvistaFundamentalsClient.AnalystConsensus
                 onvistaConsensus;
+        /**
+         * The consensus at three points across a YEAR (finanzen.net prints
+         * today, half a year ago and a year ago). The other drift readings
+         * compare against the previous count; this one shows the arc.
+         */
+        List<de.bsommerfeld.wsbg.terminal.finanzennet.FinanzenNetMarketClient.ConsensusTrend> fnTrend = List.of();
+        /**
+         * The PEERS' consensus and average target beside this name's - a
+         * target means little without the sector's yardstick next to it.
+         */
+        List<de.bsommerfeld.wsbg.terminal.finanzennet.FinanzenNetMarketClient.PeerConsensus> fnPeers = List.of();
+        /**
+         * The estimate track: forward consensus AND, for the periods that
+         * already reported, the actual with its surprise. The CNBC delivery
+         * record covers the names CNBC covers; this reaches the German and
+         * European listings it does not.
+         */
+        List<de.bsommerfeld.wsbg.terminal.finanzennet.FinanzenNetMarketClient.EstimateRow> fnEstimates = List.of();
+        /** Where the paper actually trades: the venue board with its own prices. */
+        List<de.bsommerfeld.wsbg.terminal.finanzennet.FinanzenNetMarketClient.VenueQuote> fnVenues = List.of();
+        /**
+         * Per-house standing targets - GAP FILLER only, rendered where the
+         * Consorsbank street view delivered nothing. Three other legs already
+         * carry dated analyst actions; a fourth copy would be noise.
+         */
+        List<de.bsommerfeld.wsbg.terminal.finanzennet.FinanzenNetMarketClient.PriceTarget> fnTargets = List.of();
         /** The months-spanning dated press timeline (MarketBeat news tab) — "Was war" context. */
         de.bsommerfeld.wsbg.terminal.core.price.PressTimeline pressTimeline;
         /** House-computed volume profile (Yahoo hourly bars) — the structure layer's traded side. */
@@ -3563,6 +3613,36 @@ public class DeepDiveService {
                 }
             } catch (Exception e) {
                 LOG.debug("[DEEPDIVE] onvista fundamentals failed: {}", e.getMessage());
+            }
+            // finanzen.net, ISIN-addressed through its own resolver (one call
+            // maps ISIN to the slug every sub-page is built from). Only the
+            // surfaces nothing else carries are read: the YEAR-long consensus
+            // arc, the peers' targets, the estimate history with its surprises
+            // and the venue board. Its balance sheets and company dates are
+            // DELIBERATELY left alone - three legs already carry those, and a
+            // fourth copy is noise, not coverage.
+            checkCancelled();
+            try {
+                var resolver = fnResolver;
+                var market = fnMarket;
+                if (resolver != null && market != null) {
+                    String slug = resolver.resolveByIsin(isin)
+                            .map(de.bsommerfeld.wsbg.terminal.finanzennet.FinanzenNetResolver
+                                    .InstrumentMatch::slug)
+                            .orElse(null);
+                    if (slug != null && !slug.isBlank()) {
+                        var board = market.targetBoard(slug);
+                        m.fnTrend = List.copyOf(board.trend());
+                        m.fnPeers = List.copyOf(board.peers());
+                        // The per-house targets only stand in when the house's
+                        // own street view came back empty.
+                        if (m.analystView == null) m.fnTargets = List.copyOf(board.targets());
+                        m.fnEstimates = List.copyOf(market.estimates(slug));
+                        m.fnVenues = List.copyOf(market.venueQuotes(slug));
+                    }
+                }
+            } catch (Exception e) {
+                LOG.debug("[DEEPDIVE] finanzen.net market leg failed: {}", e.getMessage());
             }
             // Handelsblatt master data: one keyless call that maps the ISIN
             // onto WKN, ticker, sector and a 1W-5Y performance ladder.
@@ -4284,6 +4364,21 @@ public class DeepDiveService {
             }
             journalNotes(subject, List.of("onvista — " + String.join(", ", bits)));
         }
+        if (!m.fnTrend.isEmpty() || !m.fnPeers.isEmpty() || !m.fnEstimates.isEmpty()
+                || !m.fnVenues.isEmpty() || !m.fnTargets.isEmpty()) {
+            List<String> bits = new ArrayList<>();
+            if (!m.fnTrend.isEmpty()) bits.add(de ? "Konsens-Verlauf" : "consensus arc");
+            if (!m.fnPeers.isEmpty()) {
+                bits.add(m.fnPeers.size() + (de ? " Vergleichswerte" : " peers"));
+            }
+            if (!m.fnEstimates.isEmpty()) {
+                bits.add(m.fnEstimates.size() + (de ? " Schätzperioden" : " estimate periods"));
+            }
+            if (!m.fnVenues.isEmpty()) {
+                bits.add(m.fnVenues.size() + (de ? " Handelsplätze" : " venues"));
+            }
+            journalNotes(subject, List.of("finanzen.net — " + String.join(", ", bits)));
+        }
         if (!m.edgarEvents.isEmpty()) {
             journalNotes(subject, List.of("SEC EDGAR — " + m.edgarEvents.size()
                     + (de ? " 8-K-Pflichtereignis(se)" : " material 8-K event(s)")));
@@ -4518,6 +4613,7 @@ public class DeepDiveService {
         appendBenchmarkFit(sb, m, nums);
         appendMarket(sb, m.snapshot, nums);
         appendTrading(sb, m.venueStats, m.facts, nums);
+        appendVenueBoard(sb, m, nums);
         appendStructure(sb, m, nums);
         appendSignals(sb, m, nums, SIGNALS_SITUATION);
         appendAmbientSignals(sb, m, nums, SIGNALS_WORLD);
@@ -4531,11 +4627,14 @@ public class DeepDiveService {
         // The delivery record LAST on this shelf but first in value: estimate
         // vs actual over eight quarters is the section's hardest evidence.
         appendCnbcSurprises(sb, m, nums);
+        appendFnEstimates(sb, m, nums);
         appendBoerseFundamentals(sb, m, nums);
         out[SEC_FUNDAMENTALS] = new Shelf(take(sb), List.of());
 
         appendAnalystRatings(sb, m.analystView, nums);
         appendConsensusDrift(sb, m, nums);
+        appendConsensusArc(sb, m, nums);
+        appendFnTargets(sb, m, nums);
         appendUsAnalysts(sb, m.usStats, nums);
         appendAnalystActions(sb, m.analystActions, nums);
         appendBoerseAnalystCalls(sb, m, nums);
@@ -4544,6 +4643,7 @@ public class DeepDiveService {
         appendUsInstitutional(sb, m.usStats, nums);
         appendHedgeFunds(sb, m.hedgeFunds, nums);
         appendPeers(sb, m.deepDive, nums);
+        appendPeerTargets(sb, m, nums);
         out[SEC_VALUATION] = new Shelf(take(sb), newsBlocksFor(m, "BEWERTUNG", nums));
 
         appendInsider(sb, m.insiderDealings, nums);
@@ -4819,6 +4919,10 @@ public class DeepDiveService {
         if (m.onvistaCompany != null || m.onvistaBenchmark != null
                 || m.onvistaConsensus != null) {
             nums.put("onvista", ++n);
+        }
+        if (!m.fnTrend.isEmpty() || !m.fnPeers.isEmpty() || !m.fnEstimates.isEmpty()
+                || !m.fnVenues.isEmpty() || !m.fnTargets.isEmpty()) {
+            nums.put("finanzennet", ++n);
         }
         if (m.deepDive != null || m.analystView != null) nums.put("consors", ++n);
         if (!m.issuerEvents.isEmpty()) nums.put("issuer", ++n);
@@ -6977,6 +7081,165 @@ public class DeepDiveService {
         sb.append(".\n");
     }
 
+    /**
+     * The consensus at three points across a YEAR (finanzen.net). Every other
+     * drift reading in this report compares against the previous count; this
+     * one shows the arc - a street that has been walking one way for twelve
+     * months is a different fact from one that turned last week.
+     */
+    private static void appendConsensusArc(StringBuilder sb, Material m,
+            Map<String, Integer> nums) {
+        if (m.fnTrend.isEmpty()) return;
+        sb.append("CONSENSUS ARC (verified, finanzen.net; the same tally at three points "
+                        + "in time, as the page labels them)")
+                .append(mark(nums, "finanzennet")).append(":\n");
+        for (var t : m.fnTrend) {
+            sb.append("  - ").append(t.label() == null ? "?" : t.label().strip())
+                    .append(": ").append(t.buy()).append(" buy, ").append(t.hold())
+                    .append(" hold, ").append(t.sell()).append(" sell\n");
+        }
+    }
+
+    /**
+     * The peers' consensus and average target (finanzen.net). A target price
+     * alone says nothing - what says something is whether the street is more
+     * or less generous with THIS name than with the ones beside it.
+     */
+    private static void appendPeerTargets(StringBuilder sb, Material m,
+            Map<String, Integer> nums) {
+        if (m.fnPeers.isEmpty()) return;
+        sb.append("PEER TARGETS (verified, finanzen.net sector comparison)")
+                .append(mark(nums, "finanzennet")).append(":\n");
+        int n = 0;
+        for (var p : m.fnPeers) {
+            if (p.name() == null || p.name().isBlank()) continue;
+            if (++n > MAX_FN_PEERS) break;
+            sb.append("  - ").append(p.name().strip()).append(": ")
+                    .append(p.buy()).append('/').append(p.hold()).append('/').append(p.sell())
+                    .append(" buy/hold/sell");
+            if (p.averageTarget() != null && Double.isFinite(p.averageTarget())) {
+                sb.append(", average target ").append(fmt2(p.averageTarget()));
+                if (p.currency() != null && !p.currency().isBlank()) {
+                    sb.append(' ').append(p.currency());
+                }
+            }
+            if (p.upsidePercent() != null && Double.isFinite(p.upsidePercent())) {
+                sb.append(" (").append(signed(p.upsidePercent())).append("% to its own price)");
+            }
+            sb.append('\n');
+        }
+    }
+
+    /**
+     * The estimate track (finanzen.net): the forward consensus and, for the
+     * periods that already reported, the actual with the deviation the page
+     * itself prints. The delivery record covers the names CNBC covers - this
+     * reaches the German and European listings it does not.
+     */
+    private static void appendFnEstimates(StringBuilder sb, Material m,
+            Map<String, Integer> nums) {
+        if (m.fnEstimates.isEmpty()) return;
+        List<String> lines = new ArrayList<>();
+        Map<String, Integer> perMetric = new HashMap<>();
+        for (var e : m.fnEstimates) {
+            String metric = e.metric() == null ? "?" : e.metric();
+            if (perMetric.merge(metric, 1, Integer::sum) > MAX_FN_ESTIMATES) continue;
+            StringBuilder line = new StringBuilder(120);
+            line.append("  - ").append(metric).append(' ')
+                    .append(e.periodLabel() == null ? "?" : e.periodLabel().strip()).append(':');
+            if (e.meanEstimate() != null && Double.isFinite(e.meanEstimate())) {
+                line.append(" consensus ").append(fmt2(e.meanEstimate()));
+                if (e.analysts() != null && e.analysts() > 0) {
+                    line.append(" (").append(e.analysts()).append(" analysts)");
+                }
+            }
+            if (e.actual() != null && Double.isFinite(e.actual())) {
+                line.append(", reported ").append(fmt2(e.actual()));
+                if (e.surprisePercent() != null && Double.isFinite(e.surprisePercent())) {
+                    line.append(" (").append(signed(e.surprisePercent()))
+                            .append("%, as the page prints it)");
+                }
+            }
+            if (e.priorYear() != null && Double.isFinite(e.priorYear())) {
+                line.append(", prior year ").append(fmt2(e.priorYear()));
+            }
+            if (e.currency() != null && !e.currency().isBlank()) {
+                line.append(" [").append(e.currency()).append(']');
+            }
+            if (line.indexOf(":") == line.length() - 1) continue; // nothing but a label
+            lines.add(line.toString());
+        }
+        if (lines.isEmpty()) return;
+        sb.append("ESTIMATE TRACK (verified, finanzen.net; a period with a reported figure "
+                        + "already happened, one without is still ahead)")
+                .append(mark(nums, "finanzennet")).append(":\n");
+        for (String line : lines) sb.append(line).append('\n');
+    }
+
+    /**
+     * Where the paper actually trades (finanzen.net venue board). The price
+     * shelf carries ONE venue's quote; this says whether the others agree and
+     * where the volume is - a name that only prints on one exchange is a
+     * different risk from one that prints on twelve.
+     */
+    private static void appendVenueBoard(StringBuilder sb, Material m,
+            Map<String, Integer> nums) {
+        if (m.fnVenues.isEmpty()) return;
+        List<String> lines = new ArrayList<>();
+        for (var v : m.fnVenues) {
+            if (v.venue() == null || v.venue().isBlank()) continue;
+            if (v.last() == null || !Double.isFinite(v.last())) continue;
+            if (lines.size() >= MAX_FN_VENUES) break;
+            StringBuilder line = new StringBuilder(96);
+            line.append("  - ").append(v.venue().strip()).append(": ").append(fmt2(v.last()));
+            if (v.currency() != null && !v.currency().isBlank()) {
+                line.append(' ').append(v.currency());
+            }
+            if (v.changePercent() != null && Double.isFinite(v.changePercent())) {
+                line.append(", ").append(signed(v.changePercent())).append("%");
+            }
+            if (v.volume() != null && v.volume() > 0) {
+                line.append(", volume ").append(v.volume());
+            }
+            if (v.date() != null) line.append(" [").append(v.date()).append(']');
+            lines.add(line.toString());
+        }
+        if (lines.isEmpty()) return;
+        sb.append("VENUE BOARD (verified, finanzen.net; each venue's own last price, so two "
+                        + "rows may legitimately differ - they close at different times)")
+                .append(mark(nums, "finanzennet")).append(":\n");
+        for (String line : lines) sb.append(line).append('\n');
+    }
+
+    /**
+     * Per-house standing targets - the STAND-IN, rendered only where the
+     * house's own street view came back empty. Three legs already carry dated
+     * analyst actions; a fourth copy would be noise rather than coverage.
+     */
+    private static void appendFnTargets(StringBuilder sb, Material m,
+            Map<String, Integer> nums) {
+        if (m.fnTargets.isEmpty()) return;
+        sb.append("ANALYST TARGETS (verified, finanzen.net - stands in where the house's "
+                        + "own street view had nothing)")
+                .append(mark(nums, "finanzennet")).append(":\n");
+        int n = 0;
+        for (var t : m.fnTargets) {
+            if (t.target() == null || !Double.isFinite(t.target())) continue;
+            if (++n > MAX_FN_TARGETS) break;
+            sb.append("  - ");
+            if (t.date() != null) sb.append('[').append(t.date()).append("] ");
+            sb.append(t.analyst() == null ? "?" : t.analyst().strip()).append(": ")
+                    .append(fmt2(t.target()));
+            if (t.currency() != null && !t.currency().isBlank()) {
+                sb.append(' ').append(t.currency());
+            }
+            if (t.upsidePercent() != null && Double.isFinite(t.upsidePercent())) {
+                sb.append(" (").append(signed(t.upsidePercent())).append("%)");
+            }
+            sb.append('\n');
+        }
+    }
+
     /** A signed number for readings where the direction IS the statement. */
     private static String signed(double v) {
         return String.format(Locale.ROOT, "%+.2f", v);
@@ -7993,6 +8256,14 @@ public class DeepDiveService {
                 return "Insider Monkey" + (de
                         ? " - Hedgefonds-Positionierung (13F-Quartalskurve)"
                         : " - hedge-fund positioning (quarterly 13F curve)");
+            case "finanzennet":
+                return "finanzen.net" + (de
+                        ? " - Konsens-Verlauf über ein Jahr, Kursziele der Branchen-"
+                                + "Vergleichsgruppe, Schätzungshistorie mit Abweichungen und "
+                                + "Handelsplatz-Übersicht"
+                        : " - the consensus arc across a year, the peer group's price "
+                                + "targets, the estimate history with its deviations and the "
+                                + "venue board");
             case "onvista":
                 return "onvista" + (de
                         ? " - Aktionärsstruktur mit Streubesitz und Beteiligungen, Beta/"

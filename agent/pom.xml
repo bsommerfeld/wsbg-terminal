@@ -102,6 +102,13 @@
             <groupId>de.bsommerfeld</groupId>
             <artifactId>tradersunion</artifactId>
         </dependency>
+        <!-- 2026-08-03: the DD names finanzen.net's own market types (the
+             year-long consensus trend, the peer target table, the estimate
+             history with its surprises, the venue board). -->
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>finanzen-net</artifactId>
+        </dependency>
         <dependency>
             <groupId>de.bsommerfeld</groupId>
             <artifactId>tradegate</artifactId>
