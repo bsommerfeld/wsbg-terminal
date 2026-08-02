@@ -144,6 +144,10 @@ public class DeepDiveService {
     private static final int MAX_ANALYST_ACTIONS = 10;
     /** CNBC quarters asked for and rendered - the endpoint's own ceiling is eight. */
     private static final int MAX_CNBC_QUARTERS = 8;
+    /** Named holders rendered from the ownership table - a structure, not a register. */
+    private static final int MAX_SHAREHOLDERS = 6;
+    /** Stakes the company itself holds, rendered - context, never a portfolio dump. */
+    private static final int MAX_PARTICIPATIONS = 4;
     /**
      * Dated 8-K events rendered per subject. The client already drops the
      * uninteresting item codes; this only keeps the block from turning into a
@@ -342,6 +346,13 @@ public class DeepDiveService {
     private volatile de.bsommerfeld.wsbg.terminal.edgar.EdgarClient edgarClient;
     private volatile de.bsommerfeld.wsbg.terminal.briefing.FinraShortVolumeClient finraShorts;
     private volatile de.bsommerfeld.wsbg.terminal.briefing.NasdaqCalendarClient nasdaqCalendar;
+    // onvista's OWN api behind the bound profile leg: the house held the
+    // resolver and the fundamentals client since the 2026-08-02 wave without a
+    // caller. They answer the three questions the Consorsbank record does not
+    // ask - who owns this, how does it move against its index, and which way
+    // the street revised since its last count.
+    private volatile de.bsommerfeld.wsbg.terminal.onvista.OnvistaEntityResolver onvistaResolver;
+    private volatile de.bsommerfeld.wsbg.terminal.onvista.OnvistaFundamentalsClient onvistaFacts;
 
     private final AtomicBoolean busy = new AtomicBoolean(false);
     private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
@@ -614,6 +625,18 @@ public class DeepDiveService {
     void setFinraShortVolume(
             de.bsommerfeld.wsbg.terminal.briefing.FinraShortVolumeClient client) {
         this.finraShorts = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setOnvistaEntityResolver(
+            de.bsommerfeld.wsbg.terminal.onvista.OnvistaEntityResolver client) {
+        this.onvistaResolver = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setOnvistaFundamentals(
+            de.bsommerfeld.wsbg.terminal.onvista.OnvistaFundamentalsClient client) {
+        this.onvistaFacts = client;
     }
 
     @com.google.inject.Inject(optional = true)
@@ -3138,6 +3161,30 @@ public class DeepDiveService {
         de.bsommerfeld.wsbg.terminal.briefing.NasdaqCalendarClient.EarningsEntry nasdaqEarnings;
         /** ISO day the NASDAQ calendar answered for. */
         String nasdaqEarningsDateIso;
+        /**
+         * Who owns this company (onvista): the free-float share and the named
+         * holders with their stakes. The Consorsbank record carries the board
+         * but never the shareholder structure - and a name whose float is a
+         * fifth of the shares trades differently from one whose float is all
+         * of them.
+         */
+        de.bsommerfeld.wsbg.terminal.onvista.OnvistaFundamentalsClient.CompanySnapshot
+                onvistaCompany;
+        /**
+         * How the share MOVES against its reference index (onvista): beta and
+         * correlation over 30 and 250 days plus the out-/underperformance over
+         * a week, a month and a year. Measured relative strength, where the
+         * rest of the material only has absolute prices.
+         */
+        de.bsommerfeld.wsbg.terminal.onvista.OnvistaFundamentalsClient.BenchmarkFit
+                onvistaBenchmark;
+        /**
+         * The sell-side tally with its DRIFT (onvista): how many houses
+         * upgraded and how many cut since the previous count. The standing
+         * distribution says where the street is; this says which way it moved.
+         */
+        de.bsommerfeld.wsbg.terminal.onvista.OnvistaFundamentalsClient.AnalystConsensus
+                onvistaConsensus;
         /** The months-spanning dated press timeline (MarketBeat news tab) — "Was war" context. */
         de.bsommerfeld.wsbg.terminal.core.price.PressTimeline pressTimeline;
         /** House-computed volume profile (Yahoo hourly bars) — the structure layer's traded side. */
@@ -3491,6 +3538,31 @@ public class DeepDiveService {
                 if (boerse != null) m.boerseFundamentals = boerse.fundamentals(isin);
             } catch (Exception e) {
                 LOG.debug("[DEEPDIVE] boerse.de fundamentals failed: {}", e.getMessage());
+            }
+            // onvista's own API, ISIN-addressed through the sanctioned
+            // resolver (never a hardcoded id - the ids are per-instrument and
+            // carrying one between names points every endpoint at the wrong
+            // company). Three answers the Consorsbank record does not carry:
+            // the shareholder structure with the free float, the benchmark fit
+            // (beta/correlation/relative performance against the reference
+            // index) and the sell-side DRIFT since the previous count.
+            checkCancelled();
+            try {
+                var resolver = onvistaResolver;
+                var facts = onvistaFacts;
+                if (resolver != null && facts != null) {
+                    var entity = resolver.resolveStock(isin)
+                            .or(() -> resolver.resolveViaPage(isin))
+                            .orElse(null);
+                    if (entity != null) {
+                        m.onvistaCompany = facts.companySnapshot(entity).orElse(null);
+                        m.onvistaConsensus = facts.analystConsensus(entity).orElse(null);
+                        facts.figures(entity).ifPresent(fig ->
+                                m.onvistaBenchmark = fig.defaultBenchmark().orElse(null));
+                    }
+                }
+            } catch (Exception e) {
+                LOG.debug("[DEEPDIVE] onvista fundamentals failed: {}", e.getMessage());
             }
             // Handelsblatt master data: one keyless call that maps the ISIN
             // onto WKN, ticker, sector and a 1W-5Y performance ladder.
@@ -4198,6 +4270,20 @@ public class DeepDiveService {
                     + (bits.isEmpty() ? (de ? "US-Listing" : "US listing")
                     : String.join(", ", bits))));
         }
+        if (m.onvistaCompany != null || m.onvistaBenchmark != null
+                || m.onvistaConsensus != null) {
+            List<String> bits = new ArrayList<>();
+            if (m.onvistaCompany != null) {
+                bits.add(de ? "Aktionärsstruktur" : "shareholder structure");
+            }
+            if (m.onvistaBenchmark != null) {
+                bits.add(de ? "Benchmark-Fit" : "benchmark fit");
+            }
+            if (m.onvistaConsensus != null) {
+                bits.add(de ? "Analysten-Revisionen" : "analyst revisions");
+            }
+            journalNotes(subject, List.of("onvista — " + String.join(", ", bits)));
+        }
         if (!m.edgarEvents.isEmpty()) {
             journalNotes(subject, List.of("SEC EDGAR — " + m.edgarEvents.size()
                     + (de ? " 8-K-Pflichtereignis(se)" : " material 8-K event(s)")));
@@ -4415,6 +4501,7 @@ public class DeepDiveService {
         appendMasterData(sb, m, nums);
         appendUsListing(sb, m.usStats, nums);
         appendBoard(sb, m.deepDive, nums);
+        appendOwnership(sb, m, nums);
         out[SEC_ABOUT] = new Shelf(take(sb), List.of());
 
         // NARRATIVE FIRST, tape LAST: a 4B anchors on the material's opening
@@ -4428,6 +4515,7 @@ public class DeepDiveService {
         appendPressTimeline(sb, m.pressTimeline, nums);
         appendPressHistory(sb, m, nums);
         appendPerformance(sb, m.deepDive, nums);
+        appendBenchmarkFit(sb, m, nums);
         appendMarket(sb, m.snapshot, nums);
         appendTrading(sb, m.venueStats, m.facts, nums);
         appendStructure(sb, m, nums);
@@ -4447,6 +4535,7 @@ public class DeepDiveService {
         out[SEC_FUNDAMENTALS] = new Shelf(take(sb), List.of());
 
         appendAnalystRatings(sb, m.analystView, nums);
+        appendConsensusDrift(sb, m, nums);
         appendUsAnalysts(sb, m.usStats, nums);
         appendAnalystActions(sb, m.analystActions, nums);
         appendBoerseAnalystCalls(sb, m, nums);
@@ -4727,6 +4816,10 @@ public class DeepDiveService {
         if (m.venueStats != null) nums.put("venue", ++n);
         if (m.facts != null || m.fundFacts != null) nums.put("profile", ++n);
         if (m.hbInstrument != null) nums.put("handelsblatt", ++n);
+        if (m.onvistaCompany != null || m.onvistaBenchmark != null
+                || m.onvistaConsensus != null) {
+            nums.put("onvista", ++n);
+        }
         if (m.deepDive != null || m.analystView != null) nums.put("consors", ++n);
         if (!m.issuerEvents.isEmpty()) nums.put("issuer", ++n);
         if (!m.euEvents.isEmpty()) nums.put("euevents", ++n);
@@ -6768,6 +6861,133 @@ public class DeepDiveService {
     }
 
     /**
+     * Who owns the company (onvista): the free float first, then the named
+     * holders with their stakes, then the stakes the company itself holds in
+     * other listed names. The board arrives from the Consorsbank record; the
+     * OWNERSHIP is what that record never carried - and a fifth of the shares
+     * in free float is a different instrument from one where the float is all
+     * of them, whatever the fundamentals say.
+     */
+    private static void appendOwnership(StringBuilder sb, Material m,
+            Map<String, Integer> nums) {
+        var c = m.onvistaCompany;
+        if (c == null) return;
+        List<String> lines = new ArrayList<>();
+        c.freeFloat().ifPresent(f -> {
+            if (Double.isFinite(f.percentage())) {
+                lines.add("  - free float: " + fmt2(f.percentage()) + "%");
+            }
+        });
+        int n = 0;
+        for (var holder : c.namedHolders()) {
+            if (holder.name() == null || holder.name().isBlank()) continue;
+            if (++n > MAX_SHAREHOLDERS) break;
+            lines.add("  - " + holder.name().strip()
+                    + (Double.isFinite(holder.percentage())
+                            ? ": " + fmt2(holder.percentage()) + "%" : ""));
+        }
+        int p = 0;
+        for (var part : c.participations()) {
+            if (part.companyName() == null || part.companyName().isBlank()) continue;
+            if (++p > MAX_PARTICIPATIONS) break;
+            lines.add("  - holds a stake in " + part.companyName().strip()
+                    + (Double.isFinite(part.sharePercentage())
+                            ? ": " + fmt2(part.sharePercentage()) + "%" : ""));
+        }
+        if (lines.isEmpty()) return;
+        sb.append("OWNERSHIP (verified, onvista)").append(mark(nums, "onvista")).append(":\n");
+        for (String line : lines) sb.append(line).append('\n');
+    }
+
+    /**
+     * How the share moves AGAINST its reference index (onvista): beta and
+     * correlation over 30 and 250 days, plus the out-/underperformance over a
+     * week, a month and a year. Everything else on the shelf is an absolute
+     * price - this is the only measured relative reading, and it is what tells
+     * a sector story from a company story.
+     */
+    private static void appendBenchmarkFit(StringBuilder sb, Material m,
+            Map<String, Integer> nums) {
+        var b = m.onvistaBenchmark;
+        if (b == null) return;
+        List<String> bits = new ArrayList<>();
+        if (Double.isFinite(b.beta250())) bits.add("beta 250d " + fmt2(b.beta250()));
+        if (Double.isFinite(b.beta30())) bits.add("beta 30d " + fmt2(b.beta30()));
+        if (Double.isFinite(b.correlation250())) {
+            bits.add("correlation 250d " + fmt2(b.correlation250()));
+        }
+        if (Double.isFinite(b.correlation30())) {
+            bits.add("correlation 30d " + fmt2(b.correlation30()));
+        }
+        if (Double.isFinite(b.outperformance1W())) {
+            bits.add("relative 1W " + signed(b.outperformance1W()) + "%");
+        }
+        if (Double.isFinite(b.outperformance1M())) {
+            bits.add("relative 1M " + signed(b.outperformance1M()) + "%");
+        }
+        if (Double.isFinite(b.outperformance1Y())) {
+            bits.add("relative 1Y " + signed(b.outperformance1Y()) + "%");
+        }
+        if (bits.isEmpty()) return;
+        String index = b.index() == null || b.index().name() == null
+                ? "its reference index" : b.index().name();
+        sb.append("BEHAVIOUR AGAINST ").append(index.toUpperCase(Locale.ROOT))
+                .append(" (verified, onvista; 'relative' is the share's performance MINUS the "
+                        + "index over that window)")
+                .append(mark(nums, "onvista")).append(": ")
+                .append(String.join(", ", bits)).append(".\n");
+    }
+
+    /**
+     * The sell-side tally WITH its drift (onvista). The standing distribution
+     * says where the street is; the upgrade/downgrade counts since the previous
+     * count say which way it moved - and the upside against our own price is
+     * house-computed from the target, never quoted.
+     */
+    private static void appendConsensusDrift(StringBuilder sb, Material m,
+            Map<String, Integer> nums) {
+        var c = m.onvistaConsensus;
+        if (c == null || c.numTotal() <= 0) return;
+        sb.append("STREET DRIFT (verified, onvista)").append(mark(nums, "onvista")).append(": ")
+                .append(c.numTotal()).append(" analysts (")
+                .append(c.numPositive()).append(" positive, ").append(c.numHold())
+                .append(" hold, ").append(c.numNegative()).append(" negative)");
+        if (c.numUpgraded() > 0 || c.numDowngraded() > 0) {
+            sb.append("; since the previous count ").append(c.numUpgraded())
+                    .append(" raised and ").append(c.numDowngraded()).append(" cut (net ")
+                    .append(signed(c.netRevisions())).append(')');
+        }
+        if (Double.isFinite(c.avgTargetPrice()) && c.avgTargetPrice() > 0) {
+            sb.append("; average target ").append(fmt2(c.avgTargetPrice()));
+            if (c.targetCurrency() != null && !c.targetCurrency().isBlank()) {
+                sb.append(' ').append(c.targetCurrency());
+            }
+            if (Double.isFinite(c.minTargetPrice()) && Double.isFinite(c.maxTargetPrice())) {
+                sb.append(" (band ").append(fmt2(c.minTargetPrice())).append(" to ")
+                        .append(fmt2(c.maxTargetPrice())).append(')');
+            }
+            if (m.snapshot != null && m.snapshot.hasPrice()) {
+                double upside = c.upsidePct(m.snapshot.price());
+                if (Double.isFinite(upside)) {
+                    sb.append(", ").append(signed(upside))
+                            .append("% against the price on this shelf (house-computed)");
+                }
+            }
+        }
+        sb.append(".\n");
+    }
+
+    /** A signed number for readings where the direction IS the statement. */
+    private static String signed(double v) {
+        return String.format(Locale.ROOT, "%+.2f", v);
+    }
+
+    /** The same for a whole count. */
+    private static String signed(int v) {
+        return String.format(Locale.ROOT, "%+d", v);
+    }
+
+    /**
      * The issuer's own dated 8-K events (SEC EDGAR). The class names are this
      * house's, mapped from the filing's item codes; the raw items ride along so
      * the model can see what the issuer actually checked. Earnings items are
@@ -7773,6 +7993,14 @@ public class DeepDiveService {
                 return "Insider Monkey" + (de
                         ? " - Hedgefonds-Positionierung (13F-Quartalskurve)"
                         : " - hedge-fund positioning (quarterly 13F curve)");
+            case "onvista":
+                return "onvista" + (de
+                        ? " - Aktionärsstruktur mit Streubesitz und Beteiligungen, Beta/"
+                                + "Korrelation und relative Wertentwicklung gegen den "
+                                + "Referenzindex, Analysten-Revisionen seit der Vorzählung"
+                        : " - shareholder structure with free float and participations, "
+                                + "beta/correlation and relative performance against the "
+                                + "reference index, analyst revisions since the previous count");
             case "edgar":
                 return de
                         ? "SEC EDGAR - Form 8-K, datierte Pflichtereignisse des Emittenten "

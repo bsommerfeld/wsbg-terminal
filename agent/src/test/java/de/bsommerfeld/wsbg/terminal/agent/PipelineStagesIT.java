@@ -49,7 +49,7 @@ class PipelineStagesIT {
     @BeforeAll
     static void up() {
         OllamaAvailability.ensureOllama();
-        GlobalConfig config = new GlobalConfig();
+        GlobalConfig config = SmokeConfig.load();
         ApplicationEventBus bus = new ApplicationEventBus();
         redditRepo = new RedditRepository();
         agentRepo = new AgentRepository();

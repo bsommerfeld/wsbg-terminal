@@ -1,6 +1,5 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
-import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -34,7 +33,7 @@ class OcrWiringIT {
     @BeforeAll
     static void up() throws Exception {
         OllamaAvailability.ensureOllama();
-        brain = new AgentBrain(new GlobalConfig(), new ApplicationEventBus(), new OllamaServerManager(), new LlmGate());
+        brain = new AgentBrain(SmokeConfig.load(), new ApplicationEventBus(), new OllamaServerManager(), new LlmGate());
         assumeTrue(brain.imageReadingAvailable(), "no system Tesseract install — skipping OCR wiring IT");
         images = new LocalImageServer();
     }

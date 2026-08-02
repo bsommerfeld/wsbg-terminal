@@ -34,7 +34,7 @@ class ColdStartTimingIT {
         Path appDir = StorageUtils.getSnapshotsDir();
         List<Path> parked = park(appDir);
         try {
-            GlobalConfig config = new GlobalConfig();
+            GlobalConfig config = SmokeConfig.load();
             ApplicationEventBus bus = new ApplicationEventBus();
             RedditRepository redditRepo = new RedditRepository();
             AgentRepository agentRepo = new AgentRepository();

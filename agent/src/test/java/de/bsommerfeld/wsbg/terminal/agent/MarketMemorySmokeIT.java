@@ -132,7 +132,7 @@ class MarketMemorySmokeIT {
     @Test
     void classifierLandsFormulaicTitlesInTheirClasses() {
         OllamaAvailability.ensureOllama();
-        GlobalConfig config = new GlobalConfig();
+        GlobalConfig config = SmokeConfig.load();
         LlmGate gate = new LlmGate();
         AgentBrain brain = new AgentBrain(config, new ApplicationEventBus(),
                 new OllamaServerManager(), gate);
@@ -160,7 +160,7 @@ class MarketMemorySmokeIT {
     @Test
     void deskWeighsTodaysEventAgainstTheMeasuredHistory() {
         OllamaAvailability.ensureOllama();
-        GlobalConfig config = new GlobalConfig();
+        GlobalConfig config = SmokeConfig.load();
         LlmGate gate = new LlmGate();
         AgentBrain brain = new AgentBrain(config, new ApplicationEventBus(),
                 new OllamaServerManager(), gate);
@@ -230,7 +230,7 @@ class MarketMemorySmokeIT {
     @Test
     void macroSurprisesRegisterOnTheIndex() {
         OllamaAvailability.ensureOllama();
-        GlobalConfig config = new GlobalConfig();
+        GlobalConfig config = SmokeConfig.load();
         LlmGate gate = new LlmGate();
         AgentBrain brain = new AgentBrain(config, new ApplicationEventBus(),
                 new OllamaServerManager(), gate);
@@ -270,7 +270,7 @@ class MarketMemorySmokeIT {
     @Test
     void deskReadsTheChannelForASingularWorldEvent() {
         OllamaAvailability.ensureOllama();
-        GlobalConfig config = new GlobalConfig();
+        GlobalConfig config = SmokeConfig.load();
         LlmGate gate = new LlmGate();
         AgentBrain brain = new AgentBrain(config, new ApplicationEventBus(),
                 new OllamaServerManager(), gate);

@@ -54,7 +54,7 @@ class WeatherSmokeIT {
         HeadlineArchive headlines = new HeadlineArchive(tmp.resolve("headlines.jsonl"));
         WeatherReportArchive reports = new WeatherReportArchive(tmp.resolve("weather.jsonl"));
 
-        GlobalConfig config = new GlobalConfig();
+        GlobalConfig config = SmokeConfig.load();
         ApplicationEventBus bus = new ApplicationEventBus();
         LlmGate gate = new LlmGate();
         AgentBrain brain = new AgentBrain(config, bus, new OllamaServerManager(), gate);

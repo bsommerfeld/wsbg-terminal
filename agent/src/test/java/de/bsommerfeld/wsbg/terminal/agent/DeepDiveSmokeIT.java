@@ -47,7 +47,7 @@ class DeepDiveSmokeIT {
     @Test
     void fullReportForSapSurvivesEveryGate() throws Exception {
         OllamaAvailability.ensureOllama();
-        GlobalConfig config = new GlobalConfig();
+        GlobalConfig config = SmokeConfig.load();
         ApplicationEventBus bus = new ApplicationEventBus();
         LlmGate gate = new LlmGate();
         AgentBrain brain = new AgentBrain(config, bus, new OllamaServerManager(), gate);

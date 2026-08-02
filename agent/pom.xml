@@ -60,10 +60,13 @@
             <artifactId>consorsbank</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- COMPILE scope since 2026-08-03: the profile leg still arrives
+             through the bound InstrumentFactsSource, but the DD now names
+             onvista's own fundamentals types (ownership, benchmark fit,
+             consensus drift) directly. -->
         <dependency>
             <groupId>de.bsommerfeld</groupId>
             <artifactId>onvista</artifactId>
-            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>de.bsommerfeld</groupId>
