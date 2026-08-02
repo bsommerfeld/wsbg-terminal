@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:media="http://search.yahoo.com/mrss/" xmlns:welt="https://www.welt.de/spec" version="2.0">
+  <channel>
+    <title>Wirtschaft - WELT</title>
+    <link>https://www.welt.de/feeds/section/wirtschaft.rss</link>
+    <description>Wirtschaft - Aktuelle Nachrichten von WELT</description>
+    <language>de</language>
+    <pubDate>Sun, 02 Aug 2026 15:52:58 GMT</pubDate>
+    <image>
+      <title>Wirtschaft - WELT</title>
+      <url>https://www.welt.de/rss-logo.png</url>
+      <link>https://www.welt.de/feeds/section/wirtschaft.rss</link>
+      <width>90</width>
+      <height>36</height>
+      <description>Wirtschaft - Aktuelle Nachrichten von WELT</description>
+    </image>
+        <item>
+      <title>Chinas Weg zur neuen KI-Weltordnung</title>
+      <link>https://www.welt.de/wirtschaft/plus6a6dd2ccef632fe6ede67ae0/chinas-weg-zur-neuen-ki-weltordnung.html</link>
+      <description>Mit Milliardeninvestitionen, offenen KI-Modellen und neuen Allianzen fordert China die Vereinigten Staaten heraus. Viele China-Modelle ermöglichen auf den ersten Blick sogar mehr Freiheiten. Europa steht vor einer Schicksalsfrage.</description>
+      <category>Wirtschaft</category>
+      <pubDate>Sun, 02 Aug 2026 15:52:58 GMT</pubDate>
+      <guid isPermaLink="false">6a6dd2ccef632fe6ede67ae0</guid>
+      <dc:creator>Adrian Geiges</dc:creator>
+      <dc:source />
+      <welt:premium>true</welt:premium>
+      <welt:topic>Künstliche Intelligenz</welt:topic>
+      <welt:commercialOptions>all</welt:commercialOptions>
+      <welt:subType>news</welt:subType>
+      <media:content type="image/jpeg" url="https://images.welt.de/6a6dd2ccef632fe6ede67ae0/f0995fce69b2a15e74a6033b082c9899-master/ci23x11-w1200/608071286-jpg">
+        <media:credit scheme="urn:ebu">picture alliance/Xinhua News Agency/Chen Haoming</media:credit>
+        <media:thumbnail url="https://images.welt.de/6a6dd2ccef632fe6ede67ae0/f0995fce69b2a15e74a6033b082c9899-master/ci23x11-w1200/608071286-jpg" />
+      </media:content>
+      <media:keywords>Künstliche Intelligenz, OpenAI, ChatGPT, Geiges, Adrian, China, KC_Makro</media:keywords>
+      <dcterms:lastModified>2026-08-02T15:52:58.967Z</dcterms:lastModified>
+    </item>
+    <item>
+      <title>Wasserzeichen für KI-Bilder – Neue EU-Regeln treten in Kraft</title>
+      <link>https://www.welt.de/videos/video6a6ef402dd06dd5ef2e42059/kuenstliche-intelligenz-wasserzeichen-fuer-ki-bilder-neue-eu-regeln-treten-in-kraft.html</link>
+      <description>Seit heute gelten neue EU-Regeln für den Umgang mit Künstlicher Intelligenz. Zahlreiche mit KI generierte Inhalte müssen dann entsprechend gekennzeichnet werden. Die Vorgaben gelten für Bilder, Videos und Texte.</description>
+      <category>Videos</category>
+      <pubDate>Sun, 02 Aug 2026 07:46:05 GMT</pubDate>
+      <guid isPermaLink="false">6a6ef402dd06dd5ef2e42059</guid>
+      <dc:creator />
+      <dc:source>WELT TV</dc:source>
+      <welt:premium>false</welt:premium>
+      <welt:topic>Künstliche Intelligenz</welt:topic>
+      <welt:commercialOptions>all</welt:commercialOptions>
+      <welt:subType>video</welt:subType>
+      <media:group>
+        <media:content duration="38" type="video/mp4" url="https://welt.cdn.content-discovery.video/videos/f5636moaaqge/rendition/8cd18338-fa85-4e0f-915f-d2aebc5b67a0/file-v720p.mp4" />
+        <media:content duration="38" type="application/vnd.apple.mpegurl" url="https://welt.cdn.content-discovery.video/videos/f5636moaaqge/rendition/c6b56310-959e-401a-973e-81e01326b1ac/master.m3u8" />
+      </media:group>
+      <media:content type="image/jpeg" url="https://images.welt.de/6a6ef402dd06dd5ef2e42059/88db5cfcbb1f0d33a6294f03893dc9d1/ci16x9-w1200/dpa-com-260801-935-1517589-jpg">
+        <media:credit scheme="urn:ebu">WELT TV</media:credit>
+        <media:rating scheme="urn:fsk">0</media:rating>
+        <media:thumbnail url="https://images.welt.de/6a6ef402dd06dd5ef2e42059/88db5cfcbb1f0d33a6294f03893dc9d1/ci16x9-w1200/dpa-com-260801-935-1517589-jpg" />
+      </media:content>
+      <media:keywords>Künstliche Intelligenz, Europäische Union (EU)</media:keywords>
+      <dcterms:lastModified>2026-08-02T07:46:05.101Z</dcterms:lastModified>
+    </item>
+    <item>
+      <title>Staatsanwaltschaft Hamburg ermittelt gegen Ex-Geschäftsführer der Modemarke Closed</title>
+      <link>https://www.welt.de/wirtschaft/article6a6c8380ff33749f5728a087/closed-staatsanwaltschaft-hamburg-ermittelt-gegen-ex-geschaeftsfuehrer-der-modemarke.html</link>
+      <description>Der Closed-Skandal hat erste juristische Konsequenzen. Die Staatsanwaltschaft Hamburg hat Ermittlungen gegen die ehemaligen Geschäftsführer aufgenommen. Es geht um den Verdacht der Insolvenzverschleppung.</description>
+      <category>Wirtschaft</category>
+      <pubDate>Fri, 31 Jul 2026 23:06:00 GMT</pubDate>
+      <guid isPermaLink="false">6a6c8380ff33749f5728a087</guid>
+      <dc:creator>Vinzenz Neumaier</dc:creator>
+      <dc:source />
+      <welt:premium>false</welt:premium>
+      <welt:topic>Hanseatisches Designerlabel</welt:topic>
+      <welt:commercialOptions>all</welt:commercialOptions>
+      <welt:subType>news</welt:subType>
+      <media:content type="image/jpeg" url="https://images.welt.de/6a6c8380ff33749f5728a087/903ae4808a537082a3428e65e9c6f0ef-master/ci23x11-w1200/53530921-jpg">
+        <media:credit scheme="urn:ebu">Jan-Timo Schaube/SuccoMedia/picture alliance</media:credit>
+        <media:thumbnail url="https://images.welt.de/6a6c8380ff33749f5728a087/903ae4808a537082a3428e65e9c6f0ef-master/ci23x11-w1200/53530921-jpg" />
+      </media:content>
+      <media:keywords>Hosen, Hamburg, Jeans (ks), Closed, Mode</media:keywords>
+      <dcterms:lastModified>2026-07-31T23:06:00.466Z</dcterms:lastModified>
+    </item>
+    <item>
+      <title>Atomkraftreaktor abgeschaltet – Rumänien ruft wegen Strommangel den Notstand aus</title>
+      <link>https://www.welt.de/wirtschaft/article6a6cc7f0ef632fe6ede671b2/niedrige-wasserstaende-atomkraftreaktor-abgeschaltet-rumaenien-ruft-wegen-strommangel-den-notstand-aus.html</link>
+      <description>Sinkende Pegel, steigende Temperaturen, stillstehende Reaktoren – der Hitzesommer verwandelt die Donau in einen Risikofaktor für die Stromversorgung in gleich mehreren EU-Staaten.</description>
+      <category>Wirtschaft</category>
+      <pubDate>Fri, 31 Jul 2026 16:33:52 GMT</pubDate>
+      <guid isPermaLink="false">6a6cc7f0ef632fe6ede671b2</guid>
+      <dc:creator />
+      <dc:source>RTR/KNA/doli</dc:source>
+      <welt:premium>false</welt:premium>
+      <welt:topic>Niedrige Wasserstände</welt:topic>
+      <welt:commercialOptions>all</welt:commercialOptions>
+      <welt:subType>news</welt:subType>
+      <media:content type="image/jpeg" url="https://images.welt.de/6a6cc7f0ef632fe6ede671b2/5c388481de7d36fcc9aed64a81fba269-master/ci23x11-w1200/2026-07-29t160452z-214567202-rc2bkga23vmf-rtrmadp-3-romania-nuclearelectrica-jpg">
+        <media:credit scheme="urn:ebu">via REUTERS/INQUAM PHOTOS/George Calin</media:credit>
+        <media:thumbnail url="https://images.welt.de/6a6cc7f0ef632fe6ede671b2/5c388481de7d36fcc9aed64a81fba269-master/ci23x11-w1200/2026-07-29t160452z-214567202-rc2bkga23vmf-rtrmadp-3-romania-nuclearelectrica-jpg" />
+      </media:content>
+      <media:keywords>Dürre, Stromverbrauch (ks), Magyar, Peter, Newsteam, Pegelstände (ks), Atomkraftwerke, newsos-import-welt, Rumänien-Politik, Rumänien, Ungarn</media:keywords>
+      <dcterms:lastModified>2026-07-31T18:46:26.545Z</dcterms:lastModified>
+    </item>
+    <item>
+      <title>Rekord-Bußgeld nach Werbeverstößen – Stuttgarter Influencerin rutscht in die Insolvenz</title>
+      <link>https://www.welt.de/wirtschaft/article6a6c9717ef632fe6ede66e38/hanadi-diab-stuttgarter-influencerin-rutscht-nach-rekord-bussgeld-in-die-insolvenz.html</link>
+      <description>Mehr als 760.000 Menschen folgen Hanadi Diab auf Instagram – nun steckt die Stuttgarter Influencerin im Insolvenzverfahren. Trotz der finanziellen Schieflage kann die 39-Jährige weiter als Content Creatorin arbeiten.</description>
+      <category>Wirtschaft</category>
+      <pubDate>Fri, 31 Jul 2026 13:18:05 GMT</pubDate>
+      <guid isPermaLink="false">6a6c9717ef632fe6ede66e38</guid>
+      <dc:creator />
+      <dc:source>dpa/ceb</dc:source>
+      <welt:premium>false</welt:premium>
+      <welt:topic>Hanadi Diab</welt:topic>
+      <welt:commercialOptions>all</welt:commercialOptions>
+      <welt:subType>news</welt:subType>
+      <media:content type="image/jpeg" url="https://images.welt.de/6a6c9717ef632fe6ede66e38/d9976180815b391981dd014d3714295e/ci23x11-w1200/dpa-com-260728-935-1508837-jpg">
+        <media:thumbnail url="https://images.welt.de/6a6c9717ef632fe6ede66e38/d9976180815b391981dd014d3714295e/ci23x11-w1200/dpa-com-260728-935-1508837-jpg" />
+      </media:content>
+      <media:keywords>Stuttgart, Newsteam, newsos-import-welt, Social Media (ks), Werbung</media:keywords>
+      <dcterms:lastModified>2026-07-31T13:22:44.239Z</dcterms:lastModified>
+    </item>
+    <item>
+      <title>„Durch die Bank sehr, sehr gute Zahlen, die Apple gemeldet hat“</title>
+      <link>https://www.welt.de/videos/video6a6c7fe1ef632fe6ede66bf8/quartalsbericht-durch-die-bank-sehr-sehr-gute-zahlen-die-apple-gemeldet-hat.html</link>
+      <description>Der Apple-Umsatz stieg im vergangenen Quartal um 16 Prozent auf gut 109,4 Milliarden Dollar, der Gewinn um 27 Prozent auf 29,8 Milliarden Dollar. Tech-Investor Thomas Rappold beantwortet im Gespräch mit Dietmar Deffner die Frage, ob Aktionäre zugreifen sollten.</description>
+      <category>Videos</category>
+      <pubDate>Fri, 31 Jul 2026 11:40:30 GMT</pubDate>
+      <guid isPermaLink="false">6a6c7fe1ef632fe6ede66bf8</guid>
+      <dc:creator />
+      <dc:source>WELT TV</dc:source>
+      <welt:premium>false</welt:premium>
+      <welt:topic>Quartalsbericht</welt:topic>
+      <welt:commercialOptions>all</welt:commercialOptions>
+      <welt:subType>video</welt:subType>
+      <media:group>
+        <media:content duration="587" type="video/mp4" url="https://welt.cdn.content-discovery.video/videos/otks3cndpzzo/rendition/6b3e3ae1-03cf-4835-b9d4-3cc36ce704f5/file-v720p.mp4" />
+        <media:content duration="587" type="application/vnd.apple.mpegurl" url="https://welt.cdn.content-discovery.video/videos/otks3cndpzzo/rendition/82bb4d24-4ec9-45a4-b090-34e37d3f8d14/master.m3u8" />
+      </media:group>
+      <media:content type="image/jpeg" url="https://images.welt.de/6a6c7fe1ef632fe6ede66bf8/7836f8baa2c37e94f930dd72a5726397/ci16x9-w1200/boerse-png">
+        <media:credit scheme="urn:ebu">WELT TV</media:credit>
+        <media:rating scheme="urn:fsk">0</media:rating>
+        <media:thumbnail url="https://images.welt.de/6a6c7fe1ef632fe6ede66bf8/7836f8baa2c37e94f930dd72a5726397/ci16x9-w1200/boerse-png" />
+      </media:content>
+      <media:keywords>Deffner-Dietmar, Amazon, Börse, Apple</media:keywords>
+      <dcterms:lastModified>2026-07-31T11:40:30.694Z</dcterms:lastModified>
+    </item>
+  </channel>
+</rss>

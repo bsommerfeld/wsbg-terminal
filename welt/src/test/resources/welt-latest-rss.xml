@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:media="http://search.yahoo.com/mrss/" xmlns:welt="https://www.welt.de/spec" version="2.0">
+  <channel>
+    <title>Nachrichten - WELT</title>
+    <link>https://www.welt.de/feeds/latest.rss</link>
+    <description>Nachrichten - Aktuelle Nachrichten von WELT</description>
+    <language>de</language>
+    <pubDate>Sun, 02 Aug 2026 19:13:41 GMT</pubDate>
+    <image>
+      <title>Nachrichten - WELT</title>
+      <url>https://www.welt.de/rss-logo.png</url>
+      <link>https://www.welt.de/feeds/latest.rss</link>
+      <width>90</width>
+      <height>36</height>
+      <description>Nachrichten - Aktuelle Nachrichten von WELT</description>
+    </image>
+        <item>
+      <title>Koffer-Leiche in Athen – 26-jähriger Afghane gesteht laut Polizei die Tat</title>
+      <link>https://www.welt.de/vermischtes/kriminalitaet/article6a6f91c0ef632fe6ede68d95/mord-an-britin-koffer-leiche-in-athen-26-jaehriger-afghane-gesteht-laut-polizei-die-tat.html</link>
+      <description>Wochenlang beschäftigte der Fund einer Frauenleiche in einem Koffer die Ermittler in Athen. Nun hat die Polizei nach eigenen Angaben einen Verdächtigen festgenommen. Gegen den 26-Jährigen wird wegen Mordes und Raubes ermittelt.</description>
+      <category>Kriminalität</category>
+      <pubDate>Sun, 02 Aug 2026 19:13:41 GMT</pubDate>
+      <guid isPermaLink="false">6a6f91c0ef632fe6ede68d95</guid>
+      <dc:creator />
+      <dc:source>dpa/ceb</dc:source>
+      <welt:premium>false</welt:premium>
+      <welt:topic>Mord an Britin</welt:topic>
+      <welt:commercialOptions>all</welt:commercialOptions>
+      <welt:subType>news</welt:subType>
+      <media:content type="image/jpeg" url="https://images.welt.de/6a6f91c0ef632fe6ede68d95/b4948442975d15613362b6a5fb1fd061-master/ci23x11-w1200/2026-07-31t114837z-616550145-rc2zomaxzlrh-rtrmadp-3-greece-crime-british-jpg">
+        <media:credit scheme="urn:ebu">Louiza Vradi/REUTERS</media:credit>
+        <media:thumbnail url="https://images.welt.de/6a6f91c0ef632fe6ede68d95/b4948442975d15613362b6a5fb1fd061-master/ci23x11-w1200/2026-07-31t114837z-616550145-rc2zomaxzlrh-rtrmadp-3-greece-crime-british-jpg" />
+      </media:content>
+      <media:keywords>Leichenfunde, Mord (ks), Newsteam, newsos-import-welt, Polizei</media:keywords>
+      <dcterms:lastModified>2026-08-02T19:20:26.444Z</dcterms:lastModified>
+    </item>
+    <item>
+      <title>Chinas Weg zur neuen KI-Weltordnung</title>
+      <link>https://www.welt.de/wirtschaft/plus6a6dd2ccef632fe6ede67ae0/chinas-weg-zur-neuen-ki-weltordnung.html</link>
+      <description>Mit Milliardeninvestitionen, offenen KI-Modellen und neuen Allianzen fordert China die Vereinigten Staaten heraus. Viele China-Modelle ermöglichen auf den ersten Blick sogar mehr Freiheiten. Europa steht vor einer Schicksalsfrage.</description>
+      <category>Wirtschaft</category>
+      <pubDate>Sun, 02 Aug 2026 15:52:58 GMT</pubDate>
+      <guid isPermaLink="false">6a6dd2ccef632fe6ede67ae0</guid>
+      <dc:creator>Adrian Geiges</dc:creator>
+      <dc:source />
+      <welt:premium>true</welt:premium>
+      <welt:topic>Künstliche Intelligenz</welt:topic>
+      <welt:commercialOptions>all</welt:commercialOptions>
+      <welt:subType>news</welt:subType>
+      <media:content type="image/jpeg" url="https://images.welt.de/6a6dd2ccef632fe6ede67ae0/f0995fce69b2a15e74a6033b082c9899-master/ci23x11-w1200/608071286-jpg">
+        <media:credit scheme="urn:ebu">picture alliance/Xinhua News Agency/Chen Haoming</media:credit>
+        <media:thumbnail url="https://images.welt.de/6a6dd2ccef632fe6ede67ae0/f0995fce69b2a15e74a6033b082c9899-master/ci23x11-w1200/608071286-jpg" />
+      </media:content>
+      <media:keywords>Künstliche Intelligenz, OpenAI, ChatGPT, Geiges, Adrian, China, KC_Makro</media:keywords>
+      <dcterms:lastModified>2026-08-02T15:52:58.967Z</dcterms:lastModified>
+    </item>
+    <item>
+      <title>Im Streit über die „Rente mit 63“ zeichnen sich jetzt Nachverhandlungen ab</title>
+      <link>https://www.welt.de/politik/deutschland/article6a6eeddddd06dd5ef2e41ffd/sozialreformen-im-streit-ueber-die-rente-mit-63-zeichnen-sich-jetzt-nachverhandlungen-ab.html</link>
+      <description>Bleibt die schwarz-rote Koalition beim geplanten Aus für die „Rente mit 63“? Nach Widerspruch aus den eigenen Reihen stellen nun Vertreter von Union und SPD Nachbesserungen in Aussicht. Es geht um spezielle Gruppen.</description>
+      <category>Deutschland</category>
+      <pubDate>Sun, 02 Aug 2026 14:01:56 GMT</pubDate>
+      <guid isPermaLink="false">6a6eeddddd06dd5ef2e41ffd</guid>
+      <dc:creator>Claudia Kade</dc:creator>
+      <dc:source>mit DPA</dc:source>
+      <welt:premium>false</welt:premium>
+      <welt:topic>Sozialreformen</welt:topic>
+      <welt:commercialOptions>all</welt:commercialOptions>
+      <welt:subType>news</welt:subType>
+      <media:content type="image/jpeg" url="https://images.welt.de/6a6eeddddd06dd5ef2e41ffd/656e638e25a26b8c71378d84160f1ebb-master/ci23x11-w1200/221294410-jpg">
+        <media:credit scheme="urn:ebu">picture alliance/Zoonar/Robert Kneschke</media:credit>
+        <media:thumbnail url="https://images.welt.de/6a6eeddddd06dd5ef2e41ffd/656e638e25a26b8c71378d84160f1ebb-master/ci23x11-w1200/221294410-jpg" />
+      </media:content>
+      <media:keywords>Merz, Friedrich (CDU), Bas, Bärbel, Reformen, Rentenpolitik (ks), Rente, Landtagswahlen (ks)</media:keywords>
+      <dcterms:lastModified>2026-08-02T18:00:58.413Z</dcterms:lastModified>
+    </item>
+    <item>
+      <title>Historischer Tiefstand – Rheinpegel in Köln sinkt auf 67 Zentimeter</title>
+      <link>https://www.welt.de/videos/video6a6f287fdd06dd5ef2e42386/wochenlange-trockenheit-historischer-tiefstand-rheinpegel-in-koeln-sinkt-auf-67-zentimeter.html</link>
+      <description>Wochenlange Trockenheit sorgt für historische Niedrigwasserstände am Rhein. In Köln fällt der Pegel auf ein Rekordtief. Ungarn, Rumänien und auch Frankreich schalten wegen niedriger Flusspegel Atomreaktoren ab.</description>
+      <category>Videos</category>
+      <pubDate>Sun, 02 Aug 2026 11:46:08 GMT</pubDate>
+      <guid isPermaLink="false">6a6f287fdd06dd5ef2e42386</guid>
+      <dc:creator />
+      <dc:source>WELT TV</dc:source>
+      <welt:premium>false</welt:premium>
+      <welt:topic>Wochenlange Trockenheit</welt:topic>
+      <welt:commercialOptions>all</welt:commercialOptions>
+      <welt:subType>video</welt:subType>
+      <media:group>
+        <media:content duration="114" type="video/mp4" url="https://welt.cdn.content-discovery.video/videos/pjeam6bbvvzl/rendition/79de4b57-0b31-4d46-ae7e-f268921b03c5/file-v720p.mp4" />
+        <media:content duration="114" type="application/vnd.apple.mpegurl" url="https://welt.cdn.content-discovery.video/videos/pjeam6bbvvzl/rendition/2ab0ab93-59b3-4343-bcf3-b25e912cd551/master.m3u8" />
+      </media:group>
+      <media:content type="image/jpeg" url="https://images.welt.de/6a6f287fdd06dd5ef2e42386/6350f7a79ce2c83bf45899b84198a53b/ci16x9-w1200/dpa-com-260801-935-1517137-jpg">
+        <media:credit scheme="urn:ebu">WELT TV</media:credit>
+        <media:rating scheme="urn:fsk">0</media:rating>
+        <media:thumbnail url="https://images.welt.de/6a6f287fdd06dd5ef2e42386/6350f7a79ce2c83bf45899b84198a53b/ci16x9-w1200/dpa-com-260801-935-1517137-jpg" />
+      </media:content>
+      <media:keywords>Rhein, Trockenheiten (ks)</media:keywords>
+      <dcterms:lastModified>2026-08-02T11:46:08.040Z</dcterms:lastModified>
+    </item>
+    <item>
+      <title>Mehrere Tote nach Explosion nahe Luxus-Restaurant in Moskau – Bürgermeister sieht „Terrorakt“</title>
+      <link>https://www.welt.de/vermischtes/article6a6e5336dd06dd5ef2e41c94/detonation-durch-sprengsatz-mehrere-tote-nach-explosion-nahe-luxus-restaurant-in-moskau-buergermeister-sieht-terrorakt.html</link>
+      <description>Nach der tödlichen Explosion im Zentrum Moskaus ist der Ablauf in groben Zügen bekannt. Demnach habe eine Frau versucht, ein Edel-Restaurant mit einem Sprengsatz zu betreten, wurde aber aufgehalten. Dann sei es zu der Detonation gekommen. Bürgermeister Sobjanin spricht von Terror.</description>
+      <category>Panorama</category>
+      <pubDate>Sun, 02 Aug 2026 11:42:00 GMT</pubDate>
+      <guid isPermaLink="false">6a6e5336dd06dd5ef2e41c94</guid>
+      <dc:creator />
+      <dc:source>Reuters/dpa/ceb/krott</dc:source>
+      <welt:premium>false</welt:premium>
+      <welt:topic>Detonation durch Sprengsatz</welt:topic>
+      <welt:commercialOptions>all</welt:commercialOptions>
+      <welt:subType>news</welt:subType>
+      <media:group>
+        <media:content duration="37" type="video/mp4" url="https://welt.cdn.content-discovery.video/videos/uu0kzwntswui/rendition/8f8bbc37-6145-4bc6-9efb-c863af618298/file-v720p.mp4" />
+        <media:content duration="37" type="application/vnd.apple.mpegurl" url="https://welt.cdn.content-discovery.video/videos/uu0kzwntswui/rendition/a22d6289-b494-4bc5-8f27-c4abb4a73833/master.m3u8" />
+      </media:group>
+      <media:content type="image/jpeg" url="https://images.welt.de/6a6e5336dd06dd5ef2e41c94/20d001e4365f73c18364bbd17c0d7fce/ci23x11-w1200/dpa-com-260801-99-228452-jpg">
+        <media:credit scheme="urn:ebu">WELT TV</media:credit>
+        <media:thumbnail url="https://images.welt.de/6a6e5336dd06dd5ef2e41c94/20d001e4365f73c18364bbd17c0d7fce/ci23x11-w1200/dpa-com-260801-99-228452-jpg" />
+      </media:content>
+      <media:keywords>Newsteam, Russland, newsos-import-welt, Explosionen</media:keywords>
+      <dcterms:lastModified>2026-08-02T11:51:58.550Z</dcterms:lastModified>
+    </item>
+  </channel>
+</rss>

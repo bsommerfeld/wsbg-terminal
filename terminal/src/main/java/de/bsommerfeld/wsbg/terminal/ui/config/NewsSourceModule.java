@@ -53,6 +53,17 @@ final class NewsSourceModule extends AbstractModule {
         // the headline survives, a body reader skips them.
         newsSources.addBinding().to(
                 de.bsommerfeld.wsbg.terminal.cnbc.CnbcNewsClient.class);
+        // WELT: the German PRESS leg with a real full-text search API
+        // (welt.de/api/search) reaching back to 2007 - the deepest press
+        // archive of the 2026-08-02 wave. Two gotchas live in the client:
+        // Akamai fingerprints HEADER COMPLETENESS (the sec-fetch trio AND
+        // Accept-Encoding are both load-bearing; a JDK client omits the
+        // latter by default and earns a 403), and the search is padded with
+        // same-day filler - a nonsense term answers 200 with 200 unrelated
+        // hits, so the TITLE-precision cut is what makes the source usable at
+        // all. WELT Plus pieces are marked pre-fetch (feed flag AND /plus URL).
+        newsSources.addBinding().to(
+                de.bsommerfeld.wsbg.terminal.welt.WeltNewsClient.class);
         // Ariva forum: the German retail FORUM-SENTIMENT leg — one keyless
         // community RSS firehose with authoritative <isin> tags per post
         // (multi-listing threads tag both share classes; probed 2026-07-16).
