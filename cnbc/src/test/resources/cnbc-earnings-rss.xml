@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?><rss xmlns:metadata="http://search.cnbc.com/rss/2.0/modules/siteContentMetadata" version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <atom:link rel="self" type="application/rss+xml" href="https://www.cnbc.com/id/15839135/device/rss/rss.html"/>
+    <language>en-us</language>
+    <ttl>60</ttl>
+    <title>Earnings</title>
+    <feed_asset>
+      <id>15839135</id>
+      <type>franchise</type>
+      <subtype>section</subtype>
+      <seo>https://www.cnbc.com/earnings/</seo>
+    </feed_asset>
+    <lastBuildDate>Sat, 01 Aug 2026 14:00 GMT</lastBuildDate>
+    <pubDate>Sat, 01 Aug 2026 14:00 GMT</pubDate>
+    <link>https://www.cnbc.com/earnings/</link>
+    <description><![CDATA[Corporate Company Earnings, Find Earnings Per Share and Earnings History Online]]></description>
+    <item>
+      <link>https://www.cnbc.com/2026/08/01/from-a-fed-decision-to-big-tech-earnings-what-drove-last-weeks-volatile-market.html</link>
+      <guid isPermaLink="false">108343148</guid>
+      <metadata:type>cnbcnewsstory</metadata:type>
+      <metadata:id>108343148</metadata:id>
+      <metadata:sponsored>false</metadata:sponsored>
+      <title>From a Fed decision to Big Tech earnings: What drove last week&apos;s volatile market</title>
+      <description><![CDATA[Wall Street got back to its winning ways last week.]]></description>
+      <pubDate>Sat, 01 Aug 2026 12:16:13 GMT</pubDate>
+    </item>
+<item>
+      <link>https://www.cnbc.com/2026/07/31/eaton-jumps-as-its-earnings-and-outlook-signal-hope-for-the-ai-buildout.html</link>
+      <guid isPermaLink="false">108343255</guid>
+      <metadata:type>cnbcnewsstory</metadata:type>
+      <metadata:id>108343255</metadata:id>
+      <metadata:sponsored>false</metadata:sponsored>
+      <title>Eaton shares jump as its earnings and outlook show resilience of the AI buildout</title>
+      <description><![CDATA[Eaton investors had good reason to be concerned heading into Friday's results.]]></description>
+      <pubDate>Fri, 31 Jul 2026 19:43:14 GMT</pubDate>
+    </item>
+<item>
+      <link>https://www.cnbc.com/2026/07/31/lindes-post-earnings-slide-is-a-buying-opportunity-heres-why-.html</link>
+      <guid isPermaLink="false">108343055</guid>
+      <metadata:type>cnbcnewsstory</metadata:type>
+      <metadata:id>108343055</metadata:id>
+      <metadata:sponsored>false</metadata:sponsored>
+      <title>Linde&apos;s post-earnings slide is a buying opportunity. Here&apos;s why</title>
+      <description><![CDATA[The stock is heading for its worst day in over a year. That's a gift for investors who can see past current obstacles.]]></description>
+      <pubDate>Fri, 31 Jul 2026 17:06:11 GMT</pubDate>
+    </item>
+<item>
+      <link>https://www.cnbc.com/2026/07/31/exxon-xom-chevron-cvx-q2-earnings.html</link>
+      <guid isPermaLink="false">108342831</guid>
+      <metadata:type>cnbcnewsstory</metadata:type>
+      <metadata:id>108342831</metadata:id>
+      <metadata:sponsored>false</metadata:sponsored>
+      <title>Exxon and Chevron profits surge on rising oil prices due to Iran war</title>
+      <description><![CDATA[ExxonMobil and Chevron on Friday reported second-quarter profits that surged on rising oil prices due to the Iran war.]]></description>
+      <pubDate>Fri, 31 Jul 2026 15:52:20 GMT</pubDate>
+    </item>
+<item>
+      <link>https://www.cnbc.com/2026/07/31/apple-aapl-amazon-amzn-stock-today.html</link>
+      <guid isPermaLink="false">108342997</guid>
+      <metadata:type>cnbcnewsstory</metadata:type>
+      <metadata:id>108342997</metadata:id>
+      <metadata:sponsored>false</metadata:sponsored>
+      <title>Alphabet, Amazon and Microsoft added nearly $1.5 trillion in combined value this week</title>
+      <description><![CDATA[Amazon, Microsoft and Google added hundreds of billions of dollars to their market caps, while Apple and Meta saw their market valuations fall.]]></description>
+      <pubDate>Fri, 31 Jul 2026 20:17:54 GMT</pubDate>
+    </item>
+<item>
+      <link>https://www.cnbc.com/2026/07/30/were-raising-our-apple-price-target-seeing-plenty-of-good-despite-memory-crunch.html</link>
+      <guid isPermaLink="false">108342893</guid>
+      <metadata:type>cnbcnewsstory</metadata:type>
+      <metadata:id>108342893</metadata:id>
+      <metadata:sponsored>false</metadata:sponsored>
+      <title>We&apos;re raising our Apple price target, seeing plenty of good despite the memory crunch knocks</title>
+      <description><![CDATA[It was a good but not great quarter as Apple worked to mitigate the memory shortage, which impacted the reported quarter and guidance.]]></description>
+      <pubDate>Fri, 31 Jul 2026 11:52:07 GMT</pubDate>
+    </item>
+  </channel>
+</rss>

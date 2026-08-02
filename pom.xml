@@ -45,6 +45,7 @@
         <module>bloomberg</module>
         <module>benzinga</module>
         <module>fool</module>
+        <module>cnbc</module>
         <module>fn-news</module>
         <module>websearch</module>
         <module>briefing</module>
@@ -263,6 +264,11 @@
             <dependency>
                 <groupId>de.bsommerfeld</groupId>
                 <artifactId>fool</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>cnbc</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

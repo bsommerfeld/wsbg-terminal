@@ -40,6 +40,19 @@ final class NewsSourceModule extends AbstractModule {
         // with teasers; keyless, public feed key (probed 2026-07-13).
         newsSources.addBinding().to(
                 de.bsommerfeld.wsbg.terminal.fool.FoolNewsClient.class);
+        // CNBC: the US financial PRESS leg - keyless on every surface (probed
+        // 2026-08-02). Two legs: twelve SECTION RSS feeds as the live pool
+        // (the ~24 show franchises answer 200 with an empty channel and are
+        // deliberately not wired), plus queryly full-text search as the
+        // instrument door AND the multi-year ARCHIVE (15.795 hits for one
+        // name, pages back to 2016 - so newsForNameWindow answers too).
+        // Name-addressed only: CNBC tags neither tickers nor ISINs, and a bare
+        // symbol in a full-text query would drag in every passing mention.
+        // CNBC Pro pieces answer 200 with an EMPTY body, so they are marked
+        // pre-fetch via cn:contentClassification and published as "CNBC Pro" -
+        // the headline survives, a body reader skips them.
+        newsSources.addBinding().to(
+                de.bsommerfeld.wsbg.terminal.cnbc.CnbcNewsClient.class);
         // Ariva forum: the German retail FORUM-SENTIMENT leg — one keyless
         // community RSS firehose with authoritative <isin> tags per post
         // (multi-listing threads tag both share classes; probed 2026-07-16).
