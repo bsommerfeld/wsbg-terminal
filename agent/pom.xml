@@ -102,6 +102,11 @@
             <groupId>de.bsommerfeld</groupId>
             <artifactId>tradersunion</artifactId>
         </dependency>
+        <!-- 2026-08-03: the macro wire feeds the DD's subject judge. -->
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>financial-juice</artifactId>
+        </dependency>
         <!-- 2026-08-03: the regime gauges the DD reads by name (EUR/USD and
              the dollar index; Fear & Greed already rides the fear-greed dep). -->
         <dependency>

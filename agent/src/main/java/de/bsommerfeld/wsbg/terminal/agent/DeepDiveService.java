@@ -144,6 +144,10 @@ public class DeepDiveService {
     private static final int MAX_ANALYST_ACTIONS = 10;
     /** CNBC quarters asked for and rendered - the endpoint's own ceiling is eight. */
     private static final int MAX_CNBC_QUARTERS = 8;
+    /** Headlines taken per press feed before the subject judge sees them. */
+    private static final int MAX_PRESS_CANDIDATES_PER_FEED = 8;
+    /** How far back the press feeds are read - the report is a snapshot of TODAY. */
+    private static final int PRESS_CANDIDATE_HOURS = 24;
     /** Rows kept per Trading Economics board - the day's movers, by arithmetic. */
     private static final int MAX_TE_BOARD_ROWS = 6;
     /** Prediction markets rendered - what the crowd prices, not a betting board. */
@@ -402,6 +406,17 @@ public class DeepDiveService {
     // The macro desk. Built with tests during the source wave and then never
     // called by anything at all - not even the evening report.
     private volatile de.bsommerfeld.wsbg.terminal.briefing.TradingEconomicsClient tradingEconomics;
+    // The PRESS half of the fishing net. These feeds are not addressed by
+    // instrument and never could be - they are the day's macro and market
+    // wire. They ride the same subject-scoped judge the world signals do, so
+    // a line only survives when the model can name the path to this subject.
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.MacroPressClient macroPress;
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.MarketPressClient marketPress;
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.TagesschauClient tagesschau;
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.CuriositiesClient curiosities;
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.WorldWeatherClient worldWeather;
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.RhinePegelClient rhinePegel;
+    private volatile de.bsommerfeld.wsbg.terminal.fj.FjScraper financialJuice;
 
     private final AtomicBoolean busy = new AtomicBoolean(false);
     private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
@@ -686,6 +701,41 @@ public class DeepDiveService {
     void setOnvistaFundamentals(
             de.bsommerfeld.wsbg.terminal.onvista.OnvistaFundamentalsClient client) {
         this.onvistaFacts = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setMacroPress(de.bsommerfeld.wsbg.terminal.briefing.MacroPressClient client) {
+        this.macroPress = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setMarketPress(de.bsommerfeld.wsbg.terminal.briefing.MarketPressClient client) {
+        this.marketPress = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setTagesschau(de.bsommerfeld.wsbg.terminal.briefing.TagesschauClient client) {
+        this.tagesschau = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setCuriosities(de.bsommerfeld.wsbg.terminal.briefing.CuriositiesClient client) {
+        this.curiosities = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setWorldWeather(de.bsommerfeld.wsbg.terminal.briefing.WorldWeatherClient client) {
+        this.worldWeather = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setRhinePegel(de.bsommerfeld.wsbg.terminal.briefing.RhinePegelClient client) {
+        this.rhinePegel = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setFinancialJuice(de.bsommerfeld.wsbg.terminal.fj.FjScraper scraper) {
+        this.financialJuice = scraper;
     }
 
     @com.google.inject.Inject(optional = true)
@@ -3417,6 +3467,13 @@ public class DeepDiveService {
          * would hide the wild-but-real connection from the model forever).
          */
         de.bsommerfeld.wsbg.terminal.db.WeatherReportRecord.WorldSignals worldSignals;
+        /**
+         * The PRESS half of the catch: the day's macro and market wire as
+         * candidate lines. Not addressed by instrument and never could be -
+         * they ride the same subject judge the world signals do, and a line
+         * only reaches the shelf when the model can name the path here.
+         */
+        List<String> pressCandidates = List.of();
         /** The judge's survivors — finished ROOT-locale material lines for the Lage shelf. */
         List<String> worldSignalKeep = List.of();
         /**
@@ -3914,6 +3971,18 @@ public class DeepDiveService {
             }
         } catch (Exception e) {
             LOG.debug("[DEEPDIVE] fool quote failed: {}", e.getMessage());
+        }
+        // The PRESS half of the fishing net. None of these feeds can be
+        // addressed by instrument - they are the day's macro and market wire -
+        // so they are collected whole and handed to the SAME subject-scoped
+        // judge the world signals go through. Fail-closed by construction: a
+        // line reaches the shelf only when the model can name the path from it
+        // to this subject.
+        checkCancelled();
+        try {
+            m.pressCandidates = collectPressCandidates();
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] press candidates failed: {}", e.getMessage());
         }
         // The macro desk (Trading Economics): the day's movers on the
         // commodity and bond boards, and the subject's own row on the earnings
@@ -4690,6 +4759,12 @@ public class DeepDiveService {
                 bits.add(m.fnVenues.size() + (de ? " Handelsplätze" : " venues"));
             }
             journalNotes(subject, List.of("finanzen.net — " + String.join(", ", bits)));
+        }
+        if (!m.pressCandidates.isEmpty()) {
+            journalNotes(subject, List.of((de ? "Tagespresse — " : "The day's press — ")
+                    + m.pressCandidates.size()
+                    + (de ? " Zeile(n) an den Subjekt-Richter"
+                            : " line(s) handed to the subject judge")));
         }
         if (!m.teCommodities.isEmpty() || !m.teBonds.isEmpty() || m.teEarnings != null) {
             List<String> bits = new ArrayList<>();
@@ -6401,6 +6476,9 @@ public class DeepDiveService {
      */
     static List<String> worldSignalCandidateLines(Material m) {
         List<String> out = new ArrayList<>();
+        // The press half rides the same judge - collected general, kept only
+        // where the model can name the path to this subject.
+        out.addAll(m.pressCandidates);
         Set<String> worldHints = m.sectorEtfSymbol == null ? Set.of()
                 : SECTOR_WORLD_EXPOSURE.getOrDefault(m.sectorEtfSymbol, Set.of());
         Set<String> hazardHints = m.sectorEtfSymbol == null ? Set.of()
@@ -7454,6 +7532,126 @@ public class DeepDiveService {
             }
         }
         sb.append(".\n");
+    }
+
+    /**
+     * The day's macro and market wire as JUDGE CANDIDATES. Every feed here is
+     * general - none of them knows what an ISIN is - so none of them can be
+     * asked about the subject. Handing them to the subject judge instead is
+     * what makes them usable: the line survives only if the model can name the
+     * path from it to this instrument, and every line carries the standing
+     * transmission anchor for its class to make that path visible.
+     *
+     * <p>Each feed is guarded on its own; a dead one costs its own lines.
+     */
+    private List<String> collectPressCandidates() {
+        List<String> out = new ArrayList<>();
+        Instant since = Instant.now().minus(java.time.Duration.ofHours(PRESS_CANDIDATE_HOURS));
+        try {
+            var mp = macroPress;
+            if (mp != null) {
+                for (var a : mp.actualsSince(since, MAX_PRESS_CANDIDATES_PER_FEED)) {
+                    if (a.title() == null || a.title().isBlank()) continue;
+                    out.add("Macro print in the press: " + a.title().strip()
+                            + (a.source() == null || a.source().isBlank()
+                                    ? "" : " (" + a.source() + ")")
+                            + affects("rate-sensitive sectors first - banks, real estate, "
+                                    + "utilities and any levered balance sheet; exporters "
+                                    + "through the currency the print moves"));
+                }
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] macro press failed: {}", e.getMessage());
+        }
+        try {
+            var mp = marketPress;
+            if (mp != null) {
+                for (var h : mp.headlinesSince(since, MAX_PRESS_CANDIDATES_PER_FEED)) {
+                    if (h.title() == null || h.title().isBlank()) continue;
+                    out.add("Market press: " + h.title().strip()
+                            + (h.source() == null || h.source().isBlank()
+                                    ? "" : " (" + h.source() + ")")
+                            + affects("whatever the piece names - a sector read, a policy "
+                                    + "move or a single issuer; the connection has to be "
+                                    + "IN the line, never assumed from the outlet"));
+                }
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] market press failed: {}", e.getMessage());
+        }
+        try {
+            var ts = tagesschau;
+            if (ts != null) {
+                for (var a : ts.wirtschaft(MAX_PRESS_CANDIDATES_PER_FEED)) {
+                    if (a.title() == null || a.title().isBlank()) continue;
+                    out.add("German public broadcaster, business desk: " + a.title().strip()
+                            + affects("German issuers directly; European suppliers and "
+                                    + "customers of whatever the piece names"));
+                }
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] tagesschau failed: {}", e.getMessage());
+        }
+        try {
+            var fj = financialJuice;
+            if (fj != null) {
+                int n = 0;
+                for (RawNewsItem item : fj.fetch()) {
+                    if (item.title() == null || item.title().isBlank()) continue;
+                    if (++n > MAX_PRESS_CANDIDATES_PER_FEED) break;
+                    out.add("Macro wire: " + item.title().strip()
+                            + affects("the whole tape when it is a central bank or a "
+                                    + "geopolitical headline; otherwise only what it names"));
+                }
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] macro wire failed: {}", e.getMessage());
+        }
+        try {
+            var rp = rhinePegel;
+            if (rp != null) {
+                rp.kaub().ifPresent(reading -> out.add("Rhine level at Kaub: "
+                        + fmt2(reading.centimeters()) + " cm (" + reading.state() + ")"
+                        + affects("German chemicals and steel move bulk on this river - low "
+                                + "water forces part loads and truck substitution, high water "
+                                + "closes it entirely; inland shipping and the utilities that "
+                                + "barge coal react first")));
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] rhine level failed: {}", e.getMessage());
+        }
+        try {
+            var ww = worldWeather;
+            if (ww != null) {
+                int n = 0;
+                for (var place : ww.worldWeather()) {
+                    if (place.place() == null || place.tempC() == null) continue;
+                    if (++n > MAX_PRESS_CANDIDATES_PER_FEED) break;
+                    out.add("Weather at a market location, " + place.place() + ": "
+                            + fmt2(place.tempC()) + " C"
+                            + (place.word() == null || place.word().isBlank()
+                                    ? "" : ", " + place.word())
+                            + affects("agriculture and energy demand where the place is a "
+                                    + "production or consumption centre; logistics where it "
+                                    + "is a port or hub - never a market comment by itself"));
+                }
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] world weather failed: {}", e.getMessage());
+        }
+        try {
+            var cu = curiosities;
+            if (cu != null) {
+                cu.usDebt().ifPresent(debt -> out.add("US federal debt outstanding: "
+                        + fmt2(debt.totalUsd()) + " USD (" + debt.dateIso() + ")"
+                        + affects("the long end of the curve and everything priced off it; "
+                                + "a level, not an event - only relevant when the report is "
+                                + "already about rates or fiscal policy")));
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] curiosities failed: {}", e.getMessage());
+        }
+        return List.copyOf(out);
     }
 
     /**
@@ -8953,12 +9151,16 @@ public class DeepDiveService {
             }
             case "world":
                 return de
-                        ? "Weltsignale - IMF PortWatch, EIA, Harpex, Energy-Charts, NOAA, CISA, "
-                                + "Politik-/Zivil-Ticker, Gefahrenlage (NOAA/USGS/FAA); "
-                                + "je Subjekt KI-beurteilt"
-                        : "World signals - IMF PortWatch, EIA, Harpex, Energy-Charts, NOAA, CISA, "
-                                + "policy/civic wires, hazard picture (NOAA/USGS/FAA); "
-                                + "AI-judged per subject";
+                        ? "Weltsignale und Tagespresse - IMF PortWatch, EIA, Harpex, "
+                                + "Energy-Charts, NOAA, CISA, Politik-/Zivil-Ticker, "
+                                + "Gefahrenlage (NOAA/USGS/FAA), Makro- und Marktpresse, "
+                                + "tagesschau-Wirtschaft, Makro-Wire, Rheinpegel, "
+                                + "Wetter an Marktstandorten; je Subjekt KI-beurteilt"
+                        : "World signals and the day's press - IMF PortWatch, EIA, Harpex, "
+                                + "Energy-Charts, NOAA, CISA, policy/civic wires, hazard "
+                                + "picture (NOAA/USGS/FAA), macro and market press, the German "
+                                + "broadcaster's business desk, the macro wire, the Rhine "
+                                + "level, weather at market locations; AI-judged per subject";
             case "cnbc":
                 return "CNBC" + (de
                         ? " - Quartalshistorie Schätzung vs. Ist (Gewinn je Aktie, Umsatz, "
