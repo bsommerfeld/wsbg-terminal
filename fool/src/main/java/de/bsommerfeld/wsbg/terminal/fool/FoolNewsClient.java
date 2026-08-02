@@ -403,6 +403,7 @@ public class FoolNewsClient implements NewsSource {
     QuotePage quotePageFor(String symbol) {
         if (symbol == null || symbol.isBlank()) return null;
         String sym = symbol.trim().toUpperCase(Locale.ROOT);
+        if (!isQuotePathSymbol(sym)) return null;
 
         CachedPage cachedPage = quotePages.get(sym);
         if (cachedPage != null && fresh(cachedPage.fetchedAt(), CACHE_TTL)) {
@@ -439,6 +440,20 @@ public class FoolNewsClient implements NewsSource {
         }
         exchangeMemo.put(sym, new CachedText(Instant.now(), ""));
         return null;
+    }
+
+    /**
+     * True when a symbol can appear in a quote path at all. Fool's quote URLs
+     * are plain path segments, so an index symbol ({@code ^TECDAX}, {@code ^N225})
+     * doesn't 404 - it fails URL parsing ("Illegal character in path") on every
+     * one of the three venue probes, once per caller. Fool carries no index
+     * quote pages either way, so the honest answer is a no-op before the URL is
+     * built. Package-private for tests.
+     */
+    static boolean isQuotePathSymbol(String symbol) {
+        if (symbol == null || symbol.isBlank()) return false;
+        return symbol.chars().allMatch(c ->
+                (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '-');
     }
 
     private QuotePage rememberPage(String symbol, String exchange, String html) {

@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -220,6 +221,22 @@ class TradingViewMindsClientTest {
         assertTrue(TradingViewMindsClient.tvSymbolCandidates("AIR.PA").isEmpty());
         assertTrue(TradingViewMindsClient.tvSymbolCandidates(".DE").isEmpty(),
                 "a bare suffix has no base symbol");
+    }
+
+    @Test
+    void nonEquityShapesNeverGetAnEquityVenue() {
+        // Indices, FX pairs, futures and crypto pairs cannot sit on NASDAQ/NYSE —
+        // asking anyway is a guaranteed 422 per symbol, per caller.
+        for (String house : List.of("^DJI", "^TECDAX", "^N225", "JPY=X", "USD=X",
+                "JPYUSD=X", "CL=F", "BZ=F", "BTC-USD", "ETH-EUR")) {
+            assertTrue(TradingViewMindsClient.tvSymbolCandidates(house).isEmpty(), house);
+            assertFalse(TradingViewMindsClient.isEquityShaped(house), house);
+        }
+        // A US share class carries a one-letter tail and stays eligible.
+        assertEquals(List.of("NASDAQ:BRK-B", "NYSE:BRK-B"),
+                TradingViewMindsClient.tvSymbolCandidates("BRK-B"));
+        assertTrue(TradingViewMindsClient.isEquityShaped("KO"));
+        assertTrue(TradingViewMindsClient.isEquityShaped("RHM.DE"));
     }
 
     @Test

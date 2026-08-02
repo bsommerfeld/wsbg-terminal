@@ -525,4 +525,18 @@ class FoolNewsClientTest {
                         "<script id=\"quote-page-related-schema\">{ broken</script>", "NVDA").isEmpty(),
                 "a truncated schema block costs the leg, never an exception");
     }
+
+    @Test
+    void indexSymbolsNeverReachTheQuotePath() {
+        // '^' is illegal in a URL path — the three venue probes would each throw
+        // instead of 404ing, once per caller. Fool carries no index pages anyway.
+        assertFalse(FoolNewsClient.isQuotePathSymbol("^TECDAX"));
+        assertFalse(FoolNewsClient.isQuotePathSymbol("^N225"));
+        assertFalse(FoolNewsClient.isQuotePathSymbol("CL=F"));
+        assertFalse(FoolNewsClient.isQuotePathSymbol(""));
+        assertFalse(FoolNewsClient.isQuotePathSymbol(null));
+        assertTrue(FoolNewsClient.isQuotePathSymbol("NVDA"));
+        assertTrue(FoolNewsClient.isQuotePathSymbol("BRK-B"));
+        assertTrue(FoolNewsClient.isQuotePathSymbol("BF.A"));
+    }
 }
