@@ -144,6 +144,8 @@ public class DeepDiveService {
     private static final int MAX_ANALYST_ACTIONS = 10;
     /** CNBC quarters asked for and rendered - the endpoint's own ceiling is eight. */
     private static final int MAX_CNBC_QUARTERS = 8;
+    /** Rows kept per Trading Economics board - the day's movers, by arithmetic. */
+    private static final int MAX_TE_BOARD_ROWS = 6;
     /** Prediction markets rendered - what the crowd prices, not a betting board. */
     private static final int MAX_PREDICTION_MARKETS = 3;
     /** Sector rows rendered off the day's board - the standings, not the whole map. */
@@ -397,6 +399,9 @@ public class DeepDiveService {
     private volatile de.bsommerfeld.wsbg.terminal.briefing.CryptoDerivsClient cryptoDerivs;
     private volatile de.bsommerfeld.wsbg.terminal.briefing.PolymarketClient polymarket;
     private volatile de.bsommerfeld.wsbg.terminal.currency.EurUsdClient eurUsd;
+    // The macro desk. Built with tests during the source wave and then never
+    // called by anything at all - not even the evening report.
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.TradingEconomicsClient tradingEconomics;
 
     private final AtomicBoolean busy = new AtomicBoolean(false);
     private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
@@ -681,6 +686,11 @@ public class DeepDiveService {
     void setOnvistaFundamentals(
             de.bsommerfeld.wsbg.terminal.onvista.OnvistaFundamentalsClient client) {
         this.onvistaFacts = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setTradingEconomics(de.bsommerfeld.wsbg.terminal.briefing.TradingEconomicsClient client) {
+        this.tradingEconomics = client;
     }
 
     @com.google.inject.Inject(optional = true)
@@ -3352,6 +3362,19 @@ public class DeepDiveService {
         de.bsommerfeld.wsbg.terminal.briefing.CryptoDerivsClient.DerivsSnapshot cryptoDerivs;
         /** What the crowd PRICES, not what it says - the busiest open markets. */
         List<de.bsommerfeld.wsbg.terminal.briefing.PolymarketClient.PredictionMarket> predictionMarkets = List.of();
+        /**
+         * The day's movers on the commodity and bond boards (Trading
+         * Economics). An industrial name lives on input prices and a levered
+         * one on yields - neither had a board in this report before.
+         */
+        List<de.bsommerfeld.wsbg.terminal.briefing.TradingEconomicsClient.Quote> teCommodities = List.of();
+        List<de.bsommerfeld.wsbg.terminal.briefing.TradingEconomicsClient.Quote> teBonds = List.of();
+        /**
+         * The subject's own row on the earnings docket (Trading Economics) -
+         * actual against consensus for earnings per share AND revenue, for the
+         * names the other delivery legs never reach.
+         */
+        de.bsommerfeld.wsbg.terminal.briefing.TradingEconomicsClient.EarningsEntry teEarnings;
         /** EUR/USD, the currency every cross-border figure in this report passes through. */
         Double eurUsdRate;
         /** The dollar index beside it - a dollar move is not a euro move. */
@@ -3891,6 +3914,30 @@ public class DeepDiveService {
             }
         } catch (Exception e) {
             LOG.debug("[DEEPDIVE] fool quote failed: {}", e.getMessage());
+        }
+        // The macro desk (Trading Economics): the day's movers on the
+        // commodity and bond boards, and the subject's own row on the earnings
+        // docket. An industrial name lives on input prices and a levered one
+        // on yields; neither had a board here before. Movers are picked by
+        // ARITHMETIC - the largest absolute daily move - never by a kept list
+        // of interesting symbols.
+        checkCancelled();
+        try {
+            var te = tradingEconomics;
+            if (te != null) {
+                m.teCommodities = topMovers(te.commodities());
+                m.teBonds = topMovers(te.bonds());
+                String bare = usTicker(m.ticker);
+                if (bare != null) {
+                    for (var row : te.earnings()) {
+                        if (row.symbol() == null || !bare.equalsIgnoreCase(row.symbol())) continue;
+                        m.teEarnings = row;
+                        break;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] trading economics failed: {}", e.getMessage());
         }
         // THE TAPE THIS INSTRUMENT STANDS IN. Every one of these gauges fed
         // the evening report and nothing else, which left the DD unable to say
@@ -4644,6 +4691,15 @@ public class DeepDiveService {
             }
             journalNotes(subject, List.of("finanzen.net — " + String.join(", ", bits)));
         }
+        if (!m.teCommodities.isEmpty() || !m.teBonds.isEmpty() || m.teEarnings != null) {
+            List<String> bits = new ArrayList<>();
+            if (!m.teCommodities.isEmpty()) {
+                bits.add(m.teCommodities.size() + (de ? " Rohstoffe" : " commodities"));
+            }
+            if (!m.teBonds.isEmpty()) bits.add(m.teBonds.size() + (de ? " Anleihen" : " bonds"));
+            if (m.teEarnings != null) bits.add(de ? "Ist gegen Konsens" : "actual vs consensus");
+            journalNotes(subject, List.of("Trading Economics — " + String.join(", ", bits)));
+        }
         if (m.fearGreed != null || m.putCall != null || m.bundYield != null
                 || m.eurUsdRate != null) {
             List<String> bits = new ArrayList<>();
@@ -4905,6 +4961,7 @@ public class DeepDiveService {
         appendSectorContext(sb, m, nums);
         appendSectorBoard(sb, m, nums);
         appendMarketRegime(sb, m, nums);
+        appendMacroBoards(sb, m, nums);
         appendWorldSignals(sb, m, nums);
         appendPressTimeline(sb, m.pressTimeline, nums);
         appendPressHistory(sb, m, nums);
@@ -4928,6 +4985,7 @@ public class DeepDiveService {
         appendCnbcSurprises(sb, m, nums);
         appendFnEstimates(sb, m, nums);
         appendFoolQuote(sb, m, nums);
+        appendTeEarnings(sb, m, nums);
         appendBoerseFundamentals(sb, m, nums);
         out[SEC_FUNDAMENTALS] = new Shelf(take(sb), List.of());
 
@@ -5234,6 +5292,9 @@ public class DeepDiveService {
                 || m.bundYield != null || m.cryptoDerivs != null || m.eurUsdRate != null
                 || !m.predictionMarkets.isEmpty()) {
             nums.put("regime", ++n);
+        }
+        if (!m.teCommodities.isEmpty() || !m.teBonds.isEmpty() || m.teEarnings != null) {
+            nums.put("tradingeconomics", ++n);
         }
         if (m.deepDive != null || m.analystView != null) nums.put("consors", ++n);
         if (!m.issuerEvents.isEmpty()) nums.put("issuer", ++n);
@@ -7396,6 +7457,97 @@ public class DeepDiveService {
     }
 
     /**
+     * The day's biggest movers on a quote board, by ARITHMETIC. Which symbols
+     * are "interesting" is exactly the kind of kept list this house does not
+     * maintain - the largest absolute daily move is a measurement, and the
+     * model decides whether any of them touch the subject.
+     */
+    static List<de.bsommerfeld.wsbg.terminal.briefing.TradingEconomicsClient.Quote>
+            topMovers(List<de.bsommerfeld.wsbg.terminal.briefing.TradingEconomicsClient.Quote> board) {
+        if (board == null || board.isEmpty()) return List.of();
+        List<de.bsommerfeld.wsbg.terminal.briefing.TradingEconomicsClient.Quote> sorted =
+                new ArrayList<>(board);
+        sorted.removeIf(q -> q == null || q.name() == null || q.name().isBlank()
+                || !Double.isFinite(q.percentChange()));
+        sorted.sort(Comparator.comparingDouble(
+                (de.bsommerfeld.wsbg.terminal.briefing.TradingEconomicsClient.Quote q) ->
+                        Math.abs(q.percentChange())).reversed());
+        return sorted.size() > MAX_TE_BOARD_ROWS
+                ? List.copyOf(sorted.subList(0, MAX_TE_BOARD_ROWS)) : List.copyOf(sorted);
+    }
+
+    /**
+     * The commodity and bond boards (Trading Economics). An industrial name
+     * lives on its input prices and a levered one on yields; neither had a
+     * board in this report before. Rows are the day's largest absolute moves -
+     * a measurement, not a kept list of symbols someone once found relevant.
+     */
+    private static void appendMacroBoards(StringBuilder sb, Material m,
+            Map<String, Integer> nums) {
+        if (m.teCommodities.isEmpty() && m.teBonds.isEmpty()) return;
+        sb.append("MACRO BOARDS TODAY (verified, Trading Economics; the LARGEST ABSOLUTE "
+                        + "MOVES of each board, picked by size and not by relevance - which "
+                        + "of them touches this subject is a judgement, not a given)")
+                .append(mark(nums, "tradingeconomics")).append(":\n");
+        appendMoverLines(sb, "commodities", m.teCommodities);
+        appendMoverLines(sb, "government bonds", m.teBonds);
+    }
+
+    private static void appendMoverLines(StringBuilder sb, String label,
+            List<de.bsommerfeld.wsbg.terminal.briefing.TradingEconomicsClient.Quote> rows) {
+        for (var q : rows) {
+            sb.append("  - ").append(label).append(": ").append(q.name().strip())
+                    .append(' ').append(fmt2(q.last()));
+            if (q.unit() != null && !q.unit().isBlank()) sb.append(' ').append(q.unit().strip());
+            sb.append(", ").append(signed(q.percentChange())).append('%');
+            if (q.asOf() != null && !q.asOf().isBlank()) {
+                sb.append(" [").append(q.asOf().strip()).append(']');
+            }
+            sb.append('\n');
+        }
+    }
+
+    /**
+     * The subject's own row on the macro desk's earnings docket - actual
+     * against consensus for earnings per share AND revenue. Values stay
+     * VERBATIM as the page prints them ("96.52B", "$638.29B"): the units vary
+     * per row, and reformatting them into a number would invent a scale.
+     */
+    private static void appendTeEarnings(StringBuilder sb, Material m,
+            Map<String, Integer> nums) {
+        var e = m.teEarnings;
+        if (e == null) return;
+        List<String> bits = new ArrayList<>();
+        if (notBlank(e.epsActual()) || notBlank(e.epsConsensus())) {
+            bits.add("earnings per share " + orDash(e.epsActual()) + " against a consensus of "
+                    + orDash(e.epsConsensus())
+                    + (notBlank(e.epsPrevious()) ? ", previously " + e.epsPrevious() : ""));
+        }
+        if (notBlank(e.revenueActual()) || notBlank(e.revenueConsensus())) {
+            bits.add("revenue " + orDash(e.revenueActual()) + " against a consensus of "
+                    + orDash(e.revenueConsensus())
+                    + (notBlank(e.revenuePrevious()) ? ", previously " + e.revenuePrevious() : ""));
+        }
+        if (bits.isEmpty()) return;
+        sb.append("REPORTED AGAINST CONSENSUS (verified, Trading Economics earnings docket");
+        if (notBlank(e.fiscalPeriod())) sb.append(", ").append(e.fiscalPeriod().strip());
+        if (notBlank(e.date())) sb.append(", ").append(e.date().strip());
+        sb.append("; figures VERBATIM as the page prints them - the units vary per row and "
+                        + "are not rescaled here)")
+                .append(mark(nums, "tradingeconomics")).append(": ")
+                .append(String.join("; ", bits)).append(".\n");
+    }
+
+    private static boolean notBlank(String s) {
+        return s != null && !s.isBlank();
+    }
+
+    /** An unreported side is a dash, never a zero. */
+    private static String orDash(String s) {
+        return notBlank(s) ? s.strip() : "-";
+    }
+
+    /**
      * THE TAPE THIS INSTRUMENT STANDS IN. Not a forecast and not a verdict on
      * the subject - the conditions every reading elsewhere in this report was
      * taken under. A 12% drop in a panicking market and the same drop in a
@@ -8852,6 +9004,12 @@ public class DeepDiveService {
                                 + "Marktkapitalisierung, KGV, Gewinn je Aktie, Dividendenrendite)"
                         : "Motley Fool (quote page) - profile figures (sector, industry, "
                                 + "market capitalisation, P/E, earnings per share, dividend yield)";
+            case "tradingeconomics":
+                return "Trading Economics" + (de
+                        ? " - Rohstoff- und Anleihe-Tafeln (die größten Tagesbewegungen) "
+                                + "sowie der Berichtskalender mit Ist gegen Konsens"
+                        : " - the commodity and bond boards (the day's largest moves) and "
+                                + "the earnings docket with actual against consensus");
             case "regime":
                 return de
                         ? "Marktregime - CNN Fear & Greed und Krypto-Stimmungsindex, "
