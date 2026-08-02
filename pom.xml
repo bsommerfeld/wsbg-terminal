@@ -53,6 +53,7 @@
         <module>boerse-de</module>
         <module>boersenmedien</module>
         <module>tradersunion</module>
+        <module>finanzen-net</module>
         <module>fn-news</module>
         <module>websearch</module>
         <module>briefing</module>
@@ -311,6 +312,11 @@
             <dependency>
                 <groupId>de.bsommerfeld</groupId>
                 <artifactId>tradersunion</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>finanzen-net</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

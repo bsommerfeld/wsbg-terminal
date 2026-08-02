@@ -183,6 +183,10 @@
         </dependency>
         <dependency>
             <groupId>de.bsommerfeld</groupId>
+            <artifactId>finanzen-net</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
             <artifactId>fn-news</artifactId>
         </dependency>
         <dependency>

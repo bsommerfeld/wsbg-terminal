@@ -118,6 +118,17 @@ final class NewsSourceModule extends AbstractModule {
         // translated from English; URLs come only from sitemaps, never built.
         newsSources.addBinding().to(
                 de.bsommerfeld.wsbg.terminal.tradersunion.TradersUnionNewsClient.class);
+        // finanzen.net: the dpa-AFX ANALYSER leg (a global feed of every
+        // single analyst action plus the full study text with house, old→new
+        // target and reasoning) and per-instrument RSS. Behind it sits the
+        // best keyless instrument resolver of the wave - one call maps
+        // name/ISIN/WKN/ticker in every direction and yields the slug every
+        // sub-page is built from, small caps included.
+        // Akamai gotcha: the wall falls to HEADER COMPLETENESS, not to a
+        // browser - but the JDK client must ask for identity encoding, or it
+        // gets a 200 full of compressed noise and every parser reads empty.
+        newsSources.addBinding().to(
+                de.bsommerfeld.wsbg.terminal.finanzennet.FinanzenNetNewsClient.class);
         // Ariva forum: the German retail FORUM-SENTIMENT leg — one keyless
         // community RSS firehose with authoritative <isin> tags per post
         // (multi-listing threads tag both share classes; probed 2026-07-16).
