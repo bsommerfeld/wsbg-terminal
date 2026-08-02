@@ -106,6 +106,18 @@ final class NewsSourceModule extends AbstractModule {
         // repeated first article ID.
         newsSources.addBinding().to(
                 de.bsommerfeld.wsbg.terminal.boersenmedien.BoersenmedienNewsClient.class);
+        // Traders Union: taken in under the fishing-net rule - the source is
+        // technically viable (open robots, full text, structured tickers, a
+        // keyless movers API), so the sorting happens at the gate, not at the
+        // net. Its own path segments do the sorting: /news/stocks/ and
+        // /news/companies/ are 94% price-tick-generated, /news/central-banks/
+        // and /news/editors-picks/ are 0%. Tick pieces are MARKED
+        // ("Traders Union (Kursbewegung)"), never dropped - they still carry
+        // GAAP figures and buyback volumes, and the model decides. Paid
+        // broker PR rides the sponsored flag. German copy is machine-
+        // translated from English; URLs come only from sitemaps, never built.
+        newsSources.addBinding().to(
+                de.bsommerfeld.wsbg.terminal.tradersunion.TradersUnionNewsClient.class);
         // Ariva forum: the German retail FORUM-SENTIMENT leg — one keyless
         // community RSS firehose with authoritative <isin> tags per post
         // (multi-listing threads tag both share classes; probed 2026-07-16).
