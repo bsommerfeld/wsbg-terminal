@@ -85,6 +85,17 @@ final class NewsSourceModule extends AbstractModule {
         // side door.
         newsSources.addBinding().to(
                 de.bsommerfeld.wsbg.terminal.kapitalmarktexperten.KapitalmarktexpertenClient.class);
+        // boerse.de: the cleanest source of the 2026-08-02 wave - robots
+        // "Allow: /", no wall, and no terms clause against automated access at
+        // all. ISIN-addressed with the slug ignored (/aktien/x/<ISIN>), which
+        // makes it the one German venue that needs no resolver. Beyond news it
+        // carries three things nobody else gives away: directors' dealings
+        // with real names and volumes, a ~340-entry analyst recommendation
+        // archive, and eight fiscal years of P&L. Pagination gotcha: the
+        // /x/<ISIN> form silently 301s any _seite,N back to page 1, so the
+        // client follows rel="next" instead of building page URLs.
+        newsSources.addBinding().to(
+                de.bsommerfeld.wsbg.terminal.boersede.BoerseDeNewsClient.class);
         // Ariva forum: the German retail FORUM-SENTIMENT leg — one keyless
         // community RSS firehose with authoritative <isin> tags per post
         // (multi-listing threads tag both share classes; probed 2026-07-16).
