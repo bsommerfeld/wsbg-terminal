@@ -31,6 +31,7 @@ final class LauncherI18n {
             Map.entry(UpdatePhase.VERIFYING_INTEGRITY.token(), "Integrität prüfen"),
             Map.entry("Cleaning up", "Aufräumen"),
             Map.entry("Update check failed", "Update-Prüfung fehlgeschlagen"),
+            Map.entry("Closing running terminal", "Laufendes Terminal wird beendet"),
             Map.entry("Launching application", "Anwendung starten"),
             Map.entry("Setup completed with warnings", "Setup mit Warnungen abgeschlossen"),
             Map.entry("Running environment setup", "Umgebung einrichten"),

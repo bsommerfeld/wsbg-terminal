@@ -9,10 +9,19 @@ import javax.swing.SwingUtilities;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 
 /**
  * Native launcher entry point. Orchestrates the full startup sequence:
  * <strong>update → environment setup → application launch</strong>.
+ *
+ * <h3>An already-running terminal</h3>
+ * There is never a second terminal. A start that finds one raises its window
+ * immediately and then asks a single question: is there an update to apply? If
+ * not, the launcher exits and leaves the app untouched. If there is, the app
+ * has to close — the update replaces the very files it runs off — so the
+ * launcher waits for it to be gone and then runs the normal pipeline, which
+ * ends by starting the fresh build. See {@link #runningTerminalGate}.
  *
  * <h3>Visibility</h3>
  * The launcher window stays hidden when everything is up-to-date and no
@@ -66,18 +75,20 @@ public final class LauncherMain {
         SessionLog log = new SessionLog(appDir);
         log.log("Launcher started");
 
-        // If a terminal is already running, hand control off and exit
-        // immediately — second double-click on the dock icon should
-        // raise the existing window, not run a parallel install flow.
+        // If a terminal is already running, raise it right now — a second
+        // double-click on the dock icon must bring the existing window
+        // forward instantly, never start a parallel install flow. Whether
+        // we may then close it again for an update is decided later, once
+        // the update check has an answer (see runningTerminalGate).
         //
         // Best-effort: any failure to detect (timeout, future protocol
         // change, port collision) falls through to the normal install
         // path. The native HULL can't be auto-updated (only its jar, via
         // StagedLauncher) and pre-self-update launchers stay in the wild,
         // so the fallback matters whenever we change the contract.
-        if (TerminalRaiser.raise()) {
-            log.log("Existing terminal detected — raised it, launcher exiting.");
-            System.exit(0);
+        final boolean terminalRunning = TerminalRaiser.raise();
+        if (terminalRunning) {
+            log.log("Existing terminal detected — raised its window.");
         }
 
         // Stage-loader: if the OTA-synced launcher jar in <appDir>/launcher/
@@ -124,6 +135,15 @@ public final class LauncherMain {
 
         Thread.ofVirtual().name("update-thread").start(() -> {
             try {
+                // A terminal is already up: either there is nothing to apply
+                // (then we are done — its window is already in front) or we
+                // close it first and run the normal pipeline over its install.
+                if (terminalRunning
+                        && !runningTerminalGate(updateClient, window, log, i18n,
+                                appDir, autoUpdate, forceUpdate)) {
+                    System.exit(0);
+                }
+
                 // No explicit model choice on record yet: morph the window into
                 // the choice list and wait for the user's pick. One OK persists
                 // the key, so this shows exactly once per install.
@@ -150,6 +170,93 @@ public final class LauncherMain {
     // =====================================================================
     // Pipeline Phases
     // =====================================================================
+
+    /**
+     * How long we give a running terminal to shut down before giving up on the
+     * update. Generous on purpose: its teardown stops the spawned Ollama, the
+     * repositories and Chromium's helper processes, which on a busy machine is
+     * seconds, not milliseconds.
+     */
+    private static final Duration QUIT_TIMEOUT = Duration.ofSeconds(45);
+
+    /**
+     * The gate for a start with a terminal already running. Its window was
+     * raised the moment we detected it, so from here there are exactly two
+     * outcomes:
+     *
+     * <ul>
+     *   <li><strong>Nothing to apply</strong> — we quietly stage a launcher
+     *       self-update (that one takes effect on the next start and never
+     *       disturbs a running app) and leave the terminal alone.</li>
+     *   <li><strong>An update is pending</strong> — the files we would replace
+     *       are the ones that terminal is running off, so it has to go first:
+     *       we ask it to close, wait for the process to be verifiably gone, and
+     *       then run the normal pipeline, which ends by starting the fresh
+     *       build. A terminal that refuses to die aborts the whole thing — a
+     *       half-applied update under a live app is the one outcome worth
+     *       avoiding at any price.</li>
+     * </ul>
+     *
+     * <p>A failed check (offline, GitHub hiccup) counts as "nothing pending":
+     * never close a running app over a network glitch.
+     *
+     * @return {@code true} if the pipeline should continue, {@code false} if
+     *         the launcher is done and should exit
+     */
+    private static boolean runningTerminalGate(TinyUpdateClient updateClient, LauncherWindow window,
+            SessionLog log, LauncherI18n i18n, Path appDir,
+            boolean autoUpdate, boolean forceUpdate) {
+
+        if (!isUpdatePending(updateClient, log, autoUpdate, forceUpdate)) {
+            log.log("Nothing to apply — leaving the running terminal alone.");
+            StagedLauncher.sync(REPO, appDir, log, autoUpdate, forceUpdate);
+            log.log("Launcher exiting, terminal keeps running.");
+            return false;
+        }
+
+        log.log("Update pending — closing the running terminal to apply it.");
+        SwingUtilities.invokeLater(() -> {
+            window.setStatus(i18n.get("Closing running terminal"));
+            window.setVisible(true);
+        });
+
+        if (!TerminalRaiser.requestQuit(QUIT_TIMEOUT, log)) {
+            log.log("Running terminal did not close — update postponed to the next start.");
+            SwingUtilities.invokeLater(() -> {
+                window.setVisible(false);
+                window.dispose();
+            });
+            return false;
+        }
+
+        log.log("Running terminal closed — applying the update.");
+        return true;
+    }
+
+    /**
+     * Read-only "would the update phase change anything?" — the manifest hash
+     * diff, without downloading an archive. Mirrors the update phase's own
+     * gates so the answer matches what would actually happen: auto-update off
+     * (and no in-app force) means nothing is pending, and offline means nothing
+     * is pending either.
+     */
+    private static boolean isUpdatePending(TinyUpdateClient client, SessionLog log,
+            boolean autoUpdate, boolean forceUpdate) {
+        if (!autoUpdate && !forceUpdate) {
+            log.log("Auto-update disabled — no update check against the running terminal.");
+            return false;
+        }
+        if (!ConnectivityProbe.isOnline()) {
+            log.log("No internet connection — no update check against the running terminal.");
+            return false;
+        }
+        try {
+            return client.isUpdatePending();
+        } catch (Exception e) {
+            log.log("Update check failed (" + e.getMessage() + ") — treating as nothing pending.");
+            return false;
+        }
+    }
 
     /**
      * Blocks until the user has picked a model tier in the morphing choice

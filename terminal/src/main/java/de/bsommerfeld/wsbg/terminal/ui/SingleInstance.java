@@ -7,6 +7,8 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 
 /**
@@ -17,10 +19,13 @@ import java.time.Duration;
  * exits.
  *
  * <p>
- * Any successful connection counts as a raise request — no payload
- * is exchanged. Keeping the protocol contentless means future
- * versions stay compatible: an old terminal sees a new launcher's
- * connect and still raises its window, and vice versa.
+ * A bare connection counts as a raise request — no payload needed.
+ * A connection that sends {@link #CMD_QUIT} asks the terminal to shut
+ * itself down instead; that is the launcher's path when it found an
+ * update and must replace the files this process is running off.
+ * Everything else — no payload, an unknown byte, a peer that hangs up
+ * — falls back to "raise", so an old launcher's contentless poke keeps
+ * working unchanged and no future dialect can accidentally kill the app.
  *
  * <p>
  * The port must stay stable across releases — change it only with a
@@ -34,17 +39,27 @@ final class SingleInstance {
     /** Fixed loopback port; high enough to avoid colliding with anything common. */
     static final int PORT = 19337;
 
+    /** Must match {@code TerminalRaiser.CMD_QUIT} in the launcher module. */
+    static final int CMD_QUIT = 'Q';
+
+    /**
+     * How long a connection may take to reveal its intent. A launcher sends
+     * its command byte immediately; anything slower is treated as the
+     * contentless raise poke rather than blocking the listener.
+     */
+    private static final int COMMAND_READ_TIMEOUT_MS = 500;
+
     private static ServerSocket lock;
 
     private SingleInstance() {}
 
     /**
      * Attempts to become the singleton holder. On success, spawns a
-     * listener that invokes {@code onRaiseRequested} (on the calling
-     * thread, so callers must hop to the EDT themselves if they touch
-     * Swing) for every inbound connection.
+     * listener that invokes {@code onRaiseRequested} / {@code onQuitRequested}
+     * (on the calling thread, so callers must hop to the EDT themselves if
+     * they touch Swing) for every inbound connection.
      */
-    static boolean claim(Runnable onRaiseRequested) {
+    static boolean claim(Runnable onRaiseRequested, Runnable onQuitRequested) {
         try {
             ServerSocket server = new ServerSocket();
             // Without reuseAddress, a fresh restart after a crash hits
@@ -56,8 +71,25 @@ final class SingleInstance {
             Thread listener = new Thread(() -> {
                 while (!server.isClosed()) {
                     try (Socket conn = server.accept()) {
-                        LOG.info("Raise request from {}", conn.getRemoteSocketAddress());
-                        onRaiseRequested.run();
+                        if (readCommand(conn) == CMD_QUIT) {
+                            LOG.info("Quit request from {} — shutting down",
+                                    conn.getRemoteSocketAddress());
+                            // Acknowledge with our PID before tearing down. The
+                            // launcher must not merely know the command was
+                            // understood — it has to wait for this JVM to be
+                            // really gone before it overwrites lib/, or the
+                            // extraction hits jars Windows still has locked.
+                            // The instance lock is released early in the
+                            // shutdown, so it is not a usable death signal.
+                            conn.getOutputStream().write(
+                                    (((char) CMD_QUIT) + Long.toString(ProcessHandle.current().pid()) + "\n")
+                                            .getBytes(StandardCharsets.US_ASCII));
+                            conn.getOutputStream().flush();
+                            onQuitRequested.run();
+                        } else {
+                            LOG.info("Raise request from {}", conn.getRemoteSocketAddress());
+                            onRaiseRequested.run();
+                        }
                     } catch (IOException ignored) {
                         // Socket closed during shutdown or accept failed mid-loop.
                     }
@@ -69,6 +101,20 @@ final class SingleInstance {
         } catch (IOException e) {
             LOG.info("Could not claim instance lock on port {}: {}", PORT, e.getMessage());
             return false;
+        }
+    }
+
+    /**
+     * Reads the caller's intent byte, or {@code -1} when none arrives in
+     * time. A missing/short payload is not an error here — it is the
+     * contentless raise poke every launcher before the quit protocol sends.
+     */
+    private static int readCommand(Socket conn) throws IOException {
+        try {
+            conn.setSoTimeout(COMMAND_READ_TIMEOUT_MS);
+            return conn.getInputStream().read();
+        } catch (SocketTimeoutException e) {
+            return -1;
         }
     }
 

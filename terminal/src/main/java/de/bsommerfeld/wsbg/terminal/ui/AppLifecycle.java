@@ -91,6 +91,18 @@ final class AppLifecycle {
         exitAfter(() -> spawnDetachedCleanup(detachedCleanup));
     }
 
+    /**
+     * Closes the app cleanly on the launcher's request — it found an update and
+     * has to replace the files we are running off, so it waits for us to vanish
+     * and then starts the fresh build itself. Same order as the other exit
+     * paths, minus the spawn step: the launcher is already running and owns the
+     * restart. Releasing the single-instance lock inside
+     * {@link #shutdownServices()} is what tells it we are gone.
+     */
+    void quitForLauncherUpdate() {
+        exitAfter(() -> { });
+    }
+
     /** The shared exit orchestration: services → spawn step → CEF teardown → reap → exit. */
     private void exitAfter(Runnable spawnStep) {
         SwingUtilities.invokeLater(() -> {

@@ -43,10 +43,16 @@ public final class AppMain {
         // We claim the lock BEFORE constructing the Guice injector so
         // a rejected second instance pays nothing — no model load, no
         // Ollama probe, just a single connect-and-exit.
+        //
+        // The same channel carries the launcher's quit request: when the
+        // launcher found an update it must replace the very files this
+        // process runs off, so it closes us first and starts the fresh
+        // build itself afterwards. We shut down exactly like a window
+        // close — services first, so Ollama dies with us.
         BrowserWindow[] windowRef = new BrowserWindow[1];
         boolean isFirst = SingleInstance.claim(() -> {
             if (windowRef[0] != null) windowRef[0].raise();
-        });
+        }, AppMain::quitForLauncherUpdate);
         if (!isFirst) {
             LOG.info("Another instance already running — raised it and exiting.");
             SingleInstance.pingExisting();
@@ -147,6 +153,24 @@ public final class AppMain {
      */
     public static void relaunchForUpdate() {
         LIFECYCLE.relaunchForUpdate();
+    }
+
+    /**
+     * Closes the app cleanly because the launcher wants to apply an update
+     * over our install. Called from the single-instance listener thread; the
+     * teardown itself hops to the EDT. Before the lifecycle exists (a quit
+     * arriving in the first moments of boot) there is nothing to tear down —
+     * exit straight away so the launcher isn't left waiting.
+     */
+    private static void quitForLauncherUpdate() {
+        AppLifecycle lifecycle = LIFECYCLE;
+        if (lifecycle == null) {
+            LOG.info("Launcher asked us to quit during boot — exiting immediately.");
+            System.exit(0);
+            return;
+        }
+        LOG.info("Launcher asked us to quit for an update — shutting down.");
+        lifecycle.quitForLauncherUpdate();
     }
 
     /**

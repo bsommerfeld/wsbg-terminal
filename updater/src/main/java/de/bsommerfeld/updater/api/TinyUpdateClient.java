@@ -149,6 +149,32 @@ public final class TinyUpdateClient implements UpdateClient {
         return versionFile.read();
     }
 
+    /**
+     * Read-only probe: would {@link #update} actually change files on disk?
+     * Runs the same source of truth as the real pipeline — the manifest hash
+     * diff, not the release tag — but stops before the first archive download,
+     * so it costs one release-JSON fetch, one manifest fetch and the local
+     * hashing.
+     *
+     * <p>
+     * Exists for the caller that must decide something <em>before</em> touching
+     * the install: the launcher closes a running terminal only when there is
+     * genuinely something to apply (see {@code LauncherMain}). A release whose
+     * assets are still uploading counts as "nothing pending" — same race guard
+     * as {@link #update}.
+     *
+     * @throws Exception on network or I/O failure — callers decide whether a
+     *                   failed probe is worth acting on
+     */
+    public boolean isUpdatePending() throws Exception {
+        String releaseJson = Downloader.toString(repository.latestReleaseUrl());
+        if (!hasAsset(releaseJson, manifestAsset)) {
+            trace("Latest release has no " + manifestAsset + " yet — nothing pending");
+            return false;
+        }
+        return !resolveChanges(releaseJson, p -> { }).isUpToDate();
+    }
+
     // =====================================================================
     // Pipeline Phases
     // =====================================================================
