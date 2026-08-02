@@ -144,6 +144,8 @@ public class DeepDiveService {
     private static final int MAX_ANALYST_ACTIONS = 10;
     /** CNBC quarters asked for and rendered - the endpoint's own ceiling is eight. */
     private static final int MAX_CNBC_QUARTERS = 8;
+    /** Days of the public-attention curve read - enough for a baseline and a spike. */
+    private static final int ATTENTION_WINDOW_DAYS = 30;
     /** Peer target rows rendered - a yardstick, never the whole sector table. */
     private static final int MAX_FN_PEERS = 5;
     /** Estimate periods rendered per metric (the page carries reported AND forward). */
@@ -367,6 +369,13 @@ public class DeepDiveService {
     // estimate history with its own surprises, and the venue board.
     private volatile de.bsommerfeld.wsbg.terminal.finanzennet.FinanzenNetResolver fnResolver;
     private volatile de.bsommerfeld.wsbg.terminal.finanzennet.FinanzenNetMarketClient fnMarket;
+    // The ATTENTION pair, both dormant until now: ApeWisdom ranks how loudly
+    // the retail rooms outside our cage are talking about a ticker, and
+    // Wikimedia counts how often the public looked the company up. Neither is
+    // an opinion - both are measured interest, which is exactly what the room
+    // shelf otherwise has to infer.
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.ApeWisdomClient apeWisdom;
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.WikidataClient wikidata;
 
     private final AtomicBoolean busy = new AtomicBoolean(false);
     private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
@@ -651,6 +660,16 @@ public class DeepDiveService {
     void setOnvistaFundamentals(
             de.bsommerfeld.wsbg.terminal.onvista.OnvistaFundamentalsClient client) {
         this.onvistaFacts = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setApeWisdom(de.bsommerfeld.wsbg.terminal.briefing.ApeWisdomClient client) {
+        this.apeWisdom = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setWikidata(de.bsommerfeld.wsbg.terminal.briefing.WikidataClient client) {
+        this.wikidata = client;
     }
 
     @com.google.inject.Inject(optional = true)
@@ -3230,6 +3249,20 @@ public class DeepDiveService {
         /** Where the paper actually trades: the venue board with its own prices. */
         List<de.bsommerfeld.wsbg.terminal.finanzennet.FinanzenNetMarketClient.VenueQuote> fnVenues = List.of();
         /**
+         * This ticker's row in the cross-subreddit mention ranking (ApeWisdom).
+         * The cage's own evidence count says how loud OUR room is; this says
+         * how loud every other one is, and which way that moved in a day.
+         */
+        de.bsommerfeld.wsbg.terminal.briefing.ApeWisdomClient.SocialTicker socialRank;
+        /**
+         * The public-attention curve: daily views of the company's Wikipedia
+         * article. Only ever read once the article was PINNED to this ISIN -
+         * attention measured on the wrong article is worse than none.
+         */
+        List<de.bsommerfeld.wsbg.terminal.briefing.WikidataClient.PageviewPoint> attentionCurve = List.of();
+        /** Structured entity facts (Wikidata), ISIN-pinned like the curve. */
+        de.bsommerfeld.wsbg.terminal.briefing.WikidataClient.CompanyFacts entityFacts;
+        /**
          * Per-house standing targets - GAP FILLER only, rendered where the
          * Consorsbank street view delivered nothing. Three other legs already
          * carry dated analyst actions; a fourth copy would be noise.
@@ -3742,6 +3775,44 @@ public class DeepDiveService {
             }
         } catch (Exception e) {
             LOG.debug("[DEEPDIVE] edgar 8-K leg failed: {}", e.getMessage());
+        }
+        // The retail rooms OUTSIDE our cage: where this ticker stands in the
+        // cross-subreddit mention ranking, and which way it moved in a day.
+        // Our own room contributes an evidence count; this is the same
+        // question asked of everyone else's, measured rather than inferred.
+        checkCancelled();
+        try {
+            var ape = apeWisdom;
+            String bare = usTicker(m.ticker);
+            if (ape != null && bare != null) {
+                for (var row : ape.topTickers()) {
+                    if (row.ticker() == null || !bare.equalsIgnoreCase(row.ticker())) continue;
+                    m.socialRank = row;
+                    break;
+                }
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] social rank failed: {}", e.getMessage());
+        }
+        // Public attention, and the entity facts beside it (Wikimedia +
+        // Wikidata). The article is PINNED to this ISIN before either is read -
+        // a name resolves to an article far too easily, and an attention curve
+        // measured on the wrong company is worse than no curve at all.
+        checkCancelled();
+        try {
+            var wiki = wikidata;
+            if (wiki != null && !isBlank(m.canonicalName) && !isBlank(m.isin)) {
+                String qid = wiki.qidForNameVerifiedByIsin(m.canonicalName, m.isin).orElse(null);
+                if (qid != null) {
+                    m.entityFacts = wiki.facts(qid).filter(f -> f.hasAnything()).orElse(null);
+                    java.time.LocalDate today =
+                            java.time.LocalDate.now(java.time.ZoneId.systemDefault());
+                    m.attentionCurve = List.copyOf(wiki.pageviews(m.canonicalName,
+                            today.minusDays(ATTENTION_WINDOW_DAYS), today));
+                }
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] attention curve failed: {}", e.getMessage());
         }
         // FINRA's consolidated daily short-VOLUME file - the freshest short
         // reading this house can get for a US name (T+1), where the NASDAQ tab
@@ -4379,6 +4450,18 @@ public class DeepDiveService {
             }
             journalNotes(subject, List.of("finanzen.net — " + String.join(", ", bits)));
         }
+        if (m.socialRank != null) {
+            journalNotes(subject, List.of("ApeWisdom — "
+                    + (de ? "Rang " : "rank ") + m.socialRank.rank() + ", "
+                    + m.socialRank.mentions() + (de ? " Nennungen" : " mentions")));
+        }
+        if (!m.attentionCurve.isEmpty() || m.entityFacts != null) {
+            journalNotes(subject, List.of("Wikidata/Wikimedia — "
+                    + (m.attentionCurve.isEmpty()
+                            ? (de ? "Stammdaten" : "entity facts")
+                            : m.attentionCurve.size()
+                                    + (de ? " Tage Aufrufe" : " days of page views"))));
+        }
         if (!m.edgarEvents.isEmpty()) {
             journalNotes(subject, List.of("SEC EDGAR — " + m.edgarEvents.size()
                     + (de ? " 8-K-Pflichtereignis(se)" : " material 8-K event(s)")));
@@ -4597,6 +4680,7 @@ public class DeepDiveService {
         appendUsListing(sb, m.usStats, nums);
         appendBoard(sb, m.deepDive, nums);
         appendOwnership(sb, m, nums);
+        appendEntityFacts(sb, m, nums);
         out[SEC_ABOUT] = new Shelf(take(sb), List.of());
 
         // NARRATIVE FIRST, tape LAST: a 4B anchors on the material's opening
@@ -4685,6 +4769,10 @@ public class DeepDiveService {
         // block (empty newsBlocks = loom bypass, exactly like the cage).
         String outsideRooms = sentimentBlock(m, nums);
         if (outsideRooms != null) roomParts.add(outsideRooms);
+        // Measured interest beside the quoted opinion: the rooms we do not
+        // read, and the public that never posts at all.
+        String attention = attentionBlock(m, nums);
+        if (attention != null) roomParts.add(attention);
         StringBuilder roomSignals = new StringBuilder();
         appendSignals(roomSignals, m, nums, SIGNALS_ROOM);
         appendAmbientSignals(roomSignals, m, nums, SIGNALS_MARKET);
@@ -4963,6 +5051,9 @@ public class DeepDiveService {
         for (int i = 0; i < m.news.size(); i++) nums.put("news:" + i, ++n);
         if (roomHasContent(m)) nums.put("room", ++n);
         if (!m.socialSentiment.isEmpty()) nums.put("sentiment", ++n);
+        if (m.socialRank != null || m.attentionCurve.size() >= 2 || m.entityFacts != null) {
+            nums.put("attention", ++n);
+        }
         return nums;
     }
 
@@ -7082,6 +7173,76 @@ public class DeepDiveService {
     }
 
     /**
+     * MEASURED attention, from two places that have no opinion about the
+     * stock: how loudly the retail rooms outside our cage are naming this
+     * ticker (ApeWisdom's cross-subreddit ranking) and how often the public
+     * looked the company up (Wikipedia views). The room shelf otherwise has to
+     * infer interest from the cage's own chatter alone - these two say whether
+     * the rest of the world is looking too.
+     *
+     * <p>The curve is stated as today against its own baseline, computed here:
+     * a raw view count means nothing without the name's normal level.
+     */
+    private static String attentionBlock(Material m, Map<String, Integer> nums) {
+        var rank = m.socialRank;
+        boolean haveCurve = m.attentionCurve.size() >= 2;
+        if (rank == null && !haveCurve) return null;
+        StringBuilder sb = new StringBuilder(320);
+        sb.append("MEASURED ATTENTION (verified)").append(mark(nums, "attention")).append(":\n");
+        if (rank != null) {
+            sb.append("  - retail rooms (ApeWisdom, across subreddits): rank ")
+                    .append(rank.rank()).append(" with ").append(rank.mentions())
+                    .append(" mention(s) and ").append(rank.upvotes()).append(" upvote(s)");
+            if (rank.rank24hAgo() >= 0) {
+                int climb = rank.rankClimb();
+                sb.append(climb == 0 ? ", unchanged against yesterday"
+                        : climb > 0 ? ", up " + climb + " place(s) in 24 h"
+                        : ", down " + (-climb) + " place(s) in 24 h");
+            }
+            sb.append(".\n");
+        }
+        if (haveCurve) {
+            var last = m.attentionCurve.get(m.attentionCurve.size() - 1);
+            double sum = 0;
+            for (var p : m.attentionCurve) sum += p.views();
+            double mean = sum / m.attentionCurve.size();
+            sb.append("  - public lookups (Wikipedia, article pinned to this ISIN): ")
+                    .append(last.views()).append(" view(s) on ").append(last.day())
+                    .append(", against a ").append(m.attentionCurve.size())
+                    .append("-day average of ").append(fmt2(mean));
+            if (mean > 0) {
+                sb.append(" (").append(signed((last.views() - mean) / mean * 100.0))
+                        .append("%, house-computed)");
+            }
+            sb.append(".\n");
+        }
+        return sb.toString();
+    }
+
+    /**
+     * The entity's structured facts (Wikidata), only ever read once the article
+     * was pinned to this ISIN. A GAP FILLER: rendered where the house's own
+     * profile leg had nothing, because the legal identifier and the founding
+     * year are exactly what is missing for the small names nobody profiles.
+     */
+    private static void appendEntityFacts(StringBuilder sb, Material m,
+            Map<String, Integer> nums) {
+        var f = m.entityFacts;
+        if (f == null) return;
+        if (m.facts != null && m.deepDive != null) return; // the house's own profile stands
+        List<String> bits = new ArrayList<>();
+        if (!f.lei().isEmpty()) bits.add("legal entity identifier " + f.lei());
+        if (!f.inception().isEmpty()) bits.add("founded " + f.inception());
+        if (!f.employees().isEmpty()) bits.add("employees " + f.employees());
+        if (!f.website().isEmpty()) bits.add("website " + f.website());
+        if (bits.isEmpty()) return;
+        sb.append("ENTITY FACTS (verified, Wikidata, item pinned to this ISIN)")
+                .append(mark(nums, "attention")).append(": ")
+                .append(String.join(", ", bits))
+                .append(". Headcount and founding date are the item's raw literals.\n");
+    }
+
+    /**
      * The consensus at three points across a YEAR (finanzen.net). Every other
      * drift reading in this report compares against the previous count; this
      * one shows the arc - a street that has been walking one way for twelve
@@ -8256,6 +8417,14 @@ public class DeepDiveService {
                 return "Insider Monkey" + (de
                         ? " - Hedgefonds-Positionierung (13F-Quartalskurve)"
                         : " - hedge-fund positioning (quarterly 13F curve)");
+            case "attention":
+                return de
+                        ? "Gemessene Aufmerksamkeit - ApeWisdom (Nennungen über Subreddits "
+                                + "hinweg), Wikimedia-Seitenaufrufe und Wikidata-Stammdaten "
+                                + "(Artikel per ISIN auf das Unternehmen festgenagelt)"
+                        : "Measured attention - ApeWisdom (mentions across subreddits), "
+                                + "Wikimedia page views and Wikidata entity facts (the article "
+                                + "pinned to the company by ISIN)";
             case "finanzennet":
                 return "finanzen.net" + (de
                         ? " - Konsens-Verlauf über ein Jahr, Kursziele der Branchen-"
