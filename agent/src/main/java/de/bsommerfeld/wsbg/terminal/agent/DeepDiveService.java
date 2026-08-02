@@ -144,6 +144,8 @@ public class DeepDiveService {
     private static final int MAX_ANALYST_ACTIONS = 10;
     /** CNBC quarters asked for and rendered - the endpoint's own ceiling is eight. */
     private static final int MAX_CNBC_QUARTERS = 8;
+    /** Prediction markets rendered - what the crowd prices, not a betting board. */
+    private static final int MAX_PREDICTION_MARKETS = 3;
     /** Sector rows rendered off the day's board - the standings, not the whole map. */
     private static final int MAX_SECTOR_ROWS = 8;
     /** Days of the public-attention curve read - enough for a baseline and a spike. */
@@ -385,6 +387,16 @@ public class DeepDiveService {
     // The screener board. The service polls for a widget that does not exist
     // yet; the DD asks it for ONE build on demand, which is one POST.
     private volatile HeatmapService heatmapService;
+    // The REGIME instruments. All of these fed the evening report and nothing
+    // else: the same instrument reads differently in a fearful tape than in a
+    // greedy one, and the DD had no way to say which one it was standing in.
+    private volatile de.bsommerfeld.wsbg.terminal.feargreed.FearGreedClient fearGreed;
+    private volatile de.bsommerfeld.wsbg.terminal.feargreed.CryptoFearGreedClient cryptoFearGreed;
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.CboePutCallClient putCall;
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.BundYieldClient bundYield;
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.CryptoDerivsClient cryptoDerivs;
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.PolymarketClient polymarket;
+    private volatile de.bsommerfeld.wsbg.terminal.currency.EurUsdClient eurUsd;
 
     private final AtomicBoolean busy = new AtomicBoolean(false);
     private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
@@ -669,6 +681,41 @@ public class DeepDiveService {
     void setOnvistaFundamentals(
             de.bsommerfeld.wsbg.terminal.onvista.OnvistaFundamentalsClient client) {
         this.onvistaFacts = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setFearGreedClient(de.bsommerfeld.wsbg.terminal.feargreed.FearGreedClient client) {
+        this.fearGreed = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setCryptoFearGreedClient(de.bsommerfeld.wsbg.terminal.feargreed.CryptoFearGreedClient client) {
+        this.cryptoFearGreed = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setCboePutCall(de.bsommerfeld.wsbg.terminal.briefing.CboePutCallClient client) {
+        this.putCall = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setBundYield(de.bsommerfeld.wsbg.terminal.briefing.BundYieldClient client) {
+        this.bundYield = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setCryptoDerivs(de.bsommerfeld.wsbg.terminal.briefing.CryptoDerivsClient client) {
+        this.cryptoDerivs = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setPolymarket(de.bsommerfeld.wsbg.terminal.briefing.PolymarketClient client) {
+        this.polymarket = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setEurUsdClient(de.bsommerfeld.wsbg.terminal.currency.EurUsdClient client) {
+        this.eurUsd = client;
     }
 
     @com.google.inject.Inject(optional = true)
@@ -3290,6 +3337,25 @@ public class DeepDiveService {
          * instrument; this is the whole market's money, sector by sector.
          */
         List<HeatmapService.Node> sectorBoard = List.of();
+        /**
+         * The tape's MOOD today - the same instrument reads differently in a
+         * fearful market than in a greedy one, and until now the report had
+         * no way to say which one it was standing in.
+         */
+        de.bsommerfeld.wsbg.terminal.feargreed.FearGreedIndex fearGreed;
+        de.bsommerfeld.wsbg.terminal.feargreed.CryptoFearGreedIndex cryptoFearGreed;
+        /** Option positioning: the day's put/call ratios plus VIX and SPX. */
+        de.bsommerfeld.wsbg.terminal.briefing.CboePutCallClient.PutCallRatios putCall;
+        /** The risk-free anchor every valuation hangs on: the 10-year Bund. */
+        de.bsommerfeld.wsbg.terminal.briefing.BundYieldClient.YieldPoint bundYield;
+        /** Crypto leverage - the risk appetite gauge for the speculative end. */
+        de.bsommerfeld.wsbg.terminal.briefing.CryptoDerivsClient.DerivsSnapshot cryptoDerivs;
+        /** What the crowd PRICES, not what it says - the busiest open markets. */
+        List<de.bsommerfeld.wsbg.terminal.briefing.PolymarketClient.PredictionMarket> predictionMarkets = List.of();
+        /** EUR/USD, the currency every cross-border figure in this report passes through. */
+        Double eurUsdRate;
+        /** The dollar index beside it - a dollar move is not a euro move. */
+        Double dollarIndex;
         /** Which market the board was built for ("Deutschland"/"USA"). */
         String sectorBoardUniverse;
         /** The subject's own sector on that board, when it appears on it at all. */
@@ -3825,6 +3891,64 @@ public class DeepDiveService {
             }
         } catch (Exception e) {
             LOG.debug("[DEEPDIVE] fool quote failed: {}", e.getMessage());
+        }
+        // THE TAPE THIS INSTRUMENT STANDS IN. Every one of these gauges fed
+        // the evening report and nothing else, which left the DD unable to say
+        // whether a move happened in a fearful market or a greedy one, at a
+        // 2% risk-free rate or a 4% one. Each is guarded on its own - the
+        // block is worth having with three of seven readings.
+        checkCancelled();
+        try {
+            var fg = fearGreed;
+            if (fg != null) m.fearGreed = fg.fetch().orElse(null);
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] fear and greed failed: {}", e.getMessage());
+        }
+        try {
+            var cfg = cryptoFearGreed;
+            if (cfg != null) m.cryptoFearGreed = cfg.fetch().orElse(null);
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] crypto fear and greed failed: {}", e.getMessage());
+        }
+        try {
+            var pc = putCall;
+            if (pc != null) {
+                m.putCall = pc.latest(
+                        java.time.LocalDate.now(java.time.ZoneId.systemDefault())).orElse(null);
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] put/call failed: {}", e.getMessage());
+        }
+        try {
+            var bund = bundYield;
+            if (bund != null) m.bundYield = bund.tenYearBund().orElse(null);
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] bund yield failed: {}", e.getMessage());
+        }
+        try {
+            var derivs = cryptoDerivs;
+            if (derivs != null) m.cryptoDerivs = derivs.snapshot().orElse(null);
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] crypto derivatives failed: {}", e.getMessage());
+        }
+        try {
+            var poly = polymarket;
+            if (poly != null) {
+                m.predictionMarkets = List.copyOf(poly.topByVolume(MAX_PREDICTION_MARKETS));
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] prediction markets failed: {}", e.getMessage());
+        }
+        try {
+            var fx = eurUsd;
+            if (fx != null) {
+                m.eurUsdRate = fx.fetchYahoo().or(fx::fetchFrankfurter).orElse(null);
+                m.dollarIndex = fx.fetchDxy()
+                        .map(de.bsommerfeld.wsbg.terminal.currency.EurUsdClient.DxyQuote::value)
+                        .orElse(null);
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] fx leg failed: {}", e.getMessage());
         }
         // The day's SECTOR STANDINGS off the screener board. The sector ETF
         // proxy answers for US sectors only, through one instrument; this is
@@ -4520,6 +4644,16 @@ public class DeepDiveService {
             }
             journalNotes(subject, List.of("finanzen.net — " + String.join(", ", bits)));
         }
+        if (m.fearGreed != null || m.putCall != null || m.bundYield != null
+                || m.eurUsdRate != null) {
+            List<String> bits = new ArrayList<>();
+            if (m.fearGreed != null) bits.add("Fear & Greed " + fmt2(m.fearGreed.score()));
+            if (m.putCall != null) bits.add("Put/Call " + fmt2(m.putCall.total()));
+            if (m.bundYield != null) bits.add("Bund " + fmt2(m.bundYield.percent()) + " %");
+            if (m.eurUsdRate != null) bits.add("EUR/USD " + fmt2(m.eurUsdRate));
+            journalNotes(subject, List.of((de ? "Marktregime — " : "Market regime — ")
+                    + String.join(", ", bits)));
+        }
         if (m.foolQuote != null) {
             journalNotes(subject, List.of("Motley Fool — "
                     + (de ? "Profil-Kennzahlen" : "profile figures")));
@@ -4770,6 +4904,7 @@ public class DeepDiveService {
         // sector, world, press arc - and the trading tape closes as evidence.
         appendSectorContext(sb, m, nums);
         appendSectorBoard(sb, m, nums);
+        appendMarketRegime(sb, m, nums);
         appendWorldSignals(sb, m, nums);
         appendPressTimeline(sb, m.pressTimeline, nums);
         appendPressHistory(sb, m, nums);
@@ -5095,6 +5230,11 @@ public class DeepDiveService {
         }
         if (m.foolQuote != null) nums.put("foolquote", ++n);
         if (!m.sectorBoard.isEmpty()) nums.put("sectorboard", ++n);
+        if (m.fearGreed != null || m.cryptoFearGreed != null || m.putCall != null
+                || m.bundYield != null || m.cryptoDerivs != null || m.eurUsdRate != null
+                || !m.predictionMarkets.isEmpty()) {
+            nums.put("regime", ++n);
+        }
         if (m.deepDive != null || m.analystView != null) nums.put("consors", ++n);
         if (!m.issuerEvents.isEmpty()) nums.put("issuer", ++n);
         if (!m.euEvents.isEmpty()) nums.put("euevents", ++n);
@@ -7256,6 +7396,100 @@ public class DeepDiveService {
     }
 
     /**
+     * THE TAPE THIS INSTRUMENT STANDS IN. Not a forecast and not a verdict on
+     * the subject - the conditions every reading elsewhere in this report was
+     * taken under. A 12% drop in a panicking market and the same drop in a
+     * calm one are different events, and until these gauges arrived the report
+     * had no way to tell them apart.
+     *
+     * <p>Each reading is offered with what it MEASURES rather than with an
+     * interpretation. The model may connect them to the subject or leave them
+     * alone; what it must not do is inherit a conclusion from the shelf.
+     */
+    private static void appendMarketRegime(StringBuilder sb, Material m,
+            Map<String, Integer> nums) {
+        List<String> lines = new ArrayList<>();
+        if (m.fearGreed != null) {
+            StringBuilder line = new StringBuilder(140);
+            line.append("  - equity sentiment (CNN Fear & Greed, 0 = extreme fear, 100 = "
+                            + "extreme greed): ")
+                    .append(fmt2(m.fearGreed.score()));
+            if (m.fearGreed.rating() != null && !m.fearGreed.rating().isBlank()) {
+                line.append(" (").append(m.fearGreed.rating()).append(')');
+            }
+            if (m.fearGreed.previousWeek() != null
+                    && Double.isFinite(m.fearGreed.previousWeek())) {
+                line.append(", a week ago ").append(fmt2(m.fearGreed.previousWeek()));
+            }
+            if (m.fearGreed.previousMonth() != null
+                    && Double.isFinite(m.fearGreed.previousMonth())) {
+                line.append(", a month ago ").append(fmt2(m.fearGreed.previousMonth()));
+            }
+            lines.add(line.toString());
+        }
+        if (m.cryptoFearGreed != null) {
+            lines.add("  - crypto sentiment (alternative.me, same scale): "
+                    + fmt2(m.cryptoFearGreed.score())
+                    + (m.cryptoFearGreed.rating() == null ? ""
+                            : " (" + m.cryptoFearGreed.rating() + ")"));
+        }
+        if (m.putCall != null) {
+            StringBuilder line = new StringBuilder(140);
+            line.append("  - option positioning (CBOE");
+            if (m.putCall.dateIso() != null) line.append(", ").append(m.putCall.dateIso());
+            line.append("): put/call total ").append(fmt2(m.putCall.total()))
+                    .append(", equity ").append(fmt2(m.putCall.equity()))
+                    .append(", index ").append(fmt2(m.putCall.index()))
+                    .append(" (above 1 means more puts than calls traded)");
+            if (Double.isFinite(m.putCall.vix()) && m.putCall.vix() > 0) {
+                line.append("; VIX ").append(fmt2(m.putCall.vix()));
+            }
+            lines.add(line.toString());
+        }
+        if (m.bundYield != null) {
+            StringBuilder line = new StringBuilder(140);
+            line.append("  - the risk-free anchor: 10-year Bund ")
+                    .append(fmt2(m.bundYield.percent())).append('%');
+            if (m.bundYield.dateIso() != null) {
+                line.append(" (").append(m.bundYield.dateIso()).append(')');
+            }
+            if (m.bundYield.previousPercent() != null
+                    && Double.isFinite(m.bundYield.previousPercent())) {
+                line.append(", previously ").append(fmt2(m.bundYield.previousPercent()))
+                        .append('%');
+            }
+            lines.add(line.toString());
+        }
+        if (m.eurUsdRate != null && Double.isFinite(m.eurUsdRate)) {
+            lines.add("  - EUR/USD " + fmt2(m.eurUsdRate)
+                    + (m.dollarIndex != null && Double.isFinite(m.dollarIndex)
+                            ? ", dollar index " + fmt2(m.dollarIndex) : "")
+                    + " (every cross-border figure in this report passes through this rate)");
+        }
+        if (m.cryptoDerivs != null) {
+            lines.add("  - speculative leverage (crypto derivatives): funding rate "
+                    + signed(m.cryptoDerivs.fundingRatePercent()) + "%, open interest "
+                    + fmt2(m.cryptoDerivs.openInterestBtc()) + " BTC");
+        }
+        int n = 0;
+        for (var market : m.predictionMarkets) {
+            if (market.question() == null || market.question().isBlank()) continue;
+            if (++n > MAX_PREDICTION_MARKETS) break;
+            lines.add("  - what the crowd PRICES (prediction market, "
+                    + fmt2(market.volume24hUsd()) + " USD traded in 24 h): \""
+                    + market.question().strip() + "\" - "
+                    + (market.outcome() == null ? "" : market.outcome() + " at ")
+                    + fmt2(market.probabilityPercent()) + "%");
+        }
+        if (lines.isEmpty()) return;
+        sb.append("THE TAPE THIS READING WAS TAKEN IN (verified; conditions in the wider "
+                        + "market, NOT statements about this subject - the same move means "
+                        + "different things in a fearful tape and a calm one)")
+                .append(mark(nums, "regime")).append(":\n");
+        for (String line : lines) sb.append(line).append('\n');
+    }
+
+    /**
      * German listing? The screener board is per market, and asking the wrong
      * one puts a German small cap next to the S&amp;P's giants. The ISIN's
      * country prefix decides, with the venue suffix behind it.
@@ -8618,6 +8852,14 @@ public class DeepDiveService {
                                 + "Marktkapitalisierung, KGV, Gewinn je Aktie, Dividendenrendite)"
                         : "Motley Fool (quote page) - profile figures (sector, industry, "
                                 + "market capitalisation, P/E, earnings per share, dividend yield)";
+            case "regime":
+                return de
+                        ? "Marktregime - CNN Fear & Greed und Krypto-Stimmungsindex, "
+                                + "CBOE Put/Call und VIX, 10-jährige Bundesanleihe, EUR/USD "
+                                + "und Dollar-Index, Krypto-Derivate, Prognosemärkte"
+                        : "Market regime - CNN Fear & Greed and the crypto sentiment index, "
+                                + "CBOE put/call and VIX, the 10-year Bund, EUR/USD and the "
+                                + "dollar index, crypto derivatives, prediction markets";
             case "sectorboard":
                 return de
                         ? "Markt-Screener - Sektor-Tagesstand des gesamten gelisteten Marktes, "

@@ -102,6 +102,12 @@
             <groupId>de.bsommerfeld</groupId>
             <artifactId>tradersunion</artifactId>
         </dependency>
+        <!-- 2026-08-03: the regime gauges the DD reads by name (EUR/USD and
+             the dollar index; Fear & Greed already rides the fear-greed dep). -->
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>currency</artifactId>
+        </dependency>
         <!-- 2026-08-03: the quote page's own profile figures, a second
              independent gap filler beside the CNBC quote. -->
         <dependency>
