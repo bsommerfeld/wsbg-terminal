@@ -233,10 +233,18 @@ public final class OllamaServerManager {
             pb.environment().putIfAbsent("OLLAMA_NUM_PARALLEL", String.valueOf(llmParallelism()));
 
             // Flash attention + quantised KV cache roughly halve the KV-cache
-            // memory at negligible quality loss — this is what makes an 8192
-            // context window affordable on end-user machines instead of an
-            // OOM risk. q8_0 is the conservative choice (q4_0 saves more but
-            // can degrade long-context recall).
+            // memory at negligible quality loss. q8_0 is the conservative
+            // choice (q4_0 saves more but can degrade long-context recall).
+            //
+            // CAVEAT (measured 2026-08-03, gemma4:26b-mlx on an M4 Max): both
+            // are ggml/llama.cpp knobs. A `-mlx` tag runs the MLX runner, which
+            // IGNORES them — q8_0, f16 and flash=0 all loaded at an identical
+            // 16.02 GiB. Since the MLX twin is the STANDARD on Apple Silicon
+            // (ModelCatalog.tagFor), that whole fleet runs unquantised here.
+            // Harmless in practice — the KV share measured ~1.8 GB at an 18k
+            // prompt — so this is documentation, not a bug to chase. What DOES
+            // dominate is the resident weights plus MLX's high-water allocator,
+            // which never shrinks back (see OLLAMA_KEEP_ALIVE below).
             pb.environment().putIfAbsent("OLLAMA_FLASH_ATTENTION", "1");
             pb.environment().putIfAbsent("OLLAMA_KV_CACHE_TYPE", "q8_0");
 
@@ -245,6 +253,14 @@ public final class OllamaServerManager {
             // has to wait for the GPU. The deployment is single-model now (the embedding
             // model was removed 2026-07-03), but MAX_LOADED_MODELS stays at 2 as harmless
             // headroom.
+            //
+            // The price, on the big tiers: pinned means the run's PEAK footprint
+            // is what stays resident. Measured 2026-08-03 on gemma4:26b-mlx —
+            // 17 GB freshly loaded, grown to ~25 GB under a live pipeline session,
+            // and MLX never gives it back. `putIfAbsent` is the escape hatch: an
+            // OLLAMA_KEEP_ALIVE already exported into the app's environment wins,
+            // so a finite value (e.g. 15m) trades ~4 s of reload latency for the
+            // idle memory.
             pb.environment().putIfAbsent("OLLAMA_KEEP_ALIVE", "-1");
             pb.environment().putIfAbsent("OLLAMA_MAX_LOADED_MODELS", "2");
 
