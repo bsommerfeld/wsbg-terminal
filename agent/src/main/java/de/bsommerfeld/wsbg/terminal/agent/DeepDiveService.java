@@ -34,6 +34,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -143,6 +144,20 @@ public class DeepDiveService {
     private static final int MAX_ANALYST_ACTIONS = 10;
     /** CNBC quarters asked for and rendered - the endpoint's own ceiling is eight. */
     private static final int MAX_CNBC_QUARTERS = 8;
+    /**
+     * Dated 8-K events rendered per subject. The client already drops the
+     * uninteresting item codes; this only keeps the block from turning into a
+     * filing dump for a name that files constantly.
+     */
+    private static final int MAX_EDGAR_EVENTS = 10;
+    /**
+     * Sessions the NASDAQ calendar is walked forward when NO other leg named a
+     * report date. One fetch per session, so the window stays short - and the
+     * walk stops on the first hit.
+     */
+    private static final int NASDAQ_CALENDAR_HORIZON_DAYS = 10;
+    /** Rows read per calendar day before the subject's row is looked up. */
+    private static final int NASDAQ_CALENDAR_ROWS = 300;
     /**
      * Rows scanned off boerse.de's GLOBAL directors'-dealings list before it is
      * filtered down to this ISIN. One page fetch either way - the number only
@@ -318,6 +333,15 @@ public class DeepDiveService {
     private volatile de.bsommerfeld.wsbg.terminal.boersenmedien.BoersenmedienResolver bmResolver;
     private volatile de.bsommerfeld.wsbg.terminal.tradersunion.TradersUnionMoversClient tuMovers;
     private volatile de.bsommerfeld.wsbg.terminal.stocknear.StocknearClient stocknear;
+    // -- 2026-08-03: legs that existed in the house but never reached the DD.
+    // EDGAR only ever ran on the market-memory ROTATION (one US ticker per 20
+    // min off the wire's recent names, 60 deep), so a subject outside that
+    // rotation carried no filing history at all; FINRA and the NASDAQ calendar
+    // were wired to the evening report alone. All three are ticker-addressed
+    // and answer for exactly this subject, now, on demand.
+    private volatile de.bsommerfeld.wsbg.terminal.edgar.EdgarClient edgarClient;
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.FinraShortVolumeClient finraShorts;
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.NasdaqCalendarClient nasdaqCalendar;
 
     private final AtomicBoolean busy = new AtomicBoolean(false);
     private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
@@ -579,6 +603,23 @@ public class DeepDiveService {
     @com.google.inject.Inject(optional = true)
     void setStocknearClient(de.bsommerfeld.wsbg.terminal.stocknear.StocknearClient client) {
         this.stocknear = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setEdgarClient(de.bsommerfeld.wsbg.terminal.edgar.EdgarClient client) {
+        this.edgarClient = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setFinraShortVolume(
+            de.bsommerfeld.wsbg.terminal.briefing.FinraShortVolumeClient client) {
+        this.finraShorts = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setNasdaqCalendar(
+            de.bsommerfeld.wsbg.terminal.briefing.NasdaqCalendarClient client) {
+        this.nasdaqCalendar = client;
     }
 
     @com.google.inject.Inject(optional = true)
@@ -2986,6 +3027,19 @@ public class DeepDiveService {
         return t.replace('.', '-');
     }
 
+    /**
+     * The ticker as a BARE US symbol, or null. A venue suffix, an index, a
+     * future or a crypto pair is not a US listing, and the legs keyed on one
+     * (FINRA's consolidated file, NASDAQ's calendar) would either miss silently
+     * or, worse, hit an unrelated US twin - the German base of RHM.DE is a real
+     * symbol somewhere. Never strips a suffix to force a match.
+     */
+    static String usTicker(String ticker) {
+        if (ticker == null || ticker.isBlank()) return null;
+        String t = ticker.trim().toUpperCase(Locale.ROOT);
+        return t.matches("[A-Z]{1,5}(\\.[A-Z])?") ? t : null;
+    }
+
     /** Stable per-item key for triage verdicts (uuid, falling back to link/title). */
     private static String newsKey(RawNewsItem item) {
         if (item.uuid() != null && !item.uuid().isBlank()) return item.uuid();
@@ -3063,6 +3117,27 @@ public class DeepDiveService {
                 boerseFundamentals = List.of();
         /** Handelsblatt ISIN master data: WKN, ticker, sector, performance ladder. */
         de.bsommerfeld.wsbg.terminal.handelsblatt.HandelsblattInstrument hbInstrument;
+        /**
+         * Dated, house-classified 8-K events straight from SEC EDGAR, newest
+         * first. The market-memory register carries the same class of event,
+         * but only for the names its slow rotation happened to sweep - this
+         * leg answers for THIS ticker, at report time.
+         */
+        List<de.bsommerfeld.wsbg.terminal.edgar.EdgarClient.EdgarEvent> edgarEvents = List.of();
+        /**
+         * The latest FINRA daily short-VOLUME ratio for this US ticker. Short
+         * volume is not short INTEREST - a high ratio is often market-maker
+         * hedging - so the block reports and never concludes.
+         */
+        de.bsommerfeld.wsbg.terminal.briefing.FinraShortVolumeClient.ShortVolume shortVolume;
+        /**
+         * The subject's own row in the NASDAQ earnings calendar - asked ONLY
+         * when no other leg named a report date, and then only across a short
+         * forward window.
+         */
+        de.bsommerfeld.wsbg.terminal.briefing.NasdaqCalendarClient.EarningsEntry nasdaqEarnings;
+        /** ISO day the NASDAQ calendar answered for. */
+        String nasdaqEarningsDateIso;
         /** The months-spanning dated press timeline (MarketBeat news tab) — "Was war" context. */
         de.bsommerfeld.wsbg.terminal.core.price.PressTimeline pressTimeline;
         /** House-computed volume profile (Yahoo hourly bars) — the structure layer's traded side. */
@@ -3494,6 +3569,44 @@ public class DeepDiveService {
         } catch (Exception e) {
             LOG.debug("[DEEPDIVE] press timeline failed: {}", e.getMessage());
         }
+        // SEC EDGAR, ticker-addressed: the issuer's own dated 8-K events -
+        // contracts, restructurings, impairments, auditor changes,
+        // restatements, cyber incidents, leadership changes. The house register
+        // carries this class of event too, but only for the names its slow
+        // rotation reached; a subject outside it had NOTHING. Asked straight,
+        // for this ticker, now. The client's own US-shape gate turns a
+        // suffixed, index or crypto symbol into a network-free no-op.
+        checkCancelled();
+        try {
+            var edgar = edgarClient;
+            if (edgar != null && m.ticker != null) {
+                List<de.bsommerfeld.wsbg.terminal.edgar.EdgarClient.EdgarEvent> events =
+                        new ArrayList<>(edgar.eightKEvents(m.ticker));
+                events.sort(Comparator.comparing(
+                        de.bsommerfeld.wsbg.terminal.edgar.EdgarClient.EdgarEvent::date,
+                        Comparator.nullsLast(Comparator.reverseOrder())));
+                m.edgarEvents = events.size() > MAX_EDGAR_EVENTS
+                        ? List.copyOf(events.subList(0, MAX_EDGAR_EVENTS)) : List.copyOf(events);
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] edgar 8-K leg failed: {}", e.getMessage());
+        }
+        // FINRA's consolidated daily short-VOLUME file - the freshest short
+        // reading this house can get for a US name (T+1), where the NASDAQ tab
+        // carries the twice-monthly short INTEREST and the German register only
+        // knows German issuers. Reported beside them, never merged: the two
+        // measure different things, and the block says so.
+        checkCancelled();
+        try {
+            var finra = finraShorts;
+            String us = usTicker(m.ticker);
+            if (finra != null && us != null) {
+                m.shortVolume = finra.ratiosFor(Set.of(us),
+                        java.time.LocalDate.now(java.time.ZoneId.systemDefault())).get(us);
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] finra short volume failed: {}", e.getMessage());
+        }
         // Sector & macro context — the Abendausgabe arsenal scoped to THIS
         // instrument (user mandate 2026-07-14): what pressed or carried the
         // sector today (XL* proxy vs the instrument, house arithmetic), the
@@ -3734,6 +3847,38 @@ public class DeepDiveService {
             }
         } catch (Exception e) {
             LOG.debug("[DEEPDIVE] wo calendar failed: {}", e.getMessage());
+        }
+        // Third in line for the report DATE, and only when the first two came
+        // back empty: NASDAQ's own earnings calendar. It is a per-DAY file, so
+        // finding one name means walking sessions - the walk is bounded, it
+        // stops on the first hit, and it never starts when the date is already
+        // known. An outlook without a dated next report is the one gap worth
+        // paying a few fetches for.
+        checkCancelled();
+        try {
+            var cal = nasdaqCalendar;
+            String us = usTicker(m.ticker);
+            if (cal != null && us != null && m.earningsEstimate == null && m.woEstimate == null) {
+                java.time.LocalDate day = java.time.LocalDate.now(java.time.ZoneId.systemDefault());
+                for (int i = 0; i < NASDAQ_CALENDAR_HORIZON_DAYS && m.nasdaqEarnings == null; i++) {
+                    java.time.LocalDate probe = day.plusDays(i);
+                    for (var row : cal.earningsOn(probe, NASDAQ_CALENDAR_ROWS)) {
+                        if (!us.equalsIgnoreCase(row.symbol())) continue;
+                        m.nasdaqEarnings = row;
+                        m.nasdaqEarningsDateIso = probe.toString();
+                        break;
+                    }
+                }
+                if (m.nasdaqEarnings != null) {
+                    // Collected after the source journal ran - announced here so
+                    // the live view still shows every leg that answered.
+                    journalNotes(ticker, List.of(journalGerman()
+                            ? "NASDAQ-Kalender — nächster Bericht " + m.nasdaqEarningsDateIso
+                            : "NASDAQ calendar — next report " + m.nasdaqEarningsDateIso));
+                }
+            }
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] nasdaq calendar failed: {}", e.getMessage());
         }
 
         // The street's numbers for the NEXT report (EarningsWhispers day calendar,
@@ -4053,6 +4198,17 @@ public class DeepDiveService {
                     + (bits.isEmpty() ? (de ? "US-Listing" : "US listing")
                     : String.join(", ", bits))));
         }
+        if (!m.edgarEvents.isEmpty()) {
+            journalNotes(subject, List.of("SEC EDGAR — " + m.edgarEvents.size()
+                    + (de ? " 8-K-Pflichtereignis(se)" : " material 8-K event(s)")));
+        }
+        if (m.shortVolume != null) {
+            journalNotes(subject, List.of("FINRA — "
+                    + (de ? "Short-Volumen " : "short volume ")
+                    + fmt2(m.shortVolume.shortPercent()) + " %"
+                    + (m.shortVolume.dateIso() == null ? ""
+                            : (de ? ", Handelstag " : ", session ") + m.shortVolume.dateIso())));
+        }
         if (!m.cnbcEarnings.isEmpty() || m.cnbcQuote != null) {
             List<String> bits = new ArrayList<>();
             if (!m.cnbcEarnings.isEmpty()) {
@@ -4307,8 +4463,12 @@ public class DeepDiveService {
         appendShorts(sb, m.shortInterest, nums);
         appendUsShortInterest(sb, m.usStats, nums);
         appendUsShortQuote(sb, m.analystActions, nums);
+        appendShortVolume(sb, m, nums);
         appendShareCount(sb, m.deepDive, nums);
         appendTechnical(sb, m.deepDive, nums);
+        // The issuer's own material filings sit with the catalysts, because
+        // that is what they are - a contract, an impairment, a restatement.
+        appendEdgarEvents(sb, m, nums);
         appendMarketMemory(sb, m, nums);
         out[SEC_CATALYSTS] = new Shelf(take(sb), newsBlocksFor(m, "KATALYSATOR", nums));
 
@@ -4318,6 +4478,7 @@ public class DeepDiveService {
         appendMacroDocket(sb, m, nums);
         appendEarningsConsensus(sb, m, nums);
         appendWoConsensus(sb, m, nums);
+        appendNasdaqEarningsDate(sb, m, nums);
         appendEstimatePath(sb, m.deepDive, nums);
         appendAnalystRatings(sb, m.analystView, nums);
         appendUsAnalysts(sb, m.usStats, nums);
@@ -4576,6 +4737,8 @@ public class DeepDiveService {
                 || !m.boerseFundamentals.isEmpty()) {
             nums.put("boersede", ++n);
         }
+        if (m.shortVolume != null) nums.put("finra", ++n);
+        if (!m.edgarEvents.isEmpty()) nums.put("edgar", ++n);
         if (m.usStats != null) nums.put("nasdaq", ++n);
         if (!m.cnbcEarnings.isEmpty() || m.cnbcQuote != null) nums.put("cnbc", ++n);
         if (m.hedgeFunds != null && !m.hedgeFunds.quarters().isEmpty()) nums.put("hedgefunds", ++n);
@@ -4591,6 +4754,7 @@ public class DeepDiveService {
         if (!m.worldSignalKeep.isEmpty()) nums.put("world", ++n);
         if (m.earningsEstimate != null) nums.put("whispers", ++n);
         if (m.woEstimate != null) nums.put("wocal", ++n);
+        if (m.nasdaqEarnings != null) nums.put("nasdaqcal", ++n);
         if (!m.regDocket.isEmpty()) nums.put("fedreg", ++n);
         if (!m.tradingBreaks.isEmpty()) nums.put("tradingcal", ++n);
         if (!m.statsDocket.isEmpty()) nums.put("statscal", ++n);
@@ -6604,6 +6768,83 @@ public class DeepDiveService {
     }
 
     /**
+     * The issuer's own dated 8-K events (SEC EDGAR). The class names are this
+     * house's, mapped from the filing's item codes; the raw items ride along so
+     * the model can see what the issuer actually checked. Earnings items are
+     * deliberately absent - they arrive signed from the delivery-record leg.
+     */
+    private static void appendEdgarEvents(StringBuilder sb, Material m,
+            Map<String, Integer> nums) {
+        if (m.edgarEvents.isEmpty()) return;
+        sb.append("MATERIAL FILINGS (verified, SEC EDGAR form 8-K, newest first; the event "
+                        + "class is this house's mapping of the filing's own item codes)")
+                .append(mark(nums, "edgar")).append(":\n");
+        for (var e : m.edgarEvents) {
+            sb.append("  - ");
+            if (e.date() != null) sb.append('[').append(e.date()).append("] ");
+            sb.append(e.eventClass());
+            if (e.items() != null && !e.items().isBlank()) {
+                sb.append(" (item ").append(e.items().strip()).append(')');
+            }
+            sb.append('\n');
+        }
+    }
+
+    /**
+     * FINRA's daily short-VOLUME ratio. Deliberately its own block beside the
+     * short-INTEREST readings: interest is a reported position, volume is one
+     * session's flow, and a high ratio is frequently market-maker hedging
+     * rather than a bet. The line reports and the caveat travels with it, so
+     * the model cannot quietly read one as the other.
+     */
+    private static void appendShortVolume(StringBuilder sb, Material m,
+            Map<String, Integer> nums) {
+        var sv = m.shortVolume;
+        if (sv == null) return;
+        sb.append("DAILY SHORT VOLUME (verified, FINRA consolidated file")
+                .append(sv.dateIso() == null ? "" : ", session " + sv.dateIso())
+                .append(")").append(mark(nums, "finra")).append(": ")
+                .append(fmt2(sv.shortPercent()))
+                .append("% of the session's consolidated volume ran over the short side")
+                .append(sv.totalVolume() > 0
+                        ? " (total " + sv.totalVolume() + " shares)" : "")
+                .append(". This is short VOLUME, not short INTEREST - one session's flow, "
+                        + "frequently market-maker hedging; it is not a reported position "
+                        + "and must not be read as one.\n");
+    }
+
+    /**
+     * The report date when neither the US consensus leg nor the German
+     * corporate calendar knew one - NASDAQ's own calendar row. Carries the
+     * bell slot and, where the calendar has it, the street's per-share
+     * estimate.
+     */
+    private static void appendNasdaqEarningsDate(StringBuilder sb, Material m,
+            Map<String, Integer> nums) {
+        var row = m.nasdaqEarnings;
+        if (row == null) return;
+        sb.append("NEXT REPORT (verified, NASDAQ earnings calendar)")
+                .append(mark(nums, "nasdaqcal")).append(": ");
+        if (m.nasdaqEarningsDateIso != null) sb.append(m.nasdaqEarningsDateIso);
+        String slot = bellSlot(row.slot());
+        if (slot != null) sb.append(", ").append(slot);
+        if (row.epsForecast() != null && !row.epsForecast().isBlank()) {
+            sb.append("; street estimate per share ").append(row.epsForecast().strip());
+        }
+        sb.append(".\n");
+    }
+
+    /** NASDAQ's own slot token spelled out; unknown tokens stay silent. */
+    private static String bellSlot(String token) {
+        if (token == null) return null;
+        return switch (token.trim().toLowerCase(Locale.ROOT)) {
+            case "time-pre-market" -> "before the bell";
+            case "time-after-hours" -> "after the bell";
+            default -> null;
+        };
+    }
+
+    /**
      * Directors' dealings off boerse.de - real names, standing and volume.
      * BESIDE the BaFin leg (which carries the same legal filings through a
      * different register), never instead of it: each block carries its own
@@ -7532,6 +7773,26 @@ public class DeepDiveService {
                 return "Insider Monkey" + (de
                         ? " - Hedgefonds-Positionierung (13F-Quartalskurve)"
                         : " - hedge-fund positioning (quarterly 13F curve)");
+            case "edgar":
+                return de
+                        ? "SEC EDGAR - Form 8-K, datierte Pflichtereignisse des Emittenten "
+                                + "(Verträge, Restrukturierung, Wertberichtigung, Prüferwechsel, "
+                                + "Restatement, Cybervorfall, Führungswechsel)"
+                        : "SEC EDGAR - form 8-K, the issuer's dated material events "
+                                + "(contracts, restructuring, impairment, auditor change, "
+                                + "restatement, cyber incident, leadership change)";
+            case "finra":
+                return "FINRA" + (de
+                        ? " - konsolidiertes Tages-Short-VOLUMEN (Anteil am Tagesvolumen, "
+                                + "nicht die gemeldete Shortposition)"
+                        : " - consolidated daily short VOLUME (share of the session's volume, "
+                                + "not the reported short position)");
+            case "nasdaqcal":
+                return de
+                        ? "NASDAQ-Earnings-Kalender - Termin des nächsten Berichts mit "
+                                + "Handelszeit-Fenster und Konsensschätzung je Aktie"
+                        : "NASDAQ earnings calendar - the next report date with its bell slot "
+                                + "and per-share consensus estimate";
             case "nasdaq":
                 return "NASDAQ" + (de
                         ? " - US-Listing: Insider-Trades (Form 4), FINRA Short Interest, "
