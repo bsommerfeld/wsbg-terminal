@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="de" data-theme="dark">
+<head><meta charset="utf-8"><title>Poststelle - Demo</title>
+<link rel="stylesheet" href="css/tokens.css"><link rel="stylesheet" href="css/base.css"><link rel="stylesheet" href="css/deepdive.css">
+<style>body{background:var(--bg);padding:20px} #live{height:620px;max-width:1000px}</style></head>
+<body><div id="live"></div>
+<script type="module">
+  import { initDeepDiveLive, mountLive, onDeepDiveLive, setLiveSubject } from './js/widgets/deepdive-live.js';
+  if (location.search.includes('light')) document.documentElement.dataset.theme = 'light';
+  initDeepDiveLive({ send() {} }, document.getElementById('live'), () => {});
+  setLiveSubject('RHM.DE'); mountLive();
+  let seq = 0, n = 0;
+  const SRC = ['Rheinmetall hebt Prognose an · Reuters','SAP Cloud-Umsatz +26% · Bloomberg','Nvidia hochgestuft · Benzinga',
+    'Siemens Energy Netzauftrag · finanzen.net','Insiderkauf Bayer · sharedeals.de','OPEC drückt Ölpreis · Reuters',
+    'DAX schließt leichter · dpa-AFX','Tesla unter Erwartung · CNBC','EZB im Fokus · Handelsblatt','Rüstung läuft · WiWo',
+    'Quartalszahlen im Blick · MarketWatch','Analystenrunde zu Infineon · NASDAQ'];
+  const feed = (k, ref, t) => onDeepDiveLive({ entry: { seq: ++seq, k, ph: k === 'src' ? 'collect' : 'triage', who: 'triage', ref, t } });
+  const wave = c => { for (let i = 0; i < c; i++) { const r = 'r' + (n++); feed('src', r, SRC[n % SRC.length]);
+    setTimeout(() => feed(Math.random() < 0.62 ? 'src-ok' : 'src-out', r), 2200 + Math.random() * 2600); } };
+  wave(4);
+  setInterval(() => wave(2 + Math.floor(Math.random() * 4)), 5000);
+</script></body></html>

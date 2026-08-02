@@ -26,8 +26,12 @@ import { escapeHtml } from '../format/escape.js';
 import { renderMarkdown } from '../format/markdown.js';
 import { wireFigureHover } from '../map/figure-hover.js';
 import { figureHtml, linkFigureRefs } from './dd-figures.js';
+import { createSourceScene } from './dd-source-scene.js';
 
 const SECTION_COUNT = 8;
+
+/** The animated source room stands in for the list — unless motion is off. */
+const SCENE_OK = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 let sock = null;
 let liveEl = null;
@@ -39,6 +43,7 @@ let onBack = null;
 
 let entries = [];                  // every entry, seq-ordered (the chat's source)
 let seenSeq = 0;                   // highest seq applied
+let gapped = false;                // a seq gap was seen — the feed needs a replay
 let sections = emptySections();    // per index: current standing text | null
 let notes = emptyNotes();          // per index: [{par, who, text}]
 let pending = emptyPending();      // per index: {par} | null
@@ -46,7 +51,8 @@ let charts = [];                   // [{section, title, note, svg}]
 /** The triage board: every collected source with its live verdict state. */
 let sources = [];                  // [{ref, title, state:'pending'|'ok'|'out'}]
 let srcIndex = new Map();          // ref -> source object
-let srcEls = new Map();            // ref -> its <li> while the board stands
+let srcEls = new Map();            // ref -> its <li> while the list stands
+let scene = null;                  // the source room while it is on stage
 let phase = null;                  // latest phase token
 let subject = null;
 let mounted = false;
@@ -71,6 +77,7 @@ export function initDeepDiveLive(socket, el, backCallback) {
 export function resetLive() {
   entries = [];
   seenSeq = 0;
+  gapped = false;
   sections = emptySections();
   notes = emptyNotes();
   pending = emptyPending();
@@ -78,6 +85,7 @@ export function resetLive() {
   sources = [];
   srcIndex = new Map();
   srcEls = new Map();
+  dropScene();
   phase = null;
   subject = null;
   finalizing = false;
@@ -96,8 +104,12 @@ export function onDeepDiveLive(payload) {
   const e = payload.entry;
   if (!e || typeof e.seq !== 'number') return;
   if (e.seq <= seenSeq) return;
-  // A gap while watching means missed increments (reconnect) — replay whole.
-  if (mounted && seenSeq > 0 && e.seq > seenSeq + 1) requestBacklog();
+  // A gap means missed increments (reconnect) — remembered even while the
+  // box is closed, so opening later knows the local feed is incomplete.
+  if (seenSeq > 0 && e.seq > seenSeq + 1) {
+    gapped = true;
+    if (mounted) requestBacklog();
+  }
   seenSeq = e.seq;
   entries.push(e);
   applyEntry(e, mounted);
@@ -115,9 +127,11 @@ export function onDeepDiveLiveBacklog(payload) {
   sources = [];
   srcIndex = new Map();
   srcEls = new Map();
+  dropScene();
   phase = null;
   jobs.clear();
   seenSeq = 0;
+  gapped = false;
   // Rebuild is pure state work — the single renderAll below paints it.
   const wasMounted = mounted;
   mounted = false;
@@ -129,8 +143,17 @@ export function onDeepDiveLiveBacklog(payload) {
   if (mounted) renderAll();
 }
 
-export function requestBacklog() {
+function requestBacklog() {
   if (sock) sock.send('deepdive', { command: 'live' });
+}
+
+/**
+ * Opening the box: the replay is only worth its megabytes when the local
+ * feed is actually incomplete — a seen gap, or nothing received yet (page
+ * loaded mid-run). Otherwise the accumulated state IS the backlog.
+ */
+export function requestBacklogIfNeeded() {
+  if (gapped || seenSeq === 0) requestBacklog();
 }
 
 export function setLiveSubject(s) {
@@ -151,7 +174,13 @@ export function mountLive() {
 export function unmountLive() {
   mounted = false;
   jobs.clear();
+  dropScene();
   if (liveEl) liveEl.innerHTML = '';
+}
+
+/** The room stops the moment its canvas leaves the DOM (paint budget). */
+function dropScene() {
+  if (scene) { scene.destroy(); scene = null; }
 }
 
 /**
@@ -234,6 +263,7 @@ function applyEntry(e, animate) {
 
 function renderAll() {
   if (!liveEl) return;
+  dropScene();
   liveEl.innerHTML = `
     <div class="dd-live${chatOpen ? ' chat-open' : ''}">
       <div class="dd-live-head">
@@ -284,10 +314,15 @@ function renderDoc() {
     // the judge's pen) — or, before anything is collected, ghost lines.
     if (sources.length) {
       doc.innerHTML = triageBoardHtml();
-      const list = doc.querySelector('.dd-triage-list');
-      for (const s of sources) {
-        if (s.state === 'out') continue; // struck rows are gone for good
-        list.appendChild(srcRowEl(s));
+      if (SCENE_OK) {
+        scene = createSourceScene(doc.querySelector('.dd-scene'));
+        scene.seed(sources);
+      } else {
+        const list = doc.querySelector('.dd-triage-list');
+        for (const s of sources) {
+          if (s.state === 'out') continue; // struck rows are gone for good
+          list.appendChild(srcRowEl(s));
+        }
       }
       updateSrcCounts();
     } else {
@@ -331,6 +366,9 @@ function ensureSection(i) {
   if (board && !board.classList.contains('is-done')) {
     board.classList.add('is-done');
     srcEls.clear();
+    // The room's loop stops with the fade, not with the removal — nothing
+    // paints behind the report.
+    dropScene();
     setTimeout(() => board.remove(), 420);
   }
   let el = doc.querySelector(`.dd-live-sec[data-sec="${i}"]`);
@@ -344,9 +382,13 @@ function ensureSection(i) {
   return el;
 }
 
-/* ---- the triage board: the collected sources under the judge's pen —
-      rows slide in as they are found, earn a green check, or are struck
-      through, slide out left and the list closes the gap ---- */
+/* ---- the triage board: the collected sources under the judge's pen. The
+      stage is the source ROOM (dd-source-scene.js) — every source lands as
+      a paper card, the clerk carries it to the desk and files it or bins
+      it. With motion turned off the room gives way to the plain list: rows
+      slide in as they are found, earn a green check, or are struck through,
+      slide out left and the list closes the gap. Either way the count chip
+      carries the exact numbers. ---- */
 
 function triageBoardHtml() {
   return `<div class="dd-triage">
@@ -354,7 +396,7 @@ function triageBoardHtml() {
       <span class="dd-triage-title">${escapeHtml(t('dd.live.sources'))}</span>
       <span class="dd-triage-count"></span>
     </div>
-    <ul class="dd-triage-list"></ul>
+    ${SCENE_OK ? '<div class="dd-scene"></div>' : '<ul class="dd-triage-list"></ul>'}
   </div>`;
 }
 
@@ -377,6 +419,7 @@ let srcBurstN = 0;
 function addSrcRow(s, animate) {
   const doc = docEl();
   if (!doc) return;
+  if (scene) { scene.add(s, animate); updateSrcCounts(); return; }
   let list = doc.querySelector('.dd-triage-list');
   if (!list) {
     // First source while the ghost stands (or a follow-up wave after the
@@ -398,6 +441,7 @@ function addSrcRow(s, animate) {
 }
 
 function updateSrcRow(s, animate) {
+  if (scene) { scene.verdict(s); updateSrcCounts(); return; }
   const li = srcEls.get(s.ref);
   updateSrcCounts();
   if (!li || !li.isConnected) return;

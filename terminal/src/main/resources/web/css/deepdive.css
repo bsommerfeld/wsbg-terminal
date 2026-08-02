@@ -1474,6 +1474,19 @@ html[data-theme="light"] .dd-figure {
   color: var(--mute);
   font-family: "JetBrains Mono", monospace;
 }
+/* The source room: a canvas box under the board head. Fixed height keeps
+   the world's proportions honest; the canvas itself is DPR-scaled in JS. */
+.dd-scene {
+  position: relative;
+  height: 240px;
+  margin: 2px 0 4px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--bg-1) 55%, transparent);
+  overflow: hidden;
+}
+.dd-scene-canvas { display: block; }
+
 .dd-triage-list {
   list-style: none;
   margin: 0;

@@ -27,7 +27,7 @@ import { wireFigureHover, wireFigureJumps } from '../map/figure-hover.js';
 import { figureHtml, linkFigureRefs } from './dd-figures.js';
 import {
   initDeepDiveLive, resetLive, mountLive, unmountLive, finalizeLive,
-  requestBacklog, setLiveSubject,
+  requestBacklogIfNeeded, setLiveSubject,
 } from './deepdive-live.js';
 
 let sock = null;
@@ -272,9 +272,10 @@ function openLive() {
   listScrollTop = sc ? sc.scrollTop : 0;
   liveOpen = true;
   setLiveSubject(state.subject);
-  // The accumulated feed renders instantly; the backlog answer is the
-  // authoritative replay (covers a box opened after a reconnect).
-  requestBacklog();
+  // The accumulated feed renders instantly; the authoritative replay is
+  // fetched ONLY when that feed is incomplete (gap seen / page loaded
+  // mid-run) — a blind replay froze the switch on long runs.
+  requestBacklogIfNeeded();
   render();
   if (sc) sc.scrollTop = 0;
 }
