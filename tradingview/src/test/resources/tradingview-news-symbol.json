@@ -1,0 +1,134 @@
+{
+ "items": [
+  {
+   "paywall": false,
+   "id": "invezz:3edd11aab094b:0",
+   "title": "Nvidia, Alphabet among 5 stocks that fit Jim Cramer’s favourite dip-buying rule",
+   "published": 1785668400,
+   "urgency": 2,
+   "link": "https://invezz.com/news/2026/08/02/nvidia-alphabet-among-5-stocks-that-fit-jim-cramers-favourite-dip-buying-rule/",
+   "relatedSymbols": [
+    {
+     "symbol": "NASDAQ:NVDA",
+     "logoid": "nvidia"
+    },
+    {
+     "symbol": "NASDAQ:META",
+     "logoid": "meta-platforms"
+    },
+    {
+     "symbol": "NASDAQ:GOOG",
+     "logoid": "alphabet"
+    }
+   ],
+   "storyPath": "/news/invezz:3edd11aab094b:0-nvidia-alphabet-among-5-stocks-that-fit-jim-cramer-s-favourite-dip-buying-rule/",
+   "provider": {
+    "id": "invezz",
+    "name": "Invezz",
+    "logo_id": "invezz",
+    "url": "https://invezz.com/"
+   }
+  },
+  {
+   "paywall": false,
+   "id": "tradingview:6ddf62f88cd42:0",
+   "title": "Key facts: NASDAQ:NVDA $250B OpenAI backing; strong AI infra; CDS 80bps",
+   "published": 1785568480,
+   "urgency": 2,
+   "relatedSymbols": [
+    {
+     "symbol": "NASDAQ:NVDA",
+     "logoid": "nvidia"
+    }
+   ],
+   "storyPath": "/news/tradingview:6ddf62f88cd42:0-key-facts-nasdaq-nvda-250b-openai-backing-strong-ai-infra-cds-80bps/",
+   "provider": {
+    "id": "tradingview",
+    "name": "TradingView",
+    "logo_id": "tradingview"
+   }
+  },
+  {
+   "paywall": true,
+   "id": "DJN_DN20260801000523:0",
+   "title": "How Chinese AI Models Could Upend Anthropic, OpenAI, and Nvidia — Barrons.com",
+   "published": 1785567600,
+   "urgency": 2,
+   "permission": "provider",
+   "relatedSymbols": [
+    {
+     "symbol": "NASDAQ:NVDA",
+     "logoid": "nvidia"
+    },
+    {
+     "symbol": "NASDAQ:OPENAI",
+     "logoid": "openai"
+    },
+    {
+     "symbol": "NASDAQ:ANTHROPIC",
+     "logoid": "anthropic"
+    }
+   ],
+   "storyPath": "/news/DJN_DN20260801000523:0/",
+   "provider": {
+    "id": "dow-jones",
+    "name": "Dow Jones Newswires",
+    "logo_id": "dow-jones"
+   }
+  },
+  {
+   "paywall": true,
+   "id": "DJN_DN20260729000826:0",
+   "title": "Options — The Striking Price: Hedging Against an AI Drop With a Collar Trade — Barron's",
+   "published": 1785547860,
+   "urgency": 2,
+   "permission": "provider",
+   "relatedSymbols": [
+    {
+     "symbol": "NASDAQ:GOOG",
+     "logoid": "alphabet"
+    },
+    {
+     "symbol": "NYSE:BRK.A",
+     "logoid": "berkshire-hathaway"
+    },
+    {
+     "symbol": "NASDAQ:NVDA",
+     "logoid": "nvidia"
+    }
+   ],
+   "storyPath": "/news/DJN_DN20260729000826:0/",
+   "provider": {
+    "id": "dow-jones",
+    "name": "Dow Jones Newswires",
+    "logo_id": "dow-jones"
+   }
+  }
+ ],
+ "sections": [
+  {
+   "id": "earnings",
+   "title": "Earnings"
+  },
+  {
+   "id": "dividends",
+   "title": "Dividends"
+  },
+  {
+   "id": "share_buybacks",
+   "title": "Share buybacks"
+  },
+  {
+   "id": "mergers_and_acquisitions",
+   "title": "Mergers and acquisitions"
+  },
+  {
+   "id": "insider_trading",
+   "title": "Insider trading"
+  },
+  {
+   "id": "recommendation",
+   "title": "Analysts"
+  }
+ ]
+}

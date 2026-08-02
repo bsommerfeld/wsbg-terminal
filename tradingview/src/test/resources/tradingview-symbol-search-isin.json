@@ -1,0 +1,90 @@
+{
+ "symbols_remaining": 0,
+ "symbols": [
+  {
+   "symbol": "SIE",
+   "description": "Siemens AG",
+   "type": "stock",
+   "exchange": "XETR",
+   "found_by_isin": true,
+   "found_by_cusip": false,
+   "isin": "<em>DE0007236101</em>",
+   "currency_code": "EUR",
+   "currency-logoid": "country/EU",
+   "logoid": "siemens",
+   "logo": {
+    "style": "single",
+    "logoid": "siemens"
+   },
+   "provider_id": "ice",
+   "source_logoid": "source/XETR",
+   "source2": {
+    "id": "XETR",
+    "name": "Deutsche Borse Xetra",
+    "description": "Deutsche Borse Xetra"
+   },
+   "source_id": "XETR",
+   "country": "DE",
+   "is_primary_listing": true,
+   "typespecs": [
+    "common"
+   ]
+  },
+  {
+   "symbol": "1SIE",
+   "description": "Siemens AG",
+   "type": "stock",
+   "exchange": "MIL",
+   "found_by_isin": true,
+   "found_by_cusip": false,
+   "isin": "<em>DE0007236101</em>",
+   "currency_code": "EUR",
+   "currency-logoid": "country/EU",
+   "logoid": "siemens",
+   "logo": {
+    "style": "single",
+    "logoid": "siemens"
+   },
+   "provider_id": "ice",
+   "source_logoid": "source/MIL",
+   "source2": {
+    "id": "MIL",
+    "name": "Euronext Milan",
+    "description": "Euronext Milan"
+   },
+   "source_id": "MIL",
+   "country": "IT",
+   "typespecs": [
+    "common"
+   ]
+  },
+  {
+   "symbol": "4SIE",
+   "description": "Siemens AG",
+   "type": "stock",
+   "exchange": "EUROTLX",
+   "found_by_isin": true,
+   "found_by_cusip": false,
+   "isin": "<em>DE0007236101</em>",
+   "currency_code": "EUR",
+   "currency-logoid": "country/EU",
+   "logoid": "siemens",
+   "logo": {
+    "style": "single",
+    "logoid": "siemens"
+   },
+   "provider_id": "ice",
+   "source_logoid": "source/EUROTLX",
+   "source2": {
+    "id": "EUROTLX",
+    "name": "BorsaItaliana",
+    "description": "BorsaItaliana"
+   },
+   "source_id": "EUROTLX",
+   "country": "IT",
+   "typespecs": [
+    "common"
+   ]
+  }
+ ]
+}

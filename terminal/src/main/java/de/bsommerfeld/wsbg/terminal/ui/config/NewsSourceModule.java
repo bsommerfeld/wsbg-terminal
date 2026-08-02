@@ -85,6 +85,16 @@ final class NewsSourceModule extends AbstractModule {
         // side door.
         newsSources.addBinding().to(
                 de.bsommerfeld.wsbg.terminal.kapitalmarktexperten.KapitalmarktexpertenClient.class);
+        // TradingView news (beside the existing Minds sentiment leg): the
+        // German-language wire mirror - dpa-AFX and Reuters, addressed per
+        // symbol via the ISIN-carrying symbol search. Every request needs an
+        // Origin/Referer pair or nginx answers 403. 94% of the German flow is
+        // gated (paywall:true OR permission headline/preview), so this leg is
+        // a HEADLINE source by nature: gated items are marked and their body
+        // is never fetched - "re-express, never reproduce" is the condition
+        // under which licensed agency copy is touchable at all.
+        newsSources.addBinding().to(
+                de.bsommerfeld.wsbg.terminal.tradingview.TradingViewNewsClient.class);
         // boerse.de: the cleanest source of the 2026-08-02 wave - robots
         // "Allow: /", no wall, and no terms clause against automated access at
         // all. ISIN-addressed with the slug ignored (/aktien/x/<ISIN>), which

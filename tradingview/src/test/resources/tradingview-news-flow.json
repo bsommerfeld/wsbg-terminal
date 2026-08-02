@@ -1,0 +1,112 @@
+{
+ "items": [
+  {
+   "paywall": true,
+   "id": "tag:reuters.com,2026:newsml_L8N43Z08X:0",
+   "title": "Der italienische Kabelhersteller Prysmian befindet sich laut Bloomberg in fortgeschrittenen Verhandlungen über die Übernahme von Atkore",
+   "published": 1785701692,
+   "urgency": 2,
+   "permission": "headline",
+   "relatedSymbols": [
+    {
+     "symbol": "MIL:PRY",
+     "logoid": "prysmian"
+    },
+    {
+     "symbol": "NYSE:ATKR",
+     "logoid": "atkore"
+    }
+   ],
+   "storyPath": "/news/reuters.com,2026:newsml_L8N43Z08X:0/",
+   "provider": {
+    "id": "reuters",
+    "name": "Reuters",
+    "logo_id": "reuters"
+   }
+  },
+  {
+   "paywall": false,
+   "id": "globenewswire:281eecd25600c:0",
+   "title": "Quartalsbericht über die Geschäftstätigkeit für den Zeitraum bis zum 30. Juni 2026",
+   "published": 1785697980,
+   "urgency": 2,
+   "link": "https://www.globenewswire.com/news-release/2026/08/02/3337189/0/de/Quartalsbericht-%C3%BCber-die-Gesch%C3%A4ftst%C3%A4tigkeit-f%C3%BCr-den-Zeitraum-bis-zum-30-Juni-2026.html",
+   "relatedSymbols": [
+    {
+     "symbol": "ASX:PDI",
+     "logoid": "predictive-discovery-ltd"
+    }
+   ],
+   "storyPath": "/news/globenewswire:281eecd25600c:0/",
+   "provider": {
+    "id": "globenewswire",
+    "name": "GlobeNewswire",
+    "logo_id": "rdp-gnw",
+    "url": "https://www.globenewswire.com/"
+   }
+  },
+  {
+   "paywall": true,
+   "id": "dpa_afx:7c1a891121fe9:0",
+   "title": "Feuer: Tausende sollen Zuhause in US-Stadt Spokane verlassen",
+   "published": 1785699486,
+   "urgency": 2,
+   "storyPath": "/news/dpa_afx:7c1a891121fe9:0/",
+   "provider": {
+    "id": "dpa_afx",
+    "name": "dpa-AFX",
+    "logo_id": "dpa_afx"
+   }
+  },
+  {
+   "paywall": false,
+   "id": "eqs:2e7e9eafd600c:0",
+   "title": "One Square Advisory Services S.à.r.l.: Steilmann SE - 19. Sachstandsbericht gegen Nachweis der Anleihegläubigerstellung verfügbar",
+   "published": 1785688333,
+   "urgency": 2,
+   "link": "https://www.eqs-news.com/news/corporate-news/one-square-advisory-services-s-a-r-l-steilmann-se-19-sachstandsbericht-gegen-nachweis-der-anleiheglaeubigerstellung-verfuegbar/144994af-e39c-4a5f-aef0-1c31efb8097c_de",
+   "storyPath": "/news/eqs:2e7e9eafd600c:0/",
+   "provider": {
+    "id": "eqs",
+    "name": "EQS",
+    "logo_id": "eqs"
+   }
+  },
+  {
+   "paywall": true,
+   "id": "dpa_afx:d325fbdbe0c02:0",
+   "title": "Flasbarth: Nächsten Sommer brauchen wir nationalen Hitzeaktionsplan",
+   "published": 1785699430,
+   "urgency": 2,
+   "storyPath": "/news/dpa_afx:d325fbdbe0c02:0/",
+   "provider": {
+    "id": "dpa_afx",
+    "name": "dpa-AFX",
+    "logo_id": "dpa_afx"
+   }
+  },
+  {
+   "paywall": false,
+   "id": "tag:reuters.com,2026-08-02:newsml_Pexb0MhXa:0",
+   "title": "PTA-PVR: Singulus Technologies Aktiengesellschaft: Veröffentlichung nach § 40 Abs. 1 WpHG",
+   "published": 1785686304,
+   "urgency": 2,
+   "permission": "preview",
+   "relatedSymbols": [
+    {
+     "symbol": "XETR:SNG",
+     "logoid": "singulus-technologies-br"
+    }
+   ],
+   "storyPath": "/news/reuters.com,2026-08-02:newsml_Pexb0MhXa:0/",
+   "provider": {
+    "id": "pressetext",
+    "name": "pressetext",
+    "logo_id": "rdp-ptx"
+   }
+  }
+ ],
+ "pagination": {
+  "cursor": "eyJfaWQiOiJlcXM6MGI1MmNmNTEzNjAwYyIsInB1YmRhdGUiOjE3ODU1MjA1MDQwMDB9"
+ }
+}

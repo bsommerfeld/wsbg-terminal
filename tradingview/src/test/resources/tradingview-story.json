@@ -1,0 +1,119 @@
+{
+ "sourceUrl": "https://invezz.com/",
+ "shortDescription": "Jim Cramer’s favourite dip-buying rule starts with a margin decline, but it does not end there.Investors must decide whether profits are temporarily compressed by investment or permanently damaged by weak demand and competition.Meta Platforms, Alphabet and SoFi are the clearest tests after their sh…",
+ "astDescription": {
+  "type": "root",
+  "children": [
+   {
+    "type": "news-image",
+    "params": {
+     "image": {
+      "id": "invezz:3edd11aab094b-2e7f00b5b44e2f01e4074ffa712ad62c",
+      "alt": "Five stocks test Cramer’s dip-buying idea as AI spending and margin pressure separate temporary weakness from deeper business risk.",
+      "source-width": 1536,
+      "source-height": 1024,
+      "bg-color": "#434a52"
+     }
+    }
+   },
+   {
+    "type": "p",
+    "children": [
+     "Jim Cramer’s favourite dip-buying rule starts with a margin decline, but it does not end there."
+    ]
+   },
+   {
+    "type": "p",
+    "children": [
+     "Investors must decide whether profits are temporarily compressed by investment or permanently damaged by weak demand and competition."
+    ]
+   },
+   {
+    "type": "p",
+    "children": [
+     "Meta Platforms, Alphabet and SoFi are the clearest tests after their shares were punished by spending increases or cautious guidance."
+    ]
+   },
+   {
+    "type": "p",
+    "children": [
+     "Intel illustrates how the market can reward a recovery, while Nvidia is a corrected leader rather than a beaten-down stock."
+    ]
+   },
+   {
+    "type": "p",
+    "children": [
+     "These five companies fit the framework based on Cramer’s framework, but he did not individually recommend them as a group."
+    ]
+   },
+   {
+    "type": "p",
+    "children": [
+     {
+      "type": "b",
+      "children": [
+       "Meta stock: Advertising strength funds an expensive AI gamble"
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ "language": "en",
+ "tags": [
+  {
+   "title": "Analysts",
+   "args": [
+    {
+     "id": "section",
+     "value": "recommendation"
+    }
+   ]
+  },
+  {
+   "title": "Invezz",
+   "args": [
+    {
+     "id": "provider",
+     "value": "invezz"
+    }
+   ]
+  },
+  {
+   "title": "US stocks",
+   "args": [
+    {
+     "id": "category",
+     "value": "stock"
+    },
+    {
+     "id": "market_country",
+     "value": "US"
+    }
+   ]
+  }
+ ],
+ "id": "invezz:3edd11aab094b:0",
+ "title": "Nvidia, Alphabet among 5 stocks that fit Jim Cramer’s favourite dip-buying rule",
+ "provider": "invezz",
+ "sourceLogoId": "invezz",
+ "published": 1785668400,
+ "source": "Invezz",
+ "urgency": 2,
+ "link": "https://invezz.com/news/2026/08/02/nvidia-alphabet-among-5-stocks-that-fit-jim-cramers-favourite-dip-buying-rule/",
+ "relatedSymbols": [
+  {
+   "symbol": "NASDAQ:NVDA",
+   "logoid": "nvidia"
+  },
+  {
+   "symbol": "NASDAQ:META",
+   "logoid": "meta-platforms"
+  },
+  {
+   "symbol": "NASDAQ:GOOG",
+   "logoid": "alphabet"
+  }
+ ],
+ "storyPath": "/news/invezz:3edd11aab094b:0-nvidia-alphabet-among-5-stocks-that-fit-jim-cramer-s-favourite-dip-buying-rule/"
+}

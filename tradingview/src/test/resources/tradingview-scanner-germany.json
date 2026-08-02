@@ -1,0 +1,70 @@
+{
+ "totalCount": 33678,
+ "data": [
+  {
+   "s": "XETR:NVD",
+   "d": [
+    "NVD",
+    "NVIDIA Corporation",
+    170.42,
+    "EUR",
+    4215497418543.104,
+    "Electronic Technology",
+    1.117188,
+    1787774400
+   ]
+  },
+  {
+   "s": "LS:918422",
+   "d": [
+    "918422",
+    "NVIDIA Corporation",
+    173.84,
+    "EUR",
+    4215497418543.104,
+    "Electronic Technology",
+    1.117188,
+    1787774400
+   ]
+  },
+  {
+   "s": "HAN:NVD",
+   "d": [
+    "NVD",
+    "NVIDIA Corporation",
+    170.2,
+    "EUR",
+    4215497418543.104,
+    "Electronic Technology",
+    1.117188,
+    1787774400
+   ]
+  },
+  {
+   "s": "HAM:NVD",
+   "d": [
+    "NVD",
+    "NVIDIA Corporation",
+    172.54,
+    "EUR",
+    4215497418543.104,
+    "Electronic Technology",
+    1.117188,
+    1787774400
+   ]
+  },
+  {
+   "s": "MUN:NVD",
+   "d": [
+    "NVD",
+    "NVIDIA Corporation",
+    172,
+    "EUR",
+    4215497418543.104,
+    "Electronic Technology",
+    1.117188,
+    1787774400
+   ]
+  }
+ ]
+}

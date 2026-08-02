@@ -1,0 +1,174 @@
+{
+ "symbols_remaining": 689,
+ "symbols": [
+  {
+   "symbol": "ENR",
+   "description": "<em>Siemens</em> Energy AG",
+   "type": "stock",
+   "exchange": "XETR",
+   "found_by_isin": false,
+   "found_by_cusip": false,
+   "isin": "DE000ENER6Y0",
+   "currency_code": "EUR",
+   "currency-logoid": "country/EU",
+   "logoid": "siemens-energy",
+   "logo": {
+    "style": "single",
+    "logoid": "siemens-energy"
+   },
+   "provider_id": "ice",
+   "source_logoid": "source/XETR",
+   "source2": {
+    "id": "XETR",
+    "name": "Deutsche Borse Xetra",
+    "description": "Deutsche Borse Xetra"
+   },
+   "source_id": "XETR",
+   "country": "DE",
+   "is_primary_listing": true,
+   "typespecs": [
+    "common"
+   ]
+  },
+  {
+   "symbol": "<em>SIEMENS</em>",
+   "description": "<em>Siemens</em> Limited",
+   "type": "stock",
+   "exchange": "NSE",
+   "found_by_isin": false,
+   "found_by_cusip": false,
+   "isin": "INE003A01024",
+   "currency_code": "INR",
+   "currency-logoid": "country/IN",
+   "logoid": "siemens",
+   "logo": {
+    "style": "single",
+    "logoid": "siemens"
+   },
+   "provider_id": "ice",
+   "source_logoid": "source/NSE",
+   "source2": {
+    "id": "NSE",
+    "name": "NSE",
+    "description": "NSE"
+   },
+   "source_id": "NSE",
+   "country": "IN",
+   "is_primary_listing": true,
+   "typespecs": [
+    "common"
+   ]
+  },
+  {
+   "symbol": "<em>SIEMENS</em>",
+   "description": "<em>SIEMENS</em> INDIA FUTURES",
+   "type": "futures",
+   "exchange": "NSE",
+   "found_by_isin": false,
+   "found_by_cusip": false,
+   "currency_code": "INR",
+   "currency-logoid": "country/IN",
+   "logoid": "siemens",
+   "logo": {
+    "style": "single",
+    "logoid": "siemens"
+   },
+   "provider_id": "ice",
+   "source_logoid": "source/NSE",
+   "source2": {
+    "id": "NSE",
+    "name": "NSE",
+    "description": "NSE"
+   },
+   "source_id": "NSE",
+   "country": "IN",
+   "contracts": [
+    {
+     "symbol": "<em>SIEMENS</em>1!",
+     "source_logoid": "source/NSE",
+     "typespecs": [
+      "continuous",
+      "synthetic"
+     ]
+    },
+    {
+     "symbol": "<em>SIEMENS</em>2!",
+     "source_logoid": "source/NSE",
+     "typespecs": [
+      "continuous",
+      "synthetic"
+     ]
+    },
+    {
+     "symbol": "<em>SIEMENS</em>Q2026",
+     "source_logoid": "source/NSE",
+     "description": "Aug 2026"
+    },
+    {
+     "symbol": "<em>SIEMENS</em>U2026",
+     "source_logoid": "source/NSE",
+     "description": "Sep 2026"
+    },
+    {
+     "symbol": "<em>SIEMENS</em>V2026",
+     "source_logoid": "source/NSE",
+     "description": "Oct 2026"
+    }
+   ]
+  },
+  {
+   "symbol": "<em>SIEMENS</em>",
+   "description": "<em>Siemens</em> AG",
+   "type": "stock",
+   "exchange": "BET",
+   "found_by_isin": false,
+   "found_by_cusip": false,
+   "isin": "DE0007236101",
+   "currency_code": "HUF",
+   "currency-logoid": "country/HU",
+   "logoid": "siemens",
+   "logo": {
+    "style": "single",
+    "logoid": "siemens"
+   },
+   "provider_id": "ice",
+   "source_logoid": "source/BET",
+   "source2": {
+    "id": "BET",
+    "name": "Budapest Stock Exchange",
+    "description": "Budapest Stock Exchange"
+   },
+   "source_id": "BET",
+   "country": "HU",
+   "typespecs": [
+    "common"
+   ]
+  },
+  {
+   "symbol": "SIEB",
+   "description": "<em>Siemens</em> AG Sponsored ADR",
+   "type": "dr",
+   "exchange": "GETTEX",
+   "found_by_isin": false,
+   "found_by_cusip": false,
+   "cusip": "826197501",
+   "isin": "US8261975010",
+   "currency_code": "EUR",
+   "currency-logoid": "country/EU",
+   "logoid": "siemens",
+   "logo": {
+    "style": "single",
+    "logoid": "siemens"
+   },
+   "provider_id": "sixgroup",
+   "source_logoid": "source/GETTEX",
+   "source2": {
+    "id": "GETTEX",
+    "name": "Gettex",
+    "description": "Gettex"
+   },
+   "source_id": "GETTEX",
+   "country": "DE"
+  }
+ ]
+}
