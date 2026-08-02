@@ -1,0 +1,61 @@
+{
+ "list": [
+  {
+   "instrument": {
+    "type": "Instrument",
+    "entityType": "FUND",
+    "entityValue": "158096834",
+    "name": "HMT Euro Aktien Seasonal - I EUR DIS",
+    "isin": "DE000A2PB697",
+    "wkn": "A2PB69",
+    "symbol": "YFPF"
+   },
+   "fundsIssuer": {
+    "id": 51863,
+    "name": "Universal-Investment-Gesellschaft mbH"
+   },
+   "investmentPct": 9.62,
+   "ongoingCharges": 0.7,
+   "performancePct1Y": -0.9098,
+   "volumeFundEuro": 49555892.0
+  },
+  {
+   "instrument": {
+    "type": "Instrument",
+    "entityType": "FUND",
+    "entityValue": "174884516",
+    "name": "HMT Euro Aktien Seasonal - R EUR DIS",
+    "isin": "DE000A2P0UL0",
+    "wkn": "A2P0UL",
+    "symbol": "CXWJ"
+   },
+   "fundsIssuer": {
+    "id": 51863,
+    "name": "Universal-Investment-Gesellschaft mbH"
+   },
+   "investmentPct": 9.62,
+   "ongoingCharges": 1.0,
+   "performancePct1Y": -1.1959,
+   "volumeFundEuro": 49555892.0
+  },
+  {
+   "instrument": {
+    "type": "Instrument",
+    "entityType": "FUND",
+    "entityValue": "84568",
+    "name": "UBS (D) Aktienfonds-Special I Deutschland - EUR ACC",
+    "isin": "DE0008488206",
+    "wkn": "848820",
+    "symbol": "UIB5"
+   },
+   "fundsIssuer": {
+    "id": 51863,
+    "name": "Universal-Investment-Gesellschaft mbH"
+   },
+   "investmentPct": 9.55,
+   "ongoingCharges": 1.6,
+   "performancePct1Y": 6.9257,
+   "volumeFundEuro": 180450530.0
+  }
+ ]
+}

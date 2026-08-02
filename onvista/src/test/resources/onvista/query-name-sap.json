@@ -1,0 +1,48 @@
+{
+ "searchValue": "SAP",
+ "list": [
+  {
+   "type": "Instrument",
+   "entityType": "STOCK",
+   "entityValue": "82849",
+   "name": "SAP",
+   "isin": "DE0007164600",
+   "wkn": "716460",
+   "symbol": "SAP"
+  },
+  {
+   "type": "Instrument",
+   "entityType": "STOCK",
+   "entityValue": "87829",
+   "name": "SAP (ADR)",
+   "isin": "US8030542042",
+   "wkn": "879535",
+   "symbol": "SAPA"
+  },
+  {
+   "type": "Instrument",
+   "entityType": "STOCK",
+   "entityValue": "86223",
+   "name": "Sappi",
+   "isin": "ZAE000006284",
+   "wkn": "860275",
+   "symbol": "SPI"
+  },
+  {
+   "type": "Instrument",
+   "entityType": "BOND",
+   "entityValue": "292902061",
+   "name": "Sappi Papier Holding GmbH EO-Notes 2025(25/32) Reg.S",
+   "isin": "XS3017017990",
+   "wkn": "A4D788"
+  },
+  {
+   "type": "Instrument",
+   "entityType": "FUND",
+   "entityValue": "7736499",
+   "name": "Saphir Global - BEST of EQUITY - B EUR ACC",
+   "isin": "LU0154398746",
+   "wkn": "725261"
+  }
+ ]
+}

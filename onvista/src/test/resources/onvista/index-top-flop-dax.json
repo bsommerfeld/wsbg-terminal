@@ -1,0 +1,94 @@
+{
+ "total": 40,
+ "numberTop": 14,
+ "numberFlop": 26,
+ "numberEqual": 0,
+ "topList": [
+  {
+   "instrument": {
+    "type": "Instrument",
+    "entityType": "STOCK",
+    "entityValue": "82561",
+    "name": "Infineon",
+    "isin": "DE0006231004",
+    "wkn": "623100",
+    "symbol": "IFX"
+   },
+   "idNotation": 154990,
+   "isoCurrency": "EUR",
+   "last": 61.67,
+   "performance": 2.2,
+   "performancePct": 3.69934420716,
+   "volume": 8581220.0,
+   "money": 536214285.475,
+   "cnPer": 46.2833252393938,
+   "cnDivYield": 0.667223810324533,
+   "cnPeg": 0.545363175009583
+  },
+  {
+   "instrument": {
+    "type": "Instrument",
+    "entityType": "STOCK",
+    "entityValue": "82818",
+    "name": "RWE",
+    "isin": "DE0007037129",
+    "wkn": "703712",
+    "symbol": "RWE"
+   },
+   "idNotation": 160037,
+   "isoCurrency": "EUR",
+   "last": 57.18,
+   "performance": 0.92,
+   "performancePct": 1.63526484181,
+   "volume": 1444825.0,
+   "money": 82735031.96,
+   "cnPer": 21.1049685207353,
+   "cnDivYield": 2.34526128688233,
+   "cnPeg": 1.24330942183681
+  }
+ ],
+ "flopList": [
+  {
+   "instrument": {
+    "type": "Instrument",
+    "entityType": "STOCK",
+    "entityValue": "96864298",
+    "name": "Scout24",
+    "isin": "DE000A12DM80",
+    "wkn": "A12DM8",
+    "symbol": "G24"
+   },
+   "idNotation": 143460576,
+   "isoCurrency": "EUR",
+   "last": 74.35,
+   "performance": -2.8,
+   "performancePct": -3.62929358393,
+   "volume": 483856.0,
+   "money": 36272800.2,
+   "cnPer": 20.340325413569,
+   "cnDivYield": 2.26548023331173,
+   "cnPeg": 1.08829354443736
+  },
+  {
+   "instrument": {
+    "type": "Instrument",
+    "entityType": "STOCK",
+    "entityValue": "15630917",
+    "name": "Symrise",
+    "isin": "DE000SYM9999",
+    "wkn": "SYM999",
+    "symbol": "SY1"
+   },
+   "idNotation": 16257517,
+   "isoCurrency": "EUR",
+   "last": 89.1,
+   "performance": -2.76,
+   "performancePct": -3.00457217505,
+   "volume": 493318.0,
+   "money": 44055010.72,
+   "cnPer": 24.2117476264,
+   "cnDivYield": 1.44288155889397,
+   "cnPeg": 2.17599348102105
+  }
+ ]
+}

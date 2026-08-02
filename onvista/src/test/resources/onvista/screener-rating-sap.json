@@ -1,0 +1,43 @@
+{
+ "fundamentalList": {
+  "typeItemList": "FUNDAMENTAL",
+  "descriptionItemList": "Fundamentalanalyse",
+  "list": [
+   {
+    "typeItem": "EARNING_REVISION_TREND",
+    "typeDescription": "Revidierte Gewinnprognose",
+    "typeValue": "FLOAT",
+    "value": 0.1,
+    "hasStar": true,
+    "numberStars": 1,
+    "shortText": "Analysten neutral, zuvor positiv (seit 10.07.2026)",
+    "longText": "Die Gewinnprognosen pro Aktie haben sich in den letzten 7 Wochen nicht wesentlich verändert (Veränderungen zwischen +1% bis -1% werden als neutral betrachtet). Das letzte signifikante Analystensignal war positiv und hat am 10.07.2026 bei einem Kurs von <strong>137,58 EUR</strong> eingesetzt."
+   },
+   {
+    "typeItem": "VALUATION_RATING",
+    "typeDescription": "Bewertung",
+    "typeValue": "INT",
+    "value": 1.0,
+    "hasStar": true,
+    "numberStars": 1,
+    "shortText": "Leicht unterbewertet, gemäss theScreener",
+    "longText": "Auf Basis des Wachstumspotentials und eigener Kriterien, erscheint uns der Aktienkurs aktuell leicht unterbewertet."
+   }
+  ]
+ },
+ "riskList": {
+  "typeItemList": "RISK",
+  "descriptionItemList": "Risikoanalyse",
+  "list": [
+   {
+    "typeItem": "BEAR_MARKET_FACTOR",
+    "typeDescription": "Bear Market Faktor",
+    "typeValue": "INT",
+    "value": 0.0,
+    "hasStar": false,
+    "shortText": "Mittlere Anfälligkeit bei Indexrückgängen",
+    "longText": "Die Aktie tendiert dazu, Indexrückgänge in etwa gleichem Umfang mitzuvollziehen."
+   }
+  ]
+ }
+}

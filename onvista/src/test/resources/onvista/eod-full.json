@@ -1,0 +1,66 @@
+{
+ "entityType": "STOCK",
+ "entityValue": "82849",
+ "market": {
+  "name": "Xetra",
+  "codeMarket": "_GER",
+  "nameExchange": "Xetra",
+  "codeExchange": "GER",
+  "idNotation": 163500,
+  "isoCountry": "DE",
+  "codeExchangeGoogle": "ETR"
+ },
+ "idInstrument": 82849,
+ "idNotation": 163500,
+ "isoCurrency": "EUR",
+ "datetimeStartAvailableHistory": "1996-12-13T00:00:00.000+00:00",
+ "datetimeEndAvailableHistory": "2026-07-31T23:59:59.000+00:00",
+ "datetimeLast": [
+  850478400,
+  850737600,
+  850824000,
+  1785326400,
+  1785412800,
+  1785499200
+ ],
+ "first": [
+  8.862393,
+  8.905,
+  8.713266,
+  159.84,
+  162.5,
+  154.9
+ ],
+ "last": [
+  8.819785,
+  8.936956,
+  8.521531,
+  162.04,
+  155.92,
+  157.68
+ ],
+ "high": [
+  8.862393,
+  9.049866,
+  8.713266,
+  163.3,
+  163.16,
+  158.26
+ ],
+ "low": [
+  8.777177,
+  8.905,
+  8.329797,
+  156.48,
+  155.2,
+  153.6
+ ],
+ "volume": [
+  268800.0,
+  166800.0,
+  300000.0,
+  4475041.0,
+  4334799.0,
+  3538684.0
+ ]
+}

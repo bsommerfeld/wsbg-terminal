@@ -1,0 +1,58 @@
+{
+ "entityType": "STOCK",
+ "entityValue": "82849",
+ "market": {
+  "name": "Tradegate BSX",
+  "codeMarket": "_GAT",
+  "nameExchange": "Tradegate BSX",
+  "codeExchange": "GAT",
+  "idNotation": 9386131,
+  "isoCountry": "DE"
+ },
+ "idInstrument": 82849,
+ "idNotation": 9386131,
+ "isoCurrency": "EUR",
+ "unitType": "STK",
+ "price": [
+  157.02,
+  156.88,
+  156.88,
+  156.86,
+  156.44
+ ],
+ "datetimePrice": [
+  1785475806,
+  1785475865,
+  1785475867,
+  1785476014,
+  1785476054
+ ],
+ "volume": [
+  405.0,
+  1145.0,
+  237.0,
+  30.0,
+  23.0
+ ],
+ "addendum": [
+  "",
+  "",
+  "",
+  "",
+  ""
+ ],
+ "idTypePrice": [
+  1,
+  1,
+  1,
+  1,
+  1
+ ],
+ "totalVolume": [
+  405.0,
+  1550.0,
+  1787.0,
+  1817.0,
+  1840.0
+ ]
+}

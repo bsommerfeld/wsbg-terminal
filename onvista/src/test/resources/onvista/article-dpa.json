@@ -1,0 +1,56 @@
+{
+ "type": "V1Article",
+ "entityType": "ARTICLE",
+ "entityValue": "26536937",
+ "urls": {
+  "WEBSITE": "https://www.onvista.de/news/2026/07-28-aktie-im-fokus-sap-setzen-rally-fort-plus-23-in-drei-handelstagen-0-10-26536937"
+ },
+ "headline": "AKTIE IM FOKUS: SAP setzen Rally fort - plus 23% in drei Handelstagen",
+ "publisher": {
+  "id": 10,
+  "name": "dpa-AFX"
+ },
+ "displayType": "NATIVE",
+ "language": "de",
+ "datetimePublication": "2026-07-28T15:30:26.000+00:00",
+ "articleSubTypeName": "News",
+ "wordCount": 144,
+ "premium": false,
+ "instruments": [
+  {
+   "type": "Instrument",
+   "entityType": "STOCK",
+   "entityValue": "82849",
+   "name": "SAP",
+   "isin": "DE0007164600",
+   "wkn": "716460",
+   "symbol": "SAP"
+  },
+  {
+   "type": "Instrument",
+   "entityType": "INDEX",
+   "entityValue": "20735",
+   "name": "DAX",
+   "isin": "DE0008469008",
+   "wkn": "846900",
+   "symbol": "DAX"
+  }
+ ],
+ "contentItems": [
+  {
+   "type": "NewsParagraph",
+   "value": "FRANKFURT (dpa-AFX) - Die Aktien von SAP haben ihren jüngsten Erfolgskurs am Dienstag nahtlos fortgesetzt. Am Nachmittag stiegen die Papiere des Softwarekonzerns auf den höchsten Stand seit sieben Woc…"
+  },
+  {
+   "type": "NewsParagraph",
+   "value": "Die Walldorfer hatten am Donnerstagabend nach Börsenschluss unerwartet gute Quartalszahlen vorgelegt. Besonders gut kam bei den Anlegern der kurzfristige Vertragsbestand bei Mietsoftware (Cloud) an, d…"
+  },
+  {
+   "type": "NewsMultiChart"
+  },
+  {
+   "type": "NewsParagraph",
+   "value": "Laut dem Analysten Oliver Frey von der Privatbank Metzler kann das zweite Quartal die zuletzt bei SAP und im Sektor spürbaren Bedenken rund um das Trendthema Künstliche Intelligenz etwas mildern. Char…"
+  }
+ ]
+}

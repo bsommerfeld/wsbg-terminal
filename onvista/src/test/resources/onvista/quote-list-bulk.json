@@ -1,0 +1,68 @@
+{
+ "list": [
+  {
+   "idInstrument": "82849",
+   "entityType": "STOCK",
+   "entityValue": "82849",
+   "market": {
+    "name": "Xetra",
+    "codeMarket": "_GER",
+    "nameExchange": "Xetra",
+    "codeExchange": "GER",
+    "idNotation": 163500,
+    "isoCountry": "DE",
+    "codeExchangeGoogle": "ETR"
+   },
+   "isoCurrency": "EUR",
+   "last": 157.68,
+   "volumeBid": 576.0,
+   "volumeAsk": 576.0,
+   "open": 154.9,
+   "high": 158.26,
+   "low": 153.6,
+   "previousLast": 155.92,
+   "performancePct": 1.128784,
+   "totalVolume": 3541483.0,
+   "volume4Weeks": 65518080.0,
+   "highPrice1Year": 257.7,
+   "lowPrice1Year": 127.5,
+   "performance1YearPct": -37.129187,
+   "codeQualityPrice": "DLY",
+   "codeQualityPriceBidAsk": "DLY",
+   "datetimeLast": "2026-07-31T15:38:08.550+00:00"
+  },
+  {
+   "idInstrument": "86627",
+   "entityType": "STOCK",
+   "entityValue": "86627",
+   "market": {
+    "name": "Nasdaq",
+    "codeMarket": "_NMS",
+    "nameExchange": "Nasdaq",
+    "codeExchange": "NMS",
+    "idNotation": 253929,
+    "isoCountry": "US",
+    "codeExchangeGoogle": "NASDAQ"
+   },
+   "isoCurrency": "USD",
+   "last": 308.91,
+   "bid": 307.33,
+   "ask": 307.35,
+   "volumeBid": 2160.0,
+   "volumeAsk": 80.0,
+   "open": 304.81,
+   "high": 310.69,
+   "low": 300.0,
+   "previousLast": 333.43,
+   "performancePct": -7.353867,
+   "totalVolume": 132489137.317501,
+   "volume4Weeks": 1198909247.400629,
+   "highPrice1Year": 344.5699,
+   "lowPrice1Year": 201.5,
+   "performance1YearPct": 48.822084,
+   "codeQualityPrice": "DLY",
+   "codeQualityPriceBidAsk": "DLY",
+   "datetimeLast": "2026-07-31T20:00:00.821+00:00"
+  }
+ ]
+}

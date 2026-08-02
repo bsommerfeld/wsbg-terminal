@@ -1,0 +1,38 @@
+{
+ "idNotation": 163500,
+ "list": [
+  {
+   "year": 2016,
+   "dateBeforeLastPrice": "2015-12-30T12:00:00.000+00:00",
+   "beforeLastPrice": 73.38,
+   "dateFirstPrice": "2016-01-04T12:00:00.000+00:00",
+   "firstPrice": 71.5,
+   "dateLastPrice": "2016-12-30T12:00:00.000+00:00",
+   "lastPrice": 82.81,
+   "performanceAbs": 9.430000000000007,
+   "performanceRel": 12.850913055328434
+  },
+  {
+   "year": 2017,
+   "dateBeforeLastPrice": "2016-12-30T12:00:00.000+00:00",
+   "beforeLastPrice": 82.81,
+   "dateFirstPrice": "2017-01-02T12:00:00.000+00:00",
+   "firstPrice": 81.99,
+   "dateLastPrice": "2017-12-29T12:00:00.000+00:00",
+   "lastPrice": 93.45,
+   "performanceAbs": 10.64,
+   "performanceRel": 12.8486897717667
+  },
+  {
+   "year": 2018,
+   "dateBeforeLastPrice": "2017-12-29T12:00:00.000+00:00",
+   "beforeLastPrice": 93.45,
+   "dateFirstPrice": "2018-01-02T12:00:00.000+00:00",
+   "firstPrice": 93.35,
+   "dateLastPrice": "2018-12-28T12:00:00.000+00:00",
+   "lastPrice": 86.93,
+   "performanceAbs": -6.519999999999996,
+   "performanceRel": -6.976993044408772
+  }
+ ]
+}

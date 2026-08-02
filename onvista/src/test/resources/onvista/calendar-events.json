@@ -1,0 +1,92 @@
+{
+ "total": 254,
+ "list": [
+  {
+   "type": "V1CalendarEvent",
+   "entityType": "CALENDAR_EVENT",
+   "entityValue": "1023119",
+   "name": "3D SYSTEMS: Geschäftsbericht",
+   "eventCategoryType": "RESULT_REPORTS",
+   "nameEventCategoryType": "Ergebnisberichte",
+   "datetimeStart": "2026-08-03T00:00:00.000+00:00",
+   "datetimeEnd": "2026-08-03T00:00:00.000+00:00",
+   "stocksCompanyEvent": {
+    "instrument": {
+     "type": "Instrument",
+     "entityType": "STOCK",
+     "entityValue": "88785",
+     "name": "3D Systems",
+     "isin": "US88554D2053",
+     "wkn": "888346",
+     "symbol": "SYV"
+    },
+    "companyEvent": {
+     "id": 10935504,
+     "title": "3D Systems Corp.: Bericht 2. Quartal 2026",
+     "nameCategory": "Ergebnisberichte & Dividenden",
+     "nameSubcategory": "Ergebnisberichte",
+     "datetimeEvent": "2026-08-03T00:00:00.000+00:00",
+     "eventName": "Bericht 2. Quartal 2026"
+    }
+   }
+  },
+  {
+   "type": "V1CalendarEvent",
+   "entityType": "CALENDAR_EVENT",
+   "entityValue": "953063",
+   "name": "AON PLC: Vierteljährliches ex-Dividenden Datum",
+   "eventCategoryType": "DIVIDENDS",
+   "nameEventCategoryType": "Dividenden",
+   "datetimeStart": "2026-08-03T00:00:00.000+00:00",
+   "datetimeEnd": "2026-08-03T00:00:00.000+00:00",
+   "stocksCompanyEvent": {
+    "instrument": {
+     "type": "Instrument",
+     "entityType": "STOCK",
+     "entityValue": "50507324",
+     "name": "AON",
+     "isin": "IE00BLP1HW54",
+     "wkn": "A2P2JR",
+     "symbol": "4VK"
+    },
+    "companyEvent": {
+     "id": 15509208,
+     "title": "",
+     "nameCategory": "Ergebnisberichte & Dividenden",
+     "nameSubcategory": "Dividenden",
+     "datetimeEvent": "2026-08-03T00:00:00.000+00:00",
+     "eventName": "Vierteljährliches ex-Dividenden Datum"
+    }
+   }
+  },
+  {
+   "type": "V1CalendarEvent",
+   "entityType": "CALENDAR_EVENT",
+   "entityValue": "924957",
+   "name": "CLOUDBERRY CLEAN ENERGY ASA: Analysten-, Investoren- & Aktionärskonferenzen",
+   "eventCategoryType": "GENERAL_MEETING",
+   "nameEventCategoryType": "Hauptversammlungen",
+   "datetimeStart": "2026-08-04T00:00:00.000+00:00",
+   "datetimeEnd": "2026-08-04T00:00:00.000+00:00",
+   "stocksCompanyEvent": {
+    "instrument": {
+     "type": "Instrument",
+     "entityType": "STOCK",
+     "entityValue": "173776250",
+     "name": "CLOUDBERRY CLEAN ENERGY",
+     "isin": "NO0010876642",
+     "wkn": "A2P85S",
+     "symbol": "52K"
+    },
+    "companyEvent": {
+     "id": 14250480,
+     "title": "Cloudberry Clean Energy ASA: Außerordentliche Hauptversammlung",
+     "nameCategory": "Hauptversammlungen & Konferenzen",
+     "nameSubcategory": "Hauptversammlung",
+     "datetimeEvent": "2026-08-04T00:00:00.000+00:00",
+     "eventName": "Außerordentliche Hauptversammlung"
+    }
+   }
+  }
+ ]
+}

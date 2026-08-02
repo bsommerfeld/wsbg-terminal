@@ -1,0 +1,15 @@
+{
+ "expires": 1785710991093,
+ "searchValue": "DE0007164600",
+ "list": [
+  {
+   "type": "Instrument",
+   "entityType": "STOCK",
+   "entityValue": "82849",
+   "name": "SAP",
+   "isin": "DE0007164600",
+   "wkn": "716460",
+   "symbol": "SAP"
+  }
+ ]
+}
