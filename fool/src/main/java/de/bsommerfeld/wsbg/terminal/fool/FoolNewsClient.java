@@ -96,9 +96,10 @@ import java.util.regex.Pattern;
  * downloads. Callers that resolve many symbols warm it once via
  * {@link #tickerMap()} and every lookup afterwards is free.
  *
- * <p>{@link #newsFor} therefore answers from BOTH legs — the chronological pool
- * (sitemap ticker tags, transcript title tickers) and the instrument's quote
- * page — joined on the canonical link. {@link #newsForName} stays pool-only:
+ * <p>{@link #newsFor} answers from the chronological pool (sitemap ticker tags,
+ * transcript title tickers); the quote-page leg is served by the dossier-only
+ * {@link FoolQuoteNewsClient} beside it, so both legs reach a deep dive while
+ * the wire keeps the fresh one. {@link #newsForName} stays pool-only:
  * a name is not a path segment. Both are title-relevance matched by the
  * google-news precision rule (a significant word of the name must appear).
  * English-language items — same as the Yahoo leg, so nothing downstream needs
@@ -219,21 +220,22 @@ public class FoolNewsClient implements NewsSource {
     }
 
     /**
-     * By ticker, from two legs joined on the canonical link: the chronological
-     * pool (the sitemap's {@code <news:stock_tickers>} tags and the transcript
-     * titles' parens) and the instrument's own quote page, which reaches weeks
-     * back where the sitemap window is two days wide. The pool leads — it is
-     * the leg that carries teasers and co-tickers; the quote page appends
-     * whatever the pool has never seen.
+     * By ticker, from the CHRONOLOGICAL pool alone: the sitemap's
+     * {@code <news:stock_tickers>} tags and the transcript titles' parens —
+     * what Fool published about this instrument in the live window, teasers
+     * and co-tickers included.
+     *
+     * <p>The instrument's own quote page reaches weeks further back, but that
+     * is archive depth, not a day's catalyst: it rides the DOSSIER-only
+     * {@link FoolQuoteNewsClient}, so the deep dive gets both legs and the
+     * wire keeps the fresh one (2026-08-03).
      */
     @Override
     public List<RawNewsItem> newsFor(String symbol, int limit) {
         if (symbol == null || symbol.isBlank() || limit <= 0) return List.of();
         String wanted = symbol.trim().toUpperCase(Locale.ROOT);
-        List<RawNewsItem> fromPool = pool().stream()
+        return pool().stream()
                 .filter(it -> it.relatedTickers().contains(wanted))
-                .toList();
-        return appendNew(fromPool, quoteNews(wanted, limit)).stream()
                 .sorted(BY_RECENCY)
                 .limit(limit)
                 .toList();

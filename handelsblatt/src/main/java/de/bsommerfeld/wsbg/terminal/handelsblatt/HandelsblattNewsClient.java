@@ -208,6 +208,16 @@ public class HandelsblattNewsClient implements NewsSource {
         return "handelsblatt";
     }
 
+    /**
+     * Dossier leg. Metered by house rule, so the wire would get headline and
+     * lead only - a teaser the loom cannot write a catalyst from. The topic
+     * machinery earns its keep in the dossier (2026-08-03).
+     */
+    @Override
+    public boolean dossierOnly() {
+        return true;
+    }
+
     // ---------------------------------------------------------------- fans
 
     /**

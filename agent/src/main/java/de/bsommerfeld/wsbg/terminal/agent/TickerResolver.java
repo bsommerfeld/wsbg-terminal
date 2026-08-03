@@ -277,10 +277,15 @@ public final class TickerResolver {
         }
     }
 
-    /** The triangulated-vs-search-news choice for a resolved subject. */
+    /**
+     * The triangulated-vs-search-news choice for a resolved subject. The WIRE
+     * fan: the research legs that only a dossier can digest stay out (see
+     * {@code NewsSource.dossierOnly}) — the loom needs the day's catalyst, not
+     * every venue note ever filed under the name.
+     */
     private List<RawNewsItem> resolveNews(String ownTicker, String canonical, SearchResult sr) {
         return (newsAggregator != null && ownTicker != null)
-                ? newsAggregator.newsFor(ownTicker, canonical, NEWS_COUNT)
+                ? newsAggregator.wireNewsFor(ownTicker, canonical, NEWS_COUNT)
                 : (sr.news() != null ? sr.news() : List.of());
     }
 
@@ -304,7 +309,7 @@ public final class TickerResolver {
                 if (sym.isEmpty() || !seen.add(sym)) continue;
                 relSyms.add(sym);
                 List<RawNewsItem> rn = newsAggregator != null
-                        ? newsAggregator.newsFor(sym, RELATED_NEWS_COUNT)
+                        ? newsAggregator.wireNewsFor(sym, RELATED_NEWS_COUNT)
                         : yahoo.getNewsForSymbol(sym, RELATED_NEWS_COUNT);
                 outRelNews.put(sym, rn == null ? List.of() : rn);
                 if (relSyms.size() >= maxRelated) break collect;

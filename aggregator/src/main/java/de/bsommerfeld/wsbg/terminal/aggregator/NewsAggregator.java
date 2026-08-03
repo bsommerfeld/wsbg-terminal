@@ -46,6 +46,25 @@ public class NewsAggregator {
     }
 
     /**
+     * The WIRE fan: like {@link #newsFor(String, String, int)}, but across the
+     * live-wire sources only — every source that declares itself
+     * {@link NewsSource#dossierOnly() dossier-only} stays out. The headline
+     * loom asks for the day's catalysts, not for the research depth a dossier
+     * lives on; fanning the research legs into the wire drowns the catalyst in
+     * venue notes and quadruples the same agency piece (2026-08-03).
+     *
+     * @return matching items, or an empty list — never {@code null}
+     */
+    public List<RawNewsItem> wireNewsFor(String symbol, int limit) {
+        return wireNewsFor(symbol, null, limit);
+    }
+
+    /** The wire fan by symbol AND name — see {@link #wireNewsFor(String, int)}. */
+    public List<RawNewsItem> wireNewsFor(String symbol, String name, int limit) {
+        return newsFor(symbol, name, null, limit, null, true);
+    }
+
+    /**
      * News referencing {@code symbol} OR the company {@code name}, merged across
      * all sources. Symbol-addressed sources (Yahoo) answer the symbol query;
      * name-addressed German venues (wallstreet-online) answer the name query —
@@ -123,6 +142,12 @@ public class NewsAggregator {
      */
     public List<RawNewsItem> newsFor(String symbol, String name, String isin, int limit,
             java.util.function.Consumer<RawNewsItem> onItem) {
+        return newsFor(symbol, name, isin, limit, onItem, false);
+    }
+
+    /** @param wireOnly drops the dossier-only sources from the fan. */
+    private List<RawNewsItem> newsFor(String symbol, String name, String isin, int limit,
+            java.util.function.Consumer<RawNewsItem> onItem, boolean wireOnly) {
         boolean haveSymbol = symbol != null && !symbol.isBlank();
         boolean haveName = name != null && !name.isBlank();
         boolean haveIsin = isin != null && !isin.isBlank();
@@ -130,7 +155,8 @@ public class NewsAggregator {
             return List.of();
         }
         Map<String, RawNewsItem> byId =
-                gather(haveSymbol, haveName, haveIsin, symbol, name, isin, limit, false, onItem);
+                gather(haveSymbol, haveName, haveIsin, symbol, name, isin, limit, false, onItem,
+                        wireOnly);
         return byId.values().stream()
                 .sorted(NewsRelevanceRanker.forName(name))
                 .limit(limit)
@@ -156,7 +182,7 @@ public class NewsAggregator {
             return List.of();
         }
         Map<String, RawNewsItem> byId =
-                gather(haveSymbol, haveName, haveIsin, symbol, name, isin, limit, true, null);
+                gather(haveSymbol, haveName, haveIsin, symbol, name, isin, limit, true, null, false);
         return byId.values().stream()
                 .sorted(java.util.Comparator.comparing(RawNewsItem::publishedAt,
                         java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder())))
@@ -175,11 +201,13 @@ public class NewsAggregator {
     private Map<String, RawNewsItem> gather(boolean haveSymbol, boolean haveName,
                                             boolean haveIsin, String symbol, String name,
                                             String isin, int limit, boolean social,
-                                            java.util.function.Consumer<RawNewsItem> onItem) {
+                                            java.util.function.Consumer<RawNewsItem> onItem,
+                                            boolean wireOnly) {
         Map<String, RawNewsItem> byId = new LinkedHashMap<>();
         Set<String> seenStories = new java.util.HashSet<>();
         for (NewsSource src : sources) {
             if (src.socialSentiment() != social) continue;
+            if (wireOnly && src.dossierOnly()) continue;
             try {
                 if (haveSymbol) collect(byId, seenStories, src.newsFor(symbol, limit), onItem);
                 if (haveName) collect(byId, seenStories, src.newsForName(name, limit), onItem);

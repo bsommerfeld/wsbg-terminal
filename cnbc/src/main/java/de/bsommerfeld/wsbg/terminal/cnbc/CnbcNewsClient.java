@@ -171,6 +171,17 @@ public class CnbcNewsClient implements NewsSource {
     }
 
     /**
+     * Dossier leg. CNBC is name-addressed full-text search over a house that
+     * publishes all day: for a wire query the same name returns passing
+     * mentions and Pro stubs by the dozen, which is archive depth for a
+     * dossier and dilution for a headline (2026-08-03).
+     */
+    @Override
+    public boolean dossierOnly() {
+        return true;
+    }
+
+    /**
      * No-op: CNBC tags neither tickers nor ISINs on the RSS or search surface.
      * Feeding a bare symbol into the full-text search would answer every
      * passing mention of a two-letter word, so the name fan carries this source.

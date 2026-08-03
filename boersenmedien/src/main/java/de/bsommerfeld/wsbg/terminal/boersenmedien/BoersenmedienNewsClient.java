@@ -299,6 +299,16 @@ public class BoersenmedienNewsClient implements NewsSource {
         return "boersenmedien";
     }
 
+    /**
+     * Dossier leg. Boerse Online and Der Aktionaer republish the same dpa-AFX
+     * piece under two more roofs; on the wire that is one story arriving four
+     * times, in a dossier it is the 2003 archive (2026-08-03).
+     */
+    @Override
+    public boolean dossierOnly() {
+        return true;
+    }
+
     // ------------------------------------------------------------------
     // instrument fans
     // ------------------------------------------------------------------

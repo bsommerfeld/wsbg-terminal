@@ -233,10 +233,10 @@ class FoolNewsClientTest {
         assertEquals(1, pep.size(), "the transcript leg answers the ticker query too");
         assertTrue(pep.get(0).title().endsWith("Earnings Call Transcript"));
 
-        assertEquals(12, fetches.get(),
-                "ONE fetch per feed for the whole burst (pool cache) — plus the "
-                        + "quote leg probing nasdaq/nyse/crypto once per ticker query "
-                        + "(3 tickers × 3 venues), all of them 404 here");
+        assertEquals(3, fetches.get(),
+                "ONE fetch per feed for the whole burst (pool cache) — and NO venue "
+                        + "probing at all: the quote leg moved to the dossier-only "
+                        + "FoolQuoteNewsClient, so a wire query costs nothing extra");
     }
 
     // ---------------------------------------------------------------- quotes
@@ -433,28 +433,40 @@ class FoolNewsClientTest {
                 "the unresolvable verdict is remembered — a burst probes once, not once per call");
     }
 
+    /**
+     * The two legs have different REACH, so they are two sources: the pool is
+     * the wire's fresh window, the quote page the dossier's archive
+     * (2026-08-03).
+     */
     @Test
-    void newsForMergesTheChronologicalPoolWithTheQuotePage() {
+    void newsForStaysOnTheChronologicalPoolAndTheQuoteLegIsItsOwnDossierSource() {
         QuoteFetcher fake = new QuoteFetcher();
         FoolNewsClient client = new FoolNewsClient(fake);
 
         List<RawNewsItem> nvda = client.newsFor("nvda", 20);
-        assertEquals(6, nvda.size(),
-                "1 from the sitemap pool (NVDA is a co-ticker of the Meta piece) "
-                        + "+ 5 the quote page reaches further back for");
-        assertTrue(nvda.stream().anyMatch(it -> it.title().equals("Why Meta Platforms Stock Surged This Week")),
-                "the pool leg survives — its co-ticker join is something the quote page cannot do");
-        assertTrue(nvda.stream().anyMatch(it -> it.title().startsWith("Nobody's Talking About")),
-                "the quote leg contributes what no chronological surface carries");
-        assertEquals(nvda.size(), nvda.stream().map(RawNewsItem::link).distinct().count(),
-                "joined on the canonical link");
-        assertTrue(nvda.get(0).publishedAt().isAfter(nvda.get(nvda.size() - 1).publishedAt()),
-                "newest first across both legs");
+        assertEquals(1, nvda.size(),
+                "the sitemap pool alone — NVDA is a co-ticker of the Meta piece");
+        assertEquals("Why Meta Platforms Stock Surged This Week", nvda.get(0).title(),
+                "the co-ticker join is something the quote page cannot do");
+        assertTrue(nvda.stream().noneMatch(it -> it.title().startsWith("Nobody's Talking About")),
+                "the archive leg must not reach the wire");
+        assertFalse(client.dossierOnly(), "the pool leg is wire material");
 
-        assertEquals(2, client.newsFor("NVDA", 2).size(), "limit caps the merged answer");
+        FoolQuoteNewsClient quotes = new FoolQuoteNewsClient(client);
+        assertTrue(quotes.dossierOnly(), "the quote leg is dossier depth");
+        List<RawNewsItem> deep = quotes.newsFor("nvda", 20);
+        assertEquals(5, deep.size(), "the quote page reaches weeks further back");
+        assertTrue(deep.stream().anyMatch(it -> it.title().startsWith("Nobody's Talking About")),
+                "it contributes what no chronological surface carries");
+        assertTrue(deep.get(0).publishedAt().isAfter(deep.get(deep.size() - 1).publishedAt()),
+                "newest first");
+        assertEquals(2, quotes.newsFor("NVDA", 2).size(), "limit caps the answer");
+        assertTrue(quotes.newsFor("  ", 10).isEmpty());
+        assertTrue(quotes.newsFor("NVDA", 0).isEmpty());
 
         int fetched = fake.fetches.get();
         client.newsFor("NVDA", 20);
+        quotes.newsFor("NVDA", 20);
         assertEquals(fetched, fake.fetches.get(), "both legs are cached");
     }
 

@@ -232,6 +232,16 @@ public class KapitalmarktexpertenClient implements NewsSource {
         return SOURCE;
     }
 
+    /**
+     * Dossier leg, and here it is a matter of principle: the house generates
+     * ~60 machine-written pieces a day from the very wires we tap directly.
+     * It may inform a dossier, it must never reach a headline (2026-08-03).
+     */
+    @Override
+    public boolean dossierOnly() {
+        return true;
+    }
+
     /** Articles, not forum posts - this source never rides the sentiment fan. */
     @Override
     public boolean socialSentiment() {

@@ -30,6 +30,20 @@ public interface NewsSource {
     }
 
     /**
+     * {@code true} when this source belongs to the DOSSIER only — the deep
+     * dive fans it, the live wire does not. The fishing net stays wide (every
+     * viable source is wired); the sorting happens at the SHELF: a research
+     * source that answers with venue notes, machine-written price ticks,
+     * gated agency copy or the same dpa-AFX piece under a fourth roof is
+     * depth for a dossier and noise for a headline. Each source declares its
+     * own reach here — self-description on the contract, not a curated list
+     * anywhere else (2026-08-03).
+     */
+    default boolean dossierOnly() {
+        return false;
+    }
+
+    /**
      * ARCHIVE window: news for the company NAME restricted to a date window
      * (ISO dates, {@code to} exclusive) - the multi-year press-history leg of
      * the long-term dossier (2026-07-16). Sources without a date-addressable

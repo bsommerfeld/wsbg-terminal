@@ -162,6 +162,17 @@ public class TradingViewNewsClient implements NewsSource {
         return "tradingview-news";
     }
 
+    /**
+     * Dossier leg. 94% of the German flow is gated, so the wire would be fed
+     * headline stubs of dpa-AFX copy the direct wires already carry - and the
+     * per-unit symbol probing costs the pipeline a request storm for it
+     * (2026-08-03).
+     */
+    @Override
+    public boolean dossierOnly() {
+        return true;
+    }
+
     /** Reported agency news, not room opinion - this rides the press loom. */
     @Override
     public boolean socialSentiment() {

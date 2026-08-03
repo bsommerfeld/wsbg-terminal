@@ -113,6 +113,52 @@ class NewsAggregatorTest {
         assertTrue(agg.sentimentFor("RHM", null, null, 0).isEmpty());
     }
 
+    /** A fixed-list DOSSIER-ONLY press source (research depth, no wire reach). */
+    private static NewsSource dossierSource(String name, RawNewsItem... items) {
+        return new NewsSource() {
+            @Override public String sourceName() { return name; }
+            @Override public boolean dossierOnly() { return true; }
+            @Override public List<RawNewsItem> newsFor(String symbol, int limit) {
+                return List.of(items);
+            }
+        };
+    }
+
+    /**
+     * The dossier fans everything, the wire does not (2026-08-03): a research
+     * leg that only a deep dive can digest must not reach the headline loom,
+     * while the deep dive keeps the full net.
+     */
+    @Test
+    void dossierOnlySourcesAnswerTheDeepDiveFanButNotTheWire() {
+        Instant t = Instant.parse("2026-08-03T09:00:00Z");
+        NewsSource wire = source("wire", false, item("w1", "Rheinmetall hebt Prognose", t));
+        NewsSource research = dossierSource("research", item("d1", "Rheinmetall Kursnotiz", t));
+
+        NewsAggregator agg = aggregator(wire, research);
+
+        List<RawNewsItem> full = agg.newsFor("RHM", "Rheinmetall", null, 10);
+        assertEquals(2, full.size(), "the dossier fan keeps every press source");
+
+        List<RawNewsItem> onWire = agg.wireNewsFor("RHM", "Rheinmetall", 10);
+        assertEquals(1, onWire.size(), "the wire fan drops the dossier-only legs");
+        assertEquals("w1", onWire.get(0).uuid());
+
+        assertEquals(1, agg.wireNewsFor("RHM", 10).size(), "symbol-only wire fan too");
+    }
+
+    /** The wire fan keeps the sentiment sources out just like the news fan. */
+    @Test
+    void wireFanStillSeesNoSocialSources() {
+        Instant t = Instant.parse("2026-08-03T09:00:00Z");
+        NewsSource press = source("press", false, item("p1", "Rheinmetall hebt Prognose", t));
+        NewsSource forum = socialSource("forum", item("f1", "RHM läuft heute", t));
+
+        List<RawNewsItem> out = aggregator(press, forum).wireNewsFor("RHM", 10);
+        assertEquals(1, out.size());
+        assertEquals("p1", out.get(0).uuid());
+    }
+
     @Test
     void ordersNewestFirstNullsLast() {
         RawNewsItem older = item("o", "older", Instant.parse("2026-06-01T00:00:00Z"));

@@ -235,6 +235,17 @@ public class WeltNewsClient implements NewsSource {
         return "welt";
     }
 
+    /**
+     * Dossier leg. The value here is the archive back to 2007, not the
+     * live minute - and the search is padded with same-day filler that only
+     * the title cut keeps usable. Depth for a dossier, noise on the wire
+     * (2026-08-03).
+     */
+    @Override
+    public boolean dossierOnly() {
+        return true;
+    }
+
     // ---------------------------------------------------------------- fans
 
     /**

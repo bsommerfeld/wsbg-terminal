@@ -167,6 +167,17 @@ public class FinanzenNetNewsClient implements NewsSource {
         return "finanzen-net";
     }
 
+    /**
+     * Dossier leg. The analyser feed is a firehose of every single sell-side
+     * action - exactly the material a dossier weighs and exactly the volume
+     * that buries a day's catalyst on the wire. The resolver behind it stays
+     * available to everyone (2026-08-03).
+     */
+    @Override
+    public boolean dossierOnly() {
+        return true;
+    }
+
     // ------------------------------------------------------- instrument fans
 
     /**

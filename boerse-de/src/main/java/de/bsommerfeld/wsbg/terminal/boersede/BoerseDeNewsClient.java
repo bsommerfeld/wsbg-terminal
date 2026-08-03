@@ -201,6 +201,16 @@ public class BoerseDeNewsClient implements NewsSource {
     }
 
     /**
+     * Dossier leg. Its unique goods are the registers - directors' dealings,
+     * the analyst archive, eight fiscal years of P&L - not its news column,
+     * which mirrors agency copy the wire already has (2026-08-03).
+     */
+    @Override
+    public boolean dossierOnly() {
+        return true;
+    }
+
+    /**
      * No-op: boerse.de has no ticker addressing. Every surface is keyed by ISIN
      * (or by nothing at all), so a symbol is not a question this venue can be
      * asked - {@link #newsForIsin} and {@link #newsForName} carry this source.

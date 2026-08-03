@@ -511,7 +511,10 @@ public class WatchlistService {
         if (pick == null) return;
         lastNewsRefreshMs.put(pick.id, now);
         try {
-            List<RawNewsItem> fresh = aggregator.newsFor(
+            // The WIRE fan, because this feeds the very unit the wire composes
+            // from - the dossier-only research legs would enter the loom through
+            // the back door otherwise (2026-08-03).
+            List<RawNewsItem> fresh = aggregator.wireNewsFor(
                     pickUnit.ticker(), pickUnit.canonicalName(), NEWS_FETCH_COUNT);
             // The freshness cut applies at the door too: a year-old search hit
             // must not even enter the unit through the watchlist's own leg.

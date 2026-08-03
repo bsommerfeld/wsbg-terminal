@@ -40,6 +40,12 @@ final class NewsSourceModule extends AbstractModule {
         // with teasers; keyless, public feed key (probed 2026-07-13).
         newsSources.addBinding().to(
                 de.bsommerfeld.wsbg.terminal.fool.FoolNewsClient.class);
+        // Fool's per-instrument QUOTE PAGE as a source of its own - the same
+        // house, but the other reach: weeks of archive per ticker where the
+        // sitemap window is two days wide.
+        // DOSSIER-ONLY (2026-08-03): research depth, not wire material.
+        newsSources.addBinding().to(
+                de.bsommerfeld.wsbg.terminal.fool.FoolQuoteNewsClient.class);
         // CNBC: the US financial PRESS leg - keyless on every surface (probed
         // 2026-08-02). Two legs: twelve SECTION RSS feeds as the live pool
         // (the ~24 show franchises answer 200 with an empty channel and are
@@ -51,6 +57,7 @@ final class NewsSourceModule extends AbstractModule {
         // CNBC Pro pieces answer 200 with an EMPTY body, so they are marked
         // pre-fetch via cn:contentClassification and published as "CNBC Pro" -
         // the headline survives, a body reader skips them.
+        // DOSSIER-ONLY (2026-08-03): research depth, not wire material.
         newsSources.addBinding().to(
                 de.bsommerfeld.wsbg.terminal.cnbc.CnbcNewsClient.class);
         // WELT: the German PRESS leg with a real full-text search API
@@ -62,6 +69,7 @@ final class NewsSourceModule extends AbstractModule {
         // same-day filler - a nonsense term answers 200 with 200 unrelated
         // hits, so the TITLE-precision cut is what makes the source usable at
         // all. WELT Plus pieces are marked pre-fetch (feed flag AND /plus URL).
+        // DOSSIER-ONLY (2026-08-03): research depth, not wire material.
         newsSources.addBinding().to(
                 de.bsommerfeld.wsbg.terminal.welt.WeltNewsClient.class);
         // Handelsblatt + WirtschaftsWoche: one client, two brands on the same
@@ -72,6 +80,7 @@ final class NewsSourceModule extends AbstractModule {
         // HOUSE RULE, deliberate: METERED counts as walled. The metering API
         // would hand over the full body, but that is client-side metering we
         // do not circumvent; headline, lead and ISINs only. Do not "fix" it.
+        // DOSSIER-ONLY (2026-08-03): research depth, not wire material.
         newsSources.addBinding().to(
                 de.bsommerfeld.wsbg.terminal.handelsblatt.HandelsblattNewsClient.class);
         // Kapitalmarktexperten: an open wp-json with 19.460 full texts, an
@@ -83,6 +92,7 @@ final class NewsSourceModule extends AbstractModule {
         // (KI-generiert)": it may inform a dossier, it must never pass as a
         // first source. The archive fan is the main road, the name fan the
         // side door.
+        // DOSSIER-ONLY (2026-08-03): research depth, not wire material.
         newsSources.addBinding().to(
                 de.bsommerfeld.wsbg.terminal.kapitalmarktexperten.KapitalmarktexpertenClient.class);
         // TradingView news (beside the existing Minds sentiment leg): the
@@ -93,6 +103,7 @@ final class NewsSourceModule extends AbstractModule {
         // a HEADLINE source by nature: gated items are marked and their body
         // is never fetched - "re-express, never reproduce" is the condition
         // under which licensed agency copy is touchable at all.
+        // DOSSIER-ONLY (2026-08-03): research depth, not wire material.
         newsSources.addBinding().to(
                 de.bsommerfeld.wsbg.terminal.tradingview.TradingViewNewsClient.class);
         // boerse.de: the cleanest source of the 2026-08-02 wave - robots
@@ -104,6 +115,7 @@ final class NewsSourceModule extends AbstractModule {
         // archive, and eight fiscal years of P&L. Pagination gotcha: the
         // /x/<ISIN> form silently 301s any _seite,N back to page 1, so the
         // client follows rel="next" instead of building page URLs.
+        // DOSSIER-ONLY (2026-08-03): research depth, not wire material.
         newsSources.addBinding().to(
                 de.bsommerfeld.wsbg.terminal.boersede.BoerseDeNewsClient.class);
         // Börse Online + Der Aktionär: one client, because it is one CMS -
@@ -114,6 +126,7 @@ final class NewsSourceModule extends AbstractModule {
         // Pagination gotcha: the lists never run empty, they CLAMP - page
         // 5000 returns page 50's items forever, so the walk also breaks on a
         // repeated first article ID.
+        // DOSSIER-ONLY (2026-08-03): research depth, not wire material.
         newsSources.addBinding().to(
                 de.bsommerfeld.wsbg.terminal.boersenmedien.BoersenmedienNewsClient.class);
         // Traders Union: taken in under the fishing-net rule - the source is
@@ -126,6 +139,7 @@ final class NewsSourceModule extends AbstractModule {
         // GAAP figures and buyback volumes, and the model decides. Paid
         // broker PR rides the sponsored flag. German copy is machine-
         // translated from English; URLs come only from sitemaps, never built.
+        // DOSSIER-ONLY (2026-08-03): research depth, not wire material.
         newsSources.addBinding().to(
                 de.bsommerfeld.wsbg.terminal.tradersunion.TradersUnionNewsClient.class);
         // finanzen.net: the dpa-AFX ANALYSER leg (a global feed of every
@@ -137,6 +151,7 @@ final class NewsSourceModule extends AbstractModule {
         // Akamai gotcha: the wall falls to HEADER COMPLETENESS, not to a
         // browser - but the JDK client must ask for identity encoding, or it
         // gets a 200 full of compressed noise and every parser reads empty.
+        // DOSSIER-ONLY (2026-08-03): research depth, not wire material.
         newsSources.addBinding().to(
                 de.bsommerfeld.wsbg.terminal.finanzennet.FinanzenNetNewsClient.class);
         // Ariva forum: the German retail FORUM-SENTIMENT leg — one keyless

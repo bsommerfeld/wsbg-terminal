@@ -302,6 +302,17 @@ public class TradersUnionNewsClient implements NewsSource {
         return "tradersunion";
     }
 
+    /**
+     * Dossier leg. Taken in under the fishing-net rule and sorted at the
+     * shelf: /news/stocks/ is 94% price-tick-generated and the German copy is
+     * machine-translated. The model may weigh that in a dossier; the wire
+     * must not report a tick as a catalyst (2026-08-03).
+     */
+    @Override
+    public boolean dossierOnly() {
+        return true;
+    }
+
     // ---------------------------------------------------------------
     // General stream - no instrument involved
     // ---------------------------------------------------------------
