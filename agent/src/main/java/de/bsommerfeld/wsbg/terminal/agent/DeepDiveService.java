@@ -154,6 +154,8 @@ public class DeepDiveService {
     private static final int WORLD_SWEEP_DEADLINE_SECONDS = 25;
     /** How wide the sweep runs - IO-bound legs, so well above the core count. */
     private static final int WORLD_SWEEP_WIDTH = 8;
+    /** Calendar years rendered - the arc, not the whole venue history. */
+    private static final int MAX_CALENDAR_YEARS = 12;
     /** Rows kept per world feed - a reading, never a register dump. */
     private static final int MAX_WORLD_ROWS_PER_FEED = 5;
     /** Headlines taken per press feed before the subject judge sees them. */
@@ -449,6 +451,9 @@ public class DeepDiveService {
     private volatile de.bsommerfeld.wsbg.terminal.briefing.EnsoClient enso;
     private volatile de.bsommerfeld.wsbg.terminal.briefing.SatelliteClient satellites;
     private volatile de.bsommerfeld.wsbg.terminal.briefing.OrbitClient orbit;
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.FlightClient flights;
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.CoinGeckoClient coinGecko;
+    private volatile de.bsommerfeld.wsbg.terminal.onvista.OnvistaMarketClient onvistaMarket;
 
     private final AtomicBoolean busy = new AtomicBoolean(false);
     private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
@@ -814,6 +819,21 @@ public class DeepDiveService {
     @com.google.inject.Inject(optional = true)
     void setOrbit(de.bsommerfeld.wsbg.terminal.briefing.OrbitClient client) {
         this.orbit = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setFlights(de.bsommerfeld.wsbg.terminal.briefing.FlightClient client) {
+        this.flights = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setCoinGecko(de.bsommerfeld.wsbg.terminal.briefing.CoinGeckoClient client) {
+        this.coinGecko = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setOnvistaMarket(de.bsommerfeld.wsbg.terminal.onvista.OnvistaMarketClient client) {
+        this.onvistaMarket = client;
     }
 
     @com.google.inject.Inject(optional = true)
@@ -3538,6 +3558,14 @@ public class DeepDiveService {
          * names the other delivery legs never reach.
          */
         de.bsommerfeld.wsbg.terminal.briefing.TradingEconomicsClient.EarningsEntry teEarnings;
+        /** Crypto's total market value and what is trending - the speculative tide. */
+        de.bsommerfeld.wsbg.terminal.briefing.CoinGeckoClient.CryptoGlobal cryptoGlobal;
+        /**
+         * Calendar-year performance, one row per year back to the venue's
+         * history start (onvista). The cheap answer to "how did this name do
+         * in 2008?" - a question no other leg in this report can answer.
+         */
+        List<de.bsommerfeld.wsbg.terminal.onvista.OnvistaMarketClient.YearPerformance> calendarYears = List.of();
         /** EUR/USD, the currency every cross-border figure in this report passes through. */
         Double eurUsdRate;
         /** The dollar index beside it - a dollar move is not a euro move. */
@@ -3935,6 +3963,17 @@ public class DeepDiveService {
                         m.onvistaConsensus = facts.analystConsensus(entity).orElse(null);
                         facts.figures(entity).ifPresent(fig ->
                                 m.onvistaBenchmark = fig.defaultBenchmark().orElse(null));
+                        // The calendar-year arc needs a venue handle, which
+                        // only the quote board carries; the reference venue is
+                        // whichever row the board puts first.
+                        var market = onvistaMarket;
+                        if (market != null) {
+                            var venues = market.quotes(entity);
+                            if (!venues.isEmpty()) {
+                                m.calendarYears = List.copyOf(market.performanceYears(
+                                        entity, venues.get(0).idNotation()));
+                            }
+                        }
                     }
                 }
             } catch (Exception e) {
@@ -4095,6 +4134,7 @@ public class DeepDiveService {
         try {
             List<String> candidates = new ArrayList<>(collectPressCandidates());
             candidates.addAll(collectWorldCandidates());
+            candidates.addAll(flightCandidates(m));
             m.pressCandidates = List.copyOf(candidates);
         } catch (Exception e) {
             LOG.debug("[DEEPDIVE] press candidates failed: {}", e.getMessage());
@@ -4169,6 +4209,12 @@ public class DeepDiveService {
             }
         } catch (Exception e) {
             LOG.debug("[DEEPDIVE] prediction markets failed: {}", e.getMessage());
+        }
+        try {
+            var cg = coinGecko;
+            if (cg != null) m.cryptoGlobal = cg.global().orElse(null);
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] crypto market failed: {}", e.getMessage());
         }
         try {
             var fx = eurUsd;
@@ -4847,7 +4893,7 @@ public class DeepDiveService {
                     : String.join(", ", bits))));
         }
         if (m.onvistaCompany != null || m.onvistaBenchmark != null
-                || m.onvistaConsensus != null) {
+                || m.onvistaConsensus != null || !m.calendarYears.isEmpty()) {
             List<String> bits = new ArrayList<>();
             if (m.onvistaCompany != null) {
                 bits.add(de ? "Aktionärsstruktur" : "shareholder structure");
@@ -5157,6 +5203,7 @@ public class DeepDiveService {
         appendPressHistory(sb, m, nums);
         appendPerformance(sb, m.deepDive, nums);
         appendBenchmarkFit(sb, m, nums);
+        appendCalendarYears(sb, m, nums);
         appendMarket(sb, m.snapshot, nums);
         appendTrading(sb, m.venueStats, m.facts, nums);
         appendVenueBoard(sb, m, nums);
@@ -5469,7 +5516,7 @@ public class DeepDiveService {
         if (m.facts != null || m.fundFacts != null) nums.put("profile", ++n);
         if (m.hbInstrument != null) nums.put("handelsblatt", ++n);
         if (m.onvistaCompany != null || m.onvistaBenchmark != null
-                || m.onvistaConsensus != null) {
+                || m.onvistaConsensus != null || !m.calendarYears.isEmpty()) {
             nums.put("onvista", ++n);
         }
         if (!m.fnTrend.isEmpty() || !m.fnPeers.isEmpty() || !m.fnEstimates.isEmpty()
@@ -5480,7 +5527,7 @@ public class DeepDiveService {
         if (!m.sectorBoard.isEmpty()) nums.put("sectorboard", ++n);
         if (m.fearGreed != null || m.cryptoFearGreed != null || m.putCall != null
                 || m.bundYield != null || m.cryptoDerivs != null || m.eurUsdRate != null
-                || !m.predictionMarkets.isEmpty()) {
+                || m.cryptoGlobal != null || !m.predictionMarkets.isEmpty()) {
             nums.put("regime", ++n);
         }
         if (!m.teCommodities.isEmpty() || !m.teBonds.isEmpty() || m.teEarnings != null) {
@@ -7905,6 +7952,37 @@ public class DeepDiveService {
     }
 
     /**
+     * Air traffic AROUND an active hazard. The flight leg needs a position and
+     * the DD has no business inventing one - a company headquarters is not
+     * where its risk sits, and a venue city says nothing at all. What it does
+     * have is the hazard picture: asking "is the sky over this event thinner
+     * than usual" is a question with an answer, and it is the only honest way
+     * to address this feed from a report about an instrument.
+     *
+     * <p>No hazard, no question - the leg simply does not run.
+     */
+    private List<String> flightCandidates(Material m) {
+        var client = flights;
+        if (client == null || m.allHazards.isEmpty()) return List.of();
+        var hazard = m.allHazards.stream()
+                .filter(h -> h.lat() != null && h.lon() != null)
+                .findFirst().orElse(null);
+        if (hazard == null) return List.of();
+        try {
+            var aircraft = client.around(hazard.lat(), hazard.lon(), hazard.text());
+            if (aircraft.isEmpty()) return List.of();
+            return List.of("Air traffic over the active hazard \"" + hazard.text() + "\": "
+                    + aircraft.size() + " aircraft currently in the box"
+                    + affects("airlines and airports on rerouting and cancellations; express "
+                            + "freight on delivery times; insurers where the hazard itself is "
+                            + "the loss - a count is a snapshot, not a trend"));
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] flight leg failed: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    /**
      * Runs the sweep wide against ONE wall clock and returns whatever answered.
      * A leg that misses the deadline is dropped and LOGGED - a silent drop
      * would read as "the world was quiet today", which is a different claim.
@@ -8237,6 +8315,11 @@ public class DeepDiveService {
                             ? ", dollar index " + fmt2(m.dollarIndex) : "")
                     + " (every cross-border figure in this report passes through this rate)");
         }
+        if (m.cryptoGlobal != null) {
+            lines.add("  - the speculative tide (total crypto market value): "
+                    + fmt2(m.cryptoGlobal.marketCapUsd()) + " USD, "
+                    + signed(m.cryptoGlobal.mcapChange24hPercent()) + "% in 24 h");
+        }
         if (m.cryptoDerivs != null) {
             lines.add("  - speculative leverage (crypto derivatives): funding rate "
                     + signed(m.cryptoDerivs.fundingRatePercent()) + "%, open interest "
@@ -8258,6 +8341,31 @@ public class DeepDiveService {
                         + "different things in a fearful tape and a calm one)")
                 .append(mark(nums, "regime")).append(":\n");
         for (String line : lines) sb.append(line).append('\n');
+    }
+
+    /**
+     * Calendar-year performance (onvista) - one row per year back to the
+     * venue's history start. Every other performance reading in this report is
+     * a window ending today; this is the only one that can answer "and what
+     * did it do in 2008?", which is the question a long-arc thesis rests on.
+     */
+    private static void appendCalendarYears(StringBuilder sb, Material m,
+            Map<String, Integer> nums) {
+        if (m.calendarYears.isEmpty()) return;
+        List<de.bsommerfeld.wsbg.terminal.onvista.OnvistaMarketClient.YearPerformance> years =
+                new ArrayList<>(m.calendarYears);
+        years.sort(Comparator.comparingInt(
+                de.bsommerfeld.wsbg.terminal.onvista.OnvistaMarketClient.YearPerformance::year));
+        int from = Math.max(0, years.size() - MAX_CALENDAR_YEARS);
+        sb.append("CALENDAR-YEAR PERFORMANCE (verified, onvista; each year's own move, "
+                        + "oldest first - not a window ending today)")
+                .append(mark(nums, "onvista")).append(":\n");
+        for (var y : years.subList(from, years.size())) {
+            sb.append("  - ").append(y.year()).append(": ")
+                    .append(signed(y.performanceRel())).append("% (")
+                    .append(fmt2(y.firstPrice())).append(" to ")
+                    .append(fmt2(y.lastPrice())).append(")\n");
+        }
     }
 
     /**
@@ -9643,10 +9751,12 @@ public class DeepDiveService {
                 return de
                         ? "Marktregime - CNN Fear & Greed und Krypto-Stimmungsindex, "
                                 + "CBOE Put/Call und VIX, 10-jährige Bundesanleihe, EUR/USD "
-                                + "und Dollar-Index, Krypto-Derivate, Prognosemärkte"
+                                + "und Dollar-Index, Krypto-Marktwert und -Derivate, "
+                                + "Prognosemärkte"
                         : "Market regime - CNN Fear & Greed and the crypto sentiment index, "
                                 + "CBOE put/call and VIX, the 10-year Bund, EUR/USD and the "
-                                + "dollar index, crypto derivatives, prediction markets";
+                                + "dollar index, the crypto market value and derivatives, "
+                                + "prediction markets";
             case "sectorboard":
                 return de
                         ? "Markt-Screener - Sektor-Tagesstand des gesamten gelisteten Marktes, "
@@ -9665,10 +9775,12 @@ public class DeepDiveService {
                 return "onvista" + (de
                         ? " - Aktionärsstruktur mit Streubesitz und Beteiligungen, Beta/"
                                 + "Korrelation und relative Wertentwicklung gegen den "
-                                + "Referenzindex, Analysten-Revisionen seit der Vorzählung"
+                                + "Referenzindex, Analysten-Revisionen seit der Vorzählung, "
+                                + "Kalenderjahres-Performance"
                         : " - shareholder structure with free float and participations, "
                                 + "beta/correlation and relative performance against the "
-                                + "reference index, analyst revisions since the previous count");
+                                + "reference index, analyst revisions since the previous count, "
+                                + "calendar-year performance");
             case "edgar":
                 return de
                         ? "SEC EDGAR - Form 8-K, datierte Pflichtereignisse des Emittenten "
