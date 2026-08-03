@@ -73,9 +73,12 @@ final class OsrInputRouter {
             }
         });
         panel.addKeyListener(new KeyListener() {
-            public void keyTyped(KeyEvent e) { browser.sendKeyEvent(e); }
-            public void keyPressed(KeyEvent e) { browser.sendKeyEvent(e); }
-            public void keyReleased(KeyEvent e) { browser.sendKeyEvent(e); }
+            public void keyTyped(KeyEvent e) { if (!isPasteChord(e)) browser.sendKeyEvent(e); }
+            public void keyPressed(KeyEvent e) {
+                if (isPasteChord(e)) { paste(); e.consume(); return; }
+                browser.sendKeyEvent(e);
+            }
+            public void keyReleased(KeyEvent e) { if (!isPasteChord(e)) browser.sendKeyEvent(e); }
         });
         panel.setFocusable(true);
         panel.addFocusListener(new FocusListener() {
@@ -90,6 +93,30 @@ final class OsrInputRouter {
             @Override public void componentMoved(ComponentEvent e) { browser.handleComponentMoved(); }
         });
         new DropTarget(panel, new OsrDropTargetGuard(new CefDropTargetListener(browser)));
+    }
+
+    /**
+     * The paste chord (Cmd+V on macOS, Ctrl+V elsewhere — both accepted, German
+     * muscle memory reaches for Ctrl even on a Mac). In OSR there is no native
+     * window, so the chord never reaches Chromium's own editing shortcut path:
+     * forwarding it as a raw key event types nothing. We run the frame's paste
+     * command ourselves instead — it reads the system clipboard and inserts into
+     * whatever editable field currently has focus.
+     */
+    private static boolean isPasteChord(KeyEvent e) {
+        if (e.isAltDown()) return false;
+        if (!(e.isControlDown() || e.isMetaDown())) return false;
+        if (e.getID() == KeyEvent.KEY_TYPED) {
+            char c = e.getKeyChar();
+            return c == 0x16 || c == 'v' || c == 'V'; // 0x16 = SYN, what Ctrl+V types
+        }
+        return e.getKeyCode() == KeyEvent.VK_V;
+    }
+
+    private void paste() {
+        CefFrame frame = browser.getFocusedFrame();
+        if (frame == null) frame = browser.getMainFrame();
+        if (frame != null) frame.paste();
     }
 
     /**
