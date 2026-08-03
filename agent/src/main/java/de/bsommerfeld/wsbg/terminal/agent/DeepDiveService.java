@@ -116,7 +116,13 @@ public class DeepDiveService {
     private static final DateTimeFormatter STAMP =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault());
 
-    /** Newest news that ride the material — the DD must be CURRENT (watchlist rule). */
+    /**
+     * The line between the two press lanes — the DD must be CURRENT (watchlist
+     * rule), so only finds inside this window ride the PRESS FACTS block. It is
+     * a SORTING line, not a cut: older finds go to the multi-year archive lane
+     * (see the routing at the end of the collect phase), where they are read in
+     * full and dated instead of being thrown away.
+     */
     private static final long NEWS_MAX_AGE_DAYS = 30;
     /**
      * News ceilings are RUNAWAY BACKSTOPS ONLY since 2026-07-14 (user mandate
@@ -132,8 +138,14 @@ public class DeepDiveService {
     private static final int MAX_RESEARCH_QUERIES = 4;
     /** Per research query: how many finds it may contribute to the candidate set. */
     private static final int RESEARCH_QUERY_LIMIT = 25;
-    /** Pre-triage CANDIDATE pool backstop — the judge sorts, the pool stays open. */
-    private static final int MAX_NEWS_CANDIDATES = 300;
+    /**
+     * How deep ONE source is asked — a transport budget, never an editorial
+     * cap. The merged candidate pool itself is UNCAPPED (user mandate
+     * 2026-08-03): a pre-triage cut was the last place in the whole dossier
+     * where a find vanished with no verdict and no way back — the triage's
+     * set-aside pool and the Nachlese only ever see what reached the judge.
+     */
+    private static final int NEWS_FETCH_PER_SOURCE = 300;
     private static final int MAX_INSIDER_DEALS = 8;
     private static final int MAX_SHORT_POSITIONS = 8;
     /** NASDAQ tab caps — material stays model-sized, the tabs carry hundreds of rows. */
@@ -2516,40 +2528,15 @@ public class DeepDiveService {
         m.factNotes = new LinkedHashMap<>(notes);
         LOG.info("[DEEPDIVE] '{}' intake: {} of {} article(s) yielded verified facts.",
                 subject, notes.size(), tasks.size());
-        // Fail-open seats must EARN their seat here (user GO 2026-07-17): an
-        // item nobody ever explicitly judged relevant that ALSO yields not
-        // one verified fact about the subject is name-collision bycatch (the
-        // OTLK board's "Outlook" login pages) — it loses seat, board row and
-        // register entry. Deterministic: the intake's own result is the
-        // second opinion, no extra judge call.
-        if (!m.failOpenSeats.isEmpty()) {
-            List<RawNewsItem> kept = new ArrayList<>(m.news.size());
-            Map<String, String> targets = new LinkedHashMap<>(m.newsTargets);
-            int struck = 0;
-            for (RawNewsItem item : m.news) {
-                String key = newsKey(item);
-                String facts = item.link() == null ? null
-                        : m.factNotes.get(item.link().trim());
-                if (m.failOpenSeats.contains(key) && isBlank(facts)) {
-                    targets.remove(key);
-                    liveSrc(subject, "src-out", item, "triage");
-                    struck++;
-                    continue;
-                }
-                kept.add(item);
-            }
-            if (struck > 0) {
-                m.news = kept;
-                m.newsTargets = targets;
-                journalNotes(subject, List.of((de
-                        ? "Einarbeitung strich " + struck + " ungeprüfte(n) Fund(e) ohne "
-                                + "einen verifizierten Fakt zum Subjekt"
-                        : "Intake struck " + struck + " unjudged find(s) without a "
-                                + "verified fact about the subject")));
-                LOG.info("[DEEPDIVE] '{}' intake struck {} fail-open seat(s) without a "
-                        + "verified fact.", subject, struck);
-            }
-        }
+        // NO seat is struck here (user mandate 2026-08-03). The old rule threw
+        // out any never-explicitly-judged find that yielded no verified fact
+        // ABOUT the subject — which is exactly the shape of the causal find
+        // the dossier wants: an article on tree protection, on a raw material,
+        // on a solar storm hitting cloud capacity, names the subject nowhere
+        // and states not one fact about it, yet carries the WHY. A fact that
+        // is not about the subject is not a worthless fact; whether the path
+        // from it to the instrument holds is the judge's call downstream, not
+        // a mechanical seat count's.
     }
 
     /**
@@ -2748,6 +2735,13 @@ public class DeepDiveService {
             Pattern.CASE_INSENSITIVE);
     private static final Pattern ALIAS_ITEM = Pattern.compile("\"([^\"]{2,40})\"");
     private static final int TRIAGE_BATCH = 6;
+    /**
+     * Lead-text budget per triage batch. Six items still ride together when
+     * they are headlines; a source that serves whole paragraphs cuts the batch
+     * early instead. Sized so a full batch stays far inside the auto-grown
+     * context with the prompt and the verdict JSON on top.
+     */
+    private static final int TRIAGE_BATCH_CHARS = 6000;
 
     /**
      * The relevance judge: every pooled item is judged "substantively about the
@@ -2777,7 +2771,6 @@ public class DeepDiveService {
                         ? "LAGE" : verdict);
                 if (verdict == null) {
                     unjudged.add(item.title());
-                    m.failOpenSeats.add(newsKey(item));
                     // Fail-open seat: the board row never saw a verdict.
                     liveSrc(subject, "src-ok", item, "triage");
                 }
@@ -2849,12 +2842,40 @@ public class DeepDiveService {
         // The batches are INDEPENDENT judge calls — run them two-wide, matching
         // Ollama's NUM_PARALLEL (2026-07-15 performance pass; verdicts land in a
         // concurrent map, quality untouched). The gate still governs every call.
+        // Batches are cut by BOTH counts: at most TRIAGE_BATCH items, and at
+        // most TRIAGE_BATCH_CHARS of lead text — since the whole lead rides,
+        // one source serving full paragraphs would otherwise blow a six-item
+        // batch past anything the judge can hold. A single oversized item
+        // still rides alone rather than being cut.
         List<Runnable> tasks = new ArrayList<>();
-        for (int from = 0; from < items.size(); from += TRIAGE_BATCH) {
-            List<RawNewsItem> batch = items.subList(from, Math.min(items.size(), from + TRIAGE_BATCH));
-            tasks.add(() -> judgeOneBatch(subject, batch, about, prompt, judge, out));
+        List<RawNewsItem> batch = new ArrayList<>(TRIAGE_BATCH);
+        int chars = 0;
+        for (RawNewsItem item : items) {
+            int size = leadChars(item);
+            if (!batch.isEmpty()
+                    && (batch.size() >= TRIAGE_BATCH || chars + size > TRIAGE_BATCH_CHARS)) {
+                List<RawNewsItem> full = List.copyOf(batch);
+                tasks.add(() -> judgeOneBatch(subject, full, about, prompt, judge, out));
+                batch.clear();
+                chars = 0;
+            }
+            batch.add(item);
+            chars += size;
+        }
+        if (!batch.isEmpty()) {
+            List<RawNewsItem> last = List.copyOf(batch);
+            tasks.add(() -> judgeOneBatch(subject, last, about, prompt, judge, out));
         }
         runTwoWide(tasks);
+    }
+
+    /** One item's weight in a triage batch: title + publisher + the whole lead. */
+    private static int leadChars(RawNewsItem item) {
+        int n = 8;
+        if (item.title() != null) n += item.title().length();
+        if (item.publisher() != null) n += item.publisher().length();
+        if (item.summary() != null) n += item.summary().length();
+        return n;
     }
 
     private void judgeOneBatch(String subject, List<RawNewsItem> batch, String about, String prompt,
@@ -2870,8 +2891,14 @@ public class DeepDiveService {
                     list.append(" · ").append(item.publisher());
                 }
                 if (item.summary() != null && !item.summary().isBlank()) {
-                    String s = item.summary().replace('\n', ' ').strip();
-                    list.append(" — ").append(s, 0, Math.min(s.length(), 160));
+                    // The WHOLE lead rides (user mandate 2026-08-03). The old
+                    // 160-char cut was an untouched prompt-budget guess from
+                    // the Redaktion rebuild — it left the judge deciding on
+                    // half a sentence while the text lay right there, free.
+                    // The batch is character-budgeted instead, so a source
+                    // that serves whole paragraphs shrinks the batch rather
+                    // than truncating the evidence.
+                    list.append(" — ").append(item.summary().replace('\n', ' ').strip());
                 }
                 list.append('\n');
             }
@@ -3044,7 +3071,6 @@ public class DeepDiveService {
                 }
                 merged.add(item);
                 earned.add(newsKey(item));
-                if (verdict == null) m.failOpenSeats.add(newsKey(item));
                 targets.put(newsKey(item), verdict == null ? "LAGE" : verdict);
             }
             if (!judgedOff.isEmpty()) {
@@ -3176,7 +3202,6 @@ public class DeepDiveService {
                 }
                 merged.add(item);
                 earned.add(newsKey(item));
-                if (verdict == null) m.failOpenSeats.add(newsKey(item));
                 targets.put(newsKey(item), verdict == null ? "LAGE" : verdict);
                 added++;
             }
@@ -3394,12 +3419,6 @@ public class DeepDiveService {
     static final class Material {
         /** News keys already announced to the live triage board (grow-as-collected). */
         final Set<String> srcAnnounced = new HashSet<>();
-        /**
-         * News keys admitted WITHOUT an explicit relevant-verdict (the judge
-         * skipped them; fail-open kept them). Such a seat must EARN itself at
-         * the intake: zero verified facts about the subject strikes it.
-         */
-        final Set<String> failOpenSeats = new HashSet<>();
         String canonicalName;
         String ticker;
         String isin;
@@ -4626,8 +4645,8 @@ public class DeepDiveService {
                 // The full triangulation: symbol + name + ISIN per source —
                 // the ISIN is the key that never chases a wrong twin and finds
                 // the disclosure-grade documents (EQS prints it verbatim).
-                List<RawNewsItem> pooled = new ArrayList<>(newsAggregator.newsFor(
-                        m.ticker, m.canonicalName, m.isin, MAX_NEWS_CANDIDATES, onItem));
+                List<RawNewsItem> pooled = new ArrayList<>(newsAggregator.newsForAll(
+                        m.ticker, m.canonicalName, m.isin, NEWS_FETCH_PER_SOURCE, onItem));
                 // Yahoo indexes news under the BASE symbol: q=SAP answers the
                 // real company stories (restructuring, antitrust — live-probed),
                 // q=SAP.DE answers an unrelated firehose. The resolver upgrades
@@ -4637,8 +4656,8 @@ public class DeepDiveService {
                 if (base != null) {
                     Set<String> seen = new HashSet<>();
                     for (RawNewsItem item : pooled) seen.add(newsKey(item));
-                    for (RawNewsItem item : newsAggregator.newsFor(base, m.canonicalName,
-                            null, MAX_NEWS_CANDIDATES, onItem)) {
+                    for (RawNewsItem item : newsAggregator.newsForAll(base, m.canonicalName,
+                            null, NEWS_FETCH_PER_SOURCE, onItem)) {
                         if (seen.add(newsKey(item))) pooled.add(item);
                     }
                 }
@@ -4741,17 +4760,67 @@ public class DeepDiveService {
         announceSrc(ticker, m, "collect");
         Instant cutoff = Instant.now().minus(java.time.Duration.ofDays(NEWS_MAX_AGE_DAYS));
         List<RawNewsItem> beforeCut = m.news;
-        m.news = m.news.stream()
-                .filter(n -> n.publishedAt() == null || !n.publishedAt().isBefore(cutoff))
-                .limit(MAX_NEWS_CANDIDATES)
-                .toList();
-        // The freshness/ceiling cut strikes its victims off the board too —
-        // an announced row must never hang pending forever.
+        // The 30-day line SORTS, it does not discard (user GO 2026-08-03): the
+        // PRESS FACTS block must stay strictly current — a 2012 headline in it
+        // reads to the model as today's situation — but an old find is exactly
+        // what the long arc is made of. So the aged wave finds are ROUTED into
+        // the archive lane instead of being struck: uncapped, never model-
+        // judged, read in FULL at the intake like every other history entry.
+        // Before this the aged finds fell between the lanes entirely (the
+        // history leg dedupes against the pre-cut pool, so they were skipped
+        // there AND cut here).
+        List<RawNewsItem> aged = new ArrayList<>();
+        List<RawNewsItem> fresh = new ArrayList<>();
+        for (RawNewsItem n : beforeCut) {
+            if (n.publishedAt() != null && n.publishedAt().isBefore(cutoff)) aged.add(n);
+            else fresh.add(n);
+        }
+        m.news = List.copyOf(fresh);
+        if (!aged.isEmpty()) {
+            // Title dedupe against both lanes — the archive leg may already
+            // carry the same story under its own link.
+            Set<String> knownTitles = new HashSet<>();
+            Set<String> knownKeys = new HashSet<>();
+            for (RawNewsItem n : m.news) knownKeys.add(newsKey(n));
+            for (RawNewsItem n : m.pressHistory) {
+                knownKeys.add(newsKey(n));
+                if (n.title() != null && !n.title().isBlank()) {
+                    knownTitles.add(n.title().strip().toLowerCase(Locale.ROOT));
+                }
+            }
+            List<RawNewsItem> merged = new ArrayList<>(m.pressHistory);
+            int routed = 0;
+            for (RawNewsItem n : aged) {
+                String t = n.title() == null ? "" : n.title().strip().toLowerCase(Locale.ROOT);
+                if (!knownKeys.add(newsKey(n)) || (!t.isEmpty() && !knownTitles.add(t))) continue;
+                merged.add(n);
+                routed++;
+            }
+            // Newest last so the arc still reads forward once the wave finds
+            // sit between the archive's per-year blocks.
+            merged.sort(Comparator.comparing(RawNewsItem::publishedAt,
+                    Comparator.nullsLast(Comparator.naturalOrder())));
+            m.pressHistory = merged;
+            if (routed > 0) {
+                LOG.info("[DEEPDIVE] '{}' routed {} aged find(s) past the 30-day line into the "
+                        + "press-history lane ({} entries total).", ticker, routed, merged.size());
+            }
+        }
+        // Every announced row must reach a verdict — a pending row may never
+        // hang forever. Nothing is struck HERE any more: an aged find was
+        // routed to the archive lane, a fresh one stands in the pool, and the
+        // pool is uncapped. The strike branch is the honest fallback for a
+        // find that somehow reached neither lane (a duplicate title inside the
+        // same wave) — it must never leave a row spinning.
         if (beforeCut.size() != m.news.size()) {
             Set<String> standing = new HashSet<>();
             for (RawNewsItem n : m.news) standing.add(newsKey(n));
+            Set<String> routedKeys = new HashSet<>();
+            for (RawNewsItem n : m.pressHistory) routedKeys.add(newsKey(n));
             for (RawNewsItem n : beforeCut) {
-                if (!standing.contains(newsKey(n))) liveSrc(ticker, "src-out", n, "collect");
+                if (standing.contains(newsKey(n))) continue;
+                liveSrc(ticker, routedKeys.contains(newsKey(n)) ? "src-ok" : "src-out",
+                        n, "collect");
             }
         }
         if (!m.news.isEmpty()) {
@@ -5346,7 +5415,8 @@ public class DeepDiveService {
             Map<String, Integer> nums) {
         if (m.pressHistory.isEmpty()) return;
         sb.append("PRESS HISTORY (multi-year - the name's longer arc; windowed archive ")
-                .append("search, entries read in FULL at the intake where a text was ")
+                .append("search plus every collected find older than the news window, ")
+                .append("oldest first; entries read in FULL at the intake where a text was ")
                 .append("retrievable - their verified fact lines ride indented)")
                 .append(mark(nums, "history")).append(":\n");
         for (RawNewsItem item : m.pressHistory) {

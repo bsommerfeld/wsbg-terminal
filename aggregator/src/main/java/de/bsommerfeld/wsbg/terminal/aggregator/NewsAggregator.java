@@ -61,7 +61,7 @@ public class NewsAggregator {
 
     /** The wire fan by symbol AND name — see {@link #wireNewsFor(String, int)}. */
     public List<RawNewsItem> wireNewsFor(String symbol, String name, int limit) {
-        return newsFor(symbol, name, null, limit, null, true);
+        return newsFor(symbol, name, null, limit, null, true, true);
     }
 
     /**
@@ -142,12 +142,29 @@ public class NewsAggregator {
      */
     public List<RawNewsItem> newsFor(String symbol, String name, String isin, int limit,
             java.util.function.Consumer<RawNewsItem> onItem) {
-        return newsFor(symbol, name, isin, limit, onItem, false);
+        return newsFor(symbol, name, isin, limit, onItem, false, true);
     }
 
-    /** @param wireOnly drops the dossier-only sources from the fan. */
+    /**
+     * The UNCAPPED fan (user mandate 2026-08-03 "MAX_NEWS_CANDIDATES darf es
+     * nicht geben"): {@code perSourceLimit} stays a pure TRANSPORT budget -
+     * how deep each single source is asked - but the merged pool is returned
+     * WHOLE, only ranked. The dossier's judge is the filter; a pool cut here
+     * would drop finds before anything ever looked at them. Wire callers keep
+     * {@link #newsFor} with its ranked cap.
+     */
+    public List<RawNewsItem> newsForAll(String symbol, String name, String isin,
+            int perSourceLimit, java.util.function.Consumer<RawNewsItem> onItem) {
+        return newsFor(symbol, name, isin, perSourceLimit, onItem, false, false);
+    }
+
+    /**
+     * @param wireOnly drops the dossier-only sources from the fan.
+     * @param capPool  caps the merged, ranked pool at {@code limit} — off for
+     *                 the dossier fan, which keeps every find.
+     */
     private List<RawNewsItem> newsFor(String symbol, String name, String isin, int limit,
-            java.util.function.Consumer<RawNewsItem> onItem, boolean wireOnly) {
+            java.util.function.Consumer<RawNewsItem> onItem, boolean wireOnly, boolean capPool) {
         boolean haveSymbol = symbol != null && !symbol.isBlank();
         boolean haveName = name != null && !name.isBlank();
         boolean haveIsin = isin != null && !isin.isBlank();
@@ -157,10 +174,8 @@ public class NewsAggregator {
         Map<String, RawNewsItem> byId =
                 gather(haveSymbol, haveName, haveIsin, symbol, name, isin, limit, false, onItem,
                         wireOnly);
-        return byId.values().stream()
-                .sorted(NewsRelevanceRanker.forName(name))
-                .limit(limit)
-                .toList();
+        var ranked = byId.values().stream().sorted(NewsRelevanceRanker.forName(name));
+        return capPool ? ranked.limit(limit).toList() : ranked.toList();
     }
 
     /**
