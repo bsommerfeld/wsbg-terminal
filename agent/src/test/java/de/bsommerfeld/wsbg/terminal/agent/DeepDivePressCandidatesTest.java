@@ -75,8 +75,9 @@ class DeepDivePressCandidatesTest {
         assertTrue(shelf.contains("Rhine level at Kaub: 78.00 cm (low water)"), shelf);
         // The register names the press feeds now, not only the world sources.
         String register = DeepDiveService.sourcesSection(m, true);
-        assertTrue(register.contains("Rheinpegel"), register);
+        assertTrue(register.contains("Pegelstände"), register);
         assertTrue(register.contains("Makro- und Marktpresse"), register);
+        assertTrue(register.contains("je Subjekt KI-beurteilt"), register);
     }
 
     @Test

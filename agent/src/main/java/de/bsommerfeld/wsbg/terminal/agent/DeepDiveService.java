@@ -144,6 +144,18 @@ public class DeepDiveService {
     private static final int MAX_ANALYST_ACTIONS = 10;
     /** CNBC quarters asked for and rendered - the endpoint's own ceiling is eight. */
     private static final int MAX_CNBC_QUARTERS = 8;
+    /**
+     * The whole dormant-world sweep runs against ONE deadline. Serially these
+     * seventeen feeds took about two minutes cold (the fire detections alone
+     * are ~90 s), which is the lesson the globe left behind: never let the
+     * slowest leg set the pace. They run wide, and whatever has not answered
+     * when the clock runs out is simply not in this report.
+     */
+    private static final int WORLD_SWEEP_DEADLINE_SECONDS = 25;
+    /** How wide the sweep runs - IO-bound legs, so well above the core count. */
+    private static final int WORLD_SWEEP_WIDTH = 8;
+    /** Rows kept per world feed - a reading, never a register dump. */
+    private static final int MAX_WORLD_ROWS_PER_FEED = 5;
     /** Headlines taken per press feed before the subject judge sees them. */
     private static final int MAX_PRESS_CANDIDATES_PER_FEED = 8;
     /** How far back the press feeds are read - the report is a snapshot of TODAY. */
@@ -417,6 +429,26 @@ public class DeepDiveService {
     private volatile de.bsommerfeld.wsbg.terminal.briefing.WorldWeatherClient worldWeather;
     private volatile de.bsommerfeld.wsbg.terminal.briefing.RhinePegelClient rhinePegel;
     private volatile de.bsommerfeld.wsbg.terminal.fj.FjScraper financialJuice;
+    // The seventeen world feeds the globe left behind (2026-08-03). Built with
+    // tests, live-probed, and then without a single caller after the widget was
+    // rolled back. They answer the same way the press does: as candidates for
+    // the subject judge, never as a shelf of their own.
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.GdacsClient gdacs;
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.EonetClient eonet;
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.WildfireClient wildfire;
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.GdeltConflictClient conflict;
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.InternetOutageClient internetOutage;
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.ServiceStatusClient serviceStatus;
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.AutobahnClient autobahn;
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.WaterLevelClient waterLevels;
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.AirQualityGridClient airQuality;
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.GlobalWeatherGridClient weatherGrid;
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.GermanWeatherAlertClient germanAlerts;
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.AuroraOvalClient auroraOval;
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.LaunchPadClient launchPad;
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.EnsoClient enso;
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.SatelliteClient satellites;
+    private volatile de.bsommerfeld.wsbg.terminal.briefing.OrbitClient orbit;
 
     private final AtomicBoolean busy = new AtomicBoolean(false);
     private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
@@ -701,6 +733,87 @@ public class DeepDiveService {
     void setOnvistaFundamentals(
             de.bsommerfeld.wsbg.terminal.onvista.OnvistaFundamentalsClient client) {
         this.onvistaFacts = client;
+    }
+
+
+    @com.google.inject.Inject(optional = true)
+    void setGdacs(de.bsommerfeld.wsbg.terminal.briefing.GdacsClient client) {
+        this.gdacs = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setEonet(de.bsommerfeld.wsbg.terminal.briefing.EonetClient client) {
+        this.eonet = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setWildfire(de.bsommerfeld.wsbg.terminal.briefing.WildfireClient client) {
+        this.wildfire = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setGdeltConflict(de.bsommerfeld.wsbg.terminal.briefing.GdeltConflictClient client) {
+        this.conflict = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setInternetOutage(de.bsommerfeld.wsbg.terminal.briefing.InternetOutageClient client) {
+        this.internetOutage = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setServiceStatus(de.bsommerfeld.wsbg.terminal.briefing.ServiceStatusClient client) {
+        this.serviceStatus = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setAutobahn(de.bsommerfeld.wsbg.terminal.briefing.AutobahnClient client) {
+        this.autobahn = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setWaterLevels(de.bsommerfeld.wsbg.terminal.briefing.WaterLevelClient client) {
+        this.waterLevels = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setAirQuality(de.bsommerfeld.wsbg.terminal.briefing.AirQualityGridClient client) {
+        this.airQuality = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setWeatherGrid(de.bsommerfeld.wsbg.terminal.briefing.GlobalWeatherGridClient client) {
+        this.weatherGrid = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setGermanAlerts(de.bsommerfeld.wsbg.terminal.briefing.GermanWeatherAlertClient client) {
+        this.germanAlerts = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setAuroraOval(de.bsommerfeld.wsbg.terminal.briefing.AuroraOvalClient client) {
+        this.auroraOval = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setLaunchPad(de.bsommerfeld.wsbg.terminal.briefing.LaunchPadClient client) {
+        this.launchPad = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setEnso(de.bsommerfeld.wsbg.terminal.briefing.EnsoClient client) {
+        this.enso = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setSatellites(de.bsommerfeld.wsbg.terminal.briefing.SatelliteClient client) {
+        this.satellites = client;
+    }
+
+    @com.google.inject.Inject(optional = true)
+    void setOrbit(de.bsommerfeld.wsbg.terminal.briefing.OrbitClient client) {
+        this.orbit = client;
     }
 
     @com.google.inject.Inject(optional = true)
@@ -3980,7 +4093,9 @@ public class DeepDiveService {
         // to this subject.
         checkCancelled();
         try {
-            m.pressCandidates = collectPressCandidates();
+            List<String> candidates = new ArrayList<>(collectPressCandidates());
+            candidates.addAll(collectWorldCandidates());
+            m.pressCandidates = List.copyOf(candidates);
         } catch (Exception e) {
             LOG.debug("[DEEPDIVE] press candidates failed: {}", e.getMessage());
         }
@@ -7535,6 +7650,312 @@ public class DeepDiveService {
     }
 
     /**
+     * The seventeen world feeds the rolled-back globe left behind - built,
+     * tested, live-probed and then without a caller. They join the press half
+     * as JUDGE CANDIDATES: collected whole, kept only where the model can name
+     * the path to this subject.
+     *
+     * <p>They run WIDE against one deadline. Serially this sweep took about
+     * two minutes cold - the fire detections alone are ~90 s - and that is
+     * precisely the lesson the globe left: never let the slowest leg set the
+     * pace. Whatever has not answered when the clock runs out is not in this
+     * report, and the drop is logged rather than silent.
+     *
+     * <p>Every line is an aggregate with a MEANING, not raw geometry. The
+     * feeds were written for a map, so their natural shape is coordinates; a
+     * judge cannot do anything with a latitude, and neither can a report.
+     */
+    private List<String> collectWorldCandidates() {
+        List<java.util.concurrent.Callable<List<String>>> jobs = new ArrayList<>();
+
+        jobs.add(() -> {
+            var c = gdacs;
+            if (c == null) return List.of();
+            List<String> out = new ArrayList<>();
+            for (var e : c.events()) {
+                if (out.size() >= MAX_WORLD_ROWS_PER_FEED) break;
+                out.add("Global disaster alert (" + e.kind() + ", level " + e.level() + "): "
+                        + e.title()
+                        + affects("insurers and reinsurers price the loss; construction and "
+                                + "building materials on the rebuild; commodity producers and "
+                                + "logistics where the region actually produces or ships"));
+            }
+            return out;
+        });
+        jobs.add(() -> {
+            var c = eonet;
+            if (c == null) return List.of();
+            List<String> out = new ArrayList<>();
+            for (var e : c.events()) {
+                if (out.size() >= MAX_WORLD_ROWS_PER_FEED) break;
+                out.add("Natural event (" + e.category() + "): " + e.title()
+                        + affects("the same path as any hazard - insurance, materials, "
+                                + "regional production and shipping; a category alone is "
+                                + "not a market event"));
+            }
+            return out;
+        });
+        jobs.add(() -> {
+            var c = wildfire;
+            if (c == null) return List.of();
+            var clusters = c.clusters();
+            if (clusters.isEmpty()) return List.of();
+            double maxFrp = 0;
+            int detections = 0;
+            for (var f : clusters) {
+                maxFrp = Math.max(maxFrp, f.maxFrp());
+                detections += f.detections();
+            }
+            return List.of("Active fire clusters worldwide: " + clusters.size()
+                    + " cluster(s), " + detections + " detection(s), strongest radiative power "
+                    + fmt2(maxFrp) + " MW"
+                    + affects("timber, pulp and paper on supply; insurers on loss; utilities "
+                            + "where transmission lines run through it; agriculture on crop "
+                            + "loss - a count alone says nothing about WHERE"));
+        });
+        jobs.add(() -> {
+            var c = conflict;
+            if (c == null) return List.of();
+            List<String> out = new ArrayList<>();
+            for (var a : c.attacks()) {
+                if (out.size() >= MAX_WORLD_ROWS_PER_FEED) break;
+                out.add("Armed conflict event (" + a.kind() + ") near " + a.place() + ", "
+                        + a.articles() + " report(s)"
+                        + affects("defence primes on order expectations; energy and shipping "
+                                + "when the region carries either; sovereign risk for issuers "
+                                + "domiciled there"));
+            }
+            for (var h : c.hotspots()) {
+                if (out.size() >= MAX_WORLD_ROWS_PER_FEED * 2) break;
+                out.add("Conflict attention hotspot: " + h.place() + ", " + h.articles()
+                        + " article(s)"
+                        + affects("the same paths as an attack, one step earlier - this is "
+                                + "coverage volume, not a confirmed event"));
+            }
+            return out;
+        });
+        jobs.add(() -> {
+            var c = internetOutage;
+            if (c == null) return List.of();
+            List<String> out = new ArrayList<>();
+            for (var o : c.outages()) {
+                if (out.size() >= MAX_WORLD_ROWS_PER_FEED) break;
+                out.add("Internet connectivity disruption in " + o.country() + " ("
+                        + o.source() + " signal at " + fmt2(o.value()) + " against a normal "
+                        + fmt2(o.normalValue()) + ")"
+                        + affects("payment networks, platforms and outsourcing operations in "
+                                + "that country; often a political event before it is a "
+                                + "technical one"));
+            }
+            return out;
+        });
+        jobs.add(() -> {
+            var c = serviceStatus;
+            if (c == null) return List.of();
+            var report = c.report();
+            List<String> out = new ArrayList<>();
+            for (var d : report.degraded()) {
+                if (out.size() >= MAX_WORLD_ROWS_PER_FEED) break;
+                out.add("Cloud or platform service degraded: " + d.name() + " (" + d.indicator()
+                        + (d.note() == null || d.note().isBlank() ? "" : ", " + d.note()) + ")"
+                        + affects("the operator itself; anyone whose product runs on it - "
+                                + "a broker, an exchange or a retailer down for hours is a "
+                                + "revenue event, minutes are not"));
+            }
+            return out;
+        });
+        jobs.add(() -> {
+            var c = autobahn;
+            if (c == null) return List.of();
+            List<String> out = new ArrayList<>();
+            int blocked = 0;
+            for (var i : c.incidents()) {
+                if (i.blocked()) blocked++;
+            }
+            if (blocked > 0) {
+                out.add("German motorway network: " + blocked + " fully blocked section(s)"
+                        + affects("road logistics and just-in-time supply into German plants; "
+                                + "a day of blockages is friction, a week is a production "
+                                + "story"));
+            }
+            return out;
+        });
+        jobs.add(() -> {
+            var c = waterLevels;
+            if (c == null) return List.of();
+            List<String> out = new ArrayList<>();
+            for (var g : c.gauges()) {
+                if (out.size() >= MAX_WORLD_ROWS_PER_FEED) break;
+                out.add("German waterway gauge " + g.name() + " on the " + g.water() + ": "
+                        + fmt2(g.centimetres()) + " cm (" + g.state() + ")"
+                        + affects("bulk shippers, chemicals and steel that move on the river; "
+                                + "utilities that barge fuel - only the extremes matter, a "
+                                + "normal level is not a signal"));
+            }
+            return out;
+        });
+        jobs.add(() -> {
+            var c = germanAlerts;
+            if (c == null) return List.of();
+            List<String> out = new ArrayList<>();
+            for (var a : c.alerts()) {
+                if (out.size() >= MAX_WORLD_ROWS_PER_FEED) break;
+                out.add("German weather warning (" + a.severity() + ", " + a.event() + ") for "
+                        + a.area() + ": " + a.headline()
+                        + affects("insurers on claims; utilities on demand and on wind and "
+                                + "solar output; retail and construction on lost days"));
+            }
+            return out;
+        });
+        jobs.add(() -> {
+            var c = airQuality;
+            if (c == null) return List.of();
+            var cells = c.grid();
+            if (cells.isEmpty()) return List.of();
+            double worst = 0;
+            for (var cell : cells) worst = Math.max(worst, cell.pm25());
+            return List.of("Worst particulate reading on the global air-quality grid: "
+                    + fmt2(worst) + " µg/m³ PM2.5 across " + cells.size() + " sampled cells"
+                    + affects("industrial regions that shut production on smog orders - "
+                            + "steel, cement and chemicals in Asia; airlines on visibility "
+                            + "closures"));
+        });
+        jobs.add(() -> {
+            var c = weatherGrid;
+            if (c == null) return List.of();
+            var cells = c.grid();
+            if (cells.isEmpty()) return List.of();
+            double min = Double.MAX_VALUE;
+            double max = -Double.MAX_VALUE;
+            for (var cell : cells) {
+                if (cell.temperatureC() == null) continue;
+                min = Math.min(min, cell.temperatureC());
+                max = Math.max(max, cell.temperatureC());
+            }
+            if (min == Double.MAX_VALUE) return List.of();
+            return List.of("Global temperature spread on the sampled grid: " + fmt2(min)
+                    + " C to " + fmt2(max) + " C across " + cells.size() + " cells"
+                    + affects("heating and cooling demand for utilities; agriculture on the "
+                            + "extremes - a spread alone is background, not an event"));
+        });
+        jobs.add(() -> {
+            var c = auroraOval;
+            if (c == null) return List.of();
+            var oval = c.latest().orElse(null);
+            if (oval == null || oval.points().isEmpty()) return List.of();
+            double equatorward = 90;
+            for (double[] point : oval.points()) {
+                if (point.length >= 2) equatorward = Math.min(equatorward, Math.abs(point[1]));
+            }
+            return List.of("Auroral oval reaches down to latitude " + fmt2(equatorward)
+                    + " degrees (forecast " + oval.forecastTime() + ")"
+                    + affects("how far south the oval reaches IS the geomagnetic disturbance - "
+                            + "power grids at high latitudes, HF communication, satellite "
+                            + "operators and precision agriculture on GPS accuracy"));
+        });
+        jobs.add(() -> {
+            var c = launchPad;
+            if (c == null) return List.of();
+            List<String> out = new ArrayList<>();
+            for (var l : c.upcoming()) {
+                if (out.size() >= MAX_WORLD_ROWS_PER_FEED) break;
+                out.add("Upcoming launch: " + l.name() + " by " + l.provider() + " from "
+                        + l.pad() + " (" + l.status() + ", " + l.netIso() + ")"
+                        + affects("the launch provider and its listed suppliers; satellite "
+                                + "operators awaiting the payload; insurers on launch risk"));
+            }
+            return out;
+        });
+        jobs.add(() -> {
+            var c = enso;
+            if (c == null) return List.of();
+            var oni = c.latest().orElse(null);
+            if (oni == null) return List.of();
+            return List.of("El Nino / La Nina state: " + oni.phase() + ", anomaly "
+                    + signed(oni.anomaly()) + " (" + oni.season() + ")"
+                    + affects("agriculture through the harvests it shifts - soft commodities, "
+                            + "fertiliser, food processors; energy through the winter it "
+                            + "implies; a SEASONAL state, never a day's move"));
+        });
+        jobs.add(() -> {
+            var c = satellites;
+            if (c == null) return List.of();
+            var objects = c.objects();
+            if (objects.isEmpty()) return List.of();
+            return List.of("Tracked satellites in the house's orbital set: " + objects.size()
+                    + " object(s)"
+                    + affects("nothing on its own - orbital elements become a market fact "
+                            + "only through an operator's outage or a launch, both of which "
+                            + "arrive on their own lines"));
+        });
+        jobs.add(() -> {
+            var c = orbit;
+            if (c == null) return List.of();
+            var station = c.station().orElse(null);
+            if (station == null) return List.of();
+            return List.of("Crewed station " + station.name() + " overhead at "
+                    + fmt2(station.lat()) + "/" + fmt2(station.lon()) + ", "
+                    + fmt2(station.altitudeKm()) + " km"
+                    + affects("nothing on its own - a position is not an event; the space "
+                            + "sector's market facts arrive through launches and operator "
+                            + "outages"));
+        });
+
+        return runWideWithDeadline(jobs);
+    }
+
+    /**
+     * Runs the sweep wide against ONE wall clock and returns whatever answered.
+     * A leg that misses the deadline is dropped and LOGGED - a silent drop
+     * would read as "the world was quiet today", which is a different claim.
+     */
+    private List<String> runWideWithDeadline(
+            List<java.util.concurrent.Callable<List<String>>> jobs) {
+        if (jobs.isEmpty()) return List.of();
+        ExecutorService pool = Executors.newFixedThreadPool(WORLD_SWEEP_WIDTH, r -> {
+            Thread t = new Thread(r, "dd-world");
+            t.setDaemon(true);
+            return t;
+        });
+        List<String> out = new ArrayList<>();
+        int dropped = 0;
+        try {
+            List<java.util.concurrent.Future<List<String>>> futures = new ArrayList<>();
+            for (var job : jobs) futures.add(pool.submit(job));
+            long deadline = System.nanoTime()
+                    + java.util.concurrent.TimeUnit.SECONDS.toNanos(WORLD_SWEEP_DEADLINE_SECONDS);
+            for (var f : futures) {
+                long left = deadline - System.nanoTime();
+                try {
+                    List<String> lines = left <= 0 ? null
+                            : f.get(left, java.util.concurrent.TimeUnit.NANOSECONDS);
+                    if (lines == null) {
+                        dropped++;
+                        f.cancel(true);
+                    } else {
+                        out.addAll(lines);
+                    }
+                } catch (java.util.concurrent.TimeoutException e) {
+                    dropped++;
+                    f.cancel(true);
+                } catch (java.util.concurrent.ExecutionException e) {
+                    dropped++;
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+        if (dropped > 0) {
+            LOG.info("[DEEPDIVE] world sweep: {} leg(s) did not answer within {} s and are "
+                    + "NOT in this report.", dropped, WORLD_SWEEP_DEADLINE_SECONDS);
+        }
+        return List.copyOf(out);
+    }
+
+    /**
      * The day's macro and market wire as JUDGE CANDIDATES. Every feed here is
      * general - none of them knows what an ISIN is - so none of them can be
      * asked about the subject. Handing them to the subject judge instead is
@@ -9151,16 +9572,22 @@ public class DeepDiveService {
             }
             case "world":
                 return de
-                        ? "Weltsignale und Tagespresse - IMF PortWatch, EIA, Harpex, "
-                                + "Energy-Charts, NOAA, CISA, Politik-/Zivil-Ticker, "
-                                + "Gefahrenlage (NOAA/USGS/FAA), Makro- und Marktpresse, "
-                                + "tagesschau-Wirtschaft, Makro-Wire, Rheinpegel, "
-                                + "Wetter an Marktstandorten; je Subjekt KI-beurteilt"
-                        : "World signals and the day's press - IMF PortWatch, EIA, Harpex, "
-                                + "Energy-Charts, NOAA, CISA, policy/civic wires, hazard "
-                                + "picture (NOAA/USGS/FAA), macro and market press, the German "
-                                + "broadcaster's business desk, the macro wire, the Rhine "
-                                + "level, weather at market locations; AI-judged per subject";
+                        ? "Weltsignale, Tagespresse und Weltlage - IMF PortWatch, EIA, "
+                                + "Harpex, Energy-Charts, NOAA, CISA, Politik-/Zivil-Ticker, "
+                                + "Gefahrenlage (NOAA/USGS/FAA/GDACS/EONET), Waldbrände, "
+                                + "Konfliktlage (GDELT), Netzausfälle, Dienste-Störungen, "
+                                + "Autobahn, Pegelstände, DWD-Warnungen, Luftqualität, "
+                                + "Wetterraster, Polarlicht-Oval, Raketenstarts, El Nino, "
+                                + "Makro- und Marktpresse, tagesschau-Wirtschaft, Makro-Wire; "
+                                + "je Subjekt KI-beurteilt"
+                        : "World signals, the day's press and the state of the world - IMF "
+                                + "PortWatch, EIA, Harpex, Energy-Charts, NOAA, CISA, "
+                                + "policy/civic wires, hazards (NOAA/USGS/FAA/GDACS/EONET), "
+                                + "wildfires, conflict (GDELT), internet outages, service "
+                                + "status, motorways, river gauges, German weather warnings, "
+                                + "air quality, the weather grid, the auroral oval, launches, "
+                                + "El Nino, macro and market press, the German broadcaster's "
+                                + "business desk, the macro wire; AI-judged per subject";
             case "cnbc":
                 return "CNBC" + (de
                         ? " - Quartalshistorie Schätzung vs. Ist (Gewinn je Aktie, Umsatz, "
