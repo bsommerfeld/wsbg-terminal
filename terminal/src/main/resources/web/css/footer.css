@@ -117,7 +117,6 @@ html[data-platform="other"] .footer-settings { display: inline-flex; }
 }
 .ad-inner .heart {
   color: var(--red); display: inline-flex;
-  animation: beat 1.6s ease-in-out infinite;
 }
 .ad-inner .heart svg { width: 12px; height: 12px; fill: currentColor; }
 @keyframes beat {
@@ -127,7 +126,6 @@ html[data-platform="other"] .footer-settings { display: inline-flex; }
 }
 .ad-inner .star {
   color: var(--amber); display: inline-flex;
-  animation: spin-pause 1.4s linear infinite;
 }
 .ad-inner .star svg { width: 12px; height: 12px; fill: currentColor; }
 /* Wind up from a standstill (ease-in: slow → fast), snap back to the start
@@ -146,7 +144,7 @@ html[data-platform="other"] .footer-settings { display: inline-flex; }
 .ad-inner .gem svg,
 .ad-inner .skull svg { width: 12px; height: 12px; fill: currentColor; }
 
-.ad-inner .gem { color: var(--green); animation: sparkle 1.8s ease-in-out infinite; }
+.ad-inner .gem { color: var(--green); }
 @keyframes sparkle {
   0%, 100% { opacity: 1;   transform: scale(1); }
   50%      { opacity: .55; transform: scale(.9); }
@@ -179,10 +177,25 @@ html[data-platform="other"] .footer-settings { display: inline-flex; }
       transparent 35%,
       oklch(from var(--amber) l c h / .08) 50%,
       transparent 65%);
-  animation: shimmer 5s linear infinite;
 }
 @keyframes shimmer {
   0%   { transform: translateX(0); }
   100% { transform: translateX(100%); }
 }
+
+/* THE BANNER ONLY MOVES WHILE IT IS ACTUALLY ON-SCREEN.
+   The ad slide is parked off-screen (translateX(100%)) for ~95 % of the time -
+   30 s of banner per 5-10 min window - but an animation on a parked slide keeps
+   ticking, and every tick damages the footer. The OSR path folds ALL dirty rects
+   of a frame into ONE union rectangle (OsrRenderPanel.onPaint) which drives both
+   the VRAM upload and the screen blit: footer damage at the bottom + anything
+   painting at the top = a full-window rect, 60x/s. That is what turned the gold
+   flash on a fresh headline into a stutter - the same trap the .heart-btn.hint
+   beat is kept finite for, and the reason .cell.exch.main .dot has no pulse.
+   data-pos="center" is set the moment the slide starts travelling in, so the
+   motion still carries the entry. */
+.slide.ad[data-pos="center"] .heart { animation: beat 1.6s ease-in-out infinite; }
+.slide.ad[data-pos="center"] .star  { animation: spin-pause 1.4s linear infinite; }
+.slide.ad[data-pos="center"] .gem   { animation: sparkle 1.8s ease-in-out infinite; }
+.slide.ad[data-pos="center"] .ad-inner::after { animation: shimmer 5s linear infinite; }
 
