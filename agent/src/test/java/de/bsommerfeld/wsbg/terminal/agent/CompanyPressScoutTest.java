@@ -20,24 +20,7 @@ class CompanyPressScoutTest {
     private static final URI HOME = URI.create("https://www.example-ag.de/");
 
     @Test
-    void findsTheMostPressLikeLink() {
-        String html = """
-                <nav>
-                  <a href="/karriere">Karriere</a>
-                  <a href="/news">News</a>
-                  <a href="/presse/mitteilungen">Pressemitteilungen</a>
-                  <a href="https://evil.example.org/presse">Fremde Presse</a>
-                </nav>""";
-        String best = CompanyPressScout.bestPressLink(html, HOME);
-        assertEquals("https://www.example-ag.de/presse/mitteilungen", best,
-                "the specific press-release link outranks the generic news link");
-    }
-
-    @Test
     void subdomainOfTheCompanyCounts() {
-        String html = "<a href=\"https://news.example-ag.de/pressemitteilungen\">Presse</a>";
-        assertEquals("https://news.example-ag.de/pressemitteilungen",
-                CompanyPressScout.bestPressLink(html, HOME));
         assertTrue(CompanyPressScout.sameHostFamily(HOME, "https://news.example-ag.de/x"));
         assertFalse(CompanyPressScout.sameHostFamily(HOME, "https://example-ag.de.evil.org/x"));
     }

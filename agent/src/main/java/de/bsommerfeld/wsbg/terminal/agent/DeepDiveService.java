@@ -3226,18 +3226,28 @@ public class DeepDiveService {
 
     /**
      * The FIRST-PARTY sweep: Consorsbank delivers the company's official
-     * website with every profile — its press/IR section carries the
-     * announcements the wire services paraphrase. The scout lifts that page's
-     * headlines as candidates (publisher = the company's own site); they pass
-     * the triage and the article digester like every other source.
+     * website with every profile — its press/IR sections carry the
+     * announcements the wire services paraphrase. The site is WALKED once
+     * (best-first frontier over the company's own host family, sitemap and
+     * feed autodiscovery included), and both legs read that single walk: the
+     * press headlines as candidates (publisher = the company's own site),
+     * which pass the triage and the article digester like every other source,
+     * and the IR archive on its own shelf.
      */
     private void pressSweep(String subject, Material m) {
         CompanyPressScout scout = pressScout;
         if (scout == null || m.deepDive == null || m.deepDive.profile() == null) return;
         String website = m.deepDive.profile().website();
         if (website == null || website.isBlank()) return;
+        CompanySiteCrawler.Crawl crawl;
         try {
-            List<RawNewsItem> found = scout.pressItems(website, 6);
+            crawl = scout.crawl(website);
+        } catch (Exception e) {
+            LOG.debug("[DEEPDIVE] site walk failed: {}", e.getMessage());
+            return;
+        }
+        try {
+            List<RawNewsItem> found = scout.pressItems(crawl, 6);
             if (found.isEmpty()) return;
             Set<String> seen = new HashSet<>();
             for (RawNewsItem item : m.news) seen.add(newsKey(item));
@@ -3262,7 +3272,7 @@ public class DeepDiveService {
         // calendar dates - its OWN shelf block, never through the news triage
         // (the 30-day freshness cut would behead every past quarter).
         try {
-            List<CompanyPressScout.IrEntry> entries = scout.irEntries(website, MAX_IR_ENTRIES);
+            List<CompanyPressScout.IrEntry> entries = scout.irEntries(crawl, MAX_IR_ENTRIES);
             if (!entries.isEmpty()) {
                 m.irEntries = entries;
                 LOG.info("[DEEPDIVE] '{}' IR archive: {} first-party entry(ies) from {}.",

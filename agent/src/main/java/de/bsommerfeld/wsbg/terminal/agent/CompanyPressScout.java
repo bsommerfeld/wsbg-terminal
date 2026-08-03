@@ -2,124 +2,141 @@ package de.bsommerfeld.wsbg.terminal.agent;
 
 import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
 import de.bsommerfeld.wsbg.terminal.source.net.WebFetcher;
-import de.bsommerfeld.wsbg.terminal.source.net.WebResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.URI;
-import java.time.Duration;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
  * The KI-DD's first-party leg: the company's OWN website (Consorsbank delivers
- * the official URL with every profile) carries a press/IR section with the
- * announcements the wire services paraphrase — restructurings, quarterly
- * releases, regulatory statements. This scout fetches the homepage, locates the
- * press/news/IR section by link heuristics, and lifts that page's headline
- * links as news candidates (publisher = the company's own site). Everything
- * best-effort with tight budgets: two fetches, one host, a handful of items —
- * the finds still pass the relevance triage and the article digester like any
- * other source.
+ * the official URL with every profile) carries the announcements the wire
+ * services paraphrase — restructurings, quarterly releases, regulatory
+ * statements — plus the report archive and the financial calendar. The
+ * {@link CompanySiteCrawler} walks that site; this scout reads what it brought
+ * back: headline-shaped links become news candidates (publisher = the
+ * company's own site) and report-shaped links become IR entries. Both legs
+ * share ONE walk, and both stay best-effort — a corporate site that resists
+ * costs its leg, never the report.
  */
 final class CompanyPressScout {
 
     private static final Logger LOG = LoggerFactory.getLogger(CompanyPressScout.class);
 
-    private static final Duration FETCH_TIMEOUT = Duration.ofSeconds(12);
-    private static final int MAX_HTML_CHARS = 400_000;
-    /** Headline-shaped anchor text: long enough to be a title, short enough to be one. */
-    private static final int MIN_TITLE_CHARS = 25;
+    /**
+     * Headline-shaped anchor text: long enough to be a title, short enough to
+     * be one. Deliberately the crawler's item/section threshold - what the
+     * frontier declines to open because it is already a story is exactly what
+     * this harvest picks up.
+     */
+    private static final int MIN_TITLE_CHARS = CompanySiteCrawler.ITEM_TITLE_CHARS;
     private static final int MAX_TITLE_CHARS = 180;
 
-    private static final Pattern ANCHOR =
-            Pattern.compile("(?is)<a\\s[^>]*?href=[\"']([^\"'#>]+)[\"'][^>]*>(.*?)</a>");
-    private static final Pattern TAG = Pattern.compile("<[^>]+>");
-    private static final Pattern WS = Pattern.compile("\\s+");
+    /**
+     * The score of a page nothing vouched for - the homepage. Measured live on
+     * siemens.com 2026-08-03: harvesting it flat put "Your Platinum Partner
+     * for Siemens software success" ahead of three actual press releases, so a
+     * page WITHOUT its own section context only contributes links that carry
+     * the smell themselves, and every page hands over its best-smelling links
+     * first.
+     */
+    private static final int FLOOR_SCORE = 1;
+
+    /** How strongly one harvested link carries a section's vocabulary itself. */
+    private static int smell(String url, String title, String[] hints) {
+        return CompanySiteCrawler.hintScore(url + " " + title, hints);
+    }
 
     /**
-     * Press-section hints in priority order — href or anchor text, German and
-     * English corporate conventions.
+     * Link vocabulary that is navigation chrome, never editorial - matched
+     * against the URL as well as the text, because a career teaser rarely says
+     * "Karriere" in the words a visitor reads ("HelloFresh als Arbeitsplatz",
+     * measured 2026-08-03) while its URL always does.
      */
-    private static final String[] PRESS_HINTS = {
-            "pressemitteilung", "press-release", "pressrelease", "newsroom",
-            "presse", "press", "media-center", "mediacenter", "investor-relations",
-            "investor", "mitteilungen", "aktuelles", "news",
-    };
-
-    /** Anchor texts that are navigation chrome, never headlines. */
     private static final String[] NAV_NOISE = {
             "cookie", "impressum", "datenschutz", "privacy", "kontakt", "contact",
             "login", "anmelden", "karriere", "career", "sitemap", "agb", "terms",
             "newsletter", "mehr erfahren", "read more", "weiterlesen", "startseite",
     };
 
-    private final WebFetcher fetcher;
-    private final String userAgent;
+    private final CompanySiteCrawler crawler;
 
     CompanyPressScout(WebFetcher fetcher, String userAgent) {
-        this.fetcher = fetcher;
-        this.userAgent = userAgent;
+        this(new CompanySiteCrawler(fetcher, userAgent));
+    }
+
+    CompanyPressScout(CompanySiteCrawler crawler) {
+        this.crawler = crawler;
+    }
+
+    /** One walk of the company site, to be handed to both harvest modes. */
+    CompanySiteCrawler.Crawl crawl(String website) {
+        return crawler == null ? CompanySiteCrawler.Crawl.empty() : crawler.crawl(website);
     }
 
     /**
-     * Lifts up to {@code limit} headline candidates from the company's press
-     * section. Empty on any failure — a corporate site that resists two plain
-     * fetches costs its leg, never the report.
+     * Lifts up to {@code limit} headline candidates from everything the walk
+     * touched — the declared feed first (finished headlines, no heuristics),
+     * then the crawled pages in press-relevance order, so a newsroom listing
+     * fills the slots before a stray section page ever gets a look in.
      */
-    List<RawNewsItem> pressItems(String website, int limit) {
-        if (fetcher == null || website == null || website.isBlank()) return List.of();
-        try {
-            URI home = normalize(website);
-            if (home == null) return List.of();
-            String homeHtml = fetch(home.toString());
-            if (homeHtml == null) return List.of();
-            String pressUrl = bestPressLink(homeHtml, home);
-            String listingHtml = homeHtml;
-            URI listingBase = home;
-            if (pressUrl != null && !pressUrl.equals(home.toString())) {
-                String fetched = fetch(pressUrl);
-                if (fetched != null) {
-                    listingHtml = fetched;
-                    listingBase = URI.create(pressUrl);
-                }
+    List<RawNewsItem> pressItems(CompanySiteCrawler.Crawl crawl, int limit) {
+        if (crawl == null || crawl.isEmpty()) return List.of();
+        String publisher = crawl.home().getHost() + " (IR/Presse)";
+        List<RawNewsItem> out = new ArrayList<>();
+        Set<String> sections = sectionUrls(crawl);
+        Set<String> seenUrls = new HashSet<>();
+        Set<String> seenTitles = new HashSet<>();
+        for (CompanySiteCrawler.FeedItem item : crawl.feedItems()) {
+            if (out.size() >= limit) break;
+            String title = item.title();
+            if (title.length() < 8 || title.length() > MAX_TITLE_CHARS) continue;
+            if (!seenUrls.add(item.url())
+                    || !seenTitles.add(title.toLowerCase(Locale.ROOT))) {
+                continue;
             }
-            List<RawNewsItem> out = new ArrayList<>();
-            String publisher = home.getHost() + " (IR/Presse)";
-            for (Headline h : extractHeadlines(listingHtml, listingBase)) {
-                if (out.size() >= limit) break;
-                out.add(new RawNewsItem(h.url(), h.title(), publisher, h.url(),
-                        null, List.of()));
-            }
-            if (!out.isEmpty()) {
-                LOG.info("[DEEPDIVE] press scout lifted {} item(s) from {} (listing {})",
-                        out.size(), home.getHost(), pressUrl == null ? "homepage" : pressUrl);
-            }
-            return out;
-        } catch (Exception e) {
-            LOG.debug("[DEEPDIVE] press scout failed for '{}': {}", website, e.getMessage());
-            return List.of();
+            out.add(new RawNewsItem(item.url(), title, publisher, item.url(), null, List.of()));
         }
+        for (CompanySiteCrawler.Page page : byScore(crawl, CompanySiteCrawler.Page::pressScore)) {
+            if (out.size() >= limit) break;
+            List<Headline> found = extractHeadlines(page.html(), URI.create(page.url()));
+            found.sort(Comparator.comparingInt(
+                    (Headline h) -> smell(h.url(), h.title(), CompanySiteCrawler.PRESS_HINTS))
+                    .reversed());
+            boolean ownSmellRequired = page.pressScore() <= FLOOR_SCORE;
+            for (Headline h : found) {
+                if (out.size() >= limit) break;
+                if (ownSmellRequired
+                        && smell(h.url(), h.title(), CompanySiteCrawler.PRESS_HINTS) == 0) {
+                    continue;
+                }
+                if (sections.contains(CompanySiteCrawler.canonical(h.url()))) continue;
+                if (!seenUrls.add(h.url()) || !seenTitles.add(h.title().toLowerCase(Locale.ROOT))) {
+                    continue;
+                }
+                out.add(new RawNewsItem(h.url(), h.title(), publisher, h.url(), null, List.of()));
+            }
+        }
+        if (!out.isEmpty()) {
+            LOG.info("[DEEPDIVE] press scout lifted {} item(s) from {} ({} page(s) walked)",
+                    out.size(), crawl.home().getHost(), crawl.pages().size());
+        }
+        return out;
+    }
+
+    /** Convenience for callers that want the press leg alone (smokes, tests). */
+    List<RawNewsItem> pressItems(String website, int limit) {
+        return pressItems(crawl(website), limit);
     }
 
     // ---- the IR ARCHIVE mode (first-party reports + financial calendar) ----
-
-    /**
-     * IR-archive hints in priority order - the financial-reports/calendar
-     * section, NOT the press stream (its own hints above). German and English
-     * corporate conventions.
-     */
-    private static final String[] IR_HINTS = {
-            "finanzberichte", "quartalsbericht", "geschaeftsbericht", "financial-report",
-            "quarterly-report", "quarterly-result", "financial-result", "finanzkalender",
-            "financial-calendar", "ir-kalender", "publikationen", "publications",
-            "berichte", "reports", "results", "investor-relations", "investor",
-    };
 
     /** A report-shaped anchor: it must smell like a filing, call or calendar entry. */
     private static final Pattern IR_ENTRY_TOKEN = Pattern.compile(
@@ -138,39 +155,80 @@ final class CompanyPressScout {
     }
 
     /**
-     * Lifts up to {@code limit} report/calendar entries from the company's IR
-     * archive - the FIRST-PARTY record of past quarters and coming dates the
-     * press only paraphrases (user mandate 2026-07-16 "Ist, Soll UND
-     * vergangener Stand"). Same tight budget as the press mode: two fetches,
-     * one host family, empty on any failure.
+     * Lifts up to {@code limit} report/calendar entries from the walk - the
+     * FIRST-PARTY record of past quarters and coming dates the press only
+     * paraphrases (user mandate 2026-07-16 "Ist, Soll UND vergangener
+     * Stand"). Pages are read in IR-relevance order, so the report archive
+     * fills the slots before anything else.
      */
-    List<IrEntry> irEntries(String website, int limit) {
-        if (fetcher == null || website == null || website.isBlank()) return List.of();
-        try {
-            URI home = normalize(website);
-            if (home == null) return List.of();
-            String homeHtml = fetch(home.toString());
-            if (homeHtml == null) return List.of();
-            String irUrl = bestLink(homeHtml, home, IR_HINTS);
-            String listingHtml = homeHtml;
-            URI listingBase = home;
-            if (irUrl != null && !irUrl.equals(home.toString())) {
-                String fetched = fetch(irUrl);
-                if (fetched != null) {
-                    listingHtml = fetched;
-                    listingBase = URI.create(irUrl);
+    List<IrEntry> irEntries(CompanySiteCrawler.Crawl crawl, int limit) {
+        if (crawl == null || crawl.isEmpty()) return List.of();
+        List<IrEntry> out = new ArrayList<>();
+        Set<String> sections = sectionUrls(crawl);
+        Set<String> seenUrls = new HashSet<>();
+        Set<String> seenTitles = new HashSet<>();
+        for (CompanySiteCrawler.Page page : byScore(crawl, CompanySiteCrawler.Page::irScore)) {
+            if (out.size() >= limit) break;
+            boolean ownSmellRequired = page.irScore() <= FLOOR_SCORE;
+            for (IrEntry e : extractIrEntries(page.html(), URI.create(page.url()), limit)) {
+                if (out.size() >= limit) break;
+                if (ownSmellRequired
+                        && smell(e.url(), e.title(), CompanySiteCrawler.IR_HINTS) == 0) {
+                    continue;
                 }
+                if (!isArchiveWorthy(e)) continue;
+                if (sections.contains(CompanySiteCrawler.canonical(e.url()))) continue;
+                if (!seenUrls.add(e.url())
+                        || !seenTitles.add(e.title().toLowerCase(Locale.ROOT))) {
+                    continue;
+                }
+                out.add(e);
             }
-            List<IrEntry> out = extractIrEntries(listingHtml, listingBase, limit);
-            if (!out.isEmpty()) {
-                LOG.info("[DEEPDIVE] IR scout lifted {} entry(ies) from {} (listing {})",
-                        out.size(), home.getHost(), irUrl == null ? "homepage" : irUrl);
-            }
-            return out;
-        } catch (Exception e) {
-            LOG.debug("[DEEPDIVE] IR scout failed for '{}': {}", website, e.getMessage());
-            return List.of();
         }
+        if (!out.isEmpty()) {
+            LOG.info("[DEEPDIVE] IR scout lifted {} entry(ies) from {} ({} page(s) walked)",
+                    out.size(), crawl.home().getHost(), crawl.pages().size());
+        }
+        return out;
+    }
+
+    /** Convenience for callers that want the IR leg alone (smokes, tests). */
+    List<IrEntry> irEntries(String website, int limit) {
+        return irEntries(crawl(website), limit);
+    }
+
+    /**
+     * The pages the walk itself opened - navigation into a section, never an
+     * item OF one. "Alle Pressemitteilungen 2026" is a link to a listing, not
+     * a headline, and "Finanzberichte" is not a report; both would otherwise
+     * ride along as content once the whole site is harvested instead of a
+     * single listing page.
+     */
+    private static Set<String> sectionUrls(CompanySiteCrawler.Crawl crawl) {
+        Set<String> out = new HashSet<>();
+        for (CompanySiteCrawler.Page p : crawl.pages()) {
+            out.add(CompanySiteCrawler.canonical(p.url()));
+        }
+        return out;
+    }
+
+    /**
+     * The walked pages that carry this mode's smell at all, most relevant
+     * first. The filter is what keeps the modes apart: a report archive holds
+     * no headlines and a newsroom holds no filings, and harvesting both from
+     * both would file every quarterly PDF twice. The homepage scores 1/1 and
+     * therefore always stays in - it is the honest last resort of both modes.
+     */
+    private static List<CompanySiteCrawler.Page> byScore(
+            CompanySiteCrawler.Crawl crawl,
+            java.util.function.ToIntFunction<CompanySiteCrawler.Page> score) {
+        List<CompanySiteCrawler.Page> pages = new ArrayList<>();
+        for (CompanySiteCrawler.Page p : crawl.pages()) {
+            if (score.applyAsInt(p) > 0) pages.add(p);
+        }
+        pages.sort(Comparator.comparingInt(score).reversed()
+                .thenComparingInt(CompanySiteCrawler.Page::depth));
+        return pages;
     }
 
     /**
@@ -181,23 +239,16 @@ final class CompanyPressScout {
      */
     static List<IrEntry> extractIrEntries(String html, URI base, int limit) {
         List<IrEntry> out = new ArrayList<>();
-        java.util.Set<String> seen = new java.util.HashSet<>();
-        Matcher m = ANCHOR.matcher(html);
-        while (m.find() && out.size() < limit) {
-            String title = flatten(m.group(2));
+        Set<String> seen = new HashSet<>();
+        for (CompanySiteCrawler.Anchor a : CompanySiteCrawler.anchors(html)) {
+            if (out.size() >= limit) break;
+            String title = a.text();
             if (title.length() < 8 || title.length() > MAX_TITLE_CHARS) continue;
             if (!IR_ENTRY_TOKEN.matcher(title).find()) continue;
             String lower = title.toLowerCase(Locale.ROOT);
-            boolean noise = false;
-            for (String bad : NAV_NOISE) {
-                if (lower.contains(bad)) {
-                    noise = true;
-                    break;
-                }
-            }
-            if (noise) continue;
-            String url = resolve(base, m.group(1).strip());
-            if (url == null || !sameHostFamily(base, url)) continue;
+            String url = CompanySiteCrawler.resolve(base, a.href());
+            if (url == null || !CompanySiteCrawler.sameHostFamily(base, url)) continue;
+            if (isNavNoise(lower + " " + url.toLowerCase(Locale.ROOT))) continue;
             if (!seen.add(url) && !seen.add(lower)) continue;
             out.add(new IrEntry(title, irDate(title, url), url));
         }
@@ -218,59 +269,6 @@ final class CompanyPressScout {
         return year.find() ? year.group(1) : null;
     }
 
-    private String fetch(String url) throws Exception {
-        Map<String, String> headers = new LinkedHashMap<>();
-        headers.put("User-Agent", userAgent);
-        headers.put("Accept", "text/html,application/xhtml+xml");
-        WebResponse resp = fetcher.fetch(url, headers, FETCH_TIMEOUT);
-        if (resp.status() != 200 || resp.body() == null) return null;
-        String body = resp.body();
-        return body.length() > MAX_HTML_CHARS ? body.substring(0, MAX_HTML_CHARS) : body;
-    }
-
-    /** A scheme-less profile URL still resolves ("www.sap.com" → https). */
-    static URI normalize(String website) {
-        String w = website.strip();
-        if (!w.startsWith("http://") && !w.startsWith("https://")) w = "https://" + w;
-        try {
-            URI uri = URI.create(w);
-            return uri.getHost() == null ? null : uri;
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    /**
-     * The most press-like link of a page, resolved absolute — hint priority
-     * decides (a "Pressemitteilungen" link beats a generic "News" one), the
-     * link must stay on the company's own host family.
-     */
-    static String bestPressLink(String html, URI base) {
-        return bestLink(html, base, PRESS_HINTS);
-    }
-
-    /** The best-ranked section link of a page for the given hint list. */
-    static String bestLink(String html, URI base, String[] hints) {
-        String bestUrl = null;
-        int bestRank = Integer.MAX_VALUE;
-        Matcher m = ANCHOR.matcher(html);
-        while (m.find()) {
-            String href = m.group(1).strip();
-            String text = flatten(m.group(2)).toLowerCase(Locale.ROOT);
-            String hrefLower = href.toLowerCase(Locale.ROOT);
-            for (int rank = 0; rank < hints.length && rank < bestRank; rank++) {
-                String hint = hints[rank];
-                if (!hrefLower.contains(hint) && !text.contains(hint)) continue;
-                String absolute = resolve(base, href);
-                if (absolute == null || !sameHostFamily(base, absolute)) continue;
-                bestRank = rank;
-                bestUrl = absolute;
-                break;
-            }
-        }
-        return bestUrl;
-    }
-
     record Headline(String title, String url) {
     }
 
@@ -281,64 +279,45 @@ final class CompanyPressScout {
      */
     static List<Headline> extractHeadlines(String html, URI base) {
         List<Headline> out = new ArrayList<>();
-        java.util.Set<String> seenUrls = new java.util.HashSet<>();
-        java.util.Set<String> seenTitles = new java.util.HashSet<>();
-        Matcher m = ANCHOR.matcher(html);
-        while (m.find()) {
-            String title = flatten(m.group(2));
+        Set<String> seenUrls = new HashSet<>();
+        Set<String> seenTitles = new HashSet<>();
+        for (CompanySiteCrawler.Anchor a : CompanySiteCrawler.anchors(html)) {
+            String title = a.text();
             if (title.length() < MIN_TITLE_CHARS || title.length() > MAX_TITLE_CHARS) continue;
             String lower = title.toLowerCase(Locale.ROOT);
-            boolean noise = false;
-            for (String bad : NAV_NOISE) {
-                if (lower.contains(bad)) {
-                    noise = true;
-                    break;
-                }
-            }
-            if (noise) continue;
-            String url = resolve(base, m.group(1).strip());
-            if (url == null || !sameHostFamily(base, url)) continue;
+            String url = CompanySiteCrawler.resolve(base, a.href());
+            if (url == null || !CompanySiteCrawler.sameHostFamily(base, url)) continue;
+            if (isNavNoise(lower + " " + url.toLowerCase(Locale.ROOT))) continue;
             if (!seenUrls.add(url) || !seenTitles.add(lower)) continue;
             out.add(new Headline(title, url));
         }
         return out;
     }
 
-    private static String flatten(String anchorInner) {
-        return WS.matcher(TAG.matcher(anchorInner).replaceAll(" ")).replaceAll(" ").strip();
+    private static boolean isNavNoise(String lowerHaystack) {
+        for (String bad : NAV_NOISE) {
+            if (lowerHaystack.contains(bad)) return true;
+        }
+        return false;
     }
 
-    private static String resolve(URI base, String href) {
-        try {
-            if (href.startsWith("javascript:") || href.startsWith("mailto:")
-                    || href.startsWith("tel:")) {
-                return null;
-            }
-            URI resolved = base.resolve(href);
-            if (resolved.getHost() == null) return null;
-            String scheme = resolved.getScheme();
-            if (!"http".equals(scheme) && !"https".equals(scheme)) return null;
-            return resolved.toString();
-        } catch (Exception e) {
-            return null;
-        }
+    /**
+     * An IR entry is a DOCUMENT or a DATED event - nothing else belongs on the
+     * archive shelf. Measured on nagarro.com 2026-08-03: without this the
+     * section links themselves ("Financial Reports and Publications", undated,
+     * pointing at a listing) were filed as reports.
+     */
+    private static boolean isArchiveWorthy(IrEntry e) {
+        return e.dateIso() != null || !CompanySiteCrawler.crawlable(e.url());
+    }
+
+    /** A scheme-less profile URL still resolves ({@code www.sap.com} → https). */
+    static URI normalize(String website) {
+        return CompanySiteCrawler.normalize(website);
     }
 
     /** {@code news.sap.com} belongs to {@code www.sap.com} — compare the registrable tail. */
     static boolean sameHostFamily(URI base, String url) {
-        try {
-            String a = tail(base.getHost());
-            String b = tail(URI.create(url).getHost());
-            return a != null && a.equals(b);
-        } catch (Exception e) {
-            return false;
-        }
-    }
-
-    private static String tail(String host) {
-        if (host == null) return null;
-        String[] parts = host.toLowerCase(Locale.ROOT).split("\\.");
-        if (parts.length < 2) return host.toLowerCase(Locale.ROOT);
-        return parts[parts.length - 2] + "." + parts[parts.length - 1];
+        return CompanySiteCrawler.sameHostFamily(base, url);
     }
 }
