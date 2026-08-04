@@ -1,5 +1,6 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
+import de.bsommerfeld.wsbg.terminal.core.util.BackgroundThreads;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.agent.event.DeepDiveFinishedEvent;
@@ -468,17 +469,23 @@ public class DeepDiveService {
     private volatile de.bsommerfeld.wsbg.terminal.onvista.OnvistaMarketClient onvistaMarket;
 
     private final AtomicBoolean busy = new AtomicBoolean(false);
-    private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "deepdive");
-        t.setDaemon(true);
-        return t;
-    });
+    /** The shared gemma4 gate — the DD arms/disarms its priority mode on it. */
+    private final LlmGate llmGate;
+    /**
+     * Priority armed for the RUNNING generation (user-armed on the overview card):
+     * the wire's model lanes are parked so this run owns both permits. Run-scoped —
+     * {@link #finish} always disarms, so the wire can never stay lahmgelegt.
+     */
+    private volatile boolean priority;
+    private final ExecutorService worker =
+            Executors.newSingleThreadExecutor(BackgroundThreads.single("deepdive"));
 
     @Inject
     public DeepDiveService(SubjectRegistry subjectRegistry, AgentBrain brain, LlmGate llmGate,
             DeepDiveArchive archive, ApplicationEventBus eventBus) {
         this.subjectRegistry = subjectRegistry;
         this.brain = brain;
+        this.llmGate = llmGate;
         this.chatGateway = new ChatGateway(brain, llmGate);
         this.archive = archive;
         this.eventBus = eventBus;
@@ -1001,6 +1008,39 @@ public class DeepDiveService {
         return busy.get();
     }
 
+    /**
+     * The ticker of the RUNNING generation, or null when the desk is idle - so a
+     * close guard can name what it is about to destroy instead of warning in the
+     * abstract. Set the moment {@code busy} latches, cleared by {@link #finish}.
+     */
+    public String runningSubject() {
+        return runningSubject;
+    }
+
+    /** Whether the running generation currently owns both model permits. */
+    public boolean isPriority() {
+        return priority;
+    }
+
+    /**
+     * Arms or disarms priority for the RUNNING generation: armed, the wire's model
+     * lanes (subject extraction, composition, digest, weather, watchlist) are parked
+     * at the {@link LlmGate} and this run has both permits to itself. The wire keeps
+     * COLLECTING throughout — only its model calls wait — so nothing is lost; the
+     * parked lanes resume the moment the run ends or the user disarms.
+     *
+     * <p>Arming while idle is a no-op ({@code false}): the mode belongs to a run,
+     * never to the session.
+     */
+    public boolean setPriority(boolean on) {
+        if (on && !busy.get()) return false;
+        priority = on;
+        llmGate.setPriority(on && busy.get());
+        LOG.info("[DEEPDIVE] priority mode {} — background model lanes {}.",
+                on ? "armed" : "disarmed", on ? "parked" : "running");
+        return true;
+    }
+
     public List<DeepDiveRecord> recent(int limit) {
         return archive.recent(limit);
     }
@@ -1030,6 +1070,7 @@ public class DeepDiveService {
             return false;
         }
         if (!busy.compareAndSet(false, true)) return false;
+        runningSubject = ticker;
         cancelRequested = false;
         worker.execute(() -> {
             runThread = Thread.currentThread();
@@ -1062,6 +1103,9 @@ public class DeepDiveService {
         });
         return true;
     }
+
+    /** The RUNNING generation's ticker - see {@link #runningSubject()}. */
+    private volatile String runningSubject;
 
     /** A user-requested abort of the RUNNING generation (flag + interrupt). */
     private volatile boolean cancelRequested;
@@ -1113,6 +1157,12 @@ public class DeepDiveService {
      * next unrelated push (user report 2026-07-13).
      */
     private void finish(String subject, boolean success, String reportId) {
+        // The wire comes back FIRST, on every exit path (success, failure, cancel):
+        // a parked background lane must never outlive the run that parked it.
+        priority = false;
+        llmGate.setPriority(false);
+        // The desk falls with its run - it is the standing generation's
+        runningSubject = null;
         busy.set(false);
         eventBus.post(new DeepDiveFinishedEvent(subject, success, reportId));
     }
