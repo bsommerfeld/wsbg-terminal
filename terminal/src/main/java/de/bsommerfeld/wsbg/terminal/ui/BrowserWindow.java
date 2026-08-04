@@ -53,6 +53,7 @@ public final class BrowserWindow {
     private JFrame frame;
     private CefBrowser browser;
     private Runnable onClose = () -> {};
+    private java.util.function.BooleanSupplier closeGuard = () -> true;
     private final java.util.concurrent.atomic.AtomicBoolean shuttingDown =
             new java.util.concurrent.atomic.AtomicBoolean(false);
 
@@ -70,6 +71,20 @@ public final class BrowserWindow {
      */
     public void setOnClose(Runnable onClose) {
         this.onClose = onClose;
+    }
+
+    /**
+     * The VETO in front of the teardown: asked on every close gesture, and a
+     * {@code false} leaves the app running untouched. Set by {@code AppMain} to a
+     * guard that stops for work whose loss the user cannot undo (a running deep
+     * dive keeps no checkpoint - closing throws the whole generation away).
+     *
+     * <p>The guard may show a modal dialog; it is called BEFORE the shutdown latch
+     * closes, so a declined close leaves the window fully usable and a later
+     * gesture asks again.
+     */
+    public void setCloseGuard(java.util.function.BooleanSupplier guard) {
+        this.closeGuard = guard == null ? () -> true : guard;
     }
 
     public void open(String url) {
@@ -165,6 +180,23 @@ public final class BrowserWindow {
      * synchronously HERE first, then CEF is torn down, then we force the exit.
      */
     private void gracefulShutdown() {
+        // Already tearing down: a second gesture must not re-ask, it must do
+        // nothing (the guard's dialog would pop up over a dying window).
+        if (shuttingDown.get()) return;
+        // The veto runs BEFORE the latch: a declined close leaves everything
+        // standing, and the next gesture is a fresh question.
+        boolean mayClose;
+        try {
+            mayClose = closeGuard.getAsBoolean();
+        } catch (Throwable t) {
+            // A broken guard must never make the app unclosable.
+            LOG.warn("Close guard failed, closing anyway: {}", t.toString());
+            mayClose = true;
+        }
+        if (!mayClose) {
+            LOG.info("Close gesture declined by the user - staying open.");
+            return;
+        }
         if (!shuttingDown.compareAndSet(false, true)) return;
         LOG.info("Graceful service shutdown, then CEF teardown.");
         try { onClose.run(); } catch (Throwable ignored) {}

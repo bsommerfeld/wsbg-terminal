@@ -308,6 +308,14 @@
                              full-window OSR blit ~15ms on the EDT (grid-view
                              slideshow). The rare Metal Queue-Flusher SIGSEGV is
                              opted into via WSBG_J2D_OPENGL=true (see AppMain). -->
+                        <!-- GC: mirrors AppLauncher.addGcFlags in the launcher
+                             module — keep the two lists in sync, or a jank fix
+                             validated in dev silently misses the shipped app.
+                             ZGC because a G1 young pause is a skipped frame on
+                             the EDT; -Xmx4g so the heap never competes with the
+                             resident Ollama model for RAM. -->
+                        <argument>-XX:+UseZGC</argument>
+                        <argument>-Xmx4g</argument>
                         <argument>--enable-native-access=ALL-UNNAMED</argument>
                         <argument>--add-opens=java.desktop/sun.awt=ALL-UNNAMED</argument>
                         <argument>--add-opens=java.desktop/sun.lwawt=ALL-UNNAMED</argument>

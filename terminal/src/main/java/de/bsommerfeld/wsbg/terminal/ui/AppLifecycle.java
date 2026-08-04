@@ -1,12 +1,19 @@
 package de.bsommerfeld.wsbg.terminal.ui;
 
 import com.google.inject.Injector;
+import de.bsommerfeld.wsbg.terminal.agent.AgentBrain;
 import de.bsommerfeld.wsbg.terminal.agent.AgentCoordinator;
+import de.bsommerfeld.wsbg.terminal.agent.DeepDiveService;
 import de.bsommerfeld.wsbg.terminal.agent.EditorialPipeline;
 import de.bsommerfeld.wsbg.terminal.agent.MarketMemoryService;
 import de.bsommerfeld.wsbg.terminal.agent.OllamaServerManager;
 import de.bsommerfeld.wsbg.terminal.agent.PassiveMonitorService;
 import de.bsommerfeld.wsbg.terminal.agent.WeatherReportService;
+import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
+import de.bsommerfeld.wsbg.terminal.currency.EurUsdMonitorService;
+import de.bsommerfeld.wsbg.terminal.feargreed.CryptoFearGreedMonitorService;
+import de.bsommerfeld.wsbg.terminal.feargreed.FearGreedMonitorService;
+import de.bsommerfeld.wsbg.terminal.core.i18n.I18nService;
 import de.bsommerfeld.wsbg.terminal.db.AgentRepository;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
 import de.bsommerfeld.wsbg.terminal.ui.web.AssetServer;
@@ -14,6 +21,7 @@ import de.bsommerfeld.wsbg.terminal.ui.web.PushHub;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.swing.JFrame;
 import javax.swing.SwingUtilities;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -60,6 +68,78 @@ final class AppLifecycle {
     /** The window's close callback ({@code BrowserWindow.setOnClose}): stop services only. */
     Runnable onWindowClose() {
         return this::shutdownServices;
+    }
+
+    /**
+     * The close VETO ({@code BrowserWindow.setCloseGuard}): asks before a running
+     * deep dive is thrown away.
+     *
+     * <p>A generation keeps NO checkpoint - material, register and every section
+     * already written live only in the run's memory, and the worker is a daemon
+     * thread that dies with the JVM mid-model-call. Closing therefore does not
+     * pause the report, it destroys it, and that is worth one question. Every
+     * other service either persists (the Reddit snapshot hook) or is cheap to
+     * redo, so nothing else gates the close.
+     *
+     * @return {@code true} when the app may close
+     */
+    java.util.function.BooleanSupplier closeGuard() {
+        return this::confirmCloseDuringDeepDive;
+    }
+
+    private boolean confirmCloseDuringDeepDive() {
+        DeepDiveService dd;
+        try {
+            dd = injector.getInstance(DeepDiveService.class);
+        } catch (Throwable t) {
+            // No desk, no question - never make the app unclosable over a guard.
+            LOG.warn("Close guard could not reach the deep-dive desk: {}", t.toString());
+            return true;
+        }
+        if (!dd.isBusy()) return true;
+        return askOnEdt();
+    }
+
+    /**
+     * Shows the modal question on the EDT and returns the answer. The close
+     * gesture reaches us on the EDT from {@code windowClosing}, but macOS routes
+     * Cmd+Q through the Desktop quit handler, which may not be on it - hence the
+     * explicit hop.
+     */
+    private boolean askOnEdt() {
+        if (SwingUtilities.isEventDispatchThread()) return ask();
+        final boolean[] answer = {true};
+        try {
+            SwingUtilities.invokeAndWait(() -> answer[0] = ask());
+        } catch (Exception e) {
+            LOG.warn("Close confirmation could not be shown, closing: {}", e.getMessage());
+            return true;
+        }
+        return answer[0];
+    }
+
+    private boolean ask() {
+        I18nService i18n = injector.getInstance(I18nService.class);
+        // The bundle resolves its locale once at construction; the language can be
+        // switched live in the settings, so re-pin it before asking.
+        try {
+            i18n.setLocale(injector.getInstance(GlobalConfig.class)
+                    .getUser().getUserLanguage().locale());
+        } catch (Throwable t) {
+            LOG.debug("Could not re-pin the dialog locale: {}", t.toString());
+        }
+        JFrame parent = null;
+        try {
+            parent = injector.getInstance(BrowserWindow.class).frame();
+        } catch (Throwable ignored) {
+            // Guarded: a parentless dialog is still a dialog.
+        }
+        return CloseConfirmDialog.confirm(
+                parent,
+                i18n.get("dialog.close.busy.title"),
+                i18n.get("dialog.close.busy.message"),
+                i18n.get("dialog.close.busy.close"),
+                i18n.get("dialog.close.busy.cancel"));
     }
 
     /**
@@ -143,6 +223,71 @@ final class AppLifecycle {
             LOG.info("Spawned detached uninstall cleanup.");
         } catch (Exception e) {
             LOG.error("Failed to spawn uninstall cleanup: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * The deferred startup: everything that is NOT the window itself. Run once,
+     * by {@link BootGate}, after the startup intro has left the screen — see that
+     * class for why the workload is held back at all.
+     *
+     * <p>ORDER IS LOAD-BEARING, for the same reason it is on the way down:
+     * <ol>
+     *   <li><b>Ollama first.</b> It has by far the longest lead time (subprocess
+     *       spawn, then a multi-GB model on the first call), and every stage
+     *       behind it will wait on it anyway.</li>
+     *   <li><b>Then the producers</b> — the editorial loops before the Reddit
+     *       scanner, so the workers are already draining when the first clusters
+     *       land instead of the queue filling against nobody.</li>
+     *   <li><b>Then the browser-joker pollers.</b> These fetch through the hidden
+     *       CEF browser, so they may only start once CEF's native init is done.
+     *       The gate can only open after the page loaded, which is strictly after
+     *       that init — the ordering holds without them running on the EDT.</li>
+     * </ol>
+     *
+     * <p>Every step is wrapped: one service failing to start must not take the
+     * rest of the app down with it.
+     */
+    void startBackgroundWork() {
+        // Closing the window in the first seconds gets the teardown in BEFORE the
+        // gate opens. Starting the workload then would spawn an Ollama that
+        // nothing is left to stop — an orphaned model process outliving the app,
+        // which is exactly what the shutdown ordering exists to prevent.
+        if (servicesDown.get()) {
+            LOG.info("Boot gate opened during shutdown — skipping the workload.");
+            return;
+        }
+        LOG.info("Starting deferred background workload...");
+        safeStart(() -> injector.getInstance(AgentBrain.class).start(), "AgentBrain");
+        // The spawn above is the one step long enough for a close to slip in
+        // beside it. If that happened, stop the server we just started and leave
+        // the rest unstarted — the teardown already ran past its Ollama step.
+        if (servicesDown.get()) {
+            LOG.info("Shutdown began while Ollama was starting — stopping it again.");
+            safeStop(() -> injector.getInstance(OllamaServerManager.class).shutdown(),
+                    "OllamaServerManager");
+            return;
+        }
+        safeStart(() -> injector.getInstance(EditorialPipeline.class).start(), "EditorialPipeline");
+        safeStart(() -> injector.getInstance(PassiveMonitorService.class).start(), "PassiveMonitorService");
+        safeStart(() -> injector.getInstance(EurUsdMonitorService.class).start(), "EurUsdMonitorService");
+        safeStart(() -> injector.getInstance(FearGreedMonitorService.class).start(), "FearGreedMonitorService");
+        safeStart(() -> injector.getInstance(CryptoFearGreedMonitorService.class).start(),
+                "CryptoFearGreedMonitorService");
+        // Daily Wetterbericht: arms the wall-clock schedule (and the boot
+        // catch-up when today's report time already passed).
+        safeStart(() -> injector.getInstance(WeatherReportService.class).start(), "WeatherReportService");
+        // Market memory: the ad-hoc register + Fear&Greed history harvests
+        // also ride the browser-joker fetch chain, so they start here too.
+        safeStart(() -> injector.getInstance(MarketMemoryService.class).start(), "MarketMemoryService");
+        LOG.info("Deferred background workload is up.");
+    }
+
+    private static void safeStart(Runnable r, String name) {
+        try {
+            r.run();
+        } catch (Throwable t) {
+            LOG.error("Startup step '{}' failed — continuing without it.", name, t);
         }
     }
 

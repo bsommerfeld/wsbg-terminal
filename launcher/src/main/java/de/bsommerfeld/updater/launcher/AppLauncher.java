@@ -129,6 +129,8 @@ final class AppLauncher {
         // a slideshow. The rare Metal Queue-Flusher SIGSEGV workaround is
         // opt-in via WSBG_J2D_OPENGL=true, handled in the app's AppMain.
 
+        addGcFlags(cmd);
+
         // JCEF native bridge needs unrestricted access to OS APIs (Cocoa,
         // GDI, etc.). Required for the embedded Chromium browser to
         // initialise; without it, the JNI helpers log a warning and the
@@ -146,6 +148,35 @@ final class AppLauncher {
         cmd.addAll(List.of(extraArgs));
 
         return cmd;
+    }
+
+    /**
+     * Garbage-collector flags for the terminal JVM. Until now the app ran on
+     * pure default ergonomics, i.e. G1 — whose young collections stop every
+     * thread for tens of milliseconds. The EDT is one of those threads, so a
+     * pause lands as a skipped frame; and the app allocates hard exactly when
+     * the UI is busiest (hundreds of scraped articles through the HTML/JSON
+     * parsers while the wire streams into the page).
+     *
+     * <ul>
+     *   <li><b>ZGC</b> — concurrent, sub-millisecond pauses independent of heap
+     *       size, and generational by default on JDK 25. It trades a little
+     *       throughput for pause times far below one frame. On a UI process that
+     *       trade is the whole point; the pipeline is I/O- and model-bound
+     *       anyway, not GC-throughput-bound.</li>
+     *   <li><b>{@code -Xmx4g}</b> — the default cap is a quarter of physical RAM
+     *       (4 GB on a 16 GB box, 16 GB on a 64 GB box). The machine also hosts
+     *       a resident multi-GB Ollama model, so an unbounded heap competes with
+     *       the very thing it is waiting for. A cap, not a reservation: ZGC
+     *       uncommits idle heap back to the OS on its own.</li>
+     * </ul>
+     *
+     * <p>Kept as a method (not an inline block) so the dev path in
+     * {@code terminal/pom.xml} can mirror the exact same list.
+     */
+    private void addGcFlags(List<String> cmd) {
+        cmd.add("-XX:+UseZGC");
+        cmd.add("-Xmx4g");
     }
 
     /**

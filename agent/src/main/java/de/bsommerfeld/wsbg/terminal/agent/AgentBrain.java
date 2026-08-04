@@ -50,6 +50,9 @@ public class AgentBrain {
 
     private final GlobalConfig config;
     private final OllamaServerManager serverManager;
+    /** Guards {@link #start()} — the server is brought up exactly once. */
+    private final java.util.concurrent.atomic.AtomicBoolean serverStarted =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
     /** The ONE shared gemma4 concurrency gate for all model calls. */
     private final LlmGate llmGate;
     private UserLanguage userLanguage;
@@ -62,8 +65,38 @@ public class AgentBrain {
         this.llmGate = llmGate;
         eventBus.register(this);
 
+        // The model HANDLES are cheap to build and several collaborators expect
+        // them right after injection, so they stay here. Bringing the SERVER up
+        // does not — that spawns a subprocess and blocks until it answers, which
+        // used to happen inside Guice.createInjector, i.e. before the window
+        // existed. It moved to start(), behind the boot gate.
+        //
+        // WITHOUT ASKING OLLAMA. Resolving the model tag is an HTTP call, and
+        // leaving it here made the whole app depend on a server that this very
+        // class is responsible for starting later: with nothing listening on
+        // the port, Guice died during injection and said "Ollama connection
+        // failed: null". It only ever worked because an orphan from an earlier
+        // run was usually still up.
+        initialize(config.getAgent(), false);
+    }
+
+    /**
+     * Brings the isolated Ollama server up. Idempotent, and deliberately NOT in
+     * the constructor: it is the single most expensive step of the boot and it
+     * used to run while the startup intro was animating.
+     *
+     * <p>Called once from the deferred startup. Model calls before that point
+     * would hit an unreachable endpoint — every caller (the editorial pipeline,
+     * the Reddit monitor, the deep dive, the weather report) is held behind the
+     * same gate, so none can get ahead of it.
+     */
+    public void start() {
+        if (!serverStarted.compareAndSet(false, true)) return;
         serverManager.ensureRunning(OLLAMA_BASE_URL);
-        initialize(config.getAgent());
+        // NOW the tag can be verified: the handles are rebuilt against what is
+        // actually installed, so a configured tag that is missing falls back to
+        // an installed sibling instead of failing at the first call.
+        initialize(config.getAgent(), true);
     }
 
     /**
@@ -71,7 +104,11 @@ public class AgentBrain {
      * are the resident gemma4:e4b (agent, compose, prose, dossier, deep-dive).
      */
     public void initialize(AgentConfig config) {
-        OllamaModelFactory.Models models = modelFactory.build(config);
+        initialize(config, true);
+    }
+
+    public void initialize(AgentConfig config, boolean askOllama) {
+        OllamaModelFactory.Models models = modelFactory.build(config, askOllama);
         this.agentModel = models.agentModel();
         this.composeModel = models.composeModel();
         this.proseModel = models.proseModel();

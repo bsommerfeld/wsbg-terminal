@@ -54,8 +54,33 @@ final class OllamaModelFactory {
      * Ollama keeps a single runner resident.
      */
     Models build(AgentConfig config) {
+        return build(config, true);
+    }
+
+    /**
+     * Builds the model handles.
+     *
+     * <p>{@code askOllama} decides whether the configured tag is VERIFIED
+     * against the running server (and replaced by an installed sibling of the
+     * same family when it is missing). That check is an HTTP call, and it used
+     * to run inside Guice's injector - so the app could not boot at all unless
+     * an Ollama already happened to be listening, with a message that named
+     * neither the cause nor the fix ("Ollama connection failed: null"). It
+     * survived only because an orphaned server from an earlier run, a smoke or
+     * a probe was usually still up; the first launch of the day would have
+     * failed.
+     *
+     * <p>The app is meant to come up independently of Ollama - intro first,
+     * then everything else behind the boot gate. So injection builds handles
+     * from the CONFIGURED tag without asking anyone, and {@link
+     * AgentBrain#start()} rebuilds them once the server is up, where the
+     * fallback can actually be resolved.
+     */
+    Models build(AgentConfig config, boolean askOllama) {
         Model agentModelEnum = config.resolveEditorialModel();
-        String agentName = resolveModel(config.resolveModelTag(), agentModelEnum.getFamilyPrefix());
+        String agentName = askOllama
+                ? resolveModel(config.resolveModelTag(), agentModelEnum.getFamilyPrefix())
+                : config.resolveModelTag();
 
         // All non-streaming — the full response is returned as String.
         // Generous timeouts: the agent + tool-use can take a minute per round

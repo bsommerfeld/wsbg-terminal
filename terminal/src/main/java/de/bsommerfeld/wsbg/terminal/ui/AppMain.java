@@ -2,11 +2,6 @@ package de.bsommerfeld.wsbg.terminal.ui;
 
 import com.google.inject.Guice;
 import com.google.inject.Injector;
-import de.bsommerfeld.wsbg.terminal.agent.MarketMemoryService;
-import de.bsommerfeld.wsbg.terminal.agent.WeatherReportService;
-import de.bsommerfeld.wsbg.terminal.currency.EurUsdMonitorService;
-import de.bsommerfeld.wsbg.terminal.feargreed.CryptoFearGreedMonitorService;
-import de.bsommerfeld.wsbg.terminal.feargreed.FearGreedMonitorService;
 import de.bsommerfeld.wsbg.terminal.ui.config.AppModule;
 import de.bsommerfeld.wsbg.terminal.ui.web.AssetServer;
 import de.bsommerfeld.wsbg.terminal.ui.web.PushHub;
@@ -92,24 +87,24 @@ public final class AppMain {
         SwingUtilities.invokeLater(() -> {
             BrowserWindow window = injector.getInstance(BrowserWindow.class);
             window.setOnClose(lifecycle.onWindowClose());
+            // Asked before the teardown: a running deep dive keeps no checkpoint,
+            // so closing destroys it rather than pausing it.
+            window.setCloseGuard(lifecycle.closeGuard());
             window.open(entryUrl);  // brings JCEF up SYNCHRONOUSLY on this (EDT) thread
             windowRef[0] = window;  // hand to the raise listener
 
-            // CEF's native init is now done, on the AWT thread, via the window. ONLY
-            // now start the background hidden-browser fetchers (FX, Fear&Greed). As
-            // eager singletons they used to poll from their own threads during DI
-            // construction — before the window — and the first fetch would trigger
-            // JCEF init off the AWT thread, racing the EDT init and deadlocking the
-            // window (no UI, unkillable JVM). Deferring them here removes the race.
-            injector.getInstance(EurUsdMonitorService.class).start();
-            injector.getInstance(FearGreedMonitorService.class).start();
-            injector.getInstance(CryptoFearGreedMonitorService.class).start();
-            // Daily Wetterbericht: arms the wall-clock schedule (and the boot
-            // catch-up when today's report time already passed).
-            injector.getInstance(WeatherReportService.class).start();
-            // Market memory: the ad-hoc register + Fear&Greed history harvests
-            // also ride the browser-joker fetch chain, so they start here too.
-            injector.getInstance(MarketMemoryService.class).start();
+            // CEF's native init is now done, on the AWT thread, via the window —
+            // so the hidden-browser fetchers (FX, Fear&Greed) may finally run.
+            // As eager singletons they used to poll from their own threads during
+            // DI construction, before the window, and the first fetch would
+            // trigger JCEF init off the AWT thread, racing the EDT init and
+            // deadlocking the window (no UI, unkillable JVM).
+            //
+            // They — and the rest of the workload — now wait one step longer
+            // still: the gate opens when the startup intro is off the screen, so
+            // the animation gets an idle machine instead of a model load. Armed
+            // here, because only now is there a page that can report in.
+            new BootGate(lifecycle::startBackgroundWork).arm(pushHub);
         });
     }
 

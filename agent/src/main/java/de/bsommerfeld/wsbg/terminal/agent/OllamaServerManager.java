@@ -30,7 +30,10 @@ import java.util.concurrent.TimeUnit;
  *
  * <p>
  * The only "reuse" that happens is reconnecting to <em>our own</em> server on
- * {@link #PORT} if it survived a previous crash — never the user's.
+ * {@link #PORT} if it survived a previous crash — never the user's. Such a
+ * survivor is <em>adopted</em>, not merely used: it is claimed as this session's
+ * process and shut down with it, so an orphan cannot live on across restart
+ * after restart (see {@link #adoptRunningServer}).
  *
  * @see StorageUtils
  */
@@ -57,7 +60,16 @@ public final class OllamaServerManager {
 
     private final Path appDataDir;
 
+    /** Set only when WE spawned the server — kept for the exit-code diagnostics in {@link #waitForServer}. */
     private Process serverProcess;
+
+    /**
+     * The server this app is responsible for killing — whether we spawned it or
+     * adopted it from a previous run. A {@link ProcessHandle} rather than a
+     * {@link Process} because an adopted orphan is not our child and there is no
+     * {@code Process} object for it.
+     */
+    private ProcessHandle ownedServer;
 
     /** Production constructor — resolves the OS-native app data directory. */
     public OllamaServerManager() {
@@ -117,7 +129,7 @@ public final class OllamaServerManager {
         LOG.info("Checking our Ollama server at {}...", baseUrl);
 
         if (isReachable(baseUrl)) {
-            LOG.info("Our Ollama server already running at {} — reusing it", baseUrl);
+            adoptRunningServer(baseUrl);
             return;
         }
 
@@ -127,18 +139,101 @@ public final class OllamaServerManager {
         LOG.info("Isolated Ollama server is ready at {}", baseUrl);
     }
 
-    /** Destroys the managed subprocess if we started one. */
+    /**
+     * Takes ownership of a server that is already listening on {@link #PORT} —
+     * an orphan from a previous run that died without its shutdown (a SIGKILL, a
+     * hard crash, a dev run cut off at the terminal).
+     *
+     * <p><b>Why this exists.</b> Reusing such a server was safe but not enough:
+     * {@link #shutdown()} only ever killed a process it had spawned itself, so a
+     * reused one was left running — and the NEXT start found it again, reused it
+     * again, and left it again. One orphan therefore became immortal, holding its
+     * model resident forever ({@code KEEP_ALIVE=-1}) with no app attached to it.
+     * Adopting it closes that loop: the orphan dies with this session.
+     *
+     * <p>Claiming it is safe by construction. {@link #PORT} is ours and is
+     * deliberately NOT Ollama's default 11434, so whatever answers there came
+     * from a previous run of this app — never the user's own instance. The
+     * process lookup insists on that too: only a binary living inside our own
+     * {@code <appData>/ollama} directory is a candidate.
+     *
+     * <p>If the process cannot be identified (an OS that hides other processes'
+     * command lines, a binary moved since it started), the server is still used —
+     * it works, it just outlives us, exactly as before. That is a degradation
+     * worth a WARNing, not a reason to refuse a perfectly good server.
+     */
+    private void adoptRunningServer(String baseUrl) {
+        ownedServer = findOwnServerProcess().orElse(null);
+        if (ownedServer != null) {
+            LOG.info("Our Ollama server already running at {} — adopted it (PID: {}), "
+                    + "it will be shut down with this session", baseUrl, ownedServer.pid());
+        } else {
+            LOG.warn("Our Ollama server already running at {} — reusing it, but its process "
+                    + "could not be identified. It will keep running after this session.",
+                    baseUrl);
+        }
+    }
+
+    /**
+     * Finds the {@code ollama serve} process belonging to THIS app: one whose
+     * binary lives inside our own {@code <appData>/ollama} directory.
+     *
+     * <p>Both the server and its {@code runner} children run that same binary, so
+     * the match alone does not identify the root. Two ways to pick it, in order:
+     * the first argument is {@code serve}; failing that (some platforms do not
+     * expose other processes' arguments) the one candidate whose parent is not
+     * itself a candidate — a runner always hangs below its server. Killing the
+     * root reaps the children through the existing tree teardown.
+     */
+    private java.util.Optional<ProcessHandle> findOwnServerProcess() {
+        Path ollamaDir = appDataDir.resolve(OLLAMA_DIR);
+        List<ProcessHandle> ours = ProcessHandle.allProcesses()
+                .filter(h -> runsBinaryUnder(h, ollamaDir))
+                .toList();
+        if (ours.isEmpty()) return java.util.Optional.empty();
+
+        java.util.Optional<ProcessHandle> byArgs = ours.stream()
+                .filter(h -> {
+                    String[] args = h.info().arguments().orElse(new String[0]);
+                    return args.length > 0 && "serve".equals(args[0]);
+                })
+                .findFirst();
+        if (byArgs.isPresent()) return byArgs;
+
+        java.util.Set<Long> pids = ours.stream().map(ProcessHandle::pid)
+                .collect(java.util.stream.Collectors.toSet());
+        return ours.stream()
+                .filter(h -> h.parent().map(p -> !pids.contains(p.pid())).orElse(true))
+                .findFirst();
+    }
+
+    /** Whether {@code h} runs an executable located inside {@code dir}. */
+    private static boolean runsBinaryUnder(ProcessHandle h, Path dir) {
+        String command = h.info().command().orElse("");
+        if (command.isEmpty()) return false;
+        try {
+            return Path.of(command).startsWith(dir);
+        } catch (Exception e) {
+            return false; // unparseable command line — not a candidate
+        }
+    }
+
+    /**
+     * Destroys the server this session owns — the one we spawned, or the orphan
+     * we adopted in {@link #adoptRunningServer}.
+     */
     public void shutdown() {
-        // Flag the teardown FIRST — even when reusing an external server, any lane
-        // still mid-call must fail fast instead of riding the connect-retry ladder.
+        // Flag the teardown FIRST — even when the server could not be claimed, any
+        // lane still mid-call must fail fast instead of riding the connect-retry ladder.
         ChatGateway.noteAppShutdown();
-        if (serverProcess == null) {
-            LOG.debug("No managed Ollama server to shut down");
+        ProcessHandle server = ownedServer;
+        if (server == null) {
+            LOG.debug("No owned Ollama server to shut down");
             return;
         }
 
-        long pid = serverProcess.pid();
-        LOG.info("Shutting down managed Ollama server (PID: {})...", pid);
+        long pid = server.pid();
+        LOG.info("Shutting down owned Ollama server (PID: {})...", pid);
 
         // Snapshot the process tree *before* destroying the root. 'ollama serve'
         // spawns 'ollama runner' children that hold the model in memory and keep
@@ -146,22 +241,27 @@ public final class OllamaServerManager {
         // parent→child kill propagation on Windows). After the parent dies its
         // descendants are reparented, so descendants() would return nothing —
         // hence we capture them up front and reap them at the end.
-        List<ProcessHandle> tree = serverProcess.descendants().toList();
+        List<ProcessHandle> tree = server.descendants().toList();
 
-        serverProcess.destroy();
+        server.destroy();
         try {
             // Grace period before force-kill — Ollama needs time to flush model
-            // state. 5s matches the typical unload latency.
-            if (!serverProcess.waitFor(5, TimeUnit.SECONDS)) {
-                LOG.warn("Ollama server did not exit within 5s — force killing PID {}", pid);
-                serverProcess.destroyForcibly();
-            } else {
-                LOG.info("Ollama server (PID: {}) shut down cleanly", pid);
-            }
+            // state. 5s matches the typical unload latency. onExit() rather than
+            // Process.waitFor: an adopted orphan is not our child, so there is no
+            // Process to wait on — only its handle.
+            server.onExit().get(5, TimeUnit.SECONDS);
+            LOG.info("Ollama server (PID: {}) shut down cleanly", pid);
+        } catch (java.util.concurrent.TimeoutException e) {
+            LOG.warn("Ollama server did not exit within 5s — force killing PID {}", pid);
+            server.destroyForcibly();
         } catch (InterruptedException e) {
             LOG.warn("Interrupted while waiting for Ollama shutdown — force killing PID {}", pid);
-            serverProcess.destroyForcibly();
+            server.destroyForcibly();
             Thread.currentThread().interrupt();
+        } catch (java.util.concurrent.ExecutionException e) {
+            LOG.warn("Waiting for Ollama shutdown failed ({}) — force killing PID {}",
+                    e.getCause() == null ? e.toString() : e.getCause().toString(), pid);
+            server.destroyForcibly();
         }
 
         // Reap any runner children that outlived the parent.
@@ -172,12 +272,13 @@ public final class OllamaServerManager {
             }
         }
 
+        ownedServer = null;
         serverProcess = null;
     }
 
-    /** Whether we started a managed process (vs. reusing an external one). */
+    /** Whether a server is ours to shut down — spawned by us or adopted from a previous run. */
     public boolean isManaged() {
-        return serverProcess != null && serverProcess.isAlive();
+        return ownedServer != null && ownedServer.isAlive();
     }
 
     /**
@@ -265,6 +366,7 @@ public final class OllamaServerManager {
             pb.environment().putIfAbsent("OLLAMA_MAX_LOADED_MODELS", "2");
 
             serverProcess = pb.start();
+            ownedServer = serverProcess.toHandle();
             LOG.info("Started isolated '{} serve' on {}:{} (models={}, NUM_PARALLEL={}, "
                             + "FLASH_ATTENTION=1, KV_CACHE_TYPE=q8_0, KEEP_ALIVE=-1, "
                             + "MAX_LOADED_MODELS=2, PID={})",
