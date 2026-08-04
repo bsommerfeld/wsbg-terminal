@@ -74,6 +74,16 @@ public final class InstrumentCorpus {
     }
 
     /**
+     * The current snapshot, whole — for consumers that build their own
+     * structure over it (the {@link MentionLexicon}) rather than querying it.
+     * Immutable and consistent: a concurrent refresh swaps the index, it never
+     * mutates this list.
+     */
+    public List<InstrumentEntry> entries() {
+        return index.get().entries();
+    }
+
+    /**
      * Top-{@code k} entries whose NAME or SYMBOL lexically matches the query.
      * Delegates to the current {@link InstrumentIndex}.
      */

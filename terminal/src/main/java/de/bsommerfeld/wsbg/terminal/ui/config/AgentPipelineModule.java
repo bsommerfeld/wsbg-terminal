@@ -4,6 +4,9 @@ import com.google.inject.AbstractModule;
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.agent.AgentCoordinator;
 import de.bsommerfeld.wsbg.terminal.agent.EditorialPipeline;
+import de.bsommerfeld.wsbg.terminal.agent.MentionCounter;
+import de.bsommerfeld.wsbg.terminal.db.MentionArchive;
+import de.bsommerfeld.wsbg.terminal.instruments.AliasStore;
 import de.bsommerfeld.wsbg.terminal.agent.PassiveMonitorService;
 import de.bsommerfeld.wsbg.terminal.core.price.InstrumentLookup;
 import de.bsommerfeld.wsbg.terminal.core.price.InstrumentFactsSource;
@@ -37,6 +40,13 @@ final class AgentPipelineModule extends AbstractModule {
         // starts emitting them, and routes them into the pipeline.
         bind(EditorialPipeline.class).asEagerSingleton();
         bind(AgentCoordinator.class).asEagerSingleton();
+        // The cage's own ticker counter hooks the repository's ingest seam, so it
+        // must be up BEFORE PassiveMonitorService starts pulling the room -
+        // anything scraped before this line is never counted. The learned name
+        // memory is bound explicitly so the resolver's optional injection finds it.
+        bind(AliasStore.class).in(Singleton.class);
+        bind(MentionArchive.class).in(Singleton.class);
+        bind(MentionCounter.class).asEagerSingleton();
         bind(PassiveMonitorService.class).asEagerSingleton();
         // TimeTracker must be eager so it starts its start/interval/stop
         // checkpointing at boot; DonationStatsPublisher reads it for the

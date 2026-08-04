@@ -33,7 +33,22 @@ public class RedditRepository {
     private final Map<String, RedditThread> threadCache = new ConcurrentHashMap<>();
     private final Map<String, List<RedditComment>> threadCommentsCache = new ConcurrentHashMap<>();
 
+    /**
+     * Watches everything that comes in (the mention counter). Optional: nothing
+     * in here depends on it, and whatever it throws is swallowed — counting must
+     * never cost a thread.
+     */
+    private volatile RedditIngestListener ingestListener;
+
     public RedditRepository() {
+    }
+
+    /**
+     * Installs the ingest watcher. One at a time by design — there is exactly
+     * one counter, and a listener list would invite silent order dependencies.
+     */
+    public void setIngestListener(RedditIngestListener listener) {
+        this.ingestListener = listener;
     }
 
     public void shutdown() {
@@ -50,14 +65,17 @@ public class RedditRepository {
 
     public CompletableFuture<Void> saveThread(RedditThread thread) {
         threadCache.put(thread.id(), thread);
+        notifyThread(thread);
         return CompletableFuture.completedFuture(null);
     }
 
     public CompletableFuture<Void> saveThreadsBatch(List<RedditThread> threads) {
         if (threads == null || threads.isEmpty())
             return CompletableFuture.completedFuture(null);
-        for (RedditThread t : threads)
+        for (RedditThread t : threads) {
             threadCache.put(t.id(), t);
+            notifyThread(t);
+        }
         return CompletableFuture.completedFuture(null);
     }
 
@@ -79,7 +97,28 @@ public class RedditRepository {
             threadCache.computeIfPresent(threadId,
                     (k, t) -> touchLastActivity(t, comment.createdUtc()));
         }
+        notifyComment(comment);
         return CompletableFuture.completedFuture(null);
+    }
+
+    private void notifyThread(RedditThread thread) {
+        RedditIngestListener l = ingestListener;
+        if (l == null) return;
+        try {
+            l.onThread(thread);
+        } catch (Exception e) {
+            LOG.debug("Ingest listener failed on thread {}: {}", thread.id(), e.getMessage());
+        }
+    }
+
+    private void notifyComment(RedditComment comment) {
+        RedditIngestListener l = ingestListener;
+        if (l == null) return;
+        try {
+            l.onComment(comment);
+        } catch (Exception e) {
+            LOG.debug("Ingest listener failed on comment {}: {}", comment.id(), e.getMessage());
+        }
     }
 
     /**

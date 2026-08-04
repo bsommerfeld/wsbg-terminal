@@ -215,6 +215,17 @@ public class EditorialAgent {
     }
 
     /**
+     * Installs the learned name memory onto the resolver, so every settled
+     * identity verdict is kept: the short form the room writes becomes
+     * countable for {@code MentionCounter} without a single extra request.
+     * Optional Guice method-injection; absent in tests, where nothing is learned.
+     */
+    @com.google.inject.Inject(optional = true)
+    void setAliasStore(de.bsommerfeld.wsbg.terminal.instruments.AliasStore aliasStore) {
+        tickerResolver.setAliasStore(aliasStore);
+    }
+
+    /**
      * Installs the multi-source news pool onto the resolver. Optional Guice
      * method-injection: present in production (AppModule binds the news sources),
      * absent in the lab harness + tests, where news stays Yahoo-only.

@@ -4,6 +4,7 @@ import de.bsommerfeld.wsbg.terminal.aggregator.NewsAggregator;
 import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
 import de.bsommerfeld.wsbg.terminal.core.price.PriceRef;
 import de.bsommerfeld.wsbg.terminal.core.price.PriceSource;
+import de.bsommerfeld.wsbg.terminal.instruments.AliasStore;
 import de.bsommerfeld.wsbg.terminal.instruments.InstrumentCorpus;
 import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
 import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooFinanceClient;
@@ -111,6 +112,14 @@ public final class TickerResolver {
     private InstrumentCorpus corpus;
 
     /**
+     * The learned name memory. Every verdict this resolver reaches is written
+     * here, so the spelling the room actually uses becomes countable without a
+     * single extra request — the mention counter reads nothing else. Null in
+     * tests/harnesses: then nothing is learned, and nothing breaks.
+     */
+    private AliasStore aliasStore;
+
+    /**
      * The live price chain (L&amp;S → …, EUR). Optional: injected only in production
      * (AppModule); null in tests, where snapshots fall back to the Yahoo batch. Yahoo
      * stays the SEARCH + NEWS source regardless — the chain only supplies the price.
@@ -159,6 +168,11 @@ public final class TickerResolver {
     /** Installs the tier-3 instrument corpus. Forwarded by {@code EditorialAgent}; null in tests. */
     void setInstrumentCorpus(InstrumentCorpus corpus) {
         this.corpus = corpus;
+    }
+
+    /** Installs the learned name memory. Forwarded by {@code EditorialAgent}; null in tests (nothing is learned). */
+    void setAliasStore(AliasStore aliasStore) {
+        this.aliasStore = aliasStore;
     }
 
     /** Installs the live price chain. Forwarded by {@code EditorialAgent}; null in tests. */
@@ -252,6 +266,7 @@ public final class TickerResolver {
             SubjectMatch match = tower.resolve(new MatchContext(query, context, sr.quotes())).orElse(null);
             String ownTicker = match == null ? null : match.symbol();
             String canonical = match == null ? query : match.canonicalName();
+            remember(query, canonical, ownTicker);
             // The desk's stamp (exact venue instrument) rides along so the price
             // chain executes the verdict instead of re-resolving the name — and so
             // does its considered "no venue listing" (venueRuledOut), which keeps
@@ -275,6 +290,18 @@ public final class TickerResolver {
             LOG.debug("Subject resolution failed for '{}': {}", query, e.getMessage());
             return Pending.empty(query);
         }
+    }
+
+    /**
+     * Hands a settled verdict to the learned name memory: the spelling the room
+     * used AND the registered name both now mean this symbol. Free — the
+     * decision was made anyway; this only stops it being forgotten. Silent when
+     * nothing was settled, and silent in tests, where no store is installed.
+     */
+    private void remember(String query, String canonical, String ownTicker) {
+        if (aliasStore == null || ownTicker == null || ownTicker.isBlank()) return;
+        aliasStore.learn(query, ownTicker);
+        if (canonical != null && !canonical.equals(query)) aliasStore.learn(canonical, ownTicker);
     }
 
     /**
