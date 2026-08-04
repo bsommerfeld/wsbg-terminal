@@ -36,6 +36,13 @@ class DeepDiveChartsTest {
                 List.of(1100.0, 1080.0, 1020.0, 992.1));
     }
 
+    /** A minimal snapshot that carries nothing but a symbol and a close series. */
+    static MarketSnapshot closes(String symbol, List<Double> series) {
+        return new MarketSnapshot(symbol, series.get(series.size() - 1), Double.NaN, Double.NaN,
+                Double.NaN, Double.NaN, 0, Double.NaN, Double.NaN, "EUR", null,
+                1_700_000_000L, List.of(), series);
+    }
+
     static CompanyDeepDive deepDive() {
         return new CompanyDeepDive("DE0007030009",
                 new CompanyDeepDive.Profile("https://www.rheinmetall.com", "Portrait",
@@ -186,7 +193,10 @@ class DeepDiveChartsTest {
         // street band, insider, shorts, US short history, event history, S/R
         assertEquals(25, figures.size());
         for (ChartFigure f : figures) {
-            assertTrue(f.svg().startsWith("<svg viewBox=\"0 0 560 "), f.title());
+            assertTrue(f.svg().startsWith("<svg viewBox=\"0 0 720 "), f.title());
+            // No figure may set type below the readability floor: font sizes
+            // are viewBox units and shrink with the rendered width.
+            assertFalse(f.svg().matches("(?s).*font-size=\"[0-9]\"" + ".*"), f.title());
             assertTrue(f.svg().endsWith("</svg>"), f.title());
             assertTrue(f.svg().contains("var(--ddc-"), f.title());
             assertFalse(f.title().isBlank());
@@ -202,6 +212,14 @@ class DeepDiveChartsTest {
                 .filter(f -> f.title().equals("Auf einen Blick")).findFirst().orElseThrow();
         assertEquals(0, facts.section());
         assertTrue(facts.svg().contains("992,10"), "price tile");
+        // A tile gives up TYPE SIZE before it gives up digits: the venue strip
+        // sets four values across the column, and "991,80 / 992,40" does not
+        // fit at the headline size — it must still arrive whole.
+        ChartFigure venue = new DeepDiveCharts("de").build(null, null, null, null, null,
+                venueStats(), null, null, null, null, List.of(), null, null, null).get(0);
+        assertTrue(venue.svg().contains("991,80 / 992,40"), "bid/ask arrives unabridged");
+        assertTrue(venue.svg().contains("985,00 – 1.019,80"), "the day range too");
+        assertFalse(venue.svg().contains("…"), "nothing in the strip is truncated");
         assertTrue(facts.svg().contains("KGV 2026e"), "nearest ESTIMATE year's P/E");
         assertTrue(facts.svg().contains("1.720,00"), "consensus target");
         // The date board anchors under the ANCHORED outlook section since the
@@ -446,8 +464,578 @@ class DeepDiveChartsTest {
         assertEquals(2, f.section());
         assertEquals("MarketBeat", f.note());
         assertTrue(f.title().contains("5"), "headline count in the title");
+        assertTrue(f.title().contains("Presse-Dichte"), "the figure answers HOW DENSE");
         assertTrue(f.svg().contains("Mai"), "German month label");
-        assertTrue(f.svg().contains("opacity=\"0.55\""), "half-opaque ticks darken on pileup");
+        // The bare tick strip said nothing: the bar carries the month's COUNT.
+        // The fixture's July holds two of the five headlines.
+        assertTrue(f.svg().contains(">2</text>"), "the busiest month carries its count");
+        assertTrue(f.svg().contains("opacity=\"0.5\""), "exact days ride over the density");
+    }
+
+    /**
+     * Nothing may be drawn outside its own canvas. A provider VAH sitting
+     * ABOVE its own profile high plotted at a negative y and had its label
+     * sliced off by the top edge — the ladder was scaled to the profile
+     * envelope instead of to the rungs it actually draws.
+     */
+    @Test
+    void everyMarkStaysInsideItsCanvas() {
+        List<ChartFigure> figures = charts.build(snapshot(), deepDive(), analystView(),
+                shorts(), insider(), venueStats(), usStats(), actions(), hedgeFunds(),
+                pressTimeline(), worldSignals(), volumeProfile(), orderBook(), memoryEvents());
+        java.util.regex.Pattern box = java.util.regex.Pattern.compile(
+                "viewBox=\"0 0 \\d+ (\\d+)\"");
+        java.util.regex.Pattern ys = java.util.regex.Pattern.compile(
+                "\\b(?:y|cy|y1|y2)=\"(-?[0-9.]+)\"");
+        for (ChartFigure f : figures) {
+            var mb = box.matcher(f.svg());
+            assertTrue(mb.find(), f.title());
+            double h = Double.parseDouble(mb.group(1));
+            var my = ys.matcher(f.svg());
+            while (my.find()) {
+                double y = Double.parseDouble(my.group(1));
+                assertTrue(y >= 0 && y <= h,
+                        f.title() + ": y=" + y + " outside 0.." + h);
+            }
+        }
+    }
+
+    // ---- Wave F: the legs the figure layer had never drawn from ----
+
+    /** Everything the pre-record call sites pass still draws, unchanged. */
+    private static DeepDiveCharts.ChartInput input(
+            List<de.bsommerfeld.wsbg.terminal.onvista.OnvistaMarketClient.YearPerformance> years,
+            List<de.bsommerfeld.wsbg.terminal.finanzennet.FinanzenNetMarketClient.ConsensusTrend> trend,
+            List<HeatmapService.Node> board, String subjectSector, String universe) {
+        return new DeepDiveCharts.ChartInput(null, null, null, null, null, null, null, null,
+                null, null, List.of(), null, null, null, years, trend, board,
+                subjectSector, universe, List.of(), null, null, null, List.of(),
+                DeepDiveCharts.Docket.EMPTY, DeepDiveCharts.Regime.EMPTY,
+                DeepDiveCharts.Registers.EMPTY, DeepDiveCharts.Boards.EMPTY, List.of());
+    }
+
+    /** An input carrying only the wave-G legs; everything else stays silent. */
+    private static DeepDiveCharts.ChartInput waveG(
+            List<de.bsommerfeld.wsbg.terminal.cnbc.CnbcQuoteClient.EarningsQuarter> cnbc,
+            MarketSnapshot subject, MarketSnapshot sectorEtf, String etfSymbol, String etfName,
+            List<de.bsommerfeld.wsbg.terminal.briefing.WikidataClient.PageviewPoint> attention,
+            DeepDiveCharts.Docket docket, DeepDiveCharts.Regime regime) {
+        return new DeepDiveCharts.ChartInput(subject, null, null, null, null, null, null, null,
+                null, null, List.of(), null, null, null, List.of(), List.of(), List.of(),
+                null, null, cnbc, sectorEtf, etfSymbol, etfName, attention, docket, regime,
+                DeepDiveCharts.Registers.EMPTY, DeepDiveCharts.Boards.EMPTY, List.of());
+    }
+
+    @Test
+    void deliveryRecordSetsConsensusBesideWhatWasReported() {
+        var q = List.of(
+                new de.bsommerfeld.wsbg.terminal.cnbc.CnbcQuoteClient.EarningsQuarter(
+                        "RHM", 2025, 3, null, 4.10, 4.62, null, null, null, null, null,
+                        "Beat", null, false),
+                new de.bsommerfeld.wsbg.terminal.cnbc.CnbcQuoteClient.EarningsQuarter(
+                        "RHM", 2025, 4, null, 5.00, 4.55, null, null, null, null, null,
+                        "Miss", null, false),
+                // still ahead: a consensus with nothing reported yet
+                new de.bsommerfeld.wsbg.terminal.cnbc.CnbcQuoteClient.EarningsQuarter(
+                        "RHM", 2026, 1, null, 5.40, null, null, null, null, null, null,
+                        null, null, false));
+        List<ChartFigure> figures = charts.build(waveG(q, null, null, null, null, List.of(),
+                DeepDiveCharts.Docket.EMPTY, DeepDiveCharts.Regime.EMPTY));
+        assertEquals(1, figures.size());
+        ChartFigure f = figures.get(0);
+        assertEquals(3, f.section());
+        assertEquals("CNBC", f.note());
+        assertTrue(f.svg().contains("Q3/25") && f.svg().contains("Q1/26"), "quarter ticks");
+        assertTrue(f.svg().contains("4,62"), "what was actually reported");
+        assertTrue(f.svg().contains("opacity=\"0.55\""), "an unreported quarter is de-emphasized");
+        // One quarter is no record.
+        assertTrue(charts.build(waveG(q.subList(0, 1), null, null, null, null, List.of(),
+                DeepDiveCharts.Docket.EMPTY, DeepDiveCharts.Regime.EMPTY)).isEmpty());
+    }
+
+    @Test
+    void relativeStrengthIndexesBothSeriesToTheSameStart() {
+        MarketSnapshot subject = closes("RHM", List.of(100.0, 110.0, 130.0));
+        MarketSnapshot sector = closes("EXV1.DE", List.of(200.0, 202.0, 206.0));
+        List<ChartFigure> figures = charts.build(waveG(List.of(), subject, sector,
+                "EXV1.DE", "Rüstung Europa", List.of(),
+                DeepDiveCharts.Docket.EMPTY, DeepDiveCharts.Regime.EMPTY));
+        // the price figure plus the relative-strength figure
+        ChartFigure f = figures.stream().filter(x -> x.title().contains("Relative Stärke"))
+                .findFirst().orElseThrow();
+        assertEquals(2, f.section());
+        assertTrue(f.note().contains("EXV1.DE"), f.note());
+        assertTrue(f.svg().contains("+30,0 %"), "the subject's own move over the window");
+        assertTrue(f.svg().contains("+3,0 %"), "the sector's move on the SAME scale");
+        assertTrue(f.svg().contains("Rüstung Europa"), "the proxy is named, not just tickered");
+        // No proxy, no comparison.
+        assertTrue(charts.build(waveG(List.of(), subject, null, null, null, List.of(),
+                DeepDiveCharts.Docket.EMPTY, DeepDiveCharts.Regime.EMPTY)).stream()
+                .noneMatch(x -> x.title().contains("Relative Stärke")));
+    }
+
+    @Test
+    void attentionCurveNamesItsPeakDay() {
+        List<de.bsommerfeld.wsbg.terminal.briefing.WikidataClient.PageviewPoint> curve =
+                new java.util.ArrayList<>();
+        for (int i = 0; i < 10; i++) {
+            curve.add(new de.bsommerfeld.wsbg.terminal.briefing.WikidataClient.PageviewPoint(
+                    java.time.LocalDate.of(2026, 7, 1).plusDays(i), i == 6 ? 9000 : 1000));
+        }
+        List<ChartFigure> figures = charts.build(waveG(List.of(), null, null, null, null, curve,
+                DeepDiveCharts.Docket.EMPTY, DeepDiveCharts.Regime.EMPTY));
+        assertEquals(1, figures.size());
+        ChartFigure f = figures.get(0);
+        assertEquals(2, f.section());
+        assertEquals("Wikimedia", f.note());
+        assertTrue(f.svg().contains("07.07.2026"), "the peak day is dated");
+        assertTrue(f.svg().contains("9.000"), "and carries its own count in full");
+        // Too short a window is no curve.
+        assertTrue(charts.build(waveG(List.of(), null, null, null, null,
+                curve.subList(0, 4), DeepDiveCharts.Docket.EMPTY,
+                DeepDiveCharts.Regime.EMPTY)).isEmpty());
+    }
+
+    @Test
+    void regimeMeterCarriesTodayAndWhereItCameFrom() {
+        var fg = new de.bsommerfeld.wsbg.terminal.feargreed.FearGreedIndex(
+                72, "Greed", 70, 55.0, 41.0, null, java.time.Instant.EPOCH,
+                List.of(), List.of());
+        var pc = new de.bsommerfeld.wsbg.terminal.briefing.CboePutCallClient.PutCallRatios(
+                "2026-08-03", 0.87, 0.62, 1.21, 14.5, 5600);
+        var bund = new de.bsommerfeld.wsbg.terminal.briefing.BundYieldClient.YieldPoint(
+                "2026-08-03", 2.54, 2.49);
+        var regime = new DeepDiveCharts.Regime(fg, pc, bund, 1.0842, 97.3);
+        List<ChartFigure> figures = charts.build(waveG(List.of(), null, null, null, null,
+                List.of(), DeepDiveCharts.Docket.EMPTY, regime));
+        assertEquals(1, figures.size());
+        ChartFigure f = figures.get(0);
+        assertEquals(2, f.section());
+        assertTrue(f.svg().contains("72 · Greed"), "today's composite and its rating");
+        assertTrue(f.svg().contains("vor 1 Wo. 55") && f.svg().contains("vor 1 Mon. 41"),
+                "where the tape came from");
+        assertTrue(f.svg().contains("0,87") && f.svg().contains("2,54 %")
+                && f.svg().contains("1,0842"), "the anchors a valuation hangs on");
+        // A yield's move is basis points, never a percent OF the yield.
+        assertTrue(f.svg().contains("Vortag 2,49 %"), "the previous LEVEL, not a delta");
+        // An empty regime draws nothing at all.
+        assertTrue(charts.build(waveG(List.of(), null, null, null, null, List.of(),
+                DeepDiveCharts.Docket.EMPTY, DeepDiveCharts.Regime.EMPTY)).isEmpty());
+    }
+
+    @Test
+    void docketPutsEveryDatedLegOnOneForwardAxis() {
+        java.time.LocalDate today = java.time.LocalDate.now();
+        var docket = new DeepDiveCharts.Docket(
+                List.of(new de.bsommerfeld.wsbg.terminal.briefing.EqsEventsClient.CorporateEvent(
+                        today.plusDays(12).atStartOfDay(java.time.ZoneId.systemDefault())
+                                .toInstant(), "DE0007030009", "Rheinmetall", "Q3-Zahlen")),
+                List.of(),
+                List.of(new de.bsommerfeld.wsbg.terminal.briefing.EconCalendarClient.EconEvent(
+                        "CPI", "DE", today.plusDays(4).atStartOfDay(
+                                java.time.ZoneId.systemDefault()).toEpochSecond(),
+                        "high", null, null)),
+                List.of(new de.bsommerfeld.wsbg.terminal.briefing.CentralBankCalendarClient
+                        .CbMeeting("EZB", "Zinsentscheid", today.plusDays(30))),
+                List.of(), List.of());
+        List<ChartFigure> figures = charts.build(waveG(List.of(), null, null, null, null,
+                List.of(), docket, DeepDiveCharts.Regime.EMPTY));
+        assertEquals(1, figures.size());
+        ChartFigure f = figures.get(0);
+        assertEquals(6, f.section());
+        assertTrue(f.svg().contains("Emittent") && f.svg().contains("Makro")
+                && f.svg().contains("Zentralbank"), "one lane per kind");
+        assertFalse(f.svg().contains("Statistik"), "an empty leg gets no lane");
+        assertTrue(f.title().contains("3"), "the total the lanes hold");
+        // A docket of only past dates is no forecast.
+        var pastOnly = new DeepDiveCharts.Docket(List.of(), List.of(), List.of(),
+                List.of(new de.bsommerfeld.wsbg.terminal.briefing.CentralBankCalendarClient
+                        .CbMeeting("EZB", "Zinsentscheid", today.minusDays(30))),
+                List.of(), List.of());
+        assertTrue(charts.build(waveG(List.of(), null, null, null, null, List.of(),
+                pastOnly, DeepDiveCharts.Regime.EMPTY)).isEmpty());
+    }
+
+    @Test
+    void calendarYearArcCarriesEveryYearsOwnMove() {
+        var years = List.of(
+                new de.bsommerfeld.wsbg.terminal.onvista.OnvistaMarketClient
+                        .YearPerformance(2022, 90, 60, -30, -33.3),
+                new de.bsommerfeld.wsbg.terminal.onvista.OnvistaMarketClient
+                        .YearPerformance(2023, 60, 120, 60, 100.0),
+                new de.bsommerfeld.wsbg.terminal.onvista.OnvistaMarketClient
+                        .YearPerformance(2024, 120, 150, 30, 25.0));
+        List<ChartFigure> figures = charts.build(input(years, List.of(), List.of(), null, null));
+        assertEquals(1, figures.size());
+        ChartFigure f = figures.get(0);
+        assertEquals(2, f.section());
+        assertEquals("onvista", f.note());
+        assertTrue(f.title().contains("2022") && f.title().contains("2024"), f.title());
+        assertTrue(f.svg().contains("+100,0 %"), "the year's own move, direct-labeled");
+        assertTrue(f.svg().contains("−33,3 %"), "a losing year keeps its sign");
+        // A single year is no arc.
+        assertTrue(charts.build(input(years.subList(0, 1), List.of(), List.of(), null, null))
+                .isEmpty());
+    }
+
+    @Test
+    void consensusArcShowsWhereTheStreetCameFrom() {
+        var trend = List.of(
+                new de.bsommerfeld.wsbg.terminal.finanzennet.FinanzenNetMarketClient
+                        .ConsensusTrend("Heute", 12, 4, 1),
+                new de.bsommerfeld.wsbg.terminal.finanzennet.FinanzenNetMarketClient
+                        .ConsensusTrend("vor 6 Mon.", 8, 6, 3),
+                new de.bsommerfeld.wsbg.terminal.finanzennet.FinanzenNetMarketClient
+                        .ConsensusTrend("vor 12 Mon.", 5, 7, 5));
+        List<ChartFigure> figures = charts.build(input(List.of(), trend, List.of(), null, null));
+        assertEquals(1, figures.size());
+        ChartFigure f = figures.get(0);
+        assertEquals(4, f.section());
+        assertEquals("finanzen.net", f.note());
+        assertTrue(f.svg().contains("vor 12 Mon."), "the far end of the arc");
+        assertTrue(f.svg().contains("Kaufen"), "localized tier legend");
+        // A single point in time is no arc, and an all-zero row draws nothing.
+        assertTrue(charts.build(input(List.of(), trend.subList(0, 1), List.of(), null, null))
+                .isEmpty());
+    }
+
+    @Test
+    void sectorBoardRanksSectorsAndMarksTheSubjectsOwn() {
+        List<HeatmapService.Node> board = List.of(
+                new HeatmapService.Node("s1", "Rüstung", null, null, 1, 3.4, null, null),
+                new HeatmapService.Node("s2", "Banken", null, null, 1, -1.2, null, null),
+                new HeatmapService.Node("s3", "Chemie", null, null, 1, 0.6, null, null),
+                // a leaf carries parent AND symbol — it is not a sector row
+                new HeatmapService.Node("l1", "Rheinmetall", "s1", "RHM", 1, 5.0, null, null));
+        List<ChartFigure> figures = charts.build(
+                input(List.of(), List.of(), board, "Rüstung", "DAX"));
+        assertEquals(1, figures.size());
+        ChartFigure f = figures.get(0);
+        assertEquals(2, f.section());
+        assertTrue(f.note().contains("DAX"), f.note());
+        assertTrue(f.svg().contains("Rüstung") && f.svg().contains("Banken"));
+        assertFalse(f.svg().contains("Rheinmetall"), "leaves are not sector rows");
+        assertTrue(f.svg().contains("+3,4 %") && f.svg().contains("−1,2 %"));
+        assertTrue(f.svg().contains("--ddc-sun"), "the subject's own sector is marked");
+        // Fewer than three sectors is no field to read.
+        assertTrue(charts.build(input(List.of(), List.of(), board.subList(0, 2), null, null))
+                .isEmpty());
+    }
+
+    /**
+     * No LABEL may run off the side of its own canvas. The y-bound test above
+     * catches marks; this one catches text, which is where the overruns
+     * actually happen: a label is anchored at an x inside the box and then
+     * extends past the edge because nothing budgeted its width.
+     */
+    @Test
+    void noLabelRunsOffTheSide() {
+        List<ChartFigure> figures = allFigures();
+        java.util.regex.Pattern box = java.util.regex.Pattern.compile("viewBox=\"0 0 (\\d+) ");
+        java.util.regex.Pattern txt = java.util.regex.Pattern.compile(
+                "<text x=\"(-?[0-9.]+)\"[^>]*text-anchor=\"(\\w+)\"[^>]*font-size=\"(\\d+)\""
+                        + "[^>]*>([^<]*)</text>");
+        List<String> overruns = new java.util.ArrayList<>();
+        for (ChartFigure f : figures) {
+            var mb = box.matcher(f.svg());
+            assertTrue(mb.find(), f.title());
+            double w = Double.parseDouble(mb.group(1));
+            var mt = txt.matcher(f.svg());
+            while (mt.find()) {
+                double x = Double.parseDouble(mt.group(1));
+                String anchor = mt.group(2);
+                int size = Integer.parseInt(mt.group(3));
+                String content = mt.group(4);
+                // Same estimate the builder uses to decide collisions.
+                double tw = content.length() * size * 0.58;
+                double left = switch (anchor) {
+                    case "end" -> x - tw;
+                    case "middle" -> x - tw / 2;
+                    default -> x;
+                };
+                double right = left + tw;
+                // A 2-unit tolerance: the estimate is an estimate.
+                if (left < -2 || right > w + 2) {
+                    overruns.add(f.title() + ": \"" + content + "\" ["
+                            + Math.round(left) + ".." + Math.round(right) + "] in 0.." + (int) w);
+                }
+            }
+        }
+        assertTrue(overruns.isEmpty(), "labels running off the canvas:\n"
+                + String.join("\n", overruns));
+    }
+
+    /**
+     * The same invariant under LOAD: real registers carry long holder names,
+     * long brokerage names and long signal lines, and those are what actually
+     * push a label off the edge. Benign fixtures prove nothing here.
+     */
+    @Test
+    void noLabelRunsOffTheSideWithLongRealWorldStrings() {
+        String longName = "Deutsche Gesellschaft für Wertpapierverwahrung und "
+                + "Sondervermögen mbH & Co. KG";
+        var longShorts = new ShortInterest("DE0007030009", 4.2, List.of(
+                new ShortInterest.ShortPosition(longName, 2.10, "2026-08-01"),
+                new ShortInterest.ShortPosition(longName + " II", 1.05, "2026-08-01")), 2);
+        var longActions = new AnalystActions(null, Double.NaN, null, List.of(
+                new AnalystActions.Action(null, null, "2026-07-01",
+                        "Morgan Stanley & Co. International plc", null,
+                        "Reiterated Rating with a very long action type",
+                        "Equal-Weight / In-Line", "Overweight / Outperform",
+                        120.0, 195.0, "USD")), null, 1);
+        var longSignals = List.of(
+                "World hazard [STORM, HIGH]: an unusually long advisory line that a producer "
+                        + "may well emit in full, with clauses and a trailing tail",
+                "US petroleum stocks (EIA weekly report, week ending 2026-07-03): crude "
+                        + "-3.2 million barrels, gasoline +1.1 million barrels");
+        var longSectors = List.of(
+                new HeatmapService.Node("s1",
+                        "Industrielle Güter, Rüstung und Luft- und Raumfahrttechnik",
+                        null, null, 1, 3.4, null, null),
+                new HeatmapService.Node("s2", "Banken und Finanzdienstleistungen",
+                        null, null, 1, -12.7, null, null),
+                new HeatmapService.Node("s3", "Chemie", null, null, 1, 0.6, null, null));
+        var longEvents = new AnalystView(19, 3, 5, 0, 0, 27, 16, 3, 6, 0, 0, 25, 0,
+                1720.0, "EUR", 73.4, 0, List.of(new AnalystView.CorporateEvent(
+                        4_102_444_800L, "Hauptversammlung mit ordentlicher Beschlussfassung "
+                                + "über die Verwendung des Bilanzgewinns", "AGM")), 1);
+
+        List<ChartFigure> figures = new DeepDiveCharts("de").build(
+                new DeepDiveCharts.ChartInput(
+                        snapshot(), deepDive(), longEvents, longShorts, insider(), venueStats(),
+                        usStats(), longActions, hedgeFunds(), pressTimeline(), longSignals,
+                        volumeProfile(), orderBook(), memoryEvents(),
+                        List.of(), List.of(), longSectors,
+                        "Industrielle Güter, Rüstung und Luft- und Raumfahrttechnik", "DAX",
+                        List.of(), null, null, null, List.of(),
+                        DeepDiveCharts.Docket.EMPTY, DeepDiveCharts.Regime.EMPTY,
+                        DeepDiveCharts.Registers.EMPTY, DeepDiveCharts.Boards.EMPTY, List.of()));
+        assertNoLabelOverruns(figures);
+    }
+
+    private static void assertNoLabelOverruns(List<ChartFigure> figures) {
+        java.util.regex.Pattern box = java.util.regex.Pattern.compile("viewBox=\"0 0 (\\d+) ");
+        java.util.regex.Pattern txt = java.util.regex.Pattern.compile(
+                "<text x=\"(-?[0-9.]+)\"[^>]*text-anchor=\"(\\w+)\"[^>]*font-size=\"(\\d+)\""
+                        + "[^>]*>([^<]*)</text>");
+        List<String> overruns = new java.util.ArrayList<>();
+        for (ChartFigure f : figures) {
+            var mb = box.matcher(f.svg());
+            assertTrue(mb.find(), f.title());
+            double w = Double.parseDouble(mb.group(1));
+            var mt = txt.matcher(f.svg());
+            while (mt.find()) {
+                double x = Double.parseDouble(mt.group(1));
+                int size = Integer.parseInt(mt.group(3));
+                String content = mt.group(4);
+                double tw = content.length() * size * 0.58;
+                double left = switch (mt.group(2)) {
+                    case "end" -> x - tw;
+                    case "middle" -> x - tw / 2;
+                    default -> x;
+                };
+                if (left < -2 || left + tw > w + 2) {
+                    overruns.add(f.title() + ": \"" + content + "\" ["
+                            + Math.round(left) + ".." + Math.round(left + tw)
+                            + "] in 0.." + (int) w);
+                }
+            }
+        }
+        assertTrue(overruns.isEmpty(), "labels running off the canvas:\n"
+                + String.join("\n", overruns));
+    }
+
+    /** Every figure the fixtures can produce, wave A through G. */
+    private static List<ChartFigure> allFigures() {
+        return new DeepDiveCharts("de").build(new DeepDiveCharts.ChartInput(
+                snapshot(), deepDive(), analystView(), shorts(), insider(), venueStats(),
+                usStats(), actions(), hedgeFunds(), pressTimeline(), worldSignals(),
+                volumeProfile(), orderBook(), memoryEvents(),
+                List.of(new de.bsommerfeld.wsbg.terminal.onvista.OnvistaMarketClient
+                                .YearPerformance(2023, 60, 120, 60, 100.0),
+                        new de.bsommerfeld.wsbg.terminal.onvista.OnvistaMarketClient
+                                .YearPerformance(2024, 120, 90, -30, -25.0)),
+                List.of(new de.bsommerfeld.wsbg.terminal.finanzennet.FinanzenNetMarketClient
+                                .ConsensusTrend("Heute", 12, 4, 1),
+                        new de.bsommerfeld.wsbg.terminal.finanzennet.FinanzenNetMarketClient
+                                .ConsensusTrend("vor 12 Mon.", 5, 7, 5)),
+                List.of(new HeatmapService.Node("s1", "Rüstung und Verteidigung", null, null,
+                                1, 3.4, null, null),
+                        new HeatmapService.Node("s2", "Banken", null, null, 1, -1.2, null, null),
+                        new HeatmapService.Node("s3", "Chemie", null, null, 1, 0.6, null, null)),
+                "Rüstung und Verteidigung", "DAX",
+                List.of(new de.bsommerfeld.wsbg.terminal.cnbc.CnbcQuoteClient.EarningsQuarter(
+                                "RHM", 2025, 3, null, 4.10, 4.62, null, null, null, null, null,
+                                null, null, false),
+                        new de.bsommerfeld.wsbg.terminal.cnbc.CnbcQuoteClient.EarningsQuarter(
+                                "RHM", 2025, 4, null, 5.00, 4.55, null, null, null, null, null,
+                                null, null, false)),
+                closes("EXV1.DE", List.of(180.0, 184.9, 188.0)), "EXV1.DE",
+                "Rüstung und Luftfahrt Europa",
+                attentionFixture(), docketFixture(),
+                new DeepDiveCharts.Regime(
+                        new de.bsommerfeld.wsbg.terminal.feargreed.FearGreedIndex(
+                                72, "Greed", 70, 55.0, 41.0, null, java.time.Instant.EPOCH,
+                                List.of(), List.of()),
+                        new de.bsommerfeld.wsbg.terminal.briefing.CboePutCallClient.PutCallRatios(
+                                "2026-08-03", 0.87, 0.62, 1.21, 14.52, 5600),
+                        new de.bsommerfeld.wsbg.terminal.briefing.BundYieldClient.YieldPoint(
+                                "2026-08-03", 2.54, 2.49),
+                        1.0842, 97.31),
+                DeepDiveCharts.Registers.EMPTY, DeepDiveCharts.Boards.EMPTY, List.of()));
+    }
+
+    private static List<de.bsommerfeld.wsbg.terminal.briefing.WikidataClient.PageviewPoint>
+            attentionFixture() {
+        List<de.bsommerfeld.wsbg.terminal.briefing.WikidataClient.PageviewPoint> out =
+                new java.util.ArrayList<>();
+        for (int i = 0; i < 30; i++) {
+            out.add(new de.bsommerfeld.wsbg.terminal.briefing.WikidataClient.PageviewPoint(
+                    java.time.LocalDate.of(2026, 7, 5).plusDays(i), i == 7 ? 91_000 : 1200));
+        }
+        return out;
+    }
+
+    private static DeepDiveCharts.Docket docketFixture() {
+        java.time.LocalDate t = java.time.LocalDate.now();
+        return new DeepDiveCharts.Docket(
+                List.of(new de.bsommerfeld.wsbg.terminal.briefing.EqsEventsClient.CorporateEvent(
+                        t.plusDays(12).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant(),
+                        "DE0007030009", "Rheinmetall", "Q3")),
+                List.of(),
+                List.of(new de.bsommerfeld.wsbg.terminal.briefing.EconCalendarClient.EconEvent(
+                        "CPI", "DE", t.plusDays(4).atStartOfDay(
+                                java.time.ZoneId.systemDefault()).toEpochSecond(),
+                        "high", null, null)),
+                List.of(new de.bsommerfeld.wsbg.terminal.briefing.CentralBankCalendarClient
+                        .CbMeeting("EZB", "Zinsentscheid", t.plusDays(30))),
+                List.of(), List.of());
+    }
+
+    // ---- Wave H: the registry legs that were collected but never drawn ----
+
+    private static DeepDiveCharts.ChartInput waveH(DeepDiveCharts.Registers registers,
+            DeepDiveCharts.Boards boards, List<de.bsommerfeld.wsbg.terminal.source.RawNewsItem>
+                    pressHistory, MarketSnapshot subject) {
+        return new DeepDiveCharts.ChartInput(subject, null, null, null, null, null, null, null,
+                null, null, List.of(), null, null, null, List.of(), List.of(), List.of(),
+                null, null, List.of(), null, null, null, List.of(),
+                DeepDiveCharts.Docket.EMPTY, DeepDiveCharts.Regime.EMPTY,
+                registers, boards, pressHistory);
+    }
+
+    @Test
+    void eightFiscalYearsShowTheCycleTheShortSeriesCannot() {
+        java.util.List<de.bsommerfeld.wsbg.terminal.boersede.BoerseDeMarketClient.FundamentalYear>
+                years = new java.util.ArrayList<>();
+        double[][] rows = {{2018, 6100, 300}, {2019, 6250, 420}, {2020, 5900, -120},
+                {2021, 6800, 510}, {2022, 7200, 580}, {2023, 7176, 586}, {2024, 9751, 936}};
+        for (double[] r : rows) {
+            years.add(new de.bsommerfeld.wsbg.terminal.boersede.BoerseDeMarketClient
+                    .FundamentalYear((int) r[0], java.util.Map.of(
+                            "Umsatz", r[1], "Jahresüberschuss", r[2])));
+        }
+        var regs = new DeepDiveCharts.Registers(null, null, null, years, List.of(), List.of(),
+                null, List.of(), List.of(), List.of(), List.of());
+        List<ChartFigure> figures = charts.build(waveH(regs, DeepDiveCharts.Boards.EMPTY,
+                List.of(), null));
+        assertEquals(1, figures.size());
+        ChartFigure f = figures.get(0);
+        assertEquals(3, f.section());
+        assertEquals("boerse.de", f.note());
+        assertTrue(f.svg().contains("2018") && f.svg().contains("2024"), "the whole cycle");
+        // Two years is a trend, not a cycle.
+        var few = new DeepDiveCharts.Registers(null, null, null, years.subList(0, 2), List.of(),
+                List.of(), null, List.of(), List.of(), List.of(), List.of());
+        assertTrue(charts.build(waveH(few, DeepDiveCharts.Boards.EMPTY, List.of(), null))
+                .isEmpty());
+    }
+
+    @Test
+    void ownershipPutsTheFreeFloatBesideItsAnchors() {
+        var company = new de.bsommerfeld.wsbg.terminal.onvista.OnvistaFundamentalsClient
+                .CompanySnapshot("Rheinmetall AG", "Rheinmetall AG", "AG", "DE", "Rüstung",
+                "Industrie", "https://x.invalid", "Portrait", 46_655_696L, 4.6e10, "EUR",
+                62.5, "31.12.", 2024,
+                List.of(new de.bsommerfeld.wsbg.terminal.onvista.OnvistaFundamentalsClient
+                                .Shareholder("BlackRock Inc.", 7.4),
+                        new de.bsommerfeld.wsbg.terminal.onvista.OnvistaFundamentalsClient
+                                .Shareholder("Wellington", 5.1)),
+                List.of(), List.of(), List.of(), List.of());
+        var regs = new DeepDiveCharts.Registers(company, null, null, List.of(), List.of(),
+                List.of(), null, List.of(), List.of(), List.of(), List.of());
+        List<ChartFigure> figures = charts.build(waveH(regs, DeepDiveCharts.Boards.EMPTY,
+                List.of(), null));
+        assertEquals(1, figures.size());
+        ChartFigure f = figures.get(0);
+        assertEquals(4, f.section());
+        assertTrue(f.title().contains("62,5"), "the free float belongs in the title");
+        assertTrue(f.svg().contains("BlackRock Inc."), "anchors are named");
+        assertTrue(f.svg().contains("Streubesitz"), "and so is the float");
+    }
+
+    @Test
+    void peerUpsideSortsTheFieldAndMarksOurOwn() {
+        var peers = List.of(
+                new de.bsommerfeld.wsbg.terminal.finanzennet.FinanzenNetMarketClient
+                        .PeerConsensus("Hensoldt", 8, 3, 1, 55.0, "EUR", 12.5),
+                new de.bsommerfeld.wsbg.terminal.finanzennet.FinanzenNetMarketClient
+                        .PeerConsensus("RHM", 19, 3, 5, 1720.0, "EUR", 73.4),
+                new de.bsommerfeld.wsbg.terminal.finanzennet.FinanzenNetMarketClient
+                        .PeerConsensus("KSB Vz", 2, 4, 2, 500.0, "EUR", -4.2));
+        var regs = new DeepDiveCharts.Registers(null, null, null, List.of(), List.of(),
+                List.of(), null, List.of(), peers, List.of(), List.of());
+        // The snapshot rides so the figure can recognise our own row - it also
+        // draws the price line, so pick the peer figure out by name.
+        ChartFigure f = charts.build(waveH(regs, DeepDiveCharts.Boards.EMPTY, List.of(),
+                        snapshot())).stream()
+                .filter(x -> x.title().contains("Kurspotenzial"))
+                .findFirst().orElseThrow();
+        assertEquals(4, f.section());
+        assertTrue(f.svg().contains("+73,4 %") && f.svg().contains("−4,2 %"),
+                "both directions keep their sign");
+        assertTrue(f.svg().contains("--ddc-sun"), "our own name is marked");
+    }
+
+    @Test
+    void theBoardsCarryBothDirectionsSorted() {
+        var boards = new DeepDiveCharts.Boards(
+                List.of(new de.bsommerfeld.wsbg.terminal.briefing.TradingEconomicsClient.Quote(
+                                "CL", "Rohöl WTI", "USD/bbl", 78.2, -1.4, -1.76, "2026-08-03"),
+                        new de.bsommerfeld.wsbg.terminal.briefing.TradingEconomicsClient.Quote(
+                                "HG", "Kupfer", "USD/lb", 4.1, 0.09, 2.24, "2026-08-03")),
+                List.of(new de.bsommerfeld.wsbg.terminal.briefing.TradingEconomicsClient.Quote(
+                        "DE10Y", "Bund 10J", "%", 2.54, 0.05, 2.01, "2026-08-03")));
+        List<ChartFigure> figures = charts.build(waveH(DeepDiveCharts.Registers.EMPTY, boards,
+                List.of(), null));
+        assertEquals(1, figures.size());
+        ChartFigure f = figures.get(0);
+        assertEquals(2, f.section());
+        assertTrue(f.svg().contains("Kupfer") && f.svg().contains("Rohöl WTI"));
+        assertTrue(f.svg().contains("−1,8 %"), "a falling board row keeps its sign");
+    }
+
+    @Test
+    void theArchiveBecomesAShapeOnlyPerYear() {
+        java.util.List<de.bsommerfeld.wsbg.terminal.source.RawNewsItem> history =
+                new java.util.ArrayList<>();
+        int[][] perYear = {{2019, 2}, {2020, 5}, {2021, 1}, {2022, 4}};
+        for (int[] y : perYear) {
+            for (int i = 0; i < y[1]; i++) {
+                history.add(new de.bsommerfeld.wsbg.terminal.source.RawNewsItem(
+                        "u" + y[0] + i, "Titel", "Publisher", "https://x.invalid/" + y[0] + i,
+                        java.time.LocalDate.of(y[0], 6, 1).atStartOfDay(
+                                java.time.ZoneId.systemDefault()).toInstant(),
+                        List.of(), null, null, false, null));
+            }
+        }
+        List<ChartFigure> figures = charts.build(waveH(DeepDiveCharts.Registers.EMPTY,
+                DeepDiveCharts.Boards.EMPTY, history, null));
+        assertEquals(1, figures.size());
+        ChartFigure f = figures.get(0);
+        assertEquals(2, f.section());
+        assertTrue(f.svg().contains("2019") && f.svg().contains("2022"), "the whole span");
+        assertTrue(f.title().contains("12"), "the entry count rides in the title");
     }
 
     // ---- Wave E: the market-memory figures ----

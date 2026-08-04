@@ -12,6 +12,7 @@ import de.bsommerfeld.wsbg.terminal.agent.event.DeepDiveProgressEvent;
 import de.bsommerfeld.wsbg.terminal.agent.event.DeepDiveStartedEvent;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
 import de.bsommerfeld.wsbg.terminal.db.DeepDiveRecord;
+import de.bsommerfeld.wsbg.terminal.ui.CefHost;
 import de.bsommerfeld.wsbg.terminal.ui.export.DeepDivePdfExporter;
 import de.bsommerfeld.wsbg.terminal.ui.web.PushHub;
 import org.slf4j.Logger;
@@ -35,13 +36,16 @@ import java.util.Map;
  *   <li>{@code {command:"list"}} — request the current state;</li>
  *   <li>{@code {command:"get", id:"dd-…"}} — one full report, answered with a
  *       {@code deepdive-report} broadcast;</li>
+ *   <li>{@code {command:"priority", on:true|false}} — park/release the wire's
+ *       model lanes for the running generation (ignored while idle);</li>
  *   <li>{@code {command:"delete", id:"dd-…"}} — remove one archived report
  *       (explicit user action; the archive rewrites its file);</li>
  *   <li>{@code {command:"export-pdf", id:"dd-…"}} — native save dialog (EDT),
- *       then Chromium {@code printToPDF}; the outcome rides the next state push.</li>
+ *       then Chromium {@code printToPDF}; the outcome rides the next state push
+ *       and a finished PDF opens itself in the OS viewer.</li>
  * </ul>
- * Outbound: topic {@code deepdive} {@code {busy, stage, subject, reports:[meta…],
- * item?, pdf?}} on client open, every progress event and every mutation.
+ * Outbound: topic {@code deepdive} {@code {busy, stage, subject, priority?,
+ * reports:[meta…], item?, pdf?}} on client open, every progress event and every mutation.
  */
 @Singleton
 public final class DeepDiveBridge {
@@ -183,6 +187,13 @@ public final class DeepDiveBridge {
                     if (!accepted) push(); // re-sync the client's busy state
                 }
                 case "cancel" -> service.cancelCurrent(); // finish event pushes the idle state
+                case "priority" -> {
+                    // The wire's model lanes park (collection keeps running) so the
+                    // report a human is waiting on owns both permits. Always push:
+                    // a rejected arm (run already over) re-syncs the toggle.
+                    service.setPriority(Boolean.TRUE.equals(payload.get("on")));
+                    push();
+                }
                 case "list" -> push();
                 case "live" -> hub.broadcastSafe("deepdive-live-backlog", this::liveBacklog);
                 case "get" -> service.byId(Payloads.str(payload.get("id"))).ifPresent(r ->
@@ -219,9 +230,13 @@ public final class DeepDiveBridge {
                 file = new File(file.getParentFile(), file.getName() + ".pdf");
             }
             final String path = file.getAbsolutePath();
-            boolean started = pdfExporter.export(record, file.toPath(), ok -> {
+            final java.nio.file.Path target = file.toPath();
+            boolean started = pdfExporter.export(record, target, ok -> {
                 pdfOutcome = Map.of("ok", ok, "path", ok ? path : "");
                 push();
+                // A finished export goes straight to the OS viewer — the user
+                // asked for a PDF, not for a note about where it now lies.
+                if (ok) CefHost.openFile(target);
             });
             if (!started) {
                 pdfOutcome = Map.of("ok", false, "path", "");
@@ -362,6 +377,7 @@ public final class DeepDiveBridge {
         m.put("busy", service.isBusy());
         if (stage != null) m.put("stage", stage);
         if (stageDetail != null) m.put("stageDetail", stageDetail);
+        if (service.isPriority()) m.put("priority", true);
         if (service.isBusy() && runStartMs > 0) {
             m.put("progress", (int) Math.round(fraction * 100));
             m.put("etaSeconds", etaSeconds());

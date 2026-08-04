@@ -31,7 +31,8 @@ import java.util.List;
  * {@code paragraph} 1-based. {@code phase} and {@code participant} are
  * protocol tokens (phase: collect|triage|figures|sections|these|reclaim|
  * consistency|typeset; participant: author|chronicle|gate|weaver|diffjudge|
- * challenger|reviser|arbiter|polisher|final|reclaim|typesetter|triage),
+ * challenger|reviser|arbiter|polisher|final|reclaim|typesetter|triage|
+ * supervisor),
  * localized by the UI, never display literals.
  */
 public record DeepDiveLiveEvent(String subject, Entry entry) {
