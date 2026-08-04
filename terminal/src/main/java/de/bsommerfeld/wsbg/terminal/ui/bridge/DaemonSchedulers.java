@@ -1,5 +1,6 @@
 package de.bsommerfeld.wsbg.terminal.ui.bridge;
 
+import de.bsommerfeld.wsbg.terminal.core.util.BackgroundThreads;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -27,8 +28,6 @@ final class DaemonSchedulers {
     }
 
     private static Thread daemon(Runnable r, String name) {
-        Thread t = new Thread(r, name);
-        t.setDaemon(true);
-        return t;
+        return BackgroundThreads.daemon(r, name);
     }
 }

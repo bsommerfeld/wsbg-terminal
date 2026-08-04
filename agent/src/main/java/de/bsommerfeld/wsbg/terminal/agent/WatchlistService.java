@@ -6,6 +6,7 @@ import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.agent.event.WatchlistChangedEvent;
 import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
+import de.bsommerfeld.wsbg.terminal.core.util.BackgroundThreads;
 import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
 import dev.langchain4j.model.chat.ChatModel;
 import org.slf4j.Logger;
@@ -185,11 +186,8 @@ public class WatchlistService {
     private final Map<String, Long> lastNewsRefreshMs = new java.util.concurrent.ConcurrentHashMap<>();
 
     private final ScheduledExecutorService scheduler =
-            Executors.newSingleThreadScheduledExecutor(r -> {
-                Thread t = new Thread(r, "watchlist");
-                t.setDaemon(true);
-                return t;
-            });
+            Executors.newSingleThreadScheduledExecutor(
+                    BackgroundThreads.single("watchlist"));
 
     @Inject
     public WatchlistService(SubjectRegistry subjectRegistry, AgentBrain brain, LlmGate llmGate,

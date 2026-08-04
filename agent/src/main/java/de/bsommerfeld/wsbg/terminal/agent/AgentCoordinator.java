@@ -2,6 +2,7 @@ package de.bsommerfeld.wsbg.terminal.agent;
 
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
+import de.bsommerfeld.wsbg.terminal.core.util.BackgroundThreads;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -54,11 +55,8 @@ public class AgentCoordinator {
     private final EditorialPipeline pipeline;
     private final long debounceMs;
     private final ScheduledExecutorService scheduler =
-            Executors.newSingleThreadScheduledExecutor(r -> {
-                Thread t = new Thread(r, "agent-coordinator");
-                t.setDaemon(true);
-                return t;
-            });
+            Executors.newSingleThreadScheduledExecutor(
+                    BackgroundThreads.single("agent-coordinator"));
 
     private final AtomicReference<ScheduledFuture<?>> pending = new AtomicReference<>();
     private final ConcurrentHashMap<String, Boolean> inFlight = new ConcurrentHashMap<>();

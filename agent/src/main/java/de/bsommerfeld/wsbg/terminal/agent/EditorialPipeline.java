@@ -4,6 +4,7 @@ import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.agent.TickerResolver.ResolvedSubject;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
+import de.bsommerfeld.wsbg.terminal.core.util.BackgroundThreads;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -16,6 +17,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -146,6 +148,9 @@ public final class EditorialPipeline {
 
     private volatile boolean running = true;
 
+    /** Guards {@link #start()} — the loops are armed exactly once. */
+    private final AtomicBoolean started = new AtomicBoolean(false);
+
     @Inject
     public EditorialPipeline(EditorialAgent agent, LlmGate llmGate, ClusterRegistry clusterRegistry,
             SubjectRegistry subjectRegistry, EditorialQueue queue, GlobalConfig config) {
@@ -155,7 +160,17 @@ public final class EditorialPipeline {
         this.subjectRegistry = subjectRegistry;
         this.queue = queue;
         this.config = config;
+    }
 
+    /**
+     * Arms the compose workers and the merge/prune cadences. Idempotent, and
+     * separate from the constructor: this class is an eager singleton, so those
+     * loops used to start inside {@code Guice.createInjector} — before the window
+     * existed, competing with the startup intro. The deferred startup calls this
+     * once the intro is gone.
+     */
+    public void start() {
+        if (!started.compareAndSet(false, true)) return;
         for (int i = 0; i < WORKER_THREADS; i++) workerPool.submit(this::workerLoop);
         mergeScheduler.scheduleWithFixedDelay(this::mergeAndEnqueue,
                 MERGE_INTERVAL_MS, MERGE_INTERVAL_MS, TimeUnit.MILLISECONDS);
@@ -430,11 +445,6 @@ public final class EditorialPipeline {
     }
 
     private static ThreadFactory daemonFactory(String name) {
-        AtomicInteger n = new AtomicInteger();
-        return r -> {
-            Thread t = new Thread(r, name + "-" + n.incrementAndGet());
-            t.setDaemon(true);
-            return t;
-        };
+        return BackgroundThreads.factory(name);
     }
 }

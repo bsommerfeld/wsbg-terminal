@@ -3,6 +3,7 @@ package de.bsommerfeld.wsbg.terminal.agent;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditComment;
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
+import de.bsommerfeld.wsbg.terminal.core.util.BackgroundThreads;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
 
 import java.util.HashMap;
@@ -29,11 +30,8 @@ final class VisionPrefetcher {
      * bounds CPU, and at ~1-2 s per image the queue drains far faster than the
      * old model reads ever did.
      */
-    private final ExecutorService visionExecutor = Executors.newFixedThreadPool(1, r -> {
-        Thread t = new Thread(r, "vision-prefetch");
-        t.setDaemon(true);
-        return t;
-    });
+    private final ExecutorService visionExecutor =
+            Executors.newFixedThreadPool(1, BackgroundThreads.single("vision-prefetch"));
 
     /**
      * Gallery slides that feed the blocking vision join ({@code describeAll}). Kept

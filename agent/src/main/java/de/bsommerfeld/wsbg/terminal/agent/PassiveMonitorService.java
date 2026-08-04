@@ -6,6 +6,7 @@ import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.core.config.RedditConfig;
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
+import de.bsommerfeld.wsbg.terminal.core.util.BackgroundThreads;
 import de.bsommerfeld.wsbg.terminal.core.util.JitteredScheduler;
 import de.bsommerfeld.wsbg.terminal.db.AgentRepository;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
@@ -65,6 +66,10 @@ public class PassiveMonitorService {
     private final ExecutorService analysisExecutor =
             Executors.newSingleThreadExecutor(daemonFactory("reddit-analysis"));
 
+    /** Guards {@link #start()} — the scan loop is armed exactly once. */
+    private final java.util.concurrent.atomic.AtomicBoolean started =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
     private Instant lastCleanup = Instant.MIN;
 
     // Config values — loaded once from RedditConfig
@@ -95,11 +100,20 @@ public class PassiveMonitorService {
         this.snapshotCoordinator = new SnapshotCoordinator(repository, agentRepository, brain,
                 clusterRegistry, subjectRegistry, snapshotStore, agentSnapshotStore,
                 deltaTracker, redditConfig.getSnapshotTtlMinutes());
-
-        startMonitoring();
     }
 
     // -- Monitoring Lifecycle --
+
+    /**
+     * Arms the scan loop. Idempotent, and separate from the constructor: this
+     * class is an eager singleton, so scanning used to begin inside
+     * {@code Guice.createInjector} — before the window existed, competing with
+     * the startup intro. The deferred startup calls this once the intro is gone.
+     */
+    public void start() {
+        if (!started.compareAndSet(false, true)) return;
+        startMonitoring();
+    }
 
     private void startMonitoring() {
         LOG.info("Starting Passive Reddit Monitor...");
@@ -120,11 +134,7 @@ public class PassiveMonitorService {
 
     /** Daemon thread factory so a dangling scan/analysis task never holds the JVM open. */
     private static ThreadFactory daemonFactory(String name) {
-        return r -> {
-            Thread t = new Thread(r, name);
-            t.setDaemon(true);
-            return t;
-        };
+        return BackgroundThreads.single(name);
     }
 
     /**

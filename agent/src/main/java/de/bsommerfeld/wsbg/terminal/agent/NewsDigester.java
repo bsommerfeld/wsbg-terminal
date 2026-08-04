@@ -1,6 +1,7 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
+import de.bsommerfeld.wsbg.terminal.core.util.BackgroundThreads;
 import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
 import de.bsommerfeld.wsbg.terminal.source.net.WebFetcher;
 import org.slf4j.Logger;
@@ -90,11 +91,8 @@ final class NewsDigester {
      * leaves the latency-sensitive editorial calls their slots — digesting is
      * cache-warming, serialising it is the right trade.
      */
-    private final ExecutorService digestExecutor = Executors.newFixedThreadPool(1, r -> {
-        Thread t = new Thread(r, "news-digest");
-        t.setDaemon(true);
-        return t;
-    });
+    private final ExecutorService digestExecutor =
+            Executors.newFixedThreadPool(1, BackgroundThreads.single("news-digest"));
 
     private final AgentBrain brain;
     private final ChatGateway chatGateway;
@@ -259,6 +257,17 @@ final class NewsDigester {
      */
     private boolean readArticles() {
         return config.getHeadlines().isReadArticles();
+    }
+
+    /**
+     * Whether this reader will actually fetch anything.
+     *
+     * <p>Exposed so a caller can SAY that the switch is off. With it off every
+     * text comes back empty, every extraction yields nothing, and a whole
+     * reading phase vanishes without one line in the log admitting it.
+     */
+    boolean readsArticles() {
+        return articleReader != null && readArticles();
     }
 
     /** Lowercased host of a link, or null when it doesn't parse as a URL. */

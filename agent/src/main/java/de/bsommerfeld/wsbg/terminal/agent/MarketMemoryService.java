@@ -7,6 +7,7 @@ import de.bsommerfeld.wsbg.terminal.core.price.AnalystActions;
 import de.bsommerfeld.wsbg.terminal.core.price.AnalystActionsSource;
 import de.bsommerfeld.wsbg.terminal.core.price.UsListingStats;
 import de.bsommerfeld.wsbg.terminal.core.price.UsListingStatsSource;
+import de.bsommerfeld.wsbg.terminal.core.util.BackgroundThreads;
 import de.bsommerfeld.wsbg.terminal.core.util.JitteredScheduler;
 import de.bsommerfeld.wsbg.terminal.db.AdhocEventArchive;
 import de.bsommerfeld.wsbg.terminal.db.AdhocEventRecord;
@@ -257,11 +258,8 @@ public class MarketMemoryService {
     /** Arms all harvest loops. Idempotent. */
     public void start() {
         if (!started.compareAndSet(false, true)) return;
-        scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread t = new Thread(r, "market-memory");
-            t.setDaemon(true);
-            return t;
-        });
+        scheduler = Executors.newSingleThreadScheduledExecutor(
+                BackgroundThreads.single("market-memory"));
         LOG.info("Market memory armed (ad-hocs {} min, F&G {} h, actions {} h, US legs {} min, "
                         + "classify {} min, enrich {} min; register: {} events).",
                 ADHOC_INTERVAL_SECONDS / 60, FEAR_GREED_INTERVAL_SECONDS / 3600,

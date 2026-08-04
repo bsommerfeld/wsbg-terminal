@@ -1,5 +1,6 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
+import de.bsommerfeld.wsbg.terminal.core.util.BackgroundThreads;
 import de.bsommerfeld.wsbg.terminal.source.net.WebFetcher;
 import de.bsommerfeld.wsbg.terminal.source.net.WebResponse;
 import org.slf4j.Logger;
@@ -213,11 +214,8 @@ final class CompanySiteCrawler {
 
         String homeUrl = home.toString();
         seen.add(canonical(homeUrl));
-        ExecutorService pool = Executors.newFixedThreadPool(BATCH, r -> {
-            Thread t = new Thread(r, "dd-site-crawler");
-            t.setDaemon(true);
-            return t;
-        });
+        ExecutorService pool = Executors.newFixedThreadPool(
+                BATCH, BackgroundThreads.factory("dd-site-crawler"));
         try {
             String homeHtml = fetch(homeUrl);
             if (homeHtml == null) return Crawl.empty();

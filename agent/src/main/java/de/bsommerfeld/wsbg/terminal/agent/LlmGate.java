@@ -21,6 +21,16 @@ import com.google.inject.Singleton;
  * waiting, the next grant goes to the background lane — the wire keeps publishing
  * (throttled, never stalled) while a DD runs.
  *
+ * <p><b>Priority mode (user-armed, 2026-08-03):</b> {@link #setPriority(boolean)}
+ * suspends the anti-starvation guarantee entirely — while it is on, NO background
+ * caller is granted a permit, so the running DD gets BOTH. The wire is only
+ * lahmgelegt at the model, never at the intake: scraping, the cluster registry and
+ * the dirty set keep filling, the parked prep/compose lanes simply resume where they
+ * stood the moment the mode falls (a still-parked cluster picks up the evidence that
+ * arrived meanwhile in ONE extraction — nothing is dropped). A running generation is
+ * never preempted; only the next grant changes. Owned by the DD run, which clears it
+ * on every exit path, so the mode can never outlive the report a human waited for.
+ *
  * <p>This is a {@code @Singleton}: exactly ONE gate of {@code llmParallelism()} permits
  * exists per process, injected into {@link AgentBrain} (vision), {@link ChatGateway}
  * (every editorial chat call) and {@link EditorialPipeline} (contention logging).
@@ -43,10 +53,33 @@ public class LlmGate {
     private int backgroundWaiting;
     /** Interactive grants since the last background grant — the guarantee counter. */
     private int interactiveStreak;
+    /** Priority mode: the background lane is parked, the interactive lane owns every permit. */
+    private boolean priority;
 
     /** Free permits right now — for contention logging, not flow control. */
     public synchronized int availablePermits() {
         return permits - inUse;
+    }
+
+    /** Whether the background lane is currently parked. */
+    public synchronized boolean isPriority() {
+        return priority;
+    }
+
+    /** Background callers waiting right now — the UI's "wie viel steht still" hint. */
+    public synchronized int backgroundWaiting() {
+        return backgroundWaiting;
+    }
+
+    /**
+     * Parks ({@code true}) or releases ({@code false}) the background lane. Turning it
+     * off wakes every parked waiter — they then contend normally again.
+     */
+    public synchronized void setPriority(boolean on) {
+        if (priority == on) return;
+        priority = on;
+        interactiveStreak = 0;
+        notifyAll();
     }
 
     /** Blocks uninterruptibly until a permit is free — the background lane. */
@@ -87,6 +120,8 @@ public class LlmGate {
 
     private boolean mayProceed(boolean interactive) {
         if (inUse >= permits) return false;
+        // Priority mode: the guarantee is off, the background lane waits out the run.
+        if (priority) return interactive;
         boolean guaranteeDue = interactiveStreak >= BACKGROUND_GUARANTEE - 1;
         if (interactive) {
             // Yield the guaranteed slot when background is actually waiting.

@@ -5,6 +5,7 @@ import de.bsommerfeld.wsbg.terminal.agent.event.WeatherReportFinishedEvent;
 import de.bsommerfeld.wsbg.terminal.agent.event.WeatherReportStartedEvent;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
+import de.bsommerfeld.wsbg.terminal.core.util.BackgroundThreads;
 import de.bsommerfeld.wsbg.terminal.db.HeadlineArchive;
 import de.bsommerfeld.wsbg.terminal.db.HeadlineHighlight;
 import de.bsommerfeld.wsbg.terminal.db.HeadlineRecord;
@@ -136,11 +137,8 @@ public class WeatherReportService {
     private final ApplicationEventBus eventBus;
 
     private final ScheduledExecutorService scheduler =
-            Executors.newSingleThreadScheduledExecutor(r -> {
-                Thread t = new Thread(r, "weather-report");
-                t.setDaemon(true);
-                return t;
-            });
+            Executors.newSingleThreadScheduledExecutor(
+                    BackgroundThreads.single("weather-report"));
 
     /** The house's shared article digester (prod-wired, absent in unit tests/smoke). */
     private volatile NewsDigester newsDigester;

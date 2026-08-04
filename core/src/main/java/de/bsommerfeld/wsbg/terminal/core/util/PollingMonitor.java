@@ -51,11 +51,8 @@ public abstract class PollingMonitor<T> {
      *                   (e.g. {@code "eurusd-monitor"})
      */
     protected PollingMonitor(String threadName) {
-        this.scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread t = new Thread(r, threadName);
-            t.setDaemon(true);
-            return t;
-        });
+        this.scheduler = Executors.newSingleThreadScheduledExecutor(
+                BackgroundThreads.single(threadName));
     }
 
     /**

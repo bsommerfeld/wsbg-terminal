@@ -79,4 +79,67 @@ class LlmGateTest {
         // guaranteed background slot, twice over.
         assertEquals(List.of("I", "I", "B", "I", "I", "B"), order);
     }
+
+    /**
+     * Priority mode (user-armed on the DD card): the guarantee is off, every
+     * grant goes interactive — and the parked background waiter is served the
+     * moment the mode falls, i.e. it waits, it never dies.
+     */
+    @Test
+    @Timeout(10)
+    void priorityParksTheBackgroundLaneUntilItIsReleased() throws Exception {
+        LlmGate gate = new LlmGate();
+        int permits = gate.availablePermits();
+        gate.setPriority(true);
+
+        // Occupy every permit, then queue one background + one interactive waiter.
+        BlockingQueue<Runnable> releases = new ArrayBlockingQueue<>(permits + 4);
+        CountDownLatch holdersIn = new CountDownLatch(permits);
+        for (int i = 0; i < permits; i++) {
+            new Thread(() -> {
+                gate.acquireInteractive();
+                holdersIn.countDown();
+            }).start();
+            releases.add(gate::release);
+        }
+        assertTrue(holdersIn.await(5, TimeUnit.SECONDS));
+
+        List<String> order = java.util.Collections.synchronizedList(new ArrayList<>());
+        CountDownLatch granted = new CountDownLatch(2);
+        Runnable bg = () -> {
+            gate.acquire();
+            order.add("B");
+            releases.add(gate::release);
+            granted.countDown();
+        };
+        new Thread(bg).start();
+        Thread.sleep(150); // the background waiter queues FIRST
+        new Thread(() -> {
+            gate.acquireInteractive();
+            order.add("I");
+            releases.add(gate::release);
+            granted.countDown();
+        }).start();
+        Thread.sleep(150);
+
+        // One free permit: it goes to the interactive lane even though the
+        // background waiter has been queued longer — and the guarantee, which
+        // would normally be due by now, does not fire.
+        releases.take().run();
+        long deadline = System.currentTimeMillis() + 2000;
+        while (order.isEmpty() && System.currentTimeMillis() < deadline) Thread.sleep(10);
+        assertEquals(List.of("I"), order);
+
+        // Free a permit with ONLY the background waiter left: it stays parked —
+        // an armed priority mode is what holds it, not a lack of permits.
+        releases.take().run();
+        Thread.sleep(300);
+        assertEquals(List.of("I"), order, "background was granted while priority was armed");
+        assertTrue(gate.backgroundWaiting() >= 1, "the background lane must still be parked");
+
+        // Mode falls → the parked waiter wakes and takes its permit.
+        gate.setPriority(false);
+        assertTrue(granted.await(5, TimeUnit.SECONDS), "parked background never resumed: " + order);
+        assertEquals(List.of("I", "B"), order);
+    }
 }
