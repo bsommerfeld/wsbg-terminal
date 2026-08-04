@@ -456,7 +456,7 @@
   stroke-linecap: round; stroke-linejoin: round;
 }
 
-/* ---- grid card / rail icons ---- */
+/* ---- grid card icon ---- */
 
 .grid-hit-icon-wl {
   width: 34px; height: 34px;
@@ -464,9 +464,4 @@
   stroke: currentColor; stroke-width: 1.8; fill: none;
   stroke-linecap: round; stroke-linejoin: round;
   filter: drop-shadow(0 2px 6px oklch(0 0 0 / .45));
-}
-.rail-logo-wl {
-  width: 24px; height: 24px;
-  stroke: currentColor; stroke-width: 1.8; fill: none;
-  stroke-linecap: round; stroke-linejoin: round;
 }

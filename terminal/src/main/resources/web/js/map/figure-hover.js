@@ -112,6 +112,69 @@ export function wireFigureJumps(container, opts = {}) {
   });
 }
 
+let zoomEsc = null; // capture-phase Esc handler, alive only while a box is open
+
+/**
+ * Click a figure → the same frozen SVG large, in a dismissable overlay. The
+ * figures are laid out for the document lane; on a narrow pane (the live
+ * workshop's mirror) that lane can still fall below what a dense ladder wants,
+ * and the reader needs a way to simply LOOK at it. Nothing is re-rendered —
+ * the clone is the same archive/PDF truth, just given the screen.
+ */
+export function wireFigureZoom(container, opts = {}) {
+  if (!container) return;
+  const cls = opts.className || 'fh-zoombox';
+  container.querySelectorAll(opts.figures || FIGURES).forEach(fig => {
+    if (fig.dataset.fhZoom) return; // idempotent across re-renders
+    fig.dataset.fhZoom = '1';
+    fig.classList.add('fh-zoomable');
+    fig.title = t('figure.zoom');
+    fig.addEventListener('click', () => openZoom(fig, cls));
+  });
+}
+
+function openZoom(fig, cls) {
+  closeZoom();
+  const box = document.createElement('div');
+  box.className = cls;
+  box.id = 'fh-zoombox';
+  const inner = document.createElement('div');
+  inner.className = 'fh-zoombox-inner';
+  const clone = fig.cloneNode(true);
+  delete clone.dataset.fhZoom;
+  clone.removeAttribute('title');
+  inner.appendChild(clone);
+  // The clone lost its listeners: re-wire the mark hover, strip the dead
+  // section-jump affordance (a jump makes no sense behind the overlay).
+  clearFigureJumps(inner);
+  wireFigureHover(inner);
+  const hint = document.createElement('div');
+  hint.className = 'fh-zoombox-hint';
+  hint.textContent = t('figure.zoom.close');
+  inner.appendChild(hint);
+  box.appendChild(inner);
+  box.addEventListener('click', closeZoom);
+  document.body.appendChild(box);
+  // Capture phase, so Esc closes ONLY the overlay — never also the focus view
+  // behind it (its own Esc handler sits in the bubble phase).
+  zoomEsc = e => {
+    if (e.key !== 'Escape') return;
+    e.stopPropagation();
+    e.preventDefault();
+    closeZoom();
+  };
+  document.addEventListener('keydown', zoomEsc, true);
+}
+
+function closeZoom() {
+  const box = document.getElementById('fh-zoombox');
+  if (box) box.remove();
+  if (zoomEsc) {
+    document.removeEventListener('keydown', zoomEsc, true);
+    zoomEsc = null;
+  }
+}
+
 /**
  * Strips the jump affordance from cloned captions (lightbox clones keep the
  * class/attributes but lose the listeners — a dead affordance would lie).

@@ -4,6 +4,17 @@
 <link rel="stylesheet" href="css/tokens.css"><link rel="stylesheet" href="css/base.css"><link rel="stylesheet" href="css/deepdive.css">
 <style>body{background:var(--bg);padding:20px} #live{height:620px;max-width:1000px}</style></head>
 <body><div id="live"></div>
+<script>
+  // Headless probe: virtual time drives timers but throttles rAF to ~70 frames
+  // total, so the room would stand still under `--virtual-time-budget`. With
+  // ?raf=timer the whole scene runs off setTimeout instead and a screenshot at
+  // budget N really shows second N.
+  if (location.search.includes('raf=timer')) {
+    let t = 0;
+    window.requestAnimationFrame = (fn) => setTimeout(() => fn(t += 33), 33);
+    window.cancelAnimationFrame = (id) => clearTimeout(id);
+  }
+</script>
 <script type="module">
   import { initDeepDiveLive, mountLive, onDeepDiveLive, setLiveSubject } from './js/widgets/deepdive-live.js';
   if (location.search.includes('light')) document.documentElement.dataset.theme = 'light';
@@ -17,6 +28,11 @@
   const feed = (k, ref, t) => onDeepDiveLive({ entry: { seq: ++seq, k, ph: k === 'src' ? 'collect' : 'triage', who: 'triage', ref, t } });
   const wave = c => { for (let i = 0; i < c; i++) { const r = 'r' + (n++); feed('src', r, SRC[n % SRC.length]);
     setTimeout(() => feed(Math.random() < 0.62 ? 'src-ok' : 'src-out', r), 2200 + Math.random() * 2600); } };
-  wave(4);
-  setInterval(() => wave(2 + Math.floor(Math.random() * 4)), 5000);
+  // The run opens on an EMPTY room: the desk sends for sources first, and the
+  // first wave only lands once a run has come back. ?rush= floods it, so the
+  // extra hands can be watched.
+  const p = new URLSearchParams(location.search);
+  setTimeout(() => wave(Number(p.get('first') || 4)), Number(p.get('wait') || 6000));
+  setInterval(() => wave(p.has('rush') ? 9 : 2 + Math.floor(Math.random() * 4)),
+    p.has('rush') ? 2200 : 5000);
 </script></body></html>

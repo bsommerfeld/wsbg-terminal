@@ -13,10 +13,17 @@ export class Socket {
     this.handlers.set(type, fn);
   }
 
+  /** Whether a message sent right now would actually leave the page. */
+  isOpen() {
+    return !!this.ws && this.ws.readyState === WebSocket.OPEN;
+  }
+
   send(type, payload) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+    if (this.isOpen()) {
       this.ws.send(JSON.stringify({ type, payload }));
+      return true;
     }
+    return false;
   }
 
   connect() {

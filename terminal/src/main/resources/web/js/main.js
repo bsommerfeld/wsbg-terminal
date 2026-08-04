@@ -4,6 +4,7 @@
 import { Socket } from './bridge/socket.js';
 import { applyPlatform } from './chrome/platform.js';
 import { initTitlebar } from './chrome/titlebar.js';
+import { initIntro } from './chrome/intro.js';
 import { initTheme, setSystemAppearance } from './chrome/theme.js';
 import { initSettings } from './chrome/settings.js';
 import { initChangelog } from './chrome/changelog.js';
@@ -28,6 +29,7 @@ import { initWatchlist, renderWatchlist, renderWatchlistSubjects } from './widge
 import { initWeather, renderWeather } from './widgets/weather.js';
 import { initDeepDive, renderDeepDive, renderDeepDiveReport } from './widgets/deepdive.js';
 import { onDeepDiveLive, onDeepDiveLiveBacklog } from './widgets/deepdive-live.js';
+import { initMentions, renderMentions, renderMentionSources } from './widgets/mentions.js';
 import { setMarketCalendar } from './markets/state.js';
 import { t } from './i18n/i18n.js';
 
@@ -82,6 +84,12 @@ const WIDGETS = [
   { topic: 'weather',        relang: true, render: p => renderWeather(document.getElementById('weather-detail'), p) },
   // KI-DD: one fixed research report per subject, generated on demand.
   { topic: 'deepdive',       relang: true, render: p => renderDeepDive(p) },
+  // Erwähnungs-Zähler: our own mechanical count over the requested window.
+  // The panorama window it belongs to rides along in the same payload.
+  { topic: 'mentions-data',  relang: true, render: p => renderMentions(p) },
+  // The two foreign r/wallstreetbets counters — answered separately so ours
+  // never waits on their network legs.
+  { topic: 'mentions-sources', relang: true, render: p => renderMentionSources(p) },
   { topic: 'reddit-status',  relang: true, render: p => applyRedditStatus(p) },
   { topic: 'donation-stats',               render: p => setDonationStats(p) },
   { topic: 'os-appearance',                render: p => { if (p) setSystemAppearance(p.mode); } },
@@ -156,10 +164,15 @@ safeInit('headline-search', () => initHeadlineSearch(socket));
 safeInit('watchlist', () => initWatchlist(socket));
 safeInit('weather', () => initWeather(socket));
 safeInit('deepdive', () => initDeepDive(socket));
+safeInit('mentions', () => initMentions(socket));
 safeInit('titlebar', () => initTitlebar(socket));
 safeInit('footer', () => initFooter());
 safeInit('donate', () => initDonate());
 safeInit('external-links', () => initExternalLinks(socket));
 safeInit('keyboard-copy', () => initKeyboardCopy());
+// Last: the intro plate is already on screen from the markup, this only seeds
+// its dust and arms the skip - and it must not sit in front of anything else
+// that still needs to initialise.
+safeInit('intro', () => initIntro(socket));
 
 socket.connect();

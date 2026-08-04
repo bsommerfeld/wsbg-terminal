@@ -149,8 +149,9 @@
 }
 .fx-attrib a:hover { color: var(--txt); border-bottom-color: var(--mute); }
 
-/* ---- widget chrome: header glyph, grid-hit icon, rail logo ----
-   All three are the same inline flag-pair SVG at different sizes. */
+/* ---- widget chrome: header glyph, grid-hit icon ----
+   Both are the same inline flag-pair SVG at different sizes (the third size,
+   the about panel's ident mark, lives in widget-grid.css). */
 
 .glyph-fx svg { width: 30px; height: auto; border-radius: 2px; }
 .grid-hit-icon-fx {
@@ -158,4 +159,3 @@
   margin-top: 6px; /* optical: the flag pair is flatter than the square marks */
   filter: drop-shadow(0 2px 6px oklch(0 0 0 / .45));
 }
-.rail-logo-fx { width: 30px; height: auto; }

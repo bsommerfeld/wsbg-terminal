@@ -9,14 +9,24 @@
 // Registered in the CAPTURE phase so the click is claimed before any other
 // handler runs; other document-level listeners (e.g. the donate snooze in
 // donate.js) still fire — preventDefault only cancels the navigation.
+//
+// The MIDDLE button needs its own listener: Chromium fires `auxclick` (not
+// `click`) for non-primary buttons, so a click-only handler let the middle
+// click through to Chromium's "open in a new tab" default. There is no tab in
+// OSR — the new-tab navigation lands in the MAIN frame and the terminal page
+// navigates away to the target site. Same treatment, second event name.
 
 export function initExternalLinks(socket) {
-  document.addEventListener('click', e => {
+  const route = e => {
     const a = e.target.closest('a[href]');
     if (!a) return;
     const href = a.href || '';
     if (!/^https?:\/\//i.test(href) || href.startsWith('http://127.0.0.1')) return;
     e.preventDefault();
     socket.send('open-external', { url: href });
-  }, true);
+  };
+  document.addEventListener('click', route, true);
+  // button 1 = middle. Right-click (2) keeps the context menu, the mouse's
+  // back/forward buttons (3/4) never open a link.
+  document.addEventListener('auxclick', e => { if (e.button === 1) route(e); }, true);
 }

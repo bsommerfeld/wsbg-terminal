@@ -6,16 +6,28 @@
 // t=FULL text, diff=[{k,t,o,n}]); `{command:"live"}` answers the whole
 // backlog on `deepdive-live-backlog` `{busy, subject, entries, charts}`.
 //
-// The stage: a live REPORT MIRROR (the standing section texts, rendered like
-// the finished page, figures slotted in the moment they exist) beside a
-// collapsible desk CHAT (every participant's full message, its diff folded
-// away as an attachment). Text edits play as human-like typing — deletions
-// fade out at the changed spot, insertions type in; a locus a judge doubts
-// wears a blurred AI cover until its next standing state. Judge objections
-// hang as amber margin notes beside their paragraph (teacher-on-an-exam
-// look). Everything here is PREVIEW: subtly badged, and none of it survives
-// into the finished report page — the finalize transition clears the
-// workshop and hands over to the ordinary detail view (deepdive.js).
+// The stage: ONE column, TWO decks, split by a rule.
+//
+// Above the rule, the REPORT DECK — and nothing but the work on the report
+// itself: the standing section texts set in the document column the finished
+// page and the PDF use, figures slotted in the moment they exist, edits
+// playing as human-like typing (deletions fade at the changed spot,
+// insertions type in), and a blurred AI cover over any locus a judge doubts
+// until its next standing state. No commentary up here.
+//
+// Below the rule, the REDAKTION — the full-width dashboard where everything
+// the desk is actually chewing on is laid out, without exception. Three ways
+// to look at the same run: the TICKET BOARD (one card per locus — a section
+// where the work is section-bound, a phase where it is house-wide; that
+// partition is closed, no entry falls through), the STREAM (the same voices
+// strictly in the order they fell) and the SOURCE REGISTER (every source ever
+// called for with the verdict it earned, rejects kept). Until 2026-08-04 this
+// was a 320-420px stripe beside the report that only ever went full width in
+// one accidental breakpoint band.
+//
+// Everything here is PREVIEW: subtly badged, and none of it survives into the
+// finished report page — the finalize transition clears the workshop and
+// hands over to the ordinary detail view (deepdive.js).
 //
 // Animation discipline (OSR paint rule): typing and fades are FINITE and
 // driven by timeouts on real state changes; the only loop is the sanctioned
@@ -24,13 +36,21 @@
 import { t } from '../i18n/i18n.js';
 import { escapeHtml } from '../format/escape.js';
 import { renderMarkdown } from '../format/markdown.js';
-import { wireFigureHover } from '../map/figure-hover.js';
+import { wireFigureHover, wireFigureZoom } from '../map/figure-hover.js';
 import { figureHtml, linkFigureRefs } from './dd-figures.js';
 import { createSourceScene } from './dd-source-scene.js';
 
 const SECTION_COUNT = 8;
 
-/** The animated source room stands in for the list — unless motion is off. */
+/** House phases in running order — the ticket board's tail is sorted by it. */
+const PHASES = ['collect', 'triage', 'figures', 'sections', 'these', 'reclaim',
+  'consistency', 'typeset'];
+
+/** The desk's three views, and the register's three filters. */
+const DESK_VIEWS = ['tickets', 'stream', 'sources'];
+const SRC_FILTERS = ['all', 'keep', 'out'];
+
+/** The animated source room runs above the register — unless motion is off. */
 const SCENE_OK = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 let sock = null;
@@ -56,8 +76,15 @@ let scene = null;                  // the source room while it is on stage
 let phase = null;                  // latest phase token
 let subject = null;
 let mounted = false;
-let chatOpen = true;
 let finalizing = false;
+/** The Redaktion folded shut down to its head. */
+let deskFolded = false;
+/** Which of the desk's three views stands — only the standing one is built. */
+let deskView = 'sources';
+/** A hand on the view switch: from then on no default moves the desk again. */
+let deskViewPinned = false;
+/** The register's row filter. */
+let srcFilter = 'all';
 
 function emptySections() { return Array(SECTION_COUNT).fill(null); }
 function emptyNotes() { return Array.from({ length: SECTION_COUNT }, () => []); }
@@ -89,7 +116,12 @@ export function resetLive() {
   phase = null;
   subject = null;
   finalizing = false;
+  deskFolded = false;
+  deskView = 'sources';
+  deskViewPinned = false;
+  srcFilter = 'all';
   jobs.clear();
+  pulses.clear();
   if (mounted) renderAll();
 }
 
@@ -168,6 +200,9 @@ export function setLiveSubject(s) {
 export function mountLive() {
   mounted = true;
   finalizing = false;
+  // Opening mid-run: the desk looks where the run actually is, unless the
+  // reader has already picked a view for this run.
+  if (!deskViewPinned) deskView = defaultDeskView();
   renderAll();
 }
 
@@ -203,39 +238,42 @@ export function finalizeLive(done) {
 /* ---- state application ---- */
 
 function applyEntry(e, animate) {
-  if (e.ph) phase = e.ph;
+  if (e.ph) {
+    phase = e.ph;
+    // The room only needs to know whether the desk still expects sources —
+    // collecting and triage overlap, and it keeps fetching through both.
+    if (scene) scene.phase(phase);
+  }
   const sec = typeof e.sec === 'number' ? e.sec : -1;
   switch (e.k) {
     case 'body':
       if (sec >= 0) {
         pending[sec] = null;
         // A landed rework answers the standing objections on this section —
-        // its margin notes are resolved and leave the rail.
+        // they are resolved and stop counting as open.
         notes[sec] = [];
         queueBody(sec, e.t || '', animate);
+        if (mounted) refreshTicketState(sec);
       }
       break;
     case 'pending':
       if (sec >= 0) {
         pending[sec] = { par: typeof e.par === 'number' ? e.par : 0 };
-        if (mounted) applyCover(sec);
+        if (mounted) { applyCover(sec); refreshTicketState(sec); }
       }
       break;
     case 'settled':
       if (sec >= 0) {
         pending[sec] = null;
-        if (mounted) applyCover(sec);
+        if (mounted) { applyCover(sec); refreshTicketState(sec); }
       }
       break;
     case 'note':
-      if (sec >= 0) {
-        notes[sec].push({ par: e.par || 0, who: e.who || '', text: e.t || '' });
-        if (mounted) hangNotes(sec);
-      }
-      if (mounted) appendChat(e);
+      if (sec >= 0) notes[sec].push({ par: e.par || 0, who: e.who || '', text: e.t || '' });
+      if (mounted) fileEntry(e);
       break;
     case 'chat':
-      if (mounted) appendChat(e);
+      if (mounted) fileEntry(e);
       break;
     case 'src': {
       if (!e.ref || srcIndex.has(e.ref)) break;
@@ -256,7 +294,7 @@ function applyEntry(e, animate) {
       break;
     }
   }
-  if (mounted) updatePhaseChip();
+  if (mounted) updateDeskHead();
 }
 
 /* ---- full render ---- */
@@ -265,74 +303,69 @@ function renderAll() {
   if (!liveEl) return;
   dropScene();
   liveEl.innerHTML = `
-    <div class="dd-live${chatOpen ? ' chat-open' : ''}">
-      <div class="dd-live-head">
-        <button class="dd-back" type="button" title="${escapeHtml(t('dd.back'))}"
-                aria-label="${escapeHtml(t('dd.back'))}">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
-        </button>
-        <span class="dd-live-titles">
-          <span class="dd-live-title">
-            <span class="dd-live-name">${escapeHtml(subject || '')}</span>
-            <span class="dd-live-badge">${escapeHtml(t('dd.live.badge'))}</span>
+    <div class="dd-live">
+      <div class="dd-live-main">
+        <div class="dd-live-head">
+          <button class="dd-back" type="button" title="${escapeHtml(t('dd.back'))}"
+                  aria-label="${escapeHtml(t('dd.back'))}">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
+          </button>
+          <span class="dd-live-titles">
+            <span class="dd-live-title">
+              <span class="dd-live-name">${escapeHtml(subject || '')}</span>
+              <span class="dd-live-badge">${escapeHtml(t('dd.live.badge'))}</span>
+            </span>
+            <span class="dd-live-sub">${escapeHtml(t('dd.live.viewonly'))}</span>
           </span>
-          <span class="dd-live-sub">${escapeHtml(t('dd.live.viewonly'))}</span>
-        </span>
-        <button class="dd-chat-toggle${chatOpen ? ' is-on' : ''}" type="button"
-                title="${escapeHtml(t('dd.live.chat.toggle'))}"
-                aria-label="${escapeHtml(t('dd.live.chat.toggle'))}">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-        </button>
-      </div>
-      <div class="dd-live-done" hidden>${escapeHtml(t('dd.live.done'))}</div>
-      <div class="dd-live-stage">
+        </div>
+        <div class="dd-live-done" hidden>${escapeHtml(t('dd.live.done'))}</div>
         <div class="dd-report dd-live-report"><div class="dd-live-doc"></div></div>
-        <aside class="dd-live-chat" ${chatOpen ? '' : 'hidden'}>
-          <div class="dd-chat-head">
-            <span class="dd-chat-title">${escapeHtml(t('dd.live.chat'))}</span>
-            <span class="dd-chat-phase"></span>
-          </div>
-          <div class="dd-chat-list"></div>
-        </aside>
       </div>
+      <section class="dd-desk${deskFolded ? ' is-folded' : ''}">
+        <div class="dd-desk-head">
+          <span class="dd-desk-title">${escapeHtml(t('dd.live.chat'))}</span>
+          <span class="dd-desk-phase"></span>
+          <span class="dd-desk-stats"></span>
+          <div class="dd-desk-views">
+            ${DESK_VIEWS.map(v => `<button type="button" class="dd-desk-view${v === deskView ? ' is-on' : ''}"
+                    data-deskview="${v}">${escapeHtml(deskViewLabel(v))}</button>`).join('')}
+          </div>
+          <button class="dd-desk-fold" type="button"
+                  aria-expanded="${deskFolded ? 'false' : 'true'}"
+                  title="${escapeHtml(t('dd.live.chat.fold'))}"
+                  aria-label="${escapeHtml(t('dd.live.chat.fold'))}">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+        </div>
+        <div class="dd-desk-body"></div>
+      </section>
     </div>`;
   renderDoc();
   renderFigures();
-  renderChatAll();
-  updatePhaseChip();
+  renderDesk();
+  updateDeskHead();
 }
 
 function docEl() { return liveEl.querySelector('.dd-live-doc'); }
 
+/** Has the report deck anything to show yet? */
+function reportStarted() {
+  return sections.some(s => s != null) || charts.length > 0;
+}
+
 function renderDoc() {
   const doc = docEl();
   if (!doc) return;
-  srcEls.clear();
-  const any = sections.some(s => s != null) || charts.length;
-  if (!any) {
-    // Before the first text: the triage board (the collected sources under
-    // the judge's pen) — or, before anything is collected, ghost lines.
-    if (sources.length) {
-      doc.innerHTML = triageBoardHtml();
-      if (SCENE_OK) {
-        scene = createSourceScene(doc.querySelector('.dd-scene'));
-        scene.seed(sources);
-      } else {
-        const list = doc.querySelector('.dd-triage-list');
-        for (const s of sources) {
-          if (s.state === 'out') continue; // struck rows are gone for good
-          list.appendChild(srcRowEl(s));
-        }
-      }
-      updateSrcCounts();
-    } else {
-      doc.innerHTML = `<div class="dd-live-empty">
-        <span class="dd-live-empty-note">${escapeHtml(t('dd.live.empty'))}</span>
-        <span class="dd-ghost" style="width:88%"></span>
-        <span class="dd-ghost" style="width:97%"></span>
-        <span class="dd-ghost" style="width:72%"></span>
-      </div>`;
-    }
+  if (!reportStarted()) {
+    // The deck holds EDITING only, so before the first text there is nothing
+    // up here but the ghost of the page to come — the legwork the desk is
+    // doing meanwhile is laid out in the Redaktion below the rule.
+    doc.innerHTML = `<div class="dd-live-empty">
+      <span class="dd-live-empty-note">${escapeHtml(t('dd.live.empty'))}</span>
+      <span class="dd-ghost" style="width:88%"></span>
+      <span class="dd-ghost" style="width:97%"></span>
+      <span class="dd-ghost" style="width:72%"></span>
+    </div>`;
     return;
   }
   doc.innerHTML = '';
@@ -340,7 +373,6 @@ function renderDoc() {
     if (sections[i] == null && !charts.some(f => f.section === i)) continue;
     doc.appendChild(sectionShell(i));
     if (sections[i] != null) setSectionFinal(i, sections[i]);
-    hangNotes(i);
     applyCover(i);
   }
 }
@@ -361,16 +393,10 @@ function ensureSection(i) {
   if (!doc) return null;
   const empty = doc.querySelector('.dd-live-empty');
   if (empty) empty.remove();
-  // The report takes the stage: the triage board bows out with one fade.
-  const board = doc.querySelector('.dd-triage');
-  if (board && !board.classList.contains('is-done')) {
-    board.classList.add('is-done');
-    srcEls.clear();
-    // The room's loop stops with the fade, not with the removal — nothing
-    // paints behind the report.
-    dropScene();
-    setTimeout(() => board.remove(), 420);
-  }
+  // The report takes the stage: the source room down in the register bows
+  // out with one fade. Its register rows stay — they are the record.
+  retireRoom();
+  autoSwitchDesk();
   let el = doc.querySelector(`.dd-live-sec[data-sec="${i}"]`);
   if (el) return el;
   el = sectionShell(i);
@@ -382,27 +408,63 @@ function ensureSection(i) {
   return el;
 }
 
-/* ---- the triage board: the collected sources under the judge's pen. The
-      stage is the source ROOM (dd-source-scene.js) — every source lands as
-      a paper card, the clerk carries it to the desk and files it or bins
-      it. With motion turned off the room gives way to the plain list: rows
-      slide in as they are found, earn a green check, or are struck through,
-      slide out left and the list closes the gap. Either way the count chip
-      carries the exact numbers. ---- */
+/* ---- the source register (Redaktion → "Quellen"): every source that was
+      ever called for, with the verdict it earned. The animated source ROOM
+      (dd-source-scene.js) runs above it while the desk is still gathering —
+      each source lands as a paper card, the clerk carries it to the desk and
+      files it or bins it — and bows out when the report takes the stage.
+      The ROWS are permanent: a struck source used to slide out and be gone
+      for good, which made this a ticker rather than a register. ---- */
 
-function triageBoardHtml() {
-  return `<div class="dd-triage">
-    <div class="dd-triage-head">
-      <span class="dd-triage-title">${escapeHtml(t('dd.live.sources'))}</span>
-      <span class="dd-triage-count"></span>
+function roomHtml() {
+  // The room goes up before the first source does: commissioning the legwork
+  // IS the collecting phase, and that is the longest wait of the whole run.
+  return SCENE_OK && !reportStarted()
+    ? '<div class="dd-triage"><div class="dd-scene"></div></div>' : '';
+}
+
+function registerHtml() {
+  return `<div class="dd-register" data-filter="${srcFilter}">
+    <div class="dd-reg-bar">
+      <span class="dd-reg-count"></span>
+      ${SRC_FILTERS.map(f => `<button type="button" data-srcfilter="${f}"
+              class="dd-reg-filter${f === srcFilter ? ' is-on' : ''}"
+              >${escapeHtml(t('dd.live.src.filter.' + f))}</button>`).join('')}
     </div>
-    ${SCENE_OK ? '<div class="dd-scene"></div>' : '<ul class="dd-triage-list"></ul>'}
+    ${roomHtml()}
+    <ul class="dd-reg-list"></ul>
+    <div class="dd-reg-empty"${sources.length ? ' hidden' : ''}
+      >${escapeHtml(t('dd.live.src.none'))}</div>
   </div>`;
+}
+
+/** Populates a freshly rendered register: the room, if it is up, and the rows. */
+function fillRegister(host) {
+  srcEls.clear();
+  const box = host.querySelector('.dd-scene');
+  if (box) {
+    scene = createSourceScene(box);
+    scene.seed(sources);
+    if (phase) scene.phase(phase);
+  }
+  const list = host.querySelector('.dd-reg-list');
+  for (const s of sources) list.appendChild(srcRowEl(s));
+  updateSrcCounts();
+}
+
+/** The room's loop stops the moment the report needs the paint budget. */
+function retireRoom() {
+  const box = liveEl ? liveEl.querySelector('.dd-triage') : null;
+  dropScene();
+  if (!box || box.classList.contains('is-done')) return;
+  box.classList.add('is-done');
+  setTimeout(() => box.remove(), 420);
 }
 
 function srcRowEl(s) {
   const li = document.createElement('li');
-  li.className = 'dd-src' + (s.state === 'ok' ? ' is-ok' : '');
+  li.className = 'dd-src'
+    + (s.state === 'ok' ? ' is-ok' : s.state === 'out' ? ' is-out' : '');
   li.innerHTML = `<span class="dd-src-dot">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 13 4 4L19 7"/></svg>
     </span>
@@ -417,58 +479,53 @@ let srcBurstAt = 0;
 let srcBurstN = 0;
 
 function addSrcRow(s, animate) {
-  const doc = docEl();
-  if (!doc) return;
-  if (scene) { scene.add(s, animate); updateSrcCounts(); return; }
-  let list = doc.querySelector('.dd-triage-list');
-  if (!list) {
-    // First source while the ghost stands (or a follow-up wave after the
-    // board was rebuilt): a full doc render puts the board up.
-    if (sections.some(x => x != null) || charts.length) return; // report stage already
-    renderDoc();
-    return;
+  if (scene) scene.add(s, animate);
+  const list = liveEl ? liveEl.querySelector('.dd-reg-list') : null;
+  if (list) {
+    const li = srcRowEl(s);
+    if (animate) {
+      const now = Date.now();
+      if (now - srcBurstAt > 600) srcBurstN = 0;
+      srcBurstAt = now;
+      li.classList.add('is-new');
+      li.style.animationDelay = Math.min(srcBurstN++ * 35, 900) + 'ms';
+    }
+    list.appendChild(li);
+    const none = liveEl.querySelector('.dd-reg-empty');
+    if (none) none.hidden = true;
   }
-  const li = srcRowEl(s);
-  if (animate) {
-    const now = Date.now();
-    if (now - srcBurstAt > 600) srcBurstN = 0;
-    srcBurstAt = now;
-    li.classList.add('is-new');
-    li.style.animationDelay = Math.min(srcBurstN++ * 35, 900) + 'ms';
-  }
-  list.appendChild(li);
   updateSrcCounts();
 }
 
-function updateSrcRow(s, animate) {
-  if (scene) { scene.verdict(s); updateSrcCounts(); return; }
+/** A verdict lands: the row takes it in place and stays where it is. */
+function updateSrcRow(s) {
+  if (scene) scene.verdict(s);
   const li = srcEls.get(s.ref);
-  updateSrcCounts();
-  if (!li || !li.isConnected) return;
-  li.classList.remove('is-new');
-  if (s.state === 'ok') {
-    li.classList.add('is-ok');
-    return;
+  if (li) {
+    li.classList.remove('is-new');
+    li.classList.toggle('is-ok', s.state === 'ok');
+    li.classList.toggle('is-out', s.state === 'out');
   }
-  // Struck: strike-through first (readable for a beat), then slide out left,
-  // fade and collapse — the list closes the gap smoothly.
-  srcEls.delete(s.ref);
-  if (!animate) { li.remove(); return; }
-  li.classList.remove('is-ok');
-  li.classList.add('is-out');
-  setTimeout(() => {
-    li.style.maxHeight = li.offsetHeight + 'px';
-    requestAnimationFrame(() => li.classList.add('is-gone'));
-    setTimeout(() => li.remove(), 480);
-  }, 700);
+  updateSrcCounts();
 }
 
 function updateSrcCounts() {
-  const chip = liveEl ? liveEl.querySelector('.dd-triage-count') : null;
+  const chip = liveEl ? liveEl.querySelector('.dd-reg-count') : null;
   if (!chip) return;
+  chip.textContent = srcCountLabel();
+}
+
+function srcCountLabel() {
   const ok = sources.filter(s => s.state === 'ok').length;
   const out = sources.filter(s => s.state === 'out').length;
-  chip.textContent = t('dd.live.src.counts')
+  // Nothing judged yet: say what the desk is doing. A row of zeroes would
+  // read as "nothing found" exactly while the fetching runs.
+  if (!ok && !out) {
+    return sources.length
+      ? t('dd.live.src.arrived').replace('{n}', String(sources.length))
+      : t('dd.live.src.calling');
+  }
+  return t('dd.live.src.counts')
     .replace('{n}', String(sources.length))
     .replace('{ok}', String(ok))
     .replace('{out}', String(out));
@@ -539,7 +596,6 @@ async function runJobs(sec, j) {
     }
   } finally {
     j.running = false;
-    hangNotes(sec);
     applyCover(sec);
   }
 }
@@ -728,66 +784,12 @@ function coalesce(ops) {
   return out;
 }
 
-/* -- margin notes (teacher-on-an-exam): amber asides on a rail OUTSIDE the
-      report page, aligned to their anchored paragraph — the report's layout
-      never shifts. The rail shows only while the chat is folded (both want
-      the same edge, and the reader focuses on one); a section's notes leave
-      when its next rework lands (the objection is answered). -- */
-
-function hangNotes(_sec) {
-  renderNotesRail();
-}
-
-function renderNotesRail() {
-  if (!liveEl) return;
-  const report = liveEl.querySelector('.dd-live-report');
-  const root = liveEl.querySelector('.dd-live');
-  if (!report || !root) return;
-  let rail = report.querySelector('.dd-note-rail');
-  const items = [];
-  for (let sec = 0; sec < SECTION_COUNT; sec++) {
-    const body = bodyEl(sec);
-    if (!body) continue;
-    const blocks = paraEls(body);
-    for (const note of notes[sec]) {
-      const anchor = note.par >= 1 && note.par <= blocks.length
-        ? blocks[note.par - 1] : body;
-      items.push({ note, anchor });
-    }
-  }
-  root.classList.toggle('has-notes', items.length > 0);
-  if (!items.length) {
-    if (rail) rail.remove();
-    return;
-  }
-  if (!rail) {
-    rail = document.createElement('div');
-    rail.className = 'dd-note-rail';
-    report.appendChild(rail);
-  }
-  rail.innerHTML = '';
-  const els = items.map(({ note, anchor }) => {
-    const el = document.createElement('aside');
-    el.className = 'dd-note';
-    el.innerHTML = `<span class="dd-note-who">${escapeHtml(participantLabel(note.who))}</span>
-      <span class="dd-note-text">${escapeHtml(note.text)}</span>`;
-    // offsetTop is relative to the positioned report container.
-    el.dataset.top = String(anchor.offsetTop || 0);
-    rail.appendChild(el);
-    return el;
-  });
-  // Second pass after layout: pin each note beside its paragraph, pushing
-  // down only to avoid overlapping the previous note.
-  requestAnimationFrame(() => {
-    let nextFree = 0;
-    for (const el of els) {
-      const want = Number(el.dataset.top) || 0;
-      const top = Math.max(want, nextFree);
-      el.style.top = top + 'px';
-      nextFree = top + el.offsetHeight + 8;
-    }
-  });
-}
+/* -- the judges' objections do NOT ride on the report deck. Up here is
+      editing only: a margin rail beside the paragraph was a second copy of a
+      note the desk already carries, and the margin it reserved came straight
+      out of the report's width. Every objection lives in the Redaktion, on
+      its locus' ticket; `notes[]` still tracks which ones stand, so a landed
+      rework still clears them. -- */
 
 /* -- the AI cover: the doubted locus blurred under the shimmer until its
       next standing state -- */
@@ -822,27 +824,284 @@ function renderFigures() {
     host.querySelectorAll('.dd-figure').forEach(el => el.classList.add('dd-fig-in'));
   }
   const report = liveEl.querySelector('.dd-live-report');
-  if (report) wireFigureHover(report);
+  if (report) { wireFigureHover(report); wireFigureZoom(report); }
 }
 
-/* ---- the desk chat: every voice, nothing trimmed ---- */
+/* ---- the Redaktion: one deck, three views ----
+   The board is the default because it answers the question the stream never
+   could: what is standing where. The stream keeps the clock, the register
+   keeps the material. All three are built from the SAME entry list, and only
+   the standing one is ever in the DOM. ---- */
 
-function chatListEl() { return liveEl.querySelector('.dd-chat-list'); }
+function deskEl() { return liveEl ? liveEl.querySelector('.dd-desk') : null; }
+function deskBodyEl() { return liveEl ? liveEl.querySelector('.dd-desk-body') : null; }
 
-function renderChatAll() {
-  const list = chatListEl();
-  if (!list) return;
-  list.innerHTML = entries.filter(e => e.k === 'chat' || e.k === 'note')
-    .map(chatMsgHtml).join('');
-  list.scrollTop = list.scrollHeight;
+function deskViewLabel(v) {
+  return v === 'sources' ? t('dd.live.sources') : t('dd.live.desk.' + v);
 }
 
-function appendChat(e) {
-  const list = chatListEl();
-  if (!list) return;
-  const nearBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 120;
-  list.insertAdjacentHTML('beforeend', chatMsgHtml(e));
-  if (nearBottom) list.scrollTop = list.scrollHeight;
+/** Every voice on the feed — the desk's whole material, nothing trimmed. */
+function voicesOf() { return entries.filter(e => e.k === 'chat' || e.k === 'note'); }
+
+/**
+ * The locus an entry belongs to: its SECTION where the work is section-bound,
+ * its PHASE where the house works on the report as a whole. That partition is
+ * closed — every voice has exactly one locus, so nothing falls off the board.
+ */
+function locusOf(e) {
+  return typeof e.sec === 'number' && e.sec >= 0 ? 's' + e.sec : 'p' + (e.ph || 'house');
+}
+
+/** A ticket is OPEN only while nothing at all has happened on its locus:
+    under rework or merely talked about it is in progress, and it stands the
+    moment a text does. */
+function sectionState(i) {
+  if (pending[i]) return 'work';
+  if (sections[i] != null) return 'stands';
+  return voicesOf().some(e => e.sec === i) ? 'work' : 'open';
+}
+
+/**
+ * The board's tickets in a STABLE order — the report's skeleton first, the
+ * house's own phases behind it. Nothing reorders on activity: a board that is
+ * scanned again and again is worth more predictable than clever, and the
+ * pulse plus the head carry the attention instead.
+ */
+function ticketsOf() {
+  const byKey = new Map();
+  const secs = [];
+  for (let i = 0; i < SECTION_COUNT; i++) {
+    // The full skeleton stands from the first second: an untouched section is
+    // a quiet head-only card, so the board shows the PLAN and fills in.
+    const tk = {
+      key: 's' + i, no: '§' + (i + 1), title: t('dd.sec.' + i),
+      msgs: [], notes: 0, changes: 0, state: sectionState(i),
+    };
+    byKey.set(tk.key, tk);
+    secs.push(tk);
+  }
+  const house = [];
+  for (const e of voicesOf()) {
+    const key = locusOf(e);
+    let tk = byKey.get(key);
+    if (!tk) {
+      tk = {
+        key, no: '', ph: e.ph, title: phaseLabel(e.ph) || t('dd.live.ticket.house'),
+        msgs: [], notes: 0, changes: 0, state: 'done',
+      };
+      byKey.set(key, tk);
+      house.push(tk);
+    }
+    tk.msgs.push(e);
+    if (e.k === 'note') tk.notes++;
+    if (e.diff && e.diff.length) tk.changes++;
+  }
+  house.sort((a, b) => PHASES.indexOf(a.ph) - PHASES.indexOf(b.ph));
+  for (const tk of house) if (tk.ph === phase) tk.state = 'work';
+  return secs.concat(house);
+}
+
+/** One locus recounted — the cheap path when a single voice lands. */
+function ticketAt(key) {
+  const tk = { msgs: [], notes: 0, changes: 0 };
+  for (const e of voicesOf()) {
+    if (locusOf(e) !== key) continue;
+    tk.msgs.push(e);
+    if (e.k === 'note') tk.notes++;
+    if (e.diff && e.diff.length) tk.changes++;
+  }
+  return tk;
+}
+
+const STAT_ICONS = {
+  voices: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+  notes: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 22V4h15l-3 4 3 4H4"/></svg>',
+  changes: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v10"/><path d="M7 9h10"/><path d="M7 20h10"/></svg>',
+};
+
+/** Voices, objections, changes — only the counts that are not zero. */
+function statChips(tk) {
+  return [['voices', tk.msgs.length], ['notes', tk.notes], ['changes', tk.changes]]
+    .filter(([, n]) => n > 0)
+    .map(([k, n]) => `<span class="dd-tstat${k === 'notes' ? ' is-note' : ''}"
+        title="${escapeHtml(t('dd.live.ticket.' + k))}"
+        >${STAT_ICONS[k]}<span>${n}</span></span>`)
+    .join('');
+}
+
+function ticketHtml(tk) {
+  const body = tk.msgs.length
+    ? `<div class="dd-ticket-stats">${statChips(tk)}</div>
+       <div class="dd-ticket-body">${tk.msgs.map(chatMsgHtml).join('')}</div>`
+    : '';
+  return `<article class="dd-ticket is-${tk.state}" data-locus="${tk.key}">
+    <header class="dd-ticket-head">
+      ${tk.no ? `<span class="dd-ticket-no">${escapeHtml(tk.no)}</span>` : ''}
+      <span class="dd-ticket-title">${escapeHtml(tk.title)}</span>
+      <span class="dd-ticket-state">${escapeHtml(t('dd.live.ticket.' + tk.state))}</span>
+    </header>
+    ${body}
+  </article>`;
+}
+
+/** Builds the standing view from scratch. The room's canvas dies with any
+    rebuild, so its loop is stopped FIRST — nothing paints off-screen. */
+function renderDesk() {
+  const host = deskBodyEl();
+  if (!host) return;
+  dropScene();
+  if (deskFolded) { host.innerHTML = ''; return; }
+  if (deskView === 'sources') {
+    host.innerHTML = registerHtml();
+    fillRegister(host);
+    return;
+  }
+  const msgs = voicesOf();
+  if (deskView === 'stream') {
+    host.innerHTML = msgs.length
+      ? `<div class="dd-stream">${msgs.map(chatMsgHtml).join('')}</div>`
+      : deskEmptyHtml();
+    return;
+  }
+  host.innerHTML = `<div class="dd-board">${ticketsOf().map(ticketHtml).join('')}</div>`;
+}
+
+function deskEmptyHtml() {
+  return `<div class="dd-desk-empty">${escapeHtml(t('dd.live.desk.empty'))}</div>`;
+}
+
+/** A voice lands: it goes to its place in the standing view, and the head's
+    running totals move whatever is on screen. */
+function fileEntry(e) {
+  updateDeskHead();
+  const host = deskBodyEl();
+  if (!host || deskFolded) return;
+  if (deskView === 'stream') {
+    const lane = host.querySelector('.dd-stream');
+    if (!lane) { renderDesk(); return; }
+    lane.insertAdjacentHTML('beforeend', chatMsgHtml(e));
+    return;
+  }
+  if (deskView !== 'tickets') return;
+  const key = locusOf(e);
+  const card = host.querySelector(`.dd-ticket[data-locus="${key}"]`);
+  // A house ticket that has never been seen: only then is a full rebuild
+  // needed, and that is once per phase over a whole run.
+  if (!card) { renderDesk(); pulseTicket(key); return; }
+  let body = card.querySelector('.dd-ticket-body');
+  if (!body) {
+    // First voice on a locus: the quiet head-only card grows its body in
+    // place, so no other card loses its scroll or its opened attachment.
+    card.insertAdjacentHTML('beforeend',
+      '<div class="dd-ticket-stats"></div><div class="dd-ticket-body"></div>');
+    body = card.querySelector('.dd-ticket-body');
+    if (key[0] === 's') refreshTicketState(Number(key.slice(1)));
+    else { card.classList.remove('is-open', 'is-done'); card.classList.add('is-work'); }
+  }
+  const near = body.scrollHeight - body.scrollTop - body.clientHeight < 100;
+  body.insertAdjacentHTML('beforeend', chatMsgHtml(e));
+  if (near) body.scrollTop = body.scrollHeight;
+  const stats = card.querySelector('.dd-ticket-stats');
+  if (stats) stats.innerHTML = statChips(ticketAt(key));
+  pulseTicket(key);
+}
+
+/** Per-locus timers for the landing flash. */
+const pulses = new Map();
+
+/** ONE finite flash on the ticket a voice just landed on — driven by a real
+    state change, never an idling loop (OSR paint rule). */
+function pulseTicket(key) {
+  const card = liveEl ? liveEl.querySelector(`.dd-ticket[data-locus="${key}"]`) : null;
+  if (!card) return;
+  card.classList.remove('is-live');
+  void card.offsetWidth; // restart the one-shot
+  card.classList.add('is-live');
+  clearTimeout(pulses.get(key));
+  pulses.set(key, setTimeout(() => card.classList.remove('is-live'), 1500));
+}
+
+/** A section changed its standing: its ticket says so without a rebuild. */
+function refreshTicketState(sec) {
+  if (deskView !== 'tickets' || !liveEl) return;
+  const card = liveEl.querySelector(`.dd-ticket[data-locus="s${sec}"]`);
+  if (!card) return;
+  const state = sectionState(sec);
+  card.classList.remove('is-open', 'is-work', 'is-stands', 'is-done');
+  card.classList.add('is-' + state);
+  const chip = card.querySelector('.dd-ticket-state');
+  if (chip) chip.textContent = t('dd.live.ticket.' + state);
+}
+
+/** Phase and running totals — the head is sticky, so this is the one line
+    that never leaves the frame however far the board is scrolled. */
+function updateDeskHead() {
+  if (!liveEl) return;
+  const chip = liveEl.querySelector('.dd-desk-phase');
+  if (chip) chip.textContent = phaseLabel(phase);
+  const stats = liveEl.querySelector('.dd-desk-stats');
+  if (!stats) return;
+  const msgs = voicesOf();
+  let notesN = 0;
+  let changes = 0;
+  for (const e of msgs) {
+    if (e.k === 'note') notesN++;
+    if (e.diff && e.diff.length) changes++;
+  }
+  stats.textContent = t('dd.live.desk.stats')
+    .replace('{v}', String(msgs.length))
+    .replace('{n}', String(notesN))
+    .replace('{c}', String(changes))
+    .replace('{s}', String(sources.length));
+}
+
+/** Where the desk looks while nobody has told it otherwise: at the material
+    as long as the material is all there is, at the board once text exists. */
+function defaultDeskView() { return reportStarted() ? 'tickets' : 'sources'; }
+
+function markDeskView() {
+  if (!liveEl) return;
+  for (const b of liveEl.querySelectorAll('.dd-desk-view')) {
+    b.classList.toggle('is-on', b.dataset.deskview === deskView);
+  }
+}
+
+function setDeskView(v) {
+  if (!DESK_VIEWS.includes(v) || v === deskView) return;
+  deskView = v;
+  deskViewPinned = true; // a hand on the switch outranks any default
+  markDeskView();
+  renderDesk();
+}
+
+/** The first text lands: the run has moved from gathering to writing, so the
+    desk follows it — unless the reader has picked a view themselves. */
+function autoSwitchDesk() {
+  if (deskViewPinned || deskView === 'tickets' || !reportStarted()) return;
+  deskView = 'tickets';
+  markDeskView();
+  renderDesk();
+}
+
+function setSrcFilter(f) {
+  if (!SRC_FILTERS.includes(f) || f === srcFilter) return;
+  srcFilter = f;
+  const reg = liveEl ? liveEl.querySelector('.dd-register') : null;
+  if (!reg) return;
+  reg.dataset.filter = f;
+  for (const b of reg.querySelectorAll('.dd-reg-filter')) {
+    b.classList.toggle('is-on', b.dataset.srcfilter === f);
+  }
+}
+
+function toggleDesk() {
+  const desk = deskEl();
+  if (!desk) return;
+  deskFolded = !deskFolded;
+  desk.classList.toggle('is-folded', deskFolded);
+  const btn = desk.querySelector('.dd-desk-fold');
+  if (btn) btn.setAttribute('aria-expanded', deskFolded ? 'false' : 'true');
+  renderDesk();
 }
 
 function chatMsgHtml(e) {
@@ -899,34 +1158,22 @@ function phaseLabel(ph) {
   return label === key ? ph : label;
 }
 
-function updatePhaseChip() {
-  const chip = liveEl ? liveEl.querySelector('.dd-chat-phase') : null;
-  if (chip) chip.textContent = phaseLabel(phase);
-}
-
-/* ---- events (view-only: back, chat toggle, attachment fold) ---- */
+/* ---- events (view-only: back, desk view/fold, register filter,
+       attachment fold) ---- */
 
 function onClick(e) {
   if (e.target.closest('.dd-back')) {
     if (onBack) onBack();
     return;
   }
-  const toggle = e.target.closest('.dd-chat-toggle');
-  if (toggle) {
-    chatOpen = !chatOpen;
-    toggle.classList.toggle('is-on', chatOpen);
-    const root = liveEl.querySelector('.dd-live');
-    if (root) root.classList.toggle('chat-open', chatOpen);
-    const aside = liveEl.querySelector('.dd-live-chat');
-    if (aside) {
-      aside.hidden = !chatOpen;
-      if (chatOpen) {
-        const list = chatListEl();
-        if (list) list.scrollTop = list.scrollHeight;
-      }
-    }
-    // The margin-note rail takes the freed edge — re-pin at the new widths.
-    renderNotesRail();
+  const view = e.target.closest('.dd-desk-view');
+  if (view) { setDeskView(view.dataset.deskview); return; }
+  const filter = e.target.closest('.dd-reg-filter');
+  if (filter) { setSrcFilter(filter.dataset.srcfilter); return; }
+  if (e.target.closest('.dd-desk-head')) {
+    // The whole head is the fold handle — the switches above take their
+    // clicks first, so only the bare head folds the deck.
+    toggleDesk();
     return;
   }
   const head = e.target.closest('.dd-attach-head');

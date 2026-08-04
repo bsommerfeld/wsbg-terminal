@@ -14,6 +14,9 @@
 // NOT auto-open — its row pulses an amber ring until it is opened, persisted
 // across restarts (localStorage). Clicking a row opens `.dd-detail-view` —
 // the report as its OWN page with a round back arrow, header and PDF export.
+// A finished export is not written out, it is PLAYED: the button runs one
+// ad-banner cycle (curtain in, check drawn on green fluid, curtain out to both
+// sides, face morphs back) while the PDF opens itself in the OS viewer.
 // View switches animate ONE-SHOT; the unread pulse is the single deliberate
 // exception to the no-loop OSR paint rule (cheap border/shadow only). The
 // `.widget-body` stays the one scroller — list scroll position is saved and
@@ -23,7 +26,7 @@ import { t, currentLang } from '../i18n/i18n.js';
 import { escapeHtml } from '../format/escape.js';
 import { renderMarkdown } from '../format/markdown.js';
 import { readingTimeLabel, readingTimeLabelFromWords } from '../format/readtime.js';
-import { wireFigureHover, wireFigureJumps } from '../map/figure-hover.js';
+import { wireFigureHover, wireFigureJumps, wireFigureZoom } from '../map/figure-hover.js';
 import { figureHtml, linkFigureRefs } from './dd-figures.js';
 import {
   initDeepDiveLive, resetLive, mountLive, unmountLive, finalizeLive,
@@ -38,15 +41,25 @@ let progressEl = null;
 let detailEl = null;
 let liveEl = null;
 
-let state = { busy: false, stage: null, stageDetail: null, subject: null, reports: [] };
+let state = { busy: false, stage: null, stageDetail: null, subject: null,
+  priority: false, reports: [] };
 /** The full report currently cached (fetched via `get`, or pushed on finish). */
 let current = null;
 /** Which report's detail view is open (null = home). */
 let openId = null;
 /** Saved list scroll position while a detail view is open. */
 let listScrollTop = 0;
-/** Transient PDF-export outcome note ({ok, path} | null), cleared on next render. */
-let pdfNote = null;
+/**
+ * The running success banner on the export button: `performance.now()` of its
+ * start (0 = none). MODULE state, not DOM state — every state push rebuilds the
+ * detail page, so the animation is re-attached with a negative delay (`--fx-shift`)
+ * and picks up where it was instead of restarting from frame one.
+ */
+let pdfFlashAt = 0;
+let pdfFlashTimer = null;
+/** A failed export says so in words - briefly, then it clears itself. */
+let pdfFailed = false;
+let pdfFailTimer = null;
 /** The report id whose delete button is armed (two-tap confirm). */
 let armedDelete = null;
 /**
@@ -184,6 +197,9 @@ export function renderDeepDive(payload) {
     subject: payload.subject || null,
     progress: typeof payload.progress === 'number' ? payload.progress : -1,
     etaSeconds: typeof payload.etaSeconds === 'number' ? payload.etaSeconds : 0,
+    // Priority: the wire's model lanes are parked, this run owns both workers.
+    // Server-owned state (the run disarms it on every exit) — never latched here.
+    priority: !!payload.priority,
     reports: Array.isArray(payload.reports) ? payload.reports : [],
   };
   etaReceivedAt = Date.now();
@@ -223,10 +239,33 @@ export function renderDeepDive(payload) {
   // A report deleted or aged out closes its stale detail view.
   if (openId && !state.reports.some(r => r.id === openId)) closeView(false);
   if (current && !state.reports.some(r => r.id === current.id)) current = null;
-  if (payload.pdf) pdfNote = payload.pdf;
+  if (payload.pdf) applyPdfOutcome(payload.pdf);
   armedDelete = state.reports.some(r => r.id === armedDelete) ? armedDelete : null;
   render();
-  pdfNote = null;
+}
+
+/** One banner cycle on the export button, in ms — keep in sync with deepdive.css. */
+const PDF_FLASH_MS = 2400;
+/** How long a failed export stays on screen before it clears itself. */
+const PDF_FAIL_MS = 6000;
+
+/**
+ * The export's outcome. Success needs no words: the button plays its banner
+ * (check + green fluid, sweeping out left and right) while the PDF opens itself
+ * in the OS viewer. Only a failure is written out, and even that goes again.
+ */
+function applyPdfOutcome(pdf) {
+  clearTimeout(pdfFlashTimer);
+  clearTimeout(pdfFailTimer);
+  if (pdf.ok) {
+    pdfFailed = false;
+    pdfFlashAt = performance.now();
+    pdfFlashTimer = setTimeout(() => { pdfFlashAt = 0; render(); }, PDF_FLASH_MS);
+  } else {
+    pdfFlashAt = 0;
+    pdfFailed = true;
+    pdfFailTimer = setTimeout(() => { pdfFailed = false; render(); }, PDF_FAIL_MS);
+  }
 }
 
 /** `deepdive-report` payload → open that report's own page. */
@@ -304,6 +343,12 @@ function onHomeClick(e) {
     render();
     return;
   }
+  if (e.target.closest('.dd-priority')) {
+    // Toggle only — the backend answers with a state push, so the button never
+    // shows a mode the gate isn't actually in (a run that just ended rejects it).
+    sock.send('deepdive', { command: 'priority', on: !state.priority });
+    return;
+  }
   if (e.target.closest('.dd-cancel')) {
     // One shot; state lives in the module (cancelSent), NOT on the node —
     // progress pushes re-render. The card collapses IMMEDIATELY (the render
@@ -333,7 +378,7 @@ function onHomeClick(e) {
     render();
   }
   const card = e.target.closest('.dd-card');
-  if (card) sock.send('deepdive', { command: 'get', id: card.dataset.id });
+  if (card && card.dataset.id) sock.send('deepdive', { command: 'get', id: card.dataset.id });
 }
 
 function onDetailClick(e) {
@@ -384,6 +429,7 @@ function render() {
     // their own labels, the title row jumps to the figure's ## section.
     wireFigureHover(detailEl);
     wireFigureJumps(detailEl);
+    wireFigureZoom(detailEl);
     return;
   }
   renderHome();
@@ -460,27 +506,30 @@ function renderHome() {
   // 0fr + opacity) so the height animates closed instead of snapping.
   if (running) progressEl.innerHTML = progressHtml();
 
-  if (!state.reports.length) {
-    listEl.innerHTML = running ? ''
-      : `<div class="dd-empty">
-           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><circle cx="11.5" cy="14.5" r="2.5"/><path d="m13.3 16.3 2.2 2.2"/></svg>
-           <p>${escapeHtml(t('dd.empty'))}</p>
-         </div>`;
-    return;
-  }
-
+  // The list is an ANCHORED slot: head + exactly PAGE_SIZE row heights + pager,
+  // whatever the archive holds. Missing rows are rendered as invisible ghosts
+  // and a single page voids the pager instead of dropping it — otherwise every
+  // new report would change the list's height and shove the orb up the stage.
   const pages = Math.max(1, Math.ceil(state.reports.length / PAGE_SIZE));
   page = Math.min(Math.max(0, page), pages - 1);
   const rows = state.reports.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+  const ghosts = Array.from({ length: PAGE_SIZE - rows.length }, ghostRowHtml);
+  const empty = !state.reports.length && !running;
   listEl.innerHTML = `
     <div class="dd-sec-head">
       <span class="dd-sec-kicker">${escapeHtml(t('dd.reports'))}</span>
       <span class="dd-sec-rule"></span>
       <span class="dd-sec-count">${state.reports.length}</span>
     </div>
-    <ul class="dd-cards">${rows.map(rowHtml).join('')}</ul>
-    ${pages > 1 ? `
-    <div class="dd-pager">
+    <div class="dd-rows">
+      <ul class="dd-cards">${rows.map(rowHtml).join('')}${ghosts.join('')}</ul>
+      ${empty ? `
+      <div class="dd-empty">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><circle cx="11.5" cy="14.5" r="2.5"/><path d="m13.3 16.3 2.2 2.2"/></svg>
+        <p>${escapeHtml(t('dd.empty'))}</p>
+      </div>` : ''}
+    </div>
+    <div class="dd-pager${pages > 1 ? '' : ' is-void'}"${pages > 1 ? '' : ' aria-hidden="true"'}>
       <button class="dd-page-prev" type="button" ${page === 0 ? 'disabled ' : ''}
               aria-label="${escapeHtml(t('dd.page.prev'))}">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
@@ -490,7 +539,18 @@ function renderHome() {
               aria-label="${escapeHtml(t('dd.page.next'))}">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
       </button>
-    </div>` : ''}`;
+    </div>`;
+}
+
+/* An empty row slot: the exact geometry of a real row (name line, meta line,
+   delete button box), painted invisible — it holds the list's height still. */
+function ghostRowHtml() {
+  return `
+  <li class="dd-card dd-card-ghost" aria-hidden="true">
+    <span class="dd-card-name">&nbsp;</span>
+    <span class="dd-card-date">&nbsp;</span>
+    <span class="dd-del"></span>
+  </li>`;
 }
 
 /* One report, one calm line — name + ticker left, date + reading time
@@ -526,6 +586,15 @@ function delBtnHtml(id) {
 
 const STAGES = ['collect', 'triage', 'sections', 'these', 'finish'];
 
+/* The stage narration. A detail that arrives as an `i18n:<key>` token is
+   translated HERE, live with the language switch — the back end never ships a
+   display literal for those. Anything else is passed through as sent. */
+function stageDetailText() {
+  const d = state.stageDetail;
+  if (!d) return '';
+  return d.startsWith('i18n:') ? t(d.slice(5)) : d;
+}
+
 function progressHtml() {
   const idx = Math.max(0, STAGES.indexOf(state.stage));
   const hasEta = state.progress >= 0 && state.etaSeconds > 0;
@@ -535,9 +604,10 @@ function progressHtml() {
       ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 13 4 4L19 7"/></svg>'
       : '';
     const live = i === idx;
+    const note = stageDetailText();
     const detail = live
       ? `<span class="dd-stage-detail">${escapeHtml(
-          t('dd.stage.' + s) + (state.stageDetail ? ` (${state.stageDetail})` : ''))}</span>`
+          t('dd.stage.' + s) + (note ? ` (${note})` : ''))}</span>`
       : '';
     return `<li class="dd-stage ${cls}">
       <span class="dd-stage-dot">${dot}</span>
@@ -552,6 +622,12 @@ function progressHtml() {
     <div class="dd-progress-head">
       <span class="dd-progress-subject">${escapeHtml(state.subject || '')}</span>
       ${hasEta ? `<span class="dd-progress-pct">${Math.max(0, Math.min(100, Math.round(state.progress)))} %</span>` : ''}
+      <button class="dd-priority${state.priority ? ' is-on' : ''}" type="button"
+              aria-pressed="${state.priority ? 'true' : 'false'}"
+              title="${escapeHtml(t(state.priority ? 'dd.priority.off' : 'dd.priority.on'))}"
+              aria-label="${escapeHtml(t(state.priority ? 'dd.priority.off' : 'dd.priority.on'))}">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>
+      </button>
       <button class="dd-cancel${cancelSent ? ' is-cancelling' : ''}" type="button"
               ${cancelSent ? 'disabled ' : ''}title="${escapeHtml(t('dd.cancel'))}"
               aria-label="${escapeHtml(t('dd.cancel'))}">
@@ -564,6 +640,7 @@ function progressHtml() {
       <div class="dd-progress-fill" style="width:${Math.max(2, state.progress)}%"></div>
     </div>` : ''}
     <ol class="dd-stages">${stages}</ol>
+    ${state.priority ? `<p class="dd-priority-note">${escapeHtml(t('dd.priority.note'))}</p>` : ''}
     <button class="dd-peek" type="button">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
       <span>${escapeHtml(t('dd.live.peek'))}</span>
@@ -578,6 +655,9 @@ function detailHtml(r) {
     r.price != null ? fmtPrice(r.price, r.currency) : null,
     r.reportWords != null ? readingTimeLabelFromWords(r.reportWords)
                           : readingTimeLabel(r.report)].filter(Boolean).join(' · ');
+  // A banner started before this repaint resumes at its own offset (see pdfFlashAt).
+  const elapsed = pdfFlashAt ? Math.round(performance.now() - pdfFlashAt) : 0;
+  const flashing = pdfFlashAt > 0 && elapsed < PDF_FLASH_MS;
   return `
   <div class="dd-detail-head">
     <button class="dd-back" type="button" title="${escapeHtml(t('dd.back'))}"
@@ -589,15 +669,40 @@ function detailHtml(r) {
         r.ticker ? `<span class="dd-ticker">${escapeHtml(r.ticker)}</span>` : ''}</span>
       <span class="dd-detail-meta">${escapeHtml(meta)}</span>
     </span>
-    <button class="dd-pdf" type="button" title="${escapeHtml(t('dd.pdf'))}"
-            aria-label="${escapeHtml(t('dd.pdf'))}">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
-      <span data-i18n="dd.pdf">${escapeHtml(t('dd.pdf'))}</span>
+    <button class="dd-pdf${flashing ? ' is-flash' : ''}" type="button"
+            ${flashing ? `style="--fx-shift:${-elapsed}ms"` : ''}
+            title="${escapeHtml(t('dd.pdf'))}" aria-label="${escapeHtml(t('dd.pdf'))}">
+      <span class="dd-pdf-face">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+        <span data-i18n="dd.pdf">${escapeHtml(t('dd.pdf'))}</span>
+      </span>
+      ${flashing ? pdfFlashHtml() : ''}
     </button>
   </div>
-  ${pdfNote ? `<span class="dd-pdf-note">${escapeHtml(
-    pdfNote.ok ? `${t('dd.pdf.done')} ${pdfNote.path || ''}` : t('dd.pdf.failed'))}</span>` : ''}
+  ${pdfFailed ? `<span class="dd-pdf-note" role="status">${
+    escapeHtml(t('dd.pdf.failed'))}</span>` : ''}
   <div class="dd-report">${reportWithFigures(r)}</div>`;
+}
+
+/**
+ * The success banner that plays INSIDE the export button, ad-banner style: the
+ * curtain sweeps shut over the button, a check draws itself on green fluid, and
+ * both halves sweep back out — left to the left, right to the right — while the
+ * button's own face morphs back in the middle. Both halves carry the SAME
+ * artwork at full button width, each clipping its own side, so the two frames
+ * compose one picture that leaves the frame in opposite directions.
+ */
+function pdfFlashHtml() {
+  const art = `<span class="dd-pdf-fx-art">
+        <i class="dd-pdf-blob b1"></i><i class="dd-pdf-blob b2"></i><i class="dd-pdf-blob b3"></i>
+        <svg class="dd-pdf-fx-check" viewBox="0 0 44 24" aria-hidden="true">
+          <path d="M16 12.6l4 4.2 8.6-9.4"/>
+        </svg>
+      </span>`;
+  return `<span class="dd-pdf-fx" aria-hidden="true">
+        <span class="dd-pdf-fx-half l">${art}</span>
+        <span class="dd-pdf-fx-half r">${art}</span>
+      </span>`;
 }
 
 /* White-paper layout: the report's ## sections rendered one by one, each
@@ -605,8 +710,8 @@ function detailHtml(r) {
    The SVG comes from our own Java builder — trusted markup; captions escaped. */
 function reportWithFigures(r) {
   const charts = Array.isArray(r.charts) ? r.charts : [];
-  const md = r.report || '';
-  if (!charts.length) return renderMarkdown(md);
+  const { body: md, sources } = splitSources(r.report || '');
+  if (!charts.length) return renderMarkdown(md) + sourcesHtml(sources);
 
   // Split the markdown into its ## sections (chunk 0 = any preamble).
   const chunks = [];
@@ -639,7 +744,47 @@ function reportWithFigures(r) {
   for (const fig of charts.filter(f => f.section > maxSection)) {
     parts.push(figureHtml(fig, figId.get(fig)));
   }
-  return parts.join('');
+  return parts.join('') + sourcesHtml(sources);
+}
+
+/* ---- the source register: apparatus, not prose ----
+   The deterministic "## Quellen" register (house-appended, ALWAYS the report's
+   last section) is the one part nobody reads top to bottom — it is looked UP.
+   So it rides folded: the crosshead stays, the footnote list waits behind it. */
+
+const SOURCES_HEAD = /^##\s+(Quellen|Sources)\s*$/;
+
+/** Splits the trailing source register off the report markdown. */
+function splitSources(md) {
+  const lines = md.split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (!lines[i].startsWith('## ')) continue;
+    // Only the LAST section can be the register — anything else is prose.
+    if (!SOURCES_HEAD.test(lines[i].trim())) break;
+    return {
+      body: lines.slice(0, i).join('\n').trimEnd(),
+      sources: {
+        title: lines[i].slice(3).trim(),
+        list: lines.slice(i + 1).join('\n').trim(),
+      },
+    };
+  }
+  return { body: md, sources: null };
+}
+
+/** The register folded into a `<details>` — collapsed until the reader asks. */
+function sourcesHtml(sources) {
+  if (!sources || !sources.list) return '';
+  const count = sources.list.split('\n').filter(l => l.trim().startsWith('- ')).length;
+  return `<details class="dd-sources">
+    <summary title="${escapeHtml(t('dd.sources.toggle'))}"
+             aria-label="${escapeHtml(t('dd.sources.toggle'))}">
+      <span class="dd-sources-title">${escapeHtml(sources.title)}</span>
+      ${count ? `<span class="dd-sources-count">${count}</span>` : ''}
+      <svg class="dd-sources-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+    </summary>
+    <div class="dd-sources-body">${renderMarkdown(sources.list)}</div>
+  </details>`;
 }
 
 /* ---- formatting ---- */

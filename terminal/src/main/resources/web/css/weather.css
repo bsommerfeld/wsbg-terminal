@@ -733,7 +733,6 @@ html[data-theme="light"] .weather-figure {
    Never force stroke/fill here — a CSS rule beats the attributes and greys
    the mark out. */
 .glyph-weather svg { width: 22px; height: 22px; }
-.rail-logo-weather { width: 24px; height: 24px; }
 .grid-hit-icon-weather {
   width: 34px; height: 34px;
   filter: drop-shadow(0 2px 6px oklch(0 0 0 / .45));

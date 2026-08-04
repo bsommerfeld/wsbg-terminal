@@ -29,7 +29,7 @@ const TAG_MIN_SCALE = 0.68;     // readability floor: the pill never shrinks bel
 // (their sections are hidden in index.html and their backend loops are
 // disabled) — re-add them here to restore the cards.
 const ORDER = [
-  'widget-reddit', 'widget-fj', 'widget-deepdive',
+  'widget-reddit', 'widget-fj', 'widget-deepdive', 'widget-mentions',
   'widget-fg', 'widget-eurusd',
 ];
 

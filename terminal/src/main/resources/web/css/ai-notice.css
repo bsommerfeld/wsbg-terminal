@@ -66,24 +66,37 @@
   transform: none;
 }
 
-/* --- the focus-rail disclosure button --- */
-/* The rail twin of the header pill: same amber identity + its own sparkle
-   mark, and deliberately set apart from the tool buttons — a hairline above
-   and pinned to the rail's END via flex order, so it stays last even if new
-   tools get added after it in the markup. */
-.rail-ai-sep { order: 98; }
-.rail-item.rail-ai { order: 99; }
-.rail-item.rail-ai .rail-btn {
+/* --- the focus-mode disclosure row --- */
+/* Fullscreen hides the header and with it the KI pill, so the notice travels
+   into the widget's "Über dieses Widget" panel (widget-grid.css) as its LAST
+   row — the header pill's amber identity plus its own sparkle mark, so it
+   reads as a notice and not as one more link. */
+.about-ai {
+  display: flex; align-items: center; gap: 7px;
+  width: fit-content;
+  padding: 4px 10px 4px 8px;
+  font-family: inherit;
+  font-size: var(--font-meta);
+  font-weight: 600;
+  letter-spacing: .06em;
   color: var(--amber);
-  border-color: color-mix(in oklch, var(--amber) 42%, transparent);
-  background: color-mix(in oklch, var(--amber) 12%,
-              color-mix(in oklch, var(--bg-1) 78%, transparent));
+  background: color-mix(in oklch, var(--amber) 14%, transparent);
+  border: 1px solid color-mix(in oklch, var(--amber) 42%, transparent);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease;
 }
-.rail-item.rail-ai .rail-btn:hover {
-  color: var(--amber);
+/* Reddit's panel has no prose and therefore no divider — the source link sits
+   directly above the notice and needs the breathing room itself. */
+.about-source + .about-ai { margin-top: 10px; }
+.about-ai:hover {
+  background: color-mix(in oklch, var(--amber) 24%, transparent);
   border-color: var(--amber);
-  background: color-mix(in oklch, var(--amber) 20%,
-              color-mix(in oklch, var(--bg-1) 78%, transparent));
+}
+.about-ai svg {
+  width: 13px; height: 13px; flex-shrink: 0;
+  stroke: currentColor; stroke-width: 1.6; fill: none;
+  stroke-linecap: round; stroke-linejoin: round;
 }
 
 /* --- the notice overlay body --- */

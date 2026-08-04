@@ -6,15 +6,36 @@ import { escapeHtml } from '../format/escape.js';
 
 /** One server-rendered figure as a card. The SVG comes from our own Java
     builder — trusted markup; captions escaped. */
+/** The document column's width — the canvas today's figures are drawn on. */
+const COLUMN = 720;
+
+/**
+ * A figure's own canvas width, read off its viewBox. Archived reports carry
+ * FROZEN SVGs from whatever builder wrote them, so a report from before the
+ * canvas changed holds narrower pictures that must not be blown up to today's
+ * column: enlarging them magnifies their labels AND their old collisions
+ * without repairing anything. They render at the size they were set for.
+ */
+function canvasWidth(svg) {
+  const m = /viewBox="0 0 (\d+(?:\.\d+)?) /.exec(svg || '');
+  return m ? parseFloat(m[1]) : COLUMN;
+}
+
 export function figureHtml(fig, id) {
-  return `<figure class="dd-figure" ${id ? `data-figid="${id}"` : ''}>
+  // Plate first, caption BENEATH it — the figure convention of set documents,
+  // and the same order DeepDivePdfExporter writes, so the report on screen and
+  // the printed page stay one document.
+  const w = canvasWidth(fig.svg);
+  const legacy = w < COLUMN;
+  const cls = legacy ? 'dd-figure dd-figure-legacy' : 'dd-figure';
+  const style = legacy ? ` style="--fig-natural:${Math.round(w * 1.2)}px"` : '';
+  return `<figure class="${cls}"${style}${id ? ` data-figid="${id}"` : ''}>
+    ${fig.svg || ''}
     <figcaption>
-      ${id ? `<span class="dd-figure-id">${id}</span>` : ''}
+      ${id ? `<span class="dd-figure-id">Abb.&nbsp;${id}</span>` : ''}
       <span class="dd-figure-title">${escapeHtml(fig.title || '')}</span>
-      <span class="dd-figure-rule"></span>
       ${fig.note ? `<span class="dd-figure-note">${escapeHtml(fig.note)}</span>` : ''}
     </figcaption>
-    ${fig.svg || ''}
   </figure>`;
 }
 

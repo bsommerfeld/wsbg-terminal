@@ -19,56 +19,65 @@
 .filter-btn svg .f-line.active { stroke: var(--amber); }
 
 /* The popover, anchored to the bottom-right of the header (its .widget-head
-   parent is position:relative). Floats over the wire rows. */
+   parent is position:relative). Floats over the wire rows. Same panel body as
+   the rail popup (mountFilterPanel renders into both), so it also wears the
+   rail's material: two-layer elevation + the inset light edge. */
 .filter-pop {
   position: absolute;
   top: calc(100% + 6px);
   right: var(--pad-x);
   z-index: 30;
-  width: 264px;
-  padding: 12px;
+  width: 288px;
+  padding: 14px 16px;
   background: var(--bg);
   border: 1px solid var(--line);
-  border-radius: 12px;
-  box-shadow: 0 18px 50px oklch(0 0 0 / .38);
+  border-radius: 16px;
+  box-shadow: 0 2px 6px oklch(0 0 0 / .28),
+              0 22px 60px oklch(0 0 0 / .34),
+              inset 0 1px 0 color-mix(in oklch, var(--txt) 9%, transparent);
+}
+html[data-theme="light"] .filter-pop {
+  box-shadow: 0 2px 6px oklch(0 0 0 / .10),
+              0 22px 60px oklch(0 0 0 / .14),
+              inset 0 1px 0 oklch(1 0 0 / .7);
 }
 .filter-pop[hidden] { display: none; }
 
-.filter-head {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 10px;
-}
-.filter-title {
-  color: var(--txt); font-weight: 600; font-size: var(--font-chrome);
-  letter-spacing: .16em; text-transform: uppercase;
-}
-.filter-reset {
-  color: var(--mute); background: none; border: 0; cursor: pointer;
-  font-size: 0.78em; padding: 2px 4px; border-radius: 6px;
-  transition: color .12s, background .12s;
-}
-.filter-reset:hover:not(:disabled) { color: var(--txt); background: var(--bg-1); }
-.filter-reset:disabled { opacity: .4; cursor: default; }
+/* Head and reset come from the shared rail grammar (.rail-pop-head /
+   .rail-pop-action in widget-grid.css) — the panel used to bring its own,
+   with its own letter-spacing, and sat one knob away from a panel that
+   used the other. */
 
-.filter-row {
-  display: flex; align-items: flex-start; gap: 10px;
-  padding: 7px 0;
-  border-top: 1px solid var(--line-soft);
-}
+/* A facet: label ABOVE its options. The old 62px label column with
+   right-aligned chips tore a hole through the middle of every row in the
+   wider rail panel; stacked, the row is one block that reads left to right.
+   Grouping is spacing, not hairlines. */
+.filter-row { padding-bottom: 14px; }
+.filter-row:last-child { padding-bottom: 0; }
 .filter-label {
-  flex: 0 0 62px; padding-top: 4px;
+  display: block;
+  margin-bottom: 8px;
   color: var(--mute); font-size: 0.72em;
   letter-spacing: .1em; text-transform: uppercase;
 }
-/* Options hug the right edge; the facet label stays left — one clean
-   left-label / right-controls axis per row. */
-.filter-opts { display: flex; gap: 6px; flex: 1; justify-content: flex-end; }
+.filter-opts { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* A facet is ONE control, not loose chips: joined into a full-width segmented
+   switch, the "either/or" is visible in the form itself. Full width because
+   left-aligned chips left two thirds of the panel empty — and because a switch
+   that spans the row is a target you can hit without aiming. */
+.filter-seg { display: flex; width: 100%; }
+.filter-seg .chip { flex: 1; text-align: center; border-radius: 0; }
+.filter-seg .chip:first-child { border-radius: 999px 0 0 999px; }
+.filter-seg .chip:last-child { border-radius: 0 999px 999px 0; margin-left: -1px; }
+/* The filled half owns the shared edge. */
+.filter-seg .chip.active { position: relative; z-index: 1; }
 
 /* Facet chip: default = idle, .active = selected, :disabled = the ruled-out
    sibling of an active mutually-exclusive pair. */
 .chip {
   font: inherit; font-size: 0.78em;
-  padding: 3px 9px; border-radius: 999px;
+  padding: 4px 11px; border-radius: 999px;
   color: var(--txt-2); background: var(--bg-1);
   border: 1px solid var(--line);
   cursor: pointer;
@@ -81,6 +90,7 @@
 }
 .chip-red.active { background: var(--red); border-color: var(--red); color: #fff; }
 .chip:disabled { opacity: .32; cursor: default; }
+.chip:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 
 /* Filtered-empty state: the cook, FROZEN (a canvas snapshot) and struck through
    in red — a wordless "no headlines for this filter", distinct from the cold,

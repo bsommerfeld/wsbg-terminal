@@ -110,33 +110,48 @@ function updateButton() {
 
 function panelHtml() {
   const s = getSpec();
+  // Head + reset use the SHARED rail-popup grammar (.rail-pop-head /
+  // .rail-pop-action, widget-grid.css) — the panel no longer brings its own
+  // title styling, so both of its anchors look like every other rail panel.
+  // .filter-reset stays purely as this file's click hook.
   return `
-    <div class="filter-head">
-      <span class="filter-title">${escapeHtml(t('filter.title'))}</span>
-      <button type="button" class="filter-reset"${isActive() ? '' : ' disabled'}>${escapeHtml(t('filter.reset'))}</button>
+    <div class="rail-pop-head">
+      <span>${escapeHtml(t('filter.title'))}</span>
+      <button type="button" class="rail-pop-action filter-reset"${isActive() ? '' : ' disabled'}>${escapeHtml(t('filter.reset'))}</button>
     </div>
-    ${toggleRow(t('filter.highlight.label'), [
+    ${toggleRow(t('filter.highlight.label'), seg([
+      // "Wichtigkeit" is a binary too — ALL vs IMPORTANT — so it wears the same
+      // switch as the other two instead of being a lone chip in a wide panel.
+      chip('highlight', 'ALL', t('filter.opt.all'), s.highlight === 'ALL'),
       chip('highlight', 'IMPORTANT', t('filter.highlight.red'), s.highlight === 'IMPORTANT', false, 'red'),
-    ])}
-    ${toggleRow(t('filter.price.label'), pairChips('price', s.price))}
-    ${toggleRow(t('filter.news.label'), pairChips('news', s.news))}
+    ]))}
+    ${toggleRow(t('filter.price.label'), pairGroup('price', s.price))}
+    ${toggleRow(t('filter.news.label'), pairGroup('news', s.news))}
   `;
 }
 
-function toggleRow(label, chips) {
+function toggleRow(label, optsHtml) {
   return `<div class="filter-row">
     <span class="filter-label">${escapeHtml(label)}</span>
-    <div class="filter-opts">${chips.join('')}</div>
+    <div class="filter-opts">${optsHtml}</div>
   </div>`;
 }
 
-// A mutually-exclusive pair: the sibling of an active value is DISABLED, so the
-// two can never both be on.
-function pairChips(facet, current) {
-  return [
-    chip(facet, 'with', t('filter.opt.with'), current === 'with', current === 'without'),
-    chip(facet, 'without', t('filter.opt.without'), current === 'without', current === 'with'),
-  ];
+function seg(chips) {
+  return `<div class="filter-seg" role="group">${chips.join('')}</div>`;
+}
+
+// A mutually-exclusive pair, rendered as ONE full-width segmented switch. The
+// exclusivity is now STRUCTURAL — two halves of one control, and togglePair()
+// swaps straight from one to the other — so the sibling is no longer disabled:
+// inside a single switch a dead half reads as a broken button, and it forced
+// two clicks (clear, then pick) for what is one decision. Clicking the active
+// half still clears the facet back to "egal".
+function pairGroup(facet, current) {
+  return seg([
+    chip(facet, 'with', t('filter.opt.with'), current === 'with'),
+    chip(facet, 'without', t('filter.opt.without'), current === 'without'),
+  ]);
 }
 
 function chip(facet, val, label, active, disabled, tone) {

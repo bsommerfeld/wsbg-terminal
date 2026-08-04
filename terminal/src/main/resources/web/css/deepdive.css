@@ -32,17 +32,24 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
+  /* The BOX decides the widths below, not the window: this stage lives in a
+     widget whose width has nothing to do with the viewport (same reasoning as
+     the live view's `ddlive` container). */
+  container-type: inline-size;
+  container-name: ddhome;
 }
 /* display:flex would defeat the hidden attribute (author styles beat the UA's
    [hidden]{display:none}) — the open report would render BELOW the still-
    visible list (live-observed 2026-07-13). Same guard as .dd-detail-view. */
 .dd-home[hidden] { display: none; }
 
-/* The stage voids: free space splits 1:2 around orb + list, which floats
-   the orb at roughly ONE THIRD of the view. When the list grows past the
-   viewport the voids collapse to a floor and the page simply scrolls. */
-.dd-void-top { flex: 1 0 28px; }
-.dd-void-bottom { flex: 2 0 20px; }
+/* The stage voids: free space splits 5:4 around orb + list, so the BAR itself
+   lands near the middle of the view and the reports hang below it (user ask
+   2026-08-04 — the old 1:2 split floated the bar at a third and left the lower
+   half empty). When the list grows past the viewport the voids collapse to a
+   floor and the page simply scrolls. */
+.dd-void-top { flex: 5 0 28px; }
+.dd-void-bottom { flex: 4 0 20px; }
 
 /* ---- the ORB: one floating container with two lives. Idle it is the
    ticker pill; while a run lives it morphs into the progress card — the
@@ -56,11 +63,15 @@
   position: relative;
   flex-shrink: 0;
   width: 100%;
-  max-width: 600px;
+  /* Grows WITH the box instead of standing as a fixed 600px island in a wide
+     window (user finding 2026-08-04: only visible when the app is pulled
+     large, where the fixed cap read as forced-centered). The lower bound is a
+     cap, never a floor — `width:100%` still wins in a narrow widget. */
+  max-width: clamp(600px, 64cqw, 880px);
   margin-inline: auto;
   transition: max-width .6s cubic-bezier(.45, .05, .15, 1);
 }
-.dd-orb-wrap.is-card { max-width: 800px; }
+.dd-orb-wrap.is-card { max-width: clamp(800px, 80cqw, 1120px); }
 
 /* The ORBITING glow (user mandate 2026-07-17 "umkreisen"): an amber light
    spot that travels once around the card's edge — a conic gradient hugging
@@ -220,12 +231,18 @@
 }
 
 /* Empty state: centered, quiet — the thumb's magnifier doc at pane size. */
+/* The empty state does not OWN space — it lies over the reserved row slots
+   (see .dd-rows), so an archive of 0 and one of 5 read at the same height and
+   the orb above never moves. */
 .dd-empty {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 14px;
-  padding: 26px 18px 12px;
+  padding: 8px 18px;
   text-align: center;
 }
 .dd-empty svg {
@@ -290,6 +307,49 @@
   font-size: .74em;
   color: var(--amber);
   font-variant-numeric: tabular-nums;
+}
+/* Vorfahrt: the same 20px slot as the cancel, but it LATCHES — armed it burns
+   amber (filled bolt) so the run's mode is readable at a glance. State-driven
+   only, nothing loops (OSR paint rule). */
+.dd-priority {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--mute);
+  cursor: pointer;
+  transition: color .18s ease, background .18s ease;
+}
+.dd-priority:hover {
+  color: var(--amber);
+  background: color-mix(in oklch, var(--amber) 10%, transparent);
+}
+.dd-priority.is-on {
+  color: var(--amber);
+  background: color-mix(in oklch, var(--amber) 16%, transparent);
+}
+.dd-priority svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linejoin: round;
+}
+.dd-priority.is-on svg {
+  fill: currentColor;
+}
+.dd-priority-note {
+  margin: 6px 0 0;
+  font-size: .72em;
+  line-height: 1.45;
+  color: var(--amber);
+  opacity: .85;
 }
 .dd-cancel {
   flex-shrink: 0;
@@ -430,7 +490,8 @@
 
 .dd-list {
   width: 100%;
-  max-width: 580px;
+  /* Rides the orb's growth, staying the same touch narrower at every size. */
+  max-width: clamp(580px, 62cqw, 852px);
   margin-inline: auto;
 }
 
@@ -466,6 +527,13 @@
   transition: background .15s, border-color .15s;
 }
 .dd-card:last-child { border-bottom-color: transparent; }
+/* The rows area is the anchor: it always holds PAGE_SIZE slots, filled with
+   ghost rows when the page is short, and it is the empty state's frame. */
+.dd-rows { position: relative; }
+.dd-card-ghost { visibility: hidden; }
+/* The last REAL row closes the list — its hairline would otherwise point at
+   nothing but ghosts. */
+.dd-card:has(+ .dd-card-ghost) { border-bottom-color: transparent; }
 .dd-card:hover {
   background: var(--bg-1);
   border-bottom-color: transparent;
@@ -514,6 +582,9 @@
 .dd-card.unread .dd-card-name { color: var(--txt); }
 
 /* The pager: ‹ 1 / 3 › — quiet, centered under the rows. */
+/* A single page still RESERVES the pager's line — dropping it would shorten
+   the list the moment the sixth report arrives. */
+.dd-pager.is-void { visibility: hidden; }
 .dd-pager {
   display: flex;
   align-items: center;
@@ -648,10 +719,11 @@
   color: var(--mute);
 }
 .dd-pdf {
+  position: relative;
+  overflow: hidden; /* the success banner sweeps out THROUGH these edges */
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
   font-family: "Inter", sans-serif;
   font-weight: 600;
   font-size: .8em;
@@ -670,27 +742,202 @@
   stroke: currentColor; stroke-width: 2; fill: none;
   stroke-linecap: round; stroke-linejoin: round;
 }
+.dd-pdf-face {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
 .dd-pdf-note {
   font-size: .78em;
-  color: var(--mute);
+  color: var(--red);
+}
+
+/* ---- the export button's success banner -------------------------------
+   A finished PDF is not announced in words, it is SHOWN: the button plays one
+   ad-banner cycle in place — curtain shut, check drawn on green fluid, curtain
+   out to both sides, face morphs back — and the PDF opens itself in the OS
+   viewer. Strictly ONE-SHOT (the no-loop OSR paint rule): the markup only
+   exists while the cycle runs and the next render drops it. The whole timeline
+   is ONE keyframe set per element (2400ms, mirrored in deepdive.js's
+   PDF_FLASH_MS) rather than chained animations, so a repaint mid-cycle can
+   resume it with a single negative delay (--fx-shift). */
+.dd-pdf.is-flash {
+  pointer-events: none;
+  animation: dd-pdf-frame 2400ms linear var(--fx-shift, 0ms) both;
+}
+.dd-pdf.is-flash .dd-pdf-face {
+  animation: dd-pdf-face 2400ms linear var(--fx-shift, 0ms) both;
+}
+@keyframes dd-pdf-frame {
+  0%   { border-color: var(--line); }
+  8%   { border-color: var(--green); }
+  62%  { border-color: var(--green); }
+  92%  { border-color: var(--line); }
+  100% { border-color: var(--line); }
+}
+@keyframes dd-pdf-face {
+  0%   { opacity: 1; transform: scale(1); }
+  6%   { opacity: 0; transform: scale(.86); }
+  62%  { opacity: 0; transform: scale(.82); }
+  78%  { opacity: 1; transform: scale(1.05); }
+  88%  { opacity: 1; transform: scale(1); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+.dd-pdf-fx {
+  position: absolute;
+  inset: 0;
+}
+/* Each half clips its own side of ONE picture: the art is always the full
+   button width, anchored to the button's edge, so the seam in the middle is
+   invisible until the halves part. The left half overlaps by 1px (and its art
+   compensates) — without it a subpixel gap draws a hairline through the check. */
+.dd-pdf-fx-half {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 50%;
+  overflow: hidden;
+}
+.dd-pdf-fx-half.l {
+  left: 0;
+  width: calc(50% + 1px);
+  animation: dd-pdf-half-l 2400ms cubic-bezier(.3,.85,.3,1) var(--fx-shift, 0ms) both;
+}
+.dd-pdf-fx-half.r {
+  right: 0;
+  animation: dd-pdf-half-r 2400ms cubic-bezier(.3,.85,.3,1) var(--fx-shift, 0ms) both;
+}
+@keyframes dd-pdf-half-l {
+  0%   { transform: translateX(-100%); }
+  9%   { transform: translateX(0); }
+  62%  { transform: translateX(0); }
+  84%  { transform: translateX(-104%); }
+  100% { transform: translateX(-104%); }
+}
+@keyframes dd-pdf-half-r {
+  0%   { transform: translateX(100%); }
+  9%   { transform: translateX(0); }
+  62%  { transform: translateX(0); }
+  84%  { transform: translateX(104%); }
+  100% { transform: translateX(104%); }
+}
+.dd-pdf-fx-art {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 200%;
+  overflow: hidden;
+  background: radial-gradient(120% 160% at 50% 120%,
+              oklch(0.94 0.05 150) 0%, oklch(0.99 0.012 150) 55%, #fff 100%);
+}
+.dd-pdf-fx-half.l .dd-pdf-fx-art { left: 0; width: calc(200% - 2px); }
+.dd-pdf-fx-half.r .dd-pdf-fx-art { right: 0; }
+
+/* The fluid: soft, off-round green bodies that swell out of the check and drift
+   apart. Gradients and border-radius only — no filters, the OSR surface paints
+   in software. */
+.dd-pdf-blob {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 26px; height: 26px;
+  margin: -13px 0 0 -13px;
+  border-radius: 46% 54% 38% 62% / 55% 40% 60% 45%;
+  background: radial-gradient(circle at 38% 36%,
+              oklch(0.82 0.17 152 / .95), oklch(0.68 0.16 156 / .35) 70%,
+              oklch(0.68 0.16 156 / 0) 100%);
+}
+.dd-pdf-blob.b1 { animation: dd-pdf-blob-1 2400ms ease-out var(--fx-shift, 0ms) both; }
+.dd-pdf-blob.b2 { animation: dd-pdf-blob-2 2400ms ease-out var(--fx-shift, 0ms) both; }
+.dd-pdf-blob.b3 {
+  width: 20px; height: 20px; margin: -10px 0 0 -10px;
+  animation: dd-pdf-blob-3 2400ms ease-out var(--fx-shift, 0ms) both;
+}
+@keyframes dd-pdf-blob-1 {
+  0%   { opacity: 0; transform: translate(0,0) scale(.2) rotate(0deg); }
+  14%  { opacity: .85; }
+  40%  { transform: translate(-24px, -3px) scale(1.5) rotate(70deg); }
+  62%  { opacity: .7; transform: translate(-30px, 2px) scale(1.7) rotate(120deg); }
+  100% { opacity: 0; transform: translate(-52px, -4px) scale(2.4) rotate(200deg); }
+}
+@keyframes dd-pdf-blob-2 {
+  0%   { opacity: 0; transform: translate(0,0) scale(.2) rotate(0deg); }
+  16%  { opacity: .8; }
+  40%  { transform: translate(24px, 4px) scale(1.45) rotate(-60deg); }
+  62%  { opacity: .65; transform: translate(31px, -2px) scale(1.65) rotate(-110deg); }
+  100% { opacity: 0; transform: translate(54px, 3px) scale(2.3) rotate(-190deg); }
+}
+@keyframes dd-pdf-blob-3 {
+  0%   { opacity: 0; transform: scale(.1) rotate(0deg); }
+  10%  { opacity: .9; transform: scale(1.25) rotate(30deg); }
+  30%  { opacity: .5; transform: scale(2.1) rotate(70deg); }
+  55%  { opacity: .22; transform: scale(2.6) rotate(110deg); }
+  100% { opacity: 0; transform: scale(3.2) rotate(170deg); }
+}
+
+/* The check DRAWS itself (stroke dash), then settles with a short pop. The
+   size is spelled out against `.dd-pdf svg` (the button's own 13px icon rule),
+   which otherwise wins on specificity and shrinks the check to a speck. */
+.dd-pdf .dd-pdf-fx-check {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 44px; height: 24px;
+  margin: -12px 0 0 -22px;
+}
+.dd-pdf-fx-check path {
+  fill: none;
+  stroke: oklch(0.52 0.16 152);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 19;
+  animation: dd-pdf-check 2400ms cubic-bezier(.2,.75,.3,1) var(--fx-shift, 0ms) both;
+}
+@keyframes dd-pdf-check {
+  0%   { stroke-dashoffset: 19; opacity: 0; }
+  9%   { stroke-dashoffset: 19; opacity: 1; }
+  30%  { stroke-dashoffset: 0; }
+  36%  { stroke-width: 3.3; }
+  46%  { stroke-width: 2.6; }
+  100% { stroke-dashoffset: 0; opacity: 1; }
 }
 
 /* The report body reads like a paper, not a dossier: uppercase tracked
    crossheads (amber tick + trailing hairline, the kicker pattern), a lead
    paragraph under the first crosshead, calm paragraph rhythm, tabular
    figures so inline values align. */
+/* ONE column holds the whole document — prose, tables and figures share BOTH
+   edges. A split lane (narrow prose, wide figures) is typographically
+   defensible but it read as two competing columns (user finding 2026-08-03),
+   and the figure canvas is sized to this exact width (DeepDiveCharts.W) so a
+   figure is SET at scale ~1, never stretched. The workshop's report deck
+   holds the SAME column, so the mirror and the finished page are one
+   document — hence the shared declaration. */
+.dd-report,
+.dd-live-main { --dd-column: 720px; }
+
 .dd-report {
   width: 100%;
-  max-width: 70ch;
+  max-width: var(--dd-column);
   margin-inline: auto;
   font-variant-numeric: tabular-nums;
+  /* The report is a DOCUMENT inside the terminal, and it is the same document
+     the PDF prints: running text is set in the paper's serif, the furniture
+     (crossheads, captions, meta) stays in the app's Inter/Mono. The terminal
+     chrome around it keeps its monospace voice. */
+  font-family: Georgia, "Times New Roman", serif;
+  counter-reset: dd-sec;
 }
+/* Running text: one measure, generous leading. The column is wide, so the
+   type carries it — a long line needs air between lines, not more words. */
 .dd-report p {
   color: var(--txt-2);
-  font-size: .95em;
-  line-height: 1.75;
+  font-size: 1.05em;
+  line-height: 1.8;
+  text-align: justify;
+  hyphens: auto;
+  orphans: 3;
+  widows: 3;
 }
-.dd-report p + p { margin-top: 12px; }
+.dd-report p + p { margin-top: 14px; }
 .dd-report h1, .dd-report h2, .dd-report h3 {
   display: flex;
   align-items: center;
@@ -701,20 +948,33 @@
   letter-spacing: .15em;
   text-transform: uppercase;
   color: var(--txt);
-  margin: 24px 0 10px;
+  /* Air ABOVE a crosshead, little beneath it: the heading belongs to what
+     follows it, and the reader should feel the section break. */
+  margin: 40px 0 14px;
   padding-left: 10px;
   border-left: 2px solid var(--amber);
+  counter-increment: dd-sec;
+  break-after: avoid;
+}
+/* Numbered sections: a reader can cite "3." and be understood — and the
+   figure register (Abb. A3) gets a structure to hang from. */
+.dd-report h1::before, .dd-report h2::before, .dd-report h3::before {
+  content: counter(dd-sec) ".";
+  color: var(--amber);
+  flex-shrink: 0;
 }
 .dd-report h1::after, .dd-report h2::after, .dd-report h3::after {
   content: "";
   flex: 1;
   border-top: 1px solid var(--line-soft);
 }
-.dd-report h1:first-child, .dd-report h2:first-child, .dd-report h3:first-child { margin-top: 2px; }
+.dd-report h1:first-child, .dd-report h2:first-child, .dd-report h3:first-child {
+  margin-top: 2px;
+}
 /* The standfirst: the first paragraph of the report answers "worum geht es?"
    and gets to speak up. */
 .dd-report h2:first-child + p {
-  font-size: 1.03em;
+  font-size: 1.16em;
   color: var(--txt);
   line-height: 1.7;
 }
@@ -725,18 +985,75 @@
 .dd-report ul, .dd-report ol { padding-left: 4px; list-style: none; }
 .dd-report li {
   color: var(--mute);
-  font-size: .82em;
-  line-height: 1.6;
-  padding-left: 14px;
-  text-indent: -14px;
+  font-size: .84em;
+  line-height: 1.5;
+  padding-left: 15px;
+  text-indent: -15px;
 }
+/* The source register rides FOLDED: it is apparatus, looked up, never read
+   through. The summary IS the crosshead — same numbered amber tick, same
+   hairline — plus the count and a chevron that turns when it opens. */
+.dd-sources { margin-top: 40px; }
+.dd-sources > summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: "Inter", sans-serif;
+  font-weight: 700;
+  font-size: .74em;
+  letter-spacing: .15em;
+  text-transform: uppercase;
+  color: var(--txt);
+  margin: 0 0 14px;
+  padding-left: 10px;
+  border-left: 2px solid var(--amber);
+  counter-increment: dd-sec;
+  cursor: pointer;
+  list-style: none;
+}
+.dd-sources > summary::-webkit-details-marker { display: none; }
+.dd-sources > summary::before {
+  content: counter(dd-sec) ".";
+  color: var(--amber);
+  flex-shrink: 0;
+}
+.dd-sources > summary::after {
+  content: "";
+  order: 1;
+  flex: 1;
+  border-top: 1px solid var(--line-soft);
+}
+.dd-sources-count {
+  color: var(--mute);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .08em;
+}
+.dd-sources-chev {
+  order: 2;
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  stroke: var(--mute);
+  fill: none;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform .18s ease;
+}
+.dd-sources[open] > summary .dd-sources-chev { transform: rotate(180deg); }
+.dd-sources > summary:hover { color: var(--amber); }
+.dd-sources > summary:hover .dd-sources-chev { stroke: var(--amber); }
+/* The folded list keeps its footnote setting — no extra crosshead inside. */
+.dd-sources-body > :first-child { margin-top: 0; }
+
 /* Compact markdown tables (model-licensed 2026-07-14): report typography —
    amber-ticked header like the crossheads, hairline row rules, tabular
    figures. The wrapper owns horizontal overflow so the .widget-body never
    scrolls sideways. */
 .dd-report .md-table {
-  max-width: 70ch;
-  margin: 12px 0 14px;
+  /* Tables are lane-width like figures, not measure-width like prose. */
+  max-width: 100%;
+  margin: 18px 0 20px;
   overflow-x: auto;
 }
 .dd-report table {
@@ -745,24 +1062,27 @@
   font-size: .88em;
   line-height: 1.55;
 }
+/* Rules only where they carry meaning — the booktabs grammar the PDF sets:
+   a heavy rule over the head, a light one under it, a heavy one to close. */
 .dd-report th {
   font-family: "Inter", sans-serif;
   font-weight: 650;
-  font-size: .82em;
+  font-size: .78em;
   letter-spacing: .08em;
   text-transform: uppercase;
   color: var(--txt);
   text-align: left;
-  padding: 5px 10px;
-  border-bottom: 1px solid var(--amber);
-  background: var(--amber-soft);
+  padding: 6px 10px;
+  border-top: 1px solid var(--txt);
+  border-bottom: 1px solid var(--line);
 }
 .dd-report td {
   color: var(--txt-2);
-  padding: 5px 10px;
+  padding: 6px 10px;
   border-bottom: 1px solid var(--line-soft);
   font-variant-numeric: tabular-nums;
 }
+.dd-report tbody tr:last-child td { border-bottom: 1px solid var(--txt); }
 .dd-report .md-align-right { text-align: right; }
 .dd-report .md-align-center { text-align: center; }
 .dd-report .md-align-left { text-align: left; }
@@ -775,13 +1095,21 @@
    every such mark carries its signed value as text (CVD relief). */
 
 .dd-figure {
-  margin: 16px 0 22px;
-  max-width: 70ch;
+  /* A figure is ONE object on the page: its own plate, its own air. Bare
+     SVGs stacked at 22px apart read as one dense smear when a section
+     carries several of them (Lage carries up to seven). */
+  margin: 32px 0 36px;
+  max-width: 100%;
+  padding: 14px 16px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: var(--bg-1);
+  break-inside: avoid;
   --ddc-ink: var(--txt);
   --ddc-mute: var(--mute);
   --ddc-grid: var(--line-soft);
   --ddc-axis: var(--line);
-  --ddc-surface: var(--bg);
+  --ddc-surface: var(--bg-1); /* the plate the marks are ringed against */
   --ddc-pos: var(--green);
   --ddc-neg: var(--red);
   --ddc-s1: #3987e5;
@@ -796,14 +1124,23 @@ html[data-theme="light"] .dd-figure {
   width: 100%;
   height: auto;
 }
+/* An archived report's frozen figure keeps the size it was DRAWN for. Pulling
+   a narrower canvas up to today's column magnifies its labels and its old
+   overlaps alike and repairs nothing (user finding 2026-08-03: an existing
+   report looked "merely enlarged"). */
+.dd-figure-legacy svg { max-width: var(--fig-natural); }
+/* The caption sits BENEATH the plate: number, title, source. */
 .dd-figure figcaption {
   display: flex;
   align-items: baseline;
-  gap: 12px;
-  margin-bottom: 8px;
+  gap: 10px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line-soft);
 }
 .dd-figure-title {
-  flex-shrink: 0;
+  flex: 1;
+  min-width: 0;
   font-family: "Inter", sans-serif;
   font-weight: 600;
   font-size: .78em;
@@ -812,14 +1149,11 @@ html[data-theme="light"] .dd-figure {
 /* Paper-style figure register: the ID badge on the card ... */
 .dd-figure-id {
   flex-shrink: 0;
-  font-family: "JetBrains Mono", monospace;
-  font-size: .68em;
-  font-weight: 600;
-  color: var(--mute);
-  border: 1px solid var(--line-soft);
-  border-radius: 4px;
-  padding: 0 5px;
-  transform: translateY(-.08em);
+  font-family: "Inter", sans-serif;
+  font-size: .74em;
+  font-weight: 700;
+  color: var(--txt);
+  white-space: nowrap;
 }
 /* ... and the cross-reference in the prose that jumps to it. */
 .dd-figref {
@@ -829,11 +1163,6 @@ html[data-theme="light"] .dd-figure {
   white-space: nowrap;
 }
 .dd-figref:hover { color: var(--amber); border-bottom-color: var(--amber); }
-.dd-figure-rule {
-  flex: 1;
-  border-top: 1px solid var(--line-soft);
-  transform: translateY(-.28em);
-}
 .dd-figure-note {
   flex-shrink: 0;
   font-family: "JetBrains Mono", monospace;
@@ -1042,13 +1371,7 @@ html[data-theme="light"] .dd-figure {
 .dd-live-view[hidden] { display: none; }
 .dd-live-view:not([hidden]) { animation: dd-view-in .22s ease both; }
 
-.dd-live {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-/* ---- head: back arrow, subject + preview badge, chat toggle ---- */
+/* ---- head: back arrow, subject + preview badge ---- */
 
 .dd-live-head {
   display: flex;
@@ -1090,22 +1413,6 @@ html[data-theme="light"] .dd-figure {
   font-size: .74em;
   color: var(--mute);
 }
-.dd-chat-toggle {
-  flex-shrink: 0;
-  width: 34px; height: 34px;
-  display: inline-flex; align-items: center; justify-content: center;
-  color: var(--mute);
-  background: none;
-  border: 1px solid var(--line);
-  border-radius: 50%;
-  cursor: pointer;
-}
-.dd-chat-toggle svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; }
-.dd-chat-toggle.is-on {
-  color: var(--amber);
-  border-color: color-mix(in oklch, var(--amber) 45%, transparent);
-}
-
 /* ---- the handover banner (one-shot, shown when the report stands) ---- */
 
 .dd-live-done {
@@ -1118,19 +1425,48 @@ html[data-theme="light"] .dd-figure {
   animation: dd-fig-in .4s ease both;
 }
 
-/* ---- stage: report mirror beside the collapsible desk chat ---- */
+/* ---- ONE stage, two decks ----
+   The workshop is a column, not two. Above the rule: the report deck, and
+   nothing but EDITING — standing text, typing, covers, figures, in the same
+   document column the finished page and the PDF use, so a figure sits at
+   scale ~1. Below the rule: the Redaktion, full width, where everything the
+   desk actually chews on is laid out — every voice, every objection, every
+   source, every change.
 
-.dd-live-stage {
+   The desk used to stand BESIDE the report as a 320-420px stripe and reached
+   full width only in the one narrow band where a container query stacked it
+   (user finding 2026-08-04). A dashboard cannot live in a stripe, and a
+   layout whose one good state is a breakpoint accident is not a layout. */
+
+.dd-live {
   display: flex;
-  align-items: flex-start;
-  gap: 16px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  /* The box, not the window, decides the breakpoints: this view lives in a
+     widget whose width has nothing to do with the viewport. */
+  container-type: inline-size;
+  container-name: ddlive;
+}
+.dd-live-main {
+  /* The report deck holds the document column and centres in the stage —
+     the head rides with it so the back arrow stays at the page's edge
+     instead of drifting off to the far left of a wide box. Plus the mirror
+     frame's own chrome (2 × 18px padding + 2 × 1px border below; everything
+     is border-box), so what stands INSIDE the dashed frame measures the
+     column exactly: a figure is set at scale 1, the same as on the finished
+     page and in the PDF. */
+  width: 100%;
+  max-width: calc(var(--dd-column) + 38px);
+  margin-inline: auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 .dd-live-report {
-  /* Positioned: the note rail anchors to it and paragraphs' offsetTop
-     measure against it. */
+  /* Positioned: covers and paragraphs' offsetTop measure against it. */
   position: relative;
-  flex: 2 1 380px;
+  /* Fills the deck, which already carries the column cap. */
+  max-width: none;
   min-width: 0;
   padding: 14px 18px 18px;
   border: 1px dashed color-mix(in oklch, var(--amber) 30%, transparent);
@@ -1187,49 +1523,6 @@ html[data-theme="light"] .dd-figure {
   animation: eurusd-skeleton 1.5s ease-in-out infinite;
 }
 
-/* ---- margin notes: the judges' objections, teacher-on-an-exam — on a
-   rail OUTSIDE the report page (absolute, so the report's layout never
-   shifts), each note pinned beside its paragraph. The rail shows only
-   while the chat is folded: both want the right edge, and the reader
-   focuses on one. .has-notes reserves the margin for the rail. ---- */
-
-.dd-note-rail {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 100%;
-  width: 200px;
-  margin-left: 14px;
-  pointer-events: none;
-}
-.dd-live.chat-open .dd-note-rail { display: none; }
-.dd-live.has-notes:not(.chat-open) .dd-live-stage { padding-right: 216px; }
-
-.dd-note {
-  position: absolute;
-  left: 0;
-  width: 200px;
-  padding: 7px 10px;
-  border-left: 2px solid var(--amber);
-  border-radius: 0 8px 8px 0;
-  background: color-mix(in oklch, var(--amber) 8%, transparent);
-  font-size: .74em;
-  line-height: 1.45;
-  font-style: italic;
-  color: var(--txt-2);
-  transition: opacity .5s ease;
-}
-.dd-note-who {
-  display: block;
-  margin-bottom: 2px;
-  font-style: normal;
-  font-weight: 700;
-  font-size: .85em;
-  letter-spacing: .06em;
-  text-transform: uppercase;
-  color: var(--amber);
-}
-
 /* ---- figures slide into their section the moment the layer exists ---- */
 
 @keyframes dd-fig-in {
@@ -1237,6 +1530,66 @@ html[data-theme="light"] .dd-figure {
   to   { opacity: 1; transform: none; }
 }
 .dd-figure.dd-fig-in { animation: dd-fig-in .45s ease both; }
+
+/* ---- figure zoom overlay (shared layer, figure-hover.js) ----
+   A dense ladder in a narrow pane stays readable because the reader can
+   simply LOOK at it: the same frozen SVG, given the screen. Nothing is
+   re-rendered, so the archive and the PDF keep their single truth. */
+
+@keyframes fh-zoombox-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.fh-zoomable { cursor: zoom-in; }
+.fh-zoombox {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: color-mix(in oklch, var(--bg) 82%, transparent);
+  backdrop-filter: blur(3px);
+  cursor: zoom-out;
+  animation: fh-zoombox-in .18s ease-out 1;
+}
+.fh-zoombox-inner {
+  width: min(1400px, 100%);
+  max-height: 100%;
+  overflow: auto;
+}
+.fh-zoombox-inner .dd-figure,
+.fh-zoombox-inner .weather-figure {
+  cursor: zoom-out;
+  margin: 0;
+  max-width: none;
+}
+.fh-zoombox-inner .dd-figure svg,
+.fh-zoombox-inner .weather-figure svg { width: 100%; height: auto; }
+.fh-zoombox-hint {
+  margin-top: 12px;
+  text-align: center;
+  font-family: "JetBrains Mono", monospace;
+  font-size: .74em;
+  letter-spacing: .06em;
+  color: var(--mute);
+}
+
+/* ---- print / PDF ----
+   The exporter renders this same page, so the paper rules live HERE and not
+   only in the Java exporter — in-app and PDF must stay one document. */
+@media print {
+  .dd-figure,
+  .dd-report .md-table,
+  .dd-report table { break-inside: avoid; page-break-inside: avoid; }
+  .dd-report h1, .dd-report h2, .dd-report h3 {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+  .dd-report p { orphans: 3; widows: 3; }
+  .fh-zoombox, .dd-pdf, .dd-back { display: none !important; }
+}
 
 /* ---- the workshop's empty state: blurred ghost lines ---- */
 
@@ -1269,50 +1622,272 @@ html[data-theme="light"] .dd-figure {
   animation: eurusd-skeleton 1.5s ease-in-out infinite;
 }
 
-/* ---- the desk chat: every voice, nothing trimmed ---- */
+/* ---- the Redaktion: the deck under the rule ----
+   Not a chat column any more but a BOARD. The rule with air above it is the
+   seam between the two decks, so the panel needs no box of its own on top of
+   that — it is the floor of the stage, not a card lying on it. */
 
-.dd-live-chat {
-  flex: 1 1 280px;
-  min-width: 260px;
-  max-width: 360px;
-  position: sticky;
-  top: 8px;
+.dd-desk {
+  margin-top: 34px;
+  border-top: 1px solid var(--line);
   display: flex;
   flex-direction: column;
-  max-height: 78vh;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--bg-1);
   transition: opacity .5s ease;
 }
-.dd-live-chat[hidden] { display: none; }
-.dd-chat-head {
+.dd-desk[hidden] { display: none; }
+
+/* The head sticks while the board scrolls past it: on a full-width board the
+   phase and the counters are the one thing that must never leave the frame.
+   The whole head is the fold handle. */
+.dd-desk-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--line-soft);
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 2px 12px;
+  background: var(--bg);
+  cursor: pointer;
 }
-.dd-chat-title {
+.dd-desk-title {
   font-weight: 600;
-  font-size: .8em;
-  letter-spacing: .08em;
+  font-size: .82em;
+  letter-spacing: .1em;
   text-transform: uppercase;
   color: var(--txt-2);
 }
-.dd-chat-phase {
-  font-size: .74em;
+.dd-desk-phase {
+  padding: 2px 9px;
+  border: 1px solid color-mix(in oklch, var(--amber) 45%, transparent);
+  border-radius: 999px;
   color: var(--amber);
+  font-size: .66em;
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-transform: uppercase;
 }
-.dd-chat-list {
-  overflow-y: auto;
-  padding: 10px 12px 12px;
+.dd-desk-phase:empty { display: none; }
+.dd-desk-stats {
+  font-family: "JetBrains Mono", monospace;
+  font-size: .72em;
+  color: var(--mute);
+}
+
+/* The three ways to look at the same run: by locus, by clock, by source. */
+.dd-desk-views {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+.dd-desk-view,
+.dd-reg-filter {
+  padding: 4px 12px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: none;
+  color: var(--mute);
+  font: inherit;
+  font-size: .74em;
+  letter-spacing: .03em;
+  cursor: pointer;
+}
+.dd-desk-view:hover,
+.dd-reg-filter:hover { color: var(--txt-2); }
+.dd-desk-view.is-on,
+.dd-reg-filter.is-on {
+  border-color: var(--line);
+  background: var(--bg-1);
+  color: var(--txt);
+}
+.dd-desk-fold {
+  display: flex;
+  align-items: center;
+  align-self: center;
+  padding: 2px;
+  border: 0;
+  background: none;
+  color: var(--mute);
+  cursor: pointer;
+}
+.dd-desk-fold:hover { color: var(--txt-2); }
+.dd-desk-fold svg {
+  width: 15px;
+  height: 15px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  transition: transform .2s ease;
+}
+.dd-desk.is-folded .dd-desk-fold svg { transform: rotate(-90deg); }
+.dd-desk.is-folded .dd-desk-views,
+.dd-desk.is-folded .dd-desk-body { display: none; }
+
+.dd-desk-body { padding-bottom: 10px; }
+.dd-desk-empty {
+  padding: 24px 2px;
+  font-size: .82em;
+  color: var(--mute);
+}
+
+/* ---- the ticket board: one card per LOCUS ----
+   A locus is a section where the work is section-bound and the phase where it
+   is house-wide — that is the closed partition of the feed, nothing falls
+   through. The full skeleton stands from the first second: an untouched
+   section is a quiet head-only card, so the board shows the PLAN and fills in
+   rather than growing out of nothing. */
+
+.dd-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+.dd-ticket {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: var(--bg-1);
+  overflow: hidden;
+}
+.dd-ticket.is-open {
+  background: none;
+  opacity: .5;
+}
+.dd-ticket.is-work { border-color: color-mix(in oklch, var(--amber) 42%, transparent); }
+.dd-ticket.is-stands,
+.dd-ticket.is-done { border-color: color-mix(in oklch, var(--green) 26%, transparent); }
+
+/* A voice landing on a ticket: ONE finite pulse on a real state change —
+   never a loop (OSR paint rule). */
+@keyframes dd-ticket-live {
+  from { box-shadow: 0 0 0 2px color-mix(in oklch, var(--amber) 50%, transparent); }
+  to   { box-shadow: 0 0 0 2px transparent; }
+}
+.dd-ticket.is-live { animation: dd-ticket-live 1.4s ease-out both; }
+
+.dd-ticket-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.dd-ticket.is-open .dd-ticket-head { border-bottom: 0; }
+.dd-ticket-no {
+  flex-shrink: 0;
+  font-family: "JetBrains Mono", monospace;
+  font-size: .7em;
+  color: var(--mute-2);
+}
+.dd-ticket-title {
+  font-weight: 600;
+  font-size: .8em;
+  color: var(--txt);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dd-ticket-state {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: .64em;
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.dd-ticket.is-work .dd-ticket-state { color: var(--amber); }
+.dd-ticket.is-stands .dd-ticket-state,
+.dd-ticket.is-done .dd-ticket-state { color: var(--green); }
+.dd-ticket-stats {
+  display: flex;
+  gap: 9px;
+  flex-shrink: 0;
+  padding: 6px 10px 0;
+}
+.dd-tstat {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: .68em;
+  color: var(--mute);
+}
+.dd-tstat svg { width: 11px; height: 11px; stroke: currentColor; fill: none; stroke-width: 2; }
+.dd-tstat.is-note { color: var(--amber); }
+.dd-ticket-body {
+  padding: 10px;
   display: flex;
   flex-direction: column;
   gap: 14px;
-  min-height: 120px;
+  max-height: 360px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
 }
+
+/* ---- the stream: the same voices, strictly in the order they fell ----
+   Chronology is the one thing the board gives up, so it keeps its own view:
+   the acting participant in a gutter, the text at a measure — a voice set
+   across 1600px is unreadable no matter how much room there is. */
+
+.dd-stream { display: flex; flex-direction: column; }
+.dd-stream .dd-msg {
+  display: grid;
+  grid-template-columns: minmax(130px, 210px) minmax(0, 1fr);
+  gap: 4px 18px;
+  align-items: baseline;
+  padding: 9px 2px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.dd-stream .dd-msg-head {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  margin: 0;
+}
+.dd-stream .dd-msg-phase { margin-left: 0; }
+.dd-stream .dd-msg-text,
+.dd-stream .dd-attach { max-width: 92ch; }
+
+/* ---- the source register: everything that was ever called for, with the
+   verdict it earned. Struck rows STAY — they used to slide out and be gone
+   for good, and a register that hides its rejects is not a register. ---- */
+
+.dd-register {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.dd-reg-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.dd-reg-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 0 20px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.dd-register[data-filter="keep"] .dd-src:not(.is-ok),
+.dd-register[data-filter="out"] .dd-src:not(.is-out) { display: none; }
+.dd-reg-empty {
+  padding: 16px 2px;
+  font-size: .82em;
+  color: var(--mute);
+}
+
+/* ---- one voice, wherever it is shown ---- */
+
 .dd-msg { font-size: .8em; line-height: 1.5; }
 .dd-msg-head {
   display: flex;
@@ -1435,8 +2010,7 @@ html[data-theme="light"] .dd-figure {
    None of the preview survives — annotations, covers and chat fade in one
    one-shot pass (transitions on the elements above). ---- */
 
-.dd-finalizing .dd-note,
-.dd-finalizing .dd-live-chat,
+.dd-finalizing .dd-desk,
 .dd-finalizing .dd-live-badge { opacity: 0; }
 .dd-finalizing .dd-cover { filter: none; }
 .dd-finalizing .dd-cover::after { display: none; }
@@ -1446,33 +2020,18 @@ html[data-theme="light"] .dd-figure {
   transition: border-color .5s ease, background .5s ease;
 }
 
-/* ---- the triage board: the collected sources under the judge's pen.
-   Rows slide in as found; a verdict paints the green check or strikes the
-   row through, slides it out left and the list closes the gap (max-height
-   collapse). All one-shot; the board itself fades once the report starts. ---- */
+/* ---- the source room and its register rows. The room runs while the desk
+   is still calling for material; once the report starts it bows out and the
+   plain register carries on alone. Rows slide in as they are found and take
+   their verdict in place — nothing is ever removed. ---- */
 
 .dd-triage { transition: opacity .4s ease; }
 .dd-triage.is-done { opacity: 0; }
-.dd-triage-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 10px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--line-soft);
-}
-.dd-triage-title {
-  font-weight: 600;
-  font-size: .82em;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-  color: var(--txt-2);
-}
-.dd-triage-count {
+.dd-reg-count {
   font-size: .74em;
   color: var(--mute);
   font-family: "JetBrains Mono", monospace;
+  margin-right: 4px;
 }
 /* The source room: a canvas box under the board head. Fixed height keeps
    the world's proportions honest; the canvas itself is DPR-scaled in JS. */
@@ -1487,14 +2046,6 @@ html[data-theme="light"] .dd-figure {
 }
 .dd-scene-canvas { display: block; }
 
-.dd-triage-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-}
-
 @keyframes dd-src-in {
   from { opacity: 0; transform: translateX(10px); }
   to   { opacity: 1; transform: none; }
@@ -1504,13 +2055,11 @@ html[data-theme="light"] .dd-figure {
   align-items: baseline;
   gap: 10px;
   padding: 5px 4px;
-  max-height: 4.5em;
   font-size: .84em;
   line-height: 1.45;
   color: var(--txt-2);
   border-radius: 6px;
-  transition: opacity .4s ease, transform .4s ease, max-height .4s ease,
-              padding .4s ease, color .3s ease;
+  transition: color .3s ease;
 }
 .dd-src.is-new { animation: dd-src-in .3s ease both; }
 .dd-src-dot {
@@ -1543,12 +2092,4 @@ html[data-theme="light"] .dd-figure {
   border-color: color-mix(in oklch, var(--red) 45%, transparent);
   background: color-mix(in oklch, var(--red) 14%, transparent);
   color: transparent; /* the strike-through carries the verdict, not the check */
-}
-/* …then the slide-out left, fade and collapse (JS pins max-height first). */
-.dd-src.is-gone {
-  opacity: 0;
-  transform: translateX(-28px);
-  max-height: 0 !important;
-  padding-top: 0;
-  padding-bottom: 0;
 }

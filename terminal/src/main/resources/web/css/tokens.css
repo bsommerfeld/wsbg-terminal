@@ -58,7 +58,7 @@
   --blue-deep:    oklch(0.55 0.16 255);
 
   --titlebar-h:   38px;
-  --footer-h:     32px;
+  --footer-h:     38px;   /* same height as the titlebar - the window frame reads symmetrical */
   --pad-x:        24px;
   --row-pad-y:    13px;
   --meta-leiste-h: 24px;  /* shared height for the headline meta "Leisten" (chart/tags/provenance) */

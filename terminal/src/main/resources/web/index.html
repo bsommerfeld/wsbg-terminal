@@ -25,8 +25,38 @@
   <link rel="stylesheet" href="/css/watchlist.css">
   <link rel="stylesheet" href="/css/weather.css">
   <link rel="stylesheet" href="/css/deepdive.css">
+  <link rel="stylesheet" href="/css/mentions.css">
+  <link rel="stylesheet" href="/css/intro.css">
 </head>
 <body>
+
+<!-- Startup intro: the logo drops into frame like an anvil - first the hands,
+     then the diamond, each with an impact jolt and a puff of dust, then the
+     facets catch a light sweep and the whole plate fades off the app. It is
+     plain markup (not JS-injected) so it covers the very first paint; the
+     choreography lives in css/intro.css, chrome/intro.js only seeds the dust,
+     handles the skip and removes the node afterwards. -->
+<div class="intro" id="intro" role="presentation" aria-hidden="true">
+  <div class="intro-backdrop"></div>
+  <div class="intro-floor"></div>
+  <div class="intro-shaker">
+    <div class="intro-stage">
+      <!-- Dust and shockwave sit BEHIND the glyph - smoke that drifts over
+           the logo just greys it out; billowing out from behind it reads as
+           impact without ever hiding what landed. -->
+      <div class="intro-ring" data-burst="hands"></div>
+      <div class="intro-ring" data-burst="diamond"></div>
+      <div class="intro-smoke" data-burst="hands"></div>
+      <div class="intro-smoke" data-burst="diamond"></div>
+      <div class="intro-layer intro-hands"></div>
+      <div class="intro-layer intro-diamond"></div>
+      <div class="intro-layer intro-shine"></div>
+    </div>
+  </div>
+  <button class="intro-skip" data-i18n="intro.skip"
+          data-i18n-aria-label="intro.skip" aria-label="Überspringen">Überspringen</button>
+</div>
+
 <div class="app">
 
   <header class="titlebar" id="titlebar">
@@ -168,20 +198,47 @@
           <span class="grid-hit-label" data-i18n="widget.reddit.title">Schlagzeilen</span>
         </span>
       </button>
+      <!-- "Über dieses Widget": the footnote in the bottom-left corner of a
+           fullscreened widget. Documentation is NOT a tool — the widget's
+           description, the link to its source platform and (where the content
+           is AI-written) the EU-AI-Act notice all live in this ONE popup, so
+           the tool rail exists only where there are real tools. Reuses the
+           rail's disclosure mechanics (.rail-item/.rail-btn/.rail-pop, wired
+           generically by widget-rail.js), dressed quieter and pinned low. -->
+      <div class="widget-about rail-item">
+        <button class="rail-btn about-btn" type="button" aria-haspopup="dialog" aria-expanded="false"
+                title="Über dieses Widget" aria-label="Über dieses Widget"
+                data-i18n-title="about.title" data-i18n-aria-label="about.title">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+        </button>
+        <div class="rail-pop about-pop" role="dialog" aria-label="Über dieses Widget"
+             data-i18n-aria-label="about.title">
+          <div class="rail-pop-body">
+            <div class="rail-pop-head about-head">
+              <span class="about-mark about-mark-reddit" aria-hidden="true"></span>
+              <span data-i18n="widget.reddit.title">Schlagzeilen</span>
+            </div>
+            <!-- The source platform, opened in the OS browser (external-links.js). -->
+            <a class="about-source" href="https://www.reddit.com/r/wallstreetbetsGER"
+               target="_blank" rel="noopener"
+               data-i18n="widget.reddit.open">r/wallstreetbetsGER öffnen</a>
+            <!-- EU AI Act disclosure in focus mode: the header (and its KI
+                 badge) is hidden fullscreen, so this row carries the notice —
+                 opens the same ai-notice overlay. -->
+            <button class="about-ai js-ai-notice" type="button" aria-haspopup="dialog"
+                    aria-label="KI-generierte Schlagzeilen - Details"
+                    data-i18n-aria-label="widget.reddit.ai.hint">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>
+              <span data-i18n="widget.reddit.ai">KI-generiert</span>
+            </button>
+          </div>
+        </div>
+      </div>
       <!-- Focus-mode tool rail: floating buttons on the left edge; each popup
-           spreads out of its button toward the centre (liquid glass). No
-           overview button here — the titlebar grid button owns navigation. -->
+           spreads out of its button toward the centre (liquid glass). Tools
+           ONLY — no ident, no info, no notice (those live in .widget-about).
+           No overview button either: the titlebar grid button owns navigation. -->
       <nav class="widget-rail" aria-label="Widget-Werkzeuge" data-i18n-aria-label="rail.tools">
-        <!-- Platform logo above the buttons, set apart by the hairline —
-             a LINK to the source (like the old header glyph), opened in the
-             OS browser via external-links.js. -->
-        <a class="rail-logo" href="https://www.reddit.com/r/wallstreetbetsGER"
-           target="_blank" rel="noopener" title="r/wallstreetbetsGER öffnen"
-           aria-label="r/wallstreetbetsGER öffnen"
-           data-i18n-title="widget.reddit.open" data-i18n-aria-label="widget.reddit.open">
-          <span class="rail-logo-img rail-logo-reddit" aria-hidden="true"></span>
-        </a>
-        <span class="rail-sep" aria-hidden="true"></span>
         <div class="rail-item">
           <!-- Same status-readout icon as the dashboard funnel: each stroke is
                one facet and lights amber while that facet filters
@@ -208,7 +265,7 @@
                   data-i18n-title="search.open" data-i18n-aria-label="search.open">
             <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="16.4" y1="16.4" x2="21" y2="21"/></svg>
           </button>
-          <div class="rail-pop rail-pop-anchored" role="dialog" aria-label="Suche" data-i18n-aria-label="search.title">
+          <div class="rail-pop" role="dialog" aria-label="Suche" data-i18n-aria-label="search.title">
             <div class="rail-pop-body js-headline-search"></div>
           </div>
         </div>
@@ -236,19 +293,6 @@
             </div>
           </div>
         </div>
-        <!-- EU AI Act disclosure in focus mode: the header (and its KI badge)
-             is hidden fullscreen, so the rail carries the notice — opens the
-             same ai-notice overlay. Deliberately NOT one of the tool buttons:
-             own sparkle mark + amber tint (the header pill's identity) and
-             pinned last behind a hairline (rail-ai order, ai-notice.css). -->
-        <span class="rail-sep rail-ai-sep" aria-hidden="true"></span>
-        <div class="rail-item rail-ai">
-          <button class="rail-btn js-ai-notice" type="button"
-                  title="KI-generiert" aria-haspopup="dialog" aria-label="KI-generierte Schlagzeilen - Details"
-                  data-i18n-title="widget.reddit.ai" data-i18n-aria-label="widget.reddit.ai.hint">
-            <svg viewBox="0 0 24 24"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>
-          </button>
-        </div>
       </nav>
     </section>
 
@@ -271,28 +315,28 @@
           <span class="grid-hit-label">Financial Juice</span>
         </span>
       </button>
-      <nav class="widget-rail" aria-label="Widget-Werkzeuge" data-i18n-aria-label="rail.tools">
-        <a class="rail-logo" href="https://www.financialjuice.com/"
-           target="_blank" rel="noopener" title="Financial Juice öffnen"
-           aria-label="Financial Juice öffnen"
-           data-i18n-title="widget.fj.open" data-i18n-aria-label="widget.fj.open">
-          <span class="rail-logo-img rail-logo-fj" aria-hidden="true"></span>
-        </a>
-        <span class="rail-sep" aria-hidden="true"></span>
-        <div class="rail-item">
-          <button class="rail-btn" type="button" aria-haspopup="dialog" aria-expanded="false"
-                  title="Info" aria-label="Was ist Financial Juice?"
-                  data-i18n-title="rail.info.title" data-i18n-aria-label="fj.info.aria">
-            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-          </button>
-          <div class="rail-pop" role="dialog" aria-label="Info" data-i18n-aria-label="rail.info.title">
-            <div class="rail-pop-body">
-              <div class="rail-pop-head" data-i18n="rail.info.title">Info</div>
-              <p class="rail-pop-text" data-i18n="fj.info.text">Financial Juice ist ein Live-Newsticker für Marktnachrichten - Meldungen erscheinen hier in dem Moment, in dem sie über die Wire laufen. Rot markierte Zeilen sind Market Mover.</p>
+      <!-- No tool rail: this widget has no tools — only the about footnote. -->
+      <div class="widget-about rail-item">
+        <button class="rail-btn about-btn" type="button" aria-haspopup="dialog" aria-expanded="false"
+                title="Über dieses Widget" aria-label="Was ist Financial Juice?"
+                data-i18n-title="about.title" data-i18n-aria-label="fj.info.aria">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+        </button>
+        <div class="rail-pop about-pop" role="dialog" aria-label="Über dieses Widget"
+             data-i18n-aria-label="about.title">
+          <div class="rail-pop-body">
+            <div class="rail-pop-head about-head">
+              <span class="about-mark about-mark-fj" aria-hidden="true"></span>
+              <span>Financial Juice</span>
             </div>
+            <p class="rail-pop-text" data-i18n="fj.info.text">Financial Juice ist ein Live-Newsticker für Marktnachrichten - Meldungen erscheinen hier in dem Moment, in dem sie über die Wire laufen. Rot markierte Zeilen sind Market Mover.</p>
+            <span class="rail-pop-divider" aria-hidden="true"></span>
+            <a class="about-source" href="https://www.financialjuice.com/"
+               target="_blank" rel="noopener"
+               data-i18n="widget.fj.open">Financial Juice öffnen</a>
           </div>
         </div>
-      </nav>
+      </div>
     </section>
 
     <!-- Fear & Greed detail widget: the third plannable widget. Hidden on the
@@ -326,38 +370,38 @@
           <span class="grid-hit-label" data-i18n="widget.fg.title">Fear &amp; Greed</span>
         </span>
       </button>
-      <nav class="widget-rail" aria-label="Widget-Werkzeuge" data-i18n-aria-label="rail.tools">
-        <a class="rail-logo" href="https://edition.cnn.com/markets/fear-and-greed"
-           target="_blank" rel="noopener" title="CNN Fear & Greed Index öffnen"
-           aria-label="CNN Fear & Greed Index öffnen"
-           data-i18n-title="fg.open" data-i18n-aria-label="fg.open">
-          <!-- No brand mark for F&G — a miniature of its own gauge is the logo. -->
-          <svg class="rail-logo-fg" viewBox="0 0 40 26" aria-hidden="true">
-            <defs>
-              <linearGradient id="railfg-grad" x1="0" y1="0" x2="1" y2="0">
-                <stop offset="0" stop-color="#e2504a"/><stop offset="0.5" stop-color="#e0b000"/><stop offset="1" stop-color="#3fb950"/>
-              </linearGradient>
-            </defs>
-            <path d="M5,22 A15,15 0 0 1 35,22" fill="none" stroke="url(#railfg-grad)" stroke-width="4" stroke-linecap="round"/>
-            <line x1="20" y1="22" x2="24" y2="11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-            <circle cx="20" cy="22" r="2.4" fill="currentColor"/>
-          </svg>
-        </a>
-        <span class="rail-sep" aria-hidden="true"></span>
-        <div class="rail-item">
-          <button class="rail-btn" type="button" aria-haspopup="dialog" aria-expanded="false"
-                  title="Info" aria-label="Was ist der Fear & Greed Index?"
-                  data-i18n-title="rail.info.title" data-i18n-aria-label="fg.info.aria">
-            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-          </button>
-          <div class="rail-pop" role="dialog" aria-label="Info" data-i18n-aria-label="rail.info.title">
-            <div class="rail-pop-body">
-              <div class="rail-pop-head" data-i18n="rail.info.title">Info</div>
-              <p class="rail-pop-text" data-i18n="fg.info.text">CNNs Fear & Greed Index verdichtet sieben Marktindikatoren (u. a. Momentum, Volatilität, Put/Call-Verhältnis) zu einem Wert von 0 bis 100: 0 = extreme Angst, 100 = extreme Gier. Er misst den breiten US-Markt - nicht die Stimmung im Käfig.</p>
+      <!-- No tool rail: this widget has no tools — only the about footnote. -->
+      <div class="widget-about rail-item">
+        <button class="rail-btn about-btn" type="button" aria-haspopup="dialog" aria-expanded="false"
+                title="Über dieses Widget" aria-label="Was ist der Fear & Greed Index?"
+                data-i18n-title="about.title" data-i18n-aria-label="fg.info.aria">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+        </button>
+        <div class="rail-pop about-pop" role="dialog" aria-label="Über dieses Widget"
+             data-i18n-aria-label="about.title">
+          <div class="rail-pop-body">
+            <div class="rail-pop-head about-head">
+              <!-- No brand mark for F&G — a miniature of its own gauge is the ident. -->
+              <svg class="about-mark about-mark-fg" viewBox="0 0 40 26" aria-hidden="true">
+                <defs>
+                  <linearGradient id="aboutfg-grad" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0" stop-color="#e2504a"/><stop offset="0.5" stop-color="#e0b000"/><stop offset="1" stop-color="#3fb950"/>
+                  </linearGradient>
+                </defs>
+                <path d="M5,22 A15,15 0 0 1 35,22" fill="none" stroke="url(#aboutfg-grad)" stroke-width="4" stroke-linecap="round"/>
+                <line x1="20" y1="22" x2="24" y2="11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                <circle cx="20" cy="22" r="2.4" fill="currentColor"/>
+              </svg>
+              <span data-i18n="widget.fg.title">Fear &amp; Greed</span>
             </div>
+            <p class="rail-pop-text" data-i18n="fg.info.text">CNNs Fear & Greed Index verdichtet sieben Marktindikatoren (u. a. Momentum, Volatilität, Put/Call-Verhältnis) zu einem Wert von 0 bis 100: 0 = extreme Angst, 100 = extreme Gier. Er misst den breiten US-Markt - nicht die Stimmung im Käfig.</p>
+            <span class="rail-pop-divider" aria-hidden="true"></span>
+            <a class="about-source" href="https://edition.cnn.com/markets/fear-and-greed"
+               target="_blank" rel="noopener"
+               data-i18n="fg.open">CNN Fear &amp; Greed Index öffnen</a>
           </div>
         </div>
-      </nav>
+      </div>
     </section>
 
     <!-- EUR/USD detail widget: like Fear & Greed it has no dashboard slot (the
@@ -383,29 +427,29 @@
           <span class="grid-hit-label" data-i18n="widget.eurusd.title">EUR/USD</span>
         </span>
       </button>
-      <nav class="widget-rail" aria-label="Widget-Werkzeuge" data-i18n-aria-label="rail.tools">
-        <a class="rail-logo" href="https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/eurofxref-graph-usd.en.html"
-           target="_blank" rel="noopener" title="EUR/USD bei der EZB öffnen"
-           aria-label="EUR/USD bei der EZB öffnen"
-           data-i18n-title="fx.open" data-i18n-aria-label="fx.open">
-          <!-- No brand mark — the flag pair is the logo. -->
-          <svg class="rail-logo-fx" viewBox="0 0 64 20" aria-hidden="true"><rect width="30" height="20" rx="1.5" fill="#003399"/><g fill="#FFCC00"><circle cx="15" cy="4" r="1.1"/><circle cx="18" cy="4.8" r="1.1"/><circle cx="20.2" cy="7" r="1.1"/><circle cx="21" cy="10" r="1.1"/><circle cx="20.2" cy="13" r="1.1"/><circle cx="18" cy="15.2" r="1.1"/><circle cx="15" cy="16" r="1.1"/><circle cx="12" cy="15.2" r="1.1"/><circle cx="9.8" cy="13" r="1.1"/><circle cx="9" cy="10" r="1.1"/><circle cx="9.8" cy="7" r="1.1"/><circle cx="12" cy="4.8" r="1.1"/></g><g transform="translate(34)"><rect width="30" height="20" rx="1.5" fill="#B22234"/><g fill="#FFFFFF"><rect y="1.54" width="30" height="1.54"/><rect y="4.62" width="30" height="1.54"/><rect y="7.69" width="30" height="1.54"/><rect y="10.77" width="30" height="1.54"/><rect y="13.85" width="30" height="1.54"/><rect y="16.92" width="30" height="1.54"/></g><rect width="12" height="10.77" fill="#3C3B6E"/></g></svg>
-        </a>
-        <span class="rail-sep" aria-hidden="true"></span>
-        <div class="rail-item">
-          <button class="rail-btn" type="button" aria-haspopup="dialog" aria-expanded="false"
-                  title="Info" aria-label="Was zeigt das EUR/USD-Widget?"
-                  data-i18n-title="rail.info.title" data-i18n-aria-label="fx.info.aria">
-            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-          </button>
-          <div class="rail-pop" role="dialog" aria-label="Info" data-i18n-aria-label="rail.info.title">
-            <div class="rail-pop-body">
-              <div class="rail-pop-head" data-i18n="rail.info.title">Info</div>
-              <p class="rail-pop-text" data-i18n="fx.info.text">EUR/USD sagt, wie viele US-Dollar ein Euro kostet. Für den Käfig zählt das doppelt: US-Aktien, Optionen und Krypto sind in Dollar gepreist - steigt der Euro, wird der Einstieg für dich billiger, fällt er, teurer. Dazu Tages- und 52-Wochen-Spanne, der offizielle EZB-Referenzkurs und ein Jahr Historie.</p>
+      <!-- No tool rail: this widget has no tools — only the about footnote. -->
+      <div class="widget-about rail-item">
+        <button class="rail-btn about-btn" type="button" aria-haspopup="dialog" aria-expanded="false"
+                title="Über dieses Widget" aria-label="Was zeigt das EUR/USD-Widget?"
+                data-i18n-title="about.title" data-i18n-aria-label="fx.info.aria">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+        </button>
+        <div class="rail-pop about-pop" role="dialog" aria-label="Über dieses Widget"
+             data-i18n-aria-label="about.title">
+          <div class="rail-pop-body">
+            <div class="rail-pop-head about-head">
+              <!-- No brand mark — the flag pair is the ident. -->
+              <svg class="about-mark about-mark-fx" viewBox="0 0 64 20" aria-hidden="true"><rect width="30" height="20" rx="1.5" fill="#003399"/><g fill="#FFCC00"><circle cx="15" cy="4" r="1.1"/><circle cx="18" cy="4.8" r="1.1"/><circle cx="20.2" cy="7" r="1.1"/><circle cx="21" cy="10" r="1.1"/><circle cx="20.2" cy="13" r="1.1"/><circle cx="18" cy="15.2" r="1.1"/><circle cx="15" cy="16" r="1.1"/><circle cx="12" cy="15.2" r="1.1"/><circle cx="9.8" cy="13" r="1.1"/><circle cx="9" cy="10" r="1.1"/><circle cx="9.8" cy="7" r="1.1"/><circle cx="12" cy="4.8" r="1.1"/></g><g transform="translate(34)"><rect width="30" height="20" rx="1.5" fill="#B22234"/><g fill="#FFFFFF"><rect y="1.54" width="30" height="1.54"/><rect y="4.62" width="30" height="1.54"/><rect y="7.69" width="30" height="1.54"/><rect y="10.77" width="30" height="1.54"/><rect y="13.85" width="30" height="1.54"/><rect y="16.92" width="30" height="1.54"/></g><rect width="12" height="10.77" fill="#3C3B6E"/></g></svg>
+              <span data-i18n="widget.eurusd.title">EUR/USD</span>
             </div>
+            <p class="rail-pop-text" data-i18n="fx.info.text">EUR/USD sagt, wie viele US-Dollar ein Euro kostet. Für den Käfig zählt das doppelt: US-Aktien, Optionen und Krypto sind in Dollar gepreist - steigt der Euro, wird der Einstieg für dich billiger, fällt er, teurer. Dazu Tages- und 52-Wochen-Spanne, der offizielle EZB-Referenzkurs und ein Jahr Historie.</p>
+            <span class="rail-pop-divider" aria-hidden="true"></span>
+            <a class="about-source" href="https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/eurofxref-graph-usd.en.html"
+               target="_blank" rel="noopener"
+               data-i18n="fx.open">EUR/USD bei der EZB öffnen</a>
           </div>
         </div>
-      </nav>
+      </div>
     </section>
 
     <!-- AI watchlist widget: hand-picked subjects, each with a standing AI
@@ -447,33 +491,76 @@
           <span class="grid-hit-label" data-i18n="widget.deepdive.title">KI-DD</span>
         </span>
       </button>
-      <nav class="widget-rail" aria-label="Widget-Werkzeuge" data-i18n-aria-label="rail.tools">
-        <span class="rail-logo" aria-hidden="true">
-          <span class="rail-logo-img rail-logo-dd" aria-hidden="true"></span>
-        </span>
-        <span class="rail-sep" aria-hidden="true"></span>
-        <div class="rail-item">
-          <button class="rail-btn" type="button" aria-haspopup="dialog" aria-expanded="false"
-                  title="Info" aria-label="Was ist die KI-DD?"
-                  data-i18n-title="rail.info.title" data-i18n-aria-label="dd.info.aria">
-            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-          </button>
-          <div class="rail-pop" role="dialog" aria-label="Info" data-i18n-aria-label="rail.info.title">
-            <div class="rail-pop-body">
-              <div class="rail-pop-head" data-i18n="rail.info.title">Info</div>
-              <p class="rail-pop-text" data-i18n="dd.info.text">Ein umfassender KI-Research-Bericht zu einem Subjekt deiner Wahl - ein fester, datierter Stand statt eines laufenden Dossiers. Die KI zieht alle Quellen des Terminals (Kurs, Profil, Kennzahlen, Analysten, Insider, Shorts, Charttechnik, News) plus die Diskussion im Käfig und baut den Bericht Paket für Paket auf - Profil, Fundamentaldaten, Analysten &amp; Insider, Charttechnik, News, Käfig -, gefolgt von kritischem Q&amp;A und Endfassung. Ältere Berichte bleiben erhalten; jeder lässt sich als PDF exportieren. Alles davon ist KI-generiert und kann Fehler enthalten.</p>
+      <!-- No tool rail: this widget has no tools — only the about footnote. -->
+      <div class="widget-about rail-item">
+        <button class="rail-btn about-btn" type="button" aria-haspopup="dialog" aria-expanded="false"
+                title="Über dieses Widget" aria-label="Was ist die KI-DD?"
+                data-i18n-title="about.title" data-i18n-aria-label="dd.info.aria">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+        </button>
+        <div class="rail-pop about-pop" role="dialog" aria-label="Über dieses Widget"
+             data-i18n-aria-label="about.title">
+          <div class="rail-pop-body">
+            <div class="rail-pop-head about-head">
+              <span class="about-mark about-mark-dd" aria-hidden="true"></span>
+              <span data-i18n="widget.deepdive.title">KI-DD</span>
             </div>
+            <p class="rail-pop-text" data-i18n="dd.info.text">Ein umfassender KI-Research-Bericht zu einem Subjekt deiner Wahl - ein fester, datierter Stand statt eines laufenden Dossiers. Die KI zieht alle Quellen des Terminals (Kurs, Profil, Kennzahlen, Analysten, Insider, Shorts, Charttechnik, News) plus die Diskussion im Käfig und baut den Bericht Paket für Paket auf - Profil, Fundamentaldaten, Analysten &amp; Insider, Charttechnik, News, Käfig -, gefolgt von kritischem Q&amp;A und Endfassung. Ältere Berichte bleiben erhalten; jeder lässt sich als PDF exportieren. Alles davon ist KI-generiert und kann Fehler enthalten.</p>
+            <span class="rail-pop-divider" aria-hidden="true"></span>
+            <!-- EU AI Act disclosure in focus mode: the header (and its KI
+                 badge) is hidden fullscreen, so this row carries the notice —
+                 opens the same ai-notice overlay. -->
+            <button class="about-ai js-ai-notice" type="button" aria-haspopup="dialog"
+                    aria-label="KI-generierte Inhalte - Details"
+                    data-i18n-aria-label="widget.reddit.ai.hint">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>
+              <span data-i18n="widget.reddit.ai">KI-generiert</span>
+            </button>
           </div>
         </div>
-        <span class="rail-sep rail-ai-sep" aria-hidden="true"></span>
-        <div class="rail-item rail-ai">
-          <button class="rail-btn js-ai-notice" type="button"
-                  title="KI-generiert" aria-haspopup="dialog" aria-label="KI-generierte Inhalte - Details"
-                  data-i18n-title="widget.reddit.ai" data-i18n-aria-label="widget.reddit.ai.hint">
-            <svg viewBox="0 0 24 24"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>
-          </button>
+      </div>
+    </section>
+
+    <!-- Erwähnungs-Zähler: what the cage actually talks about, counted
+         mechanically out of every post and comment (no AI in the loop), with a
+         panorama time control over the whole history. Below a hard rule the two
+         foreign r/wallstreetbets counters, quoted in their own window.
+         has-grid-thumb: the card shows OUR leader + volume only — the
+         neighbours are never the headline. Body: js/widgets/mentions.js. -->
+    <section class="widget has-grid-thumb" id="widget-mentions">
+      <header class="widget-head">
+        <div class="ident"><span class="glyph glyph-mv" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 19V10"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M22 19H2"/></svg></span><span data-i18n="widget.mentions.title">Erwähnungen</span></div>
+        <span class="live" data-i18n="common.live">Live</span>
+      </header>
+      <div class="widget-body">
+        <div id="mentions-detail" class="mv-detail"></div>
+      </div>
+      <div class="grid-thumb mv-thumb" id="mentions-thumb" aria-hidden="true"></div>
+      <button class="grid-hit" type="button" aria-label="Erwähnungen öffnen"
+              data-i18n-aria-label="grid.open.mentions">
+        <span class="grid-hit-tag">
+          <svg class="grid-hit-icon-mv" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V10"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M22 19H2"/></svg>
+          <span class="grid-hit-label" data-i18n="widget.mentions.title">Erwähnungen</span>
+        </span>
+      </button>
+      <!-- No tool rail: this widget has no tools — only the about footnote. -->
+      <div class="widget-about rail-item">
+        <button class="rail-btn about-btn" type="button" aria-haspopup="dialog" aria-expanded="false"
+                title="Über dieses Widget" aria-label="Was ist der Erwähnungs-Zähler?"
+                data-i18n-title="about.title" data-i18n-aria-label="mv.info.aria">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+        </button>
+        <div class="rail-pop about-pop" role="dialog" aria-label="Über dieses Widget"
+             data-i18n-aria-label="about.title">
+          <div class="rail-pop-body">
+            <div class="rail-pop-head about-head">
+              <svg class="about-mark about-mark-mv" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V10"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M22 19H2"/></svg>
+              <span data-i18n="widget.mentions.title">Erwähnungen</span>
+            </div>
+            <p class="rail-pop-text" data-i18n="mv.info.text">Zählt rein mechanisch, was der Käfig schreibt: jedes $KÜRZEL und jeder Firmenname aus dem Instrumentenverzeichnis, in jedem Beitrag und jedem Kommentar. Keine KI, keine Bewertung - und nichts wird entdoppelt: wird gespammt, steht der Spam da. Der Zeitregler ist ein Ausschnitt über die gesamte Historie: ziehen zum Wandern, an den Kanten aufziehen, scrollen zum Zoomen - von einem Tag bis zu einem Jahr in einer Ansicht. Namen, die noch keinem Kürzel zugeordnet sind, stehen als Schreibweise da und rutschen von selbst auf ihr Kürzel, sobald das Terminal sie einmal aufgelöst hat - auch rückwirkend. Darunter, klar getrennt: zwei fremde Zähler für r/wallstreetbets, unverändert in ihrem eigenen Fenster.</p>
+          </div>
         </div>
-      </nav>
+      </div>
     </section>
 
     <!-- HELD BACK for a later release (2026-07-14): hidden suppresses the card
@@ -504,38 +591,35 @@
           <span class="grid-hit-label" data-i18n="widget.watchlist.title">KI-Watchliste</span>
         </span>
       </button>
-      <nav class="widget-rail" aria-label="Widget-Werkzeuge" data-i18n-aria-label="rail.tools">
-        <!-- No external platform — the widget's own eye glyph is the logo. -->
-        <span class="rail-logo" aria-hidden="true">
-          <svg class="rail-logo-wl" viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
-        </span>
-        <span class="rail-sep" aria-hidden="true"></span>
-        <div class="rail-item">
-          <button class="rail-btn" type="button" aria-haspopup="dialog" aria-expanded="false"
-                  title="Info" aria-label="Was ist die KI-Watchliste?"
-                  data-i18n-title="rail.info.title" data-i18n-aria-label="wl.info.aria">
-            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-          </button>
-          <div class="rail-pop" role="dialog" aria-label="Info" data-i18n-aria-label="rail.info.title">
-            <div class="rail-pop-body">
-              <div class="rail-pop-head" data-i18n="rail.info.title">Info</div>
-              <p class="rail-pop-text" data-i18n="wl.info.text">Deine handverlesenen Subjekte, auf das Wesentliche reduziert: der Kurs im Minutentakt von Lang & Schwarz und ein fortlaufendes KI-Dossier darüber, was der Käfig sagt - fortgeschrieben mit jeder neuen Erwähnung. Für die tiefe Analyse mit allen Quellen gibt es die KI-DD. Alles davon ist KI-generiert und kann Fehler enthalten.</p>
+      <!-- No tool rail: this widget has no tools — only the about footnote. -->
+      <div class="widget-about rail-item">
+        <button class="rail-btn about-btn" type="button" aria-haspopup="dialog" aria-expanded="false"
+                title="Über dieses Widget" aria-label="Was ist die KI-Watchliste?"
+                data-i18n-title="about.title" data-i18n-aria-label="wl.info.aria">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+        </button>
+        <div class="rail-pop about-pop" role="dialog" aria-label="Über dieses Widget"
+             data-i18n-aria-label="about.title">
+          <div class="rail-pop-body">
+            <div class="rail-pop-head about-head">
+              <!-- No external platform — the widget's own eye glyph is the ident. -->
+              <svg class="about-mark about-mark-wl" viewBox="0 0 24 24" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+              <span data-i18n="widget.watchlist.title">KI-Watchliste</span>
             </div>
+            <p class="rail-pop-text" data-i18n="wl.info.text">Deine handverlesenen Subjekte, auf das Wesentliche reduziert: der Kurs im Minutentakt von Lang & Schwarz und ein fortlaufendes KI-Dossier darüber, was der Käfig sagt - fortgeschrieben mit jeder neuen Erwähnung. Für die tiefe Analyse mit allen Quellen gibt es die KI-DD. Alles davon ist KI-generiert und kann Fehler enthalten.</p>
+            <span class="rail-pop-divider" aria-hidden="true"></span>
+            <!-- EU AI Act disclosure in focus mode: the header (and its KI
+                 badge) is hidden fullscreen, so this row carries the notice -
+                 opens the same ai-notice overlay. -->
+            <button class="about-ai js-ai-notice" type="button" aria-haspopup="dialog"
+                    aria-label="KI-generierte Inhalte - Details"
+                    data-i18n-aria-label="widget.reddit.ai.hint">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>
+              <span data-i18n="widget.reddit.ai">KI-generiert</span>
+            </button>
           </div>
         </div>
-        <!-- EU AI Act disclosure in focus mode: header (and its KI badge) is
-             hidden fullscreen, so the rail carries the notice (same overlay).
-             Sparkle mark + amber + pinned last behind a hairline — a notice,
-             not one of the tool buttons (rail-ai, ai-notice.css). -->
-        <span class="rail-sep rail-ai-sep" aria-hidden="true"></span>
-        <div class="rail-item rail-ai">
-          <button class="rail-btn js-ai-notice" type="button"
-                  title="KI-generiert" aria-haspopup="dialog" aria-label="KI-generierte Inhalte - Details"
-                  data-i18n-title="widget.reddit.ai" data-i18n-aria-label="widget.reddit.ai.hint">
-            <svg viewBox="0 0 24 24"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>
-          </button>
-        </div>
-      </nav>
+      </div>
     </section>
 
     <!-- Wetterbericht widget: once a day (time configurable in the rail) the
@@ -573,12 +657,35 @@
           <span class="grid-hit-label" data-i18n="widget.weather.title">Wetterbericht</span>
         </span>
       </button>
+      <div class="widget-about rail-item">
+        <button class="rail-btn about-btn" type="button" aria-haspopup="dialog" aria-expanded="false"
+                title="Über dieses Widget" aria-label="Was ist der Wetterbericht?"
+                data-i18n-title="about.title" data-i18n-aria-label="weather.info.aria">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+        </button>
+        <div class="rail-pop about-pop" role="dialog" aria-label="Über dieses Widget"
+             data-i18n-aria-label="about.title">
+          <div class="rail-pop-body">
+            <div class="rail-pop-head about-head">
+              <!-- No external platform — the widget's own cloud glyph is the ident. -->
+              <svg class="about-mark about-mark-weather" viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="wxa-sun" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffd75e"/><stop offset="1" stop-color="#eda21f"/></linearGradient><linearGradient id="wxa-cloud" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f3f8fd"/><stop offset="1" stop-color="#b4c8dc"/></linearGradient></defs><g stroke="#f0b23c" stroke-width="1.7" stroke-linecap="round"><line x1="17.2" y1="0.9" x2="17.2" y2="2.6"/><line x1="22.8" y1="6.4" x2="21.1" y2="6.4"/><line x1="21.2" y1="2.5" x2="20" y2="3.7"/><line x1="13.2" y1="2.5" x2="14.4" y2="3.7"/></g><circle cx="17.2" cy="6.4" r="3.3" fill="url(#wxa-sun)"/><path d="M17.5 18.5H7a4 4 0 0 1-.4-7.98 5.5 5.5 0 0 1 10.8-1.02 4.25 4.25 0 0 1 .1 9z" transform="translate(-1.9 3.9) scale(.92)" fill="url(#wxa-cloud)" stroke="#8ba3ba" stroke-width="1.1" stroke-linejoin="round" stroke-linecap="round"/></svg>
+              <span data-i18n="widget.weather.title">Wetterbericht</span>
+            </div>
+            <p class="rail-pop-text" data-i18n="weather.info.text">Einmal am Tag - zur eingestellten Uhrzeit - verdichtet die KI alles, was über die Wire lief, zu einem Tagesreport: Großwetterlage, die tragenden Geschichten mit ihren Zahlen, Randnotizen. Dazu der eingefrorene Tagesstand der Indizes, die meistdiskutierten Papiere und die meistzitierten News. Ältere Berichte bleiben abrufbar. KI-generiert - kann Fehler enthalten.</p>
+            <span class="rail-pop-divider" aria-hidden="true"></span>
+            <!-- EU AI Act disclosure in focus mode: the header (and its KI
+                 badge) is hidden fullscreen, so this row carries the notice -
+                 opens the same ai-notice overlay. -->
+            <button class="about-ai js-ai-notice" type="button" aria-haspopup="dialog"
+                    aria-label="KI-generierte Inhalte - Details"
+                    data-i18n-aria-label="widget.reddit.ai.hint">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>
+              <span data-i18n="widget.reddit.ai">KI-generiert</span>
+            </button>
+          </div>
+        </div>
+      </div>
       <nav class="widget-rail" aria-label="Widget-Werkzeuge" data-i18n-aria-label="rail.tools">
-        <!-- No external platform — the widget's own cloud glyph is the logo. -->
-        <span class="rail-logo" aria-hidden="true">
-          <svg class="rail-logo-weather" viewBox="0 0 24 24"><defs><linearGradient id="wxr-sun" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffd75e"/><stop offset="1" stop-color="#eda21f"/></linearGradient><linearGradient id="wxr-cloud" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f3f8fd"/><stop offset="1" stop-color="#b4c8dc"/></linearGradient></defs><g stroke="#f0b23c" stroke-width="1.7" stroke-linecap="round"><line x1="17.2" y1="0.9" x2="17.2" y2="2.6"/><line x1="22.8" y1="6.4" x2="21.1" y2="6.4"/><line x1="21.2" y1="2.5" x2="20" y2="3.7"/><line x1="13.2" y1="2.5" x2="14.4" y2="3.7"/></g><circle cx="17.2" cy="6.4" r="3.3" fill="url(#wxr-sun)"/><path d="M17.5 18.5H7a4 4 0 0 1-.4-7.98 5.5 5.5 0 0 1 10.8-1.02 4.25 4.25 0 0 1 .1 9z" transform="translate(-1.9 3.9) scale(.92)" fill="url(#wxr-cloud)" stroke="#8ba3ba" stroke-width="1.1" stroke-linejoin="round" stroke-linecap="round"/></svg>
-        </span>
-        <span class="rail-sep" aria-hidden="true"></span>
         <div class="rail-item">
           <button class="rail-btn" type="button" aria-haspopup="dialog" aria-expanded="false"
                   title="Uhrzeit" aria-label="Uhrzeit des Wetterberichts einstellen"
@@ -595,31 +702,6 @@
                  data-i18n="weather.time.today-done">Der heutige Bericht ist bereits geschrieben - eine neue Uhrzeit greift ab morgen.</p>
             </div>
           </div>
-        </div>
-        <div class="rail-item">
-          <button class="rail-btn" type="button" aria-haspopup="dialog" aria-expanded="false"
-                  title="Info" aria-label="Was ist der Wetterbericht?"
-                  data-i18n-title="rail.info.title" data-i18n-aria-label="weather.info.aria">
-            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-          </button>
-          <div class="rail-pop" role="dialog" aria-label="Info" data-i18n-aria-label="rail.info.title">
-            <div class="rail-pop-body">
-              <div class="rail-pop-head" data-i18n="rail.info.title">Info</div>
-              <p class="rail-pop-text" data-i18n="weather.info.text">Einmal am Tag - zur eingestellten Uhrzeit - verdichtet die KI alles, was über die Wire lief, zu einem Tagesreport: Großwetterlage, die tragenden Geschichten mit ihren Zahlen, Randnotizen. Dazu der eingefrorene Tagesstand der Indizes, die meistdiskutierten Papiere und die meistzitierten News. Ältere Berichte bleiben abrufbar. KI-generiert - kann Fehler enthalten.</p>
-            </div>
-          </div>
-        </div>
-        <!-- EU AI Act disclosure in focus mode: header (and its KI badge) is
-             hidden fullscreen, so the rail carries the notice (same overlay).
-             Sparkle mark + amber + pinned last behind a hairline — a notice,
-             not one of the tool buttons (rail-ai, ai-notice.css). -->
-        <span class="rail-sep rail-ai-sep" aria-hidden="true"></span>
-        <div class="rail-item rail-ai">
-          <button class="rail-btn js-ai-notice" type="button"
-                  title="KI-generiert" aria-haspopup="dialog" aria-label="KI-generierte Inhalte - Details"
-                  data-i18n-title="widget.reddit.ai" data-i18n-aria-label="widget.reddit.ai.hint">
-            <svg viewBox="0 0 24 24"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>
-          </button>
         </div>
       </nav>
     </section>

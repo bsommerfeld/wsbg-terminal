@@ -1,0 +1,276 @@
+/* Erwähnungs-Zähler.
+   Two zones with different standing: ours on top (amber, the house measure),
+   the neighbours below a rule (muted, quoted not measured). One accent per
+   zone — the figures themselves always wear text ink, never a series colour. */
+
+.mv-detail {
+  height: 100%;
+  overflow-y: auto;
+  padding: 18px var(--pad-x) 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* -- ours ------------------------------------------------------------- */
+
+.mv-ours { display: flex; flex-direction: column; gap: 12px; }
+.mv-ours.loading { opacity: .82; }
+
+.mv-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mv-presets { display: flex; gap: 4px; }
+
+.mv-preset,
+.mv-nav {
+  font: inherit;
+  font-size: var(--font-chrome);
+  color: var(--mute);
+  background: transparent;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  padding: 4px 11px;
+  cursor: pointer;
+  transition: color .12s, border-color .12s, background-color .12s;
+}
+.mv-preset:hover,
+.mv-nav:hover:not([disabled]) { color: var(--txt); background: var(--bg-hover); }
+.mv-preset.on {
+  color: var(--amber);
+  border-color: color-mix(in oklch, var(--amber) 45%, transparent);
+  background: var(--amber-soft);
+}
+.mv-step { display: flex; gap: 4px; }
+.mv-nav { padding: 4px 10px; line-height: 1; }
+.mv-nav[disabled] { opacity: .35; cursor: default; }
+
+/* The panorama: one thin bar per day, the window laid over it. */
+.mv-track {
+  position: relative;
+  height: 62px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--bg-1);
+  overflow: hidden;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.mv-bars {
+  position: absolute;
+  inset: 8px 0 8px 0;
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  padding: 0 1px;
+}
+
+.mv-bar {
+  flex: 1 1 0;
+  min-width: 1px;
+  border-radius: 2px 2px 0 0;
+  background: var(--mute-2);
+  transition: background-color .1s;
+}
+.mv-bar.in { background: var(--amber); }
+
+/* The viewport frame. Its inside stays clear — the bars are the content;
+   everything OUTSIDE it is dimmed by the two shoulders. */
+.mv-window {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  min-width: 10px;
+  border: 1px solid color-mix(in oklch, var(--amber) 70%, transparent);
+  border-radius: 5px;
+  background: color-mix(in oklch, var(--amber) 13%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--bg) 60%, transparent);
+  cursor: grab;
+}
+body.mv-dragging .mv-window { cursor: grabbing; }
+body.mv-dragging { user-select: none; }
+
+.mv-grip {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  cursor: ew-resize;
+}
+.mv-grip::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px;
+  height: 18px;
+  border-radius: 1px;
+  background: var(--amber);
+}
+/* Grips live INSIDE the frame: the track clips its overflow, so an edge
+   window would otherwise lose the handle you need to grab. */
+.mv-grip-l { left: 0; }
+.mv-grip-r { right: 0; }
+
+.mv-window-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.mv-when { color: var(--txt); font-weight: 600; }
+.mv-sum { color: var(--mute); font-size: var(--font-meta); }
+
+/* Ranked rows: rank · symbol · name · magnitude · count. */
+.mv-rows { list-style: none; margin: 0; padding: 0; }
+
+.mv-row {
+  display: grid;
+  grid-template-columns: 26px auto minmax(0, 1fr) 34% 64px;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.mv-row:last-child { border-bottom: none; }
+
+.mv-rank { color: var(--mute-2); font-size: var(--font-meta); text-align: right; }
+.mv-sym {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-weight: 600;
+  color: var(--txt);
+}
+.mv-open {
+  color: var(--mute);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0 5px;
+  cursor: help;
+}
+.mv-name {
+  color: var(--txt-2);
+  font-size: var(--font-meta);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mv-row.unresolved .mv-name { color: var(--mute); font-style: italic; }
+
+.mv-bar-cell {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--line-soft);
+  overflow: hidden;
+}
+.mv-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--amber);
+}
+.mv-row.unresolved .mv-bar-fill { background: var(--mute-2); }
+
+.mv-count {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  color: var(--txt);
+  text-align: right;
+}
+
+.mv-empty, .mv-src-wait {
+  color: var(--mute);
+  font-size: var(--font-meta);
+  padding: 14px 0;
+}
+
+/* -- the fence -------------------------------------------------------- */
+
+.mv-fence {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 6px;
+  color: var(--mute-2);
+  font-size: var(--font-meta);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+.mv-fence::before, .mv-fence::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--line);
+}
+
+/* -- theirs ----------------------------------------------------------- */
+
+.mv-theirs { display: flex; flex-direction: column; gap: 16px; }
+.mv-theirs-note { margin: 0; color: var(--mute); font-size: var(--font-meta); }
+
+.mv-src-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.mv-src-name { color: var(--txt-2); font-weight: 600; font-size: var(--font-chrome); }
+.mv-src-meta { color: var(--mute-2); font-size: var(--font-meta); }
+
+.mv-src-list { list-style: none; margin: 6px 0 0; padding: 0; }
+.mv-src-row {
+  display: grid;
+  grid-template-columns: 26px auto minmax(0, 1fr) 64px;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+}
+.mv-src-row .mv-sym { color: var(--txt-2); font-weight: 500; }
+.mv-src-row .mv-count { color: var(--txt-2); }
+
+/* -- grid card thumbnail (ours only) ---------------------------------- */
+
+.mv-thumb {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 22px 26px;
+  height: 100%;
+}
+.mv-thumb-head {
+  color: var(--mute);
+  font-size: var(--font-meta);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+.mv-thumb-lead { display: flex; align-items: baseline; gap: 12px; }
+.mv-thumb-sym {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 2.1em;
+  font-weight: 600;
+  color: var(--amber);
+}
+.mv-thumb-n {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 1.4em;
+  color: var(--txt);
+}
+.mv-thumb-sum { color: var(--mute); font-size: var(--font-meta); }
+.mv-thumb-rest { list-style: none; margin: 4px 0 0; padding: 0; }
+.mv-thumb-rest li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 3px 0;
+  color: var(--txt-2);
+  border-bottom: 1px solid var(--line-soft);
+}
+.mv-thumb-rest li:last-child { border-bottom: none; }
+.mv-thumb-empty { color: var(--mute); padding: 26px; }

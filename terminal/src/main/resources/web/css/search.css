@@ -15,7 +15,10 @@
   outline: none;
   transition: border-color .15s;
 }
-.search-input:focus { border-color: var(--mute); }
+.search-input:focus {
+  border-color: color-mix(in oklch, var(--amber) 55%, transparent);
+  background: color-mix(in oklch, var(--bg-1) 70%, transparent);
+}
 .search-input::placeholder { color: var(--mute); }
 
 .search-suggest { margin-top: 8px; }
@@ -40,16 +43,24 @@
   color: var(--txt-2);
   background: none;
   border: 0;
-  border-radius: 8px;
+  /* One radius scale across every rail panel: 16 outer, 10 inner control,
+     999 for pills. */
+  border-radius: 10px;
   padding: 7px 10px;
   cursor: pointer;
   transition: background .12s, color .12s;
 }
-.search-option:hover,
+/* The keyboard-highlighted row has to beat plain hover — on the denser panel
+   background the old translucent bg-1 was barely a tint. */
+.search-option:hover {
+  color: var(--txt);
+  background: color-mix(in oklch, var(--txt) 7%, transparent);
+}
 .search-option.active {
   color: var(--txt);
-  background: color-mix(in oklch, var(--bg-1) 82%, transparent);
+  background: color-mix(in oklch, var(--amber) 14%, transparent);
 }
+.search-option:focus-visible { outline: 2px solid var(--amber); outline-offset: -2px; }
 .search-option-name {
   min-width: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -61,8 +72,8 @@
   letter-spacing: .06em;
   color: var(--amber);
   border: 1px solid color-mix(in oklch, var(--amber) 45%, transparent);
-  border-radius: 6px;
-  padding: 1px 7px;
+  border-radius: 999px;   /* pill, like every other badge in a rail panel */
+  padding: 1px 8px;
 }
 
 /* ---- result banner in the widget body ---- */

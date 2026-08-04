@@ -7,6 +7,18 @@
 // spines, the struck ones into the bin. Between jobs he idles — stretches,
 // wanders, sips his coffee — an Animal-Crossing-ish waiting screen.
 //
+// COLLECTING comes first, and it is the same room, not a second stage: the
+// tray is empty and the clerk commissions the legwork. Aides come in through
+// the back door, walk up to HIM wherever he stands, take an order (he points,
+// a slip pops over his head) and leave again; later one comes back with an
+// armful and tips it into the tray. He is not a boss — he is the one whose
+// desk it is: the runs go out through him, and he reads every sheet himself.
+//
+// Collecting and triage OVERLAP — the desk keeps pulling sources in while it
+// is already reading (the feed announces sources under both phases), so there
+// is no handover to stage: the orders simply keep going out beside the
+// reading, and they stop when the run stops expecting sources.
+//
 // The room has DEPTH: everything sits at (x, z) on a ground plane, z = 0 at
 // the front edge, z = 1 at the foot of the back wall. `proj()` is the one
 // projection — the far side converges toward a vanishing point and shrinks,
@@ -20,7 +32,9 @@
 // Honesty: the scene is a DEPICTION, never the truth of record. Verdicts
 // arrive faster than a walking figure can act them out, so the clerk works
 // off a backlog: with a queue he carries several cards at once and speeds
-// up, and past a hard backlog the overflow flies to its tray on its own.
+// up, and past a hard backlog he calls in HELP — aides that haul the already
+// judged sheets out of the tray for him. Paper never files itself; when the
+// room is swamped, the room gets more hands.
 // The exact numbers stay where they were: the count chip above the canvas.
 //
 // Paint discipline (software OSR renderer): ONE rAF loop, capped at 30 fps
@@ -46,6 +60,7 @@ const KEPT_PER_BOARD = 9;  // folder spines that fit on one shelf board
 
 const TRAY_H = 46;          // heights above the ground plane
 const DESK_H = 40;
+const SEAT_H = 17;          // his chair — and the hip height when he sits
 
 /** The clerk's skin: a fixed warm tone — a token would flip with the theme. */
 const SKIN = 'oklch(0.82 0.10 68)';
@@ -57,7 +72,21 @@ const MAX_CARRY = 4;        // a backlog is fetched in one armful
 const DESK_PILE_MAX = 5;    // a desk pile this tall is worth a trip
 const HAUL_MAX = 6;         // sheets he can carry away in one go
 const RUSH_QUEUE = 6;       // from here on the clerk hurries
-const FLY_QUEUE = 22;       // from here on the overflow files itself
+const HELP_QUEUE = 18;      // from here on the desk calls in help
+
+/* ---- the staff: aides that fetch sources and, when the tray runs over,
+   help carry the judged sheets away ---- */
+
+const AIDE_SPEED = 108;     // they are the ones doing the running
+const AIDES_ON_STAGE = 3;   // never a crowd on this little floor
+const ERRANDS_MAX = 3;      // commissioned runs outstanding at once
+const BRIEF_TIME = 0.9;     // how long an order takes to give
+const BUNDLE_MAX = 9;       // sheets one aide carries in
+const INTAKE_HOLD = 0.4;    // quiet window that closes a wave into a bundle
+const INTAKE_CAP = 24;      // a wave larger than this lands without a courier
+const HELPERS_MAX = 2;      // extra hands while the tray runs over
+/** The phases that still pull sources in — collecting outlives its own name. */
+const SOURCE_PHASES = ['collect', 'triage'];
 
 /**
  * Mounts the scene into `host` (a plain div). Returns the handle the live
@@ -81,9 +110,17 @@ export function createSourceScene(host) {
   const kept = [];               // filed on the shelf
   const deskKeep = [];           // pre-sorted on his desk: these stay
   const deskOut = [];            // pre-sorted on his desk: these go
-  const flying = [];             // mid-air (a toss or an overflow flight)
+  const flying = [];             // mid-air (a toss)
   const puffs = [];              // one-shot particles
   const byRef = new Map();
+
+  const aides = [];              // the staff currently on the floor
+  const intake = [];             // a landed wave, waiting for its courier
+  let intakeHold = 0;            // the quiet window that closes the wave
+  let errands = 0;               // commissioned runs still outside
+  let orderIn = 0.8;             // time until the next aide is called in
+  let briefing = null;           // the aide taking an order right now
+  let expecting = true;          // the run still pulls sources in
 
   const clerk = {
     x: 0, z: 0.45, dir: 1, away: false,
@@ -96,6 +133,9 @@ export function createSourceScene(host) {
     breathe: 0,
     idleAct: null, idleTimer: 1.2,
     verdictPop: null,            // {kind:'ok'|'out', life}
+    orderPop: 0,                 // seconds left of the order he is giving
+    sit: 0,                      // 0 standing .. 1 seated at the desk
+    flip: 0,                     // the page he is turning, 0..1
   };
 
   let layout = computeLayout(MIN_WORLD_W);
@@ -117,18 +157,24 @@ export function createSourceScene(host) {
   /* ---- public handle ---- */
 
   return {
-    /** A collected source appears: its card drops into the inbox tray. */
+    /**
+     * A collected source appears. It does not fall from the sky: it waits for
+     * the aide that was sent for it, and rides in with the next bundle. Only a
+     * wave too big to be carried (or a seeded rebuild) lands in the tray by
+     * itself — the room may lag behind the feed, it may never hide it.
+     */
     add(src, animate) {
       if (destroyed || byRef.has(src.ref)) return;
       const card = makeCard(src);
       byRef.set(src.ref, card);
       cards.push(card);
-      if (animate !== false) {
-        card.drop = 1;                       // falls in from above
-        card.dropDelay = Math.min(inbox.length * 0.06, 0.9);
+      if (animate !== false && intake.length < INTAKE_CAP) {
+        card.state = 'intake';
+        intake.push(card);
+        intakeHold = INTAKE_HOLD;
+      } else {
+        dropIntoTray(card, animate !== false);
       }
-      inbox.push(card);
-      relayoutInbox();
       wake();
     },
     /** The judge's verdict on a source ('ok' | 'out'). */
@@ -137,6 +183,16 @@ export function createSourceScene(host) {
       const card = byRef.get(src.ref);
       if (!card) return;
       card.verdict = src.state === 'ok' ? 'ok' : src.state === 'out' ? 'out' : null;
+      wake();
+    },
+    /**
+     * The run's phase token. Sources arrive under more than one of them, so
+     * this only answers ONE question: does the desk still expect any? Once it
+     * does not, no further runs are commissioned and the staff go home.
+     */
+    phase(ph) {
+      if (destroyed || !ph) return;
+      expecting = SOURCE_PHASES.includes(ph);
       wake();
     },
     /** Seeds a rebuilt scene (language switch, re-mount) from known state. */
@@ -257,6 +313,17 @@ export function createSourceScene(host) {
   /* Piles: only the newest sheet of the inbox shows its face, the rest are
      paper edges — a pile of paper, not a tower of cards. */
 
+  /** A sheet comes to rest in the tray — tipped out of an armful, or on its own. */
+  function dropIntoTray(card, animate, delay) {
+    card.state = 'inbox';
+    if (animate) {
+      card.drop = 1;                         // falls the last stretch
+      card.dropDelay = delay != null ? delay : Math.min(inbox.length * 0.06, 0.9);
+    }
+    inbox.push(card);
+    relayoutInbox();
+  }
+
   function relayoutInbox() {
     inbox.forEach((c, i) => {
       c.x = layout.inbox.x + ((hashHue(c.ref) % 5) - 2) * 0.6;
@@ -340,6 +407,20 @@ export function createSourceScene(host) {
       clerk.verdictPop.life -= dt;
       if (clerk.verdictPop.life <= 0) clerk.verdictPop = null;
     }
+    if (clerk.orderPop > 0) clerk.orderPop -= dt;
+
+    // Working a source IN is the one thing he does sitting down: he takes the
+    // seat, the glasses go on, the pipe comes out and he leafs through the one
+    // piece. Standing up and sitting down are eased — a pose that snaps reads
+    // as a bug, not as a man.
+    const seated = clerk.state === 'read';
+    clerk.sit += ((seated ? 1 : 0) - clerk.sit) * Math.min(1, dt * 5);
+    if (seated) {
+      clerk.flip += dt / 1.45;             // one page at a readable pace
+      if (clerk.flip >= 1) clerk.flip -= 1;
+    } else {
+      clerk.flip = 0;
+    }
 
     stepCards(dt);
     stepPuffs(dt);
@@ -347,12 +428,7 @@ export function createSourceScene(host) {
     const waiting = inbox.filter(c => c.drop <= 0).length;
     const rush = waiting >= RUSH_QUEUE ? 1.75 : 1;
 
-    // Hard backlog: the overflow files itself, so the room never pretends
-    // there are fewer sources than the desk actually pulled in.
-    if (waiting > FLY_QUEUE) {
-      const c = inbox.find(x => x.drop <= 0 && x.verdict);
-      if (c) launchFlight(c);
-    }
+    stepStaff(dt, waiting);
 
     switch (clerk.state) {
       case 'idle': idleStep(dt); break;
@@ -490,11 +566,240 @@ export function createSourceScene(host) {
       }
     }
 
-    // Work always wins over idling.
-    if (clerk.state === 'idle' && inbox.some(c => c.drop <= 0)) {
+    // Work always wins over idling — an order already being given is finished
+    // first, though: walking off mid-sentence would read as a glitch.
+    if (clerk.state === 'idle' && clerk.orderPop <= 0 && inbox.some(c => c.drop <= 0)) {
       clerk.idleAct = null;
       clerk.state = 'toInbox';
     }
+  }
+
+  /* ---- the staff: the runs that fetch sources, and the extra hands that
+     keep the tray from drowning ---- */
+
+  function stepStaff(dt, waiting) {
+    intakeHold -= dt;
+
+    // A landed wave rides in with an aide. It goes out as one bundle once the
+    // wave has stopped growing (or grew past an armful) — a courier per single
+    // source would turn the room into a revolving door.
+    if (intake.length && (intakeHold <= 0 || intake.length >= BUNDLE_MAX)
+        && onStage('errand') < AIDES_ON_STAGE) {
+      sendCourier();
+      intakeHold = 0.9;                    // the next armful follows on foot
+    }
+
+    // Standing orders: while sources are still expected, the desk keeps a few
+    // runs outstanding. The cadence is the room's, the count is the desk's.
+    orderIn -= dt;
+    if (expecting && orderIn <= 0) {
+      orderIn = 1.7 + Math.random() * 2.3;
+      if (errands < ERRANDS_MAX && onStage('errand') < AIDES_ON_STAGE) spawnAide('errand');
+    }
+
+    // The tray runs over: the clerk cannot read and file fast enough, so hands
+    // are called in. They only touch sheets the judge has ALREADY spoken on —
+    // nobody files a source that has not been read.
+    if (waiting > HELP_QUEUE && inbox.some(c => c.verdict && c.drop <= 0)
+        && onStage('help') < HELPERS_MAX) {
+      spawnAide('help');
+    }
+
+    for (let i = aides.length - 1; i >= 0; i--) {
+      if (stepAide(aides[i], dt, waiting)) {
+        if (briefing === aides[i]) briefing = null;
+        aides.splice(i, 1);
+      }
+    }
+  }
+
+  function onStage(role) {
+    return aides.reduce((n, a) => n + (a.role === role ? 1 : 0), 0);
+  }
+
+  function spawnAide(role) {
+    aides.push({
+      role,                                  // 'errand' | 'help'
+      x: layout.door.x, z: layout.door.z, dir: -1, away: false,
+      walking: true, phase: Math.random() * 6, seed: Math.random() * 6,
+      state: role === 'help' ? 'toTray' : 'in',
+      timer: 0, cargo: [], hauling: null,
+      side: Math.random() < 0.5 ? -1 : 1,
+      slot: aides.length,
+    });
+  }
+
+  /** A returning run: the wave it was sent for, tipped into the tray. */
+  function sendCourier() {
+    const cargo = intake.splice(0, BUNDLE_MAX);
+    errands = Math.max(0, errands - 1);
+    aides.push({
+      role: 'errand',
+      x: layout.door.x, z: layout.door.z, dir: -1, away: false,
+      walking: true, phase: Math.random() * 6, seed: Math.random() * 6,
+      state: 'back', timer: 0, cargo, hauling: null,
+      side: 1, slot: aides.length,
+    });
+  }
+
+  /** True once the aide has left the room for good. */
+  function stepAide(a, dt, waiting) {
+    const rush = waiting >= RUSH_QUEUE ? 1.5 : 1;
+    a.walking = true;
+
+    switch (a.state) {
+      /* -- fetching sources: in, take the order, out again -- */
+
+      case 'in': {
+        // No more sources expected? The order is moot — he turns around.
+        if (!expecting && briefing !== a) { a.state = 'exit'; break; }
+        if (briefing && briefing !== a) {
+          // Someone else is at the desk: wait by the door, out of the way.
+          const qx = layout.door.x + a.side * 30;
+          if (moveTo(a, qx, 0.9, AIDE_SPEED, dt)) a.walking = false;
+          break;
+        }
+        // He walks up to the clerk WHEREVER he stands — the desk is a person,
+        // not a place, and the man may well be over at the tray.
+        // An arm's length beside him and barely deeper into the room: any
+        // closer and the two sprites simply stand inside each other.
+        const tx = clerk.x + a.side * 46;
+        const tz = Math.min(0.95, clerk.z + 0.03);
+        if (Math.hypot(tx - a.x, (tz - a.z) * 110) < 16) {
+          a.walking = false;
+          a.dir = clerk.x > a.x ? 1 : -1;
+          briefing = a;
+          a.state = 'brief';
+          a.timer = BRIEF_TIME;
+          clerk.orderPop = BRIEF_TIME;
+          if (clerk.state === 'idle') clerk.idleAct = null;
+          if (clerk.state === 'idle' || clerk.state === 'read') {
+            clerk.dir = a.x > clerk.x ? 1 : -1;
+          }
+        } else {
+          moveTo(a, tx, tz, AIDE_SPEED, dt);
+        }
+        break;
+      }
+
+      case 'brief':
+        a.walking = false;
+        a.dir = clerk.x > a.x ? 1 : -1;
+        a.timer -= dt;
+        if (a.timer <= 0) {
+          briefing = null;
+          errands++;
+          a.state = 'exit';
+        }
+        break;
+
+      /* -- coming back with an armful -- */
+
+      case 'back':
+        // The far side of the tray: the clerk works it from the right, so a
+        // courier coming in on the same side would walk straight through him.
+        if (moveTo(a, layout.inbox.x - 28, layout.inbox.z - 0.06, AIDE_SPEED * rush, dt)) {
+          a.walking = false;
+          a.state = 'tip';
+          a.timer = 0.18;
+        }
+        break;
+
+      case 'tip': {
+        a.walking = false;
+        a.timer -= dt;
+        if (a.timer > 0) break;
+        // Sheet by sheet out of the arms into the tray — a bundle that
+        // teleports in is exactly the moment the room stops being a room.
+        const card = a.cargo.shift();
+        if (card) dropIntoTray(card, true, 0);
+        a.timer = 0.1;
+        if (!a.cargo.length) a.state = 'exit';
+        break;
+      }
+
+      /* -- the extra hands: judged sheets out of the tray, one kind per trip -- */
+
+      case 'toTray':
+        if (moveTo(a, layout.inbox.x - 24, layout.inbox.z - 0.14, AIDE_SPEED * rush, dt)) {
+          a.walking = false;
+          a.state = 'take';
+          a.timer = 0.22;
+        }
+        break;
+
+      case 'take': {
+        a.walking = false;
+        a.timer -= dt;
+        if (a.timer > 0) break;
+        // Whichever verdict is piling up higher — he takes that one, so two
+        // helpers split the tray instead of queueing at the same shelf.
+        const ready = inbox.filter(c => c.verdict && c.drop <= 0);
+        const outs = ready.filter(c => c.verdict === 'out');
+        const keeps = ready.filter(c => c.verdict === 'ok');
+        const pick = outs.length > keeps.length ? outs : keeps;
+        if (!pick.length) { a.state = 'exit'; break; }
+        a.hauling = pick[0].verdict === 'out' ? 'out' : 'keep';
+        for (const c of pick.slice(0, HAUL_MAX)) {
+          c.state = 'carry';
+          inbox.splice(inbox.indexOf(c), 1);
+          a.cargo.push(c);
+        }
+        relayoutInbox();
+        a.state = 'haul';
+        break;
+      }
+
+      case 'haul': {
+        const out = a.hauling === 'out';
+        const tx = out ? layout.bin.x - 34 : layout.shelf.x - 44;
+        const tz = out ? layout.bin.z - 0.12 : layout.shelf.z - 0.18;
+        if (moveTo(a, tx, tz, AIDE_SPEED * rush, dt)) {
+          a.walking = false;
+          a.state = 'file';
+          a.timer = 0.16;
+        }
+        break;
+      }
+
+      case 'file': {
+        a.walking = false;
+        a.timer -= dt;
+        if (a.timer > 0) break;
+        const card = a.cargo.shift();
+        if (card) {
+          if (a.hauling === 'out') tossFrom(a, card);
+          else { card.state = 'kept'; kept.push(card); relayoutKept(); sparkle(card); }
+        }
+        a.timer = 0.16;
+        if (!a.cargo.length) {
+          a.hauling = null;
+          // Still swamped? Another armful. Otherwise the desk is on its own again.
+          const more = waiting > RUSH_QUEUE && inbox.some(c => c.verdict && c.drop <= 0);
+          a.state = more ? 'toTray' : 'exit';
+        }
+        break;
+      }
+
+      /* -- and out through the same door -- */
+
+      case 'exit':
+        if (moveTo(a, layout.door.x, layout.door.z, AIDE_SPEED * rush, dt)) return true;
+        break;
+    }
+
+    // Nobody walks THROUGH the man whose desk it is: their paths cross all the
+    // time (door to tray, tray to desk), and two sprites in the same spot read
+    // as one broken figure. An aide that gets too close slides a step deeper
+    // into the room and goes around him — except while taking an order, where
+    // standing close is the whole point.
+    if (a.state !== 'brief') {
+      const gap = a.z - clerk.z;
+      if (Math.abs(a.x - clerk.x) < 20 && Math.abs(gap) < 0.11) {
+        a.z = Math.max(0.05, Math.min(0.95, a.z + (gap >= 0 ? 1 : -1) * dt * 0.5));
+      }
+    }
+    return false;
   }
 
   function idleStep(dt) {
@@ -535,44 +840,35 @@ export function createSourceScene(host) {
    * otherwise he would shoot backwards.
    */
   function walk(dt, x, z, mult) {
-    const dx = x - clerk.x;
-    const dz = (z - clerk.z) * 110;              // depth in comparable units
+    return moveTo(clerk, x, z, WALK_SPEED * (mult || 1), dt, mult >= 1.5 ? 1.25 : 1);
+  }
+
+  /** The same gait for everyone on the floor — the clerk and every aide. */
+  function moveTo(f, x, z, speed, dt, phaseMult) {
+    const dx = x - f.x;
+    const dz = (z - f.z) * 110;                  // depth in comparable units
     const dist = Math.hypot(dx, dz);
-    if (dist < 2.5) { clerk.x = x; clerk.z = z; clerk.away = false; return true; }
-    const move = Math.min(dist, WALK_SPEED * (mult || 1) * dt);
-    clerk.x += (dx / dist) * move;
-    clerk.z += (dz / dist) * move / 110;
-    if (Math.abs(dx) > 4) clerk.dir = dx > 0 ? 1 : -1;
+    if (dist < 2.5) { f.x = x; f.z = z; f.away = false; return true; }
+    const move = Math.min(dist, speed * dt);
+    f.x += (dx / dist) * move;
+    f.z += (dz / dist) * move / 110;
+    if (Math.abs(dx) > 4) f.dir = dx > 0 ? 1 : -1;
     // Heading into the room: we see his back — a face pasted on the back of
     // a head is the classic tell that a scene is fake.
-    clerk.away = dz > Math.abs(dx) * 0.9;
-    clerk.phase += (move / 13) * (mult >= 1.5 ? 1.25 : 1);
+    f.away = dz > Math.abs(dx) * 0.9;
+    f.phase += (move / 13) * (phaseMult || 1);
     return false;
   }
 
-  function tossToBin(card) {
+  function tossToBin(card) { tossFrom(clerk, card); }
+
+  /** Out of someone's hand into the basket. */
+  function tossFrom(who, card) {
     card.state = 'toss';
     card.fly = {
       t: 0, dur: 0.5,
-      x0: clerk.x + clerk.dir * 14, z0: clerk.z, h0: 40,
+      x0: who.x + who.dir * 14, z0: who.z, h0: 40,
       x1: layout.bin.x, z1: layout.bin.z, h1: 20,
-    };
-    flying.push(card);
-  }
-
-  /** Overflow: a card files itself straight from the tray. */
-  function launchFlight(card) {
-    inbox.splice(inbox.indexOf(card), 1);
-    relayoutInbox();
-    const toBin = card.verdict === 'out';
-    card.state = 'toss';
-    card.fly = {
-      t: 0, dur: 0.72,
-      x0: card.x, z0: card.z, h0: card.h,
-      x1: toBin ? layout.bin.x : layout.shelf.x,
-      z1: toBin ? layout.bin.z : layout.shelf.z,
-      h1: toBin ? 20 : layout.shelf.h1 + 8,
-      keep: !toBin,
     };
     flying.push(card);
   }
@@ -639,6 +935,7 @@ export function createSourceScene(host) {
 
   function busy() {
     return clerk.state !== 'idle' || clerk.idleAct || puffs.length ||
+      aides.length || intake.length || clerk.sit > 0.02 ||
       cards.some(c => c.fly || c.drop > 0);
   }
 
@@ -705,6 +1002,13 @@ export function createSourceScene(host) {
       vpX: W * 0.5,
       inbox: { x: inboxX, z: 0.92 },
       desk: { x: deskX, z: 0.1 },
+      // His chair, on the far side of the desk — exactly the spot he walks to
+      // when a source is worked in, so he lands ON the seat, not beside it.
+      chair: { x: deskX - 8, z: 0.32 },
+      // The door sits in the back wall, clear of the pinboard and the clock.
+      // Its world x is chosen so the PROJECTED opening lands there — a door
+      // painted on the wall and a figure walking through it must agree.
+      door: { x: W * 0.666, z: 0.985 },
       shelf: { x: shelfX, z: 0.84, h1: 28, h2: 62 },
       bin: { x: binX, z: 0.34 },
       // The plant stands in the FRONT-left corner: a foreground prop is the
@@ -731,9 +1035,11 @@ export function createSourceScene(host) {
       { z: layout.plant.z, fn: drawPlant },
       { z: layout.inbox.z, fn: drawInbox },
       { z: layout.bin.z, fn: drawBin },
+      { z: layout.chair.z, fn: drawChair },
       { z: layout.desk.z, fn: drawDesk },
       { z: clerk.z, fn: drawClerk },
     ];
+    for (const a of aides) items.push({ z: a.z, fn: () => drawAide(a) });
     for (const c of flying) items.push({ z: flyPos(c).z, fn: () => drawFlying(c) });
     items.sort((a, b) => b.z - a.z);
     for (const it of items) it.fn();
@@ -763,6 +1069,8 @@ export function createSourceScene(host) {
     ctx.strokeStyle = withAlpha(palette.line, 1);
     ctx.beginPath(); ctx.moveTo(0, HORIZON + .5); ctx.lineTo(W, HORIZON + .5); ctx.stroke();
 
+    drawDoor();
+
     // Floor seams RUN INTO THE ROOM and converge on the vanishing point —
     // the cheapest, strongest depth cue the scene has.
     ctx.strokeStyle = withAlpha(palette.line, 0.3);
@@ -773,6 +1081,36 @@ export function createSourceScene(host) {
       ctx.moveTo(near.x, near.y); ctx.lineTo(far.x, far.y);
     }
     ctx.stroke();
+  }
+
+  /**
+   * The door in the back wall: where the legwork goes out and comes back in.
+   * It is an OPENING, not a leaf — a dark gap the staff shrink into, which is
+   * what sells "the room has an outside" at this size. Its rectangle is taken
+   * from the projection, so the threshold a figure walks onto is the same line
+   * the doorway is painted on.
+   */
+  function drawDoor() {
+    const p = proj(layout.door.x, layout.door.z, 0);
+    const w = 36 * p.s, h = 78 * p.s;
+    const x = p.x - w / 2, y = p.y - h;
+    // The opening: darker than the wall, and darkest at the top where no
+    // light from this room reaches.
+    const g = ctx.createLinearGradient(0, y, 0, p.y);
+    g.addColorStop(0, withAlpha(palette.bg, 0.95));
+    g.addColorStop(1, withAlpha(palette.bg, 0.7));
+    ctx.fillStyle = g;
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = withAlpha(palette.mute2, 0.7);
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(x - 1.5, p.y); ctx.lineTo(x - 1.5, y - 1.5);
+    ctx.lineTo(x + w + 1.5, y - 1.5); ctx.lineTo(x + w + 1.5, p.y);
+    ctx.stroke();
+    ctx.lineWidth = 1;
+    // A sliver of corridor light on the floor of the opening.
+    ctx.fillStyle = withAlpha(palette.amber, 0.1);
+    ctx.fillRect(x, p.y - 3 * p.s, w, 3 * p.s);
   }
 
   /** A corkboard with pinned scraps — the desk's own memory wall. */
@@ -928,6 +1266,31 @@ export function createSourceScene(host) {
       ctx.fill();
     }
     label(t('dd.live.scene.out'), x, z, palette.red);
+  }
+
+  /** His chair: seat, four legs and a back — the reading post. */
+  function drawChair() {
+    const { x, z } = layout.chair;
+    const s = proj(x, z).s;
+    contactShadow(x, z, 16);
+
+    ctx.strokeStyle = withAlpha(palette.mute2, 0.5);
+    ctx.lineWidth = 2 * s;
+    leg(x - 9, z - 0.04, SEAT_H - 2); leg(x + 9, z - 0.04, SEAT_H - 2);
+    leg(x - 8, z + 0.04, SEAT_H - 2); leg(x + 8, z + 0.04, SEAT_H - 2);
+    ctx.lineWidth = 1;
+
+    ctx.fillStyle = withAlpha(palette.mute2, 0.22);
+    frontFace(x - 11, x + 11, z - 0.05, SEAT_H, SEAT_H - 2.5); ctx.fill();
+    ctx.fillStyle = withAlpha(palette.mute2, 0.42);
+    quad(x - 11, x + 11, z - 0.05, z + 0.05, SEAT_H); ctx.fill();
+
+    // The back panel, on the far edge — he sits in front of it, so it frames
+    // his shoulders instead of hiding them.
+    ctx.fillStyle = withAlpha(palette.mute2, 0.3);
+    frontFace(x - 10, x + 10, z + 0.05, SEAT_H + 20, SEAT_H + 4); ctx.fill();
+    ctx.strokeStyle = withAlpha(palette.mute2, 0.5);
+    frontFace(x - 10, x + 10, z + 0.05, SEAT_H + 20, SEAT_H + 4); ctx.stroke();
   }
 
   /** The desk up front: top face, apron, legs, lamp and its pool of light. */
@@ -1089,57 +1452,114 @@ export function createSourceScene(host) {
     ctx.restore();
   }
 
-  /* ---- the clerk: a billboard sprite, drawn in local units with his feet
-     at the origin and everything scaled by his depth ---- */
+  /**
+   * A page turning over the sheet in his hands: one leaf hinged on the spine,
+   * its width running through a cosine so it stands up, goes edge-on and falls
+   * over — the cheapest honest page turn there is. It shows its back (darker)
+   * for the second half of the arc, and rests between turns.
+   */
+  function drawPageTurn(c, px, py, s, dir) {
+    const TURN = 0.42;                       // the part of the cycle in motion
+    if (clerk.flip > TURN) return;
+    const k = clerk.flip / TURN;
+    const w = CARD_W * s, h = CARD_H * s;
+    const sx = Math.cos(k * Math.PI);
+    const squash = 1 - Math.sin(k * Math.PI) * 0.07;
+    ctx.save();
+    ctx.translate(px - w / 2, py - h / 2);
+    ctx.rotate(dir * 0.05);
+    ctx.fillStyle = sx >= 0 ? paperFill() : withAlpha(palette.mute2, 0.45);
+    ctx.strokeStyle = paperEdge(0.9);
+    ctx.beginPath();
+    // A plain rect: the leaf goes edge-on and past it, and rounded corners on
+    // a negative width are a shape nobody can predict.
+    ctx.rect(0, (-h / 2 + 1) * squash, (w - 2) * sx, (h - 2) * squash);
+    ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
 
-  function drawClerk() {
-    const foot = proj(clerk.x, clerk.z, 0);
+  /* ---- the people: billboard sprites, drawn in local units with their feet
+     at the origin and everything scaled by their depth. The clerk and every
+     aide share ONE body — same proportions, same gait; only the palette and
+     what the hands do tell them apart ---- */
+
+  /**
+   * Draws one figure. `extras` paints in the figure's own local space (held
+   * paper, bubbles) while the transform still stands, and is handed the frame
+   * it has to hang things off.
+   */
+  function drawPerson(o, extras) {
+    const alpha = o.alpha == null ? 1 : o.alpha;
+    if (alpha <= 0.02) return;
+    const foot = proj(o.x, o.z, 0);
     const s = foot.s;
 
-    contactShadow(clerk.x, clerk.z, 16);
-
     ctx.save();
+    ctx.globalAlpha = alpha;
+
+    contactShadow(o.x, o.z, 16);
+
     ctx.translate(foot.x, foot.y);
     ctx.scale(s, s);
 
-    const walking = clerk.state.startsWith('to') || (clerk.idleAct && clerk.idleAct.kind === 'wander');
-    const bob = walking ? Math.abs(Math.sin(clerk.phase)) * 2.2 : Math.sin(clerk.breathe * 2) * 0.7;
-    const act = clerk.idleAct ? clerk.idleAct.kind : null;
-    const dir = clerk.dir;
-    const back = clerk.away && walking;
-    const hipY = -26 - bob;
+    const seed = o.seed || 0;
+    const sit = o.sit || 0;
+    const bob = o.walking
+      ? Math.abs(Math.sin(o.phase)) * 2.2
+      : Math.sin(clerk.breathe * 2 + seed) * 0.7;
+    const dir = o.dir;
+    const back = o.away && o.walking;
+    const hipY = -(26 - (26 - SEAT_H) * sit) - bob;
+    const shoulder = hipY - 18;
+    const headY = hipY - 30;
 
-    // Legs.
-    ctx.strokeStyle = withAlpha(palette.blueDeep, 0.9);
+    // Legs. Seated, the thigh runs forward from the hip and the shin drops
+    // from the knee — the knee slides out of the standing foot as he sits, so
+    // one path covers both poses and everything in between.
+    ctx.strokeStyle = withAlpha(o.deep, 0.9);
     ctx.lineWidth = 4.5;
-    const swing = walking ? Math.sin(clerk.phase) * 6 : 0;
+    const swing = o.walking ? Math.sin(o.phase) * 6 : 0;
+    const knee = (base) => ({
+      x: base + (dir * 13 - base) * sit,
+      y: hipY * sit,
+    });
     ctx.beginPath();
-    ctx.moveTo(-3, hipY); ctx.lineTo(-3 + swing, 0);
-    ctx.moveTo(3, hipY); ctx.lineTo(3 - swing, 0);
+    for (const [hipX, footX] of [[-3, -3 + swing], [3, 3 - swing]]) {
+      const k = knee(footX);
+      ctx.moveTo(hipX, hipY);
+      ctx.lineTo(k.x, k.y);
+      ctx.lineTo(footX + (dir * 13 - footX) * sit, 0);
+    }
     ctx.stroke();
 
     // Body.
-    ctx.fillStyle = withAlpha(palette.blue, 0.85);
+    ctx.fillStyle = withAlpha(o.body, 0.85);
     ctx.beginPath(); roundRect(-9, hipY - 22, 18, 24, 6); ctx.fill();
 
-    // Arms: carrying in front, stretched up, or swinging.
-    ctx.strokeStyle = withAlpha(palette.blue, 0.95);
+    // Arms: carrying in front, stretched up, handing an errand out, or swinging.
+    ctx.strokeStyle = withAlpha(o.body, 0.95);
     ctx.lineWidth = 3.6;
-    const shoulder = hipY - 18;
-    if (clerk.carry.length || act === 'sip') {
+    if (o.arms === 'carry') {
       const hx = dir * 12;
       ctx.beginPath();
       ctx.moveTo(-6, shoulder); ctx.lineTo(hx, shoulder + 6);
       ctx.moveTo(6, shoulder); ctx.lineTo(hx, shoulder + 6);
       ctx.stroke();
-    } else if (act === 'stretch') {
-      const up = Math.sin(Math.min(1, (1.5 - clerk.idleAct.life) * 3) * Math.PI) * 14;
+    } else if (o.arms === 'stretch') {
+      const up = (o.stretch || 0) * 14;
       ctx.beginPath();
       ctx.moveTo(-6, shoulder); ctx.lineTo(-12, shoulder - up);
       ctx.moveTo(6, shoulder); ctx.lineTo(12, shoulder - up);
       ctx.stroke();
+    } else if (o.arms === 'order') {
+      // One arm out toward the person he is talking to, the other at his hip:
+      // giving an errand, not lecturing.
+      ctx.beginPath();
+      ctx.moveTo(-6 * dir, shoulder); ctx.lineTo(-9 * dir, shoulder + 12);
+      ctx.moveTo(6 * dir, shoulder); ctx.lineTo(16 * dir, shoulder + 1);
+      ctx.stroke();
     } else {
-      const a = walking ? Math.sin(clerk.phase) * 5 : Math.sin(clerk.breathe * 1.6) * 1.5;
+      const a = o.swingA || 0;
       ctx.beginPath();
       ctx.moveTo(-6, shoulder); ctx.lineTo(-8 - a, shoulder + 12);
       ctx.moveTo(6, shoulder); ctx.lineTo(8 + a, shoulder + 12);
@@ -1147,10 +1567,9 @@ export function createSourceScene(host) {
     }
     ctx.lineWidth = 1;
 
-    // Head — no face when he is walking away from us.
-    const headY = hipY - 30;
-    const tilt = act === 'look' ? Math.sin(clerk.breathe * 2.2) * 2 : 0;
-    ctx.fillStyle = SKIN;
+    // Head — no face when the figure walks away from us.
+    const tilt = o.tilt || 0;
+    ctx.fillStyle = o.skin;
     ctx.beginPath(); ctx.arc(tilt, headY, 9.5, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = withAlpha(palette.txt, 0.55);
     ctx.lineWidth = 2;
@@ -1167,7 +1586,7 @@ export function createSourceScene(host) {
       ctx.stroke();
       ctx.fillStyle = withAlpha(palette.bg, 0.95);
       const ex = tilt + dir * 2.5;
-      if (clerk.blink > 0) {
+      if (o.blink > 0) {
         ctx.fillRect(ex - 4, headY - 1, 3, 1.2);
         ctx.fillRect(ex + 1.5, headY - 1, 3, 1.2);
       } else {
@@ -1176,42 +1595,169 @@ export function createSourceScene(host) {
         ctx.arc(ex + 3, headY - 0.5, 1.5, 0, Math.PI * 2);
         ctx.fill();
       }
+      // Reading glasses — they come out with the seat and go away with it.
+      if (o.specs > 0.02) {
+        ctx.save();
+        ctx.globalAlpha = alpha * Math.min(1, o.specs);
+        ctx.strokeStyle = withAlpha(palette.txt, 0.7);
+        ctx.lineWidth = 1.1;
+        ctx.beginPath();
+        ctx.arc(ex - 2.5, headY - 0.5, 3, 0, Math.PI * 2);
+        ctx.arc(ex + 3.2, headY - 0.5, 3, 0, Math.PI * 2);
+        ctx.moveTo(ex + 0.5, headY - 0.5); ctx.lineTo(ex + 0.2, headY - 0.5);
+        ctx.moveTo(ex - 5.5, headY - 1.2); ctx.lineTo(ex - 8.5, headY - 2.4);
+        ctx.stroke();
+        ctx.restore();
+        ctx.lineWidth = 2;
+      }
+      // The pipe: stem out of the corner of his mouth, bowl on the end. The
+      // smoke is the slowest thing in the room — that is the whole point of it.
+      if (o.pipe > 0.02) {
+        ctx.save();
+        ctx.globalAlpha = alpha * Math.min(1, o.pipe);
+        const mx = tilt + dir * 7, my = headY + 4;
+        ctx.strokeStyle = withAlpha(palette.amber, 0.85);
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.moveTo(mx, my); ctx.lineTo(mx + dir * 7, my + 1.5);
+        ctx.stroke();
+        ctx.fillStyle = withAlpha(palette.amber, 0.75);
+        ctx.beginPath();
+        roundRect(mx + dir * 6, my - 3.5, 3, 5, 1); ctx.fill();
+        ctx.strokeStyle = withAlpha(palette.mute, 0.5);
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 3; i++) {
+          const k = (clerk.breathe * 0.5 + i * 0.33) % 1;
+          ctx.globalAlpha = alpha * Math.min(1, o.pipe) * (1 - k) * 0.5;
+          ctx.beginPath();
+          ctx.arc(mx + dir * 7.5 + Math.sin(k * 6 + i) * 2.5, my - 6 - k * 14,
+            1 + k * 2.4, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        ctx.restore();
+        ctx.lineWidth = 2;
+      }
     }
     ctx.lineWidth = 1;
 
-    // What he is holding, in his own local space.
-    if (clerk.reading && clerk.state === 'read') {
-      drawCardAt(clerk.reading, dir * 28, headY + 16, 1.22, dir * 0.05, 1, true, true);
-      drawThought(tilt - dir * 15, headY - 18, clerk.reading.verdict);
-    } else if (clerk.carry.length) {
-      clerk.carry.forEach((c, i) => {
+    if (extras) extras({ hipY, shoulder, headY, tilt, dir });
+
+    ctx.restore();
+  }
+
+  function drawClerk() {
+    const act = clerk.idleAct ? clerk.idleAct.kind : null;
+    const walking = clerk.state.startsWith('to') || act === 'wander';
+    const ordering = clerk.orderPop > 0 && !clerk.carry.length && !walking;
+    drawPerson({
+      x: clerk.x, z: clerk.z, dir: clerk.dir, away: clerk.away, walking,
+      phase: clerk.phase, blink: clerk.blink,
+      tilt: act === 'look' ? Math.sin(clerk.breathe * 2.2) * 2 : 0,
+      arms: (clerk.carry.length || act === 'sip') ? 'carry'
+        : act === 'stretch' ? 'stretch'
+          : ordering ? 'order' : 'swing',
+      stretch: act === 'stretch'
+        ? Math.sin(Math.min(1, (1.5 - clerk.idleAct.life) * 3) * Math.PI) : 0,
+      swingA: walking ? Math.sin(clerk.phase) * 5 : Math.sin(clerk.breathe * 1.6) * 1.5,
+      sit: clerk.sit, specs: clerk.sit, pipe: clerk.sit,
+      body: palette.blue, deep: palette.blueDeep, skin: SKIN,
+    }, ({ hipY, shoulder, headY, tilt, dir }) => {
+      // What he is holding, in his own local space.
+      if (clerk.reading && clerk.state === 'read') {
+        // Working the one source IN: it lies in his lap, held up against the
+        // lamp, and he leafs through it — page by page, not glance and done.
+        // Seated, the sheet comes DOWN out of his face — it would otherwise
+        // cover the mouth, and with it the pipe and half the point of the pose.
+        const py = headY + 16 + 20 * clerk.sit;
+        drawCardAt(clerk.reading, dir * 28, py, 1.22, dir * 0.05, 1, true, true);
+        drawPageTurn(clerk.reading, dir * 28, py, 1.22, dir);
+        drawThought(tilt - dir * 15, headY - 18, clerk.reading.verdict);
+      } else if (clerk.carry.length) {
+        clerk.carry.forEach((c, i) => {
+          drawCardAt(c, dir * 13 + i * 1.2, hipY + 2 - i * 2.4, 1, dir * 0.04, 1, false, i === 0);
+        });
+      } else if (act === 'sip') {
+        ctx.fillStyle = withAlpha(palette.amber, 0.6);
+        ctx.beginPath(); roundRect(dir * 10, shoulder + 1, 7, 8, 2); ctx.fill();
+      }
+
+      // The order rides ABOVE the verdict mark — the two can be up at once
+      // (he takes an errand while a sheet is still in his hand).
+      if (clerk.orderPop > 0) drawOrderPop(tilt, headY - (clerk.verdictPop ? 34 : 22), dir);
+
+      if (clerk.verdictPop) {
+        const p = clerk.verdictPop;
+        const rise = (0.9 - p.life) * 14;
+        ctx.save();
+        ctx.globalAlpha = Math.min(1, p.life * 2.2);
+        ctx.strokeStyle = p.kind === 'out' ? palette.red : palette.green;
+        ctx.lineWidth = 1.8;
+        const py = headY - 16 - rise;
+        ctx.beginPath();
+        if (p.kind === 'out') {
+          ctx.moveTo(-2.6, py - 2.6); ctx.lineTo(2.6, py + 2.6);
+          ctx.moveTo(2.6, py - 2.6); ctx.lineTo(-2.6, py + 2.6);
+        } else {
+          ctx.moveTo(-3.2, py); ctx.lineTo(-0.6, py + 2.6); ctx.lineTo(3.4, py - 3.2);
+        }
+        ctx.stroke();
+        ctx.restore();
+        ctx.lineWidth = 1;
+      }
+    });
+  }
+
+  /**
+   * One of the staff: the same body in the room's own grey, so the blue at
+   * the desk stays the figure the eye follows. Nobody here is anybody's boss —
+   * the aides are simply the ones on their feet.
+   */
+  function drawAide(a) {
+    // Both ways through the doorway, the figure dissolves into the dark of it.
+    const alpha = Math.max(0, Math.min(1, (0.965 - a.z) / 0.05));
+    drawPerson({
+      x: a.x, z: a.z, dir: a.dir, away: a.away, walking: a.walking,
+      phase: a.phase, blink: 0, seed: a.seed, alpha,
+      arms: a.cargo.length ? 'carry' : 'swing',
+      swingA: a.walking ? Math.sin(a.phase) * 5 : Math.sin(clerk.breathe * 1.6 + a.seed) * 1.5,
+      body: palette.mute, deep: palette.mute2, skin: SKIN,
+    }, ({ hipY, dir }) => {
+      // An armful: the sheets he is actually carrying, three of them shown —
+      // a stack any taller stops reading as arms and starts reading as a wall.
+      a.cargo.slice(0, 3).forEach((c, i) => {
         drawCardAt(c, dir * 13 + i * 1.2, hipY + 2 - i * 2.4, 1, dir * 0.04, 1, false, i === 0);
       });
-    } else if (act === 'sip') {
-      ctx.fillStyle = withAlpha(palette.amber, 0.6);
-      ctx.beginPath(); roundRect(dir * 10, shoulder + 1, 7, 8, 2); ctx.fill();
-    }
-
-    if (clerk.verdictPop) {
-      const p = clerk.verdictPop;
-      const rise = (0.9 - p.life) * 14;
-      ctx.save();
-      ctx.globalAlpha = Math.min(1, p.life * 2.2);
-      ctx.strokeStyle = p.kind === 'out' ? palette.red : palette.green;
-      ctx.lineWidth = 1.8;
-      const py = headY - 16 - rise;
-      ctx.beginPath();
-      if (p.kind === 'out') {
-        ctx.moveTo(-2.6, py - 2.6); ctx.lineTo(2.6, py + 2.6);
-        ctx.moveTo(2.6, py - 2.6); ctx.lineTo(-2.6, py + 2.6);
-      } else {
-        ctx.moveTo(-3.2, py); ctx.lineTo(-0.6, py + 2.6); ctx.lineTo(3.4, py - 3.2);
+      if (a.cargo.length > 3) {
+        ctx.fillStyle = withAlpha(palette.txt2, 0.85);
+        ctx.font = '6px "JetBrains Mono", monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`+${a.cargo.length - 3}`, dir * 13, hipY - 12);
       }
-      ctx.stroke();
-      ctx.restore();
-      ctx.lineWidth = 1;
-    }
+    });
+  }
 
+  /** The order over his head: a slip and an arrow — go, fetch, bring. */
+  function drawOrderPop(x, y, dir) {
+    const life = Math.min(1, clerk.orderPop / 0.25);
+    ctx.save();
+    ctx.globalAlpha = life;
+    ctx.fillStyle = withAlpha(palette.bg1, 0.95);
+    ctx.strokeStyle = withAlpha(palette.line, 1);
+    ctx.beginPath(); roundRect(x - 12, y - 9, 24, 15, 6); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.arc(x + dir * 6, y + 8, 2, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    // A sheet…
+    ctx.fillStyle = paperFill();
+    ctx.strokeStyle = paperEdge(0.9);
+    ctx.beginPath(); roundRect(x - 8, y - 6, 6, 8, 1); ctx.fill(); ctx.stroke();
+    // …and the arrow that says: get it.
+    ctx.strokeStyle = withAlpha(palette.amber, 0.95);
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(x, y - 2); ctx.lineTo(x + 7, y - 2);
+    ctx.moveTo(x + 4, y - 5); ctx.lineTo(x + 7, y - 2); ctx.lineTo(x + 4, y + 1);
+    ctx.stroke();
+    ctx.lineWidth = 1;
     ctx.restore();
   }
 

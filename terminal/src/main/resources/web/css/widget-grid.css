@@ -15,6 +15,7 @@
 .main[data-view="dashboard"] > #widget-fg,
 .main[data-view="dashboard"] > #widget-eurusd,
 .main[data-view="dashboard"] > #widget-watchlist,
+.main[data-view="dashboard"] > #widget-mentions,
 .main[data-view="dashboard"] > #widget-deepdive { display: none; }
 
 .grid-hit { display: none; }
@@ -259,6 +260,20 @@ html[data-theme="light"] .main > .widget.exit-card .grid-hit {
   max-width: var(--focus-col);
   margin-inline: auto;
 }
+/* The KI-DD brings its own measure: the workshop's report deck carries the
+   document column itself, and the Redaktion below it has to span the WHOLE
+   stage — capped at the reading column it is a stripe again, which is exactly
+   what the two-deck rebuild got rid of (2026-08-04). The home STAGE is the
+   same case: bar and report list carry their own caps, which grow with the
+   box (`ddhome` container) — against the 920px column that growth could never
+   happen and a wide window read as forced-centered (user finding 2026-08-04).
+   The finished report is the one view that keeps the reading column. */
+.main[data-view="focus"] > #widget-deepdive.focused
+  .widget-body > .dd-detail:has(> .dd-live-view:not([hidden])),
+.main[data-view="focus"] > #widget-deepdive.focused
+  .widget-body > .dd-detail:has(> .dd-home:not([hidden])) {
+  max-width: none;
+}
 
 /* ---- transition helpers (set/cleared by widget-nav.js) ---- */
 
@@ -271,69 +286,88 @@ html[data-theme="light"] .main > .widget.exit-card .grid-hit {
   margin: 0 !important;
 }
 
-/* ---- floating tool rail (focus mode only) ---- */
+/* ---- floating tool rail (focus mode only) ----
+   ONE capsule, not a chain of beads: the glass, the hairline and the drop
+   shadow belong to the container, the buttons inside carry nothing of their
+   own. Three separately framed discs floating over the text read as three
+   unrelated objects (and cost the OSR renderer one composited blur layer
+   EACH); as one capsule the widget's tools are one thing you can aim at. */
 
-.widget-rail { display: none; }
+.widget-rail {
+  display: none;
+  padding: 5px;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--bg-1) 78%, transparent);
+  backdrop-filter: blur(14px) saturate(1.3);
+  border: 1px solid var(--line);
+  box-shadow: 0 10px 28px oklch(0 0 0 / .30);
+}
+html[data-theme="light"] .widget-rail { box-shadow: 0 10px 28px oklch(0 0 0 / .12); }
+/* Vertically centred in the left gutter: as ONE compact capsule it is a single
+   object the hand can aim at blind, and the middle is where the hand looks for
+   it. (It can stay there because the about footnote sits in the OPPOSITE
+   corner — bottom right — so a tall panel and the capsule can never grow into
+   each other, which is exactly what happened while both lived in this gutter.) */
 .main[data-view="focus"] > .widget.focused .widget-rail {
-  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
   position: absolute; left: 18px; top: 50%;
   transform: translateY(-50%);
   z-index: 24;
 }
 
-/* ---- platform logo ----
-   Sits first, set apart by the hairline. A LINK to the source platform
-   (opened in the OS browser), styled like the tool buttons so the column
-   reads as one family. */
-.rail-logo {
-  width: 46px; height: 46px; border-radius: 50%;
-  display: inline-flex; align-items: center; justify-content: center;
-  color: var(--txt-2);
-  background: color-mix(in oklch, var(--bg-1) 78%, transparent);
-  backdrop-filter: blur(14px) saturate(1.3);
-  border: 1px solid var(--line);
-  box-shadow: 0 10px 28px oklch(0 0 0 / .30);
-  transition: border-color .15s, transform .18s cubic-bezier(.34, 1.4, .64, 1);
-}
-html[data-theme="light"] .rail-logo { box-shadow: 0 10px 28px oklch(0 0 0 / .12); }
-.rail-logo:hover { border-color: var(--mute); transform: scale(1.08); }
-.rail-logo-img {
-  width: 24px; height: 24px;
-  background-position: center; background-repeat: no-repeat; background-size: contain;
-}
-.rail-logo-reddit { background-image: url("/icons/reddit.png"); }
-.rail-logo-fj     { background-image: url("/icons/financialjuice.png"); }
-.rail-logo-dd     { background-image: url("/icons/kidd.png"); width: 31px; height: 31px; }
-.rail-logo-fg     { width: 32px; height: 21px; }
-
-.rail-sep {
-  display: block;
-  width: 20px; height: 1px; flex-shrink: 0;
-  background: var(--line);
-}
-
 .rail-item { position: relative; }
+
+/* The reveal circle's radius, shared by every popup (see .rail-pop). The
+   anchor sits OUTSIDE the panel, so the needed radius is the distance from
+   that anchor to the far corner, expressed against circle()'s %-basis
+   (diagonal/√2). Across the panel aspect ratios in use that lands at
+   ~140-145%; 150% covers them with a hair of margin and nothing more — the
+   old 175% finished the reveal early and the last third of the animation
+   grew invisibly, which is why the "pour" read as a blink. */
+:root { --rail-reveal: 150%; }
 
 /* Facet strokes on the rail's filter button — same status readout as the
    dashboard funnel: an active facet lights its own stroke amber. */
 .rail-btn svg .f-line { transition: stroke .12s; }
 .rail-btn svg .f-line.active { stroke: var(--amber); }
 
+/* A knob inside the capsule: no frame, no glass, no shadow — it only owns its
+   hit area and its glyph. Hover fills the disc instead of drawing a ring, so
+   nothing new appears at the edge; open lights it amber. */
 .rail-btn {
   position: relative;
-  width: 44px; height: 44px; border-radius: 50%;
+  width: 38px; height: 38px; border-radius: 50%;
   display: inline-flex; align-items: center; justify-content: center;
   color: var(--txt-2);
-  background: color-mix(in oklch, var(--bg-1) 78%, transparent);
-  backdrop-filter: blur(14px) saturate(1.3);
-  border: 1px solid var(--line);
-  box-shadow: 0 10px 28px oklch(0 0 0 / .30);
-  transition: color .15s, border-color .15s, background .15s,
-              transform .18s cubic-bezier(.34, 1.4, .64, 1);
+  background: none;
+  border: 0;
+  transition: color .15s, background .15s, opacity .15s, box-shadow .2s;
 }
-html[data-theme="light"] .rail-btn { box-shadow: 0 10px 28px oklch(0 0 0 / .12); }
-.rail-btn:hover { color: var(--txt); border-color: var(--mute); transform: scale(1.08); }
-.rail-item.open .rail-btn { color: var(--amber); border-color: var(--amber); }
+.rail-btn:hover {
+  color: var(--txt);
+  background: color-mix(in oklch, var(--txt) 10%, transparent);
+}
+/* Open: the knob is the panel's anchor, so it has to READ as the anchor — the
+   amber fill plus a soft halo that leaks past the disc. Without it the panel
+   floats 14px away with nothing tying it to the button it came from. */
+.rail-item.open .rail-btn {
+  color: var(--amber);
+  background: color-mix(in oklch, var(--amber) 16%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--amber) 34%, transparent),
+              0 0 18px color-mix(in oklch, var(--amber) 22%, transparent);
+}
+/* …and the siblings step back while one is open, so the eye can trace the
+   panel to exactly one knob. */
+.widget-rail:has(.rail-item.open) .rail-item:not(.open) .rail-btn {
+  opacity: .45;
+}
+/* Keyboard: the round glass knob had no focus style at all, so a Tab landed on
+   the UA default ring. Same amber ring idiom the rest of the app uses. */
+.rail-btn:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+.rail-pop:focus { outline: none; }
 .rail-btn svg {
   width: 19px; height: 19px;
   stroke: currentColor; stroke-width: 1.6; fill: none;
@@ -344,64 +378,113 @@ html[data-theme="light"] .rail-btn { box-shadow: 0 10px 28px oklch(0 0 0 / .12);
    The reveal is a clip-path circle anchored at the button's side, so the
    panel really does pour out of the knob like water over glass; frosted by
    backdrop blur. Transient animation only — nothing loops (OSR paint rule). */
+/* TOP-anchored to its knob, never centred on it: the capsule sits at the top
+   of the gutter, so a centred panel grew upward into the titlebar — and a
+   growing panel (the search suggestions) would push its own input under the
+   cursor. Anchored, every panel opens downward from its knob and stays inside
+   the widget. 19px = half the 38px knob, i.e. the knob's centre. */
 .rail-pop {
-  position: absolute; left: calc(100% + 14px); top: 50%;
-  transform: translateY(-50%);
+  position: absolute; left: calc(100% + 14px); top: 0;
   width: min(320px, 44vw);
-  background: color-mix(in oklch, var(--bg) 74%, transparent);
-  backdrop-filter: blur(18px) saturate(1.35);
+  /* Dense glass, not a translucent div. At 74% the wire underneath (amber
+     tickers, red highlight rows) fought the panel's own muted 0.86em text and
+     the whole thing read cheap; at 93% the panel is a surface that happens to
+     sit on glass. The lighter blur is also one cheaper composited layer for
+     the OSR renderer. */
+  background: color-mix(in oklch, var(--bg) 93%, transparent);
+  backdrop-filter: blur(12px) saturate(1.25);
   border: 1px solid var(--line);
   border-radius: 16px;
-  box-shadow: 0 24px 70px oklch(0 0 0 / .40);
-  clip-path: circle(0px at -14px 50%);
+  /* Two-layer elevation + a top light edge: the tight contact shadow says the
+     panel sits ABOVE something, the wide one gives it air, and the inset
+     hairline is what turns a rectangle into a pane. */
+  box-shadow: 0 2px 6px oklch(0 0 0 / .28),
+              0 22px 60px oklch(0 0 0 / .34),
+              inset 0 1px 0 color-mix(in oklch, var(--txt) 9%, transparent);
+  /* Capped so a tall panel can never run out of the widget in a short window;
+     the body scrolls inside (the about footnote opts out, see .about-pop). */
+  max-height: min(72vh, 560px);
+  overflow: hidden;
+  clip-path: circle(0px at -14px 19px);
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
+  transform: translateX(-10px);
   z-index: 30;
-  transition: clip-path .5s cubic-bezier(.3, .9, .32, 1), opacity .25s ease,
-              visibility 0s .5s;
+  transition: clip-path .38s cubic-bezier(.3, .9, .32, 1),
+              transform .38s cubic-bezier(.3, .9, .32, 1),
+              opacity .22s ease, visibility 0s .38s;
 }
-html[data-theme="light"] .rail-pop { box-shadow: 0 24px 70px oklch(0 0 0 / .16); }
+html[data-theme="light"] .rail-pop {
+  background: color-mix(in oklch, var(--bg) 95%, transparent);
+  box-shadow: 0 2px 6px oklch(0 0 0 / .10),
+              0 22px 60px oklch(0 0 0 / .14),
+              inset 0 1px 0 oklch(1 0 0 / .7);
+}
 .rail-item.open .rail-pop {
-  /* The radius must outgrow the panel's far corner from the off-panel anchor.
-     circle()'s %-basis is diagonal/√2, and for a FLAT panel (the search pop:
-     head + input only) the needed/basis ratio approaches √2·(w+14)/w ≈ 1.5 —
-     135% left the right edge permanently clipped there. 175% covers every
-     panel aspect with margin. */
-  clip-path: circle(175% at -14px 50%);
+  /* Radius from --rail-reveal (see above): tight enough that the reveal is
+     still running when the animation ends. The short slide out of the knob
+     carries the "it came from there" reading that the clip alone never did. */
+  clip-path: circle(var(--rail-reveal) at -14px 19px);
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
-  transition: clip-path .5s cubic-bezier(.3, .9, .32, 1), opacity .18s ease,
-              visibility 0s;
+  transform: translateX(0);
+  transition: clip-path .38s cubic-bezier(.3, .9, .32, 1),
+              transform .38s cubic-bezier(.3, .9, .32, 1),
+              opacity .16s ease, visibility 0s;
 }
 
 /* Settings popup runs wider so each row reads horizontally: label + hint
    left, control right, nothing stacked. */
 .rail-pop.rail-pop-wide { width: min(440px, 56vw); }
 
-/* Growing popup (the search panel: suggestions appear while typing): TOP-
-   anchored to the button instead of centred, so extra content extends the
-   panel DOWNWARD only — the input never moves under the cursor. The reveal
-   circle keeps pouring out of the button's centre (22px = half the 44px
-   button below the panel top). */
-.rail-pop.rail-pop-anchored {
-  top: 0;
-  transform: none;
-  clip-path: circle(0px at -14px 22px);
-}
-.rail-item.open .rail-pop.rail-pop-anchored {
-  clip-path: circle(175% at -14px 22px);
-}
 
-.rail-pop-body { padding: 14px 16px; }
+/* ---- ONE inner grammar for every rail panel ----
+   Filter, Suche, Einstellungen and the about footnote are four panels in the
+   same capsule: before this they carried three different heads, two paddings
+   and their own idea of a title, which is what made the family read
+   second-class. Everything below is shared; a feature only fills the body. */
+
+/* The pop is a column so a capped panel scrolls its BODY instead of clipping
+   its content (see .rail-pop max-height). */
+.rail-pop { display: flex; flex-direction: column; min-height: 0; }
+.rail-pop-body {
+  padding: 14px 16px;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin; scrollbar-color: var(--line) transparent;
+}
+.rail-pop-body::-webkit-scrollbar { width: 6px; }
+.rail-pop-body::-webkit-scrollbar-thumb { background: var(--line-soft); border-radius: 8px; }
+.rail-pop-body::-webkit-scrollbar-thumb:hover { background: var(--line); }
+
+/* Head: title left, ONE optional action right (the filter's reset lives there
+   — it used to bring its own head with its own letter-spacing). */
 .rail-pop-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
   font-family: "Inter", sans-serif; font-weight: 600;
   font-size: var(--font-chrome);
   letter-spacing: .14em; text-transform: uppercase;
   color: var(--txt);
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
+/* The shared quiet action in a head. */
+.rail-pop-action {
+  font: inherit; font-size: .74em; font-weight: 600;
+  letter-spacing: .08em;
+  color: var(--mute); background: none; border: 0;
+  padding: 3px 7px; border-radius: 999px;
+  cursor: pointer;
+  transition: color .12s, background .12s;
+}
+.rail-pop-action:hover:not(:disabled) {
+  color: var(--txt);
+  background: color-mix(in oklch, var(--txt) 9%, transparent);
+}
+.rail-pop-action:disabled { opacity: .35; cursor: default; }
+.rail-pop-action:focus-visible { outline: 2px solid var(--amber); outline-offset: 1px; }
+
 .rail-pop-text { color: var(--txt-2); font-size: .86em; line-height: 1.6; }
 
 .rail-pop-divider {
@@ -421,6 +504,118 @@ html[data-theme="light"] .rail-pop { box-shadow: 0 24px 70px oklch(0 0 0 / .16);
 .rail-setting-hint { color: var(--mute); font-size: .78em; line-height: 1.5; }
 .rail-setting .checkbox,
 .rail-setting .danger-btn { flex-shrink: 0; }
+/* The settings view's buttons carry an 8px radius; inside a rail panel they
+   join the shared 10px inner-control scale. */
+.rail-pop .danger-btn,
+.rail-pop .plain-btn { border-radius: 10px; }
+
+/* ---- "Über dieses Widget": the footnote in the bottom-RIGHT corner ----
+   Documentation is not a tool, so it does NOT sit in the rail: the widget's
+   description, the link to its source platform and the EU-AI-Act notice share
+   ONE quiet disclosure, pinned low and out of the reading eyeline. It reuses
+   the rail's mechanics (.rail-item/.rail-btn/.rail-pop — widget-rail.js wires
+   every .rail-item generically), and only re-dresses them: smaller, no glass,
+   no shadow, and the panel pours UPWARD out of the button. Because a widget
+   without tools has no rail left at all, most widgets now paint nothing but
+   content in focus view. */
+.widget-about { display: none; }
+.main[data-view="focus"] > .widget.focused .widget-about {
+  display: block;
+  position: absolute; left: 18px; bottom: 18px;
+  z-index: 24;
+}
+/* Both live in the same gutter, so a tall panel (the weather description is
+   the longest) reaches the centred capsule in a short window. The panel wins
+   the space instead of being capped — capping it buried the KI notice, its
+   last row, behind a scroll — and the capsule steps aside while the panel is
+   open. It is unusable in that moment anyway: only one disclosure is ever open
+   at a time, and a click on the capsule closes this panel first. Pure state
+   change on a user action, nothing loops (OSR paint rule). */
+.main[data-view="focus"] > .widget.focused .widget-rail {
+  transition: opacity .18s ease;
+}
+.main[data-view="focus"] > .widget.focused:has(.widget-about.open) .widget-rail {
+  opacity: 0;
+  pointer-events: none;
+}
+/* Quieter twin of the tool knob. It stands ALONE, outside the capsule, so it
+   carries its own hairline — but nothing else: no glass, no drop shadow (one
+   less composited layer for the OSR renderer). The open state (amber) comes
+   from .rail-item.open. */
+.about-btn {
+  width: 30px; height: 30px;
+  color: var(--mute);
+  border: 1px solid var(--line-soft);
+}
+.about-btn:hover {
+  color: var(--txt-2);
+  border-color: var(--mute);
+  background: none;
+}
+.rail-item.open .about-btn { border-color: color-mix(in oklch, var(--amber) 50%, transparent); }
+.about-btn svg { width: 15px; height: 15px; }
+
+/* Panel: bottom-anchored to the button (grows upward, the button never moves)
+   and the reveal circle pours out of the button's centre, 15px above the
+   panel's bottom edge (half of the 30px button, which sits 12px below it). */
+.about-pop {
+  left: 0; top: auto; bottom: calc(100% + 12px);
+  width: min(360px, 52vw);
+  /* It grows UPWARD out of the button, so the slide runs the other way — down
+     toward its own anchor. */
+  transform: translateY(10px);
+  clip-path: circle(0px at 15px calc(100% + 12px));
+}
+.rail-item.open .about-pop {
+  clip-path: circle(var(--rail-reveal) at 15px calc(100% + 12px));
+  transform: translateY(0);
+}
+/* Deliberately uncapped in height (see the capsule's step-aside above): the
+   panel's last row is the KI notice, and a cap put exactly that behind a
+   scroll. This is the ONE panel that opts out of .rail-pop's max-height. */
+.about-pop { max-height: none; }
+.about-pop .rail-pop-body { overflow-y: visible; }
+
+/* Head = the widget's ident (mark + name): fullscreen hides the header, so
+   this panel is the only place the widget still says who it is. */
+/* The ident is mark + name as ONE unit — the shared head pushes its two
+   children apart (title left, action right), which is wrong here. */
+.about-head { justify-content: flex-start; gap: 9px; }
+.about-mark {
+  width: 20px; height: 20px; flex-shrink: 0;
+  color: var(--txt-2);
+  background-position: center; background-repeat: no-repeat; background-size: contain;
+}
+.about-mark-reddit  { background-image: url("/icons/reddit.png"); }
+.about-mark-fj      { background-image: url("/icons/financialjuice.png"); }
+.about-mark-dd      { background-image: url("/icons/kidd.png"); }
+.about-mark-fg      { width: 26px; height: 17px; }
+.about-mark-fx      { width: 26px; height: auto; }
+.about-mark-mv,
+.about-mark-wl {
+  stroke: currentColor; stroke-width: 1.7; fill: none;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+
+/* The source platform (opened in the OS browser): a link row under the prose,
+   marked by an outbound arrow. */
+.about-source {
+  /* flex, not inline-flex: source link and notice row are each their own line. */
+  display: flex; align-items: center; gap: 7px;
+  width: fit-content;
+  color: var(--txt-2);
+  font-size: .84em;
+  text-decoration: none;
+  transition: color .15s;
+}
+.about-source::before {
+  content: "";
+  width: 11px; height: 11px; flex-shrink: 0;
+  background: currentColor;
+  /* outbound arrow (↗ in a corner) */
+  clip-path: polygon(28% 0, 100% 0, 100% 72%, 82% 72%, 82% 31%, 14% 100%, 0 86%, 66% 18%, 28% 18%);
+}
+.about-source:hover { color: var(--amber); }
 
 /* ---- chrome buttons ---- */
 

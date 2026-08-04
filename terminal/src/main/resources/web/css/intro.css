@@ -1,0 +1,355 @@
+/* Startup intro — the logo drops into frame like an anvil.
+ *
+ * Choreography - the timeline lives in the --t-… and --d-… custom properties
+ * below and is the single source of truth; chrome/intro.js READS it (to know
+ * when to drop the plate from the DOM) but never redefines it:
+ *
+ *   --t-hands    hands fall in, land, squash-and-settle   → impact + smoke
+ *   --t-diamond  diamond falls into the open hands        → impact + smoke
+ *   --t-shine    a light sweep runs across the facets
+ *   --t-out      the whole plate fades away, the app is behind it
+ *
+ * The fade-out ends on visibility:hidden, so even if the script never runs
+ * the plate stops swallowing clicks on its own — the app can never end up
+ * locked behind a stuck intro.
+ *
+ * The glyph is the real logo, split into its two connected components
+ * (icons/intro-hands.png + icons/intro-diamond.png) on ONE shared canvas —
+ * both layers are stretched over the same box, so they line up pixel-exact
+ * and can still be animated apart.
+ */
+
+.intro {
+  /* --- the timeline (ms) --------------------------------------------- */
+  --d-drop: 640ms;   /* fall + landing squash; the fall itself is the first 59% */
+  --from: 2.6;       /* how near the camera the glyph starts (scale factor) */
+  --d-shake: 420ms;
+  --d-ring: 700ms;
+  --d-shine: 1000ms;
+  --d-out: 620ms;
+  --d-skip: 260ms;
+
+  --t-hands: 120ms;
+  --t-hands-impact: 500ms;    /* = --t-hands + 59% of --d-drop */
+  /* The diamond comes down almost on top of the first hit — the two
+     impacts belong to one event, not to two acts. */
+  --t-diamond: 620ms;
+  --t-diamond-impact: 1000ms; /* = --t-diamond + 59% of --d-drop */
+  --t-shine: 1180ms;
+  --t-out: 2280ms;            /* + --d-out = the plate is gone at ~2.9s */
+
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  /* The plate swallows every click while it is up — the app behind it is
+     still booting and must not be poked through the animation. */
+  cursor: pointer;
+  animation: intro-plate-out var(--d-out) ease-in var(--t-out) both;
+}
+
+.intro[hidden] { display: none; }
+
+/* --- backdrop -------------------------------------------------------- */
+
+/* The logo's own near-black, with one small pool of light around the glyph
+   and nothing else — everything outside that pool just falls off into the
+   dark. Deliberately restrained: the backdrop is the room, not the show. */
+.intro-backdrop {
+  position: absolute;
+  inset: 0;
+  background:
+    /* the pool: barely-there white, brightest on the logo but scattering
+       far out into the room before it gives up */
+    radial-gradient(circle 58vh at 50% 50%,
+      oklch(1 0 0 / .115) 0%,
+      oklch(1 0 0 / .075) 22%,
+      oklch(1 0 0 / .04) 45%,
+      oklch(1 0 0 / .018) 68%,
+      oklch(1 0 0 / .006) 85%,
+      transparent 100%),
+    /* the room: warm near-black in the middle, darker toward the edges */
+    radial-gradient(circle farthest-corner at 50% 50%,
+      #13100c 0%, #0d0a08 55%, #070606 100%);
+}
+
+/* The light the impact kicks up: the pool brightens for a breath, then
+   settles back. Same white as the backdrop pool, never a second colour. */
+.intro-floor {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(70vh, 60vw, 620px);
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(closest-side,
+    oklch(1 0 0 / .07), oklch(1 0 0 / .025) 52%, transparent 76%);
+  opacity: 0;
+  animation: intro-floor-in 900ms ease-out var(--t-hands-impact) forwards;
+}
+
+/* --- stage ----------------------------------------------------------- */
+
+/* The shaker carries the two impact jolts; the stage carries the glyph. */
+.intro-shaker {
+  position: relative;
+  width: min(46vh, 42vw, 460px);
+  aspect-ratio: 1044 / 924;
+  animation:
+    intro-shake-hard var(--d-shake) ease-out var(--t-hands-impact) both,
+    intro-shake-soft var(--d-shake) ease-out var(--t-diamond-impact) both,
+    intro-stage-out var(--d-out) ease-in var(--t-out) both;
+}
+
+.intro-stage { position: absolute; inset: 0; }
+
+.intro-layer {
+  position: absolute;
+  inset: 0;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  will-change: transform;
+}
+
+/* Hands land on their own base — squash from the bottom edge. */
+.intro-hands {
+  background-image: url("/icons/intro-hands.png");
+  transform-origin: 50% 100%;
+  transform: translate3d(0, -8%, 0) scale(var(--from));
+  opacity: 0;
+  animation: intro-drop var(--d-drop) var(--t-hands) both;
+}
+
+/* The diamond lands on its tip (≈70% down the shared canvas). */
+.intro-diamond {
+  background-image: url("/icons/intro-diamond.png");
+  transform-origin: 50% 70%;
+  /* Lands nearer than the hands did — a wide, spread-out diamond reads as
+     four red spikes, not as a stone. */
+  --from: 2.1;
+  transform: translate3d(0, -8%, 0) scale(var(--from));
+  opacity: 0;
+  animation:
+    intro-drop var(--d-drop) var(--t-diamond) both,
+    intro-diamond-glow var(--d-shine) ease-in-out var(--t-shine) both;
+}
+
+/* --- shimmer --------------------------------------------------------- */
+
+/* A light bar swept across the plate, masked by the diamond's own alpha —
+   so only the facets catch it. */
+.intro-shine {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  mix-blend-mode: screen;
+  background-image: linear-gradient(103deg,
+    transparent 40%,
+    oklch(0.95 0.05 80 / .35) 47%,
+    oklch(0.99 0.02 90 / .90) 50%,
+    oklch(0.95 0.05 80 / .35) 53%,
+    transparent 60%);
+  background-repeat: no-repeat;
+  background-size: 240% 100%;
+  background-position: 150% 0;
+  -webkit-mask-image: url("/icons/intro-diamond.png");
+          mask-image: url("/icons/intro-diamond.png");
+  -webkit-mask-size: contain;
+          mask-size: contain;
+  -webkit-mask-position: center;
+          mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+          mask-repeat: no-repeat;
+  animation: intro-shine var(--d-shine) ease-in-out var(--t-shine) both;
+}
+
+/* --- impact: shockwave ring + smoke ---------------------------------- */
+
+/* Flat ellipse thrown outward along the floor line. */
+.intro-ring {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 76%;
+  aspect-ratio: 1;
+  margin-left: -38%;
+  /* The rim of displaced ground, not a drawn ellipse: white, faint, and
+     blurred just enough to lose its outline. */
+  border: 2px solid oklch(1 0 0 / .3);
+  border-radius: 50%;
+  filter: blur(2px);
+  opacity: 0;
+  transform: translateY(50%) scale(.18, .05);
+  animation: intro-ring var(--d-ring) cubic-bezier(.15, .7, .3, 1) both;
+}
+.intro-ring[data-burst="hands"]   { animation-delay: var(--t-hands-impact); }
+.intro-ring[data-burst="diamond"] { animation-delay: var(--t-diamond-impact); bottom: 30%; width: 46%; margin-left: -23%; }
+
+/* Dust kicked sideways along the floor, then drifting up and apart.
+   Each puff carries its own vector (--dx/--dy), end size (--s), opacity
+   (--o) and offset (--od) — written by intro.js. */
+/* Both bursts start a touch above their impact line: dust seeded exactly at
+   the floor stays hidden behind the glyph's own mass and never reads. */
+.intro-smoke { position: absolute; inset: 0; pointer-events: none; }
+.intro-smoke[data-burst="hands"]   { bottom: 4%; }
+/* Higher than the diamond's own contact point (30%, where its shockwave
+   sits): the stone drives into the cradle, so its dust leaves from inside
+   the hands rather than from underneath them. */
+.intro-smoke[data-burst="diamond"] { bottom: 40%; }
+
+.intro-puff {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 20%;
+  aspect-ratio: 1;
+  margin-left: -10%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side,
+    oklch(0.72 0.02 70 / .9), oklch(0.56 0.02 60 / .4) 52%, transparent 74%);
+  /* Enough blur to lose the disc, not enough to turn it into cotton — dust
+     has an edge, fog does not. */
+  filter: blur(7px);
+  opacity: 0;
+  transform: translate3d(0, 20%, 0) scale(.3);
+  animation: intro-puff var(--pd) ease-out var(--od) both;
+  will-change: transform, opacity;
+}
+
+/* --- skip ------------------------------------------------------------ */
+
+.intro-skip {
+  position: absolute;
+  right: 22px;
+  bottom: 18px;
+  padding: 6px 12px;
+  font-size: 0.78em;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: oklch(0.55 0.006 70);
+  border: 1px solid oklch(0.3 0.01 60);
+  border-radius: 999px;
+  opacity: 0;
+  animation: intro-skip-in 400ms ease-out 900ms forwards;
+  transition: color .15s, border-color .15s;
+}
+.intro-skip:hover { color: var(--amber); border-color: oklch(0.82 0.14 75 / .5); }
+
+/* --- keyframes ------------------------------------------------------- */
+
+/* The fall comes AT the camera, not in from the top of the frame: the glyph
+   starts huge and near, collapses onto its landing point and bites. Gravity
+   is in the curve (ease-in, fastest at the end), the landing squashes it
+   flat and lets it spring back. The 59% mark IS the impact — the
+   --t-…-impact vars above are derived from it. */
+@keyframes intro-drop {
+  0% {
+    transform: translate3d(0, -8%, 0) scale(var(--from));
+    opacity: 0;
+    filter: blur(7px);
+    animation-timing-function: cubic-bezier(.62, .03, .84, .18);
+  }
+  8%  { opacity: 1; }
+  59% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 1;
+    filter: blur(0);
+    animation-timing-function: cubic-bezier(.2, .8, .3, 1);
+  }
+  70% { transform: translate3d(0, 1.5%, 0) scale(1.09, .9); }
+  84% { transform: translate3d(0, -0.6%, 0) scale(.98, 1.035); }
+  93% { transform: translate3d(0, 0, 0) scale(1.008, .995); }
+  /* opacity MUST be restated here: a property that stops appearing in the
+     keyframes gets an implicit 100% frame from the element's base style —
+     and the base style is opacity:0 (the pre-drop state), so leaving it out
+     fades the glyph back to nothing while it falls. */
+  100% { transform: translate3d(0, 0, 0) scale(1); opacity: 1; }
+}
+
+@keyframes intro-shake-hard {
+  0%   { transform: translate3d(0, 0, 0); }
+  12%  { transform: translate3d(0, 1.4%, 0); }
+  28%  { transform: translate3d(-0.9%, -0.7%, 0); }
+  46%  { transform: translate3d(0.7%, 0.5%, 0); }
+  64%  { transform: translate3d(-0.4%, -0.3%, 0); }
+  82%  { transform: translate3d(0.2%, 0.15%, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+
+@keyframes intro-shake-soft {
+  0%   { transform: translate3d(0, 0, 0); }
+  14%  { transform: translate3d(0, 0.8%, 0); }
+  34%  { transform: translate3d(0.5%, -0.4%, 0); }
+  58%  { transform: translate3d(-0.35%, 0.25%, 0); }
+  80%  { transform: translate3d(0.15%, -0.1%, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+
+@keyframes intro-ring {
+  0%   { opacity: 0; transform: translateY(50%) scale(.18, .05); border-width: 3px; }
+  10%  { opacity: .5; }
+  100% { opacity: 0; transform: translateY(50%) scale(1.7, .42); border-width: 1px; }
+}
+
+/* Seeded a little way along their own vector, not all on one point: the
+   collar of dust is already a ring in the first frame, and a cloud that
+   starts as a dot spends its whole life hidden behind the glyph. */
+@keyframes intro-puff {
+  0%   { opacity: 0;
+         transform: translate3d(calc(var(--dx) * .16), calc(var(--dy) * .16), 0) scale(.4); }
+  12%  { opacity: var(--o, .5); }
+  45%  { transform: translate3d(calc(var(--dx) * .74), calc(var(--dy) * .6), 0)
+                    scale(calc(var(--s) * .6)); }
+  100% { opacity: 0; transform: translate3d(var(--dx), var(--dy), 0) scale(var(--s)); }
+}
+
+@keyframes intro-shine {
+  0%   { opacity: 0; background-position: 150% 0; }
+  18%  { opacity: 1; }
+  78%  { opacity: 1; }
+  100% { opacity: 0; background-position: -60% 0; }
+}
+
+@keyframes intro-diamond-glow {
+  0%, 100% { filter: drop-shadow(0 0 0 transparent); }
+  45%      { filter: drop-shadow(0 0 26px oklch(0.9 0.09 80 / .55)); }
+}
+
+@keyframes intro-floor-in { to { opacity: 1; } }
+@keyframes intro-skip-in  { to { opacity: 1; } }
+/* visibility:hidden at the end is the failsafe — an opacity-0 plate would
+   still eat every click if the script never got to remove it. */
+@keyframes intro-plate-out { to { opacity: 0; visibility: hidden; } }
+@keyframes intro-stage-out { to { transform: scale(1.07); } }
+
+/* --- skipping: everything collapses into one short fade -------------- */
+
+.intro.is-skipping {
+  animation: intro-plate-out var(--d-skip) ease-in both;
+  pointer-events: none;
+}
+.intro.is-skipping .intro-shaker { animation: intro-stage-out var(--d-skip) ease-in both; }
+.intro.is-skipping .intro-skip   { opacity: 0; animation: none; }
+
+/* --- reduced motion: no drop, no shake, no smoke --------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .intro {
+    --t-hands: 60ms;
+    --t-shine: 620ms;
+    --t-out: 1300ms;
+    --d-shine: 700ms;
+  }
+  .intro-hands,
+  .intro-diamond {
+    transform: none;
+    animation: intro-skip-in 500ms ease-out var(--t-hands) both;
+  }
+  .intro-shaker { animation: none; }
+  .intro-ring,
+  .intro-smoke,
+  .intro-floor { display: none; }
+}
