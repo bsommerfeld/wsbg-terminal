@@ -19,14 +19,15 @@
 # Pinned Ollama version = the GitHub release tag WITHOUT the leading "v".
 # Bump -> the isolated binary under <appData>\ollama re-downloads on next launch
 # (downloaded models are kept). Releases: https://github.com/ollama/ollama/releases
-$OllamaVersion = "0.32.5"
+$OllamaVersion = "0.32.9"
 
 # Models reconciled into our ISOLATED store (<appData>\ollama\models): section 3
 # installs/updates these to the latest registry build and removes anything else.
-# ONE gemma4 tag serves the whole editorial pipeline -- the single deployed model.
+# ONE model tag serves the whole editorial pipeline -- the single deployed model.
 # The launcher passes the resolved tag via WSBG_REASONING_MODEL (hardware check
 # + the user's config.toml choice live in ModelSelection there; valid tiers are
-# gemma4:e2b..31b -- MLX twins are macOS-only, so they never apply here). The
+# gemma4:e2b/e4b/26b and nemotron-3.5-lightning:30b -- MLX twins are macOS-only,
+# so they never apply here). The
 # fallback below only applies to standalone script runs without the launcher.
 $ReasoningModel = if ($env:WSBG_REASONING_MODEL) { $env:WSBG_REASONING_MODEL } else { "gemma4:e4b" }
 
@@ -480,7 +481,8 @@ if (!(Test-Path $configFile)) {
         "# Editorial agent reasoning model. REASONING_POWER (gemma4) - the one",
         "# model serving the whole editorial pipeline. Managed centrally; leave as-is.",
         "agent.editorial-model = `"REASONING_POWER`"",
-        "# Ollama model tag override (gemma4:e2b..31b). Empty = managed default.",
+        "# Ollama model tag override (gemma4:e2b/e4b/26b, nemotron-3.5-lightning:30b).",
+        "# Empty = managed default.",
         "# Set by the launcher's model-choice screen; the launcher reads it and installs",
         "# the matching model on the next start.",
         "agent.model-tag = `"`"",

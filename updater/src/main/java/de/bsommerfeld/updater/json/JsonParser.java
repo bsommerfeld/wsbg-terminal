@@ -67,4 +67,14 @@ public final class JsonParser {
     public static String extractAssetUrl(String releaseJson, String assetName) {
         return ReleaseJson.extractAssetUrl(releaseJson, assetName);
     }
+
+    /**
+     * Picks the newest publishable release out of a {@code /releases} listing —
+     * the first non-draft entry, pre-releases included. Returns the release
+     * object as JSON, ready to be handed to the same readers a single-release
+     * payload goes through, or {@code null} if the listing holds none.
+     */
+    public static String firstPublishedRelease(String releasesJson) {
+        return ReleaseJson.firstPublished(releasesJson);
+    }
 }

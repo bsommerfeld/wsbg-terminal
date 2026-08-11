@@ -41,6 +41,7 @@ import java.util.function.Consumer;
 public final class TinyUpdateClient implements UpdateClient {
 
     private final GitHubRepository repository;
+    private final ReleaseChannel channel;
     private final UpdateManager updateManager;
     private final VersionFile versionFile;
     private final ZipExtractor zipExtractor;
@@ -51,25 +52,27 @@ public final class TinyUpdateClient implements UpdateClient {
     private final String appArchiveAsset;
     private final String depsArchiveAsset;
 
-    /** The standard application channel: {@code update.json} + {@code files.zip} (+ split zips). */
-    public TinyUpdateClient(GitHubRepository repository, Path appDirectory) {
-        this(repository, appDirectory, "update.json", "files.zip", "app.zip", "deps.zip");
+    /** The standard application assets: {@code update.json} + {@code files.zip} (+ split zips). */
+    public TinyUpdateClient(GitHubRepository repository, Path appDirectory, ReleaseChannel channel) {
+        this(repository, appDirectory, channel, "update.json", "files.zip", "app.zip", "deps.zip");
     }
 
     /**
-     * A channel with custom release-asset names — the same pipeline pointed at
-     * a different asset pair (e.g. the launcher's self-update channel,
-     * {@code launcher-update.json} + {@code launcher-files.zip}). Channels are
+     * A stream with custom release-asset names — the same pipeline pointed at
+     * a different asset pair (e.g. the launcher's self-update stream,
+     * {@code launcher-update.json} + {@code launcher-files.zip}). The two are
      * fully independent: separate target directory, separate {@code version.txt}.
      *
+     * @param channel          which releases to accept — {@link ReleaseChannel}
      * @param appArchiveAsset  optional split-zip asset; {@code null} disables the
      *                         app/deps split and always downloads {@code archiveAsset}
      * @param depsArchiveAsset see {@code appArchiveAsset}
      */
-    public TinyUpdateClient(GitHubRepository repository, Path appDirectory,
+    public TinyUpdateClient(GitHubRepository repository, Path appDirectory, ReleaseChannel channel,
             String manifestAsset, String archiveAsset,
             String appArchiveAsset, String depsArchiveAsset) {
         this.repository = repository;
+        this.channel = channel;
         this.updateManager = new UpdateManager(appDirectory);
         this.versionFile = new VersionFile(appDirectory);
         this.zipExtractor = new ZipExtractor(appDirectory, TinyUpdateClient::trace);
@@ -97,8 +100,7 @@ public final class TinyUpdateClient implements UpdateClient {
     public UpdateResult update(Consumer<UpdateProgress> progress, int extraSteps) throws Exception {
         progress.accept(UpdateProgress.indeterminate(UpdatePhase.CHECKING.token()));
 
-        trace("Fetching release info from " + repository.latestReleaseUrl());
-        String releaseJson = Downloader.toString(repository.latestReleaseUrl());
+        String releaseJson = fetchRelease();
         String tagName = JsonParser.extractString(releaseJson, "tag_name");
         trace("Remote tag: " + tagName + ", local: " + currentVersion());
 
@@ -167,7 +169,7 @@ public final class TinyUpdateClient implements UpdateClient {
      *                   failed probe is worth acting on
      */
     public boolean isUpdatePending() throws Exception {
-        String releaseJson = Downloader.toString(repository.latestReleaseUrl());
+        String releaseJson = fetchRelease();
         if (!hasAsset(releaseJson, manifestAsset)) {
             trace("Latest release has no " + manifestAsset + " yet — nothing pending");
             return false;
@@ -247,6 +249,16 @@ public final class TinyUpdateClient implements UpdateClient {
     // =====================================================================
     // Utilities
     // =====================================================================
+
+    /**
+     * The release this install is entitled to, as JSON — the one place the
+     * channel is consulted. Everything downstream reads the returned object
+     * without knowing where it came from.
+     */
+    private String fetchRelease() throws IOException {
+        trace("Fetching release info (" + channel + ")");
+        return channel.fetchRelease(repository);
+    }
 
     /**
      * Returns the {@code browser_download_url} of a named release asset.

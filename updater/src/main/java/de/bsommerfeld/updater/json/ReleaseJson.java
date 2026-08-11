@@ -48,11 +48,75 @@ final class ReleaseJson {
     }
 
     /**
+     * Returns the newest release from a {@code /releases} listing that is
+     * actually published — the first entry whose top-level {@code draft} flag
+     * is not set. Pre-releases deliberately count as published: this listing is
+     * the experimental channel's source, and skipping them would leave it
+     * identical to {@code /releases/latest}.
+     *
+     * <p>
+     * GitHub returns the array newest-first, so the first hit is the newest.
+     * Returns {@code null} when the payload holds no publishable release.
+     */
+    static String firstPublished(String releasesJson) {
+        int arrayStart = releasesJson.indexOf('[');
+        if (arrayStart == -1)
+            return null;
+        int arrayEnd = JsonScan.findMatchingBracket(releasesJson, arrayStart, '[', ']');
+
+        int cursor = arrayStart + 1;
+        while (cursor < arrayEnd) {
+            int objStart = releasesJson.indexOf('{', cursor);
+            if (objStart == -1 || objStart > arrayEnd)
+                break;
+            int objEnd = JsonScan.findMatchingBracket(releasesJson, objStart, '{', '}');
+            String obj = releasesJson.substring(objStart, objEnd + 1);
+
+            if (!"true".equals(topLevelLiteral(obj, "draft"))) {
+                return obj;
+            }
+            cursor = objEnd + 1;
+        }
+        return null;
+    }
+
+    /**
      * Reads the string value of {@code key} at depth 1 of the given JSON
      * object, ignoring occurrences inside string values and inside nested
      * objects/arrays. Returns {@code null} if the key is absent.
      */
     private static String topLevelString(String obj, String key) {
+        int from = topLevelValueStart(obj, key);
+        return from < 0 ? null : readStringValueAfter(obj, from);
+    }
+
+    /**
+     * Reads the <em>unquoted</em> value of {@code key} at depth 1 — booleans and
+     * numbers, which {@link #topLevelString} rejects. Returns {@code null} if
+     * the key is absent or its value is a string/object/array.
+     */
+    private static String topLevelLiteral(String obj, String key) {
+        int i = topLevelValueStart(obj, key);
+        if (i < 0)
+            return null;
+        while (i < obj.length() && (Character.isWhitespace(obj.charAt(i)) || obj.charAt(i) == ':')) {
+            i++;
+        }
+        int start = i;
+        while (i < obj.length() && ",}]".indexOf(obj.charAt(i)) < 0 && !Character.isWhitespace(obj.charAt(i))) {
+            i++;
+        }
+        String literal = obj.substring(start, i);
+        return literal.isEmpty() || literal.charAt(0) == '"' ? null : literal;
+    }
+
+    /**
+     * Locates {@code key} at depth 1 of the given JSON object and returns the
+     * index just past its closing quote (i.e. where the {@code :} and the value
+     * follow), or {@code -1} if the key is absent. Occurrences inside string
+     * values and inside nested objects/arrays are skipped.
+     */
+    private static int topLevelValueStart(String obj, String key) {
         String pattern = "\"" + key + "\"";
         boolean inString = false;
         int depth = 0;
@@ -70,14 +134,14 @@ final class ReleaseJson {
                 case '}', ']' -> depth--;
                 case '"' -> {
                     if (depth == 1 && obj.startsWith(pattern, i)) {
-                        return readStringValueAfter(obj, i + pattern.length());
+                        return i + pattern.length();
                     }
                     inString = true;
                 }
                 default -> { }
             }
         }
-        return null;
+        return -1;
     }
 
     /**

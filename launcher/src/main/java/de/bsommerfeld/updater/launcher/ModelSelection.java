@@ -10,7 +10,7 @@ import java.util.Locale;
  * model-choice screen ({@link ModelChoicePanel}).
  *
  * <p>
- * Probes the machine ({@link HardwareProbe}), grades every gemma4 tier
+ * Probes the machine ({@link HardwareProbe}), grades every model tier
  * ({@link ModelCatalog}), and resolves the tag the setup script should install:
  * the user's explicit choice from {@code config.toml} ({@code agent.model-tag})
  * when present, else the managed default. <strong>The recommendation itself is
@@ -30,9 +30,6 @@ final class ModelSelection {
 
     /** Machine-readable probe result for model-choice UIs (e.g. terminal settings). */
     static final String RECOMMENDATION_FILE = "hardware-recommendation.json";
-
-    /** Only the one deployed family is installable — anything else is a typo. */
-    private static final String MODEL_FAMILY = "gemma4:";
 
     /**
      * @param effectiveTag   the tag the setup script installs and the runtime uses
@@ -77,8 +74,9 @@ final class ModelSelection {
 
     /**
      * Reads {@code agent.model-tag} from {@code config.toml}. Empty when the
-     * file/key is missing or the value is not a gemma4 tag — an unknown family
-     * must degrade to the default, never reach {@code ollama pull} verbatim.
+     * file/key is missing or the value names a family this catalog does not
+     * deploy — an unknown family must degrade to the default, never reach
+     * {@code ollama pull} verbatim.
      */
     static String configuredModelTag(Path appDir) {
         Path configFile = appDir.resolve("config.toml");
@@ -94,7 +92,7 @@ final class ModelSelection {
                         String value = trimmed.substring(eq + 1).strip()
                                 .replace("\"", "").replace("'", "")
                                 .toLowerCase(Locale.ROOT);
-                        if (value.startsWith(MODEL_FAMILY)) return value;
+                        if (ModelCatalog.isDeployedFamily(value)) return value;
                         return "";
                     }
                 }
@@ -127,6 +125,7 @@ final class ModelSelection {
         for (int i = 0; i < tiers.length; i++) {
             ModelCatalog tier = tiers[i];
             json.append("    {\"tag\": \"").append(tier.tagFor(mlx))
+                    .append("\", \"name\": \"").append(escape(tier.displayName()))
                     .append("\", \"diskGb\": ").append(tier.diskGbFor(mlx))
                     .append(", \"minRamGb\": ").append(tier.minRamGb())
                     .append(", \"recommendedRamGb\": ").append(tier.recommendedRamGb())

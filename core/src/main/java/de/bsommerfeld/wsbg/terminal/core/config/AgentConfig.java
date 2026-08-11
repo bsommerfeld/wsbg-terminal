@@ -16,11 +16,11 @@ public class AgentConfig {
     private String editorialModel = "REASONING_POWER";
 
     @Key("agent.model-tag")
-    @Comment("Ollama model tag override for the one resident gemma4 model (gemma4:e2b..31b, "
+    @Comment("Ollama model tag override for the one resident model (gemma4:e2b..26b, "
             + "-mlx twins on Apple Silicon). Empty = the managed default tier: gemma4:e4b, "
             + "as gemma4:e4b-mlx on Apple Silicon. The launcher reads this key too and "
             + "installs the matching model on the next start, so runtime and installed model "
-            + "stay in sync. Only gemma4-family tags are honored; anything else degrades to "
+            + "stay in sync. Only tags of a deployed family are honored; anything else degrades to "
             + "the default. Written by the launcher's model-choice screen — the hardware "
             + "recommendation lives in the launcher's hardware-recommendation.json.")
     private String modelTag = "";
@@ -71,7 +71,8 @@ public class AgentConfig {
 
     /**
      * Resolves the concrete Ollama tag the one resident model runs as: the
-     * user's {@code agent.model-tag} choice when it names a gemma4-family tag,
+     * user's {@code agent.model-tag} choice when it names a tag of a deployed
+     * family,
      * else the managed default — {@link Model#REASONING_POWER}, with the MLX
      * build as the standard on Apple Silicon (mirrors the launcher's
      * {@code ModelSelection}, so runtime and installed model agree without any
@@ -81,7 +82,7 @@ public class AgentConfig {
      */
     public String resolveModelTag() {
         String tag = modelTag == null ? "" : modelTag.strip().toLowerCase();
-        if (tag.startsWith(Model.REASONING_POWER.getFamilyPrefix() + ":")) {
+        if (Model.isDeployedFamily(tag)) {
             return tag;
         }
         String base = Model.REASONING_POWER.getModelName();
@@ -96,22 +97,95 @@ public class AgentConfig {
 
     /**
      * The effective context window (num_ctx) for the one resident model —
-     * fully automatic, scaled to this machine's physical memory (user mandate
-     * 2026-07-16: no maintained knob; the machine decides). The 8k floor was
-     * sized for 16 GB end-user machines with OLLAMA_KV_CACHE_TYPE=q8_0 +
-     * flash attention; a bigger window buys headroom per pass, not a
-     * different pipeline. Every model variant shares the value so they share
-     * one Ollama runner (num_ctx is a load-time parameter).
+     * fully automatic, scaled to what this machine has left AFTER the model's
+     * own weights (user mandate 2026-07-16: no maintained knob; the machine
+     * decides). The 8k floor was sized for 16 GB end-user machines with
+     * OLLAMA_KV_CACHE_TYPE=q8_0 + flash attention; a bigger window buys
+     * headroom per pass, not a different pipeline. Every model variant shares
+     * the value so they share one Ollama runner (num_ctx is a load-time
+     * parameter).
+     *
+     * <p>
+     * The tiers used to read TOTAL RAM alone, which was only ever right while
+     * the resident model was a fixed ~9 GB gemma4:e4b. Measured 2026-08-10 on
+     * a 48 GB machine: the same tier table handed a 21 GB model the same
+     * 16384-token window it hands a 9 GB one, the resident set plus KV cache
+     * pushed the machine 10.6 GB into swap, and sustained generation collapsed
+     * from ~78 to ~18 tok/s across five calls. Weight size is therefore the
+     * second axis, not a footnote.
      */
     public int resolveContextTokens() {
-        return contextTokensFor(totalPhysicalMemoryBytes());
+        return contextTokensFor(totalPhysicalMemoryBytes(), weightsGbFor(resolveModelTag()));
     }
 
-    /** The memory tiers behind auto mode - package-visible for tests. */
-    static int contextTokensFor(long totalMemoryBytes) {
-        long gb = totalMemoryBytes / (1L << 30);
-        if (gb >= 64) return 24576;
-        if (gb >= 32) return 16384;
+    /**
+     * What the machine must keep for itself: the OS plus the terminal, whose
+     * JCEF layer is a full multi-process Chromium next to a 4 GB Java heap.
+     * Deliberately generous - the failure mode this guards against (swap) does
+     * not degrade gracefully, it collapses.
+     */
+    private static final double HOST_RESERVE_GB = 12.0;
+
+    /**
+     * Approximate RESIDENT weight footprint in GB per model tag. Mirrors the
+     * launcher's {@code ModelCatalog} disk sizes (MLX twin where it differs) -
+     * the two must agree, the same way the deployed-family gates do. An
+     * unknown tag gets the anchor's size rather than zero: guessing small is
+     * the one error that reintroduces the swap collapse.
+     */
+    static double weightsGbFor(String tag) {
+        String t = tag == null ? "" : tag.strip().toLowerCase();
+        if (t.startsWith("gemma4:e2b")) return 6.5;
+        if (t.startsWith("gemma4:e4b")) return 8.8;
+        if (t.startsWith("gemma4:12b")) return 7.7;
+        if (t.startsWith("gemma4:26b")) return 18.0;
+        if (t.startsWith("nemotron-3.5-lightning:")) return 23.0;
+        return 8.8;
+    }
+
+    /**
+     * The context window is paid for TWICE: the server runs with
+     * {@code OLLAMA_NUM_PARALLEL=2} (see {@code OllamaServerManager}), so the
+     * runner allocates KV cache for two slots of {@code num_ctx} each. Any
+     * sizing that forgets this factor is off by 100 % on the one term it
+     * exists to bound.
+     */
+    private static final int LLM_PARALLEL_SLOTS = 2;
+
+    /**
+     * GB of KV cache per 1000 slot-tokens, with q8_0 + flash attention.
+     * Measured 2026-08-10 on the 48 GB machine: a 21.9 GB model at num_ctx
+     * 16384 held a 25.7 GB wired set, so ~3.8 GB of KV across 2 × 16384 =
+     * 32768 slot-tokens.
+     */
+    private static final double KV_GB_PER_1K_SLOT_TOKENS = 0.116;
+
+    /**
+     * Slack beyond the KV cache the window must ALSO leave free: fetch
+     * buffers, Java heap growth, OS file cache. Without it the ladder picks
+     * the window that exactly fills the machine, and "exactly full" is the
+     * state one browser tab away from swapping.
+     */
+    private static final double BURST_SLACK_GB = 6.0;
+
+    /** The windows auto mode may choose from, roomiest first. */
+    private static final int[] WINDOW_LADDER = {24576, 16384, 8192};
+
+    /**
+     * The memory tiers behind auto mode - package-visible for tests. Picks the
+     * roomiest window whose KV cache still fits what is left after the host
+     * reserve and the model's own weights; 8192 is the floor and is returned
+     * even when it does not fit, because a window below it is not a smaller
+     * pipeline, it is a broken one.
+     */
+    static int contextTokensFor(long totalMemoryBytes, double modelWeightsGb) {
+        if (totalMemoryBytes <= 0) return 8192;   // unprobeable → floor
+        double headroomGb =
+                totalMemoryBytes / (double) (1L << 30) - modelWeightsGb - HOST_RESERVE_GB;
+        for (int window : WINDOW_LADDER) {
+            double kvGb = window * LLM_PARALLEL_SLOTS / 1000.0 * KV_GB_PER_1K_SLOT_TOKENS;
+            if (headroomGb >= kvGb + BURST_SLACK_GB) return window;
+        }
         return 8192;
     }
 

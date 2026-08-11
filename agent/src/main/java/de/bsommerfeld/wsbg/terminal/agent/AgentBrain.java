@@ -44,8 +44,15 @@ public class AgentBrain {
     private ChatModel dossierModel;
     /** Same gemma4 model, free-form with the roomiest numPredict — for KI-DD report passes. */
     private ChatModel deepDiveModel;
-    /** Same gemma4 model, free-form, THINKING ON — for the few-call verdict judges. */
+    /**
+     * The judge lane. Free-form, and NOT a thinking lane despite the name -
+     * thinking was struck from the fleet 2026-08-05 and the factory hands this
+     * seam the sober deep-dive model. The name survives so the judge lanes stay
+     * separately routable if they ever need their own decode again.
+     */
     private ChatModel deliberateModel;
+    /** Same gemma4, DETERMINISTIC decode (temp 0, top-k 1, fixed seed) — the verdict lane. */
+    private ChatModel verdictModel;
     private String activeAgentModel;
 
     private final GlobalConfig config;
@@ -115,6 +122,7 @@ public class AgentBrain {
         this.dossierModel = models.dossierModel();
         this.deepDiveModel = models.deepDiveModel();
         this.deliberateModel = models.deliberateModel();
+        this.verdictModel = models.verdictModel();
         this.activeAgentModel = models.activeAgentModel();
         this.userLanguage = this.config.getUser().getUserLanguage();
 
@@ -252,14 +260,25 @@ public class AgentBrain {
     }
 
     /**
-     * The DELIBERATE judge model: same gemma4, free-form, thinking ON.
-     * Reserved for the few-call VERDICT judges (formcheck, final instance,
-     * reclaim) where thinking measurably flips the verdict quality
-     * (2026-07-17 A/B) — never for the mass lanes, whose think=false speedup
-     * is the wire's documented throughput fix.
+     * The DELIBERATE judge seam: same gemma4, free-form. Reserved for the
+     * few-call VERDICT judges (formcheck, final instance, reclaim). It once
+     * ran with thinking on (2026-07-17 A/B), which is where the name comes
+     * from; thinking was struck from the whole fleet on 2026-08-05 after it
+     * was measured spiralling to the num_predict ceiling with the visible
+     * verdict truncated to nothing, so this returns the sober model today.
      */
     public ChatModel getDeliberateModel() {
         return deliberateModel != null ? deliberateModel : deepDiveModel;
+    }
+
+    /**
+     * The VERDICT model: same gemma4, but decoded greedily against a fixed
+     * seed. Exactly one caller - the closing assessment's single stance pass -
+     * because that section promises the reader that the same fact base yields
+     * the same number, and a sampled decode would quietly break the promise.
+     */
+    public ChatModel getVerdictModel() {
+        return verdictModel != null ? verdictModel : deepDiveModel;
     }
 
     /** Returns the resolved Ollama model name used by {@link #getAgentModel()}. */
@@ -274,5 +293,17 @@ public class AgentBrain {
      */
     public int contextTokens() {
         return config.getAgent().resolveContextTokens();
+    }
+
+    /**
+     * The output ceiling (num_predict) every model handle runs with — ONE
+     * number for the whole fleet. Callers that must budget prompt against
+     * output ({@code DeepDiveService}, {@code WeatherReportService}) read it
+     * HERE. They used to hand-copy the figure, which meant three places had to
+     * be edited in lockstep and a missed one silently over-promised the input
+     * budget until a pass came back truncated.
+     */
+    public int numPredict() {
+        return OllamaModelFactory.NUM_PREDICT;
     }
 }

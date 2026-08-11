@@ -17,6 +17,15 @@ public class UserConfig {
     @Comment("Check for updates on startup (default: true)")
     private boolean autoUpdate = true;
 
+    @Key("experimental-updates")
+    @Comment("Which releases this install accepts: 'yes' takes everything the "
+            + "moment it is published (pre-releases included), 'no' only finished "
+            + "versions. Empty = never asked; the launcher then puts the question "
+            + "once, on the next start, and writes the answer here. Leaving the "
+            + "experimental channel re-syncs onto the newest stable release, "
+            + "which is a downgrade by design.")
+    private String experimentalUpdates = "";
+
     @Key("open-count")
     @Comment("How many times the software has been opened")
     private long openCount = 0;
@@ -94,6 +103,20 @@ public class UserConfig {
 
     public void setAutoUpdate(boolean autoUpdate) {
         this.autoUpdate = autoUpdate;
+    }
+
+    /** Raw tri-state: {@code "yes"}, {@code "no"}, or empty for "never asked". */
+    public String getExperimentalUpdates() {
+        return experimentalUpdates;
+    }
+
+    public void setExperimentalUpdates(String experimentalUpdates) {
+        this.experimentalUpdates = experimentalUpdates;
+    }
+
+    /** Whether this install accepts pre-releases. An unanswered question means no. */
+    public boolean isExperimentalUpdates() {
+        return "yes".equalsIgnoreCase(experimentalUpdates);
     }
 
     public long getOpenCount() {

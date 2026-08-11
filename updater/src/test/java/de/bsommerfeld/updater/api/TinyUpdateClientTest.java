@@ -25,7 +25,7 @@ class TinyUpdateClientTest {
   @BeforeEach
   void setUp() {
     client = new TinyUpdateClient(
-        GitHubRepository.of("owner/repo"), appDir);
+        GitHubRepository.of("owner/repo"), appDir, ReleaseChannel.STABLE);
   }
 
   @Test

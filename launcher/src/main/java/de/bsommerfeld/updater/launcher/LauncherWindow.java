@@ -46,8 +46,8 @@ final class LauncherWindow extends JFrame {
     // transparent frame, which is what keeps it smooth: a native window
     // resize per frame stutters on macOS.
     private static final int CHOICE_WIDTH = 368;
-    private static final int CHOICE_HEIGHT = 380;
-    // The language choice carries two rows instead of five — same width, so
+    private static final int CHOICE_HEIGHT = 420;
+    // The language choice carries two rows instead of four — same width, so
     // the two screens read as one flow, but only as tall as its content.
     private static final int LANGUAGE_HEIGHT = 256;
     private static final int MORPH_MS = 450;
@@ -189,6 +189,19 @@ final class LauncherWindow extends JFrame {
             String preselectCode) {
         return showChoice(CHOICE_WIDTH, LANGUAGE_HEIGHT, logo ->
                 new LanguageChoicePanel(rows, preselectCode, logo,
+                        WIDTH, HEIGHT, LOGO_TOP_NORMAL, this::onChoiceConfirmed));
+    }
+
+    /**
+     * Morphs the window into its update-channel state; the returned future
+     * completes with the chosen answer ({@code "yes"}/{@code "no"}). Two rows,
+     * so it borrows the language screen's height. Safe to call from any thread;
+     * the caller blocks on the future.
+     */
+    CompletableFuture<String> showChannelChoice(List<ChannelChoicePanel.Row> rows,
+            String preselectAnswer, ChannelChoicePanel.Labels labels) {
+        return showChoice(CHOICE_WIDTH, LANGUAGE_HEIGHT, logo ->
+                new ChannelChoicePanel(rows, preselectAnswer, labels, logo,
                         WIDTH, HEIGHT, LOGO_TOP_NORMAL, this::onChoiceConfirmed));
     }
 

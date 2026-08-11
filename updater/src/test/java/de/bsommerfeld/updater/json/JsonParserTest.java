@@ -215,4 +215,56 @@ class JsonParserTest {
     void extractAssetUrl_shouldReturnNullWithoutAssetsArray() {
         assertNull(JsonParser.extractAssetUrl("{ \"tag_name\": \"v1.0\" }", "update.json"));
     }
+
+    // -- firstPublishedRelease (the experimental channel's source) --
+
+    private static final String RELEASE_LISTING = """
+            [
+              { "tag_name": "v3.0.0-rc1", "draft": true,  "prerelease": true,
+                "body": "not ready", "assets": [] },
+              { "tag_name": "v2.9.0-rc2", "draft": false, "prerelease": true,
+                "body": "try it", "assets": [
+                  { "name": "update.json", "browser_download_url": "https://cdn/rc2.json" }
+                ] },
+              { "tag_name": "v2.8.0", "draft": false, "prerelease": false,
+                "body": "stable", "assets": [] }
+            ]
+            """;
+
+    @Test
+    void firstPublishedRelease_shouldSkipDraftsButKeepPreReleases() {
+        String release = JsonParser.firstPublishedRelease(RELEASE_LISTING);
+        assertEquals("v2.9.0-rc2", JsonParser.extractString(release, "tag_name"));
+    }
+
+    @Test
+    void firstPublishedRelease_shouldReturnAnObjectTheAssetReaderCanUse() {
+        // The whole point: the picked entry goes through the same pipeline a
+        // single-release payload does.
+        String release = JsonParser.firstPublishedRelease(RELEASE_LISTING);
+        assertEquals("https://cdn/rc2.json", JsonParser.extractAssetUrl(release, "update.json"));
+    }
+
+    @Test
+    void firstPublishedRelease_shouldIgnoreDraftWordingInsideTheBody() {
+        String listing = """
+                [
+                  { "tag_name": "v1.0.0", "body": "still a \\"draft\\": true, honestly",
+                    "assets": [] }
+                ]
+                """;
+        assertEquals("v1.0.0",
+                JsonParser.extractString(JsonParser.firstPublishedRelease(listing), "tag_name"));
+    }
+
+    @Test
+    void firstPublishedRelease_shouldReturnNullWhenEverythingIsADraft() {
+        assertNull(JsonParser.firstPublishedRelease(
+                "[ { \"tag_name\": \"v1.0\", \"draft\": true, \"assets\": [] } ]"));
+    }
+
+    @Test
+    void firstPublishedRelease_shouldReturnNullForAnEmptyListing() {
+        assertNull(JsonParser.firstPublishedRelease("[]"));
+    }
 }

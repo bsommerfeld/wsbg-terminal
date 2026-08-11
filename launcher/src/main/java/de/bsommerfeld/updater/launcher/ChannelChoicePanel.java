@@ -4,65 +4,58 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
-import java.awt.geom.Path2D;
 import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BufferedImage;
 import java.util.List;
 import java.util.function.Consumer;
 
 /**
- * The model-choice view: one row per model tier, each naming the model on its
- * own line and translating the parameter count underneath into the two numbers
- * a non-technical user can actually reason about — quality and speed, both
- * 0–10 — plus the download size and a plain-language fit verdict. The name is
- * the only technical thing on the row: no RAM figures, no parameter counts, no
- * quantization jargon.
+ * The update-channel choice — asked once per install, right after the language
+ * is known and before anything checks GitHub for the first time.
  *
- * <p>This component IS the whole morphing window content: it paints the
- * rounded window body itself at an interpolated size (the frame is resized to
- * the large target ONCE, so the morph is pure repainting — no native resize
- * per frame, which is what makes it smooth), with the top edge anchored. The
- * logo glides from its splash position into the top-left corner while the
- * rows stagger in below, growing out of thin progress-bar-like tracks — the
- * visual continuation of the {@link IslandIndicator} bar they replace.
+ * <p>
+ * Each row states plainly what it is (stable / experimental) and carries the
+ * room's own reading of that decision on the right, where the language screen
+ * puts the ISO code: risk management on one side, maximum leverage on the
+ * other. Stable arrives preselected — the cautious answer is a single click,
+ * and the adventurous one has to be picked on purpose.
  *
- * <p>Selection is advisory-friendly: every row is selectable, including
- * "too large" ones (dimmed, never disabled — the recommendation informs, the
- * user decides). The recommended tier arrives preselected, so the default
- * action is a single click on OK.
- *
- * <h3>Flicker discipline</h3>
- * The morph performs ZERO native window mutations per frame — no setBounds,
- * no setShape (each native change applies on the compositor immediately while
- * the matching paint lands 1–2 display refreshes later; on a 120 Hz panel
- * every mismatch shows as flicker). Instead the frame is sized and shaped to
- * the final target ONCE, and each animation frame is painted synchronously
- * via {@code paintImmediately} — one complete blit per frame. While morphing
- * the panel is transparent outside the painted body; at rest it flips opaque
- * ({@link #setRested}) so ordinary hover repaints can never clear-bleed the
- * desktop through. EDT-only, like all launcher widgets.
+ * <p>Shares the morphing-window contract with {@link LanguageChoicePanel} and
+ * {@link ModelChoicePanel}; see {@link MorphView} for the flicker discipline
+ * this paint code obeys.
  */
-final class ModelChoicePanel extends JComponent implements MorphView {
+final class ChannelChoicePanel extends JComponent implements MorphView {
 
-    /** One selectable tier row, fully pre-localized by the caller. */
-    record Row(String tag, String name, int quality, int speed, String sizeText,
-            ModelCatalog.Fit fit, boolean recommended, String verdictText) {
+    /**
+     * One selectable channel.
+     *
+     * @param answer   the value persisted as {@code user.experimental-updates}
+     * @param name     the channel's plain name ("Stabil" / "Experimentell")
+     * @param sideNote the room's characterisation, set beside the name
+     */
+    record Row(String answer, String name, String sideNote) {
     }
 
-    /** The localized strings the panel renders. */
-    record Labels(String title, String qualityWord, String speedWord,
-            String hint, String okText) {
+    /**
+     * The screen's fixed chrome, pre-translated by the caller.
+     *
+     * @param title  the question
+     * @param hint   the footer note
+     * @param okText the confirm button
+     */
+    record Labels(String title, String hint, String okText) {
     }
 
     private static final int PAD_X = 20;
     private static final int HEADER_H = 84;
-    private static final int ROW_H = 54;
-    private static final int ROW_GAP = 6;
+    private static final int ROW_H = 46;
+    private static final int ROW_GAP = 8;
     private static final int ROW_ARC = 12;
     private static final int OK_W = 76;
     private static final int OK_H = 32;
 
-    // Logo end state: tucked small into the top-left corner.
+    // Logo end state: tucked small into the top-left corner (same as the
+    // language and model choices, so the screens read as one flow).
     private static final int LOGO_END_X = 18;
     private static final int LOGO_END_Y = 12;
     private static final int LOGO_END_W = 72;
@@ -72,21 +65,16 @@ final class ModelChoicePanel extends JComponent implements MorphView {
     private static final Color ROW_SELECTED_TINT = new Color(0xF9, 0xB6, 0x4F, 26);
     private static final Color TEXT_PRIMARY = new Color(222, 222, 226);
     private static final Color TEXT_DIM = new Color(145, 145, 152);
-    private static final Color VERDICT_TIGHT = new Color(0xCC, 0x88, 0x44);
-    private static final Color VERDICT_TOO_LARGE = new Color(0xB0, 0x5A, 0x5A);
     private static final Color OK_TEXT = new Color(0x1A, 0x1A, 0x1A);
 
     private static final Font TITLE_FONT = new Font("SansSerif", Font.BOLD, 14);
-    private static final Font LEGEND_FONT = new Font("SansSerif", Font.PLAIN, 11);
-    private static final Font NAME_FONT = new Font("SansSerif", Font.BOLD, 13);
-    private static final Font SCORE_FONT = new Font("SansSerif", Font.BOLD, 15);
-    private static final Font SIZE_FONT = new Font("SansSerif", Font.PLAIN, 12);
-    private static final Font VERDICT_FONT = new Font("SansSerif", Font.PLAIN, 11);
+    private static final Font NAME_FONT = new Font("SansSerif", Font.BOLD, 15);
+    private static final Font SIDE_FONT = new Font("SansSerif", Font.PLAIN, 12);
     private static final Font HINT_FONT = new Font("SansSerif", Font.PLAIN, 10);
     private static final Font OK_FONT = new Font("SansSerif", Font.BOLD, 13);
 
     /** Per-row stagger of the grow-in, as a fraction of the whole morph. */
-    private static final float STAGGER = 0.08f;
+    private static final float STAGGER = 0.10f;
 
     private final List<Row> rows;
     private final Labels labels;
@@ -101,8 +89,6 @@ final class ModelChoicePanel extends JComponent implements MorphView {
     private boolean okHovered;
     private float morphT = 0f;
     private int dragX, dragY;
-    /** Whether the press that started this gesture landed on empty surface. */
-    private boolean dragging;
 
     /**
      * @param logo       a snapshot of the splash logo, glided into the corner
@@ -110,9 +96,8 @@ final class ModelChoicePanel extends JComponent implements MorphView {
      * @param smallH     height of the normal window body
      * @param logoStartY the logo's top inset in the normal layout
      */
-    ModelChoicePanel(List<Row> rows, String preselectTag, Labels labels,
-            BufferedImage logo, int smallW, int smallH, int logoStartY,
-            Consumer<String> onOk) {
+    ChannelChoicePanel(List<Row> rows, String preselectAnswer, Labels labels, BufferedImage logo,
+            int smallW, int smallH, int logoStartY, Consumer<String> onOk) {
         this.rows = rows;
         this.labels = labels;
         this.onOk = onOk;
@@ -122,7 +107,7 @@ final class ModelChoicePanel extends JComponent implements MorphView {
         this.logoStartY = logoStartY;
         selected = 0;
         for (int i = 0; i < rows.size(); i++) {
-            if (rows.get(i).tag().equals(preselectTag)) selected = i;
+            if (rows.get(i).answer().equals(preselectAnswer)) selected = i;
         }
         setOpaque(false);
         setBackground(LauncherTheme.BG);
@@ -131,7 +116,6 @@ final class ModelChoicePanel extends JComponent implements MorphView {
             public void mousePressed(MouseEvent e) {
                 dragX = e.getX();
                 dragY = e.getY();
-                dragging = !hitsControl(e.getX(), e.getY());
                 handlePress(e.getX(), e.getY());
             }
 
@@ -139,12 +123,8 @@ final class ModelChoicePanel extends JComponent implements MorphView {
             public void mouseDragged(MouseEvent e) {
                 // This view consumes mouse events, so the frame's own drag
                 // support never sees them — the window must stay draggable
-                // in the choice state too. But ONLY where nothing is on offer:
-                // a press that landed on a row or on OK is a press on a
-                // control, and a control must not slide the window out from
-                // under the hand that is aiming at it.
-                if (!dragging) return;
-                Window w = SwingUtilities.getWindowAncestor(ModelChoicePanel.this);
+                // in the choice state too.
+                Window w = SwingUtilities.getWindowAncestor(ChannelChoicePanel.this);
                 if (w != null) w.setLocation(e.getXOnScreen() - dragX, e.getYOnScreen() - dragY);
             }
 
@@ -164,22 +144,11 @@ final class ModelChoicePanel extends JComponent implements MorphView {
         addMouseMotionListener(mouse);
     }
 
-    /**
-     * Advances the morph WITHOUT scheduling a repaint: 0 = the normal window
-     * body (only the logo painted, at its splash position), 1 = fully
-     * unfolded choice list. The morph clock paints each frame synchronously
-     * via {@code paintImmediately} right after this call.
-     */
     @Override
     public void setMorphT(float t) {
         morphT = Math.max(0f, Math.min(1f, t));
     }
 
-    /**
-     * Flips between the morphing surface (transparent outside the body) and
-     * the at-rest surface (fully opaque, so hover repaints can never bleed
-     * the desktop through).
-     */
     @Override
     public void setRested(boolean rested) {
         setOpaque(rested);
@@ -197,19 +166,6 @@ final class ModelChoicePanel extends JComponent implements MorphView {
         return morphT >= 1f;
     }
 
-    /**
-     * Whether {@code (x, y)} lands on something the user can act on — a tier
-     * row or the OK button. The single source of truth for both the drag gate
-     * and the hand cursor, so what looks clickable and what refuses to drag
-     * can never drift apart. Before the morph finishes nothing is a control:
-     * the whole surface is still just a moving window.
-     */
-    private boolean hitsControl(int x, int y) {
-        if (!interactive()) return false;
-        boolean onRow = x >= PAD_X && x <= getWidth() - PAD_X && rowAt(y) >= 0;
-        return onRow || okBounds().contains(x, y);
-    }
-
     private void handlePress(int x, int y) {
         if (!interactive()) return;
         int row = rowAt(y);
@@ -219,7 +175,7 @@ final class ModelChoicePanel extends JComponent implements MorphView {
             return;
         }
         if (okBounds().contains(x, y)) {
-            onOk.accept(rows.get(selected).tag());
+            onOk.accept(rows.get(selected).answer());
         }
     }
 
@@ -231,7 +187,7 @@ final class ModelChoicePanel extends JComponent implements MorphView {
             hovered = row;
             okHovered = ok;
             setCursor(Cursor.getPredefinedCursor(
-                    hitsControl(x, y) ? Cursor.HAND_CURSOR : Cursor.DEFAULT_CURSOR));
+                    row >= 0 || ok ? Cursor.HAND_CURSOR : Cursor.DEFAULT_CURSOR));
             repaint();
         }
     }
@@ -263,20 +219,14 @@ final class ModelChoicePanel extends JComponent implements MorphView {
                 body.x, body.y, body.width, body.height, 20, 20);
 
         if (isOpaque()) {
-            // At rest the body fills the frame (the window shape rounds the
-            // corners) — paint every pixel, as opacity promises.
             g2.setColor(LauncherTheme.BG);
             g2.fillRect(0, 0, getWidth(), getHeight());
         } else {
-            // Morphing: only the body is painted, everything outside stays
-            // transparent. Clip so no content can leak past the outline.
             g2.setColor(LauncherTheme.BG);
             g2.fill(bodyShape);
             g2.clip(bodyShape);
         }
 
-        // Subtle 1px border along the current body outline (top anchored,
-        // growing horizontally around the center and downward).
         g2.setColor(new Color(255, 255, 255, 10));
         g2.setStroke(new BasicStroke(1f));
         g2.draw(new RoundRectangle2D.Float(body.x + 0.5f, 0.5f,
@@ -302,7 +252,7 @@ final class ModelChoicePanel extends JComponent implements MorphView {
         g2.drawImage(logo, Math.round(x), Math.round(y), Math.round(w), Math.round(h), null);
     }
 
-    /** Title + glyph legend beside the corner logo, fading in with the morph. */
+    /** The question, beside the corner logo. */
     private void paintHeader(Graphics2D g2, float e) {
         float a = Math.max(0f, (e - 0.4f) / 0.6f);
         if (a <= 0f) return;
@@ -311,26 +261,13 @@ final class ModelChoicePanel extends JComponent implements MorphView {
         int x = LOGO_END_X + LOGO_END_W + 18;
         g2.setFont(TITLE_FONT);
         g2.setColor(TEXT_PRIMARY);
-        g2.drawString(labels.title(), x, 34);
-
-        g2.setFont(LEGEND_FONT);
-        FontMetrics fm = g2.getFontMetrics();
-        int ly = 56;
-        double cy = ly - fm.getAscent() / 2.0 + 1;
-        paintDiamond(g2, x + 5, cy, 5.5, LauncherTheme.ACCENT);
-        g2.setColor(TEXT_DIM);
-        g2.drawString(labels.qualityWord(), x + 14, ly);
-        int qw = fm.stringWidth(labels.qualityWord());
-        int sx = x + 14 + qw + 16;
-        paintBolt(g2, sx + 4, cy, 6, TEXT_DIM);
-        g2.drawString(labels.speedWord(), sx + 13, ly);
+        g2.drawString(labels.title(), x, 44);
         g2.setComposite(AlphaComposite.SrcOver);
     }
 
     private void paintRow(Graphics2D g2, Row row, int index, int y) {
-        // Staggered grow-in: each row fades in and unfolds from a thin,
-        // bar-like track to full height, later rows slightly behind earlier
-        // ones — the progress bar dissolving into the list.
+        // Staggered grow-in: each row unfolds from a thin, bar-like track to
+        // full height — the progress bar dissolving into the list.
         float local = Math.min(1f,
                 Math.max(0f, (morphT - index * STAGGER) / (1f - rows.size() * STAGGER)));
         if (local <= 0f) return;
@@ -357,55 +294,25 @@ final class ModelChoicePanel extends JComponent implements MorphView {
         }
 
         if (ease > 0.6f) {
-            // Row content only near full height; "too large" rows stay
-            // selectable but read visibly damped.
-            float contentAlpha = ease * (row.fit() == ModelCatalog.Fit.TOO_LARGE ? 0.45f : 1f);
-            g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, contentAlpha));
+            g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, ease));
             paintRowContent(g2, row, y);
         }
         g2.setComposite(old);
     }
 
     private void paintRowContent(Graphics2D g2, Row row, int y) {
-        // Two lines: the model's name over its numbers. The verdict sits on
-        // the name's line, right-aligned — the two things a scanning eye
-        // pairs ("which one is this, and does it fit me?") share a baseline.
-        int nameY = y + 21;
-        int metricsY = y + 40;
-
         g2.setFont(NAME_FONT);
-        g2.setColor(TEXT_PRIMARY);
-        g2.drawString(row.name(), PAD_X + 14, nameY);
-
-        g2.setFont(VERDICT_FONT);
-        FontMetrics vfm = g2.getFontMetrics();
-        Color verdictColor = switch (row.fit()) {
-            case COMFORTABLE -> row.recommended() ? LauncherTheme.ACCENT : TEXT_DIM;
-            case TIGHT -> VERDICT_TIGHT;
-            case TOO_LARGE -> VERDICT_TOO_LARGE;
-        };
-        g2.setColor(verdictColor);
-        g2.drawString(row.verdictText(),
-                getWidth() - PAD_X - 14 - vfm.stringWidth(row.verdictText()), nameY);
-
-        // Quality and speed as glyph+number pairs, column-aligned across rows.
-        g2.setFont(SCORE_FONT);
         FontMetrics fm = g2.getFontMetrics();
-        double cy = metricsY - fm.getAscent() / 2.0 + 1;
-
-        int qx = PAD_X + 20;
-        paintDiamond(g2, qx, cy, 6.5, LauncherTheme.ACCENT);
+        int baseY = y + (ROW_H + fm.getAscent() - fm.getDescent()) / 2;
         g2.setColor(TEXT_PRIMARY);
-        g2.drawString(String.valueOf(row.quality()), qx + 14, metricsY);
+        g2.drawString(row.name(), PAD_X + 24, baseY);
 
-        int sx = PAD_X + 76;
-        paintBolt(g2, sx, cy, 7, TEXT_PRIMARY);
-        g2.setColor(TEXT_PRIMARY);
-        g2.drawString(String.valueOf(row.speed()), sx + 14, metricsY);
-
-        g2.setFont(SIZE_FONT);
+        g2.setFont(SIDE_FONT);
+        FontMetrics sfm = g2.getFontMetrics();
         g2.setColor(TEXT_DIM);
-        g2.drawString(row.sizeText(), PAD_X + 136, metricsY);
+        g2.drawString(row.sideNote(),
+                getWidth() - PAD_X - 24 - sfm.stringWidth(row.sideNote()),
+                y + (ROW_H + sfm.getAscent() - sfm.getDescent()) / 2);
     }
 
     private void paintFooter(Graphics2D g2) {
@@ -430,33 +337,5 @@ final class ModelChoicePanel extends JComponent implements MorphView {
                 ok.x + (ok.width - ofm.stringWidth(labels.okText())) / 2,
                 ok.y + (ok.height + ofm.getAscent() - ofm.getDescent()) / 2);
         g2.setComposite(AlphaComposite.SrcOver);
-    }
-
-    /** Four-point star/diamond — the quality glyph. */
-    private static void paintDiamond(Graphics2D g2, double cx, double cy, double r, Color c) {
-        double w = r * 0.45;
-        Path2D p = new Path2D.Double();
-        p.moveTo(cx, cy - r);
-        p.quadTo(cx + w * 0.3, cy - w * 0.3, cx + r, cy);
-        p.quadTo(cx + w * 0.3, cy + w * 0.3, cx, cy + r);
-        p.quadTo(cx - w * 0.3, cy + w * 0.3, cx - r, cy);
-        p.quadTo(cx - w * 0.3, cy - w * 0.3, cx, cy - r);
-        p.closePath();
-        g2.setColor(c);
-        g2.fill(p);
-    }
-
-    /** Lightning bolt — the speed glyph. */
-    private static void paintBolt(Graphics2D g2, double cx, double cy, double r, Color c) {
-        Path2D p = new Path2D.Double();
-        p.moveTo(cx + r * 0.45, cy - r);
-        p.lineTo(cx - r * 0.55, cy + r * 0.25);
-        p.lineTo(cx - r * 0.05, cy + r * 0.25);
-        p.lineTo(cx - r * 0.45, cy + r);
-        p.lineTo(cx + r * 0.55, cy - r * 0.25);
-        p.lineTo(cx + r * 0.05, cy - r * 0.25);
-        p.closePath();
-        g2.setColor(c);
-        g2.fill(p);
     }
 }

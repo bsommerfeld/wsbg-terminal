@@ -2,6 +2,7 @@ package de.bsommerfeld.updater.launcher;
 
 import de.bsommerfeld.updater.api.ConnectivityProbe;
 import de.bsommerfeld.updater.api.GitHubRepository;
+import de.bsommerfeld.updater.api.ReleaseChannel;
 import de.bsommerfeld.updater.api.TinyUpdateClient;
 import de.bsommerfeld.updater.api.UpdateResult;
 import de.bsommerfeld.updater.update.VersionFile;
@@ -166,7 +167,7 @@ final class StagedLauncher {
      * "update now" relaunch ({@code --force-update}) pulls it regardless.
      */
     static void sync(GitHubRepository repo, Path appDir, SessionLog log,
-            boolean autoUpdate, boolean forceUpdate) {
+            ReleaseChannel channel, boolean autoUpdate, boolean forceUpdate) {
         if (!autoUpdate && !forceUpdate) {
             log.log("Auto-update disabled — launcher self-update skipped.");
             return;
@@ -176,7 +177,7 @@ final class StagedLauncher {
 
         try {
             Files.createDirectories(stagingDir(appDir));
-            TinyUpdateClient client = new TinyUpdateClient(repo, stagingDir(appDir),
+            TinyUpdateClient client = new TinyUpdateClient(repo, stagingDir(appDir), channel,
                     MANIFEST_ASSET, ARCHIVE_ASSET, null, null);
             UpdateResult result = client.update(progress -> { }, 0);
             if (result.updated()) {

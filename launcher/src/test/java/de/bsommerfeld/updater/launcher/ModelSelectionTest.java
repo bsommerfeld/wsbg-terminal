@@ -26,11 +26,13 @@ class ModelSelectionTest {
         assertEquals(ModelCatalog.E2B, ModelCatalog.recommend(8));
         assertEquals(ModelCatalog.E2B, ModelCatalog.recommend(12));
         assertEquals(ModelCatalog.E4B, ModelCatalog.recommend(16));
-        assertEquals(ModelCatalog.B12, ModelCatalog.recommend(24));
-        assertEquals(ModelCatalog.B12, ModelCatalog.recommend(32));
+        assertEquals(ModelCatalog.E4B, ModelCatalog.recommend(24));
+        assertEquals(ModelCatalog.E4B, ModelCatalog.recommend(32));
         assertEquals(ModelCatalog.B26, ModelCatalog.recommend(40));
-        assertEquals(ModelCatalog.B31, ModelCatalog.recommend(48));
-        assertEquals(ModelCatalog.B31, ModelCatalog.recommend(128));
+        assertEquals(ModelCatalog.NEMOTRON_LIGHTNING, ModelCatalog.recommend(48));
+        // The ladder tops out at Nemotron - a bigger machine buys no bigger tier.
+        assertEquals(ModelCatalog.NEMOTRON_LIGHTNING, ModelCatalog.recommend(64));
+        assertEquals(ModelCatalog.NEMOTRON_LIGHTNING, ModelCatalog.recommend(128));
     }
 
     @Test
@@ -44,14 +46,22 @@ class ModelSelectionTest {
         assertEquals(ModelCatalog.Fit.COMFORTABLE, ModelCatalog.E4B.fitFor(16));
         assertEquals(ModelCatalog.Fit.TIGHT, ModelCatalog.E4B.fitFor(12));
         assertEquals(ModelCatalog.Fit.TOO_LARGE, ModelCatalog.E4B.fitFor(8));
-        assertEquals(ModelCatalog.Fit.TOO_LARGE, ModelCatalog.B31.fitFor(24));
+        assertEquals(ModelCatalog.Fit.TOO_LARGE, ModelCatalog.B26.fitFor(24));
+        assertEquals(ModelCatalog.Fit.TIGHT, ModelCatalog.B26.fitFor(32));
+        assertEquals(ModelCatalog.Fit.COMFORTABLE, ModelCatalog.B26.fitFor(40));
     }
 
     @Test
     void appleSiliconGetsTheMlxTwin() {
         assertEquals("gemma4:e4b", ModelCatalog.E4B.tagFor(false));
         assertEquals("gemma4:e4b-mlx", ModelCatalog.E4B.tagFor(true));
-        assertEquals("gemma4:31b-mlx", ModelCatalog.B31.tagFor(true));
+        assertEquals("gemma4:26b-mlx", ModelCatalog.B26.tagFor(true));
+        // The MLX suffix is a platform rule, not a gemma4 rule - it holds
+        // across families, so the top tier carries it too.
+        assertEquals("nemotron-3.5-lightning:30b",
+                ModelCatalog.NEMOTRON_LIGHTNING.tagFor(false));
+        assertEquals("nemotron-3.5-lightning:30b-mlx",
+                ModelCatalog.NEMOTRON_LIGHTNING.tagFor(true));
     }
 
     // ------------------------------------------------------------------
@@ -65,8 +75,8 @@ class ModelSelectionTest {
 
     @Test
     void readsConfiguredTagFromConfigToml(@TempDir Path dir) throws IOException {
-        writeConfig(dir, "[agent]", "agent.model-tag = \"gemma4:12b-mlx\"");
-        assertEquals("gemma4:12b-mlx", ModelSelection.configuredModelTag(dir));
+        writeConfig(dir, "[agent]", "agent.model-tag = \"gemma4:e2b-mlx\"");
+        assertEquals("gemma4:e2b-mlx", ModelSelection.configuredModelTag(dir));
     }
 
     @Test
@@ -85,6 +95,14 @@ class ModelSelectionTest {
     }
 
     @Test
+    void honorsAnySiblingTierNotJustTheDefault(@TempDir Path dir) throws IOException {
+        // The gate is family-level, not tag-level: every tier of a deployed
+        // family passes, not only the anchor the default happens to name.
+        writeConfig(dir, "[agent]", "agent.model-tag = \"gemma4:26b-mlx\"");
+        assertEquals("gemma4:26b-mlx", ModelSelection.configuredModelTag(dir));
+    }
+
+    @Test
     void resolveWithoutUserChoiceStaysOnTheDefaultTier(@TempDir Path dir) {
         ModelSelection.Result result = ModelSelection.resolve(dir, new SessionLog(dir));
         // The recommendation is advisory only — no silent TIER switch, ever.
@@ -93,7 +111,7 @@ class ModelSelectionTest {
         String expected = ModelCatalog.DEFAULT.tagFor(HardwareProbe.probe().isAppleSilicon());
         assertEquals(expected, result.effectiveTag());
         assertTrue(result.effectiveTag().startsWith("gemma4:e4b"));
-        assertTrue(result.recommendedTag().startsWith("gemma4:"));
+        assertTrue(ModelCatalog.isDeployedFamily(result.recommendedTag()));
         assertTrue(Files.exists(dir.resolve(ModelSelection.RECOMMENDATION_FILE)));
     }
 
@@ -117,6 +135,24 @@ class ModelSelectionTest {
         assertTrue(json.contains("\"fit\""));
         assertTrue(json.contains("\"quality\""));
         assertTrue(json.contains("\"speed\""));
+        // The name travels with the tier - a UI reading this file must never
+        // have to reconstruct a label from the package coordinate.
+        for (ModelCatalog tier : ModelCatalog.values()) {
+            assertTrue(json.contains(tier.displayName()),
+                    "missing display name in recommendation file: " + tier);
+        }
+    }
+
+    @Test
+    void everyTierCarriesItsOwnName() {
+        java.util.Set<String> names = new java.util.HashSet<>();
+        for (ModelCatalog tier : ModelCatalog.values()) {
+            String name = tier.displayName();
+            assertTrue(name != null && !name.isBlank(), "unnamed tier: " + tier);
+            // A name is a label, never the package coordinate.
+            assertTrue(!name.contains(":"), "name must not be the tag: " + tier);
+            assertTrue(names.add(name), "duplicate tier name: " + name);
+        }
     }
 
     // ------------------------------------------------------------------
@@ -134,13 +170,17 @@ class ModelSelectionTest {
 
     @Test
     void speedFollowsActiveParamsNotSize() {
-        // The non-obvious fact the scale exists to convey: the 26B MoE (4B
-        // active) outruns the smaller dense 12B; the dense 31B is slowest.
-        assertTrue(ModelCatalog.B26.speed() > ModelCatalog.B12.speed());
+        // The non-obvious fact the scale exists to convey: the BIGGEST tier
+        // (30B MoE, 3B active) outruns the 26B below it (4B active), because
+        // speed follows active parameters, not parameter count.
+        assertTrue(ModelCatalog.NEMOTRON_LIGHTNING.speed() > ModelCatalog.B26.speed());
         assertTrue(ModelCatalog.E2B.speed() > ModelCatalog.E4B.speed());
+        // No rung may be slower than the 26B: a tier that costs more machine
+        // AND more waiting than its neighbours has no place on the ladder
+        // (the rule that struck the dense 12B and the 35B on 2026-08-11).
         for (ModelCatalog tier : ModelCatalog.values()) {
-            assertTrue(tier.speed() > ModelCatalog.B31.speed()
-                    || tier == ModelCatalog.B31);
+            assertTrue(tier.speed() >= ModelCatalog.B26.speed(),
+                    "no tier may be slower than the 26B: " + tier);
         }
     }
 

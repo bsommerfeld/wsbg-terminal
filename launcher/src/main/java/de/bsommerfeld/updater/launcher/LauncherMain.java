@@ -2,8 +2,10 @@ package de.bsommerfeld.updater.launcher;
 
 import de.bsommerfeld.updater.api.ConnectivityProbe;
 import de.bsommerfeld.updater.api.GitHubRepository;
+import de.bsommerfeld.updater.api.ReleaseChannel;
 import de.bsommerfeld.updater.api.TinyUpdateClient;
 import de.bsommerfeld.updater.api.UpdateResult;
+import de.bsommerfeld.updater.update.VersionFile;
 
 import javax.swing.SwingUtilities;
 import java.io.IOException;
@@ -114,9 +116,15 @@ public final class LauncherMain {
         final String[] forwardArgs = launchArgs.forwardArgs();
         log.log("auto-update=" + autoUpdate + (forceUpdate ? " (forced by in-app update)" : ""));
 
-        TinyUpdateClient updateClient = new TinyUpdateClient(REPO, appDir);
+        // Which releases this install accepts (config.toml:
+        // user.experimental-updates). Unanswered means stable — nothing ever
+        // lands on a pre-release without being asked for it. The update client
+        // is built inside the pipeline below, once the answer is final.
+        ChannelSelection.Result channelChoice = ChannelSelection.resolve(appDir, log);
 
-        boolean firstRun = updateClient.currentVersion() == null;
+        // Read straight off version.txt: the channel decides what we may fetch,
+        // never what is already installed, so this predates the client.
+        boolean firstRun = new VersionFile(appDir).read() == null;
         LauncherWindow window = new LauncherWindow();
         EnvironmentSetup envSetup = new EnvironmentSetup(appDir);
 
@@ -146,12 +154,23 @@ public final class LauncherMain {
                     i18n.switchTo(language);
                 }
 
+                // No answer on record for the update channel yet. Ask before
+                // anything talks to GitHub — the very next step already checks
+                // for updates, and it has to check the right channel.
+                ReleaseChannel channel = channelChoice.channel();
+                if (!channelChoice.userChosen()) {
+                    String answer = runChannelChoicePhase(window, i18n, log);
+                    ConfigWriter.write(appDir, "[user]", ChannelSelection.CONFIG_KEY, answer, log);
+                    channel = ChannelSelection.channelOf(answer);
+                }
+                TinyUpdateClient updateClient = new TinyUpdateClient(REPO, appDir, channel);
+
                 // A terminal is already up: either there is nothing to apply
                 // (then we are done — its window is already in front) or we
                 // close it first and run the normal pipeline over its install.
                 if (terminalRunning
                         && !runningTerminalGate(updateClient, window, log, i18n,
-                                appDir, autoUpdate, forceUpdate)) {
+                                appDir, channel, autoUpdate, forceUpdate)) {
                     System.exit(0);
                 }
 
@@ -169,7 +188,7 @@ public final class LauncherMain {
                 // no window steps): a newly staged jar takes over on the NEXT
                 // start, so there is nothing to show now. Same auto-update
                 // gate + --force-update override as the terminal update above.
-                StagedLauncher.sync(REPO, appDir, log, autoUpdate, forceUpdate);
+                StagedLauncher.sync(REPO, appDir, log, channel, autoUpdate, forceUpdate);
                 runEnvironmentPhase(envSetup, window, log, i18n, downloadSteps);
                 runLaunchPhase(appDir, window, log, forwardArgs, i18n);
             } catch (Throwable e) {
@@ -215,12 +234,12 @@ public final class LauncherMain {
      *         the launcher is done and should exit
      */
     private static boolean runningTerminalGate(TinyUpdateClient updateClient, LauncherWindow window,
-            SessionLog log, LauncherI18n i18n, Path appDir,
+            SessionLog log, LauncherI18n i18n, Path appDir, ReleaseChannel channel,
             boolean autoUpdate, boolean forceUpdate) {
 
         if (!isUpdatePending(updateClient, log, autoUpdate, forceUpdate)) {
             log.log("Nothing to apply — leaving the running terminal alone.");
-            StagedLauncher.sync(REPO, appDir, log, autoUpdate, forceUpdate);
+            StagedLauncher.sync(REPO, appDir, log, channel, autoUpdate, forceUpdate);
             log.log("Launcher exiting, terminal keeps running.");
             return false;
         }
@@ -300,10 +319,37 @@ public final class LauncherMain {
     }
 
     /**
+     * Blocks until the user has decided which releases this install accepts.
+     * Both rows name the thing plainly and carry the room's own reading of the
+     * decision beside it; the cautious answer arrives preselected, so taking
+     * the risky one is always a deliberate act.
+     */
+    private static String runChannelChoicePhase(LauncherWindow window, LauncherI18n i18n,
+            SessionLog log) throws Exception {
+        java.util.List<ChannelChoicePanel.Row> rows = java.util.List.of(
+                new ChannelChoicePanel.Row(ChannelSelection.NO,
+                        i18n.get("Stable"), i18n.get("Risk management")),
+                new ChannelChoicePanel.Row(ChannelSelection.YES,
+                        i18n.get("Experimental"), i18n.get("100x leverage")));
+
+        ChannelChoicePanel.Labels labels = new ChannelChoicePanel.Labels(
+                i18n.get("Which updates do you want?"),
+                i18n.get("You can change this later in the settings"),
+                i18n.get("OK"));
+
+        log.log("Channel choice UI shown (no answer on record)");
+        String chosen = window.showChannelChoice(rows, ChannelSelection.NO, labels).get();
+        log.log("Channel choice confirmed: " + chosen);
+        return chosen;
+    }
+
+    /**
      * Blocks until the user has picked a model tier in the morphing choice
-     * list. The tiers are translated for a non-technical audience: quality and
-     * speed on a 0–10 scale plus a plain-language fit verdict — never RAM
-     * figures or parameter counts. The hardware recommendation arrives
+     * list. The tiers are translated for a non-technical audience: the model's
+     * name plus quality and speed on a 0–10 scale and a plain-language fit
+     * verdict — never RAM figures or parameter counts. The name is the tier's
+     * own ({@link ModelCatalog#displayName()}), not the Ollama tag, and not
+     * translated: it is a product name. The hardware recommendation arrives
      * preselected, so confirming the default is a single click.
      */
     private static String runModelChoicePhase(LauncherWindow window, LauncherI18n i18n,
@@ -323,8 +369,8 @@ public final class LauncherMain {
             String size = String.format(
                     "de".equals(i18n.language()) ? java.util.Locale.GERMAN : java.util.Locale.ROOT,
                     "%.1f GB", tier.diskGbFor(modelChoice.appleSilicon()));
-            rows.add(new ModelChoicePanel.Row(tag, tier.quality(), tier.speed(),
-                    size, fit, recommended, verdict));
+            rows.add(new ModelChoicePanel.Row(tag, tier.displayName(),
+                    tier.quality(), tier.speed(), size, fit, recommended, verdict));
         }
 
         ModelChoicePanel.Labels labels = new ModelChoicePanel.Labels(

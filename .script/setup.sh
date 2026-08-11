@@ -24,14 +24,15 @@ set -e
 # To upgrade: set the new version here. On the next launch the isolated binary
 # under <appData>/ollama is re-downloaded automatically (downloaded models kept).
 #   Releases: https://github.com/ollama/ollama/releases
-OLLAMA_VERSION="0.32.5"
+OLLAMA_VERSION="0.32.9"
 
 # Models reconciled into our ISOLATED store (<appData>/ollama/models): section 3
 # installs/updates these to the latest registry build and removes anything else.
-# ONE gemma4 tag serves the whole editorial pipeline -- the single deployed model.
+# ONE model tag serves the whole editorial pipeline -- the single deployed model.
 # The launcher passes the resolved tag via WSBG_REASONING_MODEL (hardware check
 # + the user's config.toml choice live in ModelSelection there; valid tiers are
-# gemma4:e2b..31b, with the -mlx twins as the STANDARD on Apple Silicon). The
+# gemma4:e2b/e4b/26b and nemotron-3.5-lightning:30b, with the -mlx twins as the
+# STANDARD on Apple Silicon). The
 # fallback below only applies to standalone script runs without the launcher
 # and mirrors that platform split.
 DEFAULT_MODEL="gemma4:e4b"
@@ -495,7 +496,8 @@ ui-reddit-visible = true
 # Editorial agent reasoning model. REASONING_POWER (gemma4) - the one
 # model serving the whole editorial pipeline. Managed centrally; leave as-is.
 agent.editorial-model = "REASONING_POWER"
-# Ollama model tag override (gemma4:e2b..31b, -mlx twins on Apple Silicon).
+# Ollama model tag override (gemma4:e2b/e4b/26b, nemotron-3.5-lightning:30b,
+# -mlx twins on Apple Silicon).
 # Empty = managed default. Set by the launcher's model-choice screen; the launcher
 # reads it and installs the matching model on the next start.
 agent.model-tag = ""
