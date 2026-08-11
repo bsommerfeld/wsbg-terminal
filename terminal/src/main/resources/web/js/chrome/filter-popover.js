@@ -15,13 +15,16 @@
 //     is truly disabled (not just styled), so "mit" and "ohne" can never both be
 //     picked; clicking the active one clears the facet. Exactly the contradiction
 //     rule the user asked for.
+//   - Preisspanne — a continuous band, so it owns its own control (price-range.js)
+//     instead of a chip row: the panel only hands it a slot.
 
 import { t } from '../i18n/i18n.js';
 import { escapeHtml } from '../format/escape.js';
 import {
-  getSpec, onFilterChange, isActive,
+  getSpec, onFilterChange, isActive, activeFacets,
   setHighlight, togglePair, resetFilter,
 } from '../widgets/headline-filter.js';
+import { mountPriceRange } from './price-range.js';
 
 let btn = null;
 let pop = null;
@@ -33,7 +36,12 @@ let pop = null;
  * innerHTML), so no visibility bookkeeping is needed.
  */
 export function mountFilterPanel(container) {
-  const render = () => { container.innerHTML = panelHtml(); };
+  const render = () => {
+    container.innerHTML = panelHtml();
+    // The band control renders itself into its slot; `container` is the stable
+    // anchor it keys focus restoration off (the slot itself is replaced here).
+    mountPriceRange(container.querySelector('.js-price-range'), container);
+  };
 
   // Stop the click here so it never reaches document-level outside-click
   // handlers — the re-render detaches the clicked node before they run, which
@@ -97,12 +105,7 @@ function close() {
 
 // Light each icon line whose facet is active — the icon IS the status readout.
 function updateButton() {
-  const s = getSpec();
-  const on = {
-    highlight: s.highlight !== 'ALL',
-    price: s.price !== null,
-    news: s.news !== null,
-  };
+  const on = activeFacets();
   btn.querySelectorAll('.f-line').forEach(line => {
     line.classList.toggle('active', !!on[line.dataset.facet]);
   });
@@ -126,6 +129,7 @@ function panelHtml() {
       chip('highlight', 'IMPORTANT', t('filter.highlight.red'), s.highlight === 'IMPORTANT', false, 'red'),
     ]))}
     ${toggleRow(t('filter.price.label'), pairGroup('price', s.price))}
+    <div class="filter-row js-price-range"></div>
     ${toggleRow(t('filter.news.label'), pairGroup('news', s.news))}
   `;
 }

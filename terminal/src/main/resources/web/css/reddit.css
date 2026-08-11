@@ -179,3 +179,175 @@
   width: 96px; height: 96px;
   object-fit: cover;
 }
+
+/* Unread block: every contiguous run of unread rows is outlined as ONE body
+   (headline-list.js sets .unread on each row and .unread-head/.unread-tail on
+   the ends). An amber spine down the left runs the whole block and the ends
+   close it with a hairline. There can be several blocks at once - a fresh one on top, an
+   older one still open further down.
+
+   Drawn as an OVERLAY (::before), not as borders on the row itself. Two things
+   fall out of that, both load-bearing: the outline costs the row no width and
+   no height, so a block appearing or dissolving never nudges the column the
+   reader is scrolling through; and because only an opacity changes, the block
+   can FADE out when its last line is read instead of blinking away. Colour and
+   a slow fade, no loop, and no caption - the outline says "not read yet" on its
+   own, and a label would only crowd the line it marks. The moving part of this
+   feature lives at the list's edges, not in the column. */
+#widget-reddit .row::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .7s ease;
+  background: oklch(from var(--amber) l c h / .045);
+  border-left: 2px solid var(--amber);
+  border-right: 1px solid oklch(from var(--amber) l c h / .22);
+}
+#widget-reddit .row.unread::before { opacity: 1; }
+/* The ends close the body and pull in a touch, so the block's own hairline
+   doesn't sit flush on the row separator above or below it. */
+#widget-reddit .row.unread-head::before {
+  top: 4px;
+  border-top: 1px solid oklch(from var(--amber) l c h / .45);
+  border-top-left-radius: 6px;
+  border-top-right-radius: 6px;
+}
+#widget-reddit .row.unread-tail::before {
+  bottom: 4px;
+  border-bottom: 1px solid oklch(from var(--amber) l c h / .45);
+  border-bottom-left-radius: 6px;
+  border-bottom-right-radius: 6px;
+}
+
+/* ---------------------------------------------------------------------------
+   Unread portals.
+
+   Light at the edge of the headline list, lit while an unread block lies
+   beyond it: sunlight seen from under water, breaking on the surface. Not a
+   beam, not a bar, no edges - a shallow band of brightness that wanders along
+   the rim and never holds still.
+
+   How it is made: two very low-frequency gradients, both heavily blurred, drift
+   along the rim in OPPOSITE directions at different speeds. Blurred, neither
+   has a shape of its own; where their crests cross, the rim brightens for a
+   few seconds and then lets go. Nothing in it is drawn, which is the point -
+   earlier versions used shafts and then humps, and both read as strokes laid
+   ONTO the list rather than light coming from behind it.
+
+   Its box is not styled here but MEASURED (reddit.js -> fitPortals): the list
+   sits in a different place in every view - fullscreen drops the widget header
+   and centres the rows in a reading column - so the geometry arrives as
+   --portal-* custom properties from the painted boxes.
+
+   Both edges exist and both can burn at once - the top one is the SAME object
+   flipped, so its light and its motes travel away from its edge too. It fades
+   out over a good second when the block it points at comes into view; nothing
+   here ever blinks off.
+
+   The one looping animation in the widget, and deliberately gated: it pauses
+   whenever the window is in the background or the desk has been quiet for five
+   minutes (chrome/idle.js -> html[data-idle]), so nothing paints for nobody.
+   --------------------------------------------------------------------------- */
+
+.unread-portal {
+  position: absolute;
+  left: var(--portal-left, 0px);
+  right: var(--portal-right, 0px);
+  height: 34px;
+  overflow: hidden;
+  pointer-events: none;      /* the list underneath stays fully usable */
+  z-index: 4;
+  opacity: 0;
+  transition: opacity 1.1s ease;
+  /* The floor: a standing glow along the WHOLE rim, brightest on the edge
+     itself and gone within a third of the band. Without it the caustic leaves
+     dark stretches between its crests - and a dark stretch reads as "nothing
+     here", which is the opposite of what this edge is saying. The wandering
+     light rides on top of this; the rim is the constant. */
+  background-image: linear-gradient(to top,
+    oklch(from var(--amber) l c h / .26) 0%,
+    oklch(from var(--amber) l c h / .10) 30%,
+    transparent 72%);
+  mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
+}
+.unread-portal.lit { opacity: 1; }
+.unread-portal-bottom { bottom: var(--portal-bottom, 0px); }
+/* The top portal sits on the list's own top edge and is mirrored, so "away
+   from the edge" means downward there. */
+.unread-portal-top { top: var(--portal-top, 0px); transform: scaleY(-1); }
+
+/* In the grid overview the cards are thumbnails - light on the rim of a
+   postage stamp is noise, not a signal. */
+.main[data-view="grid"] > .widget .unread-portal { display: none; }
+
+/* Surface layer one: the long, slow swell riding on the standing rim glow.
+   Kept faint on purpose - it is a movement in the light, not a light of its
+   own. The blur is what turns the gradient into light instead of a stripe. */
+.up-rift {
+  position: absolute;
+  inset: -14px -40px -14px -40px;   /* blur bleeds inward, never a cut edge */
+  background-image: linear-gradient(90deg,
+    transparent, oklch(from var(--amber) l c h / .17) 22%,
+    transparent 44%, oklch(from var(--amber) l c h / .12) 68%, transparent);
+  background-size: 620px 100%;
+  background-repeat: repeat-x;
+  filter: blur(11px);
+  /* Two fades in one mask (the layer below inherits it): out towards the list,
+     and out towards both ends of the column so the light has no cut edges.
+     The percentages allow for the negative inset above - full brightness has
+     to reach the visible rim, which sits at ~22% of this box. */
+  mask-image:
+    linear-gradient(to top, black 24%, transparent 88%),
+    linear-gradient(to right, transparent, black 12%, black 88%, transparent);
+  mask-composite: intersect;
+  animation: unread-wave-a 34s linear infinite;
+}
+/* Surface layer two: shorter, quicker, running the other way. The crossings
+   of the two are the caustic. */
+.up-rift::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(90deg,
+    transparent, oklch(from var(--amber) l c h / .12) 34%, transparent 62%);
+  background-size: 380px 100%;
+  background-repeat: repeat-x;
+  filter: blur(9px);
+  animation: unread-wave-b 21s linear infinite;
+}
+/* The drift covers exactly one tile, so the loop closes with no jump. */
+@keyframes unread-wave-a { to { background-position: 620px 0; } }
+@keyframes unread-wave-b { to { background-position: -380px 0; } }
+
+/* Motes: a few specks lifting off the rim and fading as they go. The light
+   carries the effect; these only keep it from looking painted on. */
+.up-motes i {
+  position: absolute;
+  bottom: 1px;
+  width: 2px; height: 2px;
+  border-radius: 50%;
+  background: oklch(from var(--amber) l c h / .8);
+  filter: blur(.5px);
+  opacity: 0;
+  animation: unread-mote 6s ease-out infinite;
+}
+.up-motes i:nth-child(1) { left: 14%; animation-delay: 0s;    animation-duration: 6.6s; }
+.up-motes i:nth-child(2) { left: 33%; animation-delay: 2.2s;  animation-duration: 7.4s; }
+.up-motes i:nth-child(3) { left: 52%; animation-delay: 4.1s;  animation-duration: 6.2s; }
+.up-motes i:nth-child(4) { left: 71%; animation-delay: 1.3s;  animation-duration: 7.9s; }
+.up-motes i:nth-child(5) { left: 87%; animation-delay: 5.2s;  animation-duration: 7.1s; }
+@keyframes unread-mote {
+  0%   { transform: translate3d(0, 0, 0) scale(.5);       opacity: 0; }
+  25%  {                                                  opacity: .45; }
+  100% { transform: translate3d(5px, -26px, 0) scale(.2); opacity: 0; }
+}
+
+/* AFK gate: nobody at the desk (or the window in the background) -> the loops
+   stand still. Under software OSR an unwatched animation is pure paint cost. */
+html[data-idle] .up-rift,
+html[data-idle] .up-rift::after,
+html[data-idle] .up-motes i {
+  animation-play-state: paused;
+}

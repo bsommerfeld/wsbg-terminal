@@ -18,6 +18,7 @@
   <link rel="stylesheet" href="/css/news-sources.css">
   <link rel="stylesheet" href="/css/ai-notice.css">
   <link rel="stylesheet" href="/css/filter.css">
+  <link rel="stylesheet" href="/css/price-range.css">
   <link rel="stylesheet" href="/css/search.css">
   <link rel="stylesheet" href="/css/widget-grid.css">
   <link rel="stylesheet" href="/css/fear-greed.css">
@@ -25,7 +26,7 @@
   <link rel="stylesheet" href="/css/watchlist.css">
   <link rel="stylesheet" href="/css/weather.css">
   <link rel="stylesheet" href="/css/deepdive.css">
-  <link rel="stylesheet" href="/css/mentions.css">
+  <link rel="stylesheet" href="/css/deepdive-paper.css">
   <link rel="stylesheet" href="/css/intro.css">
 </head>
 <body>
@@ -189,6 +190,18 @@
         <span class="live" data-state="OK" aria-live="polite">Live</span>
       </header>
       <div class="widget-body" data-rows></div>
+      <!-- Unread portals: a rift at the top and the bottom edge of the list,
+           each lit by reddit.js while an unread block lies beyond it and dark
+           once the reader gets there. Pure decoration (aria-hidden) — the block
+           outline in the list itself carries the meaning. -->
+      <div class="unread-portal unread-portal-top" aria-hidden="true">
+        <span class="up-rift"></span>
+        <span class="up-motes"><i></i><i></i><i></i><i></i><i></i></span>
+      </div>
+      <div class="unread-portal unread-portal-bottom" aria-hidden="true">
+        <span class="up-rift"></span>
+        <span class="up-motes"><i></i><i></i><i></i><i></i><i></i></span>
+      </div>
       <!-- Grid-mode hit target: covers the whole card (blocks inner links),
            carries the Mission-Control-style name pill. Visible only in grid view. -->
       <button class="grid-hit" type="button" aria-label="Schlagzeilen öffnen"
@@ -521,48 +534,6 @@
       </div>
     </section>
 
-    <!-- Erwähnungs-Zähler: what the cage actually talks about, counted
-         mechanically out of every post and comment (no AI in the loop), with a
-         panorama time control over the whole history. Below a hard rule the two
-         foreign r/wallstreetbets counters, quoted in their own window.
-         has-grid-thumb: the card shows OUR leader + volume only — the
-         neighbours are never the headline. Body: js/widgets/mentions.js. -->
-    <section class="widget has-grid-thumb" id="widget-mentions">
-      <header class="widget-head">
-        <div class="ident"><span class="glyph glyph-mv" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 19V10"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M22 19H2"/></svg></span><span data-i18n="widget.mentions.title">Erwähnungen</span></div>
-        <span class="live" data-i18n="common.live">Live</span>
-      </header>
-      <div class="widget-body">
-        <div id="mentions-detail" class="mv-detail"></div>
-      </div>
-      <div class="grid-thumb mv-thumb" id="mentions-thumb" aria-hidden="true"></div>
-      <button class="grid-hit" type="button" aria-label="Erwähnungen öffnen"
-              data-i18n-aria-label="grid.open.mentions">
-        <span class="grid-hit-tag">
-          <svg class="grid-hit-icon-mv" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V10"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M22 19H2"/></svg>
-          <span class="grid-hit-label" data-i18n="widget.mentions.title">Erwähnungen</span>
-        </span>
-      </button>
-      <!-- No tool rail: this widget has no tools — only the about footnote. -->
-      <div class="widget-about rail-item">
-        <button class="rail-btn about-btn" type="button" aria-haspopup="dialog" aria-expanded="false"
-                title="Über dieses Widget" aria-label="Was ist der Erwähnungs-Zähler?"
-                data-i18n-title="about.title" data-i18n-aria-label="mv.info.aria">
-          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-        </button>
-        <div class="rail-pop about-pop" role="dialog" aria-label="Über dieses Widget"
-             data-i18n-aria-label="about.title">
-          <div class="rail-pop-body">
-            <div class="rail-pop-head about-head">
-              <svg class="about-mark about-mark-mv" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V10"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M22 19H2"/></svg>
-              <span data-i18n="widget.mentions.title">Erwähnungen</span>
-            </div>
-            <p class="rail-pop-text" data-i18n="mv.info.text">Zählt rein mechanisch, was der Käfig schreibt: jedes $KÜRZEL und jeder Firmenname aus dem Instrumentenverzeichnis, in jedem Beitrag und jedem Kommentar. Keine KI, keine Bewertung - und nichts wird entdoppelt: wird gespammt, steht der Spam da. Der Zeitregler ist ein Ausschnitt über die gesamte Historie: ziehen zum Wandern, an den Kanten aufziehen, scrollen zum Zoomen - von einem Tag bis zu einem Jahr in einer Ansicht. Namen, die noch keinem Kürzel zugeordnet sind, stehen als Schreibweise da und rutschen von selbst auf ihr Kürzel, sobald das Terminal sie einmal aufgelöst hat - auch rückwirkend. Darunter, klar getrennt: zwei fremde Zähler für r/wallstreetbets, unverändert in ihrem eigenen Fenster.</p>
-          </div>
-        </div>
-      </div>
-    </section>
-
     <!-- HELD BACK for a later release (2026-07-14): hidden suppresses the card
          everywhere (the grid CSS sets no display on .widget, so the UA rule
          wins); the widget is also out of grid-layout.js' ORDER and the
@@ -782,6 +753,23 @@
             </div>
             <label class="checkbox">
               <input type="checkbox" class="js-auto-update">
+              <span class="checkbox-box"></span>
+            </label>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <div class="setting-name-row">
+                <span class="setting-name" data-i18n="settings.updates.experimental.name">Experimentelle Versionen</span>
+                <button class="setting-info js-info" type="button" aria-expanded="false" title="Mehr Infos"
+                        aria-label="Mehr Infos" data-i18n-title="settings.more.aria" data-i18n-aria-label="settings.more.aria">
+                  <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                </button>
+              </div>
+              <span class="setting-hint" data-i18n="settings.updates.experimental.hint">100er Hebel: alles sofort, auch wenn es noch nicht fertig ist.</span>
+              <p class="setting-more" hidden data-i18n="settings.updates.experimental.more">Aus heißt Risikomanagement - nur fertige Versionen. Schaltest du wieder aus, holt dich der nächste Start auf die letzte fertige Version zurück; das ist ein Rückschritt, aber ein gewollter.</p>
+            </div>
+            <label class="checkbox">
+              <input type="checkbox" class="js-experimental-updates">
               <span class="checkbox-box"></span>
             </label>
           </div>

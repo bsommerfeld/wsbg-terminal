@@ -3,7 +3,9 @@
    meta / tag), ticker + pct colouring, and the new-row flash. Widget-specific
    rules live in reddit.css / fj.css. */
 
-.widget { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+/* position: relative — the anchor for anything that has to float OVER the body
+   without scrolling with it (the headline list's unread portals). */
+.widget { display: flex; flex-direction: column; min-height: 0; overflow: hidden; position: relative; }
 
 /* The hidden attribute must win everywhere: the UA's [hidden] rule loses to
    any author display rule (the flex above, the grid view's absolute cards),
@@ -20,7 +22,7 @@
      content stays vertically centred via align-items. 47px = 22px glyph
      + 24px (12px top/bottom) + 1px bottom border, the prior auto height. */
   box-sizing: border-box;
-  height: 47px;
+  height: var(--widget-head-h);
   padding: 0 var(--pad-x);
   border-bottom: 1px solid var(--line);
   position: relative;       /* anchor for the centered rate-limit badge */
@@ -111,8 +113,10 @@ a.glyph:hover { opacity: .7; }
 
 .row {
   display: grid;
-  grid-template-columns: 56px 1fr;
-  column-gap: 16px;
+  /* Tokens, not literals: the headline list's unread portals are inset to
+     exactly where the headline text starts, and that must not drift. */
+  grid-template-columns: var(--row-time-w) 1fr;
+  column-gap: var(--row-col-gap);
   padding: var(--row-pad-y) var(--pad-x);
   border-bottom: 1px solid var(--line-soft);
   position: relative;
@@ -134,9 +138,38 @@ a.glyph:hover { opacity: .7; }
 }
 .row:hover { background: var(--bg-hover); }
 
+/* Time break: the row below a stretch where the wire went quiet (headline-list.js
+   sets .time-gap on the older row of the pair). A hairline with air on both
+   sides — not a second row border, just a pause the eye can see.
+
+   The air has to be BIG enough to read as a pause: at 9px the break sat right
+   under the previous row's own border-bottom and the two hairlines read as one
+   slightly thicker divider. So: drop the border of the row above the break (it
+   would be the second line in the same breath) and give the rule real air on
+   both sides. */
+.row:has(+ .row.time-gap) { border-bottom: 0; }
+.row.time-gap {
+  margin-top: 22.5px;
+  border-top: 1px solid var(--line);
+  padding-top: calc(var(--row-pad-y) + 22.5px);
+}
+
 .row .time {
   color: var(--mute); font-size: var(--font-time);
   font-variant-numeric: tabular-nums; padding-top: 3px;
+}
+
+/* Second line under the clock: the age of the headline, the date once it is a
+   week old. Quieter and smaller than the clock — the eye still lands on the
+   time first. Only the headline list carries it, so only that list widens its
+   time column; the Financial Juice rows keep the narrow one. Overriding the
+   TOKEN (not the grid) keeps the unread portals aligned, they read the same
+   var. */
+#widget-reddit .row { --row-time-w: 82px; }
+.row .time .stamp {
+  display: block; margin-top: 2px;
+  font-size: 0.78em; color: var(--mute); opacity: .72;
+  white-space: nowrap;
 }
 /* The body sits in the grid's `1fr` track, whose default min-width is `auto`
    (= its content's min-content). A long unbreakable string in the expanded

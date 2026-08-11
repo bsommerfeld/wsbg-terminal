@@ -10,6 +10,7 @@
 
 import { renderMarkdown } from '../format/markdown.js';
 import { attachOverlay } from './overlay.js';
+import { afterIntro } from './intro.js';
 
 // Release bodies carry build badges + an update hint above the actual notes
 // and a download-CTA footer below them; both are release-page chrome, not
@@ -75,6 +76,10 @@ export function initChangelog(socket) {
     selected = null;
     const cur = releases.some(r => r.tag === payload.current) ? payload.current : releases[0].tag;
     select(cur);
-    ctl.open();
+    // The push rides the WebSocket handshake, so it lands while the startup
+    // intro still owns the screen — opening now would play the panel's entry
+    // behind the plate and reveal a finished overlay in one cut. Wait for the
+    // stage.
+    afterIntro(() => ctl.open());
   });
 }

@@ -16,7 +16,7 @@
 //             index.html, i18n-tagged).
 
 import { mountFilterPanel } from './filter-popover.js';
-import { getSpec, onFilterChange } from '../widgets/headline-filter.js';
+import { activeFacets, onFilterChange } from '../widgets/headline-filter.js';
 
 export function initWidgetRail(socket) {
   const items = [...document.querySelectorAll('.rail-item')];
@@ -77,12 +77,7 @@ export function initWidgetRail(socket) {
     const filterBtn = document.querySelector('.js-rail-filter-btn');
     const syncLines = () => {
       if (!filterBtn) return;
-      const s = getSpec();
-      const on = {
-        highlight: s.highlight !== 'ALL',
-        price: s.price !== null,
-        news: s.news !== null,
-      };
+      const on = activeFacets();
       filterBtn.querySelectorAll('.f-line').forEach(line =>
         line.classList.toggle('active', !!on[line.dataset.facet]));
     };

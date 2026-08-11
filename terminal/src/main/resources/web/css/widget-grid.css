@@ -15,7 +15,6 @@
 .main[data-view="dashboard"] > #widget-fg,
 .main[data-view="dashboard"] > #widget-eurusd,
 .main[data-view="dashboard"] > #widget-watchlist,
-.main[data-view="dashboard"] > #widget-mentions,
 .main[data-view="dashboard"] > #widget-deepdive { display: none; }
 
 .grid-hit { display: none; }
@@ -71,11 +70,13 @@ html[data-theme="light"] .main > .widget.exit-card {
 .main[data-view="grid"] > .widget > .widget-head,
 .main > .widget.exit-card > .widget-head { display: none; }
 
-/* Miniature content: grid-layout.js computes the zoom live (card width /
-   natural screen-pane width, --grid-zoom), so the card IS the widget at its
-   natural fullscreen size, painted smaller — and content scales WITH the
-   card on every window resize. Inner links/rows are inert; the .grid-hit
-   overlay is the only click target. */
+/* Miniature content: grid-layout.js computes the zoom live as card width over
+   the pane width a widget body is DESIGNED for (--grid-zoom), so the card IS
+   the widget at its natural size, painted smaller — and content scales WITH
+   the card on every window resize. Both terms of that ratio must stay
+   independent of the window, or the content stops tracking the card; the
+   post-mortem lives on naturalPaneW() in grid-layout.js. Inner links/rows are
+   inert; the .grid-hit overlay is the only click target. */
 .main[data-view="grid"] > .widget > .widget-body,
 .main > .widget.exit-card > .widget-body {
   zoom: var(--grid-zoom, 0.58);
@@ -84,14 +85,22 @@ html[data-theme="light"] .main > .widget.exit-card {
 
 /* The F&G and EUR/USD cards show a single compact hero (gauge / rate + spark)
    that is deliberately small even at natural pane size — at the shared
-   miniature zoom it reads lost on the card. Boost THEIR zoom so the hero
-   fills the tile; the factor multiplies the shared var, so the hero still
-   scales 1:1 with the card on every window resize. */
+   miniature zoom it reads lost on the card. So they do not measure themselves
+   against the pane at all: their reference is the hero's OWN design width,
+   declared per widget below, and the zoom is card width ÷ that width. Same
+   grammar as the shared miniature (a ratio of two design constants), one
+   reference closer to the content — and no hand-tuned boost factor, which is
+   what used to sit here: a factor calibrated at one window size cannot hold
+   at another, and this one didn't (the gauge filled 149 % of its card at
+   860px and 80 % at 1600px). --grid-card-w is unitless on purpose: zoom takes
+   a number, not a length. */
+#widget-fg     { --hero-ref-w: 520; }   /* the gauge, 400px wide + its axis labels */
+#widget-eurusd { --hero-ref-w: 330; }   /* the rate row, narrower than the gauge */
 .main[data-view="grid"] > #widget-fg > .widget-body,
 .main > #widget-fg.exit-card > .widget-body,
 .main[data-view="grid"] > #widget-eurusd > .widget-body,
 .main > #widget-eurusd.exit-card > .widget-body {
-  zoom: calc(var(--grid-zoom, 0.58) * 1.6);
+  zoom: calc(var(--grid-card-w, 300) / var(--hero-ref-w));
 }
 
 /* ---- dedicated grid thumbnails ----
@@ -268,8 +277,6 @@ html[data-theme="light"] .main > .widget.exit-card .grid-hit {
    box (`ddhome` container) — against the 920px column that growth could never
    happen and a wide window read as forced-centered (user finding 2026-08-04).
    The finished report is the one view that keeps the reading column. */
-.main[data-view="focus"] > #widget-deepdive.focused
-  .widget-body > .dd-detail:has(> .dd-live-view:not([hidden])),
 .main[data-view="focus"] > #widget-deepdive.focused
   .widget-body > .dd-detail:has(> .dd-home:not([hidden])) {
   max-width: none;
@@ -591,7 +598,6 @@ html[data-theme="light"] .rail-pop {
 .about-mark-dd      { background-image: url("/icons/kidd.png"); }
 .about-mark-fg      { width: 26px; height: 17px; }
 .about-mark-fx      { width: 26px; height: auto; }
-.about-mark-mv,
 .about-mark-wl {
   stroke: currentColor; stroke-width: 1.7; fill: none;
   stroke-linecap: round; stroke-linejoin: round;

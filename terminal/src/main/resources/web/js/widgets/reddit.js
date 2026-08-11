@@ -5,6 +5,10 @@
 // scroll-back paging) live in headline-list.js; the market snapshot chip lives
 // in quote-strip.js.
 //
+// Read state (headline-read.js) is per headline and persisted: what the reader
+// has not had on screen yet is outlined as a block, and while such a block lies
+// beyond an edge of the list that edge burns as a portal (paintPortals).
+//
 // New entries (headlines not seen in the previous render) get the .new-row class
 // so the gold flash animation plays once — the "frisch aufgetaucht" cue. Keyed
 // per-headline (clusterId + createdAt), NOT per-cluster: a cluster publishes many
@@ -13,13 +17,14 @@
 
 import { highlightTickers, highlightSubjects } from '../format/ticker.js';
 import { colorizeSignedNumbers } from '../format/numbers.js';
-import { fmtClock } from '../format/time.js';
+import { fmtClock, fmtStamp } from '../format/time.js';
 import { escapeHtml } from '../format/escape.js';
 import { t } from '../i18n/i18n.js';
 import { openNewsSources } from '../chrome/news-sources.js';
 import { quoteStripHtml } from './quote-strip.js';
 import { createHeadlineList } from './headline-list.js';
-import { matches, onFilterChange } from './headline-filter.js';
+import { createReadState } from './headline-read.js';
+import { matches, onFilterChange, priceOf } from './headline-filter.js';
 
 // Gold subject highlight — LIVE since subject CONSOLIDATION (2026-07-01): one event now
 // composes exactly ONE headline under its primary subject, and the backend gilds the
@@ -38,8 +43,24 @@ function rowKey(h) {
   return h.clusterId + '@' + h.createdAt;
 }
 
+// The timestamp half of the row key — the read store prunes by it without
+// knowing how the key is put together.
+function keyAge(key) {
+  return Number(key.slice(key.lastIndexOf('@') + 1)) || 0;
+}
+
+// Two neighbouring lines further apart than this get a thin rule between them —
+// the wire's night-shift lull made visible instead of collapsed away.
+const GAP_SECONDS = 2 * 60 * 60;
+
+const readState = createReadState({ keyAge });
+
 const list = createHeadlineList({
   identity: rowKey,
+  gapSeconds: GAP_SECONDS,
+  readState,
+  canRead: headlinesAreOnScreen,
+  onUnread: paintPortals,
   renderRow: buildRow,
   renderEmpty,
   filterFn: matches,
@@ -53,7 +74,27 @@ const list = createHeadlineList({
 onFilterChange(() => list.rerender());
 
 export function renderHeadlines(host, items) {
+  startStampTicker();
   list.render(host, items);
+}
+
+// The age line under each clock has to stay true without a re-render — rows
+// live across renders (keyed sync), and a wire that stays quiet for an hour
+// would otherwise freeze every line at "vor 1 Min.". One interval for the whole
+// list, and it only touches a node whose wording actually changed, so a long
+// scroll-back page costs a string compare per row and no layout at all.
+let stampTimer = null;
+function startStampTicker() {
+  if (stampTimer) return;
+  stampTimer = setInterval(tickStamps, 1000);
+}
+
+function tickStamps() {
+  const now = Date.now() / 1000;
+  for (const el of document.querySelectorAll('#widget-reddit .row .time .stamp')) {
+    const next = fmtStamp(Number(el.dataset.stamp), now);
+    if (next && next !== el.textContent) el.textContent = next;
+  }
 }
 
 /** Wires the scroll-to-bottom → load-older-archive behaviour (call once). */
@@ -61,9 +102,102 @@ export function initHeadlineScroll(host, socket) {
   list.initScroll(host, socket);
 }
 
+// The two unread portals: a shimmer at the edge of the list, lit while an
+// unread block sits beyond it. Both can burn at once (a fresh block above,
+// yesterday's tail still open below) — each edge answers only for its own
+// direction, and goes dark the moment its block is reached. The markup is
+// static (index.html); this flips the light and MEASURES where the light goes.
+function paintPortals({ above, below }) {
+  const widget = document.getElementById('widget-reddit');
+  if (!widget) return;
+  fitPortals(widget);
+  const top = widget.querySelector('.unread-portal-top');
+  const bottom = widget.querySelector('.unread-portal-bottom');
+  if (top) top.classList.toggle('lit', !!above);
+  if (bottom) bottom.classList.toggle('lit', !!below);
+}
+
+/**
+ * Pins the portals to the LIST, not to the widget. Nothing about that geometry
+ * can be hardcoded: fullscreen drops the widget header entirely (so a portal
+ * offset by a header height floats in mid-air), centres the rows in a fixed
+ * reading column and scales the whole body with a zoom. The only honest source
+ * is the painted box of the list and of a real headline — so that is what gets
+ * measured, and the answer is written to the widget as custom properties.
+ */
+function fitPortals(widget) {
+  const body = widget.querySelector('[data-rows]');
+  if (!body) return;
+  const box = widget.getBoundingClientRect();
+  const list = body.getBoundingClientRect();
+  // Measured off a real row: from the left edge of its clock to the right edge
+  // of its text. That span already carries the reading column, the centring and
+  // the zoom of whatever view is up - and it is the line the reader's eye
+  // follows, clock included.
+  const row = body.querySelector('.row');
+  const clock = row && row.querySelector('.time');
+  const text = row && row.querySelector('.body');
+  const span = clock && text
+    ? { left: clock.getBoundingClientRect().left, right: text.getBoundingClientRect().right }
+    : { left: list.left, right: list.right };
+  if (span.right - span.left <= 0) return;
+  widget.style.setProperty('--portal-left', `${Math.max(0, span.left - box.left)}px`);
+  widget.style.setProperty('--portal-right', `${Math.max(0, box.right - span.right)}px`);
+  widget.style.setProperty('--portal-top', `${Math.max(0, list.top - box.top)}px`);
+  widget.style.setProperty('--portal-bottom', `${Math.max(0, box.bottom - list.bottom)}px`);
+}
+
+/**
+ * The portals' geometry changes without any headline changing: a window drag,
+ * the switch into fullscreen, the grid overview. Re-measure on every box
+ * change of the widget and of the list inside it.
+ */
+export function initUnreadPortals() {
+  const widget = document.getElementById('widget-reddit');
+  const body = widget && widget.querySelector('[data-rows]');
+  if (!widget || !body || typeof ResizeObserver === 'undefined') return;
+  const ro = new ResizeObserver(() => fitPortals(widget));
+  ro.observe(widget);
+  ro.observe(body);
+  fitPortals(widget);
+}
+
+/**
+ * Whether the headline list is actually in front of the reader. Dwelling on a
+ * row only counts as READING it when it does — in the grid overview every
+ * widget is a thumbnail whose rows sit technically "in view", and fullscreen on
+ * another widget hides this one entirely. Neither is reading.
+ */
+function headlinesAreOnScreen() {
+  const widget = document.getElementById('widget-reddit');
+  const main = document.querySelector('.main');
+  if (!widget || !main) return false;
+  const view = main.dataset.view;
+  if (view === 'grid') return false;
+  if (view === 'focus' && !widget.classList.contains('focused')) return false;
+  // Settings and any modal overlay cover the list — the eye is elsewhere.
+  if (main.classList.contains('settings-open')) return false;
+  return !document.querySelector('.overlay:not([hidden])');
+}
+
 /** Appends an older archive page (from the `archive-results` page command). */
 export function appendArchivePage(items) {
   list.appendArchivePage(items);
+}
+
+/**
+ * Every price currently on the loaded wire (live + scroll-back), unfiltered.
+ * The price-range dial paints these as a density rug under its ruler, so the
+ * user drags the band against where the wire's prices actually sit instead of
+ * against an empty axis.
+ */
+export function loadedPrices() {
+  const out = [];
+  for (const h of list.allItems()) {
+    const p = priceOf(h);
+    if (p !== null) out.push(p);
+  }
+  return out;
 }
 
 /** Shows an archive-search result set in place of the wire (headline-search.js). */
@@ -211,6 +345,12 @@ function toRow(h, isNew) {
   if (isNew) classes.push('new-row');
 
   const time = fmtClock(h.createdAt);
+  // Under the clock: how long ago the line landed, and from a week on its date.
+  // The timestamp rides along on the element so the ticker can keep it current
+  // without re-rendering the row.
+  const stamp = fmtStamp(h.createdAt);
+  const stampHtml = stamp
+    ? `<span class="stamp" data-stamp="${h.createdAt}">${escapeHtml(stamp)}</span>` : '';
   const meta = buildMeta(h);
   // Bottom-right "open the source thread in the browser" button. A plain external
   // anchor — external-links.js intercepts the click and routes it to the OS browser.
@@ -220,7 +360,7 @@ function toRow(h, isNew) {
     : '';
 
   return `<div class="${classes.join(' ')}">
-    <div class="time">${time}</div>
+    <div class="time">${time}${stampHtml}</div>
     <div class="body">
       <div class="head">${head}</div>
       ${meta ? `<div class="meta">${meta}</div>` : ''}

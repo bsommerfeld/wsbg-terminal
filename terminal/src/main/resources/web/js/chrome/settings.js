@@ -65,11 +65,14 @@ export function initSettings(socket) {
   // ---- Config-backed settings (over the socket) ----
   const lang = view.querySelector('.js-language');
   const auto = view.querySelector('.js-auto-update');
+  const experimental = view.querySelector('.js-experimental-updates');
 
   if (lang) lang.addEventListener('change',
       () => socket.send('settings', { command: 'set', key: 'language', value: lang.value }));
   if (auto) auto.addEventListener('change',
       () => socket.send('settings', { command: 'set', key: 'autoUpdate', value: auto.checked }));
+  if (experimental) experimental.addEventListener('change',
+      () => socket.send('settings', { command: 'set', key: 'experimentalUpdates', value: experimental.checked }));
 
   // Backend echoes the persisted snapshot on connect + after every change.
   socket.on('settings', payload => {
@@ -79,6 +82,8 @@ export function initSettings(socket) {
     window.dispatchEvent(new CustomEvent('wsbg:settings', { detail: payload }));
     if (lang && payload.language) lang.value = payload.language;
     if (auto && typeof payload.autoUpdate === 'boolean') auto.checked = payload.autoUpdate;
+    if (experimental && typeof payload.experimentalUpdates === 'boolean')
+      experimental.checked = payload.experimentalUpdates;
     // Drive the whole UI language off the persisted setting: applies on connect
     // (the backend echoes the snapshot) and live after every change — no restart.
     if (payload.language) setLang(payload.language);

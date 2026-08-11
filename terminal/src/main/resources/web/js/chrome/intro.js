@@ -81,6 +81,36 @@ function ms(styles, prop) {
 const READY_RETRY_MS = 200;
 const READY_TRIES = 15;
 
+// Fired on `window` once the plate is gone (played out or skipped).
+const INTRO_DONE = 'wsbg:introdone';
+
+// Failsafe for `afterIntro`: if this module never ran (safeInit swallowed an
+// error), the plate stays in the DOM — invisible, because the CSS fade ends on
+// visibility:hidden, but present — and the event never comes. Comfortably past
+// the intro's ~2.9 s, so it only ever fires on the broken path.
+const INTRO_FAILSAFE_MS = 5_000;
+
+/**
+ * Runs `fn` once the intro plate is off screen — immediately when there is no
+ * plate (dev page, second load), on {@link INTRO_DONE} otherwise. For anything
+ * that would otherwise open UNDER the plate (z-index 9000) and be missed.
+ */
+export function afterIntro(fn) {
+  if (!document.getElementById('intro')) {
+    fn();
+    return;
+  }
+  let ran = false;
+  const run = () => {
+    if (ran) return;
+    ran = true;
+    window.removeEventListener(INTRO_DONE, run);
+    fn();
+  };
+  window.addEventListener(INTRO_DONE, run);
+  setTimeout(run, INTRO_FAILSAFE_MS);
+}
+
 function reportReady(socket, tries = READY_TRIES) {
   if (!socket) return;
   try {
@@ -116,6 +146,9 @@ export function initIntro(socket) {
     done = true;
     window.removeEventListener('keydown', onKey, true);
     plate.remove();
+    // The stage is clear — anything that held itself back for the intro (the
+    // changelog overlay opens behind the plate otherwise) may show itself now.
+    window.dispatchEvent(new CustomEvent(INTRO_DONE));
     reportReady(socket);
   };
 
@@ -125,7 +158,15 @@ export function initIntro(socket) {
     setTimeout(teardown, skipDur + 40);
   };
 
-  const onKey = () => skip();
+  // The key belongs to the intro and to nothing else: while the plate is up it
+  // covers the whole app, so a keystroke aimed at "get this out of the way"
+  // must not also reach whatever sits underneath. Escape used to skip the
+  // intro AND close the changelog overlay behind it — which reports `seen`,
+  // so the release notes were gone before anyone read them.
+  const onKey = e => {
+    e.stopImmediatePropagation();
+    skip();
+  };
 
   plate.addEventListener('click', skip);
   window.addEventListener('keydown', onKey, true);

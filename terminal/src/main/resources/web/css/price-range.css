@@ -1,0 +1,209 @@
+/* Preisspanne — the price-band facet of the headline filter (price-range.js).
+   Two states of ONE control: a slim resting track inside the filter panel, and
+   the ruler that same row grows into while a handle is dragged — placed so its
+   axis lands on the track it came from, so the rail visibly becomes the scale
+   instead of being replaced by a view somewhere else. Nothing here loops —
+   every animation is a transition tied to a real state change (OSR paint
+   rule). */
+
+/* ---------------------------------------------------------------------------
+   The resting control, inside the filter panel
+   --------------------------------------------------------------------------- */
+
+.js-price-range .pr-mini-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 8px;
+}
+/* The label already carries the row's bottom margin from .filter-label. */
+.js-price-range .pr-clear { margin-bottom: 8px; }
+
+.pr-track {
+  position: relative;
+  height: 22px;
+  cursor: ew-resize;
+  touch-action: none;
+}
+.pr-rail {
+  position: absolute; left: 0; right: 0; top: 50%;
+  height: 3px; margin-top: -1.5px;
+  border-radius: 999px;
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+}
+.pr-band {
+  position: absolute; top: 50%;
+  height: 3px; margin-top: -1.5px;
+  border-radius: 999px;
+  background: var(--mute-2);
+  transition: left .18s cubic-bezier(.2, .8, .2, 1), width .18s cubic-bezier(.2, .8, .2, 1),
+              background .18s ease;
+}
+.pr-band.on { background: var(--amber); }
+
+/* The knob is a target, not decoration — 22px of hit area around a 10px dot. */
+.pr-handle {
+  position: absolute; top: 0;
+  width: 22px; height: 22px; padding: 0;
+  transform: translateX(-11px);
+  background: none; border: 0; cursor: ew-resize;
+  transition: left .18s cubic-bezier(.2, .8, .2, 1);
+}
+.pr-handle::before {
+  content: "";
+  position: absolute; left: 6px; top: 6px;
+  width: 10px; height: 10px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 2px solid var(--mute);
+  transition: border-color .14s, transform .14s, box-shadow .14s;
+}
+.pr-track:hover .pr-handle::before { border-color: var(--txt-2); }
+.pr-handle:hover::before,
+.pr-handle:focus-visible::before {
+  border-color: var(--amber);
+  transform: scale(1.25);
+  box-shadow: 0 0 0 5px var(--amber-soft);
+}
+.pr-handle:focus-visible { outline: none; }
+/* An open bound is not a value on the scale — it's the scale running out, so
+   the knob loses its ring on that side and reads as a wall. */
+.pr-handle.open-cap::before { border-style: dashed; opacity: .7; }
+
+.pr-read {
+  display: flex; justify-content: space-between; gap: 10px;
+  margin-top: 6px;
+  font-size: 0.74em; color: var(--mute);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------------------------
+   The ruler — only while dragging, and only over its own row
+   --------------------------------------------------------------------------- */
+
+/* Both axes carry meaning now (sideways = value, up/down = zoom), so the
+   pointer says "pick", not "resize sideways". */
+html.pr-dragging, html.pr-dragging * {
+  user-select: none;
+  cursor: crosshair !important;
+}
+
+/* Fixed, and measured against the track by the module: it must escape the
+   filter panel, whose rail-popup twin scrolls and would clip it. Pointer-
+   transparent — the gesture that opened it already owns the pointer. */
+.pr-live {
+  position: fixed; z-index: 200;
+  padding: 9px 18px 8px;
+  pointer-events: none;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 2px 6px oklch(0 0 0 / .28),
+              0 18px 46px oklch(0 0 0 / .34),
+              inset 0 1px 0 color-mix(in oklch, var(--txt) 9%, transparent);
+  opacity: 0;
+  transform: scaleY(.94);
+  transform-origin: center var(--pr-pivot, 50%);
+  transition: opacity .13s ease, transform .18s cubic-bezier(.2, .9, .25, 1);
+}
+html[data-theme="light"] .pr-live {
+  box-shadow: 0 2px 6px oklch(0 0 0 / .10),
+              0 18px 46px oklch(0 0 0 / .16),
+              inset 0 1px 0 oklch(1 0 0 / .7);
+}
+.pr-live[hidden] { display: none; }
+.pr-live.on { opacity: 1; transform: none; }
+
+/* ---- the two bounds, read as one sentence ---- */
+.pr-heads {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 2px;
+}
+.pr-head {
+  display: flex; align-items: baseline; gap: 6px;
+  opacity: .5;
+  transition: opacity .2s ease;
+}
+.pr-head.on { opacity: 1; }
+.pr-head-cap {
+  font-style: normal;
+  font-size: 0.62rem; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--mute);
+}
+.pr-head-val {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 1.05rem; font-weight: 500; line-height: 1.2;
+  color: var(--txt-2);
+  font-variant-numeric: tabular-nums;
+  transition: color .2s ease;
+}
+.pr-head.on .pr-head-val { color: var(--amber); }
+.pr-head-dash { color: var(--mute-2); font-size: 0.9rem; }
+
+/* ---- the ruler ---- */
+.pr-ruler-wrap { position: relative; }
+.pr-ruler { display: block; width: 100%; height: 104px; }
+/* A soft column of light behind the handle post — the canvas draws the crisp
+   line, this gives it a body so the eye lands there first. It follows the
+   cursor (left is set per frame), so it is also the "you are here" of the
+   whole gesture. */
+.pr-cursor {
+  position: absolute; left: 50%; top: 0; bottom: 26px;
+  width: 62px; margin-left: -31px;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center,
+              var(--amber-soft) 0%, transparent 72%);
+}
+
+/* ---- the lens over the whole domain ---- */
+.pr-lens {
+  display: block; width: 100%; height: 34px;
+  margin-top: 4px;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 4px;
+}
+
+/* ---- foot: how fine the gesture currently is, and what it matches ---- */
+.pr-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px;
+  margin-top: 6px;
+  font-size: 0.7em; color: var(--mute);
+}
+.pr-zoom { display: flex; align-items: center; gap: 7px; }
+.pr-zoom-cap {
+  font-style: normal;
+  min-width: 3.2em;
+  letter-spacing: .1em; text-transform: uppercase; font-size: 0.9em;
+}
+.pr-zoom-bar {
+  position: relative;
+  width: 58px; height: 3px;
+  border-radius: 999px;
+  background: var(--bg-1);
+  overflow: hidden;
+}
+/* No transition: the width IS the live pull, drawn every frame — a transition
+   on top of that would only smear it. */
+.pr-zoom-bar > b {
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: 0;
+  background: var(--amber);
+  border-radius: 999px;
+}
+.pr-zoom-step {
+  font-style: normal;
+  font-family: "JetBrains Mono", monospace;
+  font-variant-numeric: tabular-nums;
+  color: var(--txt-2);
+}
+.pr-count {
+  color: var(--txt-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.pr-hint {
+  margin-top: 3px;
+  font-size: 0.66em; color: var(--mute-2);
+  text-align: center;
+}

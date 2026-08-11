@@ -8,7 +8,7 @@
 
 // Raw-HTML whitelist: matched BEFORE escaping, re-emitted sanitised (only the
 // listed attributes survive; img src must be http(s)).
-const RAW_TAG = /<img\b[^>]*\/?>|<div\b[^>]*>|<\/div>|<br\s*\/?>|<p\b[^>]*>|<\/p>|<table\b[^>]*>|<\/table>|<tr\b[^>]*>|<\/tr>|<t[dh]\b[^>]*>|<\/t[dh]>/gi;
+const RAW_TAG = /<img\b[^>]*\/?>|<div\b[^>]*>|<\/div>|<br\s*\/?>|<p\b[^>]*>|<\/p>|<table\b[^>]*>|<\/table>|<tr\b[^>]*>|<\/tr>|<t[dh]\b[^>]*>|<\/t[dh]>|<details\b[^>]*>|<\/details>|<summary\b[^>]*>|<\/summary>/gi;
 
 // \u0000 (NUL) sentinels cannot occur in real text and survive HTML escaping, so
 // protected fragments (raw tags, code spans) pass through the pipeline inert.
@@ -22,6 +22,10 @@ function sanitizeRawTag(tag) {
   if (lower === '</p>') return '</p>';
   if (lower.startsWith('<p')) return '<p>';
   if (lower === '</table>' || lower === '</tr>' || lower === '</td>' || lower === '</th>') return lower;
+  if (lower === '</details>') return '</details>';
+  if (lower === '</summary>') return '</summary>';
+  if (lower.startsWith('<details')) return '<details class="md-details">';
+  if (lower.startsWith('<summary')) return '<summary>';
   if (lower.startsWith('<table')) return '<table>';
   if (lower.startsWith('<tr')) return '<tr>';
   if (lower.startsWith('<div') || lower.startsWith('<td') || lower.startsWith('<th')) {
