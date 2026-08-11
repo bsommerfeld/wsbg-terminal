@@ -4,6 +4,7 @@ import de.bsommerfeld.wsbg.terminal.aggregator.NewsAggregator;
 import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
 import de.bsommerfeld.wsbg.terminal.core.price.PriceRef;
 import de.bsommerfeld.wsbg.terminal.core.price.PriceSource;
+import de.bsommerfeld.wsbg.terminal.instruments.AliasProvenance;
 import de.bsommerfeld.wsbg.terminal.instruments.AliasStore;
 import de.bsommerfeld.wsbg.terminal.instruments.InstrumentCorpus;
 import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
@@ -138,18 +139,26 @@ public final class TickerResolver {
     private IdentityDesk identityDesk;
 
     // ---- The guard tower and its stages ----
-    // Single shared stage instances: the veto/corpus verdict caches are instance fields
-    // of these, so caching survives across calls. The judge/corpus/desk deps are read
-    // LIVE via suppliers so the post-construction setters below take effect. Order:
-    // curated catalogues first (curated identity needs no judgment), then the desk
-    // (the primary identity decision), then the legacy token/veto/judge/corpus stages
-    // as the desk's outage fallback.
+    // Single shared stage instances: the veto/corpus/coinage verdict caches are instance
+    // fields of these, so caching survives across calls. The judge/corpus/desk/alias deps
+    // are read LIVE via suppliers so the post-construction setters below take effect.
+    // Order: curated catalogues first (curated identity needs no judgment), then the
+    // LEARNED memory (a spelling the room has taught us repeatedly needs no investigation
+    // — this is also what replaced the hand-kept nickname glossary), then the desk (the
+    // primary identity decision), then the legacy token/veto/judge/corpus stages as the
+    // desk's outage fallback, and finally the coinage stage: only a spelling that nothing
+    // in the outside world recognises is a candidate for being the room's own invention.
     private final IdentityVeto identityVeto = new IdentityVeto(new StrongTokenMatcher(), () -> matchJudge);
     private final JudgeMatcher judgeMatcher = new JudgeMatcher(() -> matchJudge);
     private final CorpusMatcher corpusMatcher = new CorpusMatcher(() -> matchJudge, () -> corpus);
+    private final AliasMemoryMatcher aliasMemoryMatcher =
+            new AliasMemoryMatcher(() -> aliasStore, () -> corpus);
+    private final CoinageMatcher coinageMatcher =
+            new CoinageMatcher(() -> matchJudge, () -> corpus, () -> aliasStore);
     private final MatchTower tower = new MatchTower(List.of(
-            new IndexMatcher(), new CommodityMatcher(), new DeskMatcher(() -> identityDesk),
-            identityVeto, judgeMatcher, corpusMatcher));
+            new IndexMatcher(), new CommodityMatcher(), aliasMemoryMatcher,
+            new DeskMatcher(() -> identityDesk),
+            identityVeto, judgeMatcher, corpusMatcher, coinageMatcher));
 
     public TickerResolver(YahooFinanceClient yahoo) {
         this.yahoo = yahoo;
@@ -228,14 +237,26 @@ public final class TickerResolver {
 
         // Phase 1 — search each subject, pick its ticker, gather related tickers
         // (+ their news). No snapshots yet; just collect the symbols we'll need.
+        // What THIS thread has already settled, best first — handed to the coinage stage
+        // as context. A word the room invented need not resemble the name it stands for
+        // („Kranich" for the airline with the crane), so the thread's own subjects are
+        // the only handle on it. Filled as we go: subject i sees what 0..i-1 resolved.
+        List<String> neighbours = new ArrayList<>();
+
         for (int i = 0; i < n; i++) {
-            // Deterministic slang→canonical FIRST (the 4B model applies the prompt aliases
-            // unreliably): „Rheiner" becomes „Rheinmetall" here, every time, so it resolves to
-            // RHM.DE and merges instead of splitting off as a tickerless name-unit.
-            String query = WsbgJargon.canonicalize(names.get(i) == null ? "" : names.get(i).trim());
+            // The room's spelling travels VERBATIM now. The hand-kept nickname glossary
+            // that used to rewrite „Rheiner" into „Rheinmetall" here is gone: a curated
+            // list of thirteen entries only ever covered the nicknames somebody had
+            // noticed and typed in, while every fresh coinage still split off as its own
+            // tickerless unit. The learned memory and the coinage stage do that job now,
+            // and they do it for the fourteenth nickname too.
+            String query = names.get(i) == null ? "" : names.get(i).trim();
             int maxRelated = relatedAlloc != null && i < relatedAlloc.length ? Math.max(0, relatedAlloc[i]) : 0;
-            Pending p = searchAndMatch(query, context, maxRelated);
-            if (p.ownTicker() != null) symbols.add(p.ownTicker().toUpperCase(Locale.ROOT));
+            Pending p = searchAndMatch(query, context, maxRelated, neighbours);
+            if (p.ownTicker() != null) {
+                symbols.add(p.ownTicker().toUpperCase(Locale.ROOT));
+                if (p.canonical() != null && !p.canonical().isBlank()) neighbours.add(p.canonical());
+            }
             symbols.addAll(p.relSyms());
             pending.add(p);
         }
@@ -252,7 +273,8 @@ public final class TickerResolver {
      * {@link MatchTower} identity decision, news resolution and related collection.
      * Never throws — any failure degrades to an empty result.
      */
-    private Pending searchAndMatch(String query, String context, int maxRelated) {
+    private Pending searchAndMatch(String query, String context, int maxRelated,
+            List<String> neighbours) {
         if (query.isEmpty() || yahoo == null) {
             return Pending.empty(query);
         }
@@ -263,10 +285,12 @@ public final class TickerResolver {
                 // guess a tickerless unit, and don't fan out into more calls.
                 return Pending.rateLimited(query);
             }
-            SubjectMatch match = tower.resolve(new MatchContext(query, context, sr.quotes())).orElse(null);
+            MatchTower.Claim claim =
+                    tower.claim(new MatchContext(query, context, sr.quotes(), neighbours)).orElse(null);
+            SubjectMatch match = claim == null ? null : claim.match();
             String ownTicker = match == null ? null : match.symbol();
             String canonical = match == null ? query : match.canonicalName();
-            remember(query, canonical, ownTicker);
+            remember(query, canonical, match, claim == null ? null : claim.stage(), context);
             // The desk's stamp (exact venue instrument) rides along so the price
             // chain executes the verdict instead of re-resolving the name — and so
             // does its considered "no venue listing" (venueRuledOut), which keeps
@@ -293,15 +317,33 @@ public final class TickerResolver {
     }
 
     /**
-     * Hands a settled verdict to the learned name memory: the spelling the room
-     * used AND the registered name both now mean this symbol. Free — the
-     * decision was made anyway; this only stops it being forgotten. Silent when
-     * nothing was settled, and silent in tests, where no store is installed.
+     * Books the verdict into the learned name memory: the spelling the room used AND
+     * the registered name both now read as this symbol. Free — the decision was made
+     * anyway; this only stops it being forgotten. Silent in tests, where no store is
+     * installed.
+     *
+     * <p>The posting carries its <b>reasons</b>, not just its result: which tower
+     * stage claimed the subject, the ISIN and venue stamp the desk put on it, and the
+     * thread title it was decided under. A later reader — a person or a model — can
+     * then weigh a verdict instead of having to trust it, which is precisely what the
+     * old two-column file made impossible: one wrong judge call looked exactly as
+     * solid as a thousand confirmed catalogue hits.
+     *
+     * <p>A subject that NOTHING claimed is deliberately left alone here. The
+     * considered "this spelling is no instrument" belongs to the coinage stage, which
+     * is the only one that actually looked at candidates before saying no; booking a
+     * negative for every unresolved macro theme would teach the memory nothing except
+     * that most words are not tickers.
      */
-    private void remember(String query, String canonical, String ownTicker) {
-        if (aliasStore == null || ownTicker == null || ownTicker.isBlank()) return;
-        aliasStore.learn(query, ownTicker);
-        if (canonical != null && !canonical.equals(query)) aliasStore.learn(canonical, ownTicker);
+    private void remember(String query, String canonical, SubjectMatch match, String stage,
+            String context) {
+        if (aliasStore == null || match == null) return;
+        String ownTicker = match.symbol();
+        if (ownTicker == null || ownTicker.isBlank()) return;
+        AliasProvenance p = new AliasProvenance(stage, match.isin(), match.venueId(),
+                match.category(), context, null);
+        aliasStore.learn(query, ownTicker, p);
+        if (canonical != null && !canonical.equals(query)) aliasStore.learn(canonical, ownTicker, p);
     }
 
     /**

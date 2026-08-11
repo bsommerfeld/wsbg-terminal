@@ -49,6 +49,21 @@ public interface RedditSource {
     ScrapeStats updateThreadsBatch(List<String> threadIds);
 
     /**
+     * Ingests the subreddit's newest comments ACROSS ALL THREADS in a single
+     * request ({@code /r/<sub>/comments/}) — the cheap way to follow a busy
+     * room, where per-thread polling would cost one request per active thread.
+     * Comments whose parent thread is unknown get a stub thread so they have
+     * something to hang on.
+     *
+     * <p><b>Ingest-only by contract:</b> the returned stats count what arrived
+     * but leave {@link ScrapeStats#threadUpdates} EMPTY. The stream fills the
+     * repository (the counting/statistics lane); it deliberately does not push
+     * anything into the editorial pipeline, which is driven by the listing scans
+     * of {@link #scanSubreddit}.
+     */
+    ScrapeStats scanComments(String subreddit);
+
+    /**
      * Fetches the full context of a single thread (title, body, image, and
      * comments). Each discovered comment is saved to the repository as a side
      * effect.

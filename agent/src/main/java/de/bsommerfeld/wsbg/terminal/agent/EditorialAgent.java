@@ -31,8 +31,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>Per cluster, two model calls with deterministic glue between them:
  * <ol>
  *   <li><b>Subject extraction</b> (model, {@link SubjectExtractor}): the cluster
- *       brief in, a list of market-relevant subject names out (slang normalised to
- *       canonical/English via {@link WsbgJargon}).</li>
+ *       brief in, a list of market-relevant subject names out — as the room wrote
+ *       them. The nickname glossary that used to normalise them here is gone; a
+ *       coinage now travels verbatim to the resolver, which learns what it means.</li>
  *   <li><b>Resolve</b> (code, {@link TickerResolver}): each subject → validated
  *       Yahoo ticker + live market data + news, or news-only, or nothing.</li>
  *   <li><b>Headline composition</b> (model): the brief ({@link UnitBriefWriter}) +
@@ -216,8 +217,8 @@ public class EditorialAgent {
 
     /**
      * Installs the learned name memory onto the resolver, so every settled
-     * identity verdict is kept: the short form the room writes becomes
-     * countable for {@code MentionCounter} without a single extra request.
+     * identity verdict is kept: the short form the room writes resolves again
+     * later without a single extra request.
      * Optional Guice method-injection; absent in tests, where nothing is learned.
      */
     @com.google.inject.Inject(optional = true)
@@ -303,9 +304,10 @@ public class EditorialAgent {
         if (subjects.primaryName().isEmpty()) {
             primaryHints.remove(clusterId);
         } else {
-            // Canonicalized like the resolver canonicalizes each query, so the
-            // attribution-side match compares like with like.
-            primaryHints.put(clusterId, WsbgJargon.canonicalize(subjects.primaryName()));
+            // Stashed as the room wrote it, exactly like the resolver now takes it —
+            // both sides stopped rewriting names through a hand-kept glossary, so they
+            // still compare like with like.
+            primaryHints.put(clusterId, subjects.primaryName().trim());
         }
         int[] relatedAlloc = SubjectExtractor.distributeRelated(
                 subjects.names().size(), RELATED_BUDGET, RELATED_PER_SUBJECT);
@@ -362,8 +364,7 @@ public class EditorialAgent {
         // commits cleanly regardless of scaffold language (proven: 0 whiffs in run27).
         String lang = brain.getUserLanguage().code();
         String sys = PromptLoader.loadLocalized("headline-compose-unit", lang)
-                .replace("{{LANGUAGE}}", brain.getUserLanguage().displayName())
-                .replace("{{ROOM_SLANG}}", WsbgJargon.roomSlangForPrompt(lang));
+                .replace("{{LANGUAGE}}", brain.getUserLanguage().displayName());
         String user = UnitBriefWriter.unitBrief(unit, config.getHeadlines().isNewsCoverageEnabled(),
                 BriefLabels.of(lang), newsDigester::ifCached);
 
@@ -395,6 +396,35 @@ public class EditorialAgent {
             LOG.info("[COMPOSE] empty line for {} ({}) — retry {}/{} (a first line is never dropped)",
                     unit.id, unit.canonicalName(), attempt + 1, FIRST_COMPOSE_EMPTY_RETRIES);
         }
+        // The house checks what the house CAN check. The prompt demands the subject's
+        // name in the line; a model that reads the rule but paraphrases the subject away
+        // ("the one AI pick") writes a line with no referent, because the line is read
+        // alone. Restructuring the prompt raised the hit rate but cannot guarantee it —
+        // instruction-following is a property of the model, so the guarantee has to sit
+        // here: hold the concrete deviation up ONCE and let the model repair it.
+        if (draft != null && !namesTheSubject(draft.headline(), unit)) {
+            String repairUser = user + "\n\n"
+                    + PromptLoader.loadLocalized("headline-name-repair", lang)
+                            .replace("{{NAME}}", unit.canonicalName());
+            String repairText = chatGateway.chat(model, sys, repairUser);
+            ComposeReplyParser.ParsedCompose repaired =
+                    ComposeReplyParser.parse(repairText, hasPriors);
+            if (repaired.draft() != null && namesTheSubject(repaired.draft().headline(), unit)) {
+                LOG.info("[COMPOSE] line for {} ({}) did not name the subject — repaired",
+                        unit.id, unit.canonicalName());
+                text = repairText;
+                draft = repaired.draft();
+                salvaged = repaired.salvaged();
+                citedNews = repaired.newsUsed();
+                derivedFrom = repaired.derivedFrom();
+            } else {
+                // 1:1 mirror again: the gate lifts quality, it never swallows a line.
+                // An unrepaired line still ships — logged, so the miss stays countable.
+                LOG.warn("[COMPOSE] line for {} ({}) does not name the subject and the repair "
+                        + "did not either — publishing as written: {}",
+                        unit.id, unit.canonicalName(), draft.headline());
+            }
+        }
         long elapsed = ms(t0, System.nanoTime());
         // A whiff = no usable headline AND the model did NOT deliberately say "redundant"
         // (no headline key at all / wrong shape / garbage). This is the silent-loss case:
@@ -410,6 +440,24 @@ public class EditorialAgent {
 
         return new UnitDraft(unit.id, unit.canonicalName(), draft, salvaged, text, elapsed,
                 citedNews, whiffed, derivedFrom);
+    }
+
+    /**
+     * Whether the line carries the subject's NAME - the one compose duty the house can
+     * verify itself, so it does (see the gate in {@link #composeUnit}).
+     *
+     * <p>Deliberately name-words only, with NO ticker fallback: the prompt forbids the
+     * symbol in the name's place, so a line that carries only the ticker is exactly the
+     * defect this check exists to catch, not a pass.
+     *
+     * <p>A name whose words are all stop-words or too short leaves nothing to check -
+     * then there is no deviation to hold up, and the line stands as written.
+     */
+    static boolean namesTheSubject(String headline, SubjectUnit unit) {
+        if (headline == null || headline.isBlank()) return true;
+        Set<String> nameWords = NameMatcher.significantWords(unit.canonicalName());
+        if (nameWords.isEmpty()) return true;
+        return NameMatcher.matches(headline, nameWords, null);
     }
 
     /**

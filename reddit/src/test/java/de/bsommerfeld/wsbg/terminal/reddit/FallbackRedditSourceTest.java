@@ -37,6 +37,7 @@ class FallbackRedditSourceTest {
         @Override public ScrapeStats scanSubreddit(String s) { return scan(); }
         @Override public ScrapeStats scanSubredditHot(String s) { return scan(); }
         @Override public ScrapeStats updateThreadsBatch(List<String> ids) { return scan(); }
+        @Override public ScrapeStats scanComments(String s) { return scan(); }
         @Override public ThreadAnalysisContext fetchThreadContext(String p) { return new ThreadAnalysisContext(); }
         @Override public boolean probe(String subreddit) { return reachable; }
         @Override public String sourceName() { return name; }

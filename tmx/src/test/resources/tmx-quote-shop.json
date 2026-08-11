@@ -1,0 +1,21 @@
+{
+  "data": {
+    "getQuoteBySymbol": {
+      "symbol": "SHOP",
+      "name": "Shopify Inc. Class A Subordinate Voting Shares",
+      "price": 205.7,
+      "priceChange": 32.29,
+      "percentChange": 18.620609,
+      "volume": 2776269,
+      "openPrice": 209.08,
+      "dayHigh": 216,
+      "dayLow": 199.99,
+      "prevClose": 173.41,
+      "weeks52high": 253.1,
+      "weeks52low": 129.01,
+      "MarketCap": 248631396664,
+      "currency": "CAD",
+      "exchangeName": "Toronto Stock Exchange"
+    }
+  }
+}

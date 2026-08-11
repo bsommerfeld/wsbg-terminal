@@ -101,7 +101,11 @@ public final class CommentTreeBuilder {
             String snippet = body.length() > 140
                     ? body.substring(0, 140).replace('\n', ' ') + "…"
                     : body.replace('\n', ' ');
-            LOG.info("[REDDIT]   comment on {} | {} (score={}): {}",
+            // DEBUG: one line per INGESTED COMMENT, and a single scan of the
+            // busy room brings 50+. The scan's own tally ("+53 comment(s)")
+            // carries the same news in one line; this level is for reading a
+            // specific thread's tree, not for watching the wire run.
+            LOG.debug("[REDDIT]   comment on {} | {} (score={}): {}",
                     context.threadId, author, score, snippet);
         }
         repository.saveComment(comment);

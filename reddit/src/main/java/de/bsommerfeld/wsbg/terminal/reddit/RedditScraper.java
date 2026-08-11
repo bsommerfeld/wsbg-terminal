@@ -5,9 +5,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.core.config.RedditConfig;
+import de.bsommerfeld.wsbg.terminal.core.domain.RedditComment;
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
+import de.bsommerfeld.wsbg.terminal.reddit.support.CommentStream;
 import de.bsommerfeld.wsbg.terminal.reddit.support.DeferredCommentBackfill;
 import de.bsommerfeld.wsbg.terminal.reddit.support.RateLimitGuard;
 import de.bsommerfeld.wsbg.terminal.reddit.support.RedditConstants;
@@ -73,6 +75,13 @@ public class RedditScraper implements RedditSource {
     private static final int LISTING_LIMIT = 50;
 
     /**
+     * Comments per sub-wide stream poll. 100 is Reddit's listing ceiling and
+     * buys the widest catch-up window: measured 2026-08-10, 100 comments spanned
+     * 21 min on r/wallstreetbets — many times the poll interval.
+     */
+    private static final int COMMENT_STREAM_LIMIT = 100;
+
+    /**
      * Maximum IDs per {@code /by_id/} request. Reddit's endpoint accepts up to
      * 100 comma-separated fullnames before returning a 414 URI Too Long.
      */
@@ -92,6 +101,7 @@ public class RedditScraper implements RedditSource {
 
     private final RateLimitGuard rateGuard;
     private final SourceHealthReporter health;
+    private final RedditMediaExtractor media;
     private final RedditThreadMapper threadMapper;
     private final CommentTreeBuilder commentBuilder;
     private final DeferredCommentBackfill backfill;
@@ -118,7 +128,7 @@ public class RedditScraper implements RedditSource {
         this.rateGuard = new RateLimitGuard(rateLimiter);
         this.health = new SourceHealthReporter(eventBus);
 
-        RedditMediaExtractor media = new RedditMediaExtractor();
+        this.media = new RedditMediaExtractor();
         this.threadMapper = new RedditThreadMapper(repository, media);
         this.commentBuilder = new CommentTreeBuilder(repository, media);
 
@@ -182,6 +192,94 @@ public class RedditScraper implements RedditSource {
             LOG.error("Failed to fetch context for {}", permalink, e);
         }
         return context;
+    }
+
+    // =====================================================================
+    // Sub-wide comment stream
+    // =====================================================================
+
+    /**
+     * The sub-wide comment stream on the JSON path. Unlike the Atom sibling this
+     * carries the full comment record — {@code score}, {@code link_id} and
+     * {@code parent_id} — so votes survive (votes are sentiment) and replies keep
+     * their real parent instead of collapsing flat under the thread.
+     */
+    @Override
+    public ScrapeStats scanComments(String subreddit) {
+        ScrapeStats stats = new ScrapeStats();
+        String url = REDDIT_BASE + "/r/" + subreddit + "/comments" + JSON_SUFFIX
+                + "?limit=" + COMMENT_STREAM_LIMIT;
+
+        try {
+            WebResponse response = executeGet(url);
+            if (response.status() != 200) {
+                LOG.error("Comment stream r/{} failed: HTTP {}", subreddit, response.status());
+                health.record(false);
+                stats.failed = true;
+                return stats;
+            }
+
+            JsonNode root = mapper.readTree(response.body());
+            JsonNode children = root.path("data").path("children");
+            int seen = 0, fresh = 0;
+            for (JsonNode child : children) {
+                JsonNode data = child.path("data");
+                if (!data.has("body") || data.get("body").isNull()) continue;
+                seen++;
+                if (ingestStreamComment(data)) fresh++;
+            }
+            health.record(true);
+            stats.newComments = fresh;
+            // threadUpdates stays EMPTY on purpose — see RedditSource#scanComments.
+            LOG.info("[REDDIT-STREAM] r/{} via JSON: {} comment(s), {} new", subreddit, seen, fresh);
+        } catch (Exception e) {
+            LOG.error("Comment stream r/{} failed", subreddit, e);
+            health.record(false);
+            stats.failed = true;
+        }
+        return stats;
+    }
+
+    /**
+     * Persists one comment from the stream, creating a stub for its parent thread
+     * when we've never seen it. Returns whether the comment was new to us.
+     */
+    private boolean ingestStreamComment(JsonNode data) {
+        String id = data.path("name").asText("");
+        if (id.isEmpty()) return false;
+
+        // The parent thread is carried twice — link_id is authoritative, the
+        // permalink additionally yields the thread's own path for the stub.
+        CommentStream.Parent parent = CommentStream.parentOf(data.path("permalink").asText(""));
+        String threadId = data.path("link_id").asText(parent == null ? "" : parent.threadId());
+        if (threadId.isEmpty()) return false;
+
+        long created = data.path("created_utc").asLong(System.currentTimeMillis() / 1000);
+        if (parent != null && repository.getThread(threadId) == null) {
+            repository.saveThread(CommentStream.stubThread(parent,
+                    data.path("link_title").asText(null), created));
+        }
+
+        String rawBody = data.get("body").asText().replace("\n", " ");
+        RedditMediaExtractor.ImageExtractionResult extraction =
+                media.extractCommentImages(rawBody, data, new ThreadAnalysisContext());
+
+        boolean isNew = true;
+        for (RedditComment existing : repository.getCommentsForThread(threadId, 0)) {
+            if (existing.id().equals(id)) { isNew = false; break; }
+        }
+
+        long now = System.currentTimeMillis() / 1000;
+        repository.saveComment(new RedditComment(
+                id,
+                threadId,
+                data.path("parent_id").asText(threadId),
+                data.path("author").asText("anon"),
+                extraction.text(),
+                data.path("score").asInt(0),
+                created, now, now,
+                extraction.images()));
+        return isNew;
     }
 
     // =====================================================================

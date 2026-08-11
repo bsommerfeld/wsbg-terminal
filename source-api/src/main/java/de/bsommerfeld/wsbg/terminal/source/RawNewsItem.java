@@ -36,6 +36,12 @@ import java.util.List;
  * @param imageUrl       URL of an image embedded with the article, or {@code null}.
  *                       Cross-source (newswires/Yahoo articles carry images) and a
  *                       candidate for multimodal vision analysis.
+ * @param origin         language and press sphere the item came out of, as the
+ *                       source declares itself. Sources never fill this in by
+ *                       hand: the fan stamps it from {@link NewsSource#origin()}
+ *                       on the way through, so every construction below leaves
+ *                       it {@link SourceOrigin#UNKNOWN} and the seam stays in
+ *                       one place.
  */
 public record RawNewsItem(
         String uuid,
@@ -47,7 +53,44 @@ public record RawNewsItem(
         String isin,
         String summary,
         boolean sponsored,
-        String imageUrl) {
+        String imageUrl,
+        SourceOrigin origin) {
+
+    public RawNewsItem {
+        if (origin == null) origin = SourceOrigin.UNKNOWN;
+    }
+
+    /**
+     * The construction every source uses: origin unstamped. The fan puts it on
+     * afterwards ({@link #withOrigin}), which is the only place that knows
+     * WHICH source answered.
+     */
+    public RawNewsItem(
+            String uuid,
+            String title,
+            String publisher,
+            String link,
+            Instant publishedAt,
+            List<String> relatedTickers,
+            String isin,
+            String summary,
+            boolean sponsored,
+            String imageUrl) {
+        this(uuid, title, publisher, link, publishedAt, relatedTickers, isin, summary,
+                sponsored, imageUrl, SourceOrigin.UNKNOWN);
+    }
+
+    /**
+     * The same item with its origin stamped. Never overwrites an origin an
+     * item already carries - a source that DID name its own item's origin
+     * (a multi-edition aggregator that knows more than its instance does)
+     * keeps it.
+     */
+    public RawNewsItem withOrigin(SourceOrigin stamp) {
+        if (stamp == null || !stamp.known() || origin.known()) return this;
+        return new RawNewsItem(uuid, title, publisher, link, publishedAt, relatedTickers,
+                isin, summary, sponsored, imageUrl, stamp);
+    }
 
     /**
      * Convenience constructor for sources that carry no ISIN / teaser / sponsored

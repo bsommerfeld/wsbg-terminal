@@ -70,8 +70,7 @@ final class SubjectExtractor {
     record Subjects(List<String> names, String primaryName, int namedByModel, String raw) {}
 
     Subjects extract(ChatModel model, InvestigationCluster cluster, String brief) {
-        String sys = PromptLoader.loadLocalized("subject-extraction", brain.getUserLanguage().code())
-                .replace("{{ENTITY_ALIASES}}", WsbgJargon.entityAliasesForPrompt());
+        String sys = PromptLoader.loadLocalized("subject-extraction", brain.getUserLanguage().code());
 
         int comments = countComments(cluster);
         if (comments <= EXTRACT_CHUNK_SIZE && brief.length() <= EXTRACT_CHAR_BUDGET) {

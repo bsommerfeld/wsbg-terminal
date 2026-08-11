@@ -28,11 +28,76 @@ public class NewsAggregator {
 
     private static final Logger LOG = LoggerFactory.getLogger(NewsAggregator.class);
 
+    /**
+     * How many sources are asked at once. A fan touches one host per source, so
+     * the width is a network-latency lever, not a load one - no host sees more
+     * than its own single request. Measured on the deep dive of 2026-08-09: the
+     * serial fan over 36 sources (symbol + name + ISIN each) plus 11 serial
+     * archive windows made the press leg 353 s of the 8:45 collect phase, with
+     * the machine waiting on exactly one socket at a time.
+     */
+    private static final int FAN_WIDTH = 8;
+
     private final Set<NewsSource> sources;
+    /** Lazily built, daemon, shared by every fan of this singleton. */
+    private volatile java.util.concurrent.ExecutorService fanPool;
 
     @Inject
     public NewsAggregator(Set<NewsSource> sources) {
         this.sources = sources;
+    }
+
+    private java.util.concurrent.ExecutorService pool() {
+        java.util.concurrent.ExecutorService p = fanPool;
+        if (p != null) return p;
+        synchronized (this) {
+            if (fanPool == null) {
+                java.util.concurrent.atomic.AtomicInteger n =
+                        new java.util.concurrent.atomic.AtomicInteger();
+                fanPool = java.util.concurrent.Executors.newFixedThreadPool(FAN_WIDTH, r -> {
+                    Thread t = new Thread(r, "news-fan-" + n.incrementAndGet());
+                    t.setDaemon(true);
+                    return t;
+                });
+            }
+            return fanPool;
+        }
+    }
+
+    /**
+     * Runs one task per source concurrently and hands the results back <b>in the
+     * source set's own iteration order</b> - the merge downstream therefore sees
+     * exactly the sequence it saw when the fan was serial, which is load-bearing:
+     * first-seen id wins the dedupe. Overlapping the WAITING is the whole change;
+     * the ORDER of what comes out is untouched.
+     *
+     * <p>A source that throws yields {@code null} in its slot (logged by the
+     * task itself) - per-source error isolation, as before. An interrupt cancels
+     * the outstanding tasks and restores the flag so a cancelled deep dive stops
+     * instead of finishing the fan.
+     */
+    private <T> List<T> fanOut(List<NewsSource> ordered, java.util.function.Function<NewsSource, T> task) {
+        if (ordered.isEmpty()) return List.of();
+        if (ordered.size() == 1) {
+            return java.util.Collections.singletonList(task.apply(ordered.get(0)));
+        }
+        List<java.util.concurrent.Future<T>> futures = new java.util.ArrayList<>(ordered.size());
+        for (NewsSource src : ordered) futures.add(pool().submit(() -> task.apply(src)));
+        List<T> out = new java.util.ArrayList<>(ordered.size());
+        for (int i = 0; i < futures.size(); i++) {
+            try {
+                out.add(futures.get(i).get());
+            } catch (InterruptedException e) {
+                for (int j = i; j < futures.size(); j++) futures.get(j).cancel(true);
+                Thread.currentThread().interrupt();
+                return out;
+            } catch (java.util.concurrent.ExecutionException e) {
+                LOG.warn("news source {} failed in the fan: {}",
+                        safeName(ordered.get(i)), e.getCause() == null ? e : e.getCause().toString());
+                out.add(null);
+            }
+        }
+        return out;
     }
 
     /**
@@ -102,15 +167,20 @@ public class NewsAggregator {
         // interleaves them (2026-07-16 fix: the old first-wins break let the
         // first source fill the budget and the archive sources were never
         // asked). Dedupe by title across sources.
-        List<List<RawNewsItem>> perSource = new java.util.ArrayList<>();
-        for (NewsSource source : sources) {
+        // Side by side across sources, merged in the source set's own order -
+        // see fanOut: the round-robin below sees the identical input sequence.
+        List<List<RawNewsItem>> answers = fanOut(List.copyOf(sources), source -> {
             try {
-                List<RawNewsItem> items = source.newsForNameWindow(
-                        name, isin, fromIsoDate, toIsoDateExclusive, limit);
-                if (!items.isEmpty()) perSource.add(items);
+                return stamp(source.newsForNameWindow(
+                        name, isin, fromIsoDate, toIsoDateExclusive, limit), source);
             } catch (Exception e) {
                 LOG.debug("history window from {} failed: {}", source.sourceName(), e.getMessage());
+                return null;
             }
+        });
+        List<List<RawNewsItem>> perSource = new java.util.ArrayList<>();
+        for (List<RawNewsItem> items : answers) {
+            if (items != null && !items.isEmpty()) perSource.add(items);
         }
         List<RawNewsItem> out = new java.util.ArrayList<>();
         java.util.Set<String> seen = new java.util.HashSet<>();
@@ -218,19 +288,34 @@ public class NewsAggregator {
                                             String isin, int limit, boolean social,
                                             java.util.function.Consumer<RawNewsItem> onItem,
                                             boolean wireOnly) {
-        Map<String, RawNewsItem> byId = new LinkedHashMap<>();
-        Set<String> seenStories = new java.util.HashSet<>();
+        List<NewsSource> asked = new java.util.ArrayList<>();
         for (NewsSource src : sources) {
             if (src.socialSentiment() != social) continue;
             if (wireOnly && src.dossierOnly()) continue;
+            asked.add(src);
+        }
+        // The three queries of ONE source stay on ONE thread and keep their
+        // symbol → name → ISIN order; the sources run side by side. The merge
+        // below then walks the answers in the original source order, so the
+        // dedupe's "first-seen id wins" verdict is bit-identical to the serial
+        // fan - only the waiting overlaps.
+        List<List<List<RawNewsItem>>> perSource = fanOut(asked, src -> {
+            List<List<RawNewsItem>> answers = new java.util.ArrayList<>(3);
             try {
-                if (haveSymbol) collect(byId, seenStories, src.newsFor(symbol, limit), onItem);
-                if (haveName) collect(byId, seenStories, src.newsForName(name, limit), onItem);
-                if (haveIsin) collect(byId, seenStories, src.newsForIsin(isin, limit), onItem);
+                if (haveSymbol) answers.add(stamp(src.newsFor(symbol, limit), src));
+                if (haveName) answers.add(stamp(src.newsForName(name, limit), src));
+                if (haveIsin) answers.add(stamp(src.newsForIsin(isin, limit), src));
             } catch (Exception e) {
                 LOG.warn("news source {} failed for '{}'/'{}': {}",
                         safeName(src), symbol, name, e.getMessage());
             }
+            return answers;
+        });
+        Map<String, RawNewsItem> byId = new LinkedHashMap<>();
+        Set<String> seenStories = new java.util.HashSet<>();
+        for (List<List<RawNewsItem>> answers : perSource) {
+            if (answers == null) continue;
+            for (List<RawNewsItem> items : answers) collect(byId, seenStories, items, onItem);
         }
         return byId;
     }
@@ -274,6 +359,26 @@ public class NewsAggregator {
         String publisher = it.publisher() == null ? ""
                 : it.publisher().strip().toLowerCase(java.util.Locale.ROOT);
         return title + "|" + publisher;
+    }
+
+    /**
+     * Stamps every item of one answer with the ANSWERING source's origin - the
+     * only seam that still knows which source produced which item (the merge
+     * below has already forgotten). A source that declares no origin, or an
+     * item that carries one of its own, passes through untouched.
+     */
+    private static List<RawNewsItem> stamp(List<RawNewsItem> items, NewsSource src) {
+        if (items == null || items.isEmpty()) return items;
+        de.bsommerfeld.wsbg.terminal.source.SourceOrigin origin;
+        try {
+            origin = src.origin();
+        } catch (Exception e) {
+            return items;
+        }
+        if (origin == null || !origin.known()) return items;
+        List<RawNewsItem> out = new java.util.ArrayList<>(items.size());
+        for (RawNewsItem it : items) out.add(it == null ? null : it.withOrigin(origin));
+        return out;
     }
 
     private static String safeName(NewsSource src) {

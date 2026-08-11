@@ -165,6 +165,25 @@ public class EdgarClient {
         }
     }
 
+    /**
+     * The SEC's own id for a US ticker, or {@code null} - the one seam every
+     * further EDGAR leg (facts, insider filings) enters through, so the
+     * ticker→CIK map is fetched and cached ONCE for the whole house instead of
+     * per client. Non-US-shaped symbols never touch the network.
+     */
+    public Long cikFor(String ticker) {
+        if (ticker == null || ticker.isBlank()) return null;
+        String key = ticker.trim().toUpperCase(Locale.ROOT);
+        if (key.length() > 7 || !US_SYMBOL.matcher(key).matches()) return null;
+        Map<String, Long> map = cikMap();
+        return map == null ? null : map.get(key);
+    }
+
+    /** The SEC's fair-access header - every EDGAR leg of the house sends it. */
+    public static String userAgent() {
+        return SEC_USER_AGENT;
+    }
+
     // ---- ticker→CIK (SEC company_tickers.json) ----
 
     /**

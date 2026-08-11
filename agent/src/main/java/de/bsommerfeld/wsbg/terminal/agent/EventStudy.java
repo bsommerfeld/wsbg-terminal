@@ -63,8 +63,13 @@ final class EventStudy {
      * (nearest benchmark close on or before each anchor date, so venue
      * holidays don't tear the match). A {@code null} benchmark means RAW:
      * the span return stands alone. Null when either side is unusable.
+     *
+     * <p>Package-private rather than private because {@link DdEinpreisung}
+     * measures the SAME window arithmetic on other spans (run-up, drift): one
+     * implementation, so a reaction figure in the event register and one on a
+     * card mean the same thing down to the off-by-one.
      */
-    private static Double adjustedSpanReturn(List<Bar> instrument, List<Bar> benchmark,
+    static Double adjustedSpanReturn(List<Bar> instrument, List<Bar> benchmark,
             int from, int to) {
         double pFrom = instrument.get(from).close();
         double pTo = instrument.get(to).close();

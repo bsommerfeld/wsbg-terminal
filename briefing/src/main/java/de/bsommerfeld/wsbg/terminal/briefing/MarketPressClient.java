@@ -60,8 +60,20 @@ public class MarketPressClient {
      */
     private static final int PER_FEED_BACKSTOP = 100;
 
-    /** One catalogued feed. Category groups feeds by desk for the material label. */
-    record Feed(String source, String category, String url) {}
+    /**
+     * One catalogued feed. Category groups feeds by desk for the material
+     * label; {@code jokerOnly} marks a house that refuses plain HTTP however
+     * complete the headers are and is only reachable through the embedded
+     * browser. Such a feed stays WIRED - the production chain is browser-first,
+     * so it answers where it matters - and the catalog smoke reports it apart
+     * instead of failing on a wall it cannot pass by design.
+     */
+    record Feed(String source, String category, String url, boolean jokerOnly) {
+
+        Feed(String source, String category, String url) {
+            this(source, category, url, false);
+        }
+    }
 
     static final List<Feed> CATALOG = List.of(
             new Feed("CNBC", "US_MARKETS",
@@ -93,7 +105,66 @@ public class MarketPressClient {
             new Feed("Handelsblatt", "DE",
                     "https://www.handelsblatt.com/contentexport/feed/schlagzeilen"),
             new Feed("WiWo", "DE",
-                    "https://www.wiwo.de/contentexport/feed/rss/schlagzeilen"));
+                    "https://www.wiwo.de/contentexport/feed/rss/schlagzeilen"),
+            // -- 2026-08-11: the desks OUTSIDE the Atlantic. Every feed above
+            // this line is German or Anglo-American, which means the press
+            // half of the fishing net had exactly one telling of the world in
+            // it. These houses report the same events from inside other
+            // gatekeeping, in their own language - and where two categories
+            // below carry the same event differently, that difference is the
+            // finding, not an error to be resolved. All live-probed
+            // 2026-08-11 (200, fresh items).
+            new Feed("TASS", "RU", "https://tass.ru/rss/v2.xml"),
+            new Feed("RBC", "RU",
+                    "https://rssexport.rbc.ru/rbcnews/news/30/full.rss"),
+            new Feed("Interfax", "RU", "https://www.interfax.ru/rss.asp"),
+            new Feed("Kommersant", "RU", "https://www.kommersant.ru/RSS/news.xml"),
+            // 东方财富 - the Chinese FINANCE desk. The two state politics
+            // feeds probed first (Xinhua, People's Daily) answer 200 and are
+            // dead in the way that matters: one dates nothing at all, the
+            // other's newest item is from 2025. A feed nobody notices is
+            // stale is worse than no feed.
+            new Feed("Eastmoney", "CN", "http://rss.eastmoney.com/rss_partener.xml"),
+            // Hong Kong reports on China from a different seat - the pair is
+            // the point, not the redundancy.
+            new Feed("SCMP", "HK", "https://www.scmp.com/rss/91/feed/"),
+            new Feed("Nikkei", "JP", "https://assets.wor.jp/rss/rdf/nikkei/markets.rdf"),
+            new Feed("Yonhap", "KR", "https://www.yna.co.kr/rss/economy.xml"),
+            new Feed("Al Jazeera", "AR",
+                    "https://www.aljazeera.net/aljazeerarss/a7c186be-1baa-4bd4-9d80-"
+                            + "a84db769f779/73d0e1b4-532f-45ef-b135-bfdff8b8cab9"),
+            new Feed("Economic Times", "IN",
+                    "https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms"),
+            new Feed("Expansión", "ES", "https://e00-expansion.uecdn.es/rss/mercados.xml"),
+            new Feed("InfoMoney", "BR", "https://www.infomoney.com.br/feed/"),
+            // -- 2026-08-11, second half: the European desks the catalog never
+            // had. The house quotes SIX, the Wiener Börse and Nasdaq Nordic
+            // but carried no Swiss, Austrian or Nordic PRESS at all, and
+            // central Europe was blank on both counts. The two German
+            // small-cap houses close the other end: WSO covers the forum, not
+            // the desk that writes about a 200-million-euro issuer.
+            new Feed("NZZ", "CH", "https://www.nzz.ch/wirtschaft.rss"),
+            new Feed("Der Standard", "AT", "https://www.derstandard.at/rss/wirtschaft"),
+            new Feed("Dagens Industri", "SE", "https://www.di.se/rss"),
+            new Feed("Bankier.pl", "PL", "https://www.bankier.pl/rss/wiadomosci.xml"),
+            new Feed("Portfolio.hu", "HU", "https://www.portfolio.hu/rss/all.xml"),
+            new Feed("4investors", "DE",
+                    "https://www.4investors.de/xml/stocks_to_watch.rss"),
+            // Three houses that were written off as dead and are not: they
+            // refuse a bare client and answer one that sends a browser's full
+            // header set. The transport learned that on 2026-08-11; these
+            // three came back with it.
+            new Feed("Il Sole 24 Ore", "IT", "https://www.ilsole24ore.com/rss/finanza.xml"),
+            new Feed("Cinco Días", "ES",
+                    "https://feeds.elpais.com/mrss-s/pages/ep/site/cincodias.elpais.com/portada"),
+            new Feed("Het Financieele Dagblad", "NL", "https://fd.nl/?rss"),
+            // JOKER-ONLY: the house serves its feed to a browser and refuses
+            // every plain client, complete headers or not (measured
+            // 2026-08-11 - a curl with the same header set was answered once
+            // and refused after). It stays wired because the production chain
+            // IS a browser; the catalog smoke lists it apart.
+            new Feed("Les Echos", "FR",
+                    "https://services.lesechos.fr/rss/les-echos-finance-marches.xml", true));
 
     /**
      * One press headline: title (the figure/cause usually sits right in it) +
@@ -172,8 +243,14 @@ public class MarketPressClient {
     private String get(String url) {
         try {
             WebResponse resp = fetcher.fetch(url,
+                    // The catch-all at the end is load-bearing: two houses
+                    // answer a strict XML-only Accept with 406 Not Acceptable
+                    // and deliver nothing at all (kommersant.ru, 4investors.de,
+                    // measured 2026-08-11), while serving the identical feed
+                    // to a browser. A press review has no business negotiating
+                    // content types.
                     Map.of("User-Agent", userAgent,
-                            "Accept", "application/rss+xml, application/xml, text/xml"),
+                            "Accept", "application/rss+xml, application/xml, text/xml, */*"),
                     requestTimeout);
             if (resp != null && resp.status() == 200) return resp.body();
             LOG.debug("[MarketPress] {} answered status {}", url,

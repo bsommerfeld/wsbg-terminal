@@ -49,11 +49,6 @@ public class GdeltDocClient implements NewsSource {
             DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'");
     private static final ObjectMapper JSON = new ObjectMapper();
 
-    /** One global gate for the whole JVM - GDELT blocks bursty IPs for minutes. */
-    private static final Object GATE = new Object();
-    private static final long MIN_INTERVAL_MS = 8_000;
-    private static long lastRequestMs = 0;
-
     private final WebFetcher fetcher;
     private final String userAgent = BrowserUserAgent.random();
     private final Duration requestTimeout = Duration.ofSeconds(15);
@@ -98,17 +93,9 @@ public class GdeltDocClient implements NewsSource {
                     Math.min(limit * 4, 75),
                     fromIsoDate.replace("-", "") + "000000",
                     toIsoDateExclusive.replace("-", "") + "000000");
-            WebResponse resp;
-            synchronized (GATE) {
-                long wait = lastRequestMs + MIN_INTERVAL_MS - System.currentTimeMillis();
-                if (wait > 0) Thread.sleep(wait);
-                try {
-                    resp = fetcher.fetch(url, Map.of("User-Agent", userAgent,
-                            "Accept", "application/json"), requestTimeout);
-                } finally {
-                    lastRequestMs = System.currentTimeMillis();
-                }
-            }
+            WebResponse resp = GdeltGate.through(url, () -> fetcher.fetch(url,
+                    Map.of("User-Agent", userAgent, "Accept", "application/json"),
+                    requestTimeout));
             if (resp == null || resp.status() != 200 || resp.body() == null) return List.of();
             JsonNode articles = JSON.readTree(resp.body()).path("articles");
             if (!articles.isArray()) return List.of();
@@ -162,13 +149,13 @@ public class GdeltDocClient implements NewsSource {
         return out.length() == 0 ? companyName.strip() : out.toString();
     }
 
-    private static String firstSignificantWord(String companyName) {
+    static String firstSignificantWord(String companyName) {
         String cleaned = cleanName(companyName).toLowerCase(Locale.ROOT);
         String first = cleaned.split("\\s+")[0].replaceAll("[^a-z0-9äöüß-]", "");
         return first.length() >= 3 ? first : null;
     }
 
-    private static Instant parseSeenDate(String raw) {
+    static Instant parseSeenDate(String raw) {
         if (raw == null || raw.isBlank()) return null;
         try {
             return LocalDateTime.parse(raw.strip(), GDELT_STAMP).toInstant(ZoneOffset.UTC);

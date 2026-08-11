@@ -44,6 +44,19 @@ public interface NewsSource {
     }
 
     /**
+     * Where this source's items come FROM - language and press sphere. The
+     * fan stamps every item a source hands back with this, so the deep dive
+     * can count SPHERES instead of domains when it asks whether a fact is
+     * confirmed or merely echoed (2026-08-11). Each source declares its own
+     * origin here - self-description on the contract, not a curated map
+     * anywhere else. An aggregator wired once per edition declares the
+     * EDITION's origin; a source that cannot say keeps this default.
+     */
+    default SourceOrigin origin() {
+        return SourceOrigin.UNKNOWN;
+    }
+
+    /**
      * ARCHIVE window: news for the company NAME restricted to a date window
      * (ISO dates, {@code to} exclusive) - the multi-year press-history leg of
      * the long-term dossier (2026-07-16). Sources without a date-addressable

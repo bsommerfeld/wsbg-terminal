@@ -1,0 +1,13 @@
+{"protocolVersion":"fqs.json#17x",
+"pageNumber":1,
+"pageSize":5,
+"totalRows":1,
+"delayMinutes":15,
+"delayedMillis":1785951089778,
+"delayedDateTime":"20260805T19:31:29.778",
+"requestURL":"/itf/fqs/delayed/snap.json?pagesize=5&where=ISIN=CH0038863350&select=ShortName,ISIN,ValorSymbol,ClosingPrice,TotalVolume,DailyHighPrice,DailyLowPrice,PreviousClosingPrice",
+"copyRight":"(c) Copyright by SIX Group Ltd 2026. All rights reserved.",
+"colNames":["ShortName","ISIN","ValorSymbol","ClosingPrice","TotalVolume","DailyHighPrice","DailyLowPrice","PreviousClosingPrice"],
+"rowData":[
+["NESTLE N","CH0038863350","NESN",81.35,2445945,82.04,80.7,80.66]],
+"elapsed":0}

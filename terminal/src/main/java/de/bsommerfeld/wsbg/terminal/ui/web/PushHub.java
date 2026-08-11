@@ -103,8 +103,15 @@ public final class PushHub {
      * serialisation/build error escape the poll loop" use this instead of hand-rolling
      * their own try/catch. The supplier is evaluated inside the guard, so a throwing
      * payload builder is caught too.
+     *
+     * <p>With nobody listening the supplier is never invoked at all — building a
+     * payload for zero clients is pure theft from the worker thread that got here.
      */
     public void broadcastSafe(String type, java.util.function.Supplier<Object> supplier) {
+        if (clients.isEmpty()) {
+            LOG.debug("broadcast({}) skipped — no clients", type);
+            return;
+        }
         try {
             broadcast(type, supplier.get());
         } catch (Exception e) {
@@ -112,9 +119,17 @@ public final class PushHub {
         }
     }
 
+    /**
+     * DEBUG, not INFO: a broadcast is a HEARTBEAT, not an event. The price
+     * monitors push every 30 s and the deep-dive state every 15, so at INFO
+     * this one line alone wrote several hundred entries an hour that said
+     * nothing except "still alive" - and buried the lines that did say
+     * something. The failure cases two methods up were already DEBUG; this is
+     * the success case catching up.
+     */
     private void logBroadcast(String type, String json, Object payload) {
         int items = (payload instanceof java.util.Collection<?> c) ? c.size() : -1;
-        LOG.info("broadcast {} → {} client(s){}",
+        LOG.debug("broadcast {} → {} client(s){}",
                 type, clients.size(),
                 items >= 0 ? " (" + items + " items, " + json.length() + " B)" : "");
     }

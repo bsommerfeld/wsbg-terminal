@@ -31,6 +31,20 @@ public final class MathKit {
         return Math.sqrt(variance(xs));
     }
 
+    /**
+     * Median ueber eine Kopie von xs (die Eingabe bleibt unberuehrt); NaN bei
+     * leerer Eingabe. Der robuste Lagewert ueberall dort, wo genau die
+     * Ausreisser das Signal sind und deshalb den Bezugswert nicht mitziehen
+     * duerfen - ein Volumen-Ausbruch darf seine eigene Messlatte nicht heben.
+     */
+    public static double median(double[] xs) {
+        if (xs == null || xs.length == 0) return Double.NaN;
+        double[] copy = xs.clone();
+        java.util.Arrays.sort(copy);
+        int n = copy.length;
+        return n % 2 == 1 ? copy[n / 2] : (copy[n / 2 - 1] + copy[n / 2]) / 2.0;
+    }
+
     /** z-Score von x gegen die Verteilung history; 0 wenn history degeneriert ist. */
     public static double zScore(double x, double[] history) {
         double sd = std(history);

@@ -93,6 +93,11 @@ public final class FallbackRedditSource implements RedditSource {
     }
 
     @Override
+    public ScrapeStats scanComments(String subreddit) {
+        return runScan(s -> s.scanComments(subreddit));
+    }
+
+    @Override
     public ThreadAnalysisContext fetchThreadContext(String permalink) {
         return active().fetchThreadContext(permalink);
     }

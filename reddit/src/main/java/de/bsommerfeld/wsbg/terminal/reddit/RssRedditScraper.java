@@ -7,6 +7,7 @@ import de.bsommerfeld.wsbg.terminal.core.domain.RedditComment;
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
+import de.bsommerfeld.wsbg.terminal.reddit.support.CommentStream;
 import de.bsommerfeld.wsbg.terminal.reddit.support.DeferredCommentBackfill;
 import de.bsommerfeld.wsbg.terminal.reddit.support.RateLimitGuard;
 import de.bsommerfeld.wsbg.terminal.reddit.support.RedditConstants;
@@ -175,6 +176,57 @@ public final class RssRedditScraper implements RedditSource {
             }
         }
         return stats;
+    }
+
+    /**
+     * The sub-wide comment stream on the Atom path. Atom carries no comment
+     * score and no parent linkage (both are {@code null} in the feed, not
+     * dropped by us), so a comment lands flat under its thread — the same
+     * limitation the per-thread comment feed already has.
+     */
+    @Override
+    public ScrapeStats scanComments(String subreddit) {
+        ScrapeStats stats = new ScrapeStats();
+        String url = redditUrl("/r/" + subreddit + "/comments/.rss", "limit=" + COMMENT_LIMIT);
+
+        List<AtomFeedParser.Entry> entries = fetchFeed(url);
+        if (entries == null) {
+            health.record(false);
+            stats.failed = true;
+            return stats;
+        }
+        health.record(true);
+
+        int fresh = 0;
+        for (AtomFeedParser.Entry e : entries) {
+            if (e.id == null || !e.id.startsWith("t1_")) continue;
+            CommentStream.Parent parent = CommentStream.parentOf(e.link);
+            if (parent == null) continue;
+
+            long created = RssEntryMapper.parseEpoch(e.published != null ? e.published : e.updated);
+            ensureParentThread(parent, CommentStream.threadTitleOf(e.title), created);
+
+            if (!knownComment(parent.threadId(), e.id)) fresh++;
+            repository.saveComment(RssEntryMapper.toComment(e, parent.threadId()));
+        }
+
+        stats.newComments = fresh;
+        // threadUpdates stays EMPTY on purpose — see RedditSource#scanComments.
+        LOG.info("[REDDIT-STREAM] r/{} via RSS: {} comment(s), {} new", subreddit, entries.size(), fresh);
+        return stats;
+    }
+
+    /** Creates the stub thread for a comment whose parent we've never seen. */
+    private void ensureParentThread(CommentStream.Parent parent, String title, long createdUtc) {
+        if (repository.getThread(parent.threadId()) != null) return;
+        repository.saveThread(CommentStream.stubThread(parent, title, createdUtc));
+    }
+
+    private boolean knownComment(String threadId, String commentId) {
+        for (RedditComment c : repository.getCommentsForThread(threadId, 0)) {
+            if (c.id().equals(commentId)) return true;
+        }
+        return false;
     }
 
     @Override

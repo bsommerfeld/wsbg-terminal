@@ -1,0 +1,287 @@
+package de.bsommerfeld.wsbg.terminal.googlenews;
+
+import com.google.inject.Inject;
+import com.google.inject.Singleton;
+import de.bsommerfeld.wsbg.terminal.core.util.BrowserUserAgent;
+import de.bsommerfeld.wsbg.terminal.source.NewsSource;
+import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
+import de.bsommerfeld.wsbg.terminal.source.SourceOrigin;
+import de.bsommerfeld.wsbg.terminal.source.net.DirectWebFetcher;
+import de.bsommerfeld.wsbg.terminal.source.net.WebFetcher;
+import de.bsommerfeld.wsbg.terminal.source.net.WebResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
+
+/**
+ * Google News beyond the home edition - the SAME keyless RSS search, asked
+ * once per world EDITION ({@code hl}/{@code gl}/{@code ceid}), which is the
+ * whole point: Google indexes each language area separately, so the German
+ * edition is not a smaller view of the world press but a different one. A
+ * company's Chinese suppliers, a Russian counterparty's court date, a Korean
+ * order book - these are carried by houses the German and English indexes
+ * never surface (editions live-probed 2026-08-11).
+ *
+ * <p>Each edition carries its own {@link SourceOrigin}, stamped onto the items
+ * it produced - not because the outlet is judged here, but because "the
+ * Chinese-language index carried it" is a fact about the query. That stamp is
+ * what lets the deep dive count independent SPHERES instead of domains, and it
+ * is why the Chinese and the Taiwanese edition are two spheres rather than one
+ * language: two indexes under different gatekeeping, reporting the same firm.
+ * Where they differ, the difference is the finding.
+ *
+ * <p>DOSSIER-ONLY. The fishing net stays wide, the sorting happens at the
+ * shelf: thirteen editions per query is research depth and would be both noise
+ * and latency on the live wire, which asks for the day's catalyst in the
+ * reader's own language. The home edition ({@link GoogleNewsClient}) keeps the
+ * wire.
+ *
+ * <p>The finance-bias suffix travels WITH the edition. The measured lesson
+ * that the bare name returns general press while the "Aktie" suffix pulls the
+ * finance desk does not transfer through translation of the query - each
+ * edition names its own word for it, exactly as it names its own host
+ * parameters.
+ */
+@Singleton
+public class GoogleNewsWorldClient implements NewsSource {
+
+    private static final Logger LOG = LoggerFactory.getLogger(GoogleNewsWorldClient.class);
+
+    private static final String SEARCH_URL = "https://news.google.com/rss/search";
+    private static final Duration CACHE_TTL = Duration.ofMinutes(5);
+    /** How many editions are asked at once - one request per host, per edition. */
+    private static final int FAN_WIDTH = 6;
+
+    /**
+     * One Google News edition: its three host parameters, the word that biases
+     * a query towards the finance desk in that language, and the origin every
+     * item out of it carries.
+     *
+     * @param id     short stable id for logging ({@code "cn"})
+     * @param hl     interface language ({@code "zh-CN"})
+     * @param gl     country ({@code "CN"})
+     * @param ceid   edition id ({@code "CN:zh-Hans"})
+     * @param suffix finance-desk bias appended to a name query
+     */
+    record Edition(String id, String hl, String gl, String ceid, String suffix,
+            SourceOrigin origin) {
+
+        String url(String query) {
+            return SEARCH_URL + "?q=" + URLEncoder.encode(query, StandardCharsets.UTF_8)
+                    + "&hl=" + hl + "&gl=" + gl + "&ceid=" + ceid;
+        }
+    }
+
+    private static Edition edition(String id, String hl, String gl, String ceid,
+            String suffix, String language, String sphere) {
+        return new Edition(id, hl, gl, ceid, suffix, SourceOrigin.of(language, sphere));
+    }
+
+    /**
+     * The world editions, home edition excluded (that one is the wire's).
+     * Chinese appears TWICE on purpose - the mainland and the Taiwanese index
+     * are separate spheres, and a pair of spheres in one language is the
+     * cleanest triangulation the net can offer.
+     */
+    static final List<Edition> EDITIONS = List.of(
+            edition("us", "en-US", "US", "US:en", "stock", "en", "US"),
+            // The UK edition stands in for a door the house could not open:
+            // the London exchange's own regulatory news wire has no keyless
+            // reader (its refresh endpoint answers 200 with an empty list for
+            // every parameter tried, 2026-08-11). This is not that wire - it
+            // is the British press reporting on it - and it is what there is.
+            edition("gb", "en-GB", "GB", "GB:en", "share price", "en", "GB"),
+            edition("cn", "zh-CN", "CN", "CN:zh-Hans", "股票", "zh", "CN"),
+            edition("tw", "zh-TW", "TW", "TW:zh-Hant", "股價", "zh", "TW"),
+            edition("ru", "ru", "RU", "RU:ru", "акции", "ru", "RU"),
+            edition("jp", "ja", "JP", "JP:ja", "株価", "ja", "JP"),
+            edition("kr", "ko", "KR", "KR:ko", "주가", "ko", "KR"),
+            edition("in", "en-IN", "IN", "IN:en", "share price", "en", "IN"),
+            edition("es", "es", "ES", "ES:es", "acciones", "es", "ES"),
+            edition("br", "pt-BR", "BR", "BR:pt-419", "ações", "pt", "BR"),
+            edition("fr", "fr", "FR", "FR:fr", "action bourse", "fr", "FR"),
+            edition("ar", "ar", "EG", "EG:ar", "سهم", "ar", "AR"),
+            edition("tr", "tr", "TR", "TR:tr", "hisse", "tr", "TR"));
+
+    private final String userAgent = BrowserUserAgent.random();
+    private final WebFetcher fetcher;
+    private final Duration requestTimeout = Duration.ofSeconds(12);
+    private final Map<String, CachedResult> cache = new ConcurrentHashMap<>();
+    private volatile ExecutorService fanPool;
+
+    private record CachedResult(Instant fetchedAt, List<RawNewsItem> items) {}
+
+    /** Test/default: plain direct transport. */
+    public GoogleNewsWorldClient() {
+        this(new DirectWebFetcher());
+    }
+
+    /** Production: the same direct-first chain the home edition rides. */
+    @Inject
+    public GoogleNewsWorldClient(
+            @de.bsommerfeld.wsbg.terminal.source.net.DirectFirst WebFetcher fetcher) {
+        this.fetcher = fetcher;
+    }
+
+    @Override
+    public String sourceName() {
+        return "google-news-world";
+    }
+
+    /** Research depth across language areas - never the live wire's material. */
+    @Override
+    public boolean dossierOnly() {
+        return true;
+    }
+
+    /** Google News is name-addressed - a ticker symbol means nothing to its search. */
+    @Override
+    public List<RawNewsItem> newsFor(String symbol, int limit) {
+        return List.of();
+    }
+
+    @Override
+    public List<RawNewsItem> newsForName(String companyName, int limit) {
+        if (companyName == null || companyName.isBlank() || limit <= 0) return List.of();
+        String name = GoogleNewsClient.cleanName(companyName);
+        return fan(e -> name + " " + e.suffix(), companyName, limit);
+    }
+
+    /**
+     * ISIN full-text search across the editions: an ISIN is the one key that
+     * reads identically in every script, so this is the query that survives
+     * translation untouched. No title filter - precise by construction.
+     */
+    @Override
+    public List<RawNewsItem> newsForIsin(String isin, int limit) {
+        if (isin == null || isin.isBlank() || limit <= 0) return List.of();
+        String q = isin.strip().toUpperCase(Locale.ROOT);
+        return fan(e -> q, null, limit);
+    }
+
+    /**
+     * The multi-year press history, per edition. The years are where the
+     * language areas diverge most: an event covered everywhere today was
+     * covered in one sphere only when it happened.
+     */
+    @Override
+    public List<RawNewsItem> newsForNameWindow(String companyName, String isin,
+            String fromIsoDate, String toIsoDateExclusive, int limit) {
+        if (companyName == null || companyName.isBlank() || limit <= 0) return List.of();
+        String name = GoogleNewsClient.cleanName(companyName);
+        return fan(e -> name + " " + e.suffix() + " after:" + fromIsoDate
+                + " before:" + toIsoDateExclusive, companyName, limit);
+    }
+
+    /**
+     * The deep dive's gap research, fanned across the editions: the question
+     * the house phrased, asked of every language area that might answer it.
+     */
+    public List<RawNewsItem> searchQuery(String query, String instrumentName, int limit) {
+        if (query == null || query.isBlank() || limit <= 0) return List.of();
+        return fan(e -> query, instrumentName == null ? "" : instrumentName, limit);
+    }
+
+    /**
+     * Asks every edition its own form of the query, side by side, and returns
+     * the union in edition order - each item stamped with the origin of the
+     * index that carried it. One edition failing costs that edition, never the
+     * fan.
+     */
+    private List<RawNewsItem> fan(java.util.function.Function<Edition, String> query,
+            String relevanceName, int limit) {
+        List<Future<List<RawNewsItem>>> futures = new ArrayList<>(EDITIONS.size());
+        for (Edition e : EDITIONS) {
+            futures.add(pool().submit(() -> search(e, query.apply(e), relevanceName, limit)));
+        }
+        List<RawNewsItem> out = new ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (int i = 0; i < futures.size(); i++) {
+            try {
+                for (RawNewsItem item : futures.get(i).get()) {
+                    if (seen.add(item.link() == null ? item.uuid() : item.link())) out.add(item);
+                }
+            } catch (InterruptedException ie) {
+                for (int j = i; j < futures.size(); j++) futures.get(j).cancel(true);
+                Thread.currentThread().interrupt();
+                return out;
+            } catch (Exception ex) {
+                LOG.debug("google-news edition {} failed: {}",
+                        EDITIONS.get(i).id(), ex.getMessage());
+            }
+        }
+        return out;
+    }
+
+    private List<RawNewsItem> search(Edition edition, String query, String relevanceName,
+            int limit) {
+        String cacheKey = edition.id() + "|" + query.toLowerCase(Locale.ROOT);
+        CachedResult cached = cache.get(cacheKey);
+        if (cached != null && cached.fetchedAt().plus(CACHE_TTL).isAfter(Instant.now())) {
+            return cap(cached.items(), limit);
+        }
+        try {
+            WebResponse resp = fetcher.fetch(edition.url(query),
+                    Map.of("User-Agent", userAgent,
+                            "Accept", "application/rss+xml, application/xml, text/xml"),
+                    requestTimeout);
+            if (resp == null || resp.status() != 200) {
+                LOG.debug("google-news [{}] answered status {} for '{}'", edition.id(),
+                        resp == null ? "null" : resp.status(), query);
+                return List.of();
+            }
+            if (!GoogleNewsClient.looksLikeRss(resp.body())) {
+                LOG.warn("google-news [{}] answered a 200 that is not RSS for '{}' — "
+                        + "consent/captcha wall, this edition is starving",
+                        edition.id(), query);
+                return List.of();
+            }
+            List<RawNewsItem> parsed = GoogleNewsClient.parse(resp.body(), relevanceName);
+            List<RawNewsItem> items = new ArrayList<>(parsed.size());
+            for (RawNewsItem item : parsed) items.add(item.withOrigin(edition.origin()));
+            cache.put(cacheKey, new CachedResult(Instant.now(), items));
+            if (!items.isEmpty()) {
+                LOG.info("[google-news-world] {} '{}' → {} item(s)",
+                        edition.ceid(), query, items.size());
+            }
+            return cap(items, limit);
+        } catch (Exception e) {
+            LOG.debug("google-news [{}] failed for '{}': {}", edition.id(), query,
+                    e.getMessage());
+            return List.of();
+        }
+    }
+
+    private static List<RawNewsItem> cap(List<RawNewsItem> items, int limit) {
+        return items.size() <= limit ? items : List.copyOf(items.subList(0, limit));
+    }
+
+    private ExecutorService pool() {
+        ExecutorService p = fanPool;
+        if (p != null) return p;
+        synchronized (this) {
+            if (fanPool == null) {
+                AtomicInteger n = new AtomicInteger();
+                fanPool = Executors.newFixedThreadPool(FAN_WIDTH, r -> {
+                    Thread t = new Thread(r, "gnews-world-" + n.incrementAndGet());
+                    t.setDaemon(true);
+                    return t;
+                });
+            }
+            return fanPool;
+        }
+    }
+}

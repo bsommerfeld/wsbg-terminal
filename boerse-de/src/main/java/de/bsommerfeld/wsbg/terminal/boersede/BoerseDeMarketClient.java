@@ -76,10 +76,19 @@ public class BoerseDeMarketClient {
     static final String SPLIT_URL = BASE + "/aktiensplits/";
     /** Page 1 of the recommendation archive; deeper pages come from {@code rel="next"}. */
     static final String RECOMMENDATIONS_URL = BASE + "/empfehlungen/x/%s";
+    /** The recommendation archive's page suffix, appended to the canonical URL. */
+    static final String PAGE_SUFFIX = "_seite,%d,anzahl,20";
     static final String FUNDAMENTALS_URL = BASE + "/fundamental-analyse/x/%s";
 
     /** Recommendation pages to walk at most - SAP alone has 17. */
-    static final int MAX_RECOMMENDATION_PAGES = 5;
+    /**
+     * How far the {@code rel="next"} walk may reach. Twenty pages of twenty
+     * rows spans the whole archive of a well-covered name (SAP: 17 pages back
+     * to 2023, live-measured 2026-08-09). It is a RUNAWAY bound, not a working
+     * limit: the walk stops the moment {@code limit} rows are in hand, so a
+     * caller asking for ten still pays exactly one fetch.
+     */
+    static final int MAX_RECOMMENDATION_PAGES = 20;
 
     /**
      * One directors' dealing off the global list.
@@ -249,17 +258,36 @@ public class BoerseDeMarketClient {
      */
     public List<AnalystCall> analystCalls(String isin, int limit) {
         if (isin == null || isin.isBlank() || limit <= 0) return List.of();
-        List<AnalystCall> out = new ArrayList<>();
-        Set<String> seen = new LinkedHashSet<>();
-        String url = String.format(RECOMMENDATIONS_URL, isin.trim().toUpperCase(Locale.ROOT));
-        for (int page = 0; page < MAX_RECOMMENDATION_PAGES && url != null && seen.add(url); page++) {
-            String html = get(url);
-            if (html == null) break;
-            List<AnalystCall> batch = parseAnalystCalls(html);
-            if (batch.isEmpty()) break;
-            out.addAll(batch);
-            if (out.size() >= limit) break;
-            url = BoerseDeHtml.relNext(html);
+        String erste = String.format(RECOMMENDATIONS_URL, isin.trim().toUpperCase(Locale.ROOT));
+        String html = get(erste);
+        if (html == null) return List.of();
+        List<AnalystCall> out = new ArrayList<>(parseAnalystCalls(html));
+        if (out.isEmpty() || out.size() >= limit) {
+            return dedupe(out).stream().limit(limit).toList();
+        }
+        // Paging runs on the PAGE SCHEME, not on rel="next": only the first
+        // page carries that link (from page two on the site serves a windowed
+        // pager: 2, 4, 5, 6, … 17), so a next-walk dead-ends at forty rows -
+        // and the ISIN form ignores the page number entirely, answering page
+        // one for every N. Both live-measured 2026-08-09. The canonical URL
+        // the first page names is the one that pages.
+        String basis = BoerseDeHtml.canonical(html);
+        if (basis == null) return dedupe(out).stream().limit(limit).toList();
+        Set<String> gesehen = new LinkedHashSet<>();
+        for (AnalystCall c : out) gesehen.add(c.headline() + "|" + c.date());
+        for (int page = 2; page <= MAX_RECOMMENDATION_PAGES; page++) {
+            String seite = get(basis + String.format(PAGE_SUFFIX, page));
+            if (seite == null) break;
+            int neu = 0;
+            for (AnalystCall c : parseAnalystCalls(seite)) {
+                if (gesehen.add(c.headline() + "|" + c.date())) {
+                    out.add(c);
+                    neu++;
+                }
+            }
+            // Past the last page the site repeats itself rather than 404ing -
+            // a page that adds nothing new IS the end of the archive.
+            if (neu == 0 || out.size() >= limit) break;
         }
         return dedupe(out).stream().limit(limit).toList();
     }

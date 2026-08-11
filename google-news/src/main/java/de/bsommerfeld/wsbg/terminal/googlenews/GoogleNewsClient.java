@@ -115,6 +115,15 @@ public class GoogleNewsClient implements NewsSource {
         return "google-news";
     }
 
+    /**
+     * The HOME edition declares NO sphere on purpose. Its members are the
+     * German houses this desk has always weighed as independent of each other,
+     * and stamping them all "DE" would silently re-read every second German
+     * confirmation as an echo - a change to the existing corpus's arithmetic
+     * that nothing measured has earned. Spheres are declared where the net
+     * deliberately reaches into another gatekeeping (see
+     * {@code GoogleNewsWorldClient}); everything else keeps counting domains.
+     */
     /** Google News is name-addressed — a ticker symbol means nothing to its search. */
     @Override
     public List<RawNewsItem> newsFor(String symbol, int limit) {
@@ -125,6 +134,16 @@ public class GoogleNewsClient implements NewsSource {
     public List<RawNewsItem> newsForName(String companyName, int limit) {
         if (companyName == null || companyName.isBlank() || limit <= 0) return List.of();
         return search(cleanName(companyName) + " Aktie", companyName, limit);
+    }
+
+    /**
+     * Gap-research search: the query verbatim, precision anchored on the
+     * instrument's name in the title (the house's usual any-word match) - the
+     * deep-dive's research salvo enters here with its own phrased queries.
+     */
+    public List<RawNewsItem> searchQuery(String query, String instrumentName, int limit) {
+        if (query == null || query.isBlank() || limit <= 0) return List.of();
+        return search(query, instrumentName == null ? "" : instrumentName, limit);
     }
 
     /**
@@ -324,6 +343,21 @@ public class GoogleNewsClient implements NewsSource {
         String t = normalize(title);
         for (String w : nameWords) {
             if (t.matches(".*\\b" + Pattern.quote(w) + "\\b.*")) return true;
+        }
+        // A title in another SCRIPT cannot be tested against a Latin name: a
+        // Han or Cyrillic headline writes the company in its own characters,
+        // and reading the absent Latin word as "off topic" would silence every
+        // non-Latin edition of the world fan completely (2026-08-11). Where the
+        // test cannot be applied, the QUERY carried the precision - Google
+        // matched the name in the article's full text to return it at all.
+        return !hasLatinLetter(title);
+    }
+
+    /** True when the string carries at least one a-z/A-Z letter (after normalisation). */
+    private static boolean hasLatinLetter(String s) {
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) return true;
         }
         return false;
     }

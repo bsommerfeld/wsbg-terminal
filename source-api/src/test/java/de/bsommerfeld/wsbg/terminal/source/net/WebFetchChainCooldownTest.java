@@ -17,6 +17,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  */
 class WebFetchChainCooldownTest {
 
+    @org.junit.jupiter.api.BeforeEach
+    void forgetEveryHost() {
+        // Both memories are JVM-wide by design; a test must not inherit one.
+        WebFetchChain.forgetAll();
+    }
+
     private static WebFetcher answering(int status, AtomicInteger calls) {
         return new WebFetcher() {
             @Override
@@ -56,6 +62,114 @@ class WebFetchChainCooldownTest {
         assertEquals(200, ok.fetch("https://cooldown-test-host-c.invalid/x",
                 Map.of(), Duration.ofSeconds(1)).status());
         assertEquals(1, healthy.get());
+    }
+
+    /** A transport that threw — the browser leg's page-side fetch() timing out. */
+    private static WebFetcher throwing(AtomicInteger calls) {
+        return new WebFetcher() {
+            @Override
+            public String name() {
+                return "stub-throwing";
+            }
+
+            @Override
+            public WebResponse fetch(String url, Map<String, String> headers, Duration timeout)
+                    throws Exception {
+                calls.incrementAndGet();
+                throw new java.util.concurrent.TimeoutException(); // message: null, as in the live log
+            }
+        };
+    }
+
+    @Test
+    void aSilentStrategyDoesNotSpeakForTheHost() throws Exception {
+        // Live 2026-08-09: browser hung (no status), direct answered 429 — and
+        // the whole Yahoo host went on an exponential cooldown regardless.
+        AtomicInteger browser = new AtomicInteger();
+        AtomicInteger direct = new AtomicInteger();
+        WebFetchChain chain = new WebFetchChain(
+                List.of(throwing(browser), answering(429, direct)));
+        String url = "https://silent-leg-host.invalid/v8/chart";
+
+        assertEquals(429, chain.fetch(url, Map.of(), Duration.ofSeconds(1)).status(),
+                "the caller still sees the real answer of the leg that DID speak");
+        assertEquals(429, chain.fetch(url, Map.of(), Duration.ofSeconds(1)).status());
+        assertEquals(2, browser.get(), "no cooldown — the browser is asked again");
+        assertEquals(2, direct.get());
+    }
+
+    @Test
+    void aMessagelessFailureStillNamesItself() {
+        // The browser leg's reply channel times out with no message at all; the
+        // log used to print a bare "null".
+        assertEquals("TimeoutException",
+                WebFetchChain.describe(new java.util.concurrent.TimeoutException()));
+        assertEquals("IllegalStateException: session not ready",
+                WebFetchChain.describe(new IllegalStateException("session not ready")));
+    }
+
+    @Test
+    void aStrategyThatStaysSilentTwiceIsSkippedOnThatHost() throws Exception {
+        // Live 2026-08-11: the direct leg ran into its 20 s timeout on the St.
+        // Louis Fed for all FOURTEEN macro series in a row while the browser leg
+        // answered each one in 100-300 ms. One timeout is a blip, two are a wall.
+        AtomicInteger dead = new AtomicInteger();
+        AtomicInteger alive = new AtomicInteger();
+        WebFetchChain chain = new WebFetchChain(List.of(throwing(dead), answering(200, alive)));
+        String host = "https://silent-strategy-host.invalid/";
+
+        for (int i = 0; i < 4; i++) {
+            assertEquals(200, chain.fetch(host + "series/" + i, Map.of(),
+                    Duration.ofSeconds(1)).status());
+        }
+        assertEquals(2, dead.get(), "muted after the second strike — series 3 and 4 skip it");
+        assertEquals(4, alive.get(), "the leg that answers is asked every single time");
+    }
+
+    @Test
+    void aStrategyThatAnswersAgainIsHeardAgain() throws Exception {
+        // The strike count is about a WALL, not about a bad afternoon: a single
+        // failure between two answers must never add up to a mute.
+        AtomicInteger flaky = new AtomicInteger();
+        WebFetcher sometimes = new WebFetcher() {
+            @Override
+            public String name() {
+                return "stub-flaky";
+            }
+
+            @Override
+            public WebResponse fetch(String url, Map<String, String> headers, Duration timeout)
+                    throws Exception {
+                if (flaky.incrementAndGet() % 2 == 0) throw new java.io.IOException("blip");
+                return new WebResponse(200, "", Map.of());
+            }
+        };
+        WebFetchChain chain = new WebFetchChain(List.of(sometimes, answering(200,
+                new AtomicInteger())));
+        for (int i = 0; i < 6; i++) {
+            chain.fetch("https://flaky-strategy-host.invalid/" + i, Map.of(),
+                    Duration.ofSeconds(1));
+        }
+        assertEquals(6, flaky.get(), "never muted — every second call answered");
+    }
+
+    @Test
+    void theMemoryNeverEmptiesTheChain() throws Exception {
+        // A source may lose speed to this memory, never its function: when every
+        // strategy has gone silent, they are all tried again rather than none.
+        AtomicInteger first = new AtomicInteger();
+        AtomicInteger second = new AtomicInteger();
+        WebFetchChain chain = new WebFetchChain(List.of(throwing(first), throwing(second)));
+        for (int i = 0; i < 3; i++) {
+            try {
+                chain.fetch("https://all-silent-host.invalid/" + i, Map.of(),
+                        Duration.ofSeconds(1));
+            } catch (Exception expected) {
+                // Every strategy threw — the chain hands the last error up.
+            }
+        }
+        assertEquals(3, first.get());
+        assertEquals(3, second.get());
     }
 
     @Test

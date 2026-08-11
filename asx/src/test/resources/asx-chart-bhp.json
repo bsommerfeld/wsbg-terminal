@@ -1,0 +1,89 @@
+{
+ "Dates": [
+  "2006-08-11T00:00:00",
+  "2006-08-14T00:00:00",
+  "2006-08-15T00:00:00",
+  "2026-08-03T00:00:00",
+  "2026-08-04T00:00:00",
+  "2026-08-05T00:00:00"
+ ],
+ "Status": 1,
+ "StatusString": "Success",
+ "Elements": [
+  {
+   "Label": "price",
+   "Type": "price",
+   "CompanyName": "BHP Group Ltd",
+   "Symbol": "60947",
+   "Currency": "AUD",
+   "DisplaySymbol": "BHP",
+   "ComponentSeries": [
+    {
+     "Type": "Open",
+     "Values": [
+      21.76483,
+      21.68416,
+      21.92617,
+      60.25,
+      59.92,
+      62.1
+     ]
+    },
+    {
+     "Type": "High",
+     "Values": [
+      21.81323,
+      21.98264,
+      22.04718,
+      60.72,
+      60.76,
+      62.59
+     ]
+    },
+    {
+     "Type": "Low",
+     "Values": [
+      21.65996,
+      21.65996,
+      21.67609,
+      60.05,
+      59.52,
+      61.78
+     ]
+    },
+    {
+     "Type": "Close",
+     "Values": [
+      21.74063,
+      21.93424,
+      21.68416,
+      60.72,
+      60.52,
+      62.54
+     ]
+    }
+   ]
+  },
+  {
+   "Label": "volume",
+   "Type": "volume",
+   "CompanyName": "BHP Group Ltd",
+   "Symbol": "60947",
+   "Currency": "AUD",
+   "DisplaySymbol": "BHP",
+   "ComponentSeries": [
+    {
+     "Type": "Volume",
+     "Values": [
+      12637233.0,
+      15290005.0,
+      14737162.0,
+      5179080.0,
+      7453705.0,
+      7168173.0
+     ]
+    }
+   ]
+  }
+ ]
+}

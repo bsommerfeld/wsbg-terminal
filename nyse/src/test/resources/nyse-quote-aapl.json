@@ -1,0 +1,104 @@
+{
+ "quote": {
+  "exchg": "NASD",
+  "dispname": "AAPL",
+  "desc": "APPLE INC",
+  "last": "309.14",
+  "change": "-0.24",
+  "pctchg": "-0.07757",
+  "volume": "21767315",
+  "time": "Wednesday, August 05, 2026 12:27:15 PM ET",
+  "low": "305.670000",
+  "high": "311.710000",
+  "open": "309.360000",
+  "aveVol": "56789149",
+  "annLow": "205.590000",
+  "annHigh": "344.569900",
+  "tradeSize": "40",
+  "bid": "309.120000",
+  "ask": "309.160000",
+  "bidSize": "400",
+  "askSize": "360",
+  "prev": "309.380000",
+  "cusip": "037833100",
+  "lastUpdateTime": "16:27:16",
+  "wl52date": "Wednesday, August 06, 2025",
+  "wh52date": "Wednesday, July 29, 2026",
+  "dividend": "0.270000",
+  "divDate": "Monday, August 10, 2026",
+  "divYield": "0.34936",
+  "divInt": "90",
+  "beta": "1.0871",
+  "eps": "8.7566"
+ },
+ "quoteHistory": {
+  "symbol": "AAPL",
+  "historyList": [
+   {
+    "date": "2021/08/05",
+    "open": "146.98",
+    "high": "147.84",
+    "low": "146.17",
+    "close": "147.06",
+    "volume": "46397674",
+    "openInterest": "0"
+   },
+   {
+    "date": "2021/08/06",
+    "open": "146.35",
+    "high": "147.11",
+    "low": "145.63",
+    "close": "146.14",
+    "volume": "54126813",
+    "openInterest": "0"
+   },
+   {
+    "date": "2021/08/09",
+    "open": "146.2",
+    "high": "146.7",
+    "low": "145.52",
+    "close": "146.09",
+    "volume": "48908689",
+    "openInterest": "0"
+   },
+   {
+    "date": "2026/07/31",
+    "open": "304.81",
+    "high": "310.69",
+    "low": "300",
+    "close": "308.91",
+    "volume": "132489137",
+    "openInterest": "0"
+   },
+   {
+    "date": "2026/08/03",
+    "open": "309.58",
+    "high": "311.8",
+    "low": "302.56",
+    "close": "303.42",
+    "volume": "75051951",
+    "openInterest": "0"
+   },
+   {
+    "date": "2026/08/04",
+    "open": "302.725",
+    "high": "310.42",
+    "low": "301.32",
+    "close": "309.38",
+    "volume": "68000969",
+    "openInterest": "0"
+   }
+  ]
+ },
+ "totalReturns": {
+  "oneMonth": "0.243",
+  "threeMonth": "11.758",
+  "sixMonth": "11.896",
+  "fiftyTwoWeek": "52.464",
+  "threeYear": "19.348",
+  "volatility": ".446000",
+  "rsi": "44.68333",
+  "symbolType": "Stock",
+  "futureExDate": "20260810"
+ }
+}

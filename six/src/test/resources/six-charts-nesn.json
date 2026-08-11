@@ -1,0 +1,66 @@
+{
+  "protocolVersion": "fqs.json#17x",
+  "nettingMinutes": 1440,
+  "delayMinutes": 15,
+  "delayedMillis": 1785951063230,
+  "delayedDateTime": "20260805T19:31:03.230",
+  "requestURL": "/itf/fqs/delayed/charts.json?netting=1440&columns=Date,Time,Close,Open,High,Low,TotalVolume&fromdate=20160101&where=ISIN=CH0038863350&select=ISIN",
+  "copyRight": "(c) Copyright by SIX Group Ltd 2026. All rights reserved.",
+  "valors": [
+    {
+      "ISIN": "CH0038863350",
+      "data": {
+        "Date": [
+          20160104,
+          20160105,
+          20160106,
+          20160107,
+          20260805
+        ],
+        "Time": [
+          120000,
+          120000,
+          120000,
+          120000,
+          120000
+        ],
+        "Close": [
+          73.55,
+          73.8,
+          73.05,
+          71.35,
+          81.35
+        ],
+        "Open": [
+          73.9,
+          73.7,
+          73.65,
+          71.3,
+          80.77
+        ],
+        "High": [
+          73.95,
+          74.25,
+          74.05,
+          71.95,
+          82.04
+        ],
+        "Low": [
+          72.9,
+          72.95,
+          72.5,
+          70.65,
+          80.7
+        ],
+        "TotalVolume": [
+          6538486,
+          4939220,
+          5336051,
+          6777081,
+          2445945
+        ]
+      }
+    }
+  ],
+  "elapsed": 10
+}

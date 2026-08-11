@@ -23,6 +23,16 @@
         <module>boerse-frankfurt</module>
         <module>edgar</module>
         <module>nasdaq</module>
+        <module>nyse</module>
+        <module>finra</module>
+        <module>six</module>
+        <module>tmx</module>
+        <module>asx</module>
+        <module>minkabu</module>
+        <module>euronext</module>
+        <module>hkex</module>
+        <module>nordic</module>
+        <module>wienerboerse</module>
         <module>insidermonkey</module>
         <module>marketbeat</module>
         <module>consorsbank</module>
@@ -162,6 +172,56 @@
             <dependency>
                 <groupId>de.bsommerfeld</groupId>
                 <artifactId>nasdaq</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>nyse</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>finra</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>six</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>tmx</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>asx</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>minkabu</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>euronext</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>hkex</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>nordic</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>wienerboerse</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

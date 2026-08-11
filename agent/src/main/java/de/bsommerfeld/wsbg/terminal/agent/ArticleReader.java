@@ -30,7 +30,12 @@ final class ArticleReader {
 
     /** Upper bound on extracted article body length — keeps the digest prompt sane. */
     static final int ARTICLE_MAX_CHARS = 6000;
-    private static final Duration FETCH_TIMEOUT = Duration.ofSeconds(12);
+    /**
+     * Above the CEF transport's READY_WAIT (25 s) on purpose: a shorter budget
+     * cancelled cold origins mid-warmup and the failure was then negatively
+     * cached for the whole session (measured 2026-08-10).
+     */
+    private static final Duration FETCH_TIMEOUT = Duration.ofSeconds(30);
     private static final Pattern SCRIPT_STYLE =
             Pattern.compile("(?is)<(script|style|noscript|template|svg)[^>]*>.*?</\\1>");
     private static final Pattern PARAGRAPH = Pattern.compile("(?is)<p[^>]*>(.*?)</p>");
@@ -49,10 +54,18 @@ final class ArticleReader {
 
     private final WebFetcher webFetcher;
     private final String userAgent;
+    /**
+     * Unwraps Google-News RSS redirect links to the publisher URL before the
+     * fetch - the redirect shell is unreadable for this transport by design
+     * (see {@link GoogleNewsUrlResolver}). Lazy so tests without network pay
+     * nothing.
+     */
+    private final GoogleNewsUrlResolver googleNews;
 
     ArticleReader(WebFetcher webFetcher, String userAgent) {
         this.webFetcher = webFetcher;
         this.userAgent = userAgent;
+        this.googleNews = new GoogleNewsUrlResolver(userAgent);
     }
 
     /**
@@ -75,10 +88,16 @@ final class ArticleReader {
     Optional<String> fetchArticleText(String url, int maxChars) {
         if (url == null || url.isBlank()) return Optional.empty();
         try {
+            String target = url.trim();
+            if (GoogleNewsUrlResolver.istRedirect(target)) {
+                // A miss keeps the original link - behaviour then is exactly
+                // the pre-resolver one (the shell yields no readable text).
+                target = googleNews.resolve(target).orElse(target);
+            }
             Map<String, String> headers = new LinkedHashMap<>();
             headers.put("User-Agent", userAgent);
             headers.put("Accept", "text/html,application/xhtml+xml");
-            WebResponse resp = webFetcher.fetch(url.trim(), headers, FETCH_TIMEOUT);
+            WebResponse resp = webFetcher.fetch(target, headers, FETCH_TIMEOUT);
             if (resp.status() != 200) {
                 LOG.debug("[NEWS] article fetch '{}' returned HTTP {}", url, resp.status());
                 return Optional.empty();

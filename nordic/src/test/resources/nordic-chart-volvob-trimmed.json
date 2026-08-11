@@ -1,0 +1,104 @@
+{
+ "data": {
+  "chartData": {
+   "orderbookId": "TX100",
+   "assetClass": "SHARES",
+   "isin": "SE0000115446",
+   "symbol": "VOLV B",
+   "company": "Volvo B",
+   "timeAsOf": "2026-08-05",
+   "lastSalePrice": "SEK 366.40",
+   "netChange": "-5.10",
+   "percentageChange": "-1.37%",
+   "deltaIndicator": "up",
+   "previousClose": "SEK 371.50"
+  },
+  "CP": [
+   {
+    "z": {
+     "dateTime": "2016-08-08",
+     "value": "88.25",
+     "high": "88.60",
+     "low": "88.00",
+     "open": "88.25",
+     "close": "88.25",
+     "volume": "2,987,025"
+    },
+    "x": 1470614400,
+    "y": 88.25
+   },
+   {
+    "z": {
+     "dateTime": "2016-08-09",
+     "value": "90.60",
+     "high": "90.60",
+     "low": "88.00",
+     "open": "88.20",
+     "close": "90.60",
+     "volume": "3,639,067"
+    },
+    "x": 1470700800,
+    "y": 90.6
+   },
+   {
+    "z": {
+     "dateTime": "2016-08-10",
+     "value": "90.25",
+     "high": "90.70",
+     "low": "90.00",
+     "open": "90.50",
+     "close": "90.25",
+     "volume": "2,509,925"
+    },
+    "x": 1470787200,
+    "y": 90.25
+   },
+   {
+    "z": {
+     "dateTime": "2016-08-11",
+     "value": "89.95",
+     "high": "90.60",
+     "low": "89.30",
+     "open": "90.60",
+     "close": "89.95",
+     "volume": "3,457,691"
+    },
+    "x": 1470873600,
+    "y": 89.95
+   },
+   {
+    "z": {
+     "dateTime": "2016-08-12",
+     "value": "89.80",
+     "high": "90.45",
+     "low": "89.50",
+     "open": "90.00",
+     "close": "89.80",
+     "volume": "2,113,761"
+    },
+    "x": 1470960000,
+    "y": 89.8
+   },
+   {
+    "z": {
+     "dateTime": "2026-08-05",
+     "value": "366.40",
+     "high": "374.50",
+     "low": "362.50",
+     "open": "372.50",
+     "close": "366.40",
+     "volume": "3,058,399"
+    },
+    "x": 1785888000,
+    "y": 366.4
+   }
+  ]
+ },
+ "messages": null,
+ "status": {
+  "timestamp": "2026-08-05T20:02:31+0200",
+  "rCode": 200,
+  "bCodeMessage": null,
+  "developerMessage": ""
+ }
+}

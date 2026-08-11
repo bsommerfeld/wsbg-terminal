@@ -71,6 +71,12 @@ public final class CefFetchClient {
 
     /** Re-anchor at most this often, so a run of blocked responses can't loop-reload. */
     private static final long RELOAD_COOLDOWN_MS = 60_000;
+    /**
+     * How many fetches in a row may come back with NO answer before the tab is
+     * torn down instead of merely re-anchored. Two: the first silence gets a
+     * fresh document, and if that changes nothing the tab itself is the problem.
+     */
+    private static final int SILENT_STRIKES_BEFORE_REBUILD = 2;
     /** Warmup poll cadence — the quick base used while a Cloudflare JS interstitial resolves. */
     private static final long WARMUP_POLL_MS = 2_500;
     /**
@@ -119,8 +125,16 @@ public final class CefFetchClient {
     /** Fetches currently in flight — a client is only evictable at zero. */
     private final java.util.concurrent.atomic.AtomicInteger inFlight =
             new java.util.concurrent.atomic.AtomicInteger();
-    /** Wall-clock of the last fetch begin — the LRU/idle-TTL eviction signal. */
+    /**
+     * Wall-clock of the last fetch that actually ANSWERED — the LRU/idle-TTL
+     * signal. Stamping on the attempt (as it did until 2026-08-09) let a mute
+     * tab keep itself alive forever: the poller refreshed the corpse's stamp
+     * every 30 s, so the idle sweep never reached it.
+     */
     private volatile long lastUsedAt = System.currentTimeMillis();
+    /** Consecutive fetches that produced no answer at all — see {@link #noteSilence}. */
+    private final java.util.concurrent.atomic.AtomicInteger silentStrikes =
+            new java.util.concurrent.atomic.AtomicInteger();
     private final AtomicBoolean warmupRunning = new AtomicBoolean(false);
     /**
      * Counted down by the first load-end on our browser: from then on a probe
@@ -137,6 +151,13 @@ public final class CefFetchClient {
      * threads (audit C2). Cleared the moment a warmup probe succeeds.
      */
     private volatile long warmupExhaustedAt = 0L;
+    /**
+     * Wall-clock ms until which the warmup thread is sleeping off a restricted
+     * status (0 = not backing off). While in the future, the anchor is being
+     * ACTIVELY refused right now and no caller should wait on the latch at all
+     * — see {@link #READY_WAIT_REFUSED}. Cleared the moment a probe succeeds.
+     */
+    private volatile long warmupBackoffUntil = 0L;
     private volatile CefBrowser browser;
     private volatile long lastReloadAt = 0L;
 
@@ -151,6 +172,23 @@ public final class CefFetchClient {
     private static final Duration READY_WAIT = Duration.ofSeconds(25);
     /** How long a caller may wait when the last full warmup already failed. */
     private static final Duration READY_WAIT_EXHAUSTED = Duration.ofSeconds(3);
+    /**
+     * How long a caller may wait while the warmup is SLEEPING OFF a restricted
+     * status: not at all. The latch cannot fall during that sleep, so every
+     * millisecond spent on it is provably wasted.
+     *
+     * <p>
+     * Measured 2026-08-11 on {@code cdn.finra.org}: the anchor answered 403 on
+     * probe 1, the warmup did what it should and backed off (5 s, 10 s, 20 s,
+     * 40 s) — and meanwhile the deep dive walked ~24 daily RegSHO files, each
+     * paying the full {@link #READY_WAIT_EXHAUSTED} on a session that was being
+     * actively refused. Seventy seconds of waiting for a "no" that had already
+     * arrived. The host cooldown in {@code WebFetchChain} cannot catch this by
+     * design: it counts only an ANSWERED 429 on every strategy, and the browser
+     * strategy THREW here ("a strategy that threw is not a 429, it is silence").
+     * The anchor's 403 is the answer nobody was counting.
+     */
+    private static final Duration READY_WAIT_REFUSED = Duration.ZERO;
 
     private final AtomicLong nextId = new AtomicLong();
     private final Map<Long, Pending> pending = new ConcurrentHashMap<>();
@@ -209,24 +247,86 @@ public final class CefFetchClient {
             throw new IllegalStateException(
                     "CefFetchClient.fetch must not be called on the EDT (JCEF is EDT-pumped)");
         }
-        // Fail fast on a known-dead anchor instead of stalling every caller 45 s.
-        ensureReady(warmupExhaustedAt != 0 ? READY_WAIT_EXHAUSTED : READY_WAIT);
-        HttpResult result = rawFetch(url, method, headers, body, timeout);
+        // Three grades of patience: a healthy anchor gets the full wait, one
+        // whose last full warmup expired gets a short one, and one that is
+        // being refused AS WE SPEAK gets none — waiting on a latch that cannot
+        // fall is the difference between a slow run and a stalled one.
+        ensureReady(readyWait());
+        HttpResult result;
+        try {
+            result = rawFetch(url, method, headers, body, timeout);
+        } catch (Exception first) {
+            // No reply at all — but that does NOT mean the tab is broken.
+            // Measured live on 2026-08-09 through the running app's DevTools port:
+            // while the Java side was logging failed fetches for this very origin,
+            // the tab itself answered the identical Yahoo request with HTTP 200 in
+            // 83 ms, window.wsbgFetchQuery was a function, and the message router
+            // replied. The request goes out and is served; the REPLY is what gets
+            // lost, intermittently (7× in 100 minutes). So re-issue once before
+            // blaming the tab — the page is usually perfectly alive.
+            //
+            // Cost: a lost reply doubles that one fetch's worst-case latency.
+            // Cheap against the alternative, which cost the EUR/USD wire half an
+            // hour on the fallback source.
+            LOG.debug("[{}] no reply for {} ({}) — re-issuing once", label, url,
+                    first.getClass().getSimpleName());
+            try {
+                result = rawFetch(url, method, headers, body, timeout);
+            } catch (Exception second) {
+                // Twice mute: now it IS about the tab.
+                noteSilence(second);
+                throw second;
+            }
+        }
+        silentStrikes.set(0);
+        lastUsedAt = System.currentTimeMillis();
         // A restricted status mid-session usually means the document's session
         // went stale; reload the anchor so the next request runs against a fresh
         // page. This request still returns that status (the scraper records it),
         // but we recover automatically instead of silently dropping to RSS.
-        if (isRestricted(result.status())) reloadAnchor();
+        if (isRestricted(result.status())) reloadAnchor(false);
         return result;
+    }
+
+    /**
+     * A fetch that produced no answer whatsoever — the page-side {@code fetch()}
+     * never reported back. Its most common cause is a dead return channel: the
+     * document navigated, became a Chromium error page, or otherwise lost
+     * {@code window.wsbgFetchQuery}, and then BOTH the success and the error path
+     * of the injected script are mute (they share the one channel). There is no
+     * status to react to, so silence itself has to be the health signal.
+     *
+     * <p>First strike re-anchors (bypassing {@link #RELOAD_COOLDOWN_MS} — the
+     * deckel is there to stop reload storms on a LIVE session, not to keep a mute
+     * one alive). A second strike tears the tab down; {@link CefWebFetcher} then
+     * finds a closed client on the next fetch and builds a fresh one through its
+     * acquire-or-rebuild loop. Nothing else is touched — no other origin's tab is
+     * disturbed by this.
+     */
+    private void noteSilence(Exception cause) {
+        int strikes = silentStrikes.incrementAndGet();
+        String what = cause.getMessage() != null
+                ? cause.getClass().getSimpleName() + ": " + cause.getMessage()
+                : cause.getClass().getSimpleName();
+        if (strikes >= SILENT_STRIKES_BEFORE_REBUILD) {
+            LOG.info("CEF fetch '{}' stayed mute {}× ({}) — tearing the tab down; "
+                    + "the next fetch builds a fresh one.", label, strikes, what);
+            dispose();
+        } else {
+            LOG.info("CEF fetch '{}' answered nothing ({}) — re-anchoring on {}.",
+                    label, what, anchorUrl);
+            reloadAnchor(true);
+        }
     }
 
     // ---- eviction seam (CefWebFetcher) -------------------------------------
 
     /**
-     * Marks one fetch as in flight and refreshes the LRU stamp; {@code false}
-     * when this client is already disposed — the caller drops its map entry and
-     * builds a fresh client instead. The double-check closes the race with a
-     * concurrent {@link #dispose()}: whichever side loses backs out cleanly.
+     * Marks one fetch as in flight; {@code false} when this client is already
+     * disposed — the caller drops its map entry and builds a fresh client
+     * instead. The double-check closes the race with a concurrent
+     * {@link #dispose()}: whichever side loses backs out cleanly. The LRU stamp
+     * is NOT refreshed here — only a fetch that answered counts as use.
      */
     boolean tryBeginFetch() {
         if (closed.get()) return false;
@@ -235,7 +335,6 @@ public final class CefFetchClient {
             inFlight.decrementAndGet();
             return false;
         }
-        lastUsedAt = System.currentTimeMillis();
         return true;
     }
 
@@ -333,11 +432,13 @@ public final class CefFetchClient {
     /**
      * Reloads the anchor document to refresh cookies / re-establish the session,
      * resetting readiness so the next {@link #fetch} waits for the fresh page.
-     * Rate-limited by {@link #RELOAD_COOLDOWN_MS} and run off the calling thread.
+     * Rate-limited by {@link #RELOAD_COOLDOWN_MS} and run off the calling thread;
+     * {@code force} skips that deckel — it exists to stop reload storms on a LIVE
+     * session, and a mute tab (see {@link #noteSilence}) must not be kept alive by it.
      */
-    private synchronized void reloadAnchor() {
+    private synchronized void reloadAnchor(boolean force) {
         long now = System.currentTimeMillis();
-        if (now - lastReloadAt < RELOAD_COOLDOWN_MS) return;
+        if (!force && now - lastReloadAt < RELOAD_COOLDOWN_MS) return;
         lastReloadAt = now;
         CefBrowser b = browser;
         if (b == null) return;
@@ -348,6 +449,12 @@ public final class CefFetchClient {
     }
 
     // ---- lifecycle --------------------------------------------------------
+
+    /** The caller's patience, by how dead the anchor currently looks. */
+    private Duration readyWait() {
+        if (System.currentTimeMillis() < warmupBackoffUntil) return READY_WAIT_REFUSED;
+        return warmupExhaustedAt != 0 ? READY_WAIT_EXHAUSTED : READY_WAIT;
+    }
 
     private void ensureReady(Duration timeout) throws Exception {
         if (ready) return;
@@ -392,6 +499,7 @@ public final class CefFetchClient {
                         if (status == 200) {
                             ready = true;
                             warmupExhaustedAt = 0L; // healthy again — full patience restored
+                            warmupBackoffUntil = 0L;
                             readyLatch.countDown();
                             LOG.info("CEF fetch '{}' session ready after {} probe(s).", label, attempt);
                             return;
@@ -406,10 +514,13 @@ public final class CefFetchClient {
                     // the quick base cadence so a healthy session comes up fast.
                     if (isRestricted(status)) {
                         delay = Math.max(retryAfterMs, Math.min(WARMUP_MAX_BACKOFF_MS, delay * 2));
+                        // Publish the sleep so callers can skip the doomed wait.
+                        warmupBackoffUntil = System.currentTimeMillis() + delay;
                         LOG.debug("[{}] warmup probe {} → HTTP {}, backing off {} ms",
                                 label, attempt, status, delay);
                     } else {
                         delay = WARMUP_POLL_MS;
+                        warmupBackoffUntil = 0L;
                     }
                     Thread.sleep(delay);
                 }
@@ -462,12 +573,23 @@ public final class CefFetchClient {
                 if (request == null || !request.startsWith(clientTag)) {
                     return false; // not ours — let another client's handler try
                 }
+                // Nothing may escape from here: onQuery is dispatched on the
+                // native UI thread (AppKit on macOS), where an escaping throwable
+                // is neither logged usefully nor recoverable — it just eats this
+                // reply, and with it the whole fetch, which then times out with no
+                // trace. Throwable, not Exception: an Error out of the JSON/array
+                // work would slip past the old guard, and callback.success() sat
+                // outside it entirely.
                 try {
                     handleMessage(request);
-                } catch (Exception e) {
-                    LOG.debug("[{}] malformed router message: {}", label, e.getMessage());
+                } catch (Throwable t) {
+                    LOG.debug("[{}] malformed router message: {}", label, t.toString());
                 }
-                callback.success("");
+                try {
+                    callback.success("");
+                } catch (Throwable t) {
+                    LOG.debug("[{}] router callback refused: {}", label, t.toString());
+                }
                 return true;
             }
         };

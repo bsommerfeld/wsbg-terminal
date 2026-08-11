@@ -32,15 +32,18 @@ public final class AssetServer {
 
     private static final Logger LOG = LoggerFactory.getLogger(AssetServer.class);
 
-    private static final Map<String, String> MIME = Map.of(
-            ".html", "text/html; charset=utf-8",
-            ".css", "text/css; charset=utf-8",
-            ".js", "application/javascript; charset=utf-8",
-            ".json", "application/json; charset=utf-8",
-            ".svg", "image/svg+xml",
-            ".png", "image/png",
-            ".woff2", "font/woff2",
-            ".ico", "image/x-icon");
+    private static final Map<String, String> MIME = Map.ofEntries(
+            Map.entry(".html", "text/html; charset=utf-8"),
+            Map.entry(".css", "text/css; charset=utf-8"),
+            Map.entry(".js", "application/javascript; charset=utf-8"),
+            Map.entry(".json", "application/json; charset=utf-8"),
+            Map.entry(".svg", "image/svg+xml"),
+            Map.entry(".png", "image/png"),
+            Map.entry(".woff2", "font/woff2"),
+            Map.entry(".ico", "image/x-icon"),
+            Map.entry(".jpg", "image/jpeg"),
+            Map.entry(".webp", "image/webp"),
+            Map.entry(".gif", "image/gif"));
 
     private HttpServer server;
     private int port = -1;
@@ -83,6 +86,21 @@ public final class AssetServer {
                     .resolve(path.substring("/fonts/".length()));
             if (Files.isRegularFile(fontFile)) {
                 byte[] data = Files.readAllBytes(fontFile);
+                send(ex, 200, mime(path), data);
+                return;
+            }
+            send(ex, 404, "text/plain", ("not found: " + path).getBytes());
+            return;
+        }
+
+        // /logos/* are the first-party company logos the deep dive caches at
+        // run time (agent-side fetch from the company's own website) - served
+        // from app data like the fonts, so archived reports keep their logo.
+        if (path.startsWith("/logos/")) {
+            Path logoFile = StorageUtils.getAppDataDir().resolve("images")
+                    .resolve("logos").resolve(path.substring("/logos/".length()));
+            if (Files.isRegularFile(logoFile)) {
+                byte[] data = Files.readAllBytes(logoFile);
                 send(ex, 200, mime(path), data);
                 return;
             }

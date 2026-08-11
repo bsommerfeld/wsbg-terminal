@@ -306,8 +306,10 @@
                     <arguments>
                         <!-- Metal stays ON: the OpenGL fallback makes every
                              full-window OSR blit ~15ms on the EDT (grid-view
-                             slideshow). The rare Metal Queue-Flusher SIGSEGV is
-                             opted into via WSBG_J2D_OPENGL=true (see AppMain). -->
+                             slideshow). The Metal Queue-Flusher SIGSEGV on a
+                             display change is handled in-app by GraphicsConfigPin,
+                             not by switching pipelines; WSBG_J2D_OPENGL=true stays
+                             as the escape hatch (see AppMain). -->
                         <!-- GC: mirrors AppLauncher.addGcFlags in the launcher
                              module — keep the two lists in sync, or a jank fix
                              validated in dev silently misses the shipped app.

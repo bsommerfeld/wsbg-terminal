@@ -93,6 +93,12 @@ public final class AppMain {
             window.open(entryUrl);  // brings JCEF up SYNCHRONOUSLY on this (EDT) thread
             windowRef[0] = window;  // hand to the raise listener
 
+            // Unplugging a monitor used to kill the process outright (native
+            // SIGSEGV in the JDK's Metal graphics-config teardown). Armed here,
+            // once there is a window: it needs a live AWT, and the screens it
+            // pins must be pinned BEFORE one of them is pulled.
+            GraphicsConfigPin.install();
+
             // CEF's native init is now done, on the AWT thread, via the window —
             // so the hidden-browser fetchers (FX, Fear&Greed) may finally run.
             // As eager singletons they used to poll from their own threads during
@@ -125,11 +131,22 @@ public final class AppMain {
         // deprecated OpenGL pipeline is markedly slower and makes scroll/click/
         // animations feel laggy. So we keep Metal by DEFAULT.
         //
-        // OpenGL once mitigated a rare native crash in the Metal graphics-config
-        // teardown (MTLGC_DestroyMTLGraphicsConfig on display sleep/wake, SIGSEGV
-        // after hours) — unconfirmed and possibly external. It's kept as an
-        // OPT-IN (-Dwsbg.j2d.opengl=true or WSBG_J2D_OPENGL=true) rather than the
-        // default, so a certain, pervasive slowdown isn't traded for a rare crash.
+        // Metal DOES carry a native crash: the JDK over-releases an Objective-C
+        // object while destroying a Metal graphics config, and the process dies
+        // (objc_release in MTLGC_DestroyMTLGraphicsConfig, on the Java2D Queue
+        // Flusher). Confirmed, three identical hs_err logs — 02.07., 15.07.,
+        // 09.08. — and the trigger is a DISPLAY CHANGE, not uptime: the last one
+        // hit 2 minutes in, when a monitor was unplugged. NOT "after hours" and
+        // NOT external, as this comment used to claim.
+        //
+        // We do not pay for that with the pipeline: GraphicsConfigPin (armed in
+        // main) keeps the configs alive so the JDK's teardown never runs. Metal
+        // therefore stays ON by default — the OpenGL fallback makes every
+        // full-window OSR blit ~15ms on the EDT.
+        //
+        // The switch survives as an OPT-IN (-Dwsbg.j2d.opengl=true or
+        // WSBG_J2D_OPENGL=true) — an escape hatch should the Metal teardown find
+        // a second way to die that a pinned config cannot close.
         if (Boolean.getBoolean("wsbg.j2d.opengl")
                 || "true".equalsIgnoreCase(System.getenv("WSBG_J2D_OPENGL"))) {
             System.setProperty("sun.java2d.metal", "false");

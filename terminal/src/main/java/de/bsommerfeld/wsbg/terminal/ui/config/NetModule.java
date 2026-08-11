@@ -53,9 +53,10 @@ final class NetModule extends AbstractModule {
      * wrapped in a {@link CachingWebFetcher} — OUTSIDE the chain, so it sees the
      * final answer — which revalidates unchanged endpoints via
      * {@code If-None-Match}/{@code If-Modified-Since} and serves 304s from an
-     * in-memory cache (traffic blending, Hebel 2). The browser transport sets
-     * its own headers and drops the conditional ones; that path just keeps
-     * returning full 200s — a clean fallback, not a bug.
+     * in-memory cache (traffic blending, Hebel 2). Since the browser transport
+     * passes caller headers through to its page-side {@code fetch()}, the
+     * validators now reach BOTH legs — a revalidation saves its body whichever
+     * transport answers.
      */
     /**
      * The ONE browser-joker transport — shared by both chains below so an origin
