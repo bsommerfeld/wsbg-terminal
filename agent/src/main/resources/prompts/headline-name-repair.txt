@@ -1,0 +1,10 @@
+## Correction - your line was checked and it deviates
+
+Your line does not carry the name of the subject: {{NAME}}
+
+The line is read ALONE. Without the name it has no referent, so it is unfinished - a description of the subject is not the subject.
+
+- Write the line again, with the name woven into the sentence.
+- Keep everything else you wrote: the same event, the same figure, the same stance, the same length.
+- Never the ticker symbol in the name's place, never a stand-in phrase, never a pronoun.
+- Answer again with the SAME single JSON object and its keys, nothing else.

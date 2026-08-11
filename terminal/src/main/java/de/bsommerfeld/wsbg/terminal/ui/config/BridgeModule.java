@@ -5,8 +5,8 @@ import de.bsommerfeld.wsbg.terminal.ui.bridge.ArchiveQueryBridge;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.ChangelogBridge;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.CommandBridge;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.LauncherUpdateService;
-import de.bsommerfeld.wsbg.terminal.ui.bridge.MentionsBridge;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.SettingsBridge;
+import de.bsommerfeld.wsbg.terminal.ui.bridge.TickerLookupBridge;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.UninstallService;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.UpdateService;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.WatchlistBridge;
@@ -48,10 +48,9 @@ final class BridgeModule extends AbstractModule {
         // Wetterbericht widget backend: schedule state + report history out,
         // report-time setting in.
         bind(WeatherReportBridge.class).asEagerSingleton();
-        // Erwähnungs-Zähler: our own day-by-day count over any window (from
-        // disk, instant) plus the two foreign WSB rankings (network, answered
-        // separately so ours never waits on theirs).
-        bind(MentionsBridge.class).asEagerSingleton();
+        // Ticker-Nachschlagen widget: company name in, listed symbol(s) out
+        // (local instrument corpus first, Yahoo search as the top-up hop).
+        bind(TickerLookupBridge.class).asEagerSingleton();
         // KI-DD backend: generate/get/export-pdf inbound, generation progress +
         // the archived reports outbound (also constructs the DeepDiveService).
         bind(de.bsommerfeld.wsbg.terminal.ui.bridge.DeepDiveBridge.class).asEagerSingleton();

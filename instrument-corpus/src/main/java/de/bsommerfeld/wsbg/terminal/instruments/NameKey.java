@@ -5,8 +5,8 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * The one spelling normalizer shared by the alias memory, the mention lexicon
- * and everything that stores a name as a key — so a name written once can be
+ * The one spelling normalizer shared by the alias memory and everything else
+ * that stores a name as a key — so a name written once can be
  * found again no matter which side wrote it.
  *
  * <p>Deliberately dumb: lower-case, fold the punctuation a name can be written

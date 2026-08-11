@@ -75,7 +75,7 @@ public final class InstrumentCorpus {
 
     /**
      * The current snapshot, whole — for consumers that build their own
-     * structure over it (the {@link MentionLexicon}) rather than querying it.
+     * structure over it rather than querying it.
      * Immutable and consistent: a concurrent refresh swaps the index, it never
      * mutates this list.
      */
@@ -89,6 +89,16 @@ public final class InstrumentCorpus {
      */
     public List<InstrumentEntry> search(String query, int k) {
         return index.get().search(query, k);
+    }
+
+    /**
+     * Top-{@code k} entries whose name or symbol is a near-MISS of the query — the
+     * room's corruptions and coinages, which share no whole token with the name they
+     * corrupt and are therefore invisible to {@link #search}. A candidate list for
+     * the identity judge, never an answer: letter distance proposes, context decides.
+     */
+    public List<InstrumentEntry> nearest(String query, int k) {
+        return index.get().nearest(query, k);
     }
 
     // -- refresh --

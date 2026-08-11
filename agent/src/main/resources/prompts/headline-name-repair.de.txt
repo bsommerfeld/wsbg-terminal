@@ -1,0 +1,10 @@
+## Korrektur - deine Zeile wurde geprüft und weicht ab
+
+Deine Zeile trägt den Namen des Subjekts nicht: {{NAME}}
+
+Die Zeile wird ALLEIN gelesen. Ohne den Namen hat sie keinen Referenten, also ist sie unfertig - eine Umschreibung des Subjekts ist nicht das Subjekt.
+
+- Schreibe die Zeile neu, mit dem Namen in den Satz eingewoben.
+- Behalte alles andere, was du geschrieben hast: dasselbe Ereignis, dieselbe Zahl, dieselbe Haltung, dieselbe Länge.
+- Niemals das Ticker-Symbol an der Stelle des Namens, niemals eine Ersatzformel, niemals ein Pronomen.
+- Antworte erneut mit DEMSELBEN einen JSON-Objekt und seinen Schlüsseln, sonst nichts.
