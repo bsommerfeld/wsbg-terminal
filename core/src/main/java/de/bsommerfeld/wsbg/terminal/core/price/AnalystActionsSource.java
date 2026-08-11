@@ -23,9 +23,8 @@ public interface AnalystActionsSource {
 
     /**
      * The day's full ratings table for one country filter (provider-specific;
-     * MarketBeat's is ~490 rows for {@code "US"}) — the Abendausgabe's
-     * "who moved a target today" leg. Sources without a daily table keep this
-     * default no-op.
+     * MarketBeat's is ~490 rows for {@code "US"}) — the "who moved a target
+     * today" read. Sources without a daily table keep this default no-op.
      */
     default java.util.List<AnalystActions.Action> todaysActions(String country) {
         return java.util.List.of();
@@ -33,7 +32,7 @@ public interface AnalystActionsSource {
 
     /**
      * The dated press timeline for this ticker ({@link PressTimeline}) — the
-     * months-spanning headline history behind the KI-DD's "Was war" narrative.
+     * months-spanning headline history behind a "what happened" narrative.
      * Same symbol shapes as {@link #actionsFor}; sources without a news
      * surface keep this default no-op.
      */

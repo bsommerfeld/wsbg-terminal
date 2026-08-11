@@ -19,11 +19,26 @@ final class MatchTower {
         this.stages = List.copyOf(stages);
     }
 
+    /**
+     * A claimed subject together with the stage that claimed it. WHICH stage decided
+     * is the one confidence signal that costs nothing and does not flatter itself: a
+     * catalogue hit is a fact, a judge pick is a judgement call, and the learned name
+     * memory has no way to tell them apart unless the tower says so.
+     */
+    record Claim(SubjectMatch match, String stage) {}
+
     /** First stage to CLAIM the subject wins; empty means no stage claimed it (tickerless theme). */
     Optional<SubjectMatch> resolve(MatchContext ctx) {
+        return claim(ctx).map(Claim::match);
+    }
+
+    /** {@link #resolve} plus the name of the stage that claimed it. */
+    Optional<Claim> claim(MatchContext ctx) {
         for (SubjectMatcher stage : stages) {
             Optional<SubjectMatch> m = stage.match(ctx);
-            if (m.isPresent()) return m;
+            if (m.isPresent()) {
+                return Optional.of(new Claim(m.get(), stage.getClass().getSimpleName()));
+            }
         }
         return Optional.empty();
     }

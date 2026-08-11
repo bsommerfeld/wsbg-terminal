@@ -126,11 +126,11 @@ class NewsAggregatorTest {
 
     /**
      * The dossier fans everything, the wire does not (2026-08-03): a research
-     * leg that only a deep dive can digest must not reach the headline loom,
-     * while the deep dive keeps the full net.
+     * leg that only a full dossier read can digest must not reach the headline
+     * loom, while the dossier fan keeps the full net.
      */
     @Test
-    void dossierOnlySourcesAnswerTheDeepDiveFanButNotTheWire() {
+    void dossierOnlySourcesAnswerTheDossierFanButNotTheWire() {
         Instant t = Instant.parse("2026-08-03T09:00:00Z");
         NewsSource wire = source("wire", false, item("w1", "Rheinmetall hebt Prognose", t));
         NewsSource research = dossierSource("research", item("d1", "Rheinmetall Kursnotiz", t));

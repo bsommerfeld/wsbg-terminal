@@ -16,7 +16,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * The KI-DD's first-party leg: the company's OWN website (Consorsbank delivers
+ * The first-party leg: the company's OWN website (Consorsbank delivers
  * the official URL with every profile) carries the announcements the wire
  * services paraphrase — restructurings, quarterly releases, regulatory
  * statements — plus the report archive and the financial calendar. The
@@ -125,7 +125,7 @@ final class CompanyPressScout {
             }
         }
         if (!out.isEmpty()) {
-            LOG.info("[DEEPDIVE] press scout lifted {} item(s) from {} ({} page(s) walked)",
+            LOG.info("[FIRMENSITE] press scout lifted {} item(s) from {} ({} page(s) walked)",
                     out.size(), crawl.home().getHost(), crawl.pages().size());
         }
         return out;
@@ -186,7 +186,7 @@ final class CompanyPressScout {
             }
         }
         if (!out.isEmpty()) {
-            LOG.info("[DEEPDIVE] IR scout lifted {} entry(ies) from {} ({} page(s) walked)",
+            LOG.info("[FIRMENSITE] IR scout lifted {} entry(ies) from {} ({} page(s) walked)",
                     out.size(), crawl.home().getHost(), crawl.pages().size());
         }
         return out;

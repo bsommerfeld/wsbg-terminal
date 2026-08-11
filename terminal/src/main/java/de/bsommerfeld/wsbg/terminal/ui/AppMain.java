@@ -87,8 +87,7 @@ public final class AppMain {
         SwingUtilities.invokeLater(() -> {
             BrowserWindow window = injector.getInstance(BrowserWindow.class);
             window.setOnClose(lifecycle.onWindowClose());
-            // Asked before the teardown: a running deep dive keeps no checkpoint,
-            // so closing destroys it rather than pausing it.
+            // The close veto, consulted before the teardown.
             window.setCloseGuard(lifecycle.closeGuard());
             window.open(entryUrl);  // brings JCEF up SYNCHRONOUSLY on this (EDT) thread
             windowRef[0] = window;  // hand to the raise listener

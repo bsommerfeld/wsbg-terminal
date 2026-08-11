@@ -30,7 +30,7 @@ import java.util.List;
  * {@link HeadlineJsonlCodec} (the file IO + torn-line-tolerant load) and
  * {@link HeadlineIndex} (the in-memory records + ticker fan-out + the
  * {@link #byTicker(String)} / {@link #search(String)} / {@link #recent(Duration)}
- * / {@link #page(long, int)} query primitives a later search/watchlist UI builds
+ * / {@link #page(long, int)} query primitives a later search UI builds
  * on). The facade owns the <b>single lock</b> over both, so an append's
  * index-mutation and file-write stay atomic against a concurrent clear/read.
  *
@@ -90,7 +90,7 @@ public class HeadlineArchive {
         LOG.info("Headline archive cleared.");
     }
 
-    // ---- read API (search / watchlist primitives) ----
+    // ---- read API (search primitives) ----
 
     public synchronized int size() {
         return index.size();
@@ -108,7 +108,7 @@ public class HeadlineArchive {
 
     /**
      * Every headline that names {@code symbol} — as its primary ticker or among
-     * its subjects. Newest first. The watchlist primitive: "show me everything
+     * its subjects. Newest first. The subject primitive: "show me everything
      * the wire ever said about NVDA".
      */
     public synchronized List<HeadlineRecord> byTicker(String symbol) {

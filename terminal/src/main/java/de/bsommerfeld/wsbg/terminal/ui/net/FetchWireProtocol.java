@@ -70,8 +70,16 @@ final class FetchWireProtocol {
         String jsHeaders = JSON.writeValueAsString(
                 headers == null ? java.util.Map.of() : headers);
         String bodyField = body == null ? "" : ",body:" + JSON.writeValueAsString(body);
+        // q() is the ONE way back — success and failure share it. If the channel
+        // is gone (the document navigated, or Chromium swapped in an error page,
+        // so window.wsbgFetchQuery no longer exists), an unguarded call throws
+        // inside .then, the .catch calls q() again, that throws again, and the
+        // page ends in an unhandled rejection while Java waits out its full
+        // timeout. Swallowing here keeps the page clean; the Java side treats the
+        // silence as a health signal (CefFetchClient.noteSilence) and re-anchors.
         return "(function(){var TAG=" + jsTag + ",ID=" + id + ",URL=" + jsUrl + ",D='\\u0001';"
-                + "function q(s){window.wsbgFetchQuery({request:s,onSuccess:function(){},onFailure:function(){}});}"
+                + "function q(s){try{window.wsbgFetchQuery("
+                + "{request:s,onSuccess:function(){},onFailure:function(){}});}catch(e){}}"
                 + "var AC=new AbortController();setTimeout(function(){AC.abort();}," + PAGE_ABORT_MS + ");"
                 + "fetch(URL,{method:" + jsMethod + ",credentials:'" + credentials + "',signal:AC.signal,"
                 + "headers:" + jsHeaders + bodyField + "}).then(function(r){"

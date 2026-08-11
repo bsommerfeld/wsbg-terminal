@@ -14,7 +14,7 @@ import java.nio.file.Path;
  * Mechanical text extraction from Reddit images: Tesseract OCR over a
  * standardised screenshot. Replaces the retired multimodal vision read — the
  * goal is NOT scene understanding but pulling instrument evidence (tickers,
- * company names, WKN/ISIN strings) out of broker/watchlist/article screenshots
+ * company names, WKN/ISIN strings) out of broker/portfolio/article screenshots
  * so the regular text pipeline can match it against the corpus.
  *
  * <p>Binds to a system-installed Tesseract (Homebrew/apt/MSI); {@link #available()}

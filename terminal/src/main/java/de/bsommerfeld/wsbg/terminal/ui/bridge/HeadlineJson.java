@@ -10,7 +10,7 @@ import java.util.Map;
 /**
  * The one headline-record → socket-JSON serialisation, shared by every
  * publisher/bridge that ships {@link HeadlineRecord}s to the page (live wire,
- * archive search results, watchlist history). One shape on the socket means
+ * archive search results). One shape on the socket means
  * the JS renderer for a headline row works everywhere.
  */
 final class HeadlineJson {

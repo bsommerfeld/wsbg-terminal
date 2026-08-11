@@ -23,8 +23,8 @@ import java.util.regex.Pattern;
  * (extracted from {@code AgentBrain.initialize}). All of them are the same resident
  * gemma4 (same model name + num_ctx, so ONE loaded runner): the agent model
  * (subject extraction + judge calls), the schema-constrained compose model, and the
- * prose/dossier/deep-dive variants. Also resolves the model name against the live
- * Ollama tag list, falling back to any installed model of the same family.
+ * free-form deliberate/verdict judge variants. Also resolves the model name against
+ * the live Ollama tag list, falling back to any installed model of the same family.
  */
 final class OllamaModelFactory {
 
@@ -41,8 +41,7 @@ final class OllamaModelFactory {
     }
 
     /** The built models plus the resolved model names (for the init log line). */
-    record Models(ChatModel agentModel, ChatModel composeModel, ChatModel proseModel,
-            ChatModel dossierModel, ChatModel deepDiveModel, ChatModel deliberateModel,
+    record Models(ChatModel agentModel, ChatModel composeModel, ChatModel deliberateModel,
             ChatModel verdictModel, String activeAgentModel) {
     }
 
@@ -57,21 +56,20 @@ final class OllamaModelFactory {
      * numbers (768/1024/1536/3584), each argued from the shape its lane
      * happened to emit — and every one of them was a latent truncation waiting
      * for its lane's output to grow. The 768 did exactly that: it was sized for
-     * a ~300-token subject array, the DD triage later grew a per-item reason,
+     * a ~300-token subject array, a triage lane later grew a per-item reason,
      * and ten of ~24 triage calls came back cut off (2026-08-11).
      *
      * <p>
      * A ceiling is not a reservation. Ollama allocates nothing for it, so a
      * lane that emits 200 tokens costs exactly 200 tokens whether the ceiling
      * sits at 1024 or 3584 — the tight numbers bought nothing and cost
-     * verdicts. They were also copied by hand into {@code DeepDiveService} and
-     * {@code WeatherReportService}, which need the output half to size their
-     * char budgets; one number means there is nothing left to mirror.
+     * verdicts. They were also hand-copied into every caller that had to budget
+     * prompt against output; one number means there is nothing left to mirror.
      *
      * <p>
-     * 3584 is the roomiest lane's measured need: a full KI-DD pass returns the
-     * ENTIRE revised report, and 2560 was measured cutting the final pass
-     * mid-sentence ("Der Raum" lost entirely).
+     * 3584 is the roomiest lane's measured need: a long free-form pass that
+     * returns an entire revised text, where 2560 was measured cutting the reply
+     * mid-sentence.
      */
     static final int NUM_PREDICT = 3584;
 
@@ -171,52 +169,26 @@ final class OllamaModelFactory {
                 .timeout(timeout)
                 .build();
 
-        // Prose model — the SAME gemma4 (same name + num_ctx, still ONE runner),
-        // but FREE-FORM output: no responseFormat at all. Used by the daily
-        // Wetterbericht map-reduce, whose two stages (digest lines, final report
-        // prose) are plain text — JSON mode would only add escaping/truncation
-        // risk to running prose.
-        ChatModel proseModel = OllamaChatModel.builder()
-                .baseUrl(baseUrl).modelName(agentName)
-                .temperature(agentModelEnum.getTemperature()).topP(0.9).topK(40)
-                .numCtx(ctxTokens).numPredict(NUM_PREDICT)
-                .think(think)
-                .timeout(timeout)
-                .build();
-
-        // Dossier model — the SAME gemma4 (same name + num_ctx, still ONE runner),
-        // plain JSON mode like the agent model. Not schema-constrained on purpose: the
-        // report VALUE is free-running markdown prose; JSON mode alone keeps the
-        // envelope parseable.
-        ChatModel dossierModel = OllamaChatModel.builder()
-                .baseUrl(baseUrl).modelName(agentName)
-                .temperature(agentModelEnum.getTemperature()).topP(0.9).topK(40)
-                .numCtx(ctxTokens).numPredict(NUM_PREDICT)
-                .responseFormat(ResponseFormat.JSON)
-                .think(think)
-                .timeout(timeout)
-                .build();
-
-        // Deep-dive model — the SAME gemma4 (same name + num_ctx, still ONE
-        // runner), FREE-FORM like the prose model. The fleet's ceiling
-        // (NUM_PREDICT) is sized on THIS lane's need. On-demand only (report
-        // generation), so the budget never competes with the wire's
-        // steady-state calls.
-        ChatModel deepDiveModel = OllamaChatModel.builder()
-                .baseUrl(baseUrl).modelName(agentName)
-                .temperature(agentModelEnum.getTemperature()).topP(0.9).topK(40)
-                .numCtx(ctxTokens).numPredict(NUM_PREDICT)
-                .think(think)
-                .timeout(timeout)
-                .build();
-
+        // Deliberate model — the SAME gemma4 (same name + num_ctx, still ONE
+        // runner), FREE-FORM: no responseFormat at all. The judge seam for
+        // free-running replies that a JSON envelope would only wrap in
+        // escaping risk.
+        //
         // Thinking is STRUCK from the fleet (user decree 2026-08-05): it only
-        // ever existed for the tool-call era, and on the DD judge tables it
-        // was measured spiralling to the num_predict ceiling with the visible
+        // ever existed for the tool-call era, and on the judge tables it was
+        // measured spiralling to the num_predict ceiling with the visible
         // verdict truncated to NOTHING (14/14 truncated calls, every
         // conference abstaining). The "deliberate" seam stays as a name so
-        // the judge lanes remain separately routable, but it IS the sober
-        // deep-dive model.
+        // the judge lanes remain separately routable, but it is a sober,
+        // sampled lane.
+        ChatModel deliberateModel = OllamaChatModel.builder()
+                .baseUrl(baseUrl).modelName(agentName)
+                .temperature(agentModelEnum.getTemperature()).topP(0.9).topK(40)
+                .numCtx(ctxTokens).numPredict(NUM_PREDICT)
+                .think(think)
+                .timeout(timeout)
+                .build();
+
         // Verdict model - the SAME gemma4 (same name + num_ctx, still ONE
         // runner: temperature, top-k/p and seed are PER-REQUEST parameters and
         // do not fork a second weight copy), but decoded DETERMINISTICALLY.
@@ -237,8 +209,7 @@ final class OllamaModelFactory {
                 .timeout(timeout)
                 .build();
 
-        return new Models(agentModel, composeModel, proseModel, dossierModel,
-                deepDiveModel, deepDiveModel, verdictModel, agentName);
+        return new Models(agentModel, composeModel, deliberateModel, verdictModel, agentName);
     }
 
     /**

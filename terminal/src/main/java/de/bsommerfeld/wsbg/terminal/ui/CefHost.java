@@ -260,8 +260,8 @@ public final class CefHost {
 
     /**
      * Opens {@code file} in the OS default application for its type; failures
-     * are logged, never thrown. Used by the KI-DD's PDF export, which hands the
-     * finished report straight to the system viewer.
+     * are logged, never thrown: hands a finished file straight to the system
+     * viewer.
      */
     public static void openFile(Path file) {
         DesktopLauncher.openFile(file);

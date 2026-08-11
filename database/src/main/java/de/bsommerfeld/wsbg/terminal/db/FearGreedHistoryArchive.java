@@ -17,7 +17,7 @@ import java.util.Optional;
 
 /**
  * The permanent Fear&amp;Greed daily history (one JSONL line per trading day,
- * never deleted) — mirrored after {@link WeatherReportArchive}: loaded fully
+ * never deleted) — an append-only JSONL archive: loaded fully
  * into memory at startup, torn lines skipped, appends idempotent (identity =
  * the ISO date). Back-filled once from CNN's full series and topped up
  * forward; {@link #byDate} is the regime lookup the event stamper reads.

@@ -49,7 +49,7 @@ final class CompanySiteCrawler {
     static final int MAX_PAGES = 24;
     /** Hops away from the homepage; a newsroom's year archive sits at 2-3. */
     static final int MAX_DEPTH = 3;
-    /** Pages in flight — the sweep sits on the DD's serial path, so wall clock rules. */
+    /** Pages in flight — the sweep sits on a caller's serial path, so wall clock rules. */
     private static final int BATCH = 4;
     /**
      * The item/section split. A link carrying a headline-shaped text IS the
@@ -244,11 +244,11 @@ final class CompanySiteCrawler {
                     }
                 }
             }
-            LOG.info("[DEEPDIVE] site crawl {}: {} page(s), {} feed item(s), {} left in frontier",
+            LOG.info("[FIRMENSITE] site crawl {}: {} page(s), {} feed item(s), {} left in frontier",
                     home.getHost(), pages.size(), feedItems.size(), frontier.size());
             return new Crawl(home, pages, feedItems);
         } catch (Exception e) {
-            LOG.debug("[DEEPDIVE] site crawl failed for '{}': {}", website, e.getMessage());
+            LOG.debug("[FIRMENSITE] site crawl failed for '{}': {}", website, e.getMessage());
             return pages.isEmpty() ? Crawl.empty() : new Crawl(home, pages, feedItems);
         } finally {
             pool.shutdownNow();
@@ -488,7 +488,7 @@ final class CompanySiteCrawler {
             String body = resp.body();
             return body.length() > MAX_HTML_CHARS ? body.substring(0, MAX_HTML_CHARS) : body;
         } catch (Exception e) {
-            LOG.debug("[DEEPDIVE] site crawl fetch failed {}: {}", url, e.getMessage());
+            LOG.debug("[FIRMENSITE] site crawl fetch failed {}: {}", url, e.getMessage());
             return null;
         }
     }

@@ -180,7 +180,7 @@ public final class CefFetchClient {
      * <p>
      * Measured 2026-08-11 on {@code cdn.finra.org}: the anchor answered 403 on
      * probe 1, the warmup did what it should and backed off (5 s, 10 s, 20 s,
-     * 40 s) — and meanwhile the deep dive walked ~24 daily RegSHO files, each
+     * 40 s) — and meanwhile a research collect walked ~24 daily RegSHO files, each
      * paying the full {@link #READY_WAIT_EXHAUSTED} on a session that was being
      * actively refused. Seventy seconds of waiting for a "no" that had already
      * arrived. The host cooldown in {@code WebFetchChain} cannot catch this by

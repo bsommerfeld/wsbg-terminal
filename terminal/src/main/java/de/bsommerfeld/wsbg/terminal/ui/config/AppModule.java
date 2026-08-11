@@ -47,7 +47,10 @@ public class AppModule extends AbstractModule {
         install(new BridgeModule());
     }
 
-    /** Bootstraps the app-data dir, drops the legacy DB, and loads {@code config.toml}. */
+    /**
+     * Bootstraps the app-data dir, drops the legacy DB and the retired features'
+     * leftovers, and loads {@code config.toml}.
+     */
     private GlobalConfig loadConfig() {
         try {
             Path appDataDir = StorageUtils.getAppDataDir();
@@ -55,6 +58,7 @@ public class AppModule extends AbstractModule {
                 Files.createDirectories(appDataDir);
             }
             removeLegacyDatabase(appDataDir);
+            RemovedFeatureCleanup.run(appDataDir);
 
             Path configPath = appDataDir.resolve("config.toml");
             LOG.info("Loading Configuration from: {}", configPath.toAbsolutePath());

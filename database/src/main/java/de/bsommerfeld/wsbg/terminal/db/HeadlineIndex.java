@@ -17,7 +17,7 @@ import java.util.Set;
  * fan-out ({@code symbol → records naming it}), the identity set for
  * append-dedup, and the query primitives
  * ({@link #search}/{@link #byTicker}/{@link #recent}/{@link #page}) a search /
- * watchlist UI builds on. Pure in-memory structure — no file IO — so each query
+ * search UI builds on. Pure in-memory structure — no file IO — so each query
  * feature stands isolated and is testable with zero disk.
  *
  * <p>Not thread-safe on its own: the owning {@link HeadlineArchive} facade

@@ -188,7 +188,7 @@ public class EditorialAgent {
                 config.getHeadlines().isReadArticles());
     }
 
-    /** The article digester — shared with the KI-DD (digestNow) and the watchlist's news warmup. */
+    /** The article digester — the shared session-cached article read. */
     NewsDigester newsDigester() {
         return newsDigester;
     }
@@ -254,7 +254,7 @@ public class EditorialAgent {
 
     /**
      * The fully-wired resolver (identity desk, judge, corpus, price chain, news
-     * pool) — shared with the watchlist's research leg, so a watched subject the
+     * pool) — shared with every research leg, so a subject the
      * room has never mentioned resolves through exactly the same identity
      * machinery as a pipeline subject. Package-private on purpose: the resolver's
      * verdict caches are process-wide state that must stay single-instance.

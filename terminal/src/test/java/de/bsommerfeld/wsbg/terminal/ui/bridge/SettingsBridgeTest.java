@@ -21,6 +21,22 @@ class SettingsBridgeTest {
         assertFalse(snap.containsKey("analyzeImages"), "image analysis is no user setting anymore");
         assertEquals("de", snap.get("language"));
         assertEquals(true, snap.get("autoUpdate"));
+        assertEquals(false, snap.get("experimentalUpdates"),
+                "an unanswered install reads as off — the toggle only knows two states");
+    }
+
+    @Test
+    void experimentalUpdatesTogglesTheTriStateStringTheLauncherReads() {
+        GlobalConfig c = new GlobalConfig();
+        assertEquals("", c.getUser().getExperimentalUpdates(), "fresh config: never asked");
+
+        assertTrue(SettingsBridge.apply(c, "experimentalUpdates", true));
+        assertEquals("yes", c.getUser().getExperimentalUpdates());
+
+        assertTrue(SettingsBridge.apply(c, "experimentalUpdates", false));
+        assertEquals("no", c.getUser().getExperimentalUpdates(),
+                "switching off must write an explicit 'no', not clear the answer — "
+                + "an empty value would put the launcher's question again");
     }
 
 

@@ -52,18 +52,18 @@
             <groupId>de.bsommerfeld</groupId>
             <artifactId>edgar</artifactId>
         </dependency>
-        <!-- The KI-DD's German data legs, TEST-ONLY: the live DeepDiveSmokeIT
-             wires the real clients against the real model; production wiring
+        <!-- German data leg, TEST-ONLY. Kept on the classpath although the
+             agent module currently names none of its types; production wiring
              stays in the terminal module (AgentPipelineModule). -->
         <dependency>
             <groupId>de.bsommerfeld</groupId>
             <artifactId>consorsbank</artifactId>
             <scope>test</scope>
         </dependency>
-        <!-- COMPILE scope since 2026-08-03: the profile leg still arrives
-             through the bound InstrumentFactsSource, but the DD now names
-             onvista's own fundamentals types (ownership, benchmark fit,
-             consensus drift) directly. -->
+        <!-- COMPILE scope: onvista's own fundamentals types (ownership,
+             benchmark fit, consensus drift) stay available to the agent module;
+             the profile leg itself arrives through the bound
+             InstrumentFactsSource. No consumer in this module right now. -->
         <dependency>
             <groupId>de.bsommerfeld</groupId>
             <artifactId>onvista</artifactId>
@@ -77,11 +77,11 @@
             <artifactId>stocknear</artifactId>
         </dependency>
         <!-- The 2026-08-02 source wave's MARKET/FACT clients (no NewsSource, so
-             they never reach the DD through the aggregator): CNBC quotes +
+             they never reach a consumer through the aggregator): CNBC quotes +
              earnings surprise history, boerse.de directors' dealings / analyst
              archive / 8 fiscal years, Handelsblatt ISIN master data,
              Boersenmedien instrument resolver, Traders Union movers. Compile
-             scope on purpose - DeepDiveService itself names these types. -->
+             scope on purpose - kept wired, no consumer in this module today. -->
         <dependency>
             <groupId>de.bsommerfeld</groupId>
             <artifactId>cnbc</artifactId>
@@ -146,13 +146,15 @@
             <groupId>de.bsommerfeld</groupId>
             <artifactId>tradersunion</artifactId>
         </dependency>
-        <!-- 2026-08-03: the macro wire feeds the DD's subject judge. -->
+        <!-- 2026-08-03: the macro wire. Kept wired, no consumer in this
+             module today. -->
         <dependency>
             <groupId>de.bsommerfeld</groupId>
             <artifactId>financial-juice</artifactId>
         </dependency>
-        <!-- 2026-08-03: the regime gauges the DD reads by name (EUR/USD and
-             the dollar index; Fear & Greed already rides the fear-greed dep). -->
+        <!-- 2026-08-03: the regime gauges (EUR/USD and the dollar index; Fear
+             & Greed already rides the fear-greed dep). Kept wired, no consumer
+             in this module today. -->
         <dependency>
             <groupId>de.bsommerfeld</groupId>
             <artifactId>currency</artifactId>
@@ -163,9 +165,10 @@
             <groupId>de.bsommerfeld</groupId>
             <artifactId>fool</artifactId>
         </dependency>
-        <!-- 2026-08-03: the DD names finanzen.net's own market types (the
-             year-long consensus trend, the peer target table, the estimate
-             history with its surprises, the venue board). -->
+        <!-- 2026-08-03: finanzen.net's own market types (the year-long
+             consensus trend, the peer target table, the estimate history with
+             its surprises, the venue board). Kept wired, no consumer in this
+             module today. -->
         <dependency>
             <groupId>de.bsommerfeld</groupId>
             <artifactId>finanzen-net</artifactId>

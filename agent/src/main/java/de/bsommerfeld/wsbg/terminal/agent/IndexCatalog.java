@@ -93,7 +93,7 @@ public final class IndexCatalog {
     /**
      * The clean display name for a catalogued {@code ^}-symbol („^GDAXI" → „DAX"),
      * or {@code null} for anything uncatalogued — callers keep their own fallback.
-     * Used to keep raw caret symbols out of user-facing prose (the Wetterbericht).
+     * Used to keep raw caret symbols out of user-facing prose.
      */
     public static String displayNameFor(String symbol) {
         if (symbol == null || symbol.isBlank()) return null;

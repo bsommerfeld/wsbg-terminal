@@ -44,14 +44,11 @@ const REF_PANE_W = 960;
 // a very large display — a card is a scaled-down view, never a magnified one.
 const MAX_W = REF_PANE_W;
 
-// Fixed slot order: the two live panes lead, then the AI tool, then the
-// compact market tiles. The order never changes — only how many of them the
-// current window puts on one shelf.
-// 'widget-watchlist' and 'widget-weather' are held back for a later release
-// (their sections are hidden in index.html and their backend loops are
-// disabled) — re-add them here to restore the cards.
+// Fixed slot order: the two live panes lead, then the compact market tiles.
+// The order never changes — only how many of them the current window puts on
+// one shelf.
 const ORDER = [
-  'widget-reddit', 'widget-fj', 'widget-deepdive',
+  'widget-reddit', 'widget-fj',
   'widget-fg', 'widget-eurusd',
 ];
 
@@ -117,8 +114,8 @@ function fitCardW(W, H, cols, rows, labelH) {
  *
  * The card order stays fixed (ORDER), so widgets never swap places; only how
  * many of them share a row changes. Among arrangements that are within a hair
- * of the best card size the FLATTER one wins — five cards on one shelf read as
- * one overview, five stacked rows read as a list.
+ * of the best card size the FLATTER one wins — one shelf reads as an overview,
+ * a stack of rows reads as a list.
  */
 function chooseRaster(W, H, n, labelH) {
   const cands = [];
@@ -214,9 +211,7 @@ export function initGridLayout(mainEl, opts = {}) {
     // pointer (the miniature content is inert), so it forwards the wheel to
     // the card's .widget-body — the one scroller every widget has. Delta is
     // divided by the miniature zoom so the PAINTED scroll speed matches the
-    // wheel 1:1 (scrollTop lives in the body's own, un-zoomed units). Cards
-    // with a dedicated .grid-thumb have their body hidden — nothing scrolls,
-    // which is the honest behaviour for a static tile.
+    // wheel 1:1 (scrollTop lives in the body's own, un-zoomed units).
     hit.addEventListener('wheel', e => {
       if (!inGrid()) return;
       const body = card.querySelector('.widget-body');

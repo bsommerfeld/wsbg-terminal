@@ -81,9 +81,9 @@ final class ArticleReader {
     }
 
     /**
-     * Same fetch with a caller-chosen length cap - the DD's fact extraction
-     * reads the WHOLE article (chunked downstream), while the wire's digest
-     * keeps the tight default.
+     * Same fetch with a caller-chosen length cap - a full-text caller reads the
+     * WHOLE article (chunked downstream), while the wire's digest keeps the
+     * tight default.
      */
     Optional<String> fetchArticleText(String url, int maxChars) {
         if (url == null || url.isBlank()) return Optional.empty();

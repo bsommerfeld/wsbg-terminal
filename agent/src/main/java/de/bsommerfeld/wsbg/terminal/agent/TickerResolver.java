@@ -348,7 +348,7 @@ public final class TickerResolver {
 
     /**
      * The triangulated-vs-search-news choice for a resolved subject. The WIRE
-     * fan: the research legs that only a dossier can digest stay out (see
+     * fan: the research legs that only a deep read can digest stay out (see
      * {@code NewsSource.dossierOnly}) — the loom needs the day's catalyst, not
      * every venue note ever filed under the name.
      */

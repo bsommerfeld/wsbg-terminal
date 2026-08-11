@@ -1,0 +1,9 @@
+Include-Probe: Wirtsprompt (Test-Fixture, deutsche Fassung).
+
+## Kanon
+
+{{include:include-probe-core}}
+
+## Ausgabe
+
+Antworte auf Deutsch.

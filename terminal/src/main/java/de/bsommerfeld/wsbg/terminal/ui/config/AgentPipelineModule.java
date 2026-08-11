@@ -4,8 +4,6 @@ import com.google.inject.AbstractModule;
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.agent.AgentCoordinator;
 import de.bsommerfeld.wsbg.terminal.agent.EditorialPipeline;
-import de.bsommerfeld.wsbg.terminal.agent.MentionCounter;
-import de.bsommerfeld.wsbg.terminal.db.MentionArchive;
 import de.bsommerfeld.wsbg.terminal.instruments.AliasStore;
 import de.bsommerfeld.wsbg.terminal.agent.PassiveMonitorService;
 import de.bsommerfeld.wsbg.terminal.core.price.InstrumentLookup;
@@ -40,19 +38,14 @@ final class AgentPipelineModule extends AbstractModule {
         // starts emitting them, and routes them into the pipeline.
         bind(EditorialPipeline.class).asEagerSingleton();
         bind(AgentCoordinator.class).asEagerSingleton();
-        // The cage's own ticker counter hooks the repository's ingest seam, so it
-        // must be up BEFORE PassiveMonitorService starts pulling the room -
-        // anything scraped before this line is never counted. The learned name
-        // memory is bound explicitly so the resolver's optional injection finds it.
+        // The learned name memory is bound explicitly so the resolver's optional
+        // injection finds it.
         bind(AliasStore.class).in(Singleton.class);
-        bind(MentionArchive.class).in(Singleton.class);
-        bind(MentionCounter.class).asEagerSingleton();
         bind(PassiveMonitorService.class).asEagerSingleton();
         // TimeTracker must be eager so it starts its start/interval/stop
         // checkpointing at boot; DonationStatsPublisher reads it for the
         // footer banner's reciprocity copy.
         bind(TimeTracker.class).asEagerSingleton();
-
         // The live price chain (EUR-first: L&S, then US fallback Yahoo).
         // Optionally injected into TickerResolver; Yahoo stays the search + news source.
         bind(PriceSource.class).to(FallbackPriceSource.class).in(Singleton.class);
@@ -63,20 +56,20 @@ final class AgentPipelineModule extends AbstractModule {
         bind(InstrumentLookup.class).to(LangSchwarzClient.class).in(Singleton.class);
 
         // Venue depth stats (bid/ask with sizes, day volume, executions) by ISIN —
-        // Tradegate, the one German venue publishing these keylessly. Optionally
-        // injected into WatchlistService for the Marktdaten panel; L&S stays the
-        // price/spark source (its chart endpoint carries no volume, probed 2026-07-10).
+        // Tradegate, the one German venue publishing these keylessly. L&S stays
+        // the price/spark source (its chart endpoint carries no volume, probed
+        // 2026-07-10). The source stays wired; it currently has no consumer.
         bind(VenueStatsSource.class).to(TradegateQuoteClient.class).in(Singleton.class);
 
         // Company profile facts (sector, market cap, P/E, workforce, 30d average
-        // volume) by ISIN — onvista's keyless stocks snapshot. Optionally injected
-        // into WatchlistService for the Profil panel + the dossier brief.
+        // volume) by ISIN — onvista's keyless stocks snapshot. The source stays
+        // wired; it currently has no consumer.
         bind(InstrumentFactsSource.class).to(OnvistaClient.class).in(Singleton.class);
 
         // Analyst opinions (five-tier rating distribution + 3-month trend,
         // consensus EUR price target, upcoming earnings/dividend dates) by ISIN —
-        // Consorsbank's keyless financial-info API. Optionally injected into
-        // DeepDiveService for the KI-DD's Analysten layer.
+        // Consorsbank's keyless financial-info API. The source stays wired; it
+        // currently has no consumer.
         bind(de.bsommerfeld.wsbg.terminal.core.price.AnalystViewSource.class)
                 .to(de.bsommerfeld.wsbg.terminal.consorsbank.ConsorsbankClient.class)
                 .in(Singleton.class);
@@ -84,19 +77,22 @@ final class AgentPipelineModule extends AbstractModule {
         // The deep company record (official website + portrait, key figures with
         // estimates to 2029, balance sheets, boards, TradingCentral chart read,
         // peers, volatility, index membership) — the SAME Consorsbank client,
-        // one heavyweight on-demand call for the KI-DD report.
+        // one heavyweight on-demand call. The source stays wired; it currently
+        // has no consumer.
         bind(de.bsommerfeld.wsbg.terminal.core.price.CompanyDeepDiveSource.class)
                 .to(de.bsommerfeld.wsbg.terminal.consorsbank.ConsorsbankClient.class)
                 .in(Singleton.class);
 
         // Disclosed short positions ≥0.5% with the HOLDER'S NAME — the German
-        // Leerverkaufsregister (Bundesanzeiger CSV, 2-request cookie flow).
+        // Leerverkaufsregister (Bundesanzeiger CSV, 2-request cookie flow). The
+        // source stays wired; it currently has no consumer.
         bind(de.bsommerfeld.wsbg.terminal.core.price.ShortInterestSource.class)
                 .to(de.bsommerfeld.wsbg.terminal.bundesanzeiger.ShortInterestClient.class)
                 .in(Singleton.class);
 
         // Directors' Dealings (§19 MAR): manager buys/sells with price and
-        // aggregated EUR volume — BaFin's keyless database export.
+        // aggregated EUR volume — BaFin's keyless database export. The source
+        // stays wired; it currently has no consumer.
         bind(de.bsommerfeld.wsbg.terminal.core.price.InsiderDealingsSource.class)
                 .to(de.bsommerfeld.wsbg.terminal.bafin.InsiderDealingsClient.class)
                 .in(Singleton.class);
@@ -104,29 +100,28 @@ final class AgentPipelineModule extends AbstractModule {
         // The US listing view by bare ticker (FINRA short interest, Form-4
         // insider trades, 13F ownership, analyst consensus, earnings surprises)
         // — api.nasdaq.com, the American counterpart to the German-register
-        // legs above. Optionally injected into DeepDiveService for the KI-DD.
+        // legs above.
         bind(de.bsommerfeld.wsbg.terminal.core.price.UsListingStatsSource.class)
                 .to(de.bsommerfeld.wsbg.terminal.nasdaq.NasdaqCompanyClient.class)
                 .in(Singleton.class);
 
         // The hedge-fund positioning curve by bare US ticker (Insider Monkey's
-        // quarterly 13F fund count, CIK-addressed via SEC's ticker map).
-        // Optionally injected into DeepDiveService for the KI-DD.
+        // quarterly 13F fund count, CIK-addressed via SEC's ticker map). The
+        // source stays wired; it currently has no consumer.
         bind(de.bsommerfeld.wsbg.terminal.core.price.HedgeFundPopularitySource.class)
                 .to(de.bsommerfeld.wsbg.terminal.insidermonkey.InsiderMonkeyClient.class)
                 .in(Singleton.class);
 
         // The dated analyst-ACTION history + US short stats incl. percent of
         // float (MarketBeat; exchange-guess addressing with 301 self-healing).
-        // Optionally injected into DeepDiveService for the KI-DD.
         bind(de.bsommerfeld.wsbg.terminal.core.price.AnalystActionsSource.class)
                 .to(de.bsommerfeld.wsbg.terminal.marketbeat.MarketBeatClient.class)
                 .in(Singleton.class);
 
         // The multi-level order book by ISIN (Börse Frankfurt floor book, 10
         // levels with order counts + units per level, SSE first-frame read —
-        // trading hours only). Optionally injected into DeepDiveService for
-        // the market memory's structure block.
+        // trading hours only). The source stays wired; it currently has no
+        // consumer.
         bind(de.bsommerfeld.wsbg.terminal.core.price.OrderBookSource.class)
                 .to(de.bsommerfeld.wsbg.terminal.boersefrankfurt.OrderBookClient.class)
                 .in(Singleton.class);

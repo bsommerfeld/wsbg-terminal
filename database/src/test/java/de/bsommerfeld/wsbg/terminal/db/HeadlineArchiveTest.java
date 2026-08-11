@@ -17,8 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * The permanent headline archive: append-only JSONL that survives restarts,
- * idempotent on identity, tolerant of a torn line, and indexed for the future
- * search/watchlist UI.
+ * idempotent on identity, tolerant of a torn line, and indexed for search.
  */
 class HeadlineArchiveTest {
 

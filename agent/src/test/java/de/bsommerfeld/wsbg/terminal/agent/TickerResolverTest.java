@@ -430,13 +430,28 @@ class TickerResolverTest {
     void guardTowerStagesAreWiredInTheLoadBearingOrder() {
         // The cascade order encodes real fixes (DAX-ETF trap, „Gold" mining-stock trap,
         // SPD/Kakao veto, „OP"/Polen prefix-trap, tier-3 rescue) and must not drift:
-        // Index → Commodity → Desk (the identity border control; primary once armed)
-        // → Strong⊕Veto → Judge → Corpus (the desk's outage fallback).
+        // Index → Commodity → AliasMemory → Desk (the identity border control; primary
+        // once armed) → Strong⊕Veto → Judge → Corpus (the desk's outage fallback)
+        // → Coinage.
+        //
+        // The two learned stages bracket the investigating ones, and that is the whole
+        // point of where they sit:
+        //   AliasMemory sits BEHIND the curated catalogues (an index or a commodity is
+        //   settled identity and keeps winning) but AHEAD of everything that costs a
+        //   search or a model call — a spelling the room has taught us repeatedly needs
+        //   no re-investigation. This is also the seat the hand-kept nickname glossary
+        //   used to occupy, one layer further up, as a rewrite of the query itself.
+        //
+        //   Coinage sits LAST on purpose: only a spelling that NOTHING in the outside
+        //   world recognises — not a catalogue, not Yahoo, not the corpus — is a
+        //   candidate for being the room's own invention. Any earlier and it would be
+        //   guessing at names that have a real answer one stage down.
         java.util.List<SubjectMatcher> stages = new TickerResolver(null).matchTower().stages();
         java.util.List<Class<?>> order = stages.stream().map(Object::getClass).toList();
         assertEquals(
-                List.of(IndexMatcher.class, CommodityMatcher.class, DeskMatcher.class,
-                        IdentityVeto.class, JudgeMatcher.class, CorpusMatcher.class),
+                List.of(IndexMatcher.class, CommodityMatcher.class, AliasMemoryMatcher.class,
+                        DeskMatcher.class, IdentityVeto.class, JudgeMatcher.class,
+                        CorpusMatcher.class, CoinageMatcher.class),
                 order);
     }
 }

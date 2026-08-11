@@ -1,0 +1,4 @@
+SHARED CANON MARKER DE
+
+Dieses Schnipsel liegt nur im Test-Klassenpfad. Es ist der eingesetzte Rumpf,
+nach dem die Include-Probe sucht, in seiner deutschen Form.

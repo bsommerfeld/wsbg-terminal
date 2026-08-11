@@ -14,6 +14,19 @@ public class RedditConfig {
     @Comment("List of subreddits to scan")
     private List<String> subreddits = List.of("wallstreetbetsGER");
 
+    @Key("comment-stream-subreddits")
+    @Comment("Subreddits whose SUB-WIDE comment stream is ingested "
+            + "(/r/<sub>/comments/ - one request returns the newest comments "
+            + "across every thread of the sub, instead of one request per "
+            + "thread). This is an INGEST-ONLY lane: it fills the comment "
+            + "repository for the counting/statistics layer and never pushes "
+            + "anything into the editorial pipeline, so it cannot change the "
+            + "Reddit headlines. Threads it discovers are not scanned, not "
+            + "gap-filled and never become clusters. r/wallstreetbets carries "
+            + "roughly five times the comment volume of the German room, most "
+            + "of it in the daily discussion thread. Empty = lane off.")
+    private List<String> commentStreamSubreddits = List.of("wallstreetbets");
+
     @Key("update-interval-seconds")
     @Comment("Interval in seconds between Reddit scans (default: 180). "
             + "Bumped from 60s to keep the per-IP request budget under "
@@ -79,9 +92,10 @@ public class RedditConfig {
     @Key("snapshot-ttl-minutes")
     @Comment("Freshness of the on-disk session snapshots across restarts "
             + "(default: 60, set 0 to disable restore). A snapshot from TODAY "
-            + "(same local calendar day) is always restored — the day's context "
-            + "must survive any restart so the evening Wetterbericht covers the "
-            + "whole day; this value is the extra cross-midnight grace in "
+            + "(same local calendar day) is always restored — the day's threads "
+            + "and their sentiment must survive any restart so the wire picks "
+            + "up where it left off instead of starting cold; this value is "
+            + "the extra cross-midnight grace in "
             + "minutes. Anything neither from today nor inside the grace is "
             + "discarded to avoid ghost clusters from posts that have since "
             + "disappeared.")
@@ -89,6 +103,10 @@ public class RedditConfig {
 
     public List<String> getSubreddits() {
         return subreddits;
+    }
+
+    public List<String> getCommentStreamSubreddits() {
+        return commentStreamSubreddits == null ? List.of() : commentStreamSubreddits;
     }
 
     public long getUpdateIntervalSeconds() {

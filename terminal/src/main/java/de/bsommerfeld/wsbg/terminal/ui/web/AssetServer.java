@@ -93,21 +93,6 @@ public final class AssetServer {
             return;
         }
 
-        // /logos/* are the first-party company logos the deep dive caches at
-        // run time (agent-side fetch from the company's own website) - served
-        // from app data like the fonts, so archived reports keep their logo.
-        if (path.startsWith("/logos/")) {
-            Path logoFile = StorageUtils.getAppDataDir().resolve("images")
-                    .resolve("logos").resolve(path.substring("/logos/".length()));
-            if (Files.isRegularFile(logoFile)) {
-                byte[] data = Files.readAllBytes(logoFile);
-                send(ex, 200, mime(path), data);
-                return;
-            }
-            send(ex, 404, "text/plain", ("not found: " + path).getBytes());
-            return;
-        }
-
         String resource = "/web" + path;
         try (InputStream in = AssetServer.class.getResourceAsStream(resource)) {
             if (in == null) {

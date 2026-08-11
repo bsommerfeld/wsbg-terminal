@@ -277,6 +277,18 @@
     </dependencies>
 
     <build>
+        <resources>
+            <!-- The web/_preview*.html files are local design prototypes: they
+                 stay in the working tree, but must never be packaged - the
+                 AssetServer would serve them by URL and they still show
+                 widgets that no longer exist. -->
+            <resource>
+                <directory>src/main/resources</directory>
+                <excludes>
+                    <exclude>web/_preview*.html</exclude>
+                </excludes>
+            </resource>
+        </resources>
         <plugins>
             <!-- Embeds Main-Class in the JAR manifest so the launcher's
                  resolveMainClass() scan finds the entry point automatically. -->

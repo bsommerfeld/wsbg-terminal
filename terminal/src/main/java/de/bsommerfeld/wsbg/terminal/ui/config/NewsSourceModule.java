@@ -34,6 +34,15 @@ final class NewsSourceModule extends AbstractModule {
         // JCEF is the standard for Google).
         newsSources.addBinding().to(
                 de.bsommerfeld.wsbg.terminal.googlenews.GoogleNewsClient.class);
+        // The same keyless RSS search asked of TWELVE world editions - Google
+        // indexes every language area separately, so the German edition is not
+        // a smaller view of the world press but a different one (editions
+        // live-probed 2026-08-11). Each edition stamps its own language and
+        // press SPHERE onto its items, which is what lets the dossier count
+        // independent spheres instead of domains. DOSSIER-ONLY: research
+        // depth, and twelve editions of latency have no place on the wire.
+        newsSources.addBinding().to(
+                de.bsommerfeld.wsbg.terminal.googlenews.GoogleNewsWorldClient.class);
         // The Motley Fool: the US news/analysis leg — ticker-addressed via the
         // news sitemap's <news:stock_tickers> tags (the symbol query Yahoo also
         // answers, but with Fool's editorial angle) plus the foolwatch firehose
@@ -305,10 +314,32 @@ final class NewsSourceModule extends AbstractModule {
         // Mutares = 654 records). Archive fan only.
         newsSources.addBinding().to(
                 de.bsommerfeld.wsbg.terminal.briefing.EqsNewsArchiveClient.class);
+        // EDGAR full-text search: the SEC's own index over the TEXT of every
+        // filing since 2001, name-addressed. Finds the documents that MENTION
+        // the company - a supplier in someone else's risk factors, a customer
+        // concentration, a prospectus - which no ticker-addressed leg ever
+        // reaches. Form-filtered to the substantive documents (a name in one
+        // fund proxy-voting record is in ten thousand of them). Dossier-only.
+        newsSources.addBinding().to(
+                de.bsommerfeld.wsbg.terminal.edgar.EdgarFullTextClient.class);
+        // The UK regulatory wire (RNS and its siblings) through Investegate's
+        // server-rendered index - the British counterpart to the EQS and MFN
+        // disclosure legs, which the house simply did not have. The exchange's
+        // own component stays shut; this door opened once the transport began
+        // sending a browser's full header set (2026-08-11).
+        newsSources.addBinding().to(
+                de.bsommerfeld.wsbg.terminal.briefing.InvestegateRnsClient.class);
         // GDELT DOC 2.0: keyless world-press full text from 2017 on - the
         // breadth source of the multi-year history. HARD rate gate inside
         // (8s global, bursts earn multi-minute IP blocks). Archive fan only.
         newsSources.addBinding().to(
                 de.bsommerfeld.wsbg.terminal.websearch.GdeltDocClient.class);
+        // The same index with the German pin taken off: one sourcelang
+        // OR-clause reaches sixteen further languages in ONE request, and
+        // GDELT reports the language and source country PER ARTICLE - so this
+        // is the one leg whose spheres are measured rather than declared.
+        // Shares the global 8s host gate with its German twin.
+        newsSources.addBinding().to(
+                de.bsommerfeld.wsbg.terminal.websearch.GdeltWorldClient.class);
     }
 }

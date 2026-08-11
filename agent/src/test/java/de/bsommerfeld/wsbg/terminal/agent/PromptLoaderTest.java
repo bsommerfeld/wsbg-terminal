@@ -16,17 +16,22 @@ class PromptLoaderTest {
     }
 
     /**
-     * The craft canon lives ONCE and is spliced via {@code {{include:...}}}
+     * A shared canon lives ONCE and is spliced via {@code {{include:...}}}
      * (2026-07-16 "stark entwirren") - a loaded prompt carries the resolved
      * canon in its own language and never the raw include token.
+     *
+     * <p>Driven by the test-only fixture pair {@code include-probe} /
+     * {@code include-probe-core} on the test classpath: the splice mechanism is
+     * part of the loader, so it stays pinned even while no shipped prompt
+     * happens to use an include.
      */
     @Test
     void load_shouldResolveIncludesLanguageMatched() {
-        String en = PromptLoader.load("deepdive-revise");
-        assertTrue(en.contains("WIRE REGISTER"), "EN core spliced");
+        String en = PromptLoader.load("include-probe");
+        assertTrue(en.contains("SHARED CANON MARKER EN"), "EN core spliced");
         assertFalse(en.contains("{{include:"), "no raw include token");
-        String de = PromptLoader.loadLocalized("deepdive-revise", "de");
-        assertTrue(de.contains("WIRE-REGISTER"), "DE core spliced");
+        String de = PromptLoader.loadLocalized("include-probe", "de");
+        assertTrue(de.contains("SHARED CANON MARKER DE"), "DE core spliced");
         assertFalse(de.contains("{{include:"), "no raw include token");
     }
 

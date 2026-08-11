@@ -13,9 +13,7 @@
 /* The Fear&Greed and EUR/USD detail widgets have no dashboard slot (their
    header badges cover the figures there) — they exist in grid + focus only. */
 .main[data-view="dashboard"] > #widget-fg,
-.main[data-view="dashboard"] > #widget-eurusd,
-.main[data-view="dashboard"] > #widget-watchlist,
-.main[data-view="dashboard"] > #widget-deepdive { display: none; }
+.main[data-view="dashboard"] > #widget-eurusd { display: none; }
 
 .grid-hit { display: none; }
 
@@ -103,31 +101,6 @@ html[data-theme="light"] .main > .widget.exit-card {
   zoom: calc(var(--grid-card-w, 300) / var(--hero-ref-w));
 }
 
-/* ---- dedicated grid thumbnails ----
-   A widget whose real view doesn't miniaturise well (form chrome, dense row
-   furniture) opts in with .has-grid-thumb on its <section> and a .grid-thumb
-   direct child: in the overview the card then shows THAT tile instead of the
-   zoomed .widget-body. Same zoom var as the miniatures, so a thumb designed
-   at natural pane size scales with the card exactly like every other card.
-   Hidden everywhere else (dashboard/focus show the real view). */
-.grid-thumb { display: none; }
-.main[data-view="grid"] > .widget.has-grid-thumb > .widget-body,
-.main > .widget.has-grid-thumb.exit-card > .widget-body { display: none; }
-.main[data-view="grid"] > .widget.has-grid-thumb > .grid-thumb,
-.main > .widget.has-grid-thumb.exit-card > .grid-thumb {
-  display: flex;
-  position: absolute;
-  inset: 0;
-  /* The thumb lives INSIDE the zoom, so painted lengths are divided by it —
-     the corner clip must be 13px ON SCREEN (the card's inner radius), not
-     13 zoomed units (~6px), or an opaque thumb overpaints the card's rounded
-     border corners. */
-  border-radius: calc(13px / var(--grid-zoom, 0.58));
-  overflow: hidden;
-  zoom: var(--grid-zoom, 0.58);
-  pointer-events: none;
-}
-
 /* The F&G card shows ONLY the gauge (the "Diagramm"), centred — band chips,
    meta row, chart and attribution stay in focus view. */
 .main[data-view="grid"] > #widget-fg .fg-bands,
@@ -212,14 +185,6 @@ html[data-theme="light"] .main > .widget.exit-card .grid-hit {
 }
 .grid-hit-icon.icon-reddit { background-image: url("/icons/reddit.png"); }
 .grid-hit-icon.icon-fj     { background-image: url("/icons/financialjuice.png"); }
-.grid-hit-icon.icon-dd     {
-  background-image: url("/icons/kidd.png");
-  width: 44px; height: 44px;
-  /* the tag anchors half a 34px icon over the card edge - re-centre the
-     44px mark on the edge and hand the 5px back so the label stays in
-     line with the other cards */
-  margin-top: -5px; margin-bottom: 5px;
-}
 .grid-hit-icon-fg {
   width: 44px; height: 28px;
   margin-top: 3px; /* optical: the gauge is flatter than the square marks */
@@ -269,19 +234,6 @@ html[data-theme="light"] .main > .widget.exit-card .grid-hit {
   max-width: var(--focus-col);
   margin-inline: auto;
 }
-/* The KI-DD brings its own measure: the workshop's report deck carries the
-   document column itself, and the Redaktion below it has to span the WHOLE
-   stage — capped at the reading column it is a stripe again, which is exactly
-   what the two-deck rebuild got rid of (2026-08-04). The home STAGE is the
-   same case: bar and report list carry their own caps, which grow with the
-   box (`ddhome` container) — against the 920px column that growth could never
-   happen and a wide window read as forced-centered (user finding 2026-08-04).
-   The finished report is the one view that keeps the reading column. */
-.main[data-view="focus"] > #widget-deepdive.focused
-  .widget-body > .dd-detail:has(> .dd-home:not([hidden])) {
-  max-width: none;
-}
-
 /* ---- transition helpers (set/cleared by widget-nav.js) ---- */
 
 /* A widget flying out of the CURRENT view: [data-view] has already switched
@@ -531,8 +483,8 @@ html[data-theme="light"] .rail-pop {
   position: absolute; left: 18px; bottom: 18px;
   z-index: 24;
 }
-/* Both live in the same gutter, so a tall panel (the weather description is
-   the longest) reaches the centred capsule in a short window. The panel wins
+/* Both live in the same gutter, so a tall panel reaches the centred capsule
+   in a short window. The panel wins
    the space instead of being capped — capping it buried the KI notice, its
    last row, behind a scroll — and the capsule steps aside while the panel is
    open. It is unusable in that moment anyway: only one disclosure is ever open
@@ -595,14 +547,8 @@ html[data-theme="light"] .rail-pop {
 }
 .about-mark-reddit  { background-image: url("/icons/reddit.png"); }
 .about-mark-fj      { background-image: url("/icons/financialjuice.png"); }
-.about-mark-dd      { background-image: url("/icons/kidd.png"); }
 .about-mark-fg      { width: 26px; height: 17px; }
 .about-mark-fx      { width: 26px; height: auto; }
-.about-mark-wl {
-  stroke: currentColor; stroke-width: 1.7; fill: none;
-  stroke-linecap: round; stroke-linejoin: round;
-}
-
 /* The source platform (opened in the OS browser): a link row under the prose,
    marked by an outbound arrow. */
 .about-source {

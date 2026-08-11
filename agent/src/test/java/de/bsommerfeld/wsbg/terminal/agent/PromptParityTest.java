@@ -43,7 +43,7 @@ class PromptParityTest {
             "NORMAL", "IMPORTANT", "NONE", "RUNNER", "SQUEEZE", "BREAKOUT",
             "HARD_CATALYST", "POOLED_CALL", "EXTREME_DIRECTION",
             "BULLISH", "BEARISH", "MIXED", "FOMO", "CAPITULATION",
-            "REVERSAL", "NEUTRAL", "NEW", "UPDATE");
+            "REVERSAL", "NEUTRAL");
 
     @Test
     void localizedPromptsMatchTheirBaseStructurally() throws Exception {
@@ -87,11 +87,27 @@ class PromptParityTest {
         }
     }
 
+    /**
+     * Every {@code prompts} directory on the classpath - the shipped prompts plus the
+     * test-only include fixture. Enumerating ALL of them (instead of the classloader's
+     * first hit) is what keeps a test resource from silently shadowing the real prompt
+     * directory and hollowing this guard out.
+     */
     private static Stream<Path> promptFiles() throws Exception {
-        URL url = PromptParityTest.class.getClassLoader().getResource("prompts");
-        assertTrue(url != null && "file".equals(url.getProtocol()),
+        List<Path> dirs = new ArrayList<>();
+        for (URL url : java.util.Collections.list(
+                PromptParityTest.class.getClassLoader().getResources("prompts"))) {
+            if ("file".equals(url.getProtocol())) dirs.add(Path.of(url.toURI()));
+        }
+        assertFalse(dirs.isEmpty(),
                 "prompts resource dir not resolvable as a file path (running from a jar?)");
-        return Files.list(Path.of(url.toURI())).filter(p -> p.toString().endsWith(".txt"));
+        List<Path> files = new ArrayList<>();
+        for (Path dir : dirs) {
+            try (Stream<Path> s = Files.list(dir)) {
+                s.filter(p -> p.toString().endsWith(".txt")).forEach(files::add);
+            }
+        }
+        return files.stream();
     }
 
     private static Set<String> matches(Pattern p, String text) {

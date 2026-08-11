@@ -5,7 +5,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Daemon thread factories for the app's BACKGROUND work — every scraper poll,
- * HTML/JSON parse, editorial lane and deep-dive worker.
+ * HTML/JSON parse and editorial lane.
  *
  * <p>The app runs two things at once that want the same cores: a UI whose every
  * frame is a Swing/EDT blit of a CEF buffer, and a fleet of ~20 pools doing HTTP

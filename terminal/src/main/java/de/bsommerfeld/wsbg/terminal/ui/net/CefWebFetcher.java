@@ -82,7 +82,7 @@ public final class CefWebFetcher implements WebFetcher {
     private static final int MAX_TABS = 16;
     /**
      * A tab used this recently is NOT an LRU eviction candidate, even over
-     * {@link #MAX_TABS}. Measured on the deep dive of 2026-08-09: the collect
+     * {@link #MAX_TABS}. Measured on the research collect of 2026-08-09: the collect
      * phase touches 29 distinct origins inside 9 minutes, so the cap evicted
      * tabs the very same phase needed again seconds later - finanzen.net was
      * verified ready at 18:36:50, evicted at 18:39:07, and its next query paid

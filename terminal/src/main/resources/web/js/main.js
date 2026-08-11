@@ -26,10 +26,6 @@ import { renderEurUsd } from './widgets/eurusd.js';
 import { renderEurUsdDetail } from './widgets/eurusd-detail.js';
 import { renderFearGreed } from './widgets/fear-greed.js';
 import { renderFearGreedDetail } from './widgets/fg-detail.js';
-import { initWatchlist, renderWatchlist, renderWatchlistSubjects } from './widgets/watchlist.js';
-import { initWeather, renderWeather } from './widgets/weather.js';
-import { initDeepDive, renderDeepDive, renderDeepDiveReport,
-         renderDeepDiveSuggestions } from './widgets/deepdive.js';
 import { setMarketCalendar } from './markets/state.js';
 import { t } from './i18n/i18n.js';
 
@@ -78,12 +74,6 @@ const WIDGETS = [
       renderFearGreed(document.getElementById('fear-greed-badge'), p);
       renderFearGreedDetail(document.getElementById('fg-detail'), p);
     } },
-  // The AI watchlist: hand-picked subjects, each with a standing AI dossier.
-  { topic: 'watchlist',      relang: true, render: p => renderWatchlist(p) },
-  // Daily Wetterbericht: countdown / generating shimmer / the archived reports.
-  { topic: 'weather',        relang: true, render: p => renderWeather(document.getElementById('weather-detail'), p) },
-  // KI-DD: one fixed research report per subject, generated on demand.
-  { topic: 'deepdive',       relang: true, render: p => renderDeepDive(p) },
   { topic: 'reddit-status',  relang: true, render: p => applyRedditStatus(p) },
   { topic: 'donation-stats',               render: p => setDonationStats(p) },
   { topic: 'os-appearance',                render: p => { if (p) setSystemAppearance(p.mode); } },
@@ -93,7 +83,7 @@ const WIDGETS = [
 // content (translated strings live inside these renderers) without waiting for
 // the next server push. headlines/fj seed to [] so they always paint (matching
 // the empty-state render); the rest stay unset until their first push.
-const last = { 'headlines': [], 'fj-news': [], 'watchlist': { entries: [] } };
+const last = { 'headlines': [], 'fj-news': [] };
 
 for (const w of WIDGETS) {
   socket.on(w.topic, payload => { last[w.topic] = payload; w.render(payload); });
@@ -107,38 +97,13 @@ socket.on('archive-results', payload => {
   else onArchiveResults(payload); // search vocabulary + result sets (headline-search.js)
 });
 
-// Watchlist add-suggestions (requested when the add input gains focus).
-socket.on('watchlist-subjects', renderWatchlistSubjects);
-
-// One full KI-DD report, requested from the history list.
-socket.on('deepdive-report', renderDeepDiveReport);
-
-// The ticker lookup's answer to a name typed into the KI-DD bar (request/
-// response, not a pushed topic — so it stays out of the WIDGETS manifest).
-socket.on('ticker-lookup-results', renderDeepDiveSuggestions);
-
 // Live language switch: setLang() has already rewritten the static markup;
 // re-render the language-sensitive widgets from their last payload so their
 // translated strings update too. `last[topic] != null` guards the widgets whose
 // re-paint is conditional on having received a (non-null) payload.
-// ONE-SHOT fields must never ride a replay: the KI-DD's `item` (a finished
-// report) and `pdf` (an export outcome) are events, not state — re-rendering
-// the cached payload would re-open the banner and re-arm the unread pulse of a
-// report the user already saw. They are stripped before the re-paint; the
-// widget keeps whatever it already made of them.
-const ONE_SHOT = { deepdive: ['item', 'pdf'] };
-
-function replayPayload(topic, payload) {
-  const drop = ONE_SHOT[topic];
-  if (!drop || !payload || typeof payload !== 'object' || Array.isArray(payload)) return payload;
-  const copy = { ...payload };
-  for (const k of drop) delete copy[k];
-  return copy;
-}
-
 window.addEventListener('wsbg:languagechange', () => {
   for (const w of WIDGETS) {
-    if (w.relang && last[w.topic] != null) w.render(replayPayload(w.topic, last[w.topic]));
+    if (w.relang && last[w.topic] != null) w.render(last[w.topic]);
   }
 });
 
@@ -154,8 +119,8 @@ function safeInit(name, fn) {
   }
 }
 
-// First: everything that loops (the unread portals, the KI-DD's unread pulse)
-// and the headline read-tracker ask this module whether anyone is at the desk.
+// First: everything that loops (the unread portals) and the headline
+// read-tracker ask this module whether anyone is at the desk.
 safeInit('idle', () => initIdle());
 safeInit('theme', () => initTheme());
 safeInit('settings', () => initSettings(socket));
@@ -173,9 +138,6 @@ safeInit('widget-rail', () => initWidgetRail(socket));
 // rail's generic popup toggle (same-element listener order) to see the new state.
 safeInit('headline-search', () => initHeadlineSearch(socket));
 safeInit('unread-portals', () => initUnreadPortals());
-safeInit('watchlist', () => initWatchlist(socket));
-safeInit('weather', () => initWeather(socket));
-safeInit('deepdive', () => initDeepDive(socket));
 safeInit('titlebar', () => initTitlebar(socket));
 safeInit('footer', () => initFooter());
 safeInit('donate', () => initDonate());

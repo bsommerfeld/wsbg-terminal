@@ -10,17 +10,16 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The market memory's Abendausgabe block — DETERMINISTIC (the weather
- * doctrine: a 4B model never re-tells numbers it could mangle). For every
+ * The market memory's evening block — DETERMINISTIC (a 4B model never
+ * re-tells numbers it could mangle). For every
  * event class the register saw TODAY, the shelf gets the class's house base
  * rate ({@link BaseRates}, license gates in code) and the attributed
  * literature prior — so the edition can say "the market historically answers
  * this class with X" right beside the day's disclosure, and the discipline
  * line pins that a base rate is a PRIOR, never a prediction.
  *
- * <p>Self-contained on purpose: the weather files are the collector's/
- * material's territory — this class owns the whole block, the service only
- * appends it to the evening shelf.
+ * <p>Self-contained on purpose: this class owns the whole block, a caller
+ * only appends it to its shelf.
  */
 final class MarketMemoryBriefing {
 

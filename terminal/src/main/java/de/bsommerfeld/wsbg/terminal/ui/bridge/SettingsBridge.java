@@ -23,7 +23,10 @@ import java.util.Map;
  * Keys (all optional on the wire, ignored if unknown):
  * <ul>
  *   <li>{@code language} — {@code "de"}/{@code "en"} → {@code user.language};</li>
- *   <li>{@code autoUpdate} — boolean → {@code user.auto-update}.</li>
+ *   <li>{@code autoUpdate} — boolean → {@code user.auto-update};</li>
+ *   <li>{@code experimentalUpdates} — boolean → {@code user.experimental-updates}
+ *       (stored as {@code "yes"}/{@code "no"}; the launcher's unanswered third
+ *       state can only be produced by never having asked).</li>
  * </ul>
  * Also handles {@code {command:"clear-data"}} (delegated to {@link DataWipeService}:
  * a full terminal wipe) and {@code {command:"open-logs"}} (reveals the app-data
@@ -85,6 +88,13 @@ public final class SettingsBridge {
                 config.getUser().setAutoUpdate(Payloads.asBool(value));
                 return true;
             }
+            case "experimentalUpdates" -> {
+                // Persisted as a tri-state string, because "never asked" is a
+                // third state the launcher's first-start question depends on.
+                // A toggle can only ever produce the two answers.
+                config.getUser().setExperimentalUpdates(Payloads.asBool(value) ? "yes" : "no");
+                return true;
+            }
             default -> {
                 LOG.debug("settings: ignoring unknown key '{}'", key);
                 return false;
@@ -101,6 +111,7 @@ public final class SettingsBridge {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("language", config.getUser().getLanguage());
         out.put("autoUpdate", config.getUser().isAutoUpdate());
+        out.put("experimentalUpdates", config.getUser().isExperimentalUpdates());
         return out;
     }
 }

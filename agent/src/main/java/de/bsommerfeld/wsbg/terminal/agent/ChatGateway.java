@@ -28,10 +28,10 @@ final class ChatGateway {
 
     /**
      * Marks the CURRENT THREAD's calls as interactive (a human visibly waits):
-     * the on-demand KI-DD sets it on its worker for the run's duration, so
+     * an on-demand run sets it on its worker for the run's duration, so
      * every call it makes — sections, weaves, judges, inline digests — rides
      * the gate's interactive lane. Background lanes (wire, digest worker,
-     * weather, watchlist) never touch it.
+     * digest) never touch it.
      */
     static final ThreadLocal<Boolean> INTERACTIVE = ThreadLocal.withInitial(() -> Boolean.FALSE);
 
@@ -79,7 +79,7 @@ final class ChatGateway {
         // otherwise abandon a permit it never took.
         // A briefly unreachable Ollama (the macOS app restarting its runner —
         // live-observed 2026-07-14: ConnectException killed four of five
-        // Wetterbericht sections in six seconds) is a transient, not a verdict:
+        // concurrent calls in six seconds) is a transient, not a verdict:
         // retry with backoff, sleeping OUTSIDE the gate so a waiting worker
         // isn't blocked by a held permit.
         RuntimeException lastConnectFailure = null;

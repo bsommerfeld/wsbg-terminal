@@ -18,7 +18,7 @@ import java.util.Set;
 
 /**
  * The permanent, append-only ad-hoc event register (one JSONL line per EQS
- * disclosure, never deleted) — mirrored after {@link WeatherReportArchive}:
+ * disclosure, never deleted) — an append-only JSONL archive:
  * loaded fully into memory at startup, torn lines from a crash are skipped,
  * appends are idempotent (identity = publishedAt + ISIN + title, so the same
  * feed item re-harvested across polls is written exactly once).

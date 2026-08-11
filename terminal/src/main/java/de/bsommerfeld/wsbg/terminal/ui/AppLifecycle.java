@@ -3,17 +3,13 @@ package de.bsommerfeld.wsbg.terminal.ui;
 import com.google.inject.Injector;
 import de.bsommerfeld.wsbg.terminal.agent.AgentBrain;
 import de.bsommerfeld.wsbg.terminal.agent.AgentCoordinator;
-import de.bsommerfeld.wsbg.terminal.agent.DeepDiveService;
 import de.bsommerfeld.wsbg.terminal.agent.EditorialPipeline;
 import de.bsommerfeld.wsbg.terminal.agent.MarketMemoryService;
 import de.bsommerfeld.wsbg.terminal.agent.OllamaServerManager;
 import de.bsommerfeld.wsbg.terminal.agent.PassiveMonitorService;
-import de.bsommerfeld.wsbg.terminal.agent.WeatherReportService;
-import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.currency.EurUsdMonitorService;
 import de.bsommerfeld.wsbg.terminal.feargreed.CryptoFearGreedMonitorService;
 import de.bsommerfeld.wsbg.terminal.feargreed.FearGreedMonitorService;
-import de.bsommerfeld.wsbg.terminal.core.i18n.I18nService;
 import de.bsommerfeld.wsbg.terminal.db.AgentRepository;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
 import de.bsommerfeld.wsbg.terminal.ui.web.AssetServer;
@@ -21,7 +17,6 @@ import de.bsommerfeld.wsbg.terminal.ui.web.PushHub;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.swing.JFrame;
 import javax.swing.SwingUtilities;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -71,75 +66,14 @@ final class AppLifecycle {
     }
 
     /**
-     * The close VETO ({@code BrowserWindow.setCloseGuard}): asks before a running
-     * deep dive is thrown away.
-     *
-     * <p>A generation keeps NO checkpoint - material, register and every section
-     * already written live only in the run's memory, and the worker is a daemon
-     * thread that dies with the JVM mid-model-call. Closing therefore does not
-     * pause the report, it destroys it, and that is worth one question. Every
-     * other service either persists (the Reddit snapshot hook) or is cheap to
-     * redo, so nothing else gates the close.
+     * The close VETO ({@code BrowserWindow.setCloseGuard}). Nothing gates the
+     * close today: every service either persists (the Reddit snapshot hook) or
+     * is cheap to redo, so the app always may go.
      *
      * @return {@code true} when the app may close
      */
     java.util.function.BooleanSupplier closeGuard() {
-        return this::confirmCloseDuringDeepDive;
-    }
-
-    private boolean confirmCloseDuringDeepDive() {
-        DeepDiveService dd;
-        try {
-            dd = injector.getInstance(DeepDiveService.class);
-        } catch (Throwable t) {
-            // No desk, no question - never make the app unclosable over a guard.
-            LOG.warn("Close guard could not reach the deep-dive desk: {}", t.toString());
-            return true;
-        }
-        if (!dd.isBusy()) return true;
-        return askOnEdt();
-    }
-
-    /**
-     * Shows the modal question on the EDT and returns the answer. The close
-     * gesture reaches us on the EDT from {@code windowClosing}, but macOS routes
-     * Cmd+Q through the Desktop quit handler, which may not be on it - hence the
-     * explicit hop.
-     */
-    private boolean askOnEdt() {
-        if (SwingUtilities.isEventDispatchThread()) return ask();
-        final boolean[] answer = {true};
-        try {
-            SwingUtilities.invokeAndWait(() -> answer[0] = ask());
-        } catch (Exception e) {
-            LOG.warn("Close confirmation could not be shown, closing: {}", e.getMessage());
-            return true;
-        }
-        return answer[0];
-    }
-
-    private boolean ask() {
-        I18nService i18n = injector.getInstance(I18nService.class);
-        // The bundle resolves its locale once at construction; the language can be
-        // switched live in the settings, so re-pin it before asking.
-        try {
-            i18n.setLocale(injector.getInstance(GlobalConfig.class)
-                    .getUser().getUserLanguage().locale());
-        } catch (Throwable t) {
-            LOG.debug("Could not re-pin the dialog locale: {}", t.toString());
-        }
-        JFrame parent = null;
-        try {
-            parent = injector.getInstance(BrowserWindow.class).frame();
-        } catch (Throwable ignored) {
-            // Guarded: a parentless dialog is still a dialog.
-        }
-        return CloseConfirmDialog.confirm(
-                parent,
-                i18n.get("dialog.close.busy.title"),
-                i18n.get("dialog.close.busy.message"),
-                i18n.get("dialog.close.busy.close"),
-                i18n.get("dialog.close.busy.cancel"));
+        return () -> true;
     }
 
     /**
@@ -274,9 +208,6 @@ final class AppLifecycle {
         safeStart(() -> injector.getInstance(FearGreedMonitorService.class).start(), "FearGreedMonitorService");
         safeStart(() -> injector.getInstance(CryptoFearGreedMonitorService.class).start(),
                 "CryptoFearGreedMonitorService");
-        // Daily Wetterbericht: arms the wall-clock schedule (and the boot
-        // catch-up when today's report time already passed).
-        safeStart(() -> injector.getInstance(WeatherReportService.class).start(), "WeatherReportService");
         // Market memory: the ad-hoc register + Fear&Greed history harvests
         // also ride the browser-joker fetch chain, so they start here too.
         safeStart(() -> injector.getInstance(MarketMemoryService.class).start(), "MarketMemoryService");
@@ -303,7 +234,6 @@ final class AppLifecycle {
         // Stop the scan loop first so no fresh OCR/cluster work is
         // submitted while the services it depends on are torn down below.
         safeStop(() -> injector.getInstance(PassiveMonitorService.class).shutdown(), "PassiveMonitorService");
-        safeStop(() -> injector.getInstance(WeatherReportService.class).shutdown(), "WeatherReportService");
         safeStop(() -> injector.getInstance(MarketMemoryService.class).shutdown(), "MarketMemoryService");
         safeStop(() -> injector.getInstance(EditorialPipeline.class).shutdown(), "EditorialPipeline");
         safeStop(() -> injector.getInstance(AgentCoordinator.class).shutdown(), "AgentCoordinator");

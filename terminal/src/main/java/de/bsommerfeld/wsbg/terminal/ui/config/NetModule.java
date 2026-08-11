@@ -97,7 +97,7 @@ final class NetModule extends AbstractModule {
      * (Consorsbank, onvista, Tradegate, BaFin, FN, publisher articles …)
      * answer plain HTTP in milliseconds, and the earlier every-outreach-
      * rides-the-joker alias made each of them pay a 15-25 s hidden-browser
-     * warmup — the KI-DD collect took 5+ minutes on warmups alone. The
+     * warmup — a research collect took 5+ minutes on warmups alone. The
      * browser joker stays as the per-request rescue for a host that grows a
      * wall, and it is the SAME shared {@link CefWebFetcher} instance as the
      * browser-first chain (one hidden tab per origin, 2026-07-13 audit C4).

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
+import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.core.util.StorageUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,16 +40,38 @@ public final class GitHubReleases {
 
     private final ObjectMapper mapper = new ObjectMapper();
     private final HttpClient http = HttpClient.newHttpClient();
+    private final GlobalConfig config;
 
     private volatile List<Map<String, Object>> cachedReleases;
     private volatile long cachedAtMs;
+    private volatile boolean cachedExperimental;
 
     @Inject
-    public GitHubReleases() {
+    public GitHubReleases(GlobalConfig config) {
+        this.config = config;
     }
 
-    /** Fetches the latest GitHub release tag, or null on any failure. */
+    /**
+     * Whether this install accepts pre-releases ({@code user.experimental-updates},
+     * the same key the launcher's channel question writes). Both readers below
+     * follow it: an install running a pre-release must compare itself against
+     * pre-releases, or the titlebar's update button would light up permanently
+     * against an older stable tag.
+     */
+    private boolean experimental() {
+        return config.getUser().isExperimentalUpdates();
+    }
+
+    /** Fetches the newest release tag this install is entitled to, or null on any failure. */
     String latestTag() throws Exception {
+        if (experimental()) {
+            // GitHub's "latest" endpoint excludes pre-releases by definition,
+            // so the experimental channel has to read the listing instead.
+            HttpResponse<String> resp = get(RELEASES_URL);
+            if (resp.statusCode() != 200) return null;
+            JsonNode root = mapper.readTree(resp.body());
+            return firstPublishedTag(root);
+        }
         HttpResponse<String> resp = get(LATEST_RELEASE_URL);
         if (resp.statusCode() != 200) return null;
         JsonNode root = mapper.readTree(resp.body());
@@ -56,18 +79,42 @@ public final class GitHubReleases {
         return tag == null || tag.isBlank() ? null : tag;
     }
 
-    /** The recent releases in wire shape, cached for {@value #CACHE_TTL_MS} ms. */
+    /**
+     * The recent releases in wire shape, cached for {@value #CACHE_TTL_MS} ms.
+     * The channel is part of the cache identity — flipping the setting must not
+     * leave the overlay showing the other channel's notes for ten minutes.
+     */
     List<Map<String, Object>> recentReleases() throws Exception {
+        boolean experimental = experimental();
         List<Map<String, Object>> cached = cachedReleases;
-        if (cached != null && System.currentTimeMillis() - cachedAtMs < CACHE_TTL_MS) return cached;
+        if (cached != null && cachedExperimental == experimental
+                && System.currentTimeMillis() - cachedAtMs < CACHE_TTL_MS) {
+            return cached;
+        }
         HttpResponse<String> resp = get(RELEASES_URL);
         if (resp.statusCode() != 200) return cached != null ? cached : List.of();
-        List<Map<String, Object>> releases = parseReleases(mapper.readTree(resp.body()));
+        List<Map<String, Object>> releases = parseReleases(mapper.readTree(resp.body()), experimental);
         if (!releases.isEmpty()) {
             cachedReleases = releases;
             cachedAtMs = System.currentTimeMillis();
+            cachedExperimental = experimental;
         }
         return releases;
+    }
+
+    /**
+     * The newest publishable tag in a release listing — the first non-draft
+     * entry, pre-releases included. GitHub returns the array newest-first.
+     * Package-private for testing.
+     */
+    static String firstPublishedTag(JsonNode root) {
+        if (root == null || !root.isArray()) return null;
+        for (JsonNode rel : root) {
+            if (rel.path("draft").asBoolean(false)) continue;
+            String tag = rel.path("tag_name").asText(null);
+            if (tag != null && !tag.isBlank()) return tag;
+        }
+        return null;
     }
 
     private HttpResponse<String> get(String url) throws Exception {
@@ -79,12 +126,17 @@ public final class GitHubReleases {
         return http.send(req, HttpResponse.BodyHandlers.ofString());
     }
 
-    /** Maps the GitHub releases array to the wire shape. Package-private for testing. */
-    static List<Map<String, Object>> parseReleases(JsonNode root) {
+    /**
+     * Maps the GitHub releases array to the wire shape. Drafts never surface;
+     * pre-releases only on the experimental channel, where they are the notes
+     * for the version actually installed. Package-private for testing.
+     */
+    static List<Map<String, Object>> parseReleases(JsonNode root, boolean includePreReleases) {
         List<Map<String, Object>> out = new ArrayList<>();
         if (root == null || !root.isArray()) return out;
         for (JsonNode rel : root) {
-            if (rel.path("draft").asBoolean(false) || rel.path("prerelease").asBoolean(false)) continue;
+            if (rel.path("draft").asBoolean(false)) continue;
+            if (!includePreReleases && rel.path("prerelease").asBoolean(false)) continue;
             String tag = rel.path("tag_name").asText(null);
             String body = rel.path("body").asText(null);
             if (tag == null || tag.isBlank() || body == null || body.isBlank()) continue;

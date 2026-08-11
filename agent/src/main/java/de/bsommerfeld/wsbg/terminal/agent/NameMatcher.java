@@ -33,7 +33,9 @@ final class NameMatcher {
     /** Generic words that must never carry a match by themselves. */
     private static final Set<String> STOP = Set.of(
             "inc", "incorporated", "corp", "corporation", "company", "holdings",
-            "holding", "group", "the", "and", "für", "und", "fund", "trust",
+            // "für" is folded to "fuer" before the split - the ASCII form is the
+            // one this set is ever asked about; the umlaut form stays, harmless.
+            "holding", "group", "the", "and", "für", "fuer", "und", "fund", "trust",
             "plc", "ltd", "limited", "gmbh", "kgaa", "aktiengesellschaft",
             "gesellschaft", "technologies", "technology", "international",
             "systems", "solutions", "index", "etf");

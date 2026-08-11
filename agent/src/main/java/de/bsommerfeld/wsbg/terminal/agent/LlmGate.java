@@ -11,25 +11,20 @@ import com.google.inject.Singleton;
  * over-subscribe the server — vision used to run un-gated and starve the compose
  * workers.
  *
- * <p><b>Two lanes since 2026-07-14 (user mandate):</b> an INTERACTIVE caller — the
- * on-demand KI-DD a human visibly waits for — overtakes the background lanes (wire,
- * digest, weather, watchlist) when a permit frees up. Measured need: during the
- * Abendausgabe hour every DD call queued ~16 s behind background work, roughly
- * doubling a run. A running generation is never preempted — only the order at the
- * next free permit changes. <b>Anti-starvation guarantee:</b> after
- * {@link #BACKGROUND_GUARANTEE}−1 consecutive interactive grants with background
- * waiting, the next grant goes to the background lane — the wire keeps publishing
- * (throttled, never stalled) while a DD runs.
+ * <p><b>Two lanes, currently single-tenant.</b> The gate carries an INTERACTIVE lane
+ * that overtakes the background lanes (wire, digest) at the next free permit, plus a
+ * priority mode ({@link #setPriority(boolean)}) that suspends the anti-starvation
+ * guarantee so one caller may hold BOTH permits. Both were built for an on-demand
+ * run a human visibly waits for; since that kind of caller was removed, EVERY caller
+ * today takes the background lane and the machinery idles — it is kept because it is
+ * the seam a future on-demand tool acquires against, and because it is measured:
+ * an interactive call used to queue ~16 s behind background work.
  *
- * <p><b>Priority mode (user-armed, 2026-08-03):</b> {@link #setPriority(boolean)}
- * suspends the anti-starvation guarantee entirely — while it is on, NO background
- * caller is granted a permit, so the running DD gets BOTH. The wire is only
- * lahmgelegt at the model, never at the intake: scraping, the cluster registry and
- * the dirty set keep filling, the parked prep/compose lanes simply resume where they
- * stood the moment the mode falls (a still-parked cluster picks up the evidence that
- * arrived meanwhile in ONE extraction — nothing is dropped). A running generation is
- * never preempted; only the next grant changes. Owned by the DD run, which clears it
- * on every exit path, so the mode can never outlive the report a human waited for.
+ * <p>The guarantees still hold whenever the lanes are used again: a running
+ * generation is never preempted — only the order at the next free permit changes —
+ * and after {@link #BACKGROUND_GUARANTEE}−1 consecutive interactive grants with
+ * background waiting, the next grant goes to the background lane, so the wire keeps
+ * publishing (throttled, never stalled).
  *
  * <p>This is a {@code @Singleton}: exactly ONE gate of {@code llmParallelism()} permits
  * exists per process, injected into {@link AgentBrain} (vision), {@link ChatGateway}
@@ -87,7 +82,7 @@ public class LlmGate {
         acquire(false);
     }
 
-    /** Blocks uninterruptibly until a permit is free — the interactive lane (on-demand DD). */
+    /** Blocks uninterruptibly until a permit is free — the interactive lane (on-demand callers). */
     public void acquireInteractive() {
         acquire(true);
     }

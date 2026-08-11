@@ -1,0 +1,4 @@
+SHARED CANON MARKER EN
+
+This snippet exists only on the test classpath. It is the spliced body the
+include probe looks for, in its English form.

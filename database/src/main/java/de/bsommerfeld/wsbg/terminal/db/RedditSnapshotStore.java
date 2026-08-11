@@ -26,7 +26,7 @@ import java.util.Optional;
  * snapshots produced <em>ghost clusters</em> — clusters built from posts that
  * had since vanished from the live feed. The mitigation is the day-or-TTL rule
  * ({@link SnapshotFreshness}, {@code reddit.snapshot-ttl-minutes}): a snapshot
- * from today is restored (the evening Wetterbericht needs the day's context to
+ * from today is restored (an evening summary needs the day's context to
  * survive restarts), anything older than today and the short TTL is discarded;
  * ghost risk within the day is bounded by the normal thread retention. The
  * cold-start scan of a busy
@@ -78,7 +78,7 @@ public final class RedditSnapshotStore {
     /**
      * Loads the snapshot only if it is from TODAY or still inside {@code
      * ttlMinutes} (see {@link SnapshotFreshness} — the day window keeps the
-     * Wetterbericht's day-context alive across restarts). A stale snapshot is
+     * day-context alive across restarts). A stale snapshot is
      * deleted and {@link Optional#empty()} returned. {@code ttlMinutes <= 0}
      * disables restore entirely.
      */

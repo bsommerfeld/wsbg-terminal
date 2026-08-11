@@ -1,0 +1,9 @@
+Include probe host prompt (test fixture, English base).
+
+## Canon
+
+{{include:include-probe-core}}
+
+## Output
+
+Answer in {{LANGUAGE}}.

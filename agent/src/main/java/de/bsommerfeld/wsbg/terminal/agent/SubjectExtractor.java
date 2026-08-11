@@ -35,7 +35,7 @@ final class SubjectExtractor {
      * for monster threads now, NOT a degeneration guard: the old tight thresholds
      * (25 comments / 2 800 chars) dated from the hidden-thinking era, where the
      * invisible reasoning ate the token budget and long briefs came back
-     * blank/truncated. With think=false the model enumerates a 48-name watchlist
+     * blank/truncated. With think=false the model enumerates a 48-name holdings list
      * from a single 12k-char brief cleanly (verified 2026-07-01) — which also
      * fixed the "under-extraction of long ticker lists" quality gap that the
      * chunking itself was causing.
@@ -142,7 +142,7 @@ final class SubjectExtractor {
             Pattern.compile("\\s*(?:\\d+[.,]\\d|[€$£%]|▲|▼|↑|↓).*$");
 
     /**
-     * Spaced-out all-caps ticker, e.g. an OCR'd watchlist row read as "O T L K".
+     * Spaced-out all-caps ticker, e.g. an OCR'd portfolio row read as "O T L K".
      * A run of ≥3 single capitals separated only by spaces is collapsed to one
      * token ("O T L K" → "OTLK") so it resolves as the ticker it is. Bounded to
      * single letters so ordinary multi-word names ("Take Two") are untouched.
@@ -247,7 +247,7 @@ final class SubjectExtractor {
             preamble.append('\n');
             // Image transcripts are normal context too — fold the thread's + its
             // comments' cached vision into the preamble so screenshot-only subjects
-            // (portfolio holdings, watchlists, memes) get named in extraction.
+            // (portfolio holdings, memes) get named in extraction.
             String vis = threadVision(t, tid);
             if (!vis.isEmpty()) {
                 preamble.append("  [images]: ").append(oneLine(vis)).append('\n');

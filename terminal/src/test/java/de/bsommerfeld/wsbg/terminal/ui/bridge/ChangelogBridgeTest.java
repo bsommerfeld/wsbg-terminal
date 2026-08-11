@@ -28,7 +28,7 @@ class ChangelogBridgeTest {
                   {"tag_name":"1.0.0","name":"Das WSBG-Terminal","published_at":"2026-06-30T14:02:10Z",
                    "draft":false,"prerelease":false,"body":"**Alles. Das hier ist Tag 1.**"}
                 ]""");
-        List<Map<String, Object>> out = GitHubReleases.parseReleases(root);
+        List<Map<String, Object>> out = GitHubReleases.parseReleases(root, false);
         assertEquals(2, out.size());
         assertEquals("1.1.0", out.get(0).get("tag"));
         assertEquals("I Am Speed", out.get(0).get("name"));
@@ -45,14 +45,41 @@ class ChangelogBridgeTest {
                   {"tag_name":"1.1.5","draft":false,"prerelease":false,"body":""},
                   {"tag_name":"1.1.0","draft":false,"prerelease":false,"body":"Echt."}
                 ]""");
-        List<Map<String, Object>> out = GitHubReleases.parseReleases(root);
+        List<Map<String, Object>> out = GitHubReleases.parseReleases(root, false);
         assertEquals(1, out.size());
         assertEquals("1.1.0", out.get(0).get("tag"));
     }
 
     @Test
+    void keepsPrereleasesOnTheExperimentalChannel() throws Exception {
+        // An install running a pre-release must see ITS notes; a draft stays
+        // invisible on both channels.
+        var root = MAPPER.readTree("""
+                [
+                  {"tag_name":"1.2.0","draft":true,"prerelease":false,"body":"Entwurf"},
+                  {"tag_name":"1.2.0-rc1","draft":false,"prerelease":true,"body":"RC"},
+                  {"tag_name":"1.1.0","draft":false,"prerelease":false,"body":"Echt."}
+                ]""");
+        List<Map<String, Object>> out = GitHubReleases.parseReleases(root, true);
+        assertEquals(2, out.size());
+        assertEquals("1.2.0-rc1", out.get(0).get("tag"));
+    }
+
+    @Test
+    void firstPublishedTagIsTheNewestNonDraft() throws Exception {
+        // What the experimental channel compares the installed version against.
+        var root = MAPPER.readTree("""
+                [
+                  {"tag_name":"1.3.0-rc2","draft":true,"prerelease":true},
+                  {"tag_name":"1.3.0-rc1","draft":false,"prerelease":true},
+                  {"tag_name":"1.2.0","draft":false,"prerelease":false}
+                ]""");
+        assertEquals("1.3.0-rc1", GitHubReleases.firstPublishedTag(root));
+    }
+
+    @Test
     void toleratesNonArrayAndNull() {
-        assertTrue(GitHubReleases.parseReleases(null).isEmpty());
-        assertTrue(GitHubReleases.parseReleases(MAPPER.createObjectNode()).isEmpty());
+        assertTrue(GitHubReleases.parseReleases(null, false).isEmpty());
+        assertTrue(GitHubReleases.parseReleases(MAPPER.createObjectNode(), false).isEmpty());
     }
 }

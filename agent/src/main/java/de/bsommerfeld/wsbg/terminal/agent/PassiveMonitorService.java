@@ -190,7 +190,10 @@ public class PassiveMonitorService {
     private void seedClustersFromRepository() {
         if (!config.getHeadlines().isEnabled()) return;
         try {
-            List<RedditThread> threads = repository.getAllThreads();
+            // Stream-discovered stubs are excluded: a cluster is an editorial
+            // atom, and the comment stream is not an editorial lane.
+            List<RedditThread> threads = repository.getAllThreads().stream()
+                    .filter(this::isEditorialThread).collect(Collectors.toList());
             if (threads.isEmpty()) return;
             LOG.info("Seeding clusters from {} restored threads...", threads.size());
 
@@ -214,9 +217,26 @@ public class PassiveMonitorService {
         }
     }
 
+    /**
+     * Whether a stored thread belongs to the EDITORIAL scan set — i.e. it came
+     * from a subreddit we actually scan, not from the ingest-only comment
+     * stream. Stream threads are stubs discovered through a comment; scanning,
+     * gap-filling or clustering them would drag a foreign room into the
+     * headlines and multiply the request budget, which is precisely what the
+     * one-request stream exists to avoid.
+     */
+    private boolean isEditorialThread(RedditThread t) {
+        if (t == null || t.subreddit() == null) return false;
+        for (String sub : config.getReddit().getSubreddits()) {
+            if (sub.equalsIgnoreCase(t.subreddit())) return true;
+        }
+        return false;
+    }
+
     private void refreshLocalThreads() {
         try {
             List<String> ids = repository.getAllThreads().stream()
+                    .filter(this::isEditorialThread)
                     .map(RedditThread::id).collect(Collectors.toList());
             if (!ids.isEmpty()) {
                 ScrapeStats stats = scraper.updateThreadsBatch(ids);
@@ -248,6 +268,18 @@ public class PassiveMonitorService {
                 stats.add(scraper.scanSubreddit(sub));
             }
 
+            // The sub-wide comment stream — one request per subreddit for the
+            // whole room's comment flow. Kept OUT of `stats` on purpose: this
+            // lane feeds the repository (the counting layer), never the
+            // editorial pipeline, so a busy foreign room cannot reach the
+            // headlines. Its threads are also excluded from the gap-fill below.
+            for (String sub : config.getReddit().getCommentStreamSubreddits()) {
+                ScrapeStats streamStats = scraper.scanComments(sub);
+                if (streamStats.newComments > 0) {
+                    LOG.info("[STREAM] r/{}: +{} comment(s)", sub, streamStats.newComments);
+                }
+            }
+
             // Activity-windowed gap-fill — only refresh threads that showed activity
             // within the last window. Reddit threads cool down quickly: the bulk of
             // comments land in the first 1-2 hours. Polling an idle thread every cycle
@@ -257,6 +289,7 @@ public class PassiveMonitorService {
             final long gapFillHotWindowSecs = 45 * 60;
             final long nowEpoch = Instant.now().getEpochSecond();
             List<String> idsToUpdate = repository.getAllThreads().stream()
+                    .filter(this::isEditorialThread)
                     .filter(t -> !stats.scannedIds.contains(t.id()))
                     .filter(t -> (nowEpoch - t.lastActivityUtc()) < gapFillHotWindowSecs)
                     .map(RedditThread::id)

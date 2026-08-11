@@ -121,7 +121,7 @@ public final class PushHub {
 
     /**
      * DEBUG, not INFO: a broadcast is a HEARTBEAT, not an event. The price
-     * monitors push every 30 s and the deep-dive state every 15, so at INFO
+     * monitors push every 30 s, so at INFO
      * this one line alone wrote several hundred entries an hour that said
      * nothing except "still alive" - and buried the lines that did say
      * something. The failure cases two methods up were already DEBUG; this is

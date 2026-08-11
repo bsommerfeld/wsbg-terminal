@@ -105,3 +105,22 @@ POST-RELEASE.md
 
 # Internal working notes - never committed (user directive 2026-07-03)
 docs/
+
+# --- Scratch that keeps landing in the repo ROOT ---
+# Screenshots, scratch downloads and hand-pulled data dumps taken while working.
+# Root-anchored on purpose: a legitimate .jpg or .csv inside a module's
+# resources must stay committable.
+/Screenshot*.png
+/*.jpg
+/*.jpeg
+/buba.csv
+/fn-adhoc.xml
+
+# --- Local UI prototypes ---
+# These live INSIDE src/main/resources, which the IDE section above un-ignores
+# wholesale (`!**/src/main/resources/**`). Git takes the LAST matching pattern,
+# so these lines must stay below that negation to have any effect - verify with
+# `git check-ignore -v <path>` after touching either place. The `_`-prefixed
+# Leitstand drafts are local sketches; they must never ship in the jar.
+/terminal/src/main/resources/web/_preview.html
+/terminal/src/main/resources/web/_preview2.html

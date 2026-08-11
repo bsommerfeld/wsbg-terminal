@@ -64,10 +64,9 @@ final class EventStudy {
      * holidays don't tear the match). A {@code null} benchmark means RAW:
      * the span return stands alone. Null when either side is unusable.
      *
-     * <p>Package-private rather than private because {@link DdEinpreisung}
-     * measures the SAME window arithmetic on other spans (run-up, drift): one
-     * implementation, so a reaction figure in the event register and one on a
-     * card mean the same thing down to the off-by-one.
+     * <p>Package-private rather than private so other spans (run-up, drift)
+     * can measure the SAME window arithmetic: one implementation, so every
+     * reaction figure means the same thing down to the off-by-one.
      */
     static Double adjustedSpanReturn(List<Bar> instrument, List<Bar> benchmark,
             int from, int to) {

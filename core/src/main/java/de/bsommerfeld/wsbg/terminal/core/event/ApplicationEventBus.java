@@ -21,7 +21,11 @@ public class ApplicationEventBus {
     }
 
     public void post(Object event) {
-        LOG.debug("Posting event: {}", event);
+        // Only the TYPE at debug: live events carry whole body texts, and
+        // rendering those into the log on every post is a measurable tax on
+        // the worker thread that posted them.
+        LOG.debug("Posting event: {}", event.getClass().getSimpleName());
+        if (LOG.isTraceEnabled()) LOG.trace("Posting event payload: {}", event);
         eventBus.post(event);
     }
 

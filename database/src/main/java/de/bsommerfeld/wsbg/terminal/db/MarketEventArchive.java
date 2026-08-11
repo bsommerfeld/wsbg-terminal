@@ -19,15 +19,15 @@ import java.util.Map;
 
 /**
  * The permanent event register of the market memory — one JSONL line per
- * dated, classified event ({@link MarketEventRecord}), mirrored after
- * {@link WeatherReportArchive}: loaded fully into memory at startup, torn
- * lines skipped, appends idempotent on {@link MarketEventRecord#identity()}.
+ * dated, classified event ({@link MarketEventRecord}): loaded fully into
+ * memory at startup, torn lines skipped, appends idempotent on
+ * {@link MarketEventRecord#identity()}.
  *
  * <p>ONE mutation beyond append exists: {@link #enrich} replaces a record
  * with its reaction-enriched version (CARs, regime stamp, confounded flag)
- * under the SAME identity and atomically rewrites the file — the
- * {@code DeepDiveArchive.delete} precedent. Events themselves are never
- * deleted; enrichment only ever fills fields, evidence is never lost.
+ * under the SAME identity and atomically rewrites the file. Events
+ * themselves are never deleted; enrichment only ever fills fields, evidence
+ * is never lost.
  */
 @Singleton
 public class MarketEventArchive {

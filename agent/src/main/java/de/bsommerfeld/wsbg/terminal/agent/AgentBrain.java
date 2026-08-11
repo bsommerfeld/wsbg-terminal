@@ -38,16 +38,10 @@ public class AgentBrain {
     private ChatModel agentModel;
     /** Same gemma4 model as {@link #agentModel}, but a TIGHT numPredict — for headline composition. */
     private ChatModel composeModel;
-    /** Same gemma4 model, FREE-FORM output (no JSON mode) — for Wetterbericht prose. */
-    private ChatModel proseModel;
-    /** Same gemma4 model, JSON mode with a ROOMY numPredict — for the watchlist dossier. */
-    private ChatModel dossierModel;
-    /** Same gemma4 model, free-form with the roomiest numPredict — for KI-DD report passes. */
-    private ChatModel deepDiveModel;
     /**
      * The judge lane. Free-form, and NOT a thinking lane despite the name -
      * thinking was struck from the fleet 2026-08-05 and the factory hands this
-     * seam the sober deep-dive model. The name survives so the judge lanes stay
+     * seam a sober, sampled model. The name survives so the judge lanes stay
      * separately routable if they ever need their own decode again.
      */
     private ChatModel deliberateModel;
@@ -94,8 +88,8 @@ public class AgentBrain {
      *
      * <p>Called once from the deferred startup. Model calls before that point
      * would hit an unreachable endpoint — every caller (the editorial pipeline,
-     * the Reddit monitor, the deep dive, the weather report) is held behind the
-     * same gate, so none can get ahead of it.
+     * the Reddit monitor) is held behind the same gate, so none can get ahead
+     * of it.
      */
     public void start() {
         if (!serverStarted.compareAndSet(false, true)) return;
@@ -108,7 +102,7 @@ public class AgentBrain {
 
     /**
      * Initializes all Ollama model instances via {@link OllamaModelFactory}. All
-     * are the resident gemma4:e4b (agent, compose, prose, dossier, deep-dive).
+     * are the resident gemma4:e4b (agent, compose, deliberate, verdict).
      */
     public void initialize(AgentConfig config) {
         initialize(config, true);
@@ -118,9 +112,6 @@ public class AgentBrain {
         OllamaModelFactory.Models models = modelFactory.build(config, askOllama);
         this.agentModel = models.agentModel();
         this.composeModel = models.composeModel();
-        this.proseModel = models.proseModel();
-        this.dossierModel = models.dossierModel();
-        this.deepDiveModel = models.deepDiveModel();
         this.deliberateModel = models.deliberateModel();
         this.verdictModel = models.verdictModel();
         this.activeAgentModel = models.activeAgentModel();
@@ -236,39 +227,17 @@ public class AgentBrain {
         return composeModel;
     }
 
-    /** The free-form prose model (no JSON mode) — Wetterbericht digests + report text. */
-    public ChatModel getProseModel() {
-        return proseModel;
-    }
-
-    /**
-     * The dossier model (plain JSON mode, roomy numPredict) — watchlist dossier
-     * revisions, whose sectioned report would truncate at the agent model's 768
-     * backstop. Same resident gemma4.
-     */
-    public ChatModel getDossierModel() {
-        return dossierModel;
-    }
-
-    /**
-     * The deep-dive model (free-form, roomiest numPredict) — the KI-DD report
-     * passes: each pass emits a full markdown research report, far past the
-     * prose model's budget. On-demand only, never in the steady-state loop.
-     */
-    public ChatModel getDeepDiveModel() {
-        return deepDiveModel;
-    }
-
     /**
      * The DELIBERATE judge seam: same gemma4, free-form. Reserved for the
      * few-call VERDICT judges (formcheck, final instance, reclaim). It once
      * ran with thinking on (2026-07-17 A/B), which is where the name comes
      * from; thinking was struck from the whole fleet on 2026-08-05 after it
      * was measured spiralling to the num_predict ceiling with the visible
-     * verdict truncated to nothing, so this returns the sober model today.
+     * verdict truncated to nothing, so this returns a sober, sampled model
+     * today.
      */
     public ChatModel getDeliberateModel() {
-        return deliberateModel != null ? deliberateModel : deepDiveModel;
+        return deliberateModel;
     }
 
     /**
@@ -278,7 +247,7 @@ public class AgentBrain {
      * the same number, and a sampled decode would quietly break the promise.
      */
     public ChatModel getVerdictModel() {
-        return verdictModel != null ? verdictModel : deepDiveModel;
+        return verdictModel;
     }
 
     /** Returns the resolved Ollama model name used by {@link #getAgentModel()}. */
@@ -298,10 +267,9 @@ public class AgentBrain {
     /**
      * The output ceiling (num_predict) every model handle runs with — ONE
      * number for the whole fleet. Callers that must budget prompt against
-     * output ({@code DeepDiveService}, {@code WeatherReportService}) read it
-     * HERE. They used to hand-copy the figure, which meant three places had to
-     * be edited in lockstep and a missed one silently over-promised the input
-     * budget until a pass came back truncated.
+     * output read it HERE. They used to hand-copy the figure, which meant
+     * several places had to be edited in lockstep and a missed one silently
+     * over-promised the input budget until a pass came back truncated.
      */
     public int numPredict() {
         return OllamaModelFactory.NUM_PREDICT;

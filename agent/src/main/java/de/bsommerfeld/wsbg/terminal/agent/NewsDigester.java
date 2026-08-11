@@ -53,13 +53,13 @@ final class NewsDigester {
     private final Map<String, String> byLink = new ConcurrentHashMap<>();
 
     /**
-     * Raw-article-text cache for the DD's fact extraction (link → readable text;
-     * "" = attempted and failed). Separate from the digest cache: the DD reads
-     * the WHOLE article, the wire keeps its compact digest lane.
+     * Raw-article-text cache for full-text reads (link → readable text;
+     * "" = attempted and failed). Separate from the digest cache: a full-text
+     * caller takes the WHOLE article, the wire keeps its compact digest lane.
      */
     private final Map<String, String> textByLink = new ConcurrentHashMap<>();
 
-    /** The DD's full-article cap - chunked downstream, never summarized. */
+    /** The full-article cap - chunked downstream, never summarized. */
     static final int FULL_ARTICLE_MAX_CHARS = 24_000;
 
     /**
@@ -145,17 +145,7 @@ final class NewsDigester {
     }
 
     /**
-     * Synchronous read for the on-demand KI-DD: fetches + distills the article
-     * INLINE on the caller's thread (the DD's own daemon worker — never the
-     * editorial pools) and returns the digest, or {@code ""} when the article
-     * is unreadable or {@code read-articles} is off. One article per call, the
-     * body capped at {@link ArticleReader#ARTICLE_MAX_CHARS}, the model call
-     * gated by the shared {@link ChatGateway} — a long article can never
-     * overload the model, and the session cache is shared with the wire's
-     * background lane (a digest read here enriches the next compose too).
-     */
-    /**
-     * Synchronous FULL-TEXT read for the KI-DD's fact extraction: fetches the
+     * Synchronous FULL-TEXT read for fact extraction: fetches the
      * article's readable body ({@link #FULL_ARTICLE_MAX_CHARS} cap) with NO
      * model call - the extraction downstream replaces the digest. Session-
      * cached including failures; consent-walled hosts are fast misses.
