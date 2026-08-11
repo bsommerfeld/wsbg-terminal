@@ -1,7 +1,8 @@
 package de.bsommerfeld.wsbg.terminal.instruments;
 
-import de.bsommerfeld.wsbg.terminal.source.net.WebFetcher;
-import de.bsommerfeld.wsbg.terminal.source.net.WebResponse;
+import de.bsommerfeld.wsbg.terminal.web.fetch.FetchUtil;
+import de.bsommerfeld.wsbg.terminal.web.fetch.WebFetcher;
+import de.bsommerfeld.wsbg.terminal.web.fetch.WebResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,6 +34,10 @@ public final class XetraSource implements CorpusSource {
     private static final String USER_AGENT =
             "wsbg-terminal instrument-corpus (contact: b.sommerfeld2003@gmail.com)";
 
+    // Bulk file download from a wall-less official host — DIRECT-only stays
+    // deliberate, no browser needed.
+    private static final FetchUtil[] MODES = {FetchUtil.DIRECT};
+
     private final WebFetcher fetcher;
 
     public XetraSource(WebFetcher fetcher) {
@@ -46,7 +51,7 @@ public final class XetraSource implements CorpusSource {
 
     @Override
     public List<InstrumentEntry> fetch() throws Exception {
-        WebResponse page = fetcher.fetch(PAGE_URL, Map.of("User-Agent", USER_AGENT), Duration.ofSeconds(30));
+        WebResponse page = fetcher.fetch(PAGE_URL, Map.of("User-Agent", USER_AGENT), Duration.ofSeconds(30), MODES);
         if (page.status() != 200) {
             throw new IllegalStateException("XETRA instruments page returned HTTP " + page.status());
         }
@@ -55,7 +60,7 @@ public final class XetraSource implements CorpusSource {
             throw new IllegalStateException("XETRA instruments page carries no allTradableInstruments.csv link");
         }
         String url = m.group(1).startsWith("http") ? m.group(1) : BASE + m.group(1);
-        WebResponse csv = fetcher.fetch(url, Map.of("User-Agent", USER_AGENT), Duration.ofSeconds(60));
+        WebResponse csv = fetcher.fetch(url, Map.of("User-Agent", USER_AGENT), Duration.ofSeconds(60), MODES);
         if (csv.status() != 200) {
             throw new IllegalStateException("XETRA instruments CSV returned HTTP " + csv.status());
         }

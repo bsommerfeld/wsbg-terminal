@@ -1,8 +1,8 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
 import de.bsommerfeld.wsbg.terminal.core.util.BackgroundThreads;
-import de.bsommerfeld.wsbg.terminal.source.net.WebFetcher;
-import de.bsommerfeld.wsbg.terminal.source.net.WebResponse;
+import de.bsommerfeld.wsbg.terminal.web.fetch.WebFetcher;
+import de.bsommerfeld.wsbg.terminal.web.fetch.WebResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

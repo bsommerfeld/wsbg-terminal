@@ -1,8 +1,8 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
-import de.bsommerfeld.wsbg.terminal.core.price.InstrumentCandidate;
-import de.bsommerfeld.wsbg.terminal.core.price.InstrumentLookup;
-import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooQuote;
+import de.bsommerfeld.wsbg.terminal.web.facts.InstrumentCandidate;
+import de.bsommerfeld.wsbg.terminal.web.facts.InstrumentLookup;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.yahoofinance.YahooQuote;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

@@ -11,8 +11,14 @@ import de.bsommerfeld.wsbg.terminal.db.HeadlineRecord;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
 import de.bsommerfeld.wsbg.terminal.db.RedditSnapshotStore;
 import de.bsommerfeld.wsbg.terminal.reddit.RssRedditScraper;
-import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
-import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooFinanceClient;
+import de.bsommerfeld.wsbg.terminal.reddit.net.RedditFetch;
+import de.bsommerfeld.wsbg.terminal.web.article.Article;
+import de.bsommerfeld.wsbg.terminal.web.fetch.FetchUtil;
+import de.bsommerfeld.wsbg.terminal.web.fetch.WebFetcher;
+import de.bsommerfeld.wsbg.terminal.web.fetch.WebResponse;
+import de.bsommerfeld.wsbg.terminal.web.impl.net.DirectTransport;
+import de.bsommerfeld.wsbg.terminal.web.impl.net.HouseFetcher;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.yahoofinance.YahooMarketClient;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
@@ -70,8 +76,21 @@ class PipelineSmokeIT {
             AgentBrain brain = new AgentBrain(config, bus, osm, gate);
             ClusterRegistry registry = new ClusterRegistry();
             SubjectRegistry subjectRegistry = new SubjectRegistry();
-            YahooFinanceClient yahoo = new YahooFinanceClient(config);
-            RssRedditScraper rss = new RssRedditScraper(redditRepo, config, bus);
+            WebFetcher house = new HouseFetcher(java.util.Set.of(new DirectTransport()));
+            RedditFetch direct = new RedditFetch() {
+                @Override
+                public String name() {
+                    return "house[direct]";
+                }
+
+                @Override
+                public WebResponse fetch(String url, java.util.Map<String, String> headers,
+                        java.time.Duration timeout) throws Exception {
+                    return house.fetch(url, headers, timeout, FetchUtil.DIRECT);
+                }
+            };
+            YahooMarketClient yahoo = new YahooMarketClient(house);
+            RssRedditScraper rss = new RssRedditScraper(redditRepo, config, bus, direct);
 
             // Production clustering. The ctor self-starts the scan loop.
             ClusterEngine clusterEngine = new ClusterEngine(registry);
@@ -176,7 +195,7 @@ class PipelineSmokeIT {
             System.out.println(sb);
             if (r.hasNews()) {
                 newsBacked.incrementAndGet();
-                for (RawNewsItem n : r.news()) {
+                for (Article n : r.news()) {
                     String age = n.publishedAt() == null ? "?" :
                             humanAge(Duration.between(n.publishedAt(), now).toMinutes());
                     System.out.println("        news[" + age + "]: " + n.title()

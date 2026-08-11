@@ -3,22 +3,19 @@ package de.bsommerfeld.wsbg.terminal.reddit;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.inject.Singleton;
-import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
-import de.bsommerfeld.wsbg.terminal.core.config.RedditConfig;
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditComment;
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
+import de.bsommerfeld.wsbg.terminal.reddit.net.RedditFetch;
 import de.bsommerfeld.wsbg.terminal.reddit.support.CommentStream;
 import de.bsommerfeld.wsbg.terminal.reddit.support.DeferredCommentBackfill;
 import de.bsommerfeld.wsbg.terminal.reddit.support.RateLimitGuard;
 import de.bsommerfeld.wsbg.terminal.reddit.support.RedditConstants;
 import de.bsommerfeld.wsbg.terminal.reddit.support.RedditText;
 import de.bsommerfeld.wsbg.terminal.reddit.support.SourceHealthReporter;
-import de.bsommerfeld.wsbg.terminal.source.net.DirectWebFetcher;
-import de.bsommerfeld.wsbg.terminal.source.net.TokenBucketRateLimiter;
-import de.bsommerfeld.wsbg.terminal.source.net.WebFetcher;
-import de.bsommerfeld.wsbg.terminal.source.net.WebResponse;
+import de.bsommerfeld.wsbg.terminal.reddit.support.TokenBucketRateLimiter;
+import de.bsommerfeld.wsbg.terminal.web.fetch.WebResponse;
 import jakarta.inject.Inject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,8 +32,9 @@ import java.util.stream.Collectors;
  * <h3>How it works</h3>
  * Reddit exposes every listing and thread page as JSON by appending
  * {@code .json} to the URL (e.g. {@code /r/stocks/new.json}). This class fetches
- * those endpoints through the shared {@link WebFetcher} seam, parses the response
- * with Jackson, and persists the data through the {@link RedditRepository}.
+ * those endpoints through the module-internal {@link RedditFetch} seam, parses
+ * the response with Jackson, and persists the data through the
+ * {@link RedditRepository}.
  *
  * <h3>Responsibilities</h3>
  * This class is the orchestrator; the concerns it used to hold inline now live in
@@ -90,11 +88,11 @@ public class RedditScraper implements RedditSource {
     protected final RedditRepository repository;
 
     /**
-     * Fetches the actual bytes through the shared {@link WebFetcher} seam. In
-     * production this is a browser→direct chain; tests/CLI default to the plain
-     * {@link DirectWebFetcher}. The OAuth and RSS paths inject their own fetcher.
+     * Fetches the actual bytes through the module-internal {@link RedditFetch}
+     * seam. In production the anonymous delegate rides the house WebFetcher
+     * (modes {@code BROWSER, DIRECT}); the OAuth path injects its own fetcher.
      */
-    private final WebFetcher fetcher;
+    private final RedditFetch fetcher;
 
     /** Shared, thread-safe Jackson mapper, reused across all parse calls. */
     private final ObjectMapper mapper;
@@ -108,20 +106,12 @@ public class RedditScraper implements RedditSource {
 
     @Inject
     public RedditScraper(RedditRepository repository, ApplicationEventBus eventBus,
-            WebFetcher fetcher, TokenBucketRateLimiter rateLimiter) {
+            RedditFetch fetcher, TokenBucketRateLimiter rateLimiter) {
         this(repository, rateLimiter, eventBus, fetcher);
     }
 
-    /**
-     * Convenience constructor for callers that don't need health-status events
-     * posted (tests, CLI tools). Uses the plain direct transport.
-     */
-    public RedditScraper(RedditRepository repository, GlobalConfig config) {
-        this(repository, buildLimiterFromConfig(config), null, new DirectWebFetcher());
-    }
-
     protected RedditScraper(RedditRepository repository, TokenBucketRateLimiter rateLimiter,
-            ApplicationEventBus eventBus, WebFetcher fetcher) {
+            ApplicationEventBus eventBus, RedditFetch fetcher) {
         this.repository = repository;
         this.fetcher = fetcher;
         this.mapper = new ObjectMapper();
@@ -142,11 +132,6 @@ public class RedditScraper implements RedditSource {
                     fetchThreadContext(permalink); // populates the repo's comment tree
                     return repository.getThread(threadId) != null;
                 });
-    }
-
-    private static TokenBucketRateLimiter buildLimiterFromConfig(GlobalConfig config) {
-        RedditConfig rc = config.getReddit();
-        return new TokenBucketRateLimiter(rc.getRateLimitBurst(), rc.getRateLimitRequestsPerSecond());
     }
 
     // =====================================================================
@@ -510,7 +495,7 @@ public class RedditScraper implements RedditSource {
     // =====================================================================
 
     /**
-     * Executes a GET through the configured {@link WebFetcher} with automatic
+     * Executes a GET through the configured {@link RedditFetch} with automatic
      * rate-limit handling (the {@link RateLimitGuard} chokepoint).
      */
     private WebResponse executeGet(String url) throws Exception {

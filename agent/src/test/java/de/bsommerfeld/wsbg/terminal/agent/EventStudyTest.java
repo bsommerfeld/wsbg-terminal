@@ -1,6 +1,6 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
-import de.bsommerfeld.wsbg.terminal.yahoofinance.Bar;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.yahoofinance.Bar;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;

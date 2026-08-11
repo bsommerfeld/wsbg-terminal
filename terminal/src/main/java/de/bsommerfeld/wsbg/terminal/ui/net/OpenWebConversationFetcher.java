@@ -1,7 +1,6 @@
 package de.bsommerfeld.wsbg.terminal.ui.net;
 
-import de.bsommerfeld.wsbg.terminal.source.net.WebFetcher;
-import de.bsommerfeld.wsbg.terminal.source.net.WebResponse;
+import de.bsommerfeld.wsbg.terminal.web.fetch.WebResponse;
 import de.bsommerfeld.wsbg.terminal.ui.CefHost;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,7 +40,7 @@ import java.util.Map;
  * general transport. Transport trouble answers status 0 (never throws), so
  * the calling source degrades to empty.
  */
-public final class OpenWebConversationFetcher implements WebFetcher {
+public final class OpenWebConversationFetcher {
 
     private static final Logger LOG = LoggerFactory.getLogger(OpenWebConversationFetcher.class);
 
@@ -64,12 +63,10 @@ public final class OpenWebConversationFetcher implements WebFetcher {
                 "openweb", "omit");
     }
 
-    @Override
     public String name() {
         return "openweb-conversations";
     }
 
-    @Override
     public WebResponse fetch(String url, Map<String, String> headers, Duration timeout) {
         String spotId;
         String postId;
@@ -82,7 +79,7 @@ public final class OpenWebConversationFetcher implements WebFetcher {
             postId = null;
         }
         if (spotId == null || spotId.isBlank() || postId == null || postId.isBlank()) {
-            return new WebResponse(400, "", Map.of());
+            return WebResponse.text(400, "", Map.of());
         }
         try {
             WebResponse first = read(spotId, postId, timeout);
@@ -92,13 +89,13 @@ public final class OpenWebConversationFetcher implements WebFetcher {
             return read(spotId, postId, timeout);
         } catch (Exception e) {
             LOG.debug("OpenWeb conversation read failed for {}: {}", postId, e.getMessage());
-            return new WebResponse(0, "", Map.of());
+            return WebResponse.failure();
         }
     }
 
     private WebResponse read(String spotId, String postId, Duration timeout) throws Exception {
         String bearer = currentToken(spotId, timeout);
-        if (bearer == null) return new WebResponse(0, "", Map.of());
+        if (bearer == null) return WebResponse.failure();
         Map<String, String> h = new HashMap<>();
         h.put("Content-Type", "application/json");
         h.put("x-spot-id", spotId);
@@ -107,7 +104,7 @@ public final class OpenWebConversationFetcher implements WebFetcher {
         String body = "{\"conversation_id\":\"" + spotId + "_" + postId
                 + "\",\"count\":30,\"offset\":0,\"sort_by\":\"newest\"}";
         CefFetchClient.HttpResult r = client.fetch(READ_URL, "POST", h, body, timeout);
-        return new WebResponse(r.status(), r.body(), r.headers());
+        return WebResponse.text(r.status(), r.body(), r.headers());
     }
 
     /** The cached anonymous token, refreshed through the handshake when stale. */

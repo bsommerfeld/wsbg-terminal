@@ -1,12 +1,12 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
 import com.google.inject.Singleton;
-import de.bsommerfeld.wsbg.terminal.briefing.FnRssClient;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.briefing.FnRssClient;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
-import de.bsommerfeld.wsbg.terminal.core.price.AnalystActions;
-import de.bsommerfeld.wsbg.terminal.core.price.AnalystActionsSource;
-import de.bsommerfeld.wsbg.terminal.core.price.UsListingStats;
-import de.bsommerfeld.wsbg.terminal.core.price.UsListingStatsSource;
+import de.bsommerfeld.wsbg.terminal.web.facts.AnalystActions;
+import de.bsommerfeld.wsbg.terminal.web.facts.AnalystActionsSource;
+import de.bsommerfeld.wsbg.terminal.web.facts.UsListingStats;
+import de.bsommerfeld.wsbg.terminal.web.facts.UsListingStatsSource;
 import de.bsommerfeld.wsbg.terminal.core.util.BackgroundThreads;
 import de.bsommerfeld.wsbg.terminal.core.util.JitteredScheduler;
 import de.bsommerfeld.wsbg.terminal.db.AdhocEventArchive;
@@ -17,11 +17,11 @@ import de.bsommerfeld.wsbg.terminal.db.HeadlineArchive;
 import de.bsommerfeld.wsbg.terminal.db.HeadlineRecord;
 import de.bsommerfeld.wsbg.terminal.db.MarketEventArchive;
 import de.bsommerfeld.wsbg.terminal.db.MarketEventRecord;
-import de.bsommerfeld.wsbg.terminal.edgar.EdgarClient;
-import de.bsommerfeld.wsbg.terminal.feargreed.FearGreedClient;
-import de.bsommerfeld.wsbg.terminal.yahoofinance.Bar;
-import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooFinanceClient;
-import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooQuote;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.edgar.EdgarClient;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.feargreed.FearGreedClient;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.yahoofinance.Bar;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.yahoofinance.YahooMarketClient;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.yahoofinance.YahooQuote;
 import jakarta.inject.Inject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -157,10 +157,10 @@ public class MarketMemoryService {
     private volatile AnalystActionsSource analystActionsSource;
     private volatile UsListingStatsSource usListingStatsSource;
     private volatile EdgarClient edgarClient;
-    private volatile YahooFinanceClient yahooClient;
+    private volatile YahooMarketClient yahooClient;
     private volatile HeadlineArchive headlineArchive;
     private volatile AdhocClassifier adhocClassifier;
-    private volatile de.bsommerfeld.wsbg.terminal.briefing.TradingViewCalendarClient tvCalendar;
+    private volatile de.bsommerfeld.wsbg.terminal.web.impl.sources.briefing.TradingViewCalendarClient tvCalendar;
     private volatile MacroClassifier macroClassifier;
 
     private final AtomicBoolean started = new AtomicBoolean();
@@ -230,7 +230,7 @@ public class MarketMemoryService {
     }
 
     @com.google.inject.Inject(optional = true)
-    void setYahooClient(YahooFinanceClient client) {
+    void setYahooClient(YahooMarketClient client) {
         this.yahooClient = client;
     }
 
@@ -246,7 +246,7 @@ public class MarketMemoryService {
 
     @com.google.inject.Inject(optional = true)
     void setTradingViewCalendarClient(
-            de.bsommerfeld.wsbg.terminal.briefing.TradingViewCalendarClient client) {
+            de.bsommerfeld.wsbg.terminal.web.impl.sources.briefing.TradingViewCalendarClient client) {
         this.tvCalendar = client;
     }
 
@@ -558,7 +558,7 @@ public class MarketMemoryService {
 
     /** Best-effort ISIN → Yahoo symbol (Yahoo's search resolves ISIN queries). */
     private String resolveSymbol(String isin) {
-        YahooFinanceClient yahoo = yahooClient;
+        YahooMarketClient yahoo = yahooClient;
         if (yahoo == null || isin == null || isin.isBlank()) return null;
         try {
             for (YahooQuote quote : yahoo.search(isin, 3, 0).quotes()) {
@@ -590,11 +590,11 @@ public class MarketMemoryService {
      * section prompts, not statistics.
      */
     void harvestMacroSurprises() {
-        de.bsommerfeld.wsbg.terminal.briefing.TradingViewCalendarClient calendar = tvCalendar;
+        de.bsommerfeld.wsbg.terminal.web.impl.sources.briefing.TradingViewCalendarClient calendar = tvCalendar;
         if (calendar == null) return;
         try {
             Instant now = Instant.now();
-            List<de.bsommerfeld.wsbg.terminal.briefing.TradingViewCalendarClient.TvEvent> actuals =
+            List<de.bsommerfeld.wsbg.terminal.web.impl.sources.briefing.TradingViewCalendarClient.TvEvent> actuals =
                     new ArrayList<>();
             for (var e : calendar.events(now.minus(Duration.ofDays(MACRO_LOOKBACK_DAYS)), now)) {
                 if (e.importance() < 1 || e.actual() == null || e.forecast() == null) continue;
@@ -628,7 +628,7 @@ public class MarketMemoryService {
 
     /** Judges the not-yet-cached titles in small batches; 3 whiffs = SONSTIGES. */
     private void resolveMacroGroups(
-            List<de.bsommerfeld.wsbg.terminal.briefing.TradingViewCalendarClient.TvEvent> actuals) {
+            List<de.bsommerfeld.wsbg.terminal.web.impl.sources.briefing.TradingViewCalendarClient.TvEvent> actuals) {
         MacroClassifier classifier = macroClassifier;
         if (classifier == null) return;
         List<String> unknown = new ArrayList<>();
@@ -684,7 +684,7 @@ public class MarketMemoryService {
 
     /** One sweep over settled, still-unmeasured events. */
     void enrichEvents() {
-        YahooFinanceClient yahoo = yahooClient;
+        YahooMarketClient yahoo = yahooClient;
         if (yahoo == null) return;
         try {
             LocalDate today = LocalDate.now(ZoneOffset.UTC);

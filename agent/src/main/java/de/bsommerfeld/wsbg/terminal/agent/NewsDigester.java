@@ -2,8 +2,8 @@ package de.bsommerfeld.wsbg.terminal.agent;
 
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.core.util.BackgroundThreads;
-import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
-import de.bsommerfeld.wsbg.terminal.source.net.WebFetcher;
+import de.bsommerfeld.wsbg.terminal.web.article.Article;
+import de.bsommerfeld.wsbg.terminal.web.fetch.WebFetcher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -18,7 +18,7 @@ import java.util.concurrent.Executors;
  * {@link ArticleReader}) and distills it into a few key-fact sentences with one
  * dedicated gemma4 call, so the compose model receives substance instead of a bare
  * title — without carrying the article's length (or its HTML leftovers) into the
- * compose prompt. Source-neutral: keyed by {@link RawNewsItem#link()}, so every
+ * compose prompt. Source-neutral: keyed by {@link Article#link()}, so every
  * {@code NewsSource} (Yahoo, wallstreet-online, future legs) rides the same lane.
  *
  * <p>Follows the proven vision pattern exactly: a per-URL session cache (failures
@@ -116,9 +116,9 @@ final class NewsDigester {
      * Fire-and-forget: the compose brief reads cache-only ({@link #ifCached}), so a
      * cold article simply isn't reflected this compose and enriches the next one.
      */
-    void prefetch(Collection<RawNewsItem> items) {
+    void prefetch(Collection<Article> items) {
         if (items == null || items.isEmpty() || articleReader == null || !readArticles()) return;
-        for (RawNewsItem n : items) {
+        for (Article n : items) {
             if (n == null || n.link() == null || n.link().isBlank()) continue;
             String link = n.link().trim();
             if (byLink.containsKey(link)) continue;

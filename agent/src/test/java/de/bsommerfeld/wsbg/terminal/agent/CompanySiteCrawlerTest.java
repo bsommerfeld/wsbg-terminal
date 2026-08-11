@@ -1,8 +1,9 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
-import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
-import de.bsommerfeld.wsbg.terminal.source.net.WebFetcher;
-import de.bsommerfeld.wsbg.terminal.source.net.WebResponse;
+import de.bsommerfeld.wsbg.terminal.web.article.Article;
+import de.bsommerfeld.wsbg.terminal.web.fetch.FetchUtil;
+import de.bsommerfeld.wsbg.terminal.web.fetch.WebFetcher;
+import de.bsommerfeld.wsbg.terminal.web.fetch.WebResponse;
 import org.junit.jupiter.api.Test;
 
 import java.net.URI;
@@ -38,17 +39,30 @@ class CompanySiteCrawlerTest {
         }
 
         @Override
-        public String name() {
-            return "fake-site";
-        }
-
-        @Override
-        public WebResponse fetch(String url, Map<String, String> headers, Duration timeout) {
+        public WebResponse fetch(String url, Map<String, String> headers, Duration timeout,
+                FetchUtil... modes) {
             fetched.add(url);
             String body = pages.get(url);
             return body == null
-                    ? new WebResponse(404, "", Map.of())
-                    : new WebResponse(200, body, Map.of());
+                    ? WebResponse.text(404, "", Map.of())
+                    : WebResponse.text(200, body, Map.of());
+        }
+
+        @Override
+        public WebResponse fetchBinary(String url, Map<String, String> headers, Duration timeout,
+                FetchUtil... modes) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public WebResponse post(String url, Map<String, String> headers, String body,
+                String contentType, Duration timeout, FetchUtil... modes) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public boolean hostCoolingDown(String url) {
+            return false;
         }
     }
 
@@ -105,7 +119,7 @@ class CompanySiteCrawlerTest {
         CompanySiteCrawler.Crawl crawl = crawler(site).crawl(HOME);
         CompanyPressScout scout = new CompanyPressScout(crawler(site));
 
-        List<RawNewsItem> press = scout.pressItems(crawl, 6);
+        List<Article> press = scout.pressItems(crawl, 6);
         assertEquals(2, press.size(), String.valueOf(press));
         assertTrue(press.get(0).title().startsWith("Example AG ordnet"), press.get(0).title());
         assertEquals("www.example-ag.de (IR/Presse)", press.get(0).publisher());
@@ -139,7 +153,7 @@ class CompanySiteCrawlerTest {
         CompanySiteCrawler.Crawl crawl = crawler(site).crawl(HOME);
         assertEquals(2, crawl.feedItems().size(), String.valueOf(crawl.feedItems()));
 
-        List<RawNewsItem> press = new CompanyPressScout(crawler(site)).pressItems(crawl, 6);
+        List<Article> press = new CompanyPressScout(crawler(site)).pressItems(crawl, 6);
         assertEquals("Example AG übernimmt Mitbewerber", press.get(0).title(),
                 "feed items lead - they are finished headlines");
         assertEquals("https://www.example-ag.de/presse/2026/prognose", press.get(1).link());
@@ -214,7 +228,7 @@ class CompanySiteCrawlerTest {
         assertTrue(site.fetched.contains("https://www.example-ag.de/presse"),
                 "the short label link is navigation - that is what the frontier is for");
 
-        List<RawNewsItem> press = new CompanyPressScout(crawler(site)).pressItems(crawl, 6);
+        List<Article> press = new CompanyPressScout(crawler(site)).pressItems(crawl, 6);
         assertEquals(1, press.size(), String.valueOf(press));
         assertTrue(press.get(0).title().startsWith("Example AG ordnet"), press.get(0).title());
     }

@@ -5,6 +5,8 @@ import de.bsommerfeld.wsbg.terminal.core.domain.RedditComment;
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
+import de.bsommerfeld.wsbg.terminal.reddit.net.RedditFetch;
+import de.bsommerfeld.wsbg.terminal.web.fetch.WebResponse;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -12,7 +14,10 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -36,10 +41,39 @@ class RssRedditScraperIT {
 
     private static final String SUB = "wallstreetbetsGER";
 
+    /**
+     * Live direct-HTTP delegate — the IT stands in for the bootstrap, which
+     * hands the anonymous delegate in over the house WebFetcher.
+     */
+    private static final RedditFetch DIRECT_FETCH = new RedditFetch() {
+        private final HttpClient client = HttpClient.newHttpClient();
+
+        @Override
+        public String name() {
+            return "direct";
+        }
+
+        @Override
+        public WebResponse fetch(String url, Map<String, String> headers, Duration timeout)
+                throws Exception {
+            HttpRequest.Builder builder = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .timeout(timeout)
+                    .GET();
+            headers.forEach(builder::header);
+            HttpResponse<String> resp = client.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+            Map<String, String> outHeaders = new HashMap<>();
+            resp.headers().map().forEach((k, v) -> {
+                if (v != null && !v.isEmpty()) outHeaders.put(k, v.get(0));
+            });
+            return WebResponse.text(resp.statusCode(), resp.body(), outHeaders);
+        }
+    };
+
     @Test
     void fetchThreadContext_parsesLivePostAndComments() throws Exception {
         RssRedditScraper scraper = new RssRedditScraper(
-                new RedditRepository(), new GlobalConfig(), new ApplicationEventBus());
+                new RedditRepository(), new GlobalConfig(), new ApplicationEventBus(), DIRECT_FETCH);
 
         String permalink = firstPermalink();
         assertNotNull(permalink, "could not extract a live permalink from " + SUB + "/new.rss");
@@ -63,7 +97,8 @@ class RssRedditScraperIT {
     @Test
     void scanSubreddit_populatesRepository() {
         RedditRepository repo = new RedditRepository();
-        RssRedditScraper scraper = new RssRedditScraper(repo, new GlobalConfig(), new ApplicationEventBus());
+        RssRedditScraper scraper = new RssRedditScraper(repo, new GlobalConfig(),
+                new ApplicationEventBus(), DIRECT_FETCH);
 
         scraper.scanSubreddit(SUB);
 

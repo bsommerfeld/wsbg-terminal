@@ -18,181 +18,27 @@
         </dependency>
         <dependency>
             <groupId>de.bsommerfeld</groupId>
+            <artifactId>database</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
             <artifactId>instrument-corpus</artifactId>
         </dependency>
+        <!-- The whole outside world rides the two web modules: web-api carries
+             the contracts (Article, WebFetcher, facts, gateway), web-impl the
+             sources and the machinery. The forty per-source dependencies of
+             the old world are gone. -->
         <dependency>
             <groupId>de.bsommerfeld</groupId>
-            <artifactId>source-api</artifactId>
+            <artifactId>web-api</artifactId>
         </dependency>
         <dependency>
             <groupId>de.bsommerfeld</groupId>
-            <artifactId>aggregator</artifactId>
+            <artifactId>web-impl</artifactId>
         </dependency>
         <dependency>
             <groupId>de.bsommerfeld</groupId>
             <artifactId>signals</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>de.bsommerfeld</groupId>
-            <artifactId>yahoo-finance</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>de.bsommerfeld</groupId>
-            <artifactId>fear-greed</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>de.bsommerfeld</groupId>
-            <artifactId>briefing</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>de.bsommerfeld</groupId>
-            <artifactId>websearch</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>de.bsommerfeld</groupId>
-            <artifactId>edgar</artifactId>
-        </dependency>
-        <!-- German data leg, TEST-ONLY. Kept on the classpath although the
-             agent module currently names none of its types; production wiring
-             stays in the terminal module (AgentPipelineModule). -->
-        <dependency>
-            <groupId>de.bsommerfeld</groupId>
-            <artifactId>consorsbank</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <!-- COMPILE scope: onvista's own fundamentals types (ownership,
-             benchmark fit, consensus drift) stay available to the agent module;
-             the profile leg itself arrives through the bound
-             InstrumentFactsSource. No consumer in this module right now. -->
-        <dependency>
-            <groupId>de.bsommerfeld</groupId>
-            <artifactId>onvista</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>de.bsommerfeld</groupId>
-            <artifactId>tradingview</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>de.bsommerfeld</groupId>
-            <artifactId>stocknear</artifactId>
-        </dependency>
-        <!-- The 2026-08-02 source wave's MARKET/FACT clients (no NewsSource, so
-             they never reach a consumer through the aggregator): CNBC quotes +
-             earnings surprise history, boerse.de directors' dealings / analyst
-             archive / 8 fiscal years, Handelsblatt ISIN master data,
-             Boersenmedien instrument resolver, Traders Union movers. Compile
-             scope on purpose - kept wired, no consumer in this module today. -->
-        <dependency>
-            <groupId>de.bsommerfeld</groupId>
-            <artifactId>cnbc</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>de.bsommerfeld</groupId>
-            <artifactId>boerse-de</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>de.bsommerfeld</groupId>
-            <artifactId>handelsblatt</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>de.bsommerfeld</groupId>
-            <artifactId>nyse</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>de.bsommerfeld</groupId>
-            <artifactId>finra</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>de.bsommerfeld</groupId>
-            <artifactId>boerse-frankfurt</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>de.bsommerfeld</groupId>
-            <artifactId>six</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>de.bsommerfeld</groupId>
-            <artifactId>tmx</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>de.bsommerfeld</groupId>
-            <artifactId>asx</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>de.bsommerfeld</groupId>
-            <artifactId>minkabu</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>de.bsommerfeld</groupId>
-            <artifactId>euronext</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>de.bsommerfeld</groupId>
-            <artifactId>hkex</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>de.bsommerfeld</groupId>
-            <artifactId>nordic</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>de.bsommerfeld</groupId>
-            <artifactId>wienerboerse</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>de.bsommerfeld</groupId>
-            <artifactId>boersenmedien</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>de.bsommerfeld</groupId>
-            <artifactId>tradersunion</artifactId>
-        </dependency>
-        <!-- 2026-08-03: the macro wire. Kept wired, no consumer in this
-             module today. -->
-        <dependency>
-            <groupId>de.bsommerfeld</groupId>
-            <artifactId>financial-juice</artifactId>
-        </dependency>
-        <!-- 2026-08-03: the regime gauges (EUR/USD and the dollar index; Fear
-             & Greed already rides the fear-greed dep). Kept wired, no consumer
-             in this module today. -->
-        <dependency>
-            <groupId>de.bsommerfeld</groupId>
-            <artifactId>currency</artifactId>
-        </dependency>
-        <!-- 2026-08-03: the quote page's own profile figures, a second
-             independent gap filler beside the CNBC quote. -->
-        <dependency>
-            <groupId>de.bsommerfeld</groupId>
-            <artifactId>fool</artifactId>
-        </dependency>
-        <!-- 2026-08-03: finanzen.net's own market types (the year-long
-             consensus trend, the peer target table, the estimate history with
-             its surprises, the venue board). Kept wired, no consumer in this
-             module today. -->
-        <dependency>
-            <groupId>de.bsommerfeld</groupId>
-            <artifactId>finanzen-net</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>de.bsommerfeld</groupId>
-            <artifactId>tradegate</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>de.bsommerfeld</groupId>
-            <artifactId>bundesanzeiger</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>de.bsommerfeld</groupId>
-            <artifactId>bafin</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <!-- Productive since the gap-research salvo (DdRecherche) fires
-             query-addressed Google News searches from the deep dive. -->
-        <dependency>
-            <groupId>de.bsommerfeld</groupId>
-            <artifactId>google-news</artifactId>
         </dependency>
         <dependency>
             <groupId>dev.langchain4j</groupId>

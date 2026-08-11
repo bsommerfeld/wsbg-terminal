@@ -2,8 +2,9 @@ package de.bsommerfeld.wsbg.terminal.instruments;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import de.bsommerfeld.wsbg.terminal.source.net.WebFetcher;
-import de.bsommerfeld.wsbg.terminal.source.net.WebResponse;
+import de.bsommerfeld.wsbg.terminal.web.fetch.FetchUtil;
+import de.bsommerfeld.wsbg.terminal.web.fetch.WebFetcher;
+import de.bsommerfeld.wsbg.terminal.web.fetch.WebResponse;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -23,6 +24,10 @@ public final class SecTickerSource implements CorpusSource {
     private static final String USER_AGENT = "wsbg-terminal instrument-corpus (contact: b.sommerfeld2003@gmail.com)";
     private static final ObjectMapper JSON = new ObjectMapper();
 
+    // Bulk file download from a wall-less official host — DIRECT-only stays
+    // deliberate, no browser needed.
+    private static final FetchUtil[] MODES = {FetchUtil.DIRECT};
+
     private final WebFetcher fetcher;
 
     public SecTickerSource(WebFetcher fetcher) {
@@ -37,7 +42,7 @@ public final class SecTickerSource implements CorpusSource {
     @Override
     public List<InstrumentEntry> fetch() throws Exception {
         WebResponse resp = fetcher.fetch(URL, Map.of(
-                "User-Agent", USER_AGENT, "Accept", "application/json"), Duration.ofSeconds(30));
+                "User-Agent", USER_AGENT, "Accept", "application/json"), Duration.ofSeconds(30), MODES);
         if (resp.status() != 200) {
             throw new IllegalStateException("SEC company_tickers returned HTTP " + resp.status());
         }

@@ -1,23 +1,32 @@
 package de.bsommerfeld.wsbg.terminal.ui.config;
 
 import com.google.inject.AbstractModule;
+import com.google.inject.Provides;
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.agent.AgentCoordinator;
 import de.bsommerfeld.wsbg.terminal.agent.EditorialPipeline;
-import de.bsommerfeld.wsbg.terminal.instruments.AliasStore;
 import de.bsommerfeld.wsbg.terminal.agent.PassiveMonitorService;
-import de.bsommerfeld.wsbg.terminal.core.price.InstrumentLookup;
-import de.bsommerfeld.wsbg.terminal.core.price.InstrumentFactsSource;
-import de.bsommerfeld.wsbg.terminal.core.price.PriceSource;
-import de.bsommerfeld.wsbg.terminal.core.price.VenueStatsSource;
-import de.bsommerfeld.wsbg.terminal.langschwarz.LangSchwarzClient;
-import de.bsommerfeld.wsbg.terminal.onvista.OnvistaClient;
+import de.bsommerfeld.wsbg.terminal.instruments.AliasStore;
+import de.bsommerfeld.wsbg.terminal.price.CorpusInstrumentRegister;
 import de.bsommerfeld.wsbg.terminal.price.FallbackPriceSource;
-import de.bsommerfeld.wsbg.terminal.tradegate.TradegateQuoteClient;
 import de.bsommerfeld.wsbg.terminal.ui.TimeTracker;
+import de.bsommerfeld.wsbg.terminal.web.facts.InstrumentLookup;
+import de.bsommerfeld.wsbg.terminal.web.facts.PriceSource;
+import de.bsommerfeld.wsbg.terminal.web.impl.gateway.FactsSources;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.bafin.BafinInsiderDealingsSource;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.boersefrankfurt.BoerseFrankfurtOrderBookSource;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.bundesanzeiger.BundesanzeigerShortInterestSource;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.consorsbank.ConsorsbankSource;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.insidermonkey.InsiderMonkeySource;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.langschwarz.LangSchwarzSource;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.marketbeat.MarketBeatSource;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.nasdaq.NasdaqCompanySource;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.onvista.OnvistaFactsSource;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.tradegate.TradegateQuoteSource;
+import de.bsommerfeld.wsbg.terminal.web.instrument.InstrumentRegister;
 
 /**
- * The editorial pipeline quartet + the live price chain.
+ * The editorial pipeline quartet + the facts world.
  *
  * <p><b>The eager-singleton ORDER here is load-bearing</b> and must stay in this
  * sequence (see CLAUDE.md): {@link EditorialPipeline} (its prep/compose/merge pools
@@ -26,6 +35,10 @@ import de.bsommerfeld.wsbg.terminal.ui.TimeTracker;
  * {@link PassiveMonitorService} (starts the polling loop) → {@link TimeTracker}
  * (start/interval/stop checkpointing at boot). This whole quartet is kept in ONE
  * module so Guice instantiates them in this exact order; do not scatter it.
+ *
+ * <p>The facts sources of the old per-interface bindings are bundled into the
+ * {@link FactsSources} roster: the gateway's third pipeline grazes them all in
+ * parallel per inquiry, so "wired but no consumer" is finally over.
  */
 final class AgentPipelineModule extends AbstractModule {
 
@@ -46,84 +59,40 @@ final class AgentPipelineModule extends AbstractModule {
         // checkpointing at boot; DonationStatsPublisher reads it for the
         // footer banner's reciprocity copy.
         bind(TimeTracker.class).asEagerSingleton();
+
         // The live price chain (EUR-first: L&S, then US fallback Yahoo).
-        // Optionally injected into TickerResolver; Yahoo stays the search + news source.
+        // Optionally injected into TickerResolver; Yahoo stays a search + news source.
         bind(PriceSource.class).to(FallbackPriceSource.class).in(Singleton.class);
 
         // The identity desk's venue candidate search: L&S typed search results
-        // (STK/ETF/CUR/RES) feed the gemma4 identity judgment. Optionally injected
-        // into EditorialAgent, which also arms the persistent verdict ledger.
-        bind(InstrumentLookup.class).to(LangSchwarzClient.class).in(Singleton.class);
+        // (STK/ETF/CUR/RES) feed the gemma4 identity judgment.
+        bind(InstrumentLookup.class).to(LangSchwarzSource.class).in(Singleton.class);
 
-        // Venue depth stats (bid/ask with sizes, day volume, executions) by ISIN —
-        // Tradegate, the one German venue publishing these keylessly. L&S stays
-        // the price/spark source (its chart endpoint carries no volume, probed
-        // 2026-07-10). The source stays wired; it currently has no consumer.
-        bind(VenueStatsSource.class).to(TradegateQuoteClient.class).in(Singleton.class);
+        // The gateway's register door: whatever a caller typed resolves against
+        // the local corpus into every key it can vouch for.
+        bind(InstrumentRegister.class).to(CorpusInstrumentRegister.class).in(Singleton.class);
+    }
 
-        // Company profile facts (sector, market cap, P/E, workforce, 30d average
-        // volume) by ISIN — onvista's keyless stocks snapshot. The source stays
-        // wired; it currently has no consumer.
-        bind(InstrumentFactsSource.class).to(OnvistaClient.class).in(Singleton.class);
-
-        // Analyst opinions (five-tier rating distribution + 3-month trend,
-        // consensus EUR price target, upcoming earnings/dividend dates) by ISIN —
-        // Consorsbank's keyless financial-info API. The source stays wired; it
-        // currently has no consumer.
-        bind(de.bsommerfeld.wsbg.terminal.core.price.AnalystViewSource.class)
-                .to(de.bsommerfeld.wsbg.terminal.consorsbank.ConsorsbankClient.class)
-                .in(Singleton.class);
-
-        // The deep company record (official website + portrait, key figures with
-        // estimates to 2029, balance sheets, boards, TradingCentral chart read,
-        // peers, volatility, index membership) — the SAME Consorsbank client,
-        // one heavyweight on-demand call. The source stays wired; it currently
-        // has no consumer.
-        bind(de.bsommerfeld.wsbg.terminal.core.price.CompanyDeepDiveSource.class)
-                .to(de.bsommerfeld.wsbg.terminal.consorsbank.ConsorsbankClient.class)
-                .in(Singleton.class);
-
-        // Disclosed short positions ≥0.5% with the HOLDER'S NAME — the German
-        // Leerverkaufsregister (Bundesanzeiger CSV, 2-request cookie flow). The
-        // source stays wired; it currently has no consumer.
-        bind(de.bsommerfeld.wsbg.terminal.core.price.ShortInterestSource.class)
-                .to(de.bsommerfeld.wsbg.terminal.bundesanzeiger.ShortInterestClient.class)
-                .in(Singleton.class);
-
-        // Directors' Dealings (§19 MAR): manager buys/sells with price and
-        // aggregated EUR volume — BaFin's keyless database export. The source
-        // stays wired; it currently has no consumer.
-        bind(de.bsommerfeld.wsbg.terminal.core.price.InsiderDealingsSource.class)
-                .to(de.bsommerfeld.wsbg.terminal.bafin.InsiderDealingsClient.class)
-                .in(Singleton.class);
-
-        // The US listing view by bare ticker (FINRA short interest, Form-4
-        // insider trades, 13F ownership, analyst consensus, earnings surprises)
-        // — api.nasdaq.com, the American counterpart to the German-register
-        // legs above.
-        bind(de.bsommerfeld.wsbg.terminal.core.price.UsListingStatsSource.class)
-                .to(de.bsommerfeld.wsbg.terminal.nasdaq.NasdaqCompanyClient.class)
-                .in(Singleton.class);
-
-        // The hedge-fund positioning curve by bare US ticker (Insider Monkey's
-        // quarterly 13F fund count, CIK-addressed via SEC's ticker map). The
-        // source stays wired; it currently has no consumer.
-        bind(de.bsommerfeld.wsbg.terminal.core.price.HedgeFundPopularitySource.class)
-                .to(de.bsommerfeld.wsbg.terminal.insidermonkey.InsiderMonkeyClient.class)
-                .in(Singleton.class);
-
-        // The dated analyst-ACTION history + US short stats incl. percent of
-        // float (MarketBeat; exchange-guess addressing with 301 self-healing).
-        bind(de.bsommerfeld.wsbg.terminal.core.price.AnalystActionsSource.class)
-                .to(de.bsommerfeld.wsbg.terminal.marketbeat.MarketBeatClient.class)
-                .in(Singleton.class);
-
-        // The multi-level order book by ISIN (Börse Frankfurt floor book, 10
-        // levels with order counts + units per level, SSE first-frame read —
-        // trading hours only). The source stays wired; it currently has no
-        // consumer.
-        bind(de.bsommerfeld.wsbg.terminal.core.price.OrderBookSource.class)
-                .to(de.bsommerfeld.wsbg.terminal.boersefrankfurt.OrderBookClient.class)
-                .in(Singleton.class);
+    /**
+     * The facts roster — which concrete source answers each block of the
+     * gateway's facts graze. One place instead of ten bindings; a slot this
+     * environment cannot serve stays null and shows as SKIPPED in the
+     * inquiry's outcomes.
+     */
+    @Provides
+    @Singleton
+    FactsSources provideFactsSources(
+            FallbackPriceSource price,
+            TradegateQuoteSource venueStats,
+            BoerseFrankfurtOrderBookSource orderBook,
+            OnvistaFactsSource profile,
+            ConsorsbankSource analystView,
+            MarketBeatSource analystActions,
+            BundesanzeigerShortInterestSource shortInterest,
+            BafinInsiderDealingsSource insiderDealings,
+            InsiderMonkeySource hedgeFunds,
+            NasdaqCompanySource usListing) {
+        return new FactsSources(price, venueStats, orderBook, profile, analystView,
+                analystActions, shortInterest, insiderDealings, hedgeFunds, usListing);
     }
 }

@@ -2,10 +2,10 @@ package de.bsommerfeld.wsbg.terminal.ui.bridge;
 
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
-import de.bsommerfeld.wsbg.terminal.feargreed.CryptoFearGreedIndex;
-import de.bsommerfeld.wsbg.terminal.feargreed.CryptoFearGreedMonitorService;
-import de.bsommerfeld.wsbg.terminal.feargreed.FearGreedIndex;
-import de.bsommerfeld.wsbg.terminal.feargreed.FearGreedMonitorService;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.feargreed.CryptoFearGreedIndex;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.feargreed.CryptoFearGreedMonitorService;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.feargreed.FearGreedIndex;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.feargreed.FearGreedMonitorService;
 import de.bsommerfeld.wsbg.terminal.ui.web.PushHub;
 
 import java.util.LinkedHashMap;

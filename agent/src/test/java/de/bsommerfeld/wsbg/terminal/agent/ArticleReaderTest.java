@@ -81,17 +81,33 @@ class ArticleReaderTest {
                 + para("Sie können Ihre Auswahl unter Einstellungen verwalten jederzeit gerne widerrufen")
                 + "</form></body></html>";
         ArticleReader reader = new ArticleReader(
-                new de.bsommerfeld.wsbg.terminal.source.net.WebFetcher() {
+                new de.bsommerfeld.wsbg.terminal.web.fetch.WebFetcher() {
                     @Override
-                    public String name() {
-                        return "test";
+                    public de.bsommerfeld.wsbg.terminal.web.fetch.WebResponse fetch(
+                            String url, java.util.Map<String, String> headers, java.time.Duration timeout,
+                            de.bsommerfeld.wsbg.terminal.web.fetch.FetchUtil... modes) {
+                        return de.bsommerfeld.wsbg.terminal.web.fetch.WebResponse.text(
+                                200, shell, java.util.Map.of());
                     }
 
                     @Override
-                    public de.bsommerfeld.wsbg.terminal.source.net.WebResponse fetch(
-                            String url, java.util.Map<String, String> headers, java.time.Duration timeout) {
-                        return new de.bsommerfeld.wsbg.terminal.source.net.WebResponse(
-                                200, shell, java.util.Map.of());
+                    public de.bsommerfeld.wsbg.terminal.web.fetch.WebResponse fetchBinary(
+                            String url, java.util.Map<String, String> headers, java.time.Duration timeout,
+                            de.bsommerfeld.wsbg.terminal.web.fetch.FetchUtil... modes) {
+                        throw new UnsupportedOperationException();
+                    }
+
+                    @Override
+                    public de.bsommerfeld.wsbg.terminal.web.fetch.WebResponse post(
+                            String url, java.util.Map<String, String> headers, String body,
+                            String contentType, java.time.Duration timeout,
+                            de.bsommerfeld.wsbg.terminal.web.fetch.FetchUtil... modes) {
+                        throw new UnsupportedOperationException();
+                    }
+
+                    @Override
+                    public boolean hostCoolingDown(String url) {
+                        return false;
                     }
                 }, "test-ua");
 

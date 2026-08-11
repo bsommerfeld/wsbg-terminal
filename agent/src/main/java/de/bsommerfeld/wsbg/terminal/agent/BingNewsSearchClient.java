@@ -1,8 +1,8 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
-import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
-import de.bsommerfeld.wsbg.terminal.source.net.WebFetcher;
-import de.bsommerfeld.wsbg.terminal.source.net.WebResponse;
+import de.bsommerfeld.wsbg.terminal.web.article.Article;
+import de.bsommerfeld.wsbg.terminal.web.fetch.WebFetcher;
+import de.bsommerfeld.wsbg.terminal.web.fetch.WebResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -45,7 +45,7 @@ final class BingNewsSearchClient {
     }
 
     /** One query against the news RSS; anything unanswered stays empty. */
-    List<RawNewsItem> search(String query, int limit) {
+    List<Article> search(String query, int limit) {
         try {
             WebResponse resp = fetcher.fetch(
                     "https://www.bing.com/news/search?format=rss&q="
@@ -70,8 +70,8 @@ final class BingNewsSearchClient {
     private static final Pattern RSS_DATE = Pattern.compile("<pubDate>(.*?)</pubDate>",
             Pattern.DOTALL);
 
-    static List<RawNewsItem> parseRss(String xml, int limit) {
-        List<RawNewsItem> out = new ArrayList<>();
+    static List<Article> parseRss(String xml, int limit) {
+        List<Article> out = new ArrayList<>();
         if (xml == null || xml.isBlank()) return out;
         Matcher item = RSS_ITEM.matcher(xml);
         while (item.find() && out.size() < limit) {
@@ -91,7 +91,7 @@ final class BingNewsSearchClient {
                 } catch (Exception ignored) {
                 }
             }
-            out.add(new RawNewsItem(link, titel, "", link, wann, List.of()));
+            out.add(new Article(link, titel, "", link, wann, List.of()));
         }
         return out;
     }

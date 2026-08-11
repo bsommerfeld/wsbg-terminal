@@ -1,6 +1,6 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
-import de.bsommerfeld.wsbg.terminal.yahoofinance.Bar;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.yahoofinance.Bar;
 
 import java.time.LocalDate;
 import java.util.List;

@@ -7,6 +7,12 @@ import de.bsommerfeld.wsbg.terminal.db.AgentRepository;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
 import de.bsommerfeld.wsbg.terminal.db.RedditSnapshotStore;
 import de.bsommerfeld.wsbg.terminal.reddit.RssRedditScraper;
+import de.bsommerfeld.wsbg.terminal.reddit.net.RedditFetch;
+import de.bsommerfeld.wsbg.terminal.web.fetch.FetchUtil;
+import de.bsommerfeld.wsbg.terminal.web.fetch.WebFetcher;
+import de.bsommerfeld.wsbg.terminal.web.fetch.WebResponse;
+import de.bsommerfeld.wsbg.terminal.web.impl.net.DirectTransport;
+import de.bsommerfeld.wsbg.terminal.web.impl.net.HouseFetcher;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
@@ -40,7 +46,20 @@ class ColdStartTimingIT {
             AgentRepository agentRepo = new AgentRepository();
             AgentBrain brain = new AgentBrain(config, bus, new OllamaServerManager(), new LlmGate());
             ClusterRegistry registry = new ClusterRegistry();
-            RssRedditScraper rss = new RssRedditScraper(redditRepo, config, bus);
+            WebFetcher house = new HouseFetcher(java.util.Set.of(new DirectTransport()));
+            RedditFetch direct = new RedditFetch() {
+                @Override
+                public String name() {
+                    return "house[direct]";
+                }
+
+                @Override
+                public WebResponse fetch(String url, java.util.Map<String, String> headers,
+                        java.time.Duration timeout) throws Exception {
+                    return house.fetch(url, headers, timeout, FetchUtil.DIRECT);
+                }
+            };
+            RssRedditScraper rss = new RssRedditScraper(redditRepo, config, bus, direct);
 
             ClusterEngine clusterEngine = new ClusterEngine(registry);
 

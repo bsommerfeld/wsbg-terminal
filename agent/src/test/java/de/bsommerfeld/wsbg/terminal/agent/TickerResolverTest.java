@@ -1,6 +1,6 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
-import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooQuote;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.yahoofinance.YahooQuote;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;

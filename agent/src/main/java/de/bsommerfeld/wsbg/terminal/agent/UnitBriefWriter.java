@@ -1,7 +1,7 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
 import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
-import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
+import de.bsommerfeld.wsbg.terminal.web.article.Article;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -111,9 +111,9 @@ final class UnitBriefWriter {
         // uuids of the old sourceNewsIds field were uncitable for a 4B).
         // Old items are kept (no fresh news is also a situation worth reporting
         // from) but tagged STALE so they're never sold as a fresh catalyst.
-        List<RawNewsItem> freshNews = NewsProvenance.briefNews(unit, newsCoverageEnabled);
-        List<RawNewsItem> toldNews = new ArrayList<>();
-        for (RawNewsItem n : unit.news()) {
+        List<Article> freshNews = NewsProvenance.briefNews(unit, newsCoverageEnabled);
+        List<Article> toldNews = new ArrayList<>();
+        for (Article n : unit.news()) {
             if (!freshNews.contains(n)) toldNews.add(n);
         }
         if (!freshNews.isEmpty() || !toldNews.isEmpty()) {
@@ -121,11 +121,11 @@ final class UnitBriefWriter {
             // Already-woven items stay VISIBLE — a known fact remains the anchor the
             // room's next development hangs on — but compact (title only) and tagged,
             // so it frames the next line without being re-sold as fresh news.
-            for (RawNewsItem n : toldNews) {
+            for (Article n : toldNews) {
                 sb.append("  - ").append(lbl.newsToldTag()).append(' ').append(n.title()).append('\n');
             }
             int newsOrdinal = 0;
-            for (RawNewsItem n : freshNews) {
+            for (Article n : freshNews) {
                 sb.append("  - [N").append(++newsOrdinal).append("] ");
                 if (n.publishedAt() != null) {
                     sb.append(lbl.ago(age(n.publishedAt(), now))).append(' ');

@@ -1,7 +1,7 @@
 package de.bsommerfeld.wsbg.terminal.price;
 
 import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
-import de.bsommerfeld.wsbg.terminal.currency.EurUsdMonitorService;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.currency.EurUsdMonitorService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

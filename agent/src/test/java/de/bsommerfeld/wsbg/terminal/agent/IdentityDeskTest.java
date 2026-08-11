@@ -1,7 +1,7 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
-import de.bsommerfeld.wsbg.terminal.core.price.InstrumentCandidate;
-import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooQuote;
+import de.bsommerfeld.wsbg.terminal.web.facts.InstrumentCandidate;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.yahoofinance.YahooQuote;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -195,7 +195,7 @@ class IdentityDeskTest {
     /** A lookup whose venue prices are fixed — the price-veto seam. */
     private IdentityDesk deskWithPrices(List<InstrumentCandidate> venue, double venuePrice) {
         IdentityDesk d = new IdentityDesk(judge, () -> true);
-        d.installLookup(new de.bsommerfeld.wsbg.terminal.core.price.InstrumentLookup() {
+        d.installLookup(new de.bsommerfeld.wsbg.terminal.web.facts.InstrumentLookup() {
             @Override
             public List<InstrumentCandidate> search(String query) {
                 return venue;

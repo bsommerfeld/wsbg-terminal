@@ -1,6 +1,6 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
-import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
+import de.bsommerfeld.wsbg.terminal.web.article.Article;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -41,7 +41,7 @@ class BingNewsSearchClientTest {
                 </item>
                 </channel></rss>
                 """.formatted(APICLICK.replace("&", "&amp;"));
-        List<RawNewsItem> items = BingNewsSearchClient.parseRss(rss, 5);
+        List<Article> items = BingNewsSearchClient.parseRss(rss, 5);
         assertEquals(1, items.size());
         assertEquals("https://www.swr.de/swraktuell/baden-wuerttemberg/"
                 + "sap-legt-halbjahreszahlen-2026-vor-100.html", items.get(0).link());

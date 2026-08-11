@@ -1,7 +1,7 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
 import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
-import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
+import de.bsommerfeld.wsbg.terminal.web.article.Article;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -137,9 +137,9 @@ class EditorialAgentTest {
         SubjectUnit u = new SubjectUnit("NVDA", "NVIDIA");
         Instant now = Instant.now();
         u.updateResolved("NVIDIA", "NVDA", null, List.of(
-                new RawNewsItem("fresh", "Nvidia beats", "Reuters", "http://x/f",
+                new Article("fresh", "Nvidia beats", "Reuters", "http://x/f",
                         now.minus(2, ChronoUnit.HOURS), List.of()),
-                new RawNewsItem("old", "Nvidia capex worries", "WSJ", "http://x/o",
+                new Article("old", "Nvidia capex worries", "WSJ", "http://x/o",
                         now.minus(3, ChronoUnit.DAYS), List.of())));
         u.addEvidence(ev("t1_a", "NVDA yolo"));
 
@@ -261,7 +261,7 @@ class EditorialAgentTest {
 
     @org.junit.jupiter.api.Test
     void newsIsCoveredOnlyWhenTheLineActuallyWoveItIn() {
-        var n = new de.bsommerfeld.wsbg.terminal.source.RawNewsItem("u1",
+        var n = new de.bsommerfeld.wsbg.terminal.web.article.Article("u1",
                 "Meta Wolf AG: Wandlung zu CERAM TECH abgeschlossen",
                 "wso", "https://x", null, java.util.List.of());
         org.junit.jupiter.api.Assertions.assertTrue(NewsProvenance.headlineReflectsNews(

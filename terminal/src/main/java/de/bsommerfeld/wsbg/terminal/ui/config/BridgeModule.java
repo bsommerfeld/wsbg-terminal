@@ -39,5 +39,10 @@ final class BridgeModule extends AbstractModule {
         // "Was hat sich geändert" overlay: pushes the GitHub release notes
         // once after a fresh update (installed version ≠ last seen).
         bind(ChangelogBridge.class).asEagerSingleton();
+        // The web world stays UNARMED on purpose (user decision 2026-08-12):
+        // the collector clock — and with it every world-signal collector —
+        // does NOT start at boot. Arming is one deliberate line:
+        //   bind(WebWorldStarter.class).asEagerSingleton();
+        // Everything else (gateway, basin, fetcher) is wired and passive.
     }
 }

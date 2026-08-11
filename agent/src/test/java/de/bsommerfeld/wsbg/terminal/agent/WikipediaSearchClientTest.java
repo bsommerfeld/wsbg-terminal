@@ -1,8 +1,9 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
-import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
-import de.bsommerfeld.wsbg.terminal.source.net.WebFetcher;
-import de.bsommerfeld.wsbg.terminal.source.net.WebResponse;
+import de.bsommerfeld.wsbg.terminal.web.article.Article;
+import de.bsommerfeld.wsbg.terminal.web.fetch.FetchUtil;
+import de.bsommerfeld.wsbg.terminal.web.fetch.WebFetcher;
+import de.bsommerfeld.wsbg.terminal.web.fetch.WebResponse;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
@@ -30,21 +31,34 @@ class WikipediaSearchClientTest {
         String gefragt;
 
         @Override
-        public String name() {
-            return "fake-wiki";
+        public WebResponse fetch(String url, Map<String, String> headers, Duration timeout,
+                FetchUtil... modes) {
+            gefragt = url;
+            return WebResponse.text(200, JSON, Map.of());
         }
 
         @Override
-        public WebResponse fetch(String url, Map<String, String> headers, Duration timeout) {
-            gefragt = url;
-            return new WebResponse(200, JSON, Map.of());
+        public WebResponse fetchBinary(String url, Map<String, String> headers, Duration timeout,
+                FetchUtil... modes) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public WebResponse post(String url, Map<String, String> headers, String body,
+                String contentType, Duration timeout, FetchUtil... modes) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public boolean hostCoolingDown(String url) {
+            return false;
         }
     }
 
     @Test
     void theSearchHandsOverPageLinksOfTheAskedLanguageEdition() {
         FakeWiki wiki = new FakeWiki();
-        List<RawNewsItem> items = new WikipediaSearchClient(wiki, true).search("SAP SE", 5);
+        List<Article> items = new WikipediaSearchClient(wiki, true).search("SAP SE", 5);
         assertEquals("https://de.wikipedia.org/w/rest.php/v1/search/page?limit=5&q=SAP+SE",
                 wiki.gefragt);
         assertEquals(2, items.size());
@@ -63,14 +77,26 @@ class WikipediaSearchClientTest {
 
         WebFetcher kaputt = new WebFetcher() {
             @Override
-            public String name() {
-                return "kaputt";
+            public WebResponse fetch(String url, Map<String, String> headers,
+                    Duration timeout, FetchUtil... modes) {
+                return WebResponse.text(503, "", Map.of());
             }
 
             @Override
-            public WebResponse fetch(String url, Map<String, String> headers,
-                    Duration timeout) {
-                return new WebResponse(503, "", Map.of());
+            public WebResponse fetchBinary(String url, Map<String, String> headers,
+                    Duration timeout, FetchUtil... modes) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public WebResponse post(String url, Map<String, String> headers, String body,
+                    String contentType, Duration timeout, FetchUtil... modes) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public boolean hostCoolingDown(String url) {
+                return false;
             }
         };
         assertTrue(new WikipediaSearchClient(kaputt, true).search("SAP", 5).isEmpty());

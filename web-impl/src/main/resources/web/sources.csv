@@ -1,0 +1,47 @@
+# The curated source list — one row, one feed source; a new source of a known
+# shape is a LINE here, not a class. Hard-validated at load: a malformed row
+# fails the boot, a silently dropped source does not exist for planning.
+#
+# name;publisher;lang;sphere;modes;min;max;social;accept;url[|url…]
+#   modes    transport order: DIRECT / BROWSER / DIRECT,BROWSER (order = fallback)
+#   min;max  collector interval bounds in minutes (floor 2)
+#   social   true = sentiment stream (boards/forums), false = press
+#   accept   Accept header; empty = feed default
+#
+bloomberg;Bloomberg;en;US;DIRECT,BROWSER;8;15;false;;https://feeds.bloomberg.com/markets/news.rss|https://feeds.bloomberg.com/economics/news.rss|https://feeds.bloomberg.com/technology/news.rss|https://feeds.bloomberg.com/politics/news.rss|https://feeds.bloomberg.com/wealth/news.rss
+# Benzinga newsdesk (fast US retail wire, movers + "Why Is It Moving?"; live-probed 2026-07-16,
+# plain client 200). Deliberately NOT the bare /feed (evergreen money-blog) and NOT
+# /topic/wiim/feed (valid but permanently empty). Cloudflare appends a script tail after </rss> -
+# the FeedParser truncates at the root close generically.
+benzinga;Benzinga;en;US;DIRECT,BROWSER;5;10;false;;https://www.benzinga.com/news/feed|https://www.benzinga.com/markets/feed|https://www.benzinga.com/topic/why-is-it-moving/feed
+# Ariva dpa-AFX-Analyser: sell-side ratings/price targets for DE/EU names, minutes-fresh
+# (live-probed 2026-07-16, plain client 200). Item links carry the covered ISIN in utm_content.
+ariva-analysten;dpa-AFX Analyser;de;DE;DIRECT,BROWSER;8;15;false;;https://www.ariva.de/news/analysen/rss
+# Ariva community forum (same forum backs the finanzen.net and onvista white-labels, verified
+# 2026-07-16). Only ~10 posts that turn over in minutes during trading hours - fast cadence.
+# Items tag <isin> elements; forum posts, not articles (user opinion = sentiment).
+ariva-forum;Ariva-Forum;de;DE;DIRECT,BROWSER;5;10;true;;https://www.ariva.de/forum/rss
+# PR Newswire UK all-releases wire: the issuer's OWN announcements, 24/7, keyless (live-probed
+# 2026-07-14). Soft-200 trap: unknown /rss/*.rss paths answer 200-shaped non-feeds - the
+# looksLikeFeed gate covers that.
+prnewswire-uk;PR Newswire UK;en;UK;DIRECT,BROWSER;5;10;false;;https://www.prnewswire.co.uk/rss/news-releases-list.rss
+# comdirect community (Khoros): Germany's largest broker forum. The RSS endpoints are the ONLY
+# way past the Cloudflare wall (pinned 2026-07-16) - every HTML page answers a CF challenge, the
+# /rss/board endpoints answer a bare client 200. Do not "improve" this onto the HTML pages.
+# 4 finance-relevant ACTIVE boards (Brokerboard is dead since 2021, deliberately excluded).
+# Unknown board.id answers a VALID empty "Ressource nicht gefunden" skeleton - parses to zero
+# items, harmless. Low-frequency forum behind a wall: slow cadence.
+comdirect-community;comdirect Community;de;DE;DIRECT,BROWSER;15;30;true;;https://community.comdirect.de/rss/board?board.id=WertpapiereAnlage|https://community.comdirect.de/rss/board?board.id=CFD-Board|https://community.comdirect.de/rss/board?board.id=KontoKarte|https://community.comdirect.de/rss/board?board.id=VorsorgeFinanzierung
+# CNBC section RSS (keyless, no wall, probed 2026-08-02): the 12 finance-relevant SECTION feeds
+# (US Top News, Business, Finance, Investing, Earnings, Economy, Technology, Energy, Europe,
+# Asia, Politics, International). Only subtype:section feeds carry items - the ~24 show
+# franchises answer empty/stale channels and stay out. The queryly search leg lives elsewhere.
+cnbc;CNBC;en;US;BROWSER,DIRECT;8;15;false;;https://www.cnbc.com/id/100003114/device/rss/rss.html|https://www.cnbc.com/id/10001147/device/rss/rss.html|https://www.cnbc.com/id/10000664/device/rss/rss.html|https://www.cnbc.com/id/15839069/device/rss/rss.html|https://www.cnbc.com/id/15839135/device/rss/rss.html|https://www.cnbc.com/id/20910258/device/rss/rss.html|https://www.cnbc.com/id/19854910/device/rss/rss.html|https://www.cnbc.com/id/19836768/device/rss/rss.html|https://www.cnbc.com/id/19794221/device/rss/rss.html|https://www.cnbc.com/id/19832390/device/rss/rss.html|https://www.cnbc.com/id/10000113/device/rss/rss.html|https://www.cnbc.com/id/100727362/device/rss/rss.html
+# The Motley Fool foolwatch firehose (the apikey is Fool's own public feed key, not a secret).
+# Only the RSS leg rides here; the sitemap/HTML legs live elsewhere.
+fool;The Motley Fool;en;US;BROWSER,DIRECT;8;15;false;;https://api.fool.com/feeds/foolwatch?apikey=foolwatch-feed&format=rss2
+# wallstreet-online board RSS: Germany's largest finance community, 4 broad high-churn equity
+# boards, slugs pinned verbatim from the live /rss index 2026-07-16 - NEVER guess a slug,
+# unknown slugs soft-200 into a default board's feed. Thread titles name the company; the
+# description is only "Autor: <name>", dates ride <dc:date> (ISO-8601, no <pubDate>).
+wso-boards;wallstreet-online Forum;de;DE;DIRECT,BROWSER;8;15;true;;https://www.wallstreet-online.de/rss/board-hot-stocks.xml|https://www.wallstreet-online.de/rss/board-deutsche-aktien-im-fokus.xml|https://www.wallstreet-online.de/rss/board-nebenwerte-deutschland.xml|https://www.wallstreet-online.de/rss/board-us-hotstocks.xml

@@ -84,7 +84,7 @@ public final class HeadlineWriter {
     }
 
     public boolean publishUnit(SubjectUnit unit, Draft draft,
-            List<de.bsommerfeld.wsbg.terminal.source.RawNewsItem> newsUsed) {
+            List<de.bsommerfeld.wsbg.terminal.web.article.Article> newsUsed) {
         return publishUnit(unit, draft, newsUsed, List.of());
     }
 
@@ -98,7 +98,7 @@ public final class HeadlineWriter {
      * none.
      */
     public boolean publishUnit(SubjectUnit unit, Draft draft,
-            List<de.bsommerfeld.wsbg.terminal.source.RawNewsItem> newsUsed,
+            List<de.bsommerfeld.wsbg.terminal.web.article.Article> newsUsed,
             List<HeadlineNewsRef> inheritedRefs) {
         boolean newsEnriched = (newsUsed != null && !newsUsed.isEmpty())
                 || (inheritedRefs != null && !inheritedRefs.isEmpty());
@@ -210,7 +210,7 @@ public final class HeadlineWriter {
      * nothing. Extracted from {@code publishUnit}.
      */
     private static List<HeadlineNewsRef> buildNewsRefs(boolean newsEnriched,
-            List<de.bsommerfeld.wsbg.terminal.source.RawNewsItem> newsUsed,
+            List<de.bsommerfeld.wsbg.terminal.web.article.Article> newsUsed,
             List<HeadlineNewsRef> inheritedRefs) {
         if (!newsEnriched) return List.of();
         Map<String, HeadlineNewsRef> byUrl = new java.util.LinkedHashMap<>();

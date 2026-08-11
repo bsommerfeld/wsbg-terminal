@@ -2,9 +2,9 @@ package de.bsommerfeld.wsbg.terminal.ui.bridge;
 
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
-import de.bsommerfeld.wsbg.terminal.currency.EurUsdMonitorService;
-import de.bsommerfeld.wsbg.terminal.currency.EurUsdQuote;
-import de.bsommerfeld.wsbg.terminal.currency.FxDetails;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.currency.EurUsdMonitorService;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.currency.EurUsdQuote;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.currency.FxDetails;
 import de.bsommerfeld.wsbg.terminal.ui.web.PushHub;
 
 import java.util.LinkedHashMap;

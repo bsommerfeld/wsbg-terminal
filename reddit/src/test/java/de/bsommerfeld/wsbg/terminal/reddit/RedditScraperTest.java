@@ -2,14 +2,18 @@ package de.bsommerfeld.wsbg.terminal.reddit;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
+import de.bsommerfeld.wsbg.terminal.reddit.net.RedditFetch;
 import de.bsommerfeld.wsbg.terminal.reddit.support.RedditText;
+import de.bsommerfeld.wsbg.terminal.reddit.support.TokenBucketRateLimiter;
+import de.bsommerfeld.wsbg.terminal.web.fetch.WebResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -30,10 +34,24 @@ class RedditScraperTest {
     private RedditMediaExtractor media;
     private RedditThreadMapper threadMapper;
 
+    /** Offline fake delegate — no test here ever reaches the network. */
+    private static final RedditFetch FAKE_FETCH = new RedditFetch() {
+        @Override
+        public String name() {
+            return "fake";
+        }
+
+        @Override
+        public WebResponse fetch(String url, Map<String, String> headers, Duration timeout) {
+            return WebResponse.failure();
+        }
+    };
+
     @BeforeEach
     void setUp() {
         repository = mock(RedditRepository.class);
-        scraper = new RedditScraper(repository, new GlobalConfig());
+        scraper = new RedditScraper(repository, null, FAKE_FETCH,
+                new TokenBucketRateLimiter(10.0, 10.0));
         media = new RedditMediaExtractor();
         threadMapper = new RedditThreadMapper(repository, media);
     }

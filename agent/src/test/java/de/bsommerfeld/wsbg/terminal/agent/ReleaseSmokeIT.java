@@ -13,8 +13,13 @@ import de.bsommerfeld.wsbg.terminal.reddit.RedditScraper;
 import de.bsommerfeld.wsbg.terminal.reddit.RedditSource;
 import de.bsommerfeld.wsbg.terminal.reddit.RssRedditScraper;
 import de.bsommerfeld.wsbg.terminal.reddit.ThreadAnalysisContext;
-import de.bsommerfeld.wsbg.terminal.source.net.TokenBucketRateLimiter;
-import de.bsommerfeld.wsbg.terminal.source.net.DirectWebFetcher;
+import de.bsommerfeld.wsbg.terminal.reddit.net.RedditFetch;
+import de.bsommerfeld.wsbg.terminal.reddit.support.TokenBucketRateLimiter;
+import de.bsommerfeld.wsbg.terminal.web.fetch.FetchUtil;
+import de.bsommerfeld.wsbg.terminal.web.fetch.WebFetcher;
+import de.bsommerfeld.wsbg.terminal.web.fetch.WebResponse;
+import de.bsommerfeld.wsbg.terminal.web.impl.net.DirectTransport;
+import de.bsommerfeld.wsbg.terminal.web.impl.net.HouseFetcher;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -58,11 +63,24 @@ class ReleaseSmokeIT {
         GlobalConfig config = new GlobalConfig(); // oauth-client-id blank → OAuth must fail
         ApplicationEventBus bus = new ApplicationEventBus();
 
+        WebFetcher house = new HouseFetcher(java.util.Set.of(new DirectTransport()));
+        RedditFetch direct = new RedditFetch() {
+            @Override
+            public String name() {
+                return "house[direct]";
+            }
+
+            @Override
+            public WebResponse fetch(String url, java.util.Map<String, String> headers,
+                    java.time.Duration timeout) throws Exception {
+                return house.fetch(url, headers, timeout, FetchUtil.DIRECT);
+            }
+        };
         RedditScraper oauth = new RedditScraper(repo, bus,
                 new OAuthRedditFetcher(config), new TokenBucketRateLimiter(20, 8));
         RedditScraper json = new RedditScraper(repo, bus,
-                new DirectWebFetcher(), new TokenBucketRateLimiter(5, 0.15));
-        RssRedditScraper rss = new RssRedditScraper(repo, config, bus);
+                direct, new TokenBucketRateLimiter(5, 0.15));
+        RssRedditScraper rss = new RssRedditScraper(repo, config, bus, direct);
 
         System.out.println("[SMOKE] probe OAuth = " + oauth.probe(SUB) + " (expect false: no client-id)");
         System.out.println("[SMOKE] probe JSON  = " + json.probe(SUB) + " (expect false: bot-blocked)");

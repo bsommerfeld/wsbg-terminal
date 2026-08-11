@@ -1,18 +1,18 @@
 # Was hat sich geändert?
 
-**Wir haben die KI-DD abgerissen - und das Terminal auf das zurückgeschnitten, was es jeden Tag wirklich tut.** Das Dossier auf Zuruf ist raus: kein Ticker-Feld mehr, keine Redaktion, die im Hintergrund eine halbe Stunde lang an einem Papier schreibt, keine Abbildungen, kein PDF. Wer die Kachel benutzt hat, wird sie vermissen, und deshalb sagen wir es offen: Die DD war der ehrgeizigste Teil dieses Terminals und zugleich der, der am meisten Aufmerksamkeit gefressen hat - für ein Werkzeug, das ein paar Mal am Tag lief, während die Wire durchgehend arbeitet. Diese Rechnung ging auf Dauer nicht auf.
+**Das Terminal hat jetzt eine Widget-Übersicht - wie Mission Control auf dem Mac.** Ein Klick auf den Raster-Knopf zoomt heraus und legt alle Widgets als Karten vor euch hin, ein Klick auf eine Karte zoomt flüssig ins Vollbild hinein, Escape bringt euch zurück. Und es gibt mehr zu sehen als vorher: Neben Schlagzeilen und Financial Juice liegen dort jetzt das Fear-&-Greed-Barometer und EUR/USD als ausgewachsene eigene Widgets - mit Verlauf, Kennzahlen und Einordnung statt nur der kleinen Anzeige in der Kopfzeile.
 
-Was bleibt, ist der Kern: das Affengeschrei aus dem Käfig, von der KI zu Schlagzeilen verdichtet, mit Live-Kurs, News-Beleg und Raketen-Radar an jeder Zeile - dazu Financial Juice, der Fear-&-Greed-Tacho, EUR/USD und die Marktzeiten-Leiste. Vier Kacheln, die dauernd laufen, statt sieben, von denen drei nur Platz belegten.
+> 📸 **[Bild einfügen: Die Grid-Übersicht mit den vier Karten Schlagzeilen / Financial Juice / Fear & Greed / EUR-USD, Namens-Pille unter jeder Karte]**
 
-> 📸 **[Bild einfügen: Die Rasteransicht nach dem Rückbau - die vier verbliebenen Karten Schlagzeilen, Financial Juice, Fear & Greed und EUR/USD nebeneinander, ohne die alte KI-DD-Kachel]**
+**Die Schlagzeilen sind deutlich besser geworden.** Die KI liest hinter jeder Meldung den ganzen Artikel und die geposteten Screenshots gleich mit, zieht dazu die Weltpresse von Reuters bis Motley Fool heran und entscheidet sorgfältiger, welches Papier eine Zeile überhaupt meint - weniger falsche Kurse, weniger wiedergekäute Themen, mehr Substanz pro Zeile. Und das ganze Archiv ist jetzt durchsuchbar: Lupe antippen, Ticker oder Namen tippen, das Terminal schlägt live vor und findet zurück bis zum ersten Tag.
 
-**An den Quellen haben wir dafür nichts angerührt.** Kein einziger Anschluss wurde gekappt: Die Börsenplätze, die Nachrichtenhäuser, die Register und Kalender, die das Terminal über die Jahre gelernt hat, liegen vollständig und einsatzbereit da - sie warten nur auf das nächste Werkzeug, das sie ruft. Der Rückbau hat Funktionen entfernt, keine Verbindungen zur Welt.
+> 📸 **[Bild einfügen: Die Schlagzeilen-Suche - Lupe geöffnet, Live-Vorschläge unter dem Suchfeld („rhein" → Rheinmetall), darunter Archiv-Treffer mit Datum]**
 
 ## Restliches
 
-- Die KI-Watchliste ist raus. Sie war seit Wochen stillgelegt und für euch ohnehin nicht sichtbar - jetzt ist auch der Unterbau weg.
-- Der Wetterbericht mit seiner Abendausgabe und der Weltkarte ist raus. Ebenfalls seit Wochen stillgelegt.
-- Der PDF-Export und die Berichts-Ablage verschwinden mit der DD.
-- Beim Schließen fragt das Terminal nicht mehr nach - es gibt keinen laufenden Bericht mehr, den man verlieren könnte.
-- Der Platz, den alte DD-Läufe, Berichte und Wetter-Ausgaben auf eurer Platte belegt haben, wird beim ersten Start dieser Version einmalig freigegeben. Bei uns waren das etwas über 350 Megabyte.
-- Das Marktgedächtnis sammelt im Hintergrund unverändert weiter: datierte Unternehmens-Ereignisse samt gemessener Kursreaktion. Es wartet auf seinen nächsten Leser.
+- Der Starter fragt beim ersten Mal nach eurer Sprache und danach, welches KI-Modell im Terminal denken soll - übersetzt in zwei ehrliche Zahlen, Qualität und Tempo, mit einem Klartext-Urteil für euren Rechner. Die beste Stufe ist vorgewählt, wer nichts entscheiden will, klickt Ok.
+> 📸 **[Bild einfügen: Das aufgewachsene Launcher-Fenster mit der Modell-Liste - Zeilen mit ✦-Qualität und ⚡-Tempo, die vorgewählte Stufe mit goldenem Rand und „Empfohlen"]**
+- Der Launcher hält sich ab jetzt selbst aktuell - den Installer noch einmal herunterladen ist Geschichte. Wer noch einen von davor hat, sieht einmalig einen orangen Werkzeug-Knopf in der Titelleiste: einmal drüberinstallieren, fertig.
+- Das Terminal startet schneller, füllt sich früher mit Inhalt und läuft ruhiger - die Abstürze auf dem Mac sind weg, die Mac-App ist von Apple signiert (keine Schadsoftware-Warnung mehr), und ein zweiter Start holt das offene Fenster nach vorn, statt eine zweite Kopie danebenzustellen.
+- Das Terminal sammelt die Weltpresse jetzt rund um die Uhr im Hintergrund ein, statt sie erst zu holen, wenn jemand fragt - wer ein Papier nachschlägt, bekommt die Nachrichtenlage sofort aus dem eigenen Vorrat statt nach einer Wartezeit aus dem Netz.
+- Das ganze Nachrichten-Netz hängt jetzt an einem einzigen, robusteren Draht - Quellen, die zicken, bremsen die anderen nicht mehr aus, und was eine Sperre vorschützt, wird automatisch über den eingebauten Browser gerettet.

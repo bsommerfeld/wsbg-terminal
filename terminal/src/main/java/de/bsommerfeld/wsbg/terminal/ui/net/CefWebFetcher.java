@@ -1,7 +1,6 @@
 package de.bsommerfeld.wsbg.terminal.ui.net;
 
-import de.bsommerfeld.wsbg.terminal.source.net.WebFetcher;
-import de.bsommerfeld.wsbg.terminal.source.net.WebResponse;
+import de.bsommerfeld.wsbg.terminal.web.fetch.WebResponse;
 import de.bsommerfeld.wsbg.terminal.ui.CefHost;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,10 +30,10 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <p>Caller headers are passed through to the page-side {@code fetch()}, minus
  * the names a browser owns itself (see {@link #sanitizeHeaders}) — so content
- * negotiation and the {@link de.bsommerfeld.wsbg.terminal.source.net.CachingWebFetcher}
+ * negotiation and the conditional cache
  * conditional validators work on this leg too, not just on {@code direct}.
  */
-public final class CefWebFetcher implements WebFetcher {
+public final class CefWebFetcher {
 
     private static final Logger LOG = LoggerFactory.getLogger(CefWebFetcher.class);
 
@@ -105,12 +104,10 @@ public final class CefWebFetcher implements WebFetcher {
         this.cefHost = cefHost;
     }
 
-    @Override
     public String name() {
         return "browser";
     }
 
-    @Override
     public WebResponse fetch(String url, Map<String, String> headers, Duration timeout) throws Exception {
         String requestOrigin = originOf(url);
         if (requestOrigin == null) {
@@ -152,7 +149,7 @@ public final class CefWebFetcher implements WebFetcher {
             byOrigin.remove(anchorOrigin, client);
         }
         evictIdle();
-        return new WebResponse(r.status(), r.body(), r.headers());
+        return WebResponse.text(r.status(), r.body(), r.headers());
     }
 
     /**

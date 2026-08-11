@@ -4,15 +4,15 @@ import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
-import de.bsommerfeld.wsbg.terminal.core.price.PriceRef;
-import de.bsommerfeld.wsbg.terminal.core.price.PriceSource;
-import de.bsommerfeld.wsbg.terminal.currency.EurUsdMonitorService;
-import de.bsommerfeld.wsbg.terminal.langschwarz.LangSchwarzClient;
-import de.bsommerfeld.wsbg.terminal.langschwarz.LsInstrument;
 import de.bsommerfeld.wsbg.terminal.price.TradingWindowClock.PriceWindow;
-import de.bsommerfeld.wsbg.terminal.wallstreetonline.WallstreetOnlineClient;
-import de.bsommerfeld.wsbg.terminal.wallstreetonline.WsoInstrument;
-import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooFinanceClient;
+import de.bsommerfeld.wsbg.terminal.web.facts.PriceRef;
+import de.bsommerfeld.wsbg.terminal.web.facts.PriceSource;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.currency.EurUsdMonitorService;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.langschwarz.LangSchwarzSource;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.langschwarz.LsInstrument;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.wallstreetonline.WallstreetOnlineClient;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.wallstreetonline.WsoInstrument;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.yahoofinance.YahooMarketClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -52,17 +52,17 @@ public class FallbackPriceSource implements PriceSource {
     /** A snapshot whose quote is younger than this counts as fresh/live. */
     private static final long FRESH_SECONDS = 30 * 60;
 
-    private final LangSchwarzClient ls;
+    private final LangSchwarzSource ls;
     private final WallstreetOnlineClient wso;
-    private final YahooFinanceClient yahoo;
+    private final YahooMarketClient yahoo;
     private final EurNormalizer eur;
     private final SnapshotCache cache = new SnapshotCache();
     /** Read fresh each call so the Settings toggle takes effect live; null in tests/lab. */
     private final GlobalConfig config;
 
     @Inject
-    public FallbackPriceSource(LangSchwarzClient ls, WallstreetOnlineClient wso,
-            YahooFinanceClient yahoo, EurUsdMonitorService fx, GlobalConfig config) {
+    public FallbackPriceSource(LangSchwarzSource ls, WallstreetOnlineClient wso,
+            YahooMarketClient yahoo, EurUsdMonitorService fx, GlobalConfig config) {
         this.ls = ls;
         this.wso = wso;
         this.yahoo = yahoo;

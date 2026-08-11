@@ -3,8 +3,8 @@ package de.bsommerfeld.wsbg.terminal.agent;
 import de.bsommerfeld.wsbg.terminal.agent.TickerResolver.RelatedInstrument;
 import de.bsommerfeld.wsbg.terminal.agent.TickerResolver.ResolvedSubject;
 import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
-import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooFinanceClient;
-import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.yahoofinance.YahooMarketClient;
+import de.bsommerfeld.wsbg.terminal.web.article.Article;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
@@ -25,12 +25,14 @@ class TickerResolverLiveIT {
 
     @Test
     void surfacesRelatedInstrumentsForThemes() {
-        TickerResolver resolver = new TickerResolver(new YahooFinanceClient());
+        TickerResolver resolver = new TickerResolver(new YahooMarketClient(
+                new de.bsommerfeld.wsbg.terminal.web.impl.net.HouseFetcher(
+                        java.util.Set.of(new de.bsommerfeld.wsbg.terminal.web.impl.net.DirectTransport()))));
         for (String subject : List.of("Trump", "oil", "Nvidia", "Hormuz")) {
             ResolvedSubject r = resolver.resolve(subject);
             System.out.println("\n=== " + subject + " → " + r.canonicalName()
                     + (r.isInstrument() ? " [" + r.ticker() + "]" : " [theme/person]") + " ===");
-            for (RawNewsItem n : r.news()) {
+            for (Article n : r.news()) {
                 System.out.println("  news: " + n.title()
                         + (n.relatedTickers().isEmpty() ? "" : "  {" + String.join(",", n.relatedTickers()) + "}"));
             }
@@ -38,7 +40,7 @@ class TickerResolverLiveIT {
                 MarketSnapshot s = ri.snapshot();
                 System.out.printf(Locale.ROOT, "  related: %-10s %+.2f%% today%n",
                         ri.ticker(), s == null ? Double.NaN : s.dayChangePercent());
-                for (RawNewsItem rn : ri.news()) {
+                for (Article rn : ri.news()) {
                     System.out.println("      └ news: " + rn.title());
                 }
             }

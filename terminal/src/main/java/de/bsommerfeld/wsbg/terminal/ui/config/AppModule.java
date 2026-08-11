@@ -16,9 +16,10 @@ import java.nio.file.Path;
  * itself:
  * <ul>
  *   <li>{@link ConfigModule} — config instance binds + the wheel-scroll seam;</li>
- *   <li>{@link NetModule} — the shared WebFetcher, instrument corpus, RedditSource;</li>
- *   <li>{@link NewsSourceModule} — the {@code Set<NewsSource>} multibinding;</li>
- *   <li>{@link AgentPipelineModule} — the editorial quartet + price chain (ordered);</li>
+ *   <li>{@link NetModule} — the BROWSER transport, instrument corpus, RedditSource;</li>
+ *   <li>{@code WebSourcesModule} (web-impl) — the whole web world: fetcher, pool,
+ *       scheduler, gateway, curated catalog and every source registration;</li>
+ *   <li>{@link AgentPipelineModule} — the editorial quartet + facts roster (ordered);</li>
  *   <li>{@link PublisherModule} — the Java→page publishers;</li>
  *   <li>{@link BridgeModule} — the inbound page→Java bridges.</li>
  * </ul>
@@ -38,7 +39,10 @@ public class AppModule extends AbstractModule {
 
         install(new ConfigModule(config));
         install(new NetModule());
-        install(new NewsSourceModule());
+        install(new de.bsommerfeld.wsbg.terminal.web.impl.WebSourcesModule());
+        // Sources that need terminal-only bindings (the @Named("openweb")
+        // fetcher from NetModule) install separately from the generic set.
+        install(new de.bsommerfeld.wsbg.terminal.web.impl.sources.OpenWebSourcesModule());
         // RedditSource is assembled in NetModule.provideRedditSource() — it
         // auto-selects a working path (OAuth → .json → RSS) at runtime, so there
         // is no configured source and every install finds its own way.

@@ -1,7 +1,8 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
-import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
-import de.bsommerfeld.wsbg.terminal.source.net.DirectWebFetcher;
+import de.bsommerfeld.wsbg.terminal.web.article.Article;
+import de.bsommerfeld.wsbg.terminal.web.impl.net.DirectTransport;
+import de.bsommerfeld.wsbg.terminal.web.impl.net.HouseFetcher;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
@@ -31,14 +32,15 @@ class CompanySiteCrawlerIT {
     void walksRealCorporateSites() {
         String sites = System.getenv().getOrDefault("SITE_CRAWL_SITES",
                 "www.sap.com,www.siemens.com,www.evotec.com");
-        CompanySiteCrawler crawler = new CompanySiteCrawler(new DirectWebFetcher(), UA);
+        CompanySiteCrawler crawler = new CompanySiteCrawler(
+                new HouseFetcher(java.util.Set.of(new DirectTransport())), UA);
         CompanyPressScout scout = new CompanyPressScout(crawler);
         int totalItems = 0;
         for (String site : sites.split(",")) {
             long t0 = System.currentTimeMillis();
             CompanySiteCrawler.Crawl crawl = crawler.crawl(site.strip());
             long ms = System.currentTimeMillis() - t0;
-            List<RawNewsItem> press = scout.pressItems(crawl, 6);
+            List<Article> press = scout.pressItems(crawl, 6);
             List<CompanyPressScout.IrEntry> ir = scout.irEntries(crawl, 12);
             totalItems += press.size() + ir.size();
             System.out.printf("%n== %s: %d page(s), %d feed item(s) in %d ms%n",
@@ -48,7 +50,7 @@ class CompanySiteCrawlerIT {
                         p.depth(), p.pressScore(), p.irScore(), p.url());
             }
             System.out.println("   -- press --");
-            for (RawNewsItem n : press) System.out.println("   * " + n.title());
+            for (Article n : press) System.out.println("   * " + n.title());
             System.out.println("   -- IR --");
             for (CompanyPressScout.IrEntry e : ir) {
                 System.out.println("   * " + e.dateIso() + "  " + e.title());

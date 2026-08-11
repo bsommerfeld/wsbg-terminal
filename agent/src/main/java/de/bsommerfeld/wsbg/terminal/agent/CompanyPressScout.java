@@ -1,7 +1,7 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
-import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
-import de.bsommerfeld.wsbg.terminal.source.net.WebFetcher;
+import de.bsommerfeld.wsbg.terminal.web.article.Article;
+import de.bsommerfeld.wsbg.terminal.web.fetch.WebFetcher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -87,10 +87,10 @@ final class CompanyPressScout {
      * then the crawled pages in press-relevance order, so a newsroom listing
      * fills the slots before a stray section page ever gets a look in.
      */
-    List<RawNewsItem> pressItems(CompanySiteCrawler.Crawl crawl, int limit) {
+    List<Article> pressItems(CompanySiteCrawler.Crawl crawl, int limit) {
         if (crawl == null || crawl.isEmpty()) return List.of();
         String publisher = crawl.home().getHost() + " (IR/Presse)";
-        List<RawNewsItem> out = new ArrayList<>();
+        List<Article> out = new ArrayList<>();
         Set<String> sections = sectionUrls(crawl);
         Set<String> seenUrls = new HashSet<>();
         Set<String> seenTitles = new HashSet<>();
@@ -102,7 +102,7 @@ final class CompanyPressScout {
                     || !seenTitles.add(title.toLowerCase(Locale.ROOT))) {
                 continue;
             }
-            out.add(new RawNewsItem(item.url(), title, publisher, item.url(), null, List.of()));
+            out.add(new Article(item.url(), title, publisher, item.url(), null, List.of()));
         }
         for (CompanySiteCrawler.Page page : byScore(crawl, CompanySiteCrawler.Page::pressScore)) {
             if (out.size() >= limit) break;
@@ -121,7 +121,7 @@ final class CompanyPressScout {
                 if (!seenUrls.add(h.url()) || !seenTitles.add(h.title().toLowerCase(Locale.ROOT))) {
                     continue;
                 }
-                out.add(new RawNewsItem(h.url(), h.title(), publisher, h.url(), null, List.of()));
+                out.add(new Article(h.url(), h.title(), publisher, h.url(), null, List.of()));
             }
         }
         if (!out.isEmpty()) {
@@ -132,7 +132,7 @@ final class CompanyPressScout {
     }
 
     /** Convenience for callers that want the press leg alone (smokes, tests). */
-    List<RawNewsItem> pressItems(String website, int limit) {
+    List<Article> pressItems(String website, int limit) {
         return pressItems(crawl(website), limit);
     }
 

@@ -1,8 +1,8 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
-import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
-import de.bsommerfeld.wsbg.terminal.source.net.WebFetcher;
-import de.bsommerfeld.wsbg.terminal.source.net.WebResponse;
+import de.bsommerfeld.wsbg.terminal.web.article.Article;
+import de.bsommerfeld.wsbg.terminal.web.fetch.WebFetcher;
+import de.bsommerfeld.wsbg.terminal.web.fetch.WebResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -50,7 +50,7 @@ final class WikipediaSearchClient {
     }
 
     /** One query against the REST search; anything unanswered stays empty. */
-    List<RawNewsItem> search(String query, int limit) {
+    List<Article> search(String query, int limit) {
         try {
             WebResponse resp = fetcher.fetch(
                     "https://" + host + "/w/rest.php/v1/search/page?limit="
@@ -60,13 +60,13 @@ final class WikipediaSearchClient {
                             "Accept", "application/json"),
                     TIMEOUT);
             if (resp == null || resp.status() != 200) return List.of();
-            List<RawNewsItem> out = new ArrayList<>();
+            List<Article> out = new ArrayList<>();
             Matcher m = WIKI_PAGE.matcher(resp.body());
             while (m.find() && out.size() < limit) {
                 String key = m.group(1);
                 String title = m.group(2).replace("\\\"", "\"");
                 String url = "https://" + host + "/wiki/" + key;
-                out.add(new RawNewsItem(url, title, "Wikipedia", url,
+                out.add(new Article(url, title, "Wikipedia", url,
                         null, List.of()));
             }
             return out;

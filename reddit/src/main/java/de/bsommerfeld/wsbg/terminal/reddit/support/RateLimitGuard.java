@@ -1,8 +1,7 @@
 package de.bsommerfeld.wsbg.terminal.reddit.support;
 
-import de.bsommerfeld.wsbg.terminal.source.net.TokenBucketRateLimiter;
-import de.bsommerfeld.wsbg.terminal.source.net.WebFetcher;
-import de.bsommerfeld.wsbg.terminal.source.net.WebResponse;
+import de.bsommerfeld.wsbg.terminal.reddit.net.RedditFetch;
+import de.bsommerfeld.wsbg.terminal.web.fetch.WebResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,11 +30,11 @@ public final class RateLimitGuard {
     }
 
     /**
-     * Executes a GET through the given {@link WebFetcher} with automatic
-     * rate-limit handling: a token is acquired before the send, and the
-     * response headers are inspected for a near-limit backoff afterwards.
+     * Executes a GET through the given {@link RedditFetch} delegate with
+     * automatic rate-limit handling: a token is acquired before the send, and
+     * the response headers are inspected for a near-limit backoff afterwards.
      */
-    public WebResponse execute(WebFetcher fetcher, String url,
+    public WebResponse execute(RedditFetch fetcher, String url,
             Map<String, String> headers, Duration timeout) throws Exception {
         rateLimiter.acquire();
         WebResponse response = fetcher.fetch(url, headers, timeout);

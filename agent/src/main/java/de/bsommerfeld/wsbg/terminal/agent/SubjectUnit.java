@@ -1,7 +1,7 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
 import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
-import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
+import de.bsommerfeld.wsbg.terminal.web.article.Article;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -137,7 +137,7 @@ public final class SubjectUnit {
      * deliberately skips fetching) must not wipe the headline's chart/price.
      */
     public synchronized void updateResolved(String canonicalName, String ticker,
-            MarketSnapshot snapshot, List<RawNewsItem> news) {
+            MarketSnapshot snapshot, List<Article> news) {
         if (canonicalName != null && !canonicalName.isBlank()) this.canonicalName = canonicalName;
         this.ticker = ticker;
         if (snapshot != null) this.snapshot = snapshot; // keep last good price when this resolve had none
@@ -187,7 +187,7 @@ public final class SubjectUnit {
     public String ticker() { return ticker; }
     public boolean isInstrument() { return ticker != null && !ticker.isBlank(); }
     public MarketSnapshot snapshot() { return snapshot; }
-    public List<RawNewsItem> news() { return newsBox.news(); }
+    public List<Article> news() { return newsBox.news(); }
     public Instant lastActivity() { return lastActivity; }
     public Double firstPrice() { return firstPrice; }
     public Instant firstPriceAt() { return firstPriceAt; }

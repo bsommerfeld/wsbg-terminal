@@ -7,16 +7,15 @@ import de.bsommerfeld.wsbg.terminal.core.domain.RedditComment;
 import de.bsommerfeld.wsbg.terminal.core.domain.RedditThread;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
+import de.bsommerfeld.wsbg.terminal.reddit.net.RedditFetch;
 import de.bsommerfeld.wsbg.terminal.reddit.support.CommentStream;
 import de.bsommerfeld.wsbg.terminal.reddit.support.DeferredCommentBackfill;
 import de.bsommerfeld.wsbg.terminal.reddit.support.RateLimitGuard;
 import de.bsommerfeld.wsbg.terminal.reddit.support.RedditConstants;
 import de.bsommerfeld.wsbg.terminal.reddit.support.RedditText;
 import de.bsommerfeld.wsbg.terminal.reddit.support.SourceHealthReporter;
-import de.bsommerfeld.wsbg.terminal.source.net.DirectWebFetcher;
-import de.bsommerfeld.wsbg.terminal.source.net.TokenBucketRateLimiter;
-import de.bsommerfeld.wsbg.terminal.source.net.WebFetcher;
-import de.bsommerfeld.wsbg.terminal.source.net.WebResponse;
+import de.bsommerfeld.wsbg.terminal.reddit.support.TokenBucketRateLimiter;
+import de.bsommerfeld.wsbg.terminal.web.fetch.WebResponse;
 import jakarta.inject.Inject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -63,7 +62,7 @@ public final class RssRedditScraper implements RedditSource {
     private static final int COMMENT_LIMIT = 100;
 
     private final RedditRepository repository;
-    private final WebFetcher fetcher;
+    private final RedditFetch fetcher;
     private final RateLimitGuard rateGuard;
     private final SourceHealthReporter health;
     private final AtomFeedParser feedParser;
@@ -71,15 +70,16 @@ public final class RssRedditScraper implements RedditSource {
 
     @Inject
     public RssRedditScraper(RedditRepository repository, GlobalConfig config,
-            ApplicationEventBus eventBus) {
+            ApplicationEventBus eventBus, RedditFetch fetcher) {
         this.repository = repository;
         RedditConfig rc = config.getReddit();
         this.rateGuard = new RateLimitGuard(new TokenBucketRateLimiter(
                 rc.getRateLimitBurst(), rc.getRateLimitRequestsPerSecond()));
         this.health = new SourceHealthReporter(eventBus);
-        // Plain transport: hits www.reddit.com directly (no OAuth host rewrite,
-        // no bearer token) — exactly what the public Atom feeds need.
-        this.fetcher = new DirectWebFetcher();
+        // Anonymous transport: hits www.reddit.com (no OAuth host rewrite, no
+        // bearer token) — exactly what the public Atom feeds need. Supplied at
+        // bootstrap as a delegate over the house WebFetcher.
+        this.fetcher = fetcher;
         this.feedParser = new AtomFeedParser();
 
         // Comment ingestion is the cold-start bottleneck: fetching one comment

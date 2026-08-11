@@ -1,6 +1,6 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
-import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
+import de.bsommerfeld.wsbg.terminal.web.article.Article;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -32,7 +32,7 @@ final class NewsBox {
      */
     static final int MAX_NEWS = 12;
 
-    private volatile List<RawNewsItem> news = List.of();
+    private volatile List<Article> news = List.of();
 
     /**
      * IDs of news items a published headline has already cited (#2 step 3b).
@@ -46,16 +46,16 @@ final class NewsBox {
      * capped at {@link #MAX_NEWS}) and drops the covered-ids of any item that fell
      * off the cap.
      */
-    void merge(List<RawNewsItem> fresh) {
+    void merge(List<Article> fresh) {
         this.news = mergeNews(this.news, fresh);
         Set<String> kept = new HashSet<>();
-        for (RawNewsItem n : this.news) {
+        for (Article n : this.news) {
             if (n.uuid() != null) kept.add(n.uuid());
         }
         coveredNewsIds.retainAll(kept);
     }
 
-    List<RawNewsItem> news() {
+    List<Article> news() {
         return news;
     }
 
@@ -80,17 +80,17 @@ final class NewsBox {
     }
 
     /** Existing ∪ fresh, deduped by uuid (existing wins), newest first, capped at {@link #MAX_NEWS}. */
-    private static List<RawNewsItem> mergeNews(List<RawNewsItem> existing, List<RawNewsItem> fresh) {
-        Map<String, RawNewsItem> byUuid = new LinkedHashMap<>();
-        for (RawNewsItem n : existing) {
+    private static List<Article> mergeNews(List<Article> existing, List<Article> fresh) {
+        Map<String, Article> byUuid = new LinkedHashMap<>();
+        for (Article n : existing) {
             if (n != null && n.uuid() != null && !n.uuid().isBlank()) byUuid.putIfAbsent(n.uuid(), n);
         }
         if (fresh != null) {
-            for (RawNewsItem n : fresh) {
+            for (Article n : fresh) {
                 if (n != null && n.uuid() != null && !n.uuid().isBlank()) byUuid.putIfAbsent(n.uuid(), n);
             }
         }
-        List<RawNewsItem> merged = new ArrayList<>(byUuid.values());
+        List<Article> merged = new ArrayList<>(byUuid.values());
         // Newest first; items without a timestamp sort last (oldest), so they're
         // the first to fall off the cap.
         merged.sort((a, b) -> {

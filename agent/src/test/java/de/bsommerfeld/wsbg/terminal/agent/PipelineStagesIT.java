@@ -10,7 +10,7 @@ import de.bsommerfeld.wsbg.terminal.core.i18n.I18nService;
 import de.bsommerfeld.wsbg.terminal.db.AgentRepository;
 import de.bsommerfeld.wsbg.terminal.db.HeadlineRecord;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
-import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooFinanceClient;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.yahoofinance.YahooMarketClient;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -58,7 +58,9 @@ class PipelineStagesIT {
         registry = new ClusterRegistry();
         engine = new ClusterEngine(registry);
         editorial = new EditorialAgent(brain, gate, registry, agentRepo, redditRepo, bus,
-                new I18nService(config), new YahooFinanceClient(config),
+                new I18nService(config),
+                new YahooMarketClient(new de.bsommerfeld.wsbg.terminal.web.impl.net.HouseFetcher(
+                        java.util.Set.of(new de.bsommerfeld.wsbg.terminal.web.impl.net.DirectTransport()))),
                 new SubjectRegistry(), config);
     }
 

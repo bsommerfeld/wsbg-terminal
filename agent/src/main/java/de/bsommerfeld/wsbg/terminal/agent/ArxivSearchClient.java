@@ -1,8 +1,8 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
-import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
-import de.bsommerfeld.wsbg.terminal.source.net.WebFetcher;
-import de.bsommerfeld.wsbg.terminal.source.net.WebResponse;
+import de.bsommerfeld.wsbg.terminal.web.article.Article;
+import de.bsommerfeld.wsbg.terminal.web.fetch.WebFetcher;
+import de.bsommerfeld.wsbg.terminal.web.fetch.WebResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -43,7 +43,7 @@ final class ArxivSearchClient {
     }
 
     /** One query against the Atom API; anything unanswered stays empty. */
-    List<RawNewsItem> search(String query, int limit) {
+    List<Article> search(String query, int limit) {
         try {
             WebResponse resp = fetcher.fetch(
                     "http://export.arxiv.org/api/query?search_query=all:"
@@ -76,8 +76,8 @@ final class ArxivSearchClient {
             "<published>(.*?)</published>", Pattern.DOTALL);
 
     /** Tolerant Atom read of the arXiv answer; anything unreadable is skipped. */
-    static List<RawNewsItem> parseAtomArxiv(String xml, int limit) {
-        List<RawNewsItem> out = new ArrayList<>();
+    static List<Article> parseAtomArxiv(String xml, int limit) {
+        List<Article> out = new ArrayList<>();
         if (xml == null || xml.isBlank()) return out;
         Matcher entry = ATOM_ENTRY.matcher(xml);
         while (entry.find() && out.size() < limit) {
@@ -111,7 +111,7 @@ final class ArxivSearchClient {
                 } catch (Exception ignored) {
                 }
             }
-            out.add(new RawNewsItem(link, titel, "arXiv", link, wann, List.of(),
+            out.add(new Article(link, titel, "arXiv", link, wann, List.of(),
                     null, zusammenfassung, false));
         }
         return out;

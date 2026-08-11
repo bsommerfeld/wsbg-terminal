@@ -1,7 +1,7 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
-import de.bsommerfeld.wsbg.terminal.source.net.WebFetcher;
-import de.bsommerfeld.wsbg.terminal.source.net.WebResponse;
+import de.bsommerfeld.wsbg.terminal.web.fetch.WebFetcher;
+import de.bsommerfeld.wsbg.terminal.web.fetch.WebResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -14,7 +14,7 @@ import java.util.regex.Pattern;
 
 /**
  * Best-effort readable-body extractor for a news article permalink — the
- * {@code link} on any {@code RawNewsItem}, regardless of which {@code NewsSource}
+ * {@code link} on any {@code Article}, regardless of which {@code NewsSource}
  * emitted it (Yahoo, wallstreet-online, future legs). Source-neutral on purpose:
  * publisher HTML is heterogeneous everywhere, so extraction is heuristic (prefer
  * {@code <p>} text, drop script/style, unescape entities) and the result is "best

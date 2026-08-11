@@ -1,16 +1,18 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
-import de.bsommerfeld.wsbg.terminal.aggregator.NewsAggregator;
+import de.bsommerfeld.wsbg.terminal.web.gateway.WebGateway;
+import de.bsommerfeld.wsbg.terminal.web.instrument.ResolvedInstrument;
+import de.bsommerfeld.wsbg.terminal.web.instrument.Ticker;
 import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
-import de.bsommerfeld.wsbg.terminal.core.price.PriceRef;
-import de.bsommerfeld.wsbg.terminal.core.price.PriceSource;
+import de.bsommerfeld.wsbg.terminal.web.facts.PriceRef;
+import de.bsommerfeld.wsbg.terminal.web.facts.PriceSource;
 import de.bsommerfeld.wsbg.terminal.instruments.AliasProvenance;
 import de.bsommerfeld.wsbg.terminal.instruments.AliasStore;
 import de.bsommerfeld.wsbg.terminal.instruments.InstrumentCorpus;
-import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
-import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooFinanceClient;
-import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooFinanceClient.SearchResult;
-import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooQuote;
+import de.bsommerfeld.wsbg.terminal.web.article.Article;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.yahoofinance.YahooMarketClient;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.yahoofinance.YahooMarketClient.SearchResult;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.yahoofinance.YahooQuote;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -101,7 +103,7 @@ public final class TickerResolver {
         int pick(String subject, String context, List<String> candidateNames);
     }
 
-    private final YahooFinanceClient yahoo;
+    private final YahooMarketClient yahoo;
 
     /** Identity judge; null disables veto + tier 2 + tier 3. Set post-construction by {@code EditorialAgent}. */
     private MatchJudge matchJudge;
@@ -127,8 +129,12 @@ public final class TickerResolver {
      */
     private PriceSource priceSource;
 
-    /** The multi-source news pool (Yahoo + …). Null in tests, where news comes from the search result. */
-    private NewsAggregator newsAggregator;
+    /**
+     * The web gateway — the basin the collectors pour into. The wire fan of
+     * the old aggregator became a LOCAL query: the pool already holds the
+     * day's world. Null in tests, where news comes from the search result.
+     */
+    private WebGateway webGateway;
 
     /**
      * The identity desk — the border-control checkpoint that decides identity ONCE
@@ -160,7 +166,7 @@ public final class TickerResolver {
             new DeskMatcher(() -> identityDesk),
             identityVeto, judgeMatcher, corpusMatcher, coinageMatcher));
 
-    public TickerResolver(YahooFinanceClient yahoo) {
+    public TickerResolver(YahooMarketClient yahoo) {
         this.yahoo = yahoo;
     }
 
@@ -189,9 +195,9 @@ public final class TickerResolver {
         this.priceSource = priceSource;
     }
 
-    /** Installs the multi-source news pool. Forwarded by {@code EditorialAgent}; null in tests. */
-    void setNewsAggregator(NewsAggregator newsAggregator) {
-        this.newsAggregator = newsAggregator;
+    /** Installs the web gateway (basin + live fans). Forwarded by {@code EditorialAgent}; null in tests. */
+    void setWebGateway(WebGateway webGateway) {
+        this.webGateway = webGateway;
     }
 
     /** Resolves a single subject with the default related allowance ({@link #MAX_RELATED}). */
@@ -220,7 +226,7 @@ public final class TickerResolver {
      * Resolves many subjects at once with a per-subject related allowance, and
      * — crucially — fetches every needed price snapshot (each subject's own
      * ticker + all related tickers) in a single batched call
-     * ({@link YahooFinanceClient#fetchCharts}, spark endpoint). That collapses
+     * ({@link YahooMarketClient#fetchCharts}, spark endpoint). That collapses
      * what used to be ~one chart request per ticker into 1–2 requests, which is
      * the big Yahoo-call saving when a cluster names many subjects.
      *
@@ -305,8 +311,8 @@ public final class TickerResolver {
             // (wallstreet-online) answer the name, closing the German small-cap gap. A
             // ticker-less theme keeps Yahoo's query-news (the only handle without a
             // symbol); the tests (no aggregator) also keep the search news.
-            List<RawNewsItem> news = resolveNews(ownTicker, canonical, sr);
-            Map<String, List<RawNewsItem>> relNews = new LinkedHashMap<>();
+            List<Article> news = resolveNews(ownTicker, canonical, sr);
+            Map<String, List<Article>> relNews = new LinkedHashMap<>();
             List<String> relSyms = collectRelated(news, ownTicker, maxRelated, relNews);
             return new Pending(query, canonical, ownTicker, isin, venueId, category, venueRuledOut,
                     news, relSyms, relNews, false);
@@ -352,9 +358,9 @@ public final class TickerResolver {
      * {@code NewsSource.dossierOnly}) — the loom needs the day's catalyst, not
      * every venue note ever filed under the name.
      */
-    private List<RawNewsItem> resolveNews(String ownTicker, String canonical, SearchResult sr) {
-        return (newsAggregator != null && ownTicker != null)
-                ? newsAggregator.wireNewsFor(ownTicker, canonical, NEWS_COUNT)
+    private List<Article> resolveNews(String ownTicker, String canonical, SearchResult sr) {
+        return (webGateway != null && ownTicker != null)
+                ? webGateway.pool().queryInstrument(instrumentKey(ownTicker, canonical), NEWS_COUNT)
                 : (sr.news() != null ? sr.news() : List.of());
     }
 
@@ -363,23 +369,29 @@ public final class TickerResolver {
      * the subject's news (bounded by {@code maxRelated}), each with its own news,
      * collected into {@code outRelNews}. Returns the ordered related symbols.
      */
-    private List<String> collectRelated(List<RawNewsItem> news, String ownTicker, int maxRelated,
-            Map<String, List<RawNewsItem>> outRelNews) {
+    /** The basin's instrument key for a wire query: ticker + optional name. */
+    private static ResolvedInstrument instrumentKey(String symbol, String name) {
+        return new ResolvedInstrument(java.util.Optional.empty(),
+                Ticker.parse(symbol), name == null ? "" : name);
+    }
+
+    private List<String> collectRelated(List<Article> news, String ownTicker, int maxRelated,
+            Map<String, List<Article>> outRelNews) {
         List<String> relSyms = new ArrayList<>();
         if (maxRelated <= 0) return relSyms;
         Set<String> seen = new HashSet<>();
         if (ownTicker != null) seen.add(ownTicker.toUpperCase(Locale.ROOT));
         collect:
-        for (RawNewsItem ni : news) {
+        for (Article ni : news) {
             if (ni.relatedTickers() == null) continue;
             for (String raw : ni.relatedTickers()) {
                 if (raw == null) continue;
                 String sym = raw.trim().toUpperCase(Locale.ROOT);
                 if (sym.isEmpty() || !seen.add(sym)) continue;
                 relSyms.add(sym);
-                List<RawNewsItem> rn = newsAggregator != null
-                        ? newsAggregator.wireNewsFor(sym, RELATED_NEWS_COUNT)
-                        : yahoo.getNewsForSymbol(sym, RELATED_NEWS_COUNT);
+                List<Article> rn = webGateway != null
+                        ? webGateway.pool().queryInstrument(instrumentKey(sym, null), RELATED_NEWS_COUNT)
+                        : yahoo.search(sym, 0, RELATED_NEWS_COUNT).news();
                 outRelNews.put(sym, rn == null ? List.of() : rn);
                 if (relSyms.size() >= maxRelated) break collect;
             }
@@ -475,8 +487,8 @@ public final class TickerResolver {
     /** Per-subject scratch between phase 1 (collect) and phase 3 (assemble). */
     private record Pending(String query, String canonical, String ownTicker,
             String isin, long venueId, String category, boolean venueRuledOut,
-            List<RawNewsItem> news, List<String> relSyms,
-            Map<String, List<RawNewsItem>> relNews, boolean rateLimited) {
+            List<Article> news, List<String> relSyms,
+            Map<String, List<Article>> relNews, boolean rateLimited) {
         static Pending empty(String query) {
             return new Pending(query, query, null, null, 0, null, false,
                     List.of(), List.of(), Map.of(), false);
@@ -505,7 +517,7 @@ public final class TickerResolver {
             // WKN-keyed venue unit into its Yahoo-keyed twin (A419CG vs RKLB).
             String isin,
             MarketSnapshot snapshot,
-            List<RawNewsItem> news,
+            List<Article> news,
             List<RelatedInstrument> related,
             // unresolved: Yahoo was rate-limiting (breaker open) so this subject was
             // NOT enriched — a marker, NOT a skip. It's still attributed + headlined
@@ -515,7 +527,7 @@ public final class TickerResolver {
 
         /** Pre-stamp shape (tests, older call sites): no ISIN. */
         public ResolvedSubject(String query, String canonicalName, String ticker,
-                MarketSnapshot snapshot, List<RawNewsItem> news,
+                MarketSnapshot snapshot, List<Article> news,
                 List<RelatedInstrument> related, boolean unresolved) {
             this(query, canonicalName, ticker, null, snapshot, news, related, unresolved);
         }
@@ -538,7 +550,7 @@ public final class TickerResolver {
      * with its live snapshot. Carried as evidence for a possible causal link;
      * never asserted as one.
      */
-    public record RelatedInstrument(String ticker, MarketSnapshot snapshot, List<RawNewsItem> news) {
+    public record RelatedInstrument(String ticker, MarketSnapshot snapshot, List<Article> news) {
         public boolean hasNews() {
             return news != null && !news.isEmpty();
         }

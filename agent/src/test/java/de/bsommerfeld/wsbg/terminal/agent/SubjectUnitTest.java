@@ -1,7 +1,7 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
 import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
-import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
+import de.bsommerfeld.wsbg.terminal.web.article.Article;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -27,8 +27,8 @@ class SubjectUnitTest {
                 -1, Double.NaN, Double.NaN, "USD", "", 0, List.of());
     }
 
-    private static RawNewsItem news(String uuid, Instant publishedAt) {
-        return new RawNewsItem(uuid, "title " + uuid, "pub", "http://x/" + uuid,
+    private static Article news(String uuid, Instant publishedAt) {
+        return new Article(uuid, "title " + uuid, "pub", "http://x/" + uuid,
                 publishedAt, List.of());
     }
 
@@ -42,7 +42,7 @@ class SubjectUnitTest {
         // (possibly already cited by a headline) must not vanish.
         u.updateResolved("NVIDIA", "NVDA", null, List.of(news("c", now)));
 
-        List<String> uuids = u.news().stream().map(RawNewsItem::uuid).toList();
+        List<String> uuids = u.news().stream().map(Article::uuid).toList();
         assertTrue(uuids.containsAll(List.of("a", "b", "c")), "merged, not replaced: " + uuids);
         assertEquals("c", uuids.get(0), "newest first");
     }
@@ -51,7 +51,7 @@ class SubjectUnitTest {
     void newsCapDropsOldestAndReleasesItsCoveredId() {
         SubjectUnit u = new SubjectUnit("NVDA", "NVIDIA");
         Instant now = Instant.now();
-        List<RawNewsItem> first = new ArrayList<>();
+        List<Article> first = new ArrayList<>();
         for (int i = 0; i < SubjectUnit.MAX_NEWS; i++) {
             first.add(news("n" + i, now.minus(i + 10, ChronoUnit.HOURS))); // n0 newest … n11 oldest
         }
@@ -63,7 +63,7 @@ class SubjectUnitTest {
                 List.of(news("fresh1", now), news("fresh2", now.minus(1, ChronoUnit.HOURS))));
 
         assertEquals(SubjectUnit.MAX_NEWS, u.news().size(), "capped");
-        List<String> uuids = u.news().stream().map(RawNewsItem::uuid).toList();
+        List<String> uuids = u.news().stream().map(Article::uuid).toList();
         assertTrue(uuids.contains("fresh1") && uuids.contains("fresh2"));
         assertFalse(uuids.contains("n" + (SubjectUnit.MAX_NEWS - 1)), "oldest fell off");
         assertFalse(u.isNewsCovered("n" + (SubjectUnit.MAX_NEWS - 1)),

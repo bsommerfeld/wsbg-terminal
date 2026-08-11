@@ -2,7 +2,7 @@ package de.bsommerfeld.wsbg.terminal.agent;
 
 import de.bsommerfeld.wsbg.terminal.db.HeadlineRecord;
 import de.bsommerfeld.wsbg.terminal.db.HeadlineNewsRef;
-import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
+import de.bsommerfeld.wsbg.terminal.web.article.Article;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -26,9 +26,9 @@ final class NewsProvenance {
      * resolves deterministically back to its item. Kept as one helper so the brief
      * and the citation resolution can never drift apart.
      */
-    static List<RawNewsItem> briefNews(SubjectUnit unit, boolean newsCoverageEnabled) {
-        List<RawNewsItem> fresh = new ArrayList<>();
-        for (RawNewsItem n : unit.news()) {
+    static List<Article> briefNews(SubjectUnit unit, boolean newsCoverageEnabled) {
+        List<Article> fresh = new ArrayList<>();
+        for (Article n : unit.news()) {
             // News coverage is OFF by default: news enriches freely and may back
             // several headlines on a topic (it's cached, so reuse is free). Only when
             // explicitly enabled do we hide a unit's already-cited news.
@@ -46,7 +46,7 @@ final class NewsProvenance {
      */
     static final int NEWS_WOVEN_MIN_OVERLAP = 2;
 
-    static boolean headlineReflectsNews(String headline, RawNewsItem n) {
+    static boolean headlineReflectsNews(String headline, Article n) {
         if (headline == null || n == null) return false;
         Set<String> line = significantTokens(headline);
         Set<String> news = significantTokens(nz(n.title()) + " " + nz(n.summary()));

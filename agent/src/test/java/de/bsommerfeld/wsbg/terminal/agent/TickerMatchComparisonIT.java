@@ -1,8 +1,8 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
-import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooFinanceClient;
-import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooFinanceClient.SearchResult;
-import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooQuote;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.yahoofinance.YahooMarketClient;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.yahoofinance.YahooMarketClient.SearchResult;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.yahoofinance.YahooQuote;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
@@ -33,6 +33,11 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 @EnabledIfEnvironmentVariable(named = "RESOLVER_LIVE", matches = "true")
 class TickerMatchComparisonIT {
 
+    private static YahooMarketClient liveYahoo() {
+        return new YahooMarketClient(new de.bsommerfeld.wsbg.terminal.web.impl.net.HouseFetcher(
+                java.util.Set.of(new de.bsommerfeld.wsbg.terminal.web.impl.net.DirectTransport())));
+    }
+
     /** Old generic stop tokens — the same set the resolver used BEFORE "com" was added. */
     private static final Set<String> OLD_STOP = Set.of(
             "inc", "incorporated", "corp", "corporation", "co", "company",
@@ -61,7 +66,7 @@ class TickerMatchComparisonIT {
 
     @Test
     void compareLegacyVsScoreGatedMatching() {
-        YahooFinanceClient yahoo = new YahooFinanceClient();
+        YahooMarketClient yahoo = liveYahoo();
         int rescued = 0, regressed = 0;
 
         for (String group : List.of("MEGACAPS", "ALREADY_OK", "MULTI", "TRICKY")) {
@@ -105,7 +110,7 @@ class TickerMatchComparisonIT {
     /** The new path must not REGRESS any name the old gate already resolved. */
     @Test
     void scoreGateNeverRegressesNamesTheOldGateMatched() {
-        YahooFinanceClient yahoo = new YahooFinanceClient();
+        YahooMarketClient yahoo = liveYahoo();
         for (String subject : concat(ALREADY_OK, MULTI)) {
             List<YahooQuote> quotes;
             try {
@@ -124,7 +129,7 @@ class TickerMatchComparisonIT {
     /** The megacaps the old gate dropped must now resolve to an instrument. */
     @Test
     void scoreGateRescuesMegacaps() {
-        YahooFinanceClient yahoo = new YahooFinanceClient();
+        YahooMarketClient yahoo = liveYahoo();
         for (String subject : MEGACAPS) {
             List<YahooQuote> quotes;
             try {
@@ -140,7 +145,7 @@ class TickerMatchComparisonIT {
     /** "Rheiner" (the historic fuzzy false-positive) must stay unmatched. */
     @Test
     void fuzzyGuardStillHolds() {
-        YahooFinanceClient yahoo = new YahooFinanceClient();
+        YahooMarketClient yahoo = liveYahoo();
         List<YahooQuote> quotes;
         try {
             quotes = yahoo.search("Rheiner", 8, 0).quotes();

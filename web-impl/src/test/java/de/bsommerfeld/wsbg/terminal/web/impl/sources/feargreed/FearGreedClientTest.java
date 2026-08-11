@@ -1,0 +1,191 @@
+package de.bsommerfeld.wsbg.terminal.web.impl.sources.feargreed;
+
+import de.bsommerfeld.wsbg.terminal.web.fetch.FetchUtil;
+import de.bsommerfeld.wsbg.terminal.web.fetch.WebFetcher;
+import de.bsommerfeld.wsbg.terminal.web.fetch.WebResponse;
+import org.junit.jupiter.api.Test;
+
+import java.time.Duration;
+import java.util.Map;
+import java.util.Optional;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/** Parsing of the CNN dataviz response + the score→band thresholds. No network. */
+class FearGreedClientTest {
+
+    /** Parse-only tests — the fetcher must never be reached. */
+    private static FearGreedClient client() {
+        return new FearGreedClient(new WebFetcher() {
+            @Override
+            public WebResponse fetch(String url, Map<String, String> headers, Duration timeout,
+                    FetchUtil... modes) {
+                throw new UnsupportedOperationException("no network in parse tests");
+            }
+
+            @Override
+            public WebResponse fetchBinary(String url, Map<String, String> headers,
+                    Duration timeout, FetchUtil... modes) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public WebResponse post(String url, Map<String, String> headers, String body,
+                    String contentType, Duration timeout, FetchUtil... modes) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public boolean hostCoolingDown(String url) {
+                return false;
+            }
+        });
+    }
+
+    @Test
+    void parsesScoreRatingAndPreviousClose() {
+        String body = """
+            {"fear_and_greed":{"score":63.27,"rating":"greed","timestamp":"2026-06-24T20:00:00+00:00",
+             "previous_close":60.1,"previous_1_week":55,"previous_1_month":48,"previous_1_year":70},
+             "fear_and_greed_historical":{"data":[]}}
+            """;
+        Optional<FearGreedIndex> idx = client().parse(body);
+        assertTrue(idx.isPresent());
+        assertEquals(63.27, idx.get().score(), 1e-9);
+        assertEquals("greed", idx.get().rating());
+        assertEquals(60.1, idx.get().previousClose(), 1e-9);
+        assertEquals(FearGreedIndex.Band.GREED, idx.get().band());
+    }
+
+    @Test
+    void parsesLookBacksAndComponents() {
+        String body = """
+            {"fear_and_greed":{"score":47.97,"rating":"neutral","previous_close":47.29,
+             "previous_1_week":32.4,"previous_1_month":26.91,"previous_1_year":76.97},
+             "market_momentum_sp500":{"score":61.2,"rating":"greed","data":[]},
+             "market_momentum_sp125":{"score":61.2,"rating":"greed"},
+             "stock_price_strength":{"score":40.6,"rating":"fear"},
+             "stock_price_breadth":{"score":25.6,"rating":"fear"},
+             "put_call_options":{"score":58.2,"rating":"greed"},
+             "market_volatility_vix":{"score":50,"rating":"neutral"},
+             "market_volatility_vix_50":{"score":50,"rating":"neutral"},
+             "junk_bond_demand":{"score":35.4,"rating":"fear"},
+             "safe_haven_demand":{"score":64.2,"rating":"greed"}}
+            """;
+        FearGreedIndex idx = client().parse(body).orElseThrow();
+        assertEquals(32.4, idx.previousWeek(), 1e-9);
+        assertEquals(26.91, idx.previousMonth(), 1e-9);
+        assertEquals(76.97, idx.previousYear(), 1e-9);
+        // The seven canonical components, in CNN's order; the sp125/vix_50
+        // duplicates are deliberately not parsed.
+        assertEquals(7, idx.components().size());
+        assertEquals("market_momentum_sp500", idx.components().get(0).key());
+        assertEquals(61.2, idx.components().get(0).score(), 1e-9);
+        assertEquals("greed", idx.components().get(0).rating());
+        assertEquals(FearGreedIndex.Band.GREED, idx.components().get(0).band());
+        assertEquals("safe_haven_demand", idx.components().get(6).key());
+    }
+
+    @Test
+    void missingComponentsAndLookBacksStayEmpty() {
+        FearGreedIndex idx = client()
+                .parse("{\"fear_and_greed\":{\"score\":50,\"rating\":\"neutral\",\"previous_close\":49}}")
+                .orElseThrow();
+        assertTrue(idx.components().isEmpty());
+        assertEquals(null, idx.previousWeek());
+        assertEquals(null, idx.previousMonth());
+        assertEquals(null, idx.previousYear());
+    }
+
+    @Test
+    void malformedComponentBlockIsSkippedNotFatal() {
+        String body = """
+            {"fear_and_greed":{"score":50,"rating":"neutral","previous_close":49},
+             "market_momentum_sp500":{"score":"kaputt","rating":"greed"},
+             "junk_bond_demand":{"score":140,"rating":"fear"},
+             "safe_haven_demand":{"score":64.2,"rating":"greed"}}
+            """;
+        FearGreedIndex idx = client().parse(body).orElseThrow();
+        assertEquals(1, idx.components().size());
+        assertEquals("safe_haven_demand", idx.components().get(0).key());
+    }
+
+    @Test
+    void parsesHistorySkippingMalformedSamples() {
+        String body = """
+            {"fear_and_greed":{"score":50,"rating":"neutral","previous_close":49},
+             "fear_and_greed_historical":{"data":[
+               {"x":1719100000000,"y":55.2},
+               {"x":1719000000000,"y":41.0},
+               {"x":1719200000000,"y":140},
+               {"x":"kaputt","y":33},
+               {"x":1719300000000}
+             ]}}
+            """;
+        Optional<FearGreedIndex> idx = client().parse(body);
+        assertTrue(idx.isPresent());
+        // Two valid samples survive, sorted chronologically; the out-of-band and
+        // malformed ones are skipped without failing the reading.
+        assertEquals(2, idx.get().history().size());
+        assertEquals(1719000000000L, idx.get().history().get(0).epochMs());
+        assertEquals(41.0, idx.get().history().get(0).score(), 1e-9);
+        assertEquals(55.2, idx.get().history().get(1).score(), 1e-9);
+    }
+
+    @Test
+    void missingHistoryYieldsEmptyList() {
+        Optional<FearGreedIndex> idx = client()
+                .parse("{\"fear_and_greed\":{\"score\":50,\"rating\":\"neutral\",\"previous_close\":49}}");
+        assertTrue(idx.isPresent());
+        assertTrue(idx.get().history().isEmpty());
+    }
+
+    @Test
+    void rejectsOutOfBandAndMissingScore() {
+        assertTrue(client().parse("{\"fear_and_greed\":{\"score\":140}}").isEmpty());
+        assertTrue(client().parse("{\"fear_and_greed\":{\"rating\":\"fear\"}}").isEmpty());
+        assertTrue(client().parse("not json").isEmpty());
+    }
+
+    @Test
+    void bandThresholds() {
+        assertEquals(FearGreedIndex.Band.EXTREME_FEAR, band(10));
+        assertEquals(FearGreedIndex.Band.FEAR, band(30));
+        assertEquals(FearGreedIndex.Band.NEUTRAL, band(50));
+        assertEquals(FearGreedIndex.Band.GREED, band(70));
+        assertEquals(FearGreedIndex.Band.EXTREME_GREED, band(90));
+    }
+
+    private static FearGreedIndex.Band band(double score) {
+        return new FearGreedIndex(score, "", score, java.time.Instant.EPOCH).band();
+    }
+
+    @Test
+    void parsesDailyHistoryOneReadingPerDateLastPointWins() {
+        // One settled day, an intraday pair on the next (the later epoch must
+        // win), plus an out-of-band and a malformed point (both skipped).
+        String body = """
+            {"fear_and_greed":{"score":50,"rating":"neutral"},
+             "fear_and_greed_historical":{"data":[
+               {"x":1600732800000,"y":45.2,"rating":"fear"},
+               {"x":1600819200000,"y":40.0,"rating":"fear"},
+               {"x":1600855200000,"y":38.5,"rating":"fear"},
+               {"x":1600941600000,"y":250.0,"rating":"broken"},
+               {"y":12.0,"rating":"no-x"}]}}
+            """;
+        var days = FearGreedClient.parseDailyHistory(body);
+        assertEquals(2, days.size());
+        assertEquals(java.time.LocalDate.of(2020, 9, 22), days.get(0).date());
+        assertEquals(45.2, days.get(0).score(), 1e-9);
+        assertEquals("fear", days.get(0).rating());
+        assertEquals(java.time.LocalDate.of(2020, 9, 23), days.get(1).date());
+        assertEquals(38.5, days.get(1).score(), 1e-9);
+    }
+
+    @Test
+    void dailyHistoryEmptyOnMissingOrBrokenBody() {
+        assertTrue(FearGreedClient.parseDailyHistory("{\"fear_and_greed\":{\"score\":50}}").isEmpty());
+        assertTrue(FearGreedClient.parseDailyHistory("not json").isEmpty());
+    }
+}

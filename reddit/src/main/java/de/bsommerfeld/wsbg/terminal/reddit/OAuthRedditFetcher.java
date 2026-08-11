@@ -4,8 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
-import de.bsommerfeld.wsbg.terminal.source.net.WebFetcher;
-import de.bsommerfeld.wsbg.terminal.source.net.WebResponse;
+import de.bsommerfeld.wsbg.terminal.reddit.net.RedditFetch;
+import de.bsommerfeld.wsbg.terminal.web.fetch.WebResponse;
 import jakarta.inject.Inject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,7 +23,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Application-only ("userless") OAuth {@link WebFetcher} against
+ * Application-only ("userless") OAuth {@link RedditFetch} against
  * {@code oauth.reddit.com}.
  *
  * <p>
@@ -31,7 +31,7 @@ import java.util.Map;
  * {@code www.reddit.com/.json} endpoints often reject headless clients with a
  * 403, but the official OAuth API host is served normally to a plain
  * {@link HttpClient} carrying a bearer token, with no browser involved. It is
- * one transport strategy among the shared {@link WebFetcher} seam — caller
+ * one delegate in Reddit's module-internal {@link RedditFetch} chain — caller
  * headers are ignored (this sets its own {@code User-Agent} + {@code Authorization}).
  *
  * <h3>No user login</h3>
@@ -53,7 +53,7 @@ import java.util.Map;
  * (listings, {@code /by_id/}, comment trees) are identical on the OAuth host.
  */
 @Singleton
-public final class OAuthRedditFetcher implements WebFetcher {
+public final class OAuthRedditFetcher implements RedditFetch {
 
     private static final Logger LOG = LoggerFactory.getLogger(OAuthRedditFetcher.class);
 
@@ -123,7 +123,7 @@ public final class OAuthRedditFetcher implements WebFetcher {
         response.headers().map().forEach((k, v) -> {
             if (v != null && !v.isEmpty()) outHeaders.put(k, v.get(0));
         });
-        return new WebResponse(response.statusCode(), response.body(), outHeaders);
+        return WebResponse.text(response.statusCode(), response.body(), outHeaders);
     }
 
     /** Maps a {@code www.reddit.com} URL onto the OAuth host. */

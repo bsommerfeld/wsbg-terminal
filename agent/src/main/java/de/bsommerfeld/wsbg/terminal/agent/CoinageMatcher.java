@@ -5,7 +5,7 @@ import de.bsommerfeld.wsbg.terminal.instruments.AliasProvenance;
 import de.bsommerfeld.wsbg.terminal.instruments.AliasStore;
 import de.bsommerfeld.wsbg.terminal.instruments.InstrumentCorpus;
 import de.bsommerfeld.wsbg.terminal.instruments.InstrumentEntry;
-import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooQuote;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.yahoofinance.YahooQuote;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

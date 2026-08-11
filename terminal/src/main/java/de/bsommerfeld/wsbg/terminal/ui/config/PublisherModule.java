@@ -1,9 +1,9 @@
 package de.bsommerfeld.wsbg.terminal.ui.config;
 
 import com.google.inject.AbstractModule;
-import de.bsommerfeld.wsbg.terminal.currency.EurUsdMonitorService;
-import de.bsommerfeld.wsbg.terminal.feargreed.CryptoFearGreedMonitorService;
-import de.bsommerfeld.wsbg.terminal.feargreed.FearGreedMonitorService;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.currency.EurUsdMonitorService;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.feargreed.CryptoFearGreedMonitorService;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.feargreed.FearGreedMonitorService;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.DonationStatsPublisher;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.EurUsdPublisher;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.FearGreedPublisher;

@@ -392,8 +392,8 @@ class HeadlineWriterTest {
         AgentRepository repo = new AgentRepository();
         HeadlineWriter w = new HeadlineWriter(repo, new ApplicationEventBus());
         SubjectUnit u = instrumentUnit();
-        de.bsommerfeld.wsbg.terminal.source.RawNewsItem article =
-                new de.bsommerfeld.wsbg.terminal.source.RawNewsItem("uuid-1",
+        de.bsommerfeld.wsbg.terminal.web.article.Article article =
+                new de.bsommerfeld.wsbg.terminal.web.article.Article("uuid-1",
                         "ServiceNow hebt Prognose nach Großauftrag an", "Reuters",
                         "https://example.com/now", null, List.of("NOW"));
 

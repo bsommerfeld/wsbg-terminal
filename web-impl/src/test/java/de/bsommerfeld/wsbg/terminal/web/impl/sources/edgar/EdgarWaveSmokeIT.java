@@ -1,0 +1,86 @@
+package de.bsommerfeld.wsbg.terminal.web.impl.sources.edgar;
+
+import de.bsommerfeld.wsbg.terminal.web.article.Article;
+import de.bsommerfeld.wsbg.terminal.web.facts.InsiderDealings;
+import de.bsommerfeld.wsbg.terminal.web.fetch.WebFetcher;
+import de.bsommerfeld.wsbg.terminal.web.impl.net.DirectTransport;
+import de.bsommerfeld.wsbg.terminal.web.impl.net.HouseFetcher;
+import de.bsommerfeld.wsbg.terminal.web.instrument.ResolvedInstrument;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * The three EDGAR legs, live against the real SEC: reported figures,
+ * full-text filings and Form 4 insider transactions. Isolated verification is
+ * the live probe - a fixture would only ever prove that the parser reads the
+ * fixture.
+ *
+ * <pre>EDGAR_SMOKE=true mvn test -pl web-impl -Dtest=EdgarWaveSmokeIT -Dtest.excludedGroups=</pre>
+ */
+@Tag("integration")
+@EnabledIfEnvironmentVariable(named = "EDGAR_SMOKE", matches = "true")
+class EdgarWaveSmokeIT {
+
+    private static WebFetcher fetcher() {
+        return new HouseFetcher(Set.of(new DirectTransport()));
+    }
+
+    @Test
+    void theReportedFiguresArriveAsASeries() {
+        WebFetcher fetcher = fetcher();
+        EdgarFactsClient.Kennzahlen facts =
+                new EdgarFactsClient(new EdgarClient(fetcher), fetcher).kennzahlen("AAPL");
+        assertFalse(facts.isEmpty(), "company-facts answered nothing for AAPL");
+        System.out.println("[edgar-facts] " + facts.firma() + " · "
+                + facts.werte().size() + " figures");
+        Set<String> kennzahlen = new LinkedHashSet<>();
+        for (EdgarFactsClient.Kennzahlwert w : facts.werte()) kennzahlen.add(w.kennzahl());
+        System.out.println("[edgar-facts] quantities: " + kennzahlen);
+        for (EdgarFactsClient.Kennzahlwert w : facts.werte().subList(0, 12)) {
+            System.out.println("  " + w.ende() + " " + w.fy() + w.fp() + " " + w.kennzahl()
+                    + " = " + w.wert() + " " + w.einheit() + " (" + w.form() + ")");
+        }
+        // A series, not a snapshot: the same quantity across several periods.
+        assertTrue(kennzahlen.size() >= 5, "only " + kennzahlen.size() + " quantities read");
+        long umsatzPeriods = facts.werte().stream()
+                .filter(w -> w.kennzahl().equals("umsatz")).count();
+        assertTrue(umsatzPeriods >= 4, "revenue carries only " + umsatzPeriods + " period(s)");
+    }
+
+    @Test
+    void theFullTextIndexFindsFilingsThatNameTheCompany() throws Exception {
+        List<Article> hits = new EdgarFullTextSource(fetcher())
+                .newsFor(ResolvedInstrument.ofName("Rheinmetall"), 10);
+        assertFalse(hits.isEmpty(), "the full-text index answered nothing");
+        for (Article hit : hits) {
+            System.out.println("[edgar-fts] " + hit.publishedAt() + "  " + hit.title()
+                    + "\n            " + hit.link());
+            assertNotNull(hit.link());
+            assertTrue(hit.link().startsWith("https://www.sec.gov/Archives/"));
+        }
+    }
+
+    @Test
+    void formFourTransactionsArriveInTheInsiderShape() {
+        WebFetcher fetcher = fetcher();
+        InsiderDealings deals = new EdgarInsiderClient(new EdgarClient(fetcher), fetcher)
+                .insiderDeals("AAPL", "US0378331005");
+        assertNotNull(deals, "the Form 4 register could not be read");
+        System.out.println("[edgar-insider] " + deals.deals().size() + " transaction(s)");
+        for (InsiderDealings.InsiderDeal d : deals.deals()) {
+            System.out.println("  " + d.dealDateIso() + "  " + d.person() + " (" + d.positionStatus()
+                    + ")  " + d.dealType() + "  " + d.avgPrice() + " " + d.currency()
+                    + "  vol " + d.volumeEur());
+        }
+        assertFalse(deals.deals().isEmpty(), "no Form 4 transaction parsed");
+    }
+}

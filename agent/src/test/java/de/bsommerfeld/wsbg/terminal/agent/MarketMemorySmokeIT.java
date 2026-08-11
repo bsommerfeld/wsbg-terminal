@@ -1,16 +1,19 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
-import de.bsommerfeld.wsbg.terminal.briefing.FnRssClient;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.briefing.FnRssClient;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
 import de.bsommerfeld.wsbg.terminal.db.AdhocEventArchive;
 import de.bsommerfeld.wsbg.terminal.db.FearGreedHistoryArchive;
 import de.bsommerfeld.wsbg.terminal.db.MarketEventArchive;
 import de.bsommerfeld.wsbg.terminal.db.MarketEventRecord;
-import de.bsommerfeld.wsbg.terminal.edgar.EdgarClient;
-import de.bsommerfeld.wsbg.terminal.feargreed.FearGreedClient;
-import de.bsommerfeld.wsbg.terminal.yahoofinance.Bar;
-import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooFinanceClient;
+import de.bsommerfeld.wsbg.terminal.web.fetch.WebFetcher;
+import de.bsommerfeld.wsbg.terminal.web.impl.net.DirectTransport;
+import de.bsommerfeld.wsbg.terminal.web.impl.net.HouseFetcher;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.edgar.EdgarClient;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.feargreed.FearGreedClient;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.yahoofinance.Bar;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.yahoofinance.YahooMarketClient;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
@@ -48,6 +51,10 @@ class MarketMemorySmokeIT {
     @TempDir
     Path dir;
 
+    /** The live smoke's real HTTP door — the house fetcher over plain HTTP. */
+    private static final WebFetcher LIVE =
+            new HouseFetcher(java.util.Set.of(new DirectTransport()));
+
     @Test
     void everyLegDeliversAndTheEnrichmentMeasures() {
         AdhocEventArchive adhocs = new AdhocEventArchive(dir.resolve("adhocs.jsonl"));
@@ -56,7 +63,7 @@ class MarketMemorySmokeIT {
         MarketMemoryService svc = new MarketMemoryService(adhocs, fg, events, null);
 
         // --- Leg 1: FN ad-hocs (live RSS) -------------------------------
-        svc.setFnRssClient(new FnRssClient());
+        svc.setFnRssClient(new FnRssClient(LIVE));
         svc.harvestAdhocs();
         assertTrue(adhocs.size() > 0, "FN ad-hoc feed delivered nothing");
         svc.harvestAdhocs();
@@ -65,14 +72,14 @@ class MarketMemorySmokeIT {
         assertEquals(afterSecond, adhocs.size(), "re-harvest must be idempotent");
 
         // --- Leg 2: CNN F&G history (live, full backfill) ----------------
-        svc.setFearGreedClient(new FearGreedClient());
+        svc.setFearGreedClient(new FearGreedClient(LIVE));
         svc.topUpFearGreedHistory();
         assertTrue(fg.size() > 1000,
                 "F&G backfill too small: " + fg.size() + " days (expected the full series since 2020-09-21)");
         assertTrue(fg.byDate("2022-06-15").isPresent(), "mid-series day missing from the backfill");
 
         // --- Leg 3: Yahoo deep bars (live) -------------------------------
-        YahooFinanceClient yahoo = new YahooFinanceClient();
+        YahooMarketClient yahoo = new YahooMarketClient(LIVE);
         List<Bar> gspc = yahoo.fetchDailyBars("^GSPC", LocalDate.of(1950, 1, 1));
         assertTrue(gspc.size() > 10_000,
                 "negative/deep period1 did not unlock the ^GSPC floor: " + gspc.size() + " bars");
@@ -81,7 +88,7 @@ class MarketMemorySmokeIT {
         assertTrue(hourly.size() > 300, "NVDA hourly bars too thin: " + hourly.size());
 
         // --- Leg 4: EDGAR 8-K classes (live) -----------------------------
-        EdgarClient edgar = new EdgarClient();
+        EdgarClient edgar = new EdgarClient(LIVE);
         List<EdgarClient.EdgarEvent> aapl = edgar.eightKEvents("AAPL");
         assertFalse(aapl.isEmpty(), "EDGAR delivered no mapped 8-K events for AAPL");
         for (EdgarClient.EdgarEvent e : aapl) {
@@ -163,7 +170,7 @@ class MarketMemorySmokeIT {
                 new AdhocEventArchive(dir.resolve("a.jsonl")),
                 new FearGreedHistoryArchive(dir.resolve("f.jsonl")), events, null);
         svc.setTradingViewCalendarClient(
-                new de.bsommerfeld.wsbg.terminal.briefing.TradingViewCalendarClient());
+                new de.bsommerfeld.wsbg.terminal.web.impl.sources.briefing.TradingViewCalendarClient(LIVE));
         svc.setMacroClassifier(new MacroClassifier(brain, gate));
 
         svc.harvestMacroSurprises();

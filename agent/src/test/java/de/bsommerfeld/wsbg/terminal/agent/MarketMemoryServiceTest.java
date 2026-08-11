@@ -1,10 +1,13 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
-import de.bsommerfeld.wsbg.terminal.briefing.FnRssClient;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.briefing.FnRssClient;
 import de.bsommerfeld.wsbg.terminal.db.AdhocEventArchive;
 import de.bsommerfeld.wsbg.terminal.db.FearGreedDayRecord;
 import de.bsommerfeld.wsbg.terminal.db.FearGreedHistoryArchive;
-import de.bsommerfeld.wsbg.terminal.feargreed.FearGreedClient;
+import de.bsommerfeld.wsbg.terminal.web.fetch.FetchUtil;
+import de.bsommerfeld.wsbg.terminal.web.fetch.WebFetcher;
+import de.bsommerfeld.wsbg.terminal.web.fetch.WebResponse;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.feargreed.FearGreedClient;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -25,6 +28,32 @@ class MarketMemoryServiceTest {
 
     @TempDir
     java.nio.file.Path dir;
+
+    /** A fetcher no stubbed client is ever allowed to touch. */
+    private static final WebFetcher DEAD = new WebFetcher() {
+        @Override
+        public WebResponse fetch(String url, java.util.Map<String, String> headers,
+                java.time.Duration timeout, FetchUtil... modes) {
+            throw new UnsupportedOperationException("network-free test");
+        }
+
+        @Override
+        public WebResponse fetchBinary(String url, java.util.Map<String, String> headers,
+                java.time.Duration timeout, FetchUtil... modes) {
+            throw new UnsupportedOperationException("network-free test");
+        }
+
+        @Override
+        public WebResponse post(String url, java.util.Map<String, String> headers, String body,
+                String contentType, java.time.Duration timeout, FetchUtil... modes) {
+            throw new UnsupportedOperationException("network-free test");
+        }
+
+        @Override
+        public boolean hostCoolingDown(String url) {
+            return false;
+        }
+    };
 
     private MarketMemoryService service(AdhocEventArchive adhocs, FearGreedHistoryArchive fg) {
         return new MarketMemoryService(adhocs, fg,
@@ -63,7 +92,7 @@ class MarketMemoryServiceTest {
     void adhocSweepArchivesOnceAcrossRepeatedPolls() {
         AdhocEventArchive adhocs = new AdhocEventArchive(dir.resolve("adhocs.jsonl"));
         MarketMemoryService svc = service(adhocs, new FearGreedHistoryArchive(dir.resolve("fg.jsonl")));
-        svc.setFnRssClient(new FnRssClient() {
+        svc.setFnRssClient(new FnRssClient(DEAD) {
             @Override
             public List<AdhocItem> adhocs(int limit) {
                 return List.of(
@@ -83,7 +112,7 @@ class MarketMemoryServiceTest {
         FearGreedHistoryArchive fg = new FearGreedHistoryArchive(dir.resolve("fg.jsonl"));
         LocalDate today = LocalDate.now(java.time.ZoneOffset.UTC);
         MarketMemoryService svc = service(new AdhocEventArchive(dir.resolve("adhocs.jsonl")), fg);
-        svc.setFearGreedClient(new FearGreedClient() {
+        svc.setFearGreedClient(new FearGreedClient(DEAD) {
             @Override
             public List<DailyScore> historySince(LocalDate since) {
                 return List.of(
@@ -98,7 +127,7 @@ class MarketMemoryServiceTest {
         assertEquals(Optional.empty(), fg.byDate(today.toString()).map(FearGreedDayRecord::date));
 
         // Current through yesterday now — the next tick must not fetch at all.
-        svc.setFearGreedClient(new FearGreedClient() {
+        svc.setFearGreedClient(new FearGreedClient(DEAD) {
             @Override
             public List<DailyScore> historySince(LocalDate since) {
                 throw new AssertionError("must not fetch when current");

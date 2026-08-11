@@ -10,8 +10,8 @@ import de.bsommerfeld.wsbg.terminal.core.i18n.I18nService;
 import de.bsommerfeld.wsbg.terminal.db.AgentRepository;
 import de.bsommerfeld.wsbg.terminal.db.HeadlineRecord;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
-import de.bsommerfeld.wsbg.terminal.yahoofinance.YahooFinanceClient;
-import de.bsommerfeld.wsbg.terminal.source.RawNewsItem;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.yahoofinance.YahooMarketClient;
+import de.bsommerfeld.wsbg.terminal.web.article.Article;
 import dev.langchain4j.model.chat.ChatModel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -137,7 +137,7 @@ public class EditorialAgent {
             AgentRepository agentRepository,
             RedditRepository redditRepository,
             ApplicationEventBus eventBus, I18nService i18n,
-            YahooFinanceClient yahooFinance,
+            YahooMarketClient yahooFinance,
             SubjectRegistry subjectRegistry, GlobalConfig config) {
         this.brain = brain;
         this.llmGate = llmGate;
@@ -165,22 +165,15 @@ public class EditorialAgent {
     }
 
     /**
-     * Installs the shared web transport onto the article digester (the news
+     * Installs the house fetcher onto the article digester (the news
      * pre-stage: full article → key-fact digest → compose brief). Optional Guice
-     * method-injection like the seams below: present in production (NetModule binds
-     * the {@link de.bsommerfeld.wsbg.terminal.source.net.WebFetcher} chain), absent
+     * method-injection like the seams below: present in production, absent
      * in tests, where the digester stays inert and briefs fall back to the teaser.
      */
     @com.google.inject.Inject(optional = true)
-    void setArticleFetcher(
-            @de.bsommerfeld.wsbg.terminal.source.net.DirectFirst
-            de.bsommerfeld.wsbg.terminal.source.net.WebFetcher webFetcher) {
-        // Since 2026-07-14 the @DirectFirst binding is an alias of the
-        // browser-first chain (user mandate: every third-party outreach rides
-        // the joker, plain HTTP only as the per-request fallback). Article
-        // links fan across ARBITRARY publisher domains — each anchors its own
-        // hidden Chromium tab, which the joker's idle-TTL/LRU eviction
-        // (CefWebFetcher.evictIdle) now disposes again after use.
+    void setArticleFetcher(de.bsommerfeld.wsbg.terminal.web.fetch.WebFetcher webFetcher) {
+        // Article links fan across ARBITRARY publisher domains; the digester
+        // declares its own mode order (direct-first, joker as the rescue).
         newsDigester.setFetcher(webFetcher,
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) "
                         + "Chrome/126.0.0.0 Safari/537.36");
@@ -201,7 +194,7 @@ public class EditorialAgent {
      * constructor, so the hand-built {@link #tickerResolver} already exists.
      */
     @com.google.inject.Inject(optional = true)
-    void setPriceSource(de.bsommerfeld.wsbg.terminal.core.price.PriceSource priceSource) {
+    void setPriceSource(de.bsommerfeld.wsbg.terminal.web.facts.PriceSource priceSource) {
         tickerResolver.setPriceSource(priceSource);
     }
 
@@ -227,24 +220,25 @@ public class EditorialAgent {
     }
 
     /**
-     * Installs the multi-source news pool onto the resolver. Optional Guice
-     * method-injection: present in production (AppModule binds the news sources),
-     * absent in the lab harness + tests, where news stays Yahoo-only.
+     * Installs the web gateway onto the resolver — the basin the collectors
+     * pour into; the wire fan became a local pool query. Optional Guice
+     * method-injection: absent in the lab harness + tests, where news stays
+     * Yahoo-only.
      */
     @com.google.inject.Inject(optional = true)
-    void setNewsAggregator(de.bsommerfeld.wsbg.terminal.aggregator.NewsAggregator aggregator) {
-        tickerResolver.setNewsAggregator(aggregator);
-        LOG.info("[NEWS] multi-source aggregator installed on the resolver.");
+    void setWebGateway(de.bsommerfeld.wsbg.terminal.web.gateway.WebGateway gateway) {
+        tickerResolver.setWebGateway(gateway);
+        LOG.info("[NEWS] web gateway (basin) installed on the resolver.");
     }
 
     /**
      * Installs the venue candidate search (L&amp;S) + the persistent verdict ledger
      * onto the identity desk. Optional Guice method-injection: present in production
-     * (AppModule binds {@link de.bsommerfeld.wsbg.terminal.core.price.InstrumentLookup}),
+     * (AppModule binds {@link de.bsommerfeld.wsbg.terminal.web.facts.InstrumentLookup}),
      * absent in tests, where the desk stays memory-only and judges Yahoo facts alone.
      */
     @com.google.inject.Inject(optional = true)
-    void setInstrumentLookup(de.bsommerfeld.wsbg.terminal.core.price.InstrumentLookup lookup) {
+    void setInstrumentLookup(de.bsommerfeld.wsbg.terminal.web.facts.InstrumentLookup lookup) {
         identityDesk.installLookup(lookup);
         identityDesk.installLedger(new IdentityLedger(
                 de.bsommerfeld.wsbg.terminal.core.util.StorageUtils.getAppDataDir()
@@ -597,15 +591,15 @@ public class EditorialAgent {
         // a German line fully paraphrasing an English item shares zero tokens (live: the
         // SAP cost-cuts line carried no tag despite being written FROM the news), so the
         // model's citation closes that gap while the token test backstops its under-citing.
-        java.util.LinkedHashSet<RawNewsItem> usedSet = new java.util.LinkedHashSet<>();
-        List<RawNewsItem> shown = NewsProvenance.briefNews(u, config.getHeadlines().isNewsCoverageEnabled());
+        java.util.LinkedHashSet<Article> usedSet = new java.util.LinkedHashSet<>();
+        List<Article> shown = NewsProvenance.briefNews(u, config.getHeadlines().isNewsCoverageEnabled());
         for (Integer ord : ud.newsUsed()) {
             if (ord != null && ord >= 1 && ord <= shown.size()) usedSet.add(shown.get(ord - 1));
         }
-        for (RawNewsItem n : u.news()) {
+        for (Article n : u.news()) {
             if (NewsProvenance.headlineReflectsNews(d.headline(), n)) usedSet.add(n);
         }
-        List<RawNewsItem> newsUsed = List.copyOf(usedSet);
+        List<Article> newsUsed = List.copyOf(usedSet);
         // Provenance chaining: the model cites the numbered prior lines it built on
         // ("derivedFrom": [2]) — those lines' news sources carry over, so a fact that
         // debuted on an earlier, tagged line keeps its sources on every continuation
@@ -622,7 +616,7 @@ public class EditorialAgent {
             // prior headlines instead of re-milking the same item); another unit
             // pulling the same item is untouched (covered ids live on the unit).
             u.markNewsCovered(newsUsed.stream()
-                    .map(RawNewsItem::uuid)
+                    .map(Article::uuid)
                     .filter(Objects::nonNull).toList());
             return true;
         }
