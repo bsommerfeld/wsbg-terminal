@@ -24,6 +24,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Deterministic, code-side resolution of an editorial <em>subject</em> against
@@ -80,6 +82,15 @@ public final class TickerResolver {
 
     /** News items to attach to each related instrument (so it carries a "why", not just a move). */
     private static final int RELATED_NEWS_COUNT = 2;
+
+    /**
+     * How long a resolve waits on the live source fan before composing without
+     * it. Bounded on purpose: the fan has per-source timeouts but no overall
+     * one, so an unbounded wait would let a single slow house hold a prep
+     * thread — and there are only four. What arrives late is not lost, it is in
+     * the basin for the next pass.
+     */
+    private static final long NEWS_FAN_WAIT_SECONDS = 6;
 
     /**
      * The LLM identity judge — a discrete "which of these candidates IS the
@@ -359,9 +370,33 @@ public final class TickerResolver {
      * every venue note ever filed under the name.
      */
     private List<Article> resolveNews(String ownTicker, String canonical, SearchResult sr) {
-        return (webGateway != null && ownTicker != null)
-                ? webGateway.pool().queryInstrument(instrumentKey(ownTicker, canonical), NEWS_COUNT)
-                : (sr.news() != null ? sr.news() : List.of());
+        if (webGateway == null || ownTicker == null) {
+            return sr.news() != null ? sr.news() : List.of();
+        }
+        ResolvedInstrument key = instrumentKey(ownTicker, canonical);
+        List<Article> pooled = webGateway.pool().queryInstrument(key, NEWS_COUNT);
+        if (pooled != null && !pooled.isEmpty()) return pooled;
+
+        // The basin is a WINDOW, not an archive: it holds what the collectors
+        // swept in the last hours, which covers the names the world is writing
+        // about and misses the long tail — the small cap the room found before
+        // the desks did. For those, ask the sources directly. The fan pours
+        // into the same basin, so the wait is only about whether THIS compose
+        // sees it; whatever lands later is there for the next pass, and the
+        // gateway's own ledger keeps a repeated miss from re-fanning.
+        try {
+            String query = canonical == null || canonical.isBlank() ? ownTicker : canonical;
+            webGateway.searchInstrument(query).get(NEWS_FAN_WAIT_SECONDS, TimeUnit.SECONDS);
+        } catch (TimeoutException e) {
+            LOG.debug("[news] live fan for '{}' still running — its yield lands next pass", ownTicker);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return List.of();
+        } catch (Exception e) {
+            LOG.debug("[news] live fan for '{}' failed: {}", ownTicker, e.toString());
+        }
+        List<Article> afterFan = webGateway.pool().queryInstrument(key, NEWS_COUNT);
+        return afterFan == null ? List.of() : afterFan;
     }
 
     /**

@@ -10,8 +10,10 @@ import org.slf4j.LoggerFactory;
 import java.util.Collection;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 /**
  * The article-digest pre-stage: reads a news item's FULL article (via
@@ -86,13 +88,31 @@ final class NewsDigester {
     private final Map<String, Boolean> walledHosts = new ConcurrentHashMap<>();
 
     /**
+     * How deep the digest backlog may grow. Digesting is cache-warming: an item
+     * that has waited behind two hundred others is long past the compose it was
+     * meant to enrich, so the OLDEST waiting job is dropped to make room. The
+     * unbounded queue this replaces was the pipeline's real ceiling — with a
+     * full article pool the worker fell hours behind, and because every digest
+     * spends a slot of the shared gemma4 gate, the compose workers starved
+     * behind cache-warming for stories nobody was writing about anymore.
+     */
+    private static final int DIGEST_QUEUE_DEPTH = 200;
+
+    /**
      * Single background worker, mirroring the vision pool's sizing rationale: the
      * digest shares the one gemma4 model with extraction + compose, so one worker
      * leaves the latency-sensitive editorial calls their slots — digesting is
      * cache-warming, serialising it is the right trade.
      */
-    private final ExecutorService digestExecutor =
-            Executors.newFixedThreadPool(1, BackgroundThreads.single("news-digest"));
+    private final ExecutorService digestExecutor = newDigestExecutor();
+
+    private static ExecutorService newDigestExecutor() {
+        ThreadPoolExecutor pool = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(DIGEST_QUEUE_DEPTH),
+                BackgroundThreads.single("news-digest"),
+                new ThreadPoolExecutor.DiscardOldestPolicy());
+        return pool;
+    }
 
     private final AgentBrain brain;
     private final ChatGateway chatGateway;
@@ -112,17 +132,29 @@ final class NewsDigester {
     }
 
     /**
-     * Queues every not-yet-digested item for background fetch + digest.
+     * How many of one call's items are worth warming. The caller hands them
+     * newest-first, and a brief that renders at most a dozen articles gains
+     * little from the tail — while each extra job costs a fetch plus a slot of
+     * the shared model gate. Taking the freshest few keeps the backlog short
+     * enough that a digest still lands before the compose it belongs to.
+     */
+    private static final int PREFETCH_PER_CALL = 3;
+
+    /**
+     * Queues the freshest not-yet-digested items for background fetch + digest.
      * Fire-and-forget: the compose brief reads cache-only ({@link #ifCached}), so a
      * cold article simply isn't reflected this compose and enriches the next one.
      */
     void prefetch(Collection<Article> items) {
         if (items == null || items.isEmpty() || articleReader == null || !readArticles()) return;
+        int queued = 0;
         for (Article n : items) {
+            if (queued >= PREFETCH_PER_CALL) break;
             if (n == null || n.link() == null || n.link().isBlank()) continue;
             String link = n.link().trim();
             if (byLink.containsKey(link)) continue;
             digestExecutor.submit(() -> digest(link));
+            queued++;
         }
     }
 

@@ -101,6 +101,11 @@ final class NewsBox {
             if (pb == null) return -1;
             return pb.compareTo(pa);
         });
-        return merged.size() <= MAX_NEWS ? merged : new ArrayList<>(merged.subList(0, MAX_NEWS));
+        // Fold the outlets BEFORE the cap, not after: uuid-dedup only catches
+        // the same source twice, so without this an agency report reprinted by
+        // three houses would spend three of the twelve slots on one fact and
+        // crowd out three unrelated developments.
+        List<Article> folded = StoryClusterer.fold(merged);
+        return folded.size() <= MAX_NEWS ? folded : new ArrayList<>(folded.subList(0, MAX_NEWS));
     }
 }

@@ -115,10 +115,29 @@ final class BriefLabels {
                 + " [STALE] = older background, NOT a fresh catalyst):\n";
     }
 
+    /**
+     * The per-item marker. Short on purpose: the explanation it used to carry
+     * on EVERY line now stands once in {@link #newsToldNote()} — at a dozen
+     * items the repeated clause cost more of the window than the items did.
+     */
     String newsToldTag() {
+        return de ? "[ERZÄHLT]" : "[TOLD]";
+    }
+
+    /** Said once above the told block, in place of the old per-line clause. */
+    String newsToldNote() {
         return de
-                ? "[ERZÄHLT — steckt schon in deinen Schlagzeilen unten; als Anker nutzbar, nicht als Neuigkeit]"
-                : "[TOLD — already woven into your headlines below; usable as the anchor, not as news]";
+                ? "  ([ERZÄHLT] steckt schon in deinen Schlagzeilen unten;"
+                + " als Anker nutzbar, nicht als Neuigkeit)\n"
+                : "  ([TOLD] is already woven into your headlines below;"
+                + " usable as the anchor, not as news)\n";
+    }
+
+    /** Said when the news block itself had to be cut to fit the window. */
+    String newsBudgetOmitted(int n) {
+        return de
+                ? "  (" + n + " weitere ältere Meldung(en) weggelassen, um ins Kontext-Budget zu passen)\n"
+                : "  (" + n + " further older item(s) omitted to fit the context budget)\n";
     }
 
     String visionLoc() {

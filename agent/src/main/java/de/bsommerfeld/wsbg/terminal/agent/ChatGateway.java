@@ -62,11 +62,18 @@ final class ChatGateway {
     String chat(ChatModel model, String systemPrompt, String userMessage) {
         // Ollama TRUNCATES a prompt beyond num_ctx silently — the model then sees a
         // cut-off brief and produces exactly the confused output that looks like
-        // sudden dumbness, with no error anywhere. Estimate (~4 chars/token) and
-        // at least make the overflow visible. 512 tokens headroom for the reply.
-        int estTokens = (systemPrompt.length() + userMessage.length()) / 4;
+        // sudden dumbness, with no error anywhere. Estimate and at least make the
+        // overflow visible.
+        //
+        // Two corrections over the first cut, both of which hid real overflow:
+        // the ~4 chars/token rule is an ENGLISH figure — German compounds plus
+        // the brief's markdown run nearer 3.2, so the old estimate flattered
+        // every prompt by a fifth. And the reply needs num_predict of room, not
+        // 512: reserving a seventh of what the model may actually emit meant the
+        // warning stayed silent right up to the truncation it was built to catch.
+        int estTokens = (int) ((systemPrompt.length() + userMessage.length()) / 3.2);
         int ctx = brain.contextTokens();
-        if (estTokens > ctx - 512) {
+        if (estTokens > ctx - brain.numPredict()) {
             LOG.warn("[CTX] prompt ~{} tok vs num_ctx {} — Ollama will silently truncate; "
                     + "brief should have been budgeted tighter (sys={} chars, user={} chars)",
                     estTokens, ctx, systemPrompt.length(), userMessage.length());

@@ -83,6 +83,19 @@ public record Article(
     }
 
     /**
+     * The same article under a different byline. The one caller is the story
+     * clusterer: when several outlets carry one agency report, a single item
+     * stands for the cluster and takes a byline naming the others - how WIDELY
+     * a story is carried is itself signal, and losing it would make three
+     * outlets look like one.
+     */
+    public Article withPublisher(String byline) {
+        if (byline == null || byline.isBlank() || byline.equals(publisher)) return this;
+        return new Article(uuid, title, byline, link, publishedAt, relatedTickers,
+                isin, summary, sponsored, imageUrl, origin);
+    }
+
+    /**
      * Convenience constructor for sources that carry no ISIN / teaser /
      * sponsored flag / image (e.g. plain search results).
      */

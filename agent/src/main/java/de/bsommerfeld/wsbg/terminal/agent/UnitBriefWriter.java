@@ -41,6 +41,18 @@ final class UnitBriefWriter {
     /** Cap for the per-item article digest rendered under a news title (a runaway model reply must not eat the brief). */
     static final int DIGEST_CHAR_CAP = 500;
 
+    /**
+     * Rough char budget for the fresh-news block (~950 tokens). The item count
+     * is already capped, but twelve items with a full digest each are ~7.5k
+     * chars — more than the evidence block is allowed, for material that is
+     * context rather than the subject itself. Newest are kept, the rest counted
+     * off explicitly, exactly as the evidence budget does.
+     */
+    static final int NEWS_CHAR_BUDGET = 3000;
+
+    /** Already-told titles rendered before the block collapses to the newest few. */
+    static final int TOLD_NEWS_SHOWN = 3;
+
     /** Builds the per-unit brief: Yahoo data + the room's evidence about this subject + its story memory. Static for testability. */
     static String unitBrief(SubjectUnit unit, boolean newsCoverageEnabled) {
         return unitBrief(unit, newsCoverageEnabled, BriefLabels.EN);
@@ -120,12 +132,30 @@ final class UnitBriefWriter {
             sb.append(lbl.newsHeader());
             // Already-woven items stay VISIBLE — a known fact remains the anchor the
             // room's next development hangs on — but compact (title only) and tagged,
-            // so it frames the next line without being re-sold as fresh news.
-            for (Article n : toldNews) {
-                sb.append("  - ").append(lbl.newsToldTag()).append(' ').append(n.title()).append('\n');
+            // so it frames the next line without being re-sold as fresh news. Only the
+            // newest few: the eighth already-told title anchors nothing the first three
+            // do not, and it competes for the window with news that IS new.
+            if (!toldNews.isEmpty()) {
+                sb.append(lbl.newsToldNote());
+                for (Article n : toldNews.subList(0, Math.min(TOLD_NEWS_SHOWN, toldNews.size()))) {
+                    sb.append("  - ").append(lbl.newsToldTag()).append(' ').append(n.title()).append('\n');
+                }
             }
+            // Char budget over the fresh items, the same economy the evidence block
+            // has always run: render newest-first while the budget holds, then say
+            // how many were dropped. Without it a unit whose twelve slots all carry
+            // a full digest lands ~1.9k tokens of news alone — on the 8k rung of the
+            // context ladder that is the difference between a brief and a silently
+            // truncated one.
+            int newsBudget = NEWS_CHAR_BUDGET;
+            int newsOmitted = 0;
             int newsOrdinal = 0;
             for (Article n : freshNews) {
+                if (newsBudget <= 0) {
+                    newsOmitted++;
+                    continue;
+                }
+                int before = sb.length();
                 sb.append("  - [N").append(++newsOrdinal).append("] ");
                 if (n.publishedAt() != null) {
                     sb.append(lbl.ago(age(n.publishedAt(), now))).append(' ');
@@ -149,6 +179,10 @@ final class UnitBriefWriter {
                     sb.append("\n      ").append(sum.length() > 200 ? sum.substring(0, 200) + "…" : sum);
                 }
                 sb.append('\n');
+                newsBudget -= sb.length() - before;
+            }
+            if (newsOmitted > 0) {
+                sb.append(lbl.newsBudgetOmitted(newsOmitted));
             }
         }
 
