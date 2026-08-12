@@ -6,6 +6,7 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseMotionAdapter;
 import java.awt.geom.RoundRectangle2D;
+import java.awt.image.BufferedImage;
 import java.net.URL;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -26,33 +27,39 @@ import java.util.concurrent.CompletableFuture;
  *     └─────────────────┘
  * </pre>
  *
- * <p>Two concerns are delegated: {@link LogoRenderer} builds the pre-scaled
- * logo panel, and {@link EtaEstimator} owns the remaining-time regression +
- * smoothing math. This class is the view + EDT-coalescing facade.
+ * <h3>One window, several screens</h3>
+ * The questions the launcher asks (language, update channel, AI model) are
+ * screens inside this same window, not windows of their own: the frame keeps
+ * its size and shape from start to finish, and every screen change is a
+ * dissolve between two snapshots ({@link ScreenTransition}). Choice screens
+ * share their chrome via {@link ChoiceScreen}.
+ *
+ * <p>Two further concerns are delegated: {@link LogoRenderer} builds the
+ * pre-scaled logo panel, and {@link EtaEstimator} owns the remaining-time
+ * regression + smoothing math. This class is the view + EDT-coalescing facade.
  *
  * <h3>Thread safety</h3>
  * Volatile fields with coalesced EDT flush, same as before.
  */
 final class LauncherWindow extends JFrame {
 
-    // Portrait rectangle — 1:1.2 ratio
+    // Portrait rectangle — 1:1.2 ratio. Every screen the launcher shows lives
+    // inside exactly this rectangle; the frame is never resized after it is
+    // built (see ScreenTransition for why the morph that used to do so is gone).
     private static final int WIDTH = 320;
     private static final int HEIGHT = 330;
     private static final int CORNER_ARC = 20;
 
-    // Model-choice morph target: +15% in both directions. The frame is
-    // resized to this ONCE at morph start (top edge anchored, horizontally
-    // centered) — the visible morph is pure repainting inside the already
-    // transparent frame, which is what keeps it smooth: a native window
-    // resize per frame stutters on macOS.
-    private static final int CHOICE_WIDTH = 368;
-    private static final int CHOICE_HEIGHT = 420;
-    // The language choice carries two rows instead of four — same width, so
-    // the two screens read as one flow, but only as tall as its content.
-    private static final int LANGUAGE_HEIGHT = 256;
-    private static final int MORPH_MS = 450;
+    /**
+     * How long the finished choice screen stays up before the window dissolves
+     * back to the progress screen. Long enough for the confirm to register as
+     * an answer, short enough that a following question dissolves straight out
+     * of the previous one — a pipeline that asks its next question inside this
+     * beat cancels the return entirely and goes screen → screen.
+     */
+    private static final int RETURN_DELAY_MS = 220;
 
-    /** The logo's top inset in the normal layout (the morph's start point). */
+    /** The logo's top inset in the normal layout. */
     private static final int LOGO_TOP_NORMAL = 28;
 
     private static final Color BG = LauncherTheme.BG;
@@ -66,20 +73,14 @@ final class LauncherWindow extends JFrame {
     private final ProgressInfoLine infoLine;
     private final JLabel bytesLabel;
 
-    // Choice-morph state. A choice view replaces the content pane wholesale
-    // and paints the (smaller) window body itself while morphing; the normal
-    // root returns after the collapse.
+    // Screen state. A choice screen replaces the content pane wholesale and
+    // fills the same rectangle the progress screen does; the normal root
+    // returns once the question is answered.
     private final JComponent logoPanel = LogoRenderer.createPanel();
     private final JPanel normalRoot;
-    private JComponent choicePanel;
-    private MorphView choiceView;
-    private int choiceWidth;
-    private int choiceHeight;
-    private Timer morphTimer;
-    private long morphStart;
-    private boolean morphExpanding;
+    private Timer transitionTimer;
+    private Timer returnTimer;
     private CompletableFuture<String> choiceFuture;
-    private String chosenValue;
 
     // Remaining-time estimator. EDT-only — touched solely from
     // flush()/resetProgress(), both of which run on the Swing thread.
@@ -181,83 +182,66 @@ final class LauncherWindow extends JFrame {
     }
 
     /**
-     * Morphs the window into its language-choice state; the returned future
+     * Dissolves the window into its language choice; the returned future
      * completes with the chosen ISO language code. Safe to call from any
      * thread; the caller blocks on the future.
      */
     CompletableFuture<String> showLanguageChoice(List<LanguageChoicePanel.Row> rows,
             String preselectCode) {
-        return showChoice(CHOICE_WIDTH, LANGUAGE_HEIGHT, logo ->
-                new LanguageChoicePanel(rows, preselectCode, logo,
-                        WIDTH, HEIGHT, LOGO_TOP_NORMAL, this::onChoiceConfirmed));
+        return showChoice(logo ->
+                new LanguageChoicePanel(rows, preselectCode, logo, this::onChoiceConfirmed));
     }
 
     /**
-     * Morphs the window into its update-channel state; the returned future
-     * completes with the chosen answer ({@code "yes"}/{@code "no"}). Two rows,
-     * so it borrows the language screen's height. Safe to call from any thread;
-     * the caller blocks on the future.
+     * Dissolves the window into the update-channel question; the returned
+     * future completes with the chosen answer ({@code "yes"}/{@code "no"}).
+     * Safe to call from any thread; the caller blocks on the future.
      */
     CompletableFuture<String> showChannelChoice(List<ChannelChoicePanel.Row> rows,
             String preselectAnswer, ChannelChoicePanel.Labels labels) {
-        return showChoice(CHOICE_WIDTH, LANGUAGE_HEIGHT, logo ->
+        return showChoice(logo ->
                 new ChannelChoicePanel(rows, preselectAnswer, labels, logo,
-                        WIDTH, HEIGHT, LOGO_TOP_NORMAL, this::onChoiceConfirmed));
+                        this::onChoiceConfirmed));
     }
 
     /**
-     * Morphs the window into its large model-choice state and shows the tier
-     * list; the returned future completes with the chosen tag after the user
-     * confirmed and the window has morphed back to its normal state. Safe to
-     * call from any thread; the caller blocks on the future.
+     * Dissolves the window into the model choice - a stack of tier cards the
+     * user flips through; the returned future completes with the chosen tag.
+     * Safe to call from any thread; the caller blocks on the future.
      */
     CompletableFuture<String> showModelChoice(List<ModelChoicePanel.Row> rows,
             String preselectTag, ModelChoicePanel.Labels labels) {
-        return showChoice(CHOICE_WIDTH, CHOICE_HEIGHT, logo ->
-                new ModelChoicePanel(rows, preselectTag, labels,
-                        logo, WIDTH, HEIGHT, LOGO_TOP_NORMAL, this::onChoiceConfirmed));
+        return showChoice(logo ->
+                new ModelChoicePanel(rows, preselectTag, labels, logo, this::onChoiceConfirmed));
     }
 
     /**
-     * The shared morph-in for every choice screen: snapshots the splash logo,
-     * installs the view, and starts the expand clock.
+     * The shared entry for every choice screen: snapshots the splash logo for
+     * the screen's corner, builds the view and dissolves the window into it.
+     * A pending return to the progress screen (from the previous question) is
+     * cancelled, so two questions in a row read as one continuous flow.
      */
-    private <T extends JComponent & MorphView> CompletableFuture<String> showChoice(
-            int targetWidth, int targetHeight,
-            java.util.function.Function<java.awt.image.BufferedImage, T> viewFactory) {
+    private CompletableFuture<String> showChoice(
+            java.util.function.Function<BufferedImage, ChoiceScreen> viewFactory) {
         CompletableFuture<String> future = new CompletableFuture<>();
         choiceFuture = future;
         SwingUtilities.invokeLater(() -> {
             if (!isVisible()) setVisible(true);
+            if (returnTimer != null) {
+                returnTimer.stop();
+                returnTimer = null;
+            }
 
-            // Snapshot the splash logo so the choice view can glide it into
-            // the corner as a plain image — no component re-parenting.
-            java.awt.image.BufferedImage logo = new java.awt.image.BufferedImage(
+            // Snapshot the splash logo so the choice screen can put it in its
+            // corner as a plain image — no component re-parenting.
+            BufferedImage logo = new BufferedImage(
                     Math.max(1, logoPanel.getWidth()), Math.max(1, logoPanel.getHeight()),
-                    java.awt.image.BufferedImage.TYPE_INT_ARGB);
+                    BufferedImage.TYPE_INT_ARGB);
             Graphics2D lg = logo.createGraphics();
             logoPanel.paint(lg);
             lg.dispose();
 
-            T view = viewFactory.apply(logo);
-            choicePanel = view;
-            choiceView = view;
-            choiceWidth = targetWidth;
-            choiceHeight = targetHeight;
-
-            // Size and shape the frame to the target ONCE — top edge
-            // anchored, horizontally centered. The newly claimed area is
-            // still transparent at this instant, so nothing visibly jumps;
-            // from here on the morph is pure synchronous painting (see the
-            // flicker discipline on MorphView).
-            setBounds(getX() - (targetWidth - WIDTH) / 2, getY(),
-                    targetWidth, targetHeight);
-            setShape(new RoundRectangle2D.Double(0, 0, targetWidth, targetHeight,
-                    CORNER_ARC, CORNER_ARC));
-            setContentPane(choicePanel);
-            validate();
-            repaint();
-            startMorph(true);
+            transitionTo(viewFactory.apply(logo));
         });
         return future;
     }
@@ -305,19 +289,20 @@ final class LauncherWindow extends JFrame {
         gbc.insets = new Insets(0, 0, 8, 0);
         root.add(islandIndicator, gbc);
 
-        // The row directly under the bar: model pips centered (one dot per
-        // installing AI model, hidden otherwise) with the downloaded/total
-        // figures bottom-right, right-aligned to the bar's right edge. Fixed
+        // The row directly under the bar, spanning exactly the bar's width (180
+        // wide in a 240 row → 30 in on each side): model pips flush left (one
+        // dot per installing AI model, hidden otherwise), the downloaded/total
+        // figures flush right. The two split the row instead of sharing it -
+        // centered pips grew into the figures as soon as those got long. Fixed
         // height so appearing/disappearing never shifts the layout.
         gbc.gridy = 3;
         gbc.insets = new Insets(0, 0, 10, 0);
         JPanel underBar = new JPanel(null);
         underBar.setOpaque(false);
         underBar.setPreferredSize(new Dimension(240, 14));
-        modelPips.setBounds(0, 0, 240, 14);
+        modelPips.setBounds(30, 0, 60, 14);
         underBar.add(modelPips);
-        // The bar is 180 wide in a 240 row → its right edge sits 30 in.
-        bytesLabel.setBounds(90, 1, 120, 13);
+        bytesLabel.setBounds(96, 1, 114, 13);
         underBar.add(bytesLabel);
         root.add(underBar, gbc);
 
@@ -363,62 +348,79 @@ final class LauncherWindow extends JFrame {
     }
 
     // =====================================================================
-    // Choice morph
+    // Screen changes
     // =====================================================================
 
+    /**
+     * A question was answered: hand the answer to the waiting pipeline at once
+     * and schedule the dissolve back to the progress screen. The delay is what
+     * lets a pipeline with another question ready go straight from one screen
+     * into the next ({@link #showChoice} cancels this timer) instead of
+     * blinking through the progress screen in between.
+     */
     private void onChoiceConfirmed(String value) {
-        chosenValue = value;
-        // Back to the morphing surface: transparent outside the shrinking body.
-        choiceView.setRested(false);
-        startMorph(false);
+        CompletableFuture<String> future = choiceFuture;
+        choiceFuture = null;
+
+        if (returnTimer != null) returnTimer.stop();
+        returnTimer = new Timer(RETURN_DELAY_MS, _ -> {
+            returnTimer = null;
+            transitionTo(normalRoot);
+        });
+        returnTimer.setRepeats(false);
+        returnTimer.start();
+
+        if (future != null) future.complete(value);
     }
 
     /**
-     * Drives the morph clock. During the animation the frame is never
-     * touched natively (no bounds, no shape — each such change applies on
-     * the compositor ahead of the matching paint and reads as flicker);
-     * every tick paints the eased (cubic in-out) state synchronously in one
-     * blit. Collapsing shrinks the frame back around its CURRENT position
-     * (the window may have been dragged), restores the normal root and
-     * completes the choice future.
+     * Dissolves the currently shown screen into {@code next}. Both screens are
+     * snapshotted first — the outgoing one as it looks right now (a transition
+     * already running is simply caught mid-frame), the incoming one after it
+     * has been installed and laid out — so the animation itself touches no
+     * live component and mutates nothing native: same frame, same bounds, same
+     * shape, one blit per frame via {@code paintImmediately}.
      */
-    private void startMorph(boolean expanding) {
-        if (morphTimer != null) morphTimer.stop();
-        morphExpanding = expanding;
-        morphStart = System.currentTimeMillis();
-        morphTimer = new Timer(16, _ -> morphTick());
-        morphTimer.start();
-    }
+    private void transitionTo(JComponent next) {
+        if (transitionTimer != null) transitionTimer.stop();
 
-    private void morphTick() {
-        float raw = Math.min(1f, (System.currentTimeMillis() - morphStart) / (float) MORPH_MS);
-        float t = morphExpanding ? raw : 1f - raw;
-        // Cubic ease-in-out — soft start, soft landing, no snap.
-        float e = t < 0.5f ? 4 * t * t * t : 1 - (float) Math.pow(-2 * t + 2, 3) / 2;
+        BufferedImage from = snapshot(getContentPane());
+        setContentPane(next);
+        validate();
+        BufferedImage to = snapshot(next);
 
-        choiceView.setMorphT(e);
-        choicePanel.paintImmediately(0, 0, choicePanel.getWidth(), choicePanel.getHeight());
+        ScreenTransition transition = new ScreenTransition(from, to);
+        setContentPane(transition);
+        validate();
+        repaint();
 
-        if (raw >= 1f) {
-            morphTimer.stop();
-            if (morphExpanding) {
-                // At rest the body fills the frame — flip opaque so ordinary
-                // hover repaints can never clear-bleed the desktop through.
-                choiceView.setRested(true);
-            } else {
-                setBounds(getX() + (choiceWidth - WIDTH) / 2, getY(), WIDTH, HEIGHT);
-                setShape(new RoundRectangle2D.Double(0, 0, WIDTH, HEIGHT,
-                        CORNER_ARC, CORNER_ARC));
-                setContentPane(normalRoot);
+        long start = System.currentTimeMillis();
+        transitionTimer = new Timer(16, _ -> {
+            float raw = Math.min(1f,
+                    (System.currentTimeMillis() - start) / (float) ScreenTransition.DURATION_MS);
+            // Cubic ease-in-out — soft start, soft landing, no snap.
+            float e = raw < 0.5f ? 4 * raw * raw * raw
+                    : 1 - (float) Math.pow(-2 * raw + 2, 3) / 2;
+            transition.setProgress(e);
+            transition.paintImmediately(0, 0, transition.getWidth(), transition.getHeight());
+            if (raw >= 1f) {
+                transitionTimer.stop();
+                transitionTimer = null;
+                setContentPane(next);
                 validate();
                 repaint();
-                choicePanel = null;
-                choiceView = null;
-                CompletableFuture<String> future = choiceFuture;
-                choiceFuture = null;
-                if (future != null) future.complete(chosenValue);
             }
-        }
+        });
+        transitionTimer.start();
+    }
+
+    /** Paints {@code c} into an image at the window's fixed size. */
+    private BufferedImage snapshot(Container c) {
+        BufferedImage image = new BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = image.createGraphics();
+        c.paint(g);
+        g.dispose();
+        return image;
     }
 
     private JLabel createStatusLabel() {

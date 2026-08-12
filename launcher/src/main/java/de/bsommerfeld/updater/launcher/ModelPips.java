@@ -57,8 +57,10 @@ final class ModelPips extends JComponent {
         Graphics2D g2 = (Graphics2D) g.create();
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
-        int rowWidth = total * DOT + (total - 1) * GAP;
-        double x = (getWidth() - rowWidth) / 2.0;
+        // Left-aligned, flush with the progress bar's left edge: the row it
+        // shares with the downloaded/total figures is only as wide as the bar,
+        // and a centred pip row grows straight into that readout.
+        double x = 0;
         double cy = getHeight() / 2.0;
 
         for (int i = 0; i < total; i++) {
