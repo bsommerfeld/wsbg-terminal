@@ -19,7 +19,7 @@ import { setDonationStats } from './chrome/slider.js';
 import { initDonate } from './chrome/donate.js';
 import { initExternalLinks } from './chrome/external-links.js';
 import { initKeyboardCopy } from './chrome/copy-fx.js';
-import { renderHeadlines, initHeadlineScroll, initUnreadPortals, appendArchivePage } from './widgets/reddit.js';
+import { renderHeadlines, appendHeadlines, initHeadlineScroll, initUnreadPortals } from './widgets/reddit.js';
 import { initHeadlineSearch, onArchiveResults } from './widgets/headline-search.js';
 import { renderFjNews } from './widgets/financial-juice.js';
 import { renderEurUsd } from './widgets/eurusd.js';
@@ -89,12 +89,22 @@ for (const w of WIDGETS) {
   socket.on(w.topic, payload => { last[w.topic] = payload; w.render(payload); });
 }
 
-// Scroll-back: load older archived headlines as the user scrolls past the live wire.
-initHeadlineScroll(redditBody, socket);
+// The wire ships in full on connect ('headlines') and then only grows
+// ('headlines-add'), so the delta appends instead of replacing. It rides beside
+// the WIDGETS manifest, not in it: that table maps a topic to the COMPLETE state
+// of a widget, and a delta is by definition not that. `last.headlines` is kept
+// whole all the same — a live language switch re-paints from it.
+initHeadlineScroll(redditBody);
+socket.on('headlines-add', payload => {
+  const items = payload ?? [];
+  if (!items.length) return;
+  last['headlines'] = items.concat(last['headlines'] ?? []);
+  appendHeadlines(redditBody, items);
+});
+
 socket.on('archive-results', payload => {
   if (!payload) return;
-  if (payload.command === 'page') appendArchivePage(payload.items);
-  else onArchiveResults(payload); // search vocabulary + result sets (headline-search.js)
+  onArchiveResults(payload); // search vocabulary + result sets (headline-search.js)
 });
 
 // Live language switch: setLang() has already rewritten the static markup;

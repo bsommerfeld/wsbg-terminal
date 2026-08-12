@@ -260,7 +260,8 @@ public class PassiveMonitorService {
                 lastCleanup = Instant.now();
                 repository.cleanupOldThreads(dataRetentionSeconds)
                         .thenAccept(count -> LOG.debug("[CLEANUP] pruned {} old thread(s)", count));
-                agentRepository.cleanup();
+                // The headline wire is NOT pruned: it mirrors the permanent
+                // archive in full, and the page renders only what is on screen.
             }
 
             ScrapeStats stats = new ScrapeStats();

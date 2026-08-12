@@ -4,21 +4,28 @@ import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
 
-import java.time.Duration;
 import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
- * The live headline wire: an in-memory window (24h soft TTL) over the
- * <b>permanent</b> {@link HeadlineArchive}. Every accepted headline is appended
- * to the archive (append-only JSONL, never deleted), and on startup the wire
- * re-seeds itself from the archive's last 24h — so published output survives
- * any restart, not just the short snapshot TTL. Only the <em>Reddit-derived</em>
- * state (threads, clusters, evidence) stays session-bound: that data goes stale
- * against the live feed; our own output never does. Coverage and ticker-throttle
- * checks read this cache, so they too survive restarts. Stable cluster ids
- * (= initial thread id) keep restored records linked to re-seeded clusters.
+ * The live headline wire: the in-memory mirror of the <b>permanent</b>
+ * {@link HeadlineArchive}. Every accepted headline is appended to the archive
+ * (append-only JSONL, never deleted), and on startup the wire re-seeds itself
+ * from the archive in FULL — the wire carries the whole history, and the page
+ * renders only what is on screen (CSS {@code content-visibility}). Only the
+ * <em>Reddit-derived</em> state (threads, clusters, evidence) stays
+ * session-bound: that data goes stale against the live feed; our own output
+ * never does. Coverage and ticker-throttle checks read this cache, so they too
+ * survive restarts. Stable cluster ids (= initial thread id) keep restored
+ * records linked to re-seeded clusters.
+ *
+ * <p><b>Two reads, two purposes — do not merge them.</b>
+ * {@link #getWireHeadlines()} is the DISPLAY feed: everything, newest first.
+ * {@link #getRecentHeadlines()} is the EDITORIAL recency corpus (repetition
+ * check in {@code HeadlineWriter}) and stays bounded to {@link #TTL_SECONDS} —
+ * widening it would silently change what the desk considers a repeat, and grow
+ * the compose prompt with the archive.
  *
  * <p>
  * Each headline can optionally carry source attribution
@@ -29,7 +36,11 @@ import java.util.concurrent.CopyOnWriteArrayList;
 @Singleton
 public class AgentRepository {
 
-    /** Soft TTL of the live wire — the permanent history lives in {@link HeadlineArchive}. */
+    /**
+     * The editorial recency horizon — how far back {@link #getRecentHeadlines()}
+     * looks for the repetition check. NOT a wire bound: the wire holds everything
+     * the archive holds.
+     */
     private static final long TTL_SECONDS = 86400;
 
     private final List<HeadlineRecord> headlineCache = new CopyOnWriteArrayList<>();
@@ -49,9 +60,11 @@ public class AgentRepository {
     public AgentRepository(HeadlineArchive archive) {
         this.archive = archive;
         if (archive != null) {
-            // Re-seed the wire window from permanent history: headlines outlive
-            // every restart, coverage + dedupe + ticker-throttle keep working.
-            headlineCache.addAll(archive.recent(Duration.ofSeconds(TTL_SECONDS)));
+            // Re-seed the wire from permanent history IN FULL: headlines outlive
+            // every restart, coverage + dedupe + ticker-throttle keep working —
+            // and the page gets the whole history to scroll, without having to
+            // page it back in from the archive.
+            headlineCache.addAll(archive.all());
         }
     }
 
@@ -167,7 +180,22 @@ public class AgentRepository {
         }
     }
 
-    /** Returns headlines from the last 24 hours, newest first. */
+    /**
+     * The DISPLAY feed: every headline on the wire, newest first. This is what
+     * the page shows — the whole history, rendered lazily on screen. See the
+     * class doc on why this is separate from {@link #getRecentHeadlines()}.
+     */
+    public List<HeadlineRecord> getWireHeadlines() {
+        return headlineCache.stream()
+                .sorted((a, b) -> Long.compare(b.createdAt(), a.createdAt()))
+                .toList();
+    }
+
+    /**
+     * The EDITORIAL recency corpus: headlines from the last 24 hours, newest
+     * first. Feeds the repetition check when composing — deliberately bounded,
+     * see the class doc. Not the display feed.
+     */
     public List<HeadlineRecord> getRecentHeadlines() {
         long cutoff = (System.currentTimeMillis() / 1000) - TTL_SECONDS;
         return headlineCache.stream()
@@ -185,12 +213,6 @@ public class AgentRepository {
                 .filter(h -> h.createdAt() >= cutoff && h.clusterId().equals(clusterId))
                 .sorted(Comparator.comparingLong(HeadlineRecord::createdAt))
                 .toList();
-    }
-
-    /** Drops wire entries older than the TTL — the archive keeps them forever. Called from the hourly cycle. */
-    public void cleanup() {
-        long cutoff = (System.currentTimeMillis() / 1000) - TTL_SECONDS;
-        headlineCache.removeIf(h -> h.createdAt() < cutoff);
     }
 
     /**

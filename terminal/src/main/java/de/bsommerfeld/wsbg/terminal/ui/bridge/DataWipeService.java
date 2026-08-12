@@ -9,7 +9,6 @@ import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.db.AgentRepository;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
 import de.bsommerfeld.wsbg.terminal.db.RedditSnapshotStore;
-import de.bsommerfeld.wsbg.terminal.ui.web.PushHub;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,13 +33,13 @@ public final class DataWipeService {
     private final SubjectRegistry subjectRegistry;
     private final RedditSnapshotStore redditSnapshotStore;
     private final AgentSnapshotStore agentSnapshotStore;
-    private final PushHub hub;
+    private final HeadlinePublisher headlinePublisher;
 
     @Inject
     public DataWipeService(GlobalConfig config, AgentRepository agentRepository,
             RedditRepository redditRepository, ClusterRegistry clusterRegistry,
             SubjectRegistry subjectRegistry, RedditSnapshotStore redditSnapshotStore,
-            AgentSnapshotStore agentSnapshotStore, PushHub hub) {
+            AgentSnapshotStore agentSnapshotStore, HeadlinePublisher headlinePublisher) {
         this.config = config;
         this.agentRepository = agentRepository;
         this.redditRepository = redditRepository;
@@ -48,7 +47,7 @@ public final class DataWipeService {
         this.subjectRegistry = subjectRegistry;
         this.redditSnapshotStore = redditSnapshotStore;
         this.agentSnapshotStore = agentSnapshotStore;
-        this.hub = hub;
+        this.headlinePublisher = headlinePublisher;
     }
 
     /**
@@ -75,7 +74,10 @@ public final class DataWipeService {
         // Also wipe the on-disk session snapshots so a quick restart can't restore the cleared state.
         redditSnapshotStore.clear();
         agentSnapshotStore.clear();
-        hub.broadcast("headlines", HeadlineJson.toJson(agentRepository.getRecentHeadlines()));
+        // Through the publisher, not past it: a wipe REMOVES records, which no
+        // delta can express — this repaints the page AND resets the publisher's
+        // delta baseline in one move.
+        headlinePublisher.pushSnapshot();
         LOG.info("Daten gelöscht (full terminal wipe + snapshots) by user; wire will refill from the next scan.");
     }
 }

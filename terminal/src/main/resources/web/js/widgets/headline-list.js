@@ -1,14 +1,15 @@
-// Keyed incremental list engine + archive scroll-back paging.
+// Keyed incremental list engine.
 //
 // The mechanics behind the headline widget, kept free of row-content concerns:
 // the caller injects `identity(item)` (the per-row key), `renderRow(item, isNew)`
 // (builds and returns the row element) and `renderEmpty(host)` (the empty state).
 //
-// The list is two stacked layers, newest at the top:
-//   liveItems    — the live 24h wire (pushed, replaces wholesale)
-//   archiveItems — older headlines pulled from the permanent archive as the user
-//                  scrolls DOWN past the wire (prepended below, never flash).
-// Both are kept so a live push re-renders without dropping the scroll-back rows.
+// `liveItems` is the whole wire — the server ships the full history once on
+// connect (`render`) and appends each new line as it is composed (`appendLive`).
+// There is no archive paging any more: the wire IS the archive, and the browser
+// renders only the rows on screen (content-visibility, see rows.css). That is
+// what keeps a list of thousands cheap, and it is why an empty wire is now
+// genuinely "nothing published yet" rather than "nothing in the last 24h".
 //
 // On top of the two layers sits the READ layer (optional — only active when the
 // caller hands in a `readState`): every contiguous run of unread rows is
@@ -25,11 +26,6 @@
 // interrupted by a layout storm.
 
 import { isIdle, onIdleChange } from '../chrome/idle.js';
-
-const PAGE = 50;
-// Scroll-back rows kept in memory/DOM. Trimmed (oldest first) on a live push
-// while the user is reading the top of the wire — never under their viewport.
-const ARCHIVE_CAP = 300;
 
 // Marks the row BELOW a quiet stretch of the wire (see markGaps).
 const GAP_CLASS = 'time-gap';
@@ -51,8 +47,8 @@ export function createHeadlineList({ identity, renderRow, renderEmpty, filterFn,
                                      renderSearchHead, renderSearchEmpty, gapSeconds,
                                      readState, canRead, onUnread }) {
   // The scan filter (headline-filter.js). Applied at DISPLAY time only: the
-  // liveItems/archiveItems arrays stay complete, so the scroll-back paging cursor
-  // and a filter toggle-off both work without any re-fetch.
+  // liveItems array stays complete, so toggling a filter off restores the hidden
+  // rows without any re-fetch.
   const passes = filterFn || (() => true);
   const noMatches = renderNoMatches || renderEmpty;
   // Per-host caches. seenKeys: last render's live keys (new-row diffing). rowEls:
@@ -61,11 +57,7 @@ export function createHeadlineList({ identity, renderRow, renderEmpty, filterFn,
   const rowEls = new WeakMap();
 
   let liveItems = [];
-  let archiveItems = [];
   let hostRef = null;
-  let socketRef = null;
-  let loadingMore = false;
-  let exhausted = false;     // archive returned a short/empty page → nothing older left
   // Search mode: an explicit archive lookup replaces the wire view until the
   // banner is closed. The wire arrays keep updating underneath (a live push
   // only stores), so closing the search restores the current state instantly.
@@ -84,67 +76,53 @@ export function createHeadlineList({ identity, renderRow, renderEmpty, filterFn,
   let dwellTimer = null;
   let probeQueued = false;
 
+  /** The full wire, as shipped on connect. Replaces whatever is loaded. */
   function render(host, items) {
     if (!host) return;
     hostRef = host;
     liveItems = items || [];
     if (search) return;      // store only — the search view owns the host
-    if (liveItems.length === 0 && archiveItems.length === 0) {
+    if (liveItems.length === 0) {
       renderEmpty(host);
       seenKeys.set(host, new Set());
       rowEls.set(host, new Map());
       return;
     }
-    if (archiveItems.length > ARCHIVE_CAP && host.scrollTop < host.clientHeight) {
-      archiveItems = archiveItems.slice(0, ARCHIVE_CAP);
-      exhausted = false; // scrolling back down re-pages the trimmed rows
-    }
     renderCombined();
   }
 
-  /** Wires the scroll-to-bottom → load-older-archive behaviour (call once). */
-  function initScroll(host, socket) {
+  /**
+   * Appends newly composed headlines (the `headlines-add` delta). Deduped by
+   * key, so a snapshot arriving late — or a redelivery — can't double a row.
+   */
+  function appendLive(host, items) {
+    if (!host || !items || items.length === 0) return;
+    hostRef = host;
+    const known = new Set(liveItems.map(identity));
+    const fresh = items.filter(h => !known.has(identity(h)));
+    if (fresh.length === 0) return;
+    // Newest first, the order the wire is rendered in.
+    liveItems = fresh.concat(liveItems).sort((a, b) => b.createdAt - a.createdAt);
+    if (search) return;      // store only — the search view owns the host
+    renderCombined();
+  }
+
+  /** Wires the scroll listener the unread portals need (call once). */
+  function initScroll(host) {
     if (!host) return;
     hostRef = host;
-    socketRef = socket;
-    host.addEventListener('scroll', () => {
-      // The portals answer "which way lies unread I cannot see" — that answer
-      // changes with every scroll, not only with every render.
-      probeDirection();
-      if (search || loadingMore || exhausted) return;
-      // within ~1.5 rows of the bottom → fetch the next older page
-      if (host.scrollTop + host.clientHeight >= host.scrollHeight - 120) loadMore();
-    }, { passive: true });
+    // The portals answer "which way lies unread I cannot see" — that answer
+    // changes with every scroll, not only with every render.
+    host.addEventListener('scroll', probeDirection, { passive: true });
   }
 
-  /** Appends an older archive page (from the `archive-results` page command). */
-  function appendArchivePage(items) {
-    loadingMore = false;
-    if (!items || items.length === 0) { exhausted = true; return; }
-    const known = new Set([...liveItems, ...archiveItems].map(identity));
-    const fresh = items.filter(h => !known.has(identity(h)));
-    if (fresh.length === 0) { exhausted = true; return; }
-    if (items.length < PAGE) exhausted = true; // last page
-    archiveItems = archiveItems.concat(fresh);
-    if (!search) renderCombined(); // a late page must not clobber an open search view
-  }
-
-  function loadMore() {
-    if (!socketRef) return;
-    const all = [...liveItems, ...archiveItems];
-    if (all.length === 0) return;
-    const oldest = all.reduce((m, h) => Math.min(m, h.createdAt), Infinity);
-    loadingMore = true;
-    socketRef.send('archive', { command: 'page', before: oldest, limit: PAGE, requestId: 'scrollback' });
-  }
-
-  // Renders live (top) + archive (below) as one list, de-duped by row key.
-  // Only genuinely-new LIVE rows flash; archive rows never do.
+  // Renders the wire, de-duped by row key. Only rows that arrived AFTER the
+  // first paint flash — the opening snapshot is history, not news.
   function renderCombined() {
     const host = hostRef;
     if (!host) return;
     const byKey = new Map();
-    for (const h of [...liveItems, ...archiveItems]) if (passes(h)) byKey.set(identity(h), h);
+    for (const h of liveItems) if (passes(h)) byKey.set(identity(h), h);
 
     const prev = seenKeys.get(host) || new Set();
     const isFirstRender = prev.size === 0;
@@ -162,7 +140,7 @@ export function createHeadlineList({ identity, renderRow, renderEmpty, filterFn,
     if (byKey.size === 0) {
       for (const [, el] of els) el.remove();
       els.clear();
-      if (liveItems.length || archiveItems.length) noMatches(host);
+      if (liveItems.length) noMatches(host);
       else renderEmpty(host);
       seenKeys.set(host, new Set());
       clearUnread();
@@ -372,7 +350,7 @@ export function createHeadlineList({ identity, renderRow, renderEmpty, filterFn,
     renderSearch();
   }
 
-  /** Leaves the search view and restores the live wire + scroll-back state. */
+  /** Leaves the search view and restores the wire. */
   function clearSearch() {
     if (!search) return;
     search = null;
@@ -409,10 +387,10 @@ export function createHeadlineList({ identity, renderRow, renderEmpty, filterFn,
     host.scrollTop = 0;
   }
 
-  /** Every loaded record (live wire + scroll-back archive), UNfiltered. */
+  /** Every record on the wire, UNfiltered. */
   function allItems() {
-    return liveItems.concat(archiveItems);
+    return liveItems.slice();
   }
 
-  return { render, initScroll, appendArchivePage, rerender, showSearch, clearSearch, allItems };
+  return { render, appendLive, initScroll, rerender, showSearch, clearSearch, allItems };
 }

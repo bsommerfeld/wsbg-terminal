@@ -78,6 +78,12 @@ export function renderHeadlines(host, items) {
   list.render(host, items);
 }
 
+/** The delta push: newly composed headlines, appended to the wire. */
+export function appendHeadlines(host, items) {
+  startStampTicker();
+  list.appendLive(host, items);
+}
+
 // The age line under each clock has to stay true without a re-render — rows
 // live across renders (keyed sync), and a wire that stays quiet for an hour
 // would otherwise freeze every line at "vor 1 Min.". One interval for the whole
@@ -97,9 +103,9 @@ function tickStamps() {
   }
 }
 
-/** Wires the scroll-to-bottom → load-older-archive behaviour (call once). */
-export function initHeadlineScroll(host, socket) {
-  list.initScroll(host, socket);
+/** Wires the scroll listener the unread portals need (call once). */
+export function initHeadlineScroll(host) {
+  list.initScroll(host);
 }
 
 // The two unread portals: a shimmer at the edge of the list, lit while an
@@ -180,13 +186,8 @@ function headlinesAreOnScreen() {
   return !document.querySelector('.overlay:not([hidden])');
 }
 
-/** Appends an older archive page (from the `archive-results` page command). */
-export function appendArchivePage(items) {
-  list.appendArchivePage(items);
-}
-
 /**
- * Every price currently on the loaded wire (live + scroll-back), unfiltered.
+ * Every price currently on the wire, unfiltered.
  * The price-range dial paints these as a density rug under its ruler, so the
  * user drags the band against where the wire's prices actually sit instead of
  * against an empty axis.

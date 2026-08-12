@@ -189,9 +189,19 @@ class HeadlineArchiveTest {
         a.append(rec("t3_a", "Gestern Abend publiziert", now() - 3600, "NVDA", List.of(), null));
 
         AgentRepository repo = new AgentRepository(a);
-        List<HeadlineRecord> wire = repo.getRecentHeadlines();
-        assertEquals(1, wire.size(), "wire re-seeds only the last 24h");
-        assertEquals("Gestern Abend publiziert", wire.get(0).headline());
+
+        // The DISPLAY feed carries the whole archive — the page renders only
+        // what is on screen, so age is not a reason to withhold a line.
+        List<HeadlineRecord> wire = repo.getWireHeadlines();
+        assertEquals(2, wire.size(), "wire re-seeds the archive in full");
+        assertEquals("Gestern Abend publiziert", wire.get(0).headline(), "newest first");
+        assertEquals("Uralte Zeile", wire.get(1).headline());
+
+        // The EDITORIAL recency corpus stays bounded to 24h — widening it would
+        // change what the desk treats as a repeat. The two reads must not merge.
+        List<HeadlineRecord> recent = repo.getRecentHeadlines();
+        assertEquals(1, recent.size(), "recency corpus stays at 24h");
+        assertEquals("Gestern Abend publiziert", recent.get(0).headline());
 
         repo.saveHeadline("t3_b", "Neue Zeile", "");
         assertEquals(3, a.size(), "every accepted publish lands in the archive");

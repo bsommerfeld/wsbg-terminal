@@ -10,6 +10,7 @@
 
 ## Restliches
 
+- Die Schlagzeilen-Wand hält jetzt alles. Bisher fiel jede Zeile nach 24 Stunden aus der Liste - wer das Terminal einen Tag zu hatte, fand beim nächsten Start eine leere Wand vor, obwohl keine einzige Zeile verloren war. Ab jetzt trägt die Liste die komplette Historie, und ihr scrollt ohne Nachladen bis zur allerersten Zeile zurück.
 - Der Starter fragt beim ersten Mal nach eurer Sprache und danach, welches KI-Modell im Terminal denken soll - übersetzt in zwei ehrliche Zahlen, Qualität und Tempo, mit einem Klartext-Urteil für euren Rechner. Die beste Stufe ist vorgewählt, wer nichts entscheiden will, klickt Ok.
 > 📸 **[Bild einfügen: Das aufgewachsene Launcher-Fenster mit der Modell-Liste - Zeilen mit ✦-Qualität und ⚡-Tempo, die vorgewählte Stufe mit goldenem Rand und „Empfohlen"]**
 - Der Launcher hält sich ab jetzt selbst aktuell - den Installer noch einmal herunterladen ist Geschichte. Wer noch einen von davor hat, sieht einmalig einen orangen Werkzeug-Knopf in der Titelleiste: einmal drüberinstallieren, fertig.
