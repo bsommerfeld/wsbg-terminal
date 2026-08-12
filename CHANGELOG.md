@@ -18,7 +18,7 @@
 - Der Starter fragt beim ersten Start nach Sprache, Update-Kanal und KI-Modell. Die Modelle liegen als Kartenstapel, bewertet nach Qualität und Tempo; die zum Rechner passende Stufe liegt oben.
 
 <p align="center">
-  <video src="https://github.com/user-attachments/assets/942610b8-cb8c-4921-a0c7-836f5a31ad8e" width="800" controls autoplay loop muted></video>
+ <img width="682" height="694" alt="ezgif-84c3212308eb6df9" src="https://github.com/user-attachments/assets/20f50585-8a97-4dcc-b127-5e82c8d7ee33" />
 </p>
 
 - Das Launcher-Fenster behält seine Größe und blendet zwischen den Schritten über, statt beim Wechsel zu wachsen und zu schrumpfen.
