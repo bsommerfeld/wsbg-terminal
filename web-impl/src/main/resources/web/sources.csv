@@ -45,3 +45,158 @@ fool;The Motley Fool;en;US;BROWSER,DIRECT;8;15;false;;https://api.fool.com/feeds
 # unknown slugs soft-200 into a default board's feed. Thread titles name the company; the
 # description is only "Autor: <name>", dates ride <dc:date> (ISO-8601, no <pubDate>).
 wso-boards;wallstreet-online Forum;de;DE;DIRECT,BROWSER;8;15;true;;https://www.wallstreet-online.de/rss/board-hot-stocks.xml|https://www.wallstreet-online.de/rss/board-deutsche-aktien-im-fokus.xml|https://www.wallstreet-online.de/rss/board-nebenwerte-deutschland.xml|https://www.wallstreet-online.de/rss/board-us-hotstocks.xml
+#
+# ============================================================================
+# NEWS AGENCIES — the layer the house had none of. The big three are not to be
+# had: AP answers 401 (licence key), AFP's public feeds froze in 2013/2021, dpa
+# publishes none at all. The dpa gap is already covered in practice by
+# presseportal + dpa-AFX/ariva; what follows are the agencies that still ship
+# their wire in the open. All live-probed 2026-08-12, plain client 200.
+# ============================================================================
+# APA-OTS, Austria's original-text service: ad-hoc filings, corporate PR and
+# agency notices by the minute. Only these three slugs exist - /rss/alle and
+# /rss/unternehmen answer an HTML shell. Never guess a slug.
+apa-ots;APA-OTS;de;AT;DIRECT,BROWSER;5;10;false;;https://www.ots.at/rss/wirtschaft|https://www.ots.at/rss/finanzen|https://www.ots.at/rss/politik
+# ANSA, three desks. The PMI feed is the real catch - Mittelstand filings no
+# anglophone desk ever picks up. borsa_rss.xml does not exist (404), do not
+# "complete" the set with it.
+ansa;ANSA;it;IT;DIRECT,BROWSER;5;10;false;;https://www.ansa.it/sito/notizie/economia/economia_rss.xml|https://www.ansa.it/sito/notizie/economia/pmi/pmi_rss.xml|https://www.ansa.it/sito/notizie/topnews/topnews_rss.xml
+# Same agency, other language - and therefore its own row: provenance is part
+# of the article, one feed per language.
+ansa-en;ANSA English;en;IT;DIRECT,BROWSER;8;15;false;;https://www.ansa.it/english/english_rss.xml
+# Ukrinform (state agency, English edition): grain corridor, energy, refinery
+# strikes - commodity signal out of the sphere that moves it.
+ukrinform;Ukrinform;en;UA;DIRECT,BROWSER;5;10;false;;https://www.ukrinform.net/rss/block-lastnews
+# CTK via ceskenoviny.cz: the Czech domestic wire. Skoda/VW, CEZ, industrial output.
+ctk;CTK;cs;CZ;DIRECT,BROWSER;8;15;false;;https://www.ceskenoviny.cz/sluzby/rss/cr.php
+# MercoPress, the South Atlantic wire out of Montevideo: Mercosur, Argentina,
+# fisheries, Falklands. Ten items a day - hence the slower cadence.
+mercopress;MercoPress;en;LATAM;DIRECT,BROWSER;8;15;false;;https://www.mercopress.com/rss/
+# Prensa Latina (Cuban state agency, Spanish). Here not for market relevance
+# but because Latin America is otherwise told only through InfoMoney.
+prensa-latina;Prensa Latina;es;CU;DIRECT,BROWSER;15;30;false;;https://www.prensa-latina.cu/feed/
+# Anadolu, English economy desk. Ships a UTF-8 BOM ahead of the prolog, which
+# String.stripLeading does NOT remove - FeedParser strips it generically now;
+# before that fix this row would have parsed to silence, not to an error.
+anadolu;Anadolu Ajansi;en;TR;DIRECT,BROWSER;8;15;false;;https://www.aa.com.tr/en/rss/default?cat=economy
+#
+# ============================================================================
+# REGIONAL PRESS — the desk that reports a plant closure before it is an
+# ad-hoc. All live-probed 2026-08-12.
+# ============================================================================
+# ARD state broadcasters. BR24 is missing on purpose: br.de has no discoverable
+# RSS left (every guessed variant 404s, no autodiscovery in the HTML) - Bavaria
+# hangs on nordbayern.de below.
+ard-mdr;MDR;de;DE;DIRECT,BROWSER;10;20;false;;https://www.mdr.de/nachrichten/index-rss.xml
+ard-ndr;NDR;de;DE;DIRECT,BROWSER;10;20;false;;https://www.ndr.de/home/index-rss.xml
+# WDR: path taken from the page's autodiscovery, not guessed - index~rss2.xml 404s.
+ard-wdr;WDR;de;DE;DIRECT,BROWSER;10;20;false;;https://www1.wdr.de/nachrichten/uebersicht-100.feed
+# SWR: the umbrella feed plus the two state editions - BW is the
+# Mercedes/Porsche/Bosch desk, RLP the one for BASF and BioNTech.
+ard-swr;SWR Aktuell;de;DE;DIRECT,BROWSER;10;20;false;;https://www.swr.de/~rss/swraktuell/index.xml|https://www.swr.de/~rss/swraktuell/baden-wuerttemberg/index.xml|https://www.swr.de/~rss/swraktuell/rheinland-pfalz/index.xml
+# rbb24: Berlin/Brandenburg incl. its own business desk (Tesla Gruenheide, PCK Schwedt).
+ard-rbb;rbb24;de;DE;DIRECT,BROWSER;10;20;false;;https://www.rbb24.de/aktuell/index.xml/feed=rss.xml|https://www.rbb24.de/wirtschaft/index.xml/feed=rss.xml
+# hessenschau: Hesse incl. the banking centre and Fraport. The MAIN feed, NOT
+# /wirtschaft/ - that section's feed has a newest item days old.
+ard-hessenschau;hessenschau;de;DE;DIRECT,BROWSER;10;20;false;;https://www.hessenschau.de/index.rss
+# German dailies. Chains carry ONE title per central desk on purpose: nrz.de and
+# wp.de deliver 60 of 64 headlines identical to waz.de, and the five Ippen
+# business feeds (fr, merkur, hna, tz, op-online) overlap each other by more
+# than 75 % while being national anyway - the whole Ippen block stays out.
+# Funke North: the Hamburg business desk plus its local section. Aurubis,
+# Lufthansa Technik, AIDA, Basler - names no national feed carries before the
+# number is out.
+funke-abendblatt;Hamburger Abendblatt;de;DE;DIRECT,BROWSER;15;30;false;;https://www.abendblatt.de/wirtschaft/rss|https://www.abendblatt.de/hamburg/rss
+# Funke West: the Ruhr (Thyssenkrupp, RWE, Evonik).
+funke-waz;WAZ;de;DE;DIRECT,BROWSER;15;30;false;;https://www.waz.de/wirtschaft/rss
+# Funke Braunschweig: the VW home desk. Salzgitter AG, VW plants, suppliers.
+funke-bszeitung;Braunschweiger Zeitung;de;DE;DIRECT,BROWSER;15;30;false;;https://www.braunschweiger-zeitung.de/wirtschaft/rss
+rp-online;Rheinische Post;de;DE;DIRECT,BROWSER;15;30;false;;https://www.rp-online.de/wirtschaft/feed.rss
+tagesspiegel;Tagesspiegel;de;DE;DIRECT,BROWSER;15;30;false;;https://www.tagesspiegel.de/contentexport/feed/wirtschaft
+# Weser-Kurier: the SECTION feed only. The main feed (?view=rss) is a valid but
+# empty skeleton - 200, zero items.
+weser-kurier;Weser-Kurier;de;DE;DIRECT,BROWSER;15;30;false;;https://www.weser-kurier.de/wirtschaft/?view=rss
+noz;NOZ;de;DE;DIRECT,BROWSER;15;30;false;;https://www.noz.de/rss
+# nordbayern.de (Nuernberger Nachrichten): Siemens, adidas, Puma, Schaeffler.
+# Path from autodiscovery - /wirtschaft/?isRss=true does not exist.
+nordbayern;nordbayern.de;de;DE;DIRECT,BROWSER;15;30;false;;https://www.nordbayern.de/?isRss=true
+# RND/Madsack: five state editions plus the central business desk. One row per
+# title rather than a collective stamp - the publisher shows up in the brief,
+# and "RND-Regionalpresse" would tell the model nothing about where a report
+# came from. The full feeds are half central copy, half genuine local; the
+# local half is the signal (low water on the Elbe and a truck ban stand there
+# hours before any logistics comment).
+madsack-lvz;Leipziger Volkszeitung;de;DE;DIRECT,BROWSER;15;30;false;;https://www.lvz.de/arc/outboundfeeds/rss/
+madsack-haz;Hannoversche Allgemeine;de;DE;DIRECT,BROWSER;15;30;false;;https://www.haz.de/arc/outboundfeeds/rss/
+madsack-oz;Ostsee-Zeitung;de;DE;DIRECT,BROWSER;15;30;false;;https://www.ostsee-zeitung.de/arc/outboundfeeds/rss/
+madsack-maz;Maerkische Allgemeine;de;DE;DIRECT,BROWSER;15;30;false;;https://www.maz-online.de/arc/outboundfeeds/rss/
+madsack-kn;Kieler Nachrichten;de;DE;DIRECT,BROWSER;15;30;false;;https://www.kn-online.de/arc/outboundfeeds/rss/
+madsack-rnd;RND;de;DE;DIRECT,BROWSER;15;30;false;;https://www.rnd.de/arc/outboundfeeds/rss/category/wirtschaft/
+ruhrnachrichten;Ruhr Nachrichten;de;DE;DIRECT,BROWSER;15;30;false;;https://www.ruhrnachrichten.de/feed/
+# Metro desks where market movement originates. What is missing is not
+# negligence: Detroit (Gannett), Houston/San Francisco (Hearst),
+# Chicago/Denver/San Jose (Tribune/MediaNews) and Atlanta (Cox) answer 403 or
+# have switched RSS off - the US auto metro stays blind for now.
+seattle-times;The Seattle Times;en;US;DIRECT,BROWSER;15;30;false;;https://www.seattletimes.com/business/feed/
+la-times;Los Angeles Times;en;US;DIRECT,BROWSER;15;30;false;;https://www.latimes.com/business/rss2.0.xml
+star-tribune;Star Tribune;en;US;DIRECT,BROWSER;15;30;false;;https://www.startribune.com/business/index.rss2
+oregonlive;The Oregonian;en;US;DIRECT,BROWSER;15;30;false;;https://www.oregonlive.com/arc/outboundfeeds/rss/category/business/
+globe-and-mail;The Globe and Mail;en;CA;DIRECT,BROWSER;15;30;false;;https://www.theglobeandmail.com/arc/outboundfeeds/rss/category/business/
+straits-times;The Straits Times;en;SG;DIRECT,BROWSER;15;30;false;;https://www.straitstimes.com/news/business/rss.xml
+smh;The Sydney Morning Herald;en;AU;DIRECT,BROWSER;15;30;false;;https://www.smh.com.au/rss/business.xml
+japan-times;The Japan Times;en;JP;DIRECT,BROWSER;15;30;false;;https://www.japantimes.co.jp/feed/
+#
+# ============================================================================
+# WORLD PRESS — the multilingual broadband layer. These feeds spent months
+# catalogued inside MarketPressClient with no caller left after the weather
+# desk was removed; they are rows now, on the one collector mechanism, instead
+# of a second parallel one. Re-probed live 2026-08-12: every row below answered
+# 200 with same-day items. Deliberately NOT carried over: the Bloomberg,
+# CNBC and Reuters entries, which already ride their own rows/sources above -
+# a second row would only spend the same host's budget twice.
+# ============================================================================
+# Dow Jones: MarketWatch's top stories and the WSJ markets desk. Headlines are
+# keyless, the articles paywalled - the title IS the value here. The MarketPulse
+# sibling feed stays out: months-old items under a current lastBuildDate.
+marketwatch;MarketWatch;en;US;DIRECT,BROWSER;8;15;false;;https://feeds.content.dowjones.io/public/rss/mw_topstories
+wsj-markets;WSJ;en;US;DIRECT,BROWSER;8;15;false;;https://feeds.content.dowjones.io/public/rss/RSSMarketsMain
+# Investing.com stock-market news (Reuters syndication). Zone-less pubDates.
+investing-com;Investing.com;en;US;DIRECT,BROWSER;8;15;false;;https://www.investing.com/rss/news_25.rss
+ft;Financial Times;en;UK;DIRECT,BROWSER;8;15;false;;https://www.ft.com/rss/home
+# German desks beyond the retail boards: the general-press half of the picture.
+ntv-wirtschaft;n-tv;de;DE;DIRECT,BROWSER;8;15;false;;https://www.n-tv.de/wirtschaft/rss
+spiegel-wirtschaft;Spiegel;de;DE;DIRECT,BROWSER;8;15;false;;https://www.spiegel.de/wirtschaft/index.rss
+# Handelsblatt and WiWo both 301 onto their feeds.cms.* hosts - the transport follows.
+handelsblatt;Handelsblatt;de;DE;DIRECT,BROWSER;8;15;false;;https://www.handelsblatt.com/contentexport/feed/schlagzeilen
+wiwo;WirtschaftsWoche;de;DE;DIRECT,BROWSER;10;20;false;;https://www.wiwo.de/contentexport/feed/rss/schlagzeilen
+# 4investors stocks-to-watch. Answers 406 to a feed-shaped Accept - it wants */*.
+4investors;4investors;de;DE;DIRECT,BROWSER;10;20;false;*/*;https://www.4investors.de/xml/stocks_to_watch.rss
+# Russian wires. The sphere the western desks report ABOUT rather than FROM -
+# energy, sanctions, metals. Kommersant also insists on */*.
+tass;TASS;ru;RU;DIRECT,BROWSER;10;20;false;;https://tass.ru/rss/v2.xml
+rbc;RBC;ru;RU;DIRECT,BROWSER;10;20;false;;https://rssexport.rbc.ru/rbcnews/news/30/full.rss
+interfax;Interfax;ru;RU;DIRECT,BROWSER;10;20;false;;https://www.interfax.ru/rss.asp
+kommersant;Kommersant;ru;RU;DIRECT,BROWSER;10;20;false;*/*;https://www.kommersant.ru/RSS/news.xml
+# Asian desks. Nikkei rides an RDF (RSS 1.0) mirror - top-level <item>, parses fine.
+eastmoney;Eastmoney;zh;CN;DIRECT,BROWSER;10;20;false;;http://rss.eastmoney.com/rss_partener.xml
+scmp;South China Morning Post;en;HK;DIRECT,BROWSER;10;20;false;;https://www.scmp.com/rss/91/feed/
+nikkei;Nikkei;ja;JP;DIRECT,BROWSER;10;20;false;;https://assets.wor.jp/rss/rdf/nikkei/markets.rdf
+yonhap;Yonhap;ko;KR;DIRECT,BROWSER;10;20;false;;https://www.yna.co.kr/rss/economy.xml
+economic-times;The Economic Times;en;IN;DIRECT,BROWSER;10;20;false;;https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms
+aljazeera;Al Jazeera;ar;AR;DIRECT,BROWSER;10;20;false;*/*;https://www.aljazeera.net/aljazeerarss/a7c186be-1baa-4bd4-9d80-a84db769f779/73d0e1b4-532f-45ef-b135-bfdff8b8cab9
+# European desks outside the German-language core.
+expansion;Expansion;es;ES;DIRECT,BROWSER;10;20;false;;https://e00-expansion.uecdn.es/rss/mercados.xml
+cinco-dias;Cinco Dias;es;ES;DIRECT,BROWSER;10;20;false;;https://feeds.elpais.com/mrss-s/pages/ep/site/cincodias.elpais.com/portada
+il-sole;Il Sole 24 Ore;it;IT;DIRECT,BROWSER;10;20;false;;https://www.ilsole24ore.com/rss/finanza.xml
+fd-nl;Het Financieele Dagblad;nl;NL;DIRECT,BROWSER;10;20;false;;https://fd.nl/?rss
+nzz;NZZ;de;CH;DIRECT,BROWSER;10;20;false;;https://www.nzz.ch/wirtschaft.rss
+der-standard;Der Standard;de;AT;DIRECT,BROWSER;10;20;false;;https://www.derstandard.at/rss/wirtschaft
+dagens-industri;Dagens Industri;sv;SE;DIRECT,BROWSER;10;20;false;;https://www.di.se/rss
+bankier;Bankier.pl;pl;PL;DIRECT,BROWSER;10;20;false;;https://www.bankier.pl/rss/wiadomosci.xml
+portfolio-hu;Portfolio.hu;hu;HU;DIRECT,BROWSER;10;20;false;;https://www.portfolio.hu/rss/all.xml
+# Les Echos refuses plain HTTP however complete the headers are (403, re-probed
+# 2026-08-12) - browser-first on purpose, and it simply yields nothing when CEF
+# is off rather than breaking the sweep.
+les-echos;Les Echos;fr;FR;BROWSER,DIRECT;10;20;false;;https://services.lesechos.fr/rss/les-echos-finance-marches.xml
+# Latin America.
+infomoney;InfoMoney;pt;BR;DIRECT,BROWSER;10;20;false;;https://www.infomoney.com.br/feed/

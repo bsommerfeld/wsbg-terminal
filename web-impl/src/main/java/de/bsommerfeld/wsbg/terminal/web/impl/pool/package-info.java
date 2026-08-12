@@ -8,16 +8,18 @@
  *       the collectors fetch consequently instead of on demand, so the basin
  *       always carries the current world; only the size ceiling evicts.</li>
  *   <li><b>Live entries</b> (instrument fan, search engines) expire after
- *       5 minutes — a repeat inquiry inside the window is answered from RAM,
- *       after it the world is asked FRESH.</li>
+ *       15 minutes — a repeat inquiry inside the window is answered from RAM,
+ *       after it the world is asked FRESH. Coupled to the gateway's
+ *       {@code FAN_FRESH} ledger window; move one and you move both.</li>
  * </ul>
  *
- * <p><b>URGENT — persistence debt:</b> the basin is RAM-ONLY. Both streams —
- * the collected world wire AND the live yields — are lost on every shutdown,
- * and every restart begins with an empty basin (cold start: minutes of blind
- * flight until the collectors have poured once). The basin MUST gain disk
- * persistence (write-through or snapshot-on-interval under the app-data dir,
- * reload on boot honoring each stream's clock). Until that exists, every
- * consumer has to treat a fresh boot as "the world is not in yet".
+ * <p><b>RAM-only is the design, not a debt</b> (user decision 2026-08-12).
+ * The basin is a WINDOW on the last hours, never an archive: nothing is
+ * written to disk, and every restart begins empty. That is chosen, and it has
+ * one consequence every consumer must carry — a fresh boot means "the world is
+ * not in yet" for the first few minutes, until the collectors have poured once.
+ * Read the basin as the current state of the world, never as a record of it;
+ * what needs to outlive a restart (published headlines and their sources) is
+ * persisted by the agent side, not here.
  */
 package de.bsommerfeld.wsbg.terminal.web.impl.pool;

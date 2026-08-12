@@ -19,7 +19,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 /**
  * The two clocks of the basin (user decision 2026-08-12): collector entries
  * STAY (the world wire is fetched consequently, not on demand), live entries
- * expire after five minutes so a later inquiry sees the world fresh.
+ * expire after InMemoryArticlePool.LIVE_TTL so a later inquiry sees the world
+ * fresh. The window is read from the constant, never restated here - it is tuned
+ * together with the gateway's fan ledger, and a hardcoded figure would only fail
+ * the next time that happens.
  */
 class LiveEntryTtlTest {
 
@@ -95,7 +98,7 @@ class LiveEntryTtlTest {
         pool.add(LIVE, List.of(article("live-1")));
         assertEquals(2, pool.recent(10).size());
 
-        clock.now = clock.now.plus(Duration.ofMinutes(6));
+        clock.now = clock.now.plus(InMemoryArticlePool.LIVE_TTL).plus(Duration.ofMinutes(1));
         List<Article> after = pool.recent(10);
         assertEquals(List.of("wire-1"), after.stream().map(Article::uuid).toList(),
                 "the live window passed; the collector entry stays");
@@ -106,7 +109,7 @@ class LiveEntryTtlTest {
         TestClock clock = new TestClock();
         InMemoryArticlePool pool = new InMemoryArticlePool(clock);
         pool.add(LIVE, List.of(article("live-1")));
-        clock.now = clock.now.plus(Duration.ofMinutes(4));
+        clock.now = clock.now.plus(InMemoryArticlePool.LIVE_TTL).minus(Duration.ofMinutes(1));
         assertEquals(1, pool.recent(10).size());
     }
 
@@ -117,7 +120,7 @@ class LiveEntryTtlTest {
         pool.add(LIVE, List.of(article("story")));
         // The same story arrives on the wire — it earned durability.
         assertEquals(0, pool.add(COLLECTOR, List.of(article("story"))));
-        clock.now = clock.now.plus(Duration.ofMinutes(6));
+        clock.now = clock.now.plus(InMemoryArticlePool.LIVE_TTL).plus(Duration.ofMinutes(1));
         assertEquals(List.of("story"),
                 pool.recent(10).stream().map(Article::uuid).toList());
     }

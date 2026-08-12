@@ -45,8 +45,15 @@ public final class InMemoryArticlePool implements ArticlePool {
      * a repeat inquiry after this window sees the CURRENT state of the world
      * instead of a stale echo. Within the window, repeats are answered from
      * RAM and cost the outside world nothing.
+     *
+     * <p>Must stay COUPLED to {@code HouseWebGateway.FAN_FRESH}: the ledger
+     * suppresses a re-fan exactly as long as this window keeps the previous
+     * yield readable. Fifteen minutes rather than five — with the fan now on
+     * the subject-resolution path, the shorter window meant a busy name could
+     * be re-fanned twelve times an hour across ~28 sources for news that had
+     * not changed.
      */
-    static final java.time.Duration LIVE_TTL = java.time.Duration.ofMinutes(5);
+    static final java.time.Duration LIVE_TTL = java.time.Duration.ofMinutes(15);
 
     private record Entry(Article article, String sourceName, boolean sentiment,
             boolean durable, Instant pouredAt) {

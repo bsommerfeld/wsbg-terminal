@@ -60,7 +60,7 @@ public final class HouseWebGateway implements WebGateway {
      * off), a FAILED one must not (so it retries on the next inquiry while
      * the fetcher's cooldown protects the host).
      */
-    static final java.time.Duration FAN_FRESH = java.time.Duration.ofMinutes(5);
+    static final java.time.Duration FAN_FRESH = java.time.Duration.ofMinutes(15);
     /** Same nature as {@link #LIVE_FAN_LIMIT}, for the free-text engines. */
     static final int SEARCH_LIMIT = 30;
     /**
