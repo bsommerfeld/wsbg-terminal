@@ -49,4 +49,14 @@ public abstract class AbstractWebSource implements WebSource {
     protected final boolean hostCoolingDown(String url) {
         return fetcher.hostCoolingDown(url);
     }
+
+    /**
+     * Tells the house that a healthy-looking 2xx was actually a wall (bot
+     * challenge, consent shell). Only the source can judge that; the fetcher
+     * sees a fine status. Reporting it puts the host on the same cooldown a
+     * 429 would earn.
+     */
+    protected final void reportWall(String url) {
+        fetcher.reportWall(url);
+    }
 }

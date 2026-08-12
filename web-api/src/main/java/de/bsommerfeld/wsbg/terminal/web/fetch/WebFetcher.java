@@ -54,4 +54,19 @@ public interface WebFetcher {
      * so a polite caller can skip a doomed request without burning a socket.
      */
     boolean hostCoolingDown(String url);
+
+    /**
+     * Reports that {@code url} answered with a wall the status line did not
+     * admit to — a consent interstitial, a bot challenge, a JS shell where a
+     * feed was promised. The fetcher cannot recognise these (they arrive as a
+     * healthy 2xx), so the source that knows what a real answer looks like
+     * hands the verdict back and the host goes on cooldown like any other
+     * block. Without it the house keeps hammering a wall at full cadence.
+     *
+     * <p>Default is a no-op so a fetcher that owns no host memory (the
+     * open-web leg) stays valid.
+     */
+    default void reportWall(String url) {
+        // no memory to teach
+    }
 }

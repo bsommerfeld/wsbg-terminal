@@ -51,6 +51,38 @@ public final class HouseFetcher implements WebFetcher {
     private static final long BASE_MUTE_MS = 300_000;
     private static final long MAX_MUTE_MS = 1_800_000;
 
+    /** House budget for a host nobody asked for anything special. */
+    private static final int GATE_CONCURRENCY = 2;
+    private static final double GATE_PER_SECOND = 2.0;
+    private static final double GATE_BURST = 4.0;
+
+    /**
+     * How long a caller waits for a host's budget before being turned away
+     * with a synthetic 429. Long enough to absorb the fan's own bursts, short
+     * enough that one throttled host cannot stall a compose.
+     */
+    private static final long GATE_WAIT_MS = 8_000;
+
+    /**
+     * Hosts that publish (or enforce) a tighter budget than the house default.
+     * GDELT documents one request every five seconds and answers an overrun
+     * with an IP block; 4chan's API asks for a second between calls; Yahoo and
+     * the SEC both punish volume hard, the latter with an immediate block.
+     */
+    private static final Map<String, HostBudget> HOST_BUDGETS = Map.of(
+            "api.gdeltproject.org", new HostBudget(1, 0.2, 1.0),
+            "data.gdeltproject.org", new HostBudget(1, 0.2, 1.0),
+            "a.4cdn.org", new HostBudget(1, 1.0, 2.0),
+            "efts.sec.gov", new HostBudget(1, 2.0, 2.0),
+            "www.sec.gov", new HostBudget(1, 2.0, 2.0),
+            "query2.finance.yahoo.com", new HostBudget(1, 1.0, 2.0),
+            "query1.finance.yahoo.com", new HostBudget(1, 1.0, 2.0),
+            "www.bing.com", new HostBudget(1, 0.5, 1.0),
+            "news.google.com", new HostBudget(2, 1.0, 2.0));
+
+    private record HostBudget(int concurrency, double perSecond, double burst) {
+    }
+
     private record Cooldown(long untilMs, int strikes) {
     }
 
@@ -66,6 +98,13 @@ public final class HouseFetcher implements WebFetcher {
 
     /** Per-HOST, per-TRANSPORT silence memory. */
     private final Map<String, Silence> transportSilence = new ConcurrentHashMap<>();
+
+    /**
+     * Per-HOST proactive budgets. Every path — collectors, the instrument fan,
+     * the facts graze, the archive fan, the anonymous reddit leg — runs through
+     * {@link #run}, so this one map paces the whole process.
+     */
+    private final Map<String, HostGate> hostGates = new ConcurrentHashMap<>();
 
     private final EnumMap<FetchUtil, Transport> transports = new EnumMap<>(FetchUtil.class);
     private final ConditionalCache cache = new ConditionalCache();
@@ -137,6 +176,31 @@ public final class HouseFetcher implements WebFetcher {
             }
         }
 
+        HostGate gate = host == null ? null : hostGates.computeIfAbsent(host, HouseFetcher::gateFor);
+        if (gate == null) {
+            return attempt(url, headers, timeout, modes, kind, body, contentType, host);
+        }
+        if (!gate.acquire(GATE_WAIT_MS)) {
+            LOG.debug("Host '{}' budget saturated — turning away {} rather than queueing", host, url);
+            return WebResponse.text(429, "", Map.of());
+        }
+        try {
+            return attempt(url, headers, timeout, modes, kind, body, contentType, host);
+        } finally {
+            gate.release();
+        }
+    }
+
+    private static HostGate gateFor(String host) {
+        HostBudget budget = HOST_BUDGETS.get(host);
+        return budget == null
+                ? new HostGate(GATE_CONCURRENCY, GATE_PER_SECOND, GATE_BURST)
+                : new HostGate(budget.concurrency(), budget.perSecond(), budget.burst());
+    }
+
+    private WebResponse attempt(String url, Map<String, String> headers, Duration timeout,
+            FetchUtil[] modes, Kind kind, String body, String contentType,
+            String host) throws Exception {
         List<Transport> declared = new ArrayList<>(modes.length);
         for (FetchUtil mode : modes) {
             Transport t = transports.get(mode);
@@ -153,12 +217,12 @@ public final class HouseFetcher implements WebFetcher {
 
         WebResponse last = WebResponse.failure();
         Exception lastError = null;
-        // Only an ANSWERED 429 counts toward the cooldown. A transport that
+        // Only an ANSWERED block counts toward the cooldown. A transport that
         // threw said nothing at all; one the memory skipped was never asked —
         // neither may speak for the host in the cooldown verdict.
-        boolean everyTransportAnswered429 = true;
+        boolean everyTransportBlocked = true;
         List<Transport> plan = planFor(host, declared);
-        if (plan.size() != declared.size()) everyTransportAnswered429 = false;
+        if (plan.size() != declared.size()) everyTransportBlocked = false;
 
         for (Transport t : plan) {
             try {
@@ -173,35 +237,60 @@ public final class HouseFetcher implements WebFetcher {
                     return r;
                 }
                 LOG.debug("Transport '{}' → HTTP {} for {}, trying next", t.util(), r.status(), url);
-                if (r.status() != 429) everyTransportAnswered429 = false;
+                if (!isBlock(r.status())) everyTransportBlocked = false;
                 last = r;
             } catch (Exception e) {
                 LOG.debug("Transport '{}' failed for {}: {}, trying next", t.util(), url, describe(e));
                 silent(host, t);
-                everyTransportAnswered429 = false;
+                everyTransportBlocked = false;
                 lastError = e;
             }
         }
 
-        // Every transport fell through. A chain-wide 429 trips the host
+        // Every transport fell through. A chain-wide BLOCK trips the host
         // cooldown; a silent transport must never speak for the host (live
         // 2026-08-09: a hung browser leg beside a direct 429 is NOT a
         // chain-wide rate limit).
-        if (host != null && everyTransportAnswered429 && last.status() == 429) {
-            int strikes = cooldown == null ? 1 : cooldown.strikes() + 1;
-            long backoff = Math.min(MAX_COOLDOWN_MS, BASE_COOLDOWN_MS * (1L << (strikes - 1)));
+        if (host != null && everyTransportBlocked && isBlock(last.status())) {
             long retryAfterMs = last.header("Retry-After")
                     .map(HouseFetcher::parseRetryAfterMs).orElse(0L);
-            long waitMs = Math.max(backoff, retryAfterMs);
-            hostCooldowns.put(host, new Cooldown(System.currentTimeMillis() + waitMs, strikes));
-            LOG.info("Host '{}' answered 429 on every transport — cooldown {} s (strike {}).",
-                    host, waitMs / 1000, strikes);
+            penalize(host, retryAfterMs, "answered HTTP " + last.status() + " on every transport");
         }
         // Prefer a real (block) response over an exception so the caller can
         // branch on the status (e.g. trip a breaker).
         if (last.status() != 0) return last;
         if (lastError != null) throw lastError;
         return last;
+    }
+
+    @Override
+    public void reportWall(String url) {
+        String host = hostOf(url);
+        if (host == null) return;
+        // A 200-shaped challenge (consent interstitial, bot check, JS wall) is
+        // a block the status line does not admit to. Only the source can tell
+        // — it is the one that knows what a real answer looks like — so it
+        // hands the verdict back here instead of the house hammering on.
+        penalize(host, 0L, "served a 200-shaped wall instead of content");
+    }
+
+    /**
+     * A status the host used to turn us away. 429 is the polite form, 403 the
+     * blunt one — and a 403 wall never lifts on its own, so it earns the same
+     * exponential patience rather than an endless retry at full cadence.
+     */
+    private static boolean isBlock(int status) {
+        return status == 429 || status == 403;
+    }
+
+    /** Puts (or deepens) a host's cooldown and says why in the log. */
+    private void penalize(String host, long retryAfterMs, String why) {
+        Cooldown previous = hostCooldowns.get(host);
+        int strikes = previous == null ? 1 : previous.strikes() + 1;
+        long backoff = Math.min(MAX_COOLDOWN_MS, BASE_COOLDOWN_MS * (1L << Math.min(31, strikes - 1)));
+        long waitMs = Math.max(backoff, retryAfterMs);
+        hostCooldowns.put(host, new Cooldown(System.currentTimeMillis() + waitMs, strikes));
+        LOG.info("Host '{}' {} — cooldown {} s (strike {}).", host, why, waitMs / 1000, strikes);
     }
 
     /**
@@ -245,10 +334,19 @@ public final class HouseFetcher implements WebFetcher {
         return host + '|' + t.util();
     }
 
-    /** Test seam: forget every host's cooldown and transport memory. */
+    /** Test seam: how much of a host's cooldown is left, 0 when it is clear. */
+    long cooldownLeftMs(String url) {
+        String host = hostOf(url);
+        if (host == null) return 0L;
+        Cooldown cooldown = hostCooldowns.get(host);
+        return cooldown == null ? 0L : Math.max(0L, cooldown.untilMs() - System.currentTimeMillis());
+    }
+
+    /** Test seam: forget every host's cooldown, budget and transport memory. */
     void forgetAll() {
         hostCooldowns.clear();
         transportSilence.clear();
+        hostGates.clear();
     }
 
     /**
@@ -270,11 +368,25 @@ public final class HouseFetcher implements WebFetcher {
         }
     }
 
-    /** Retry-After: delta-seconds only (the HTTP-date form is rare on APIs). */
+    /**
+     * Retry-After in either legal shape. The date form is rarer on APIs but
+     * carries the longest waits — collapsing a "come back in an hour" to the
+     * 120 s base backoff is exactly the mistake that earns a ban.
+     */
     private static long parseRetryAfterMs(String value) {
+        String raw = value == null ? "" : value.strip();
+        if (raw.isEmpty()) return 0L;
         try {
-            return Long.parseLong(value.strip()) * 1000L;
-        } catch (NumberFormatException e) {
+            return Math.max(0L, Long.parseLong(raw) * 1000L);
+        } catch (NumberFormatException ignored) {
+            // not delta-seconds — try the HTTP-date form
+        }
+        try {
+            long epochMs = java.time.ZonedDateTime
+                    .parse(raw, java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME)
+                    .toInstant().toEpochMilli();
+            return Math.max(0L, epochMs - System.currentTimeMillis());
+        } catch (Exception e) {
             return 0L;
         }
     }

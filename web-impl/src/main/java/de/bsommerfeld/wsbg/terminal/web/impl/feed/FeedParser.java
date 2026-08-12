@@ -43,10 +43,20 @@ public final class FeedParser {
     /** A 200 is only a feed when the body is actually XML — error shells are HTML. */
     public static boolean looksLikeFeed(String body) {
         if (body == null) return false;
-        String head = body.stripLeading();
+        String head = stripBom(body).stripLeading();
         if (head.length() > 512) head = head.substring(0, 512);
         String lower = head.toLowerCase(Locale.ROOT);
         return lower.startsWith("<?xml") || lower.startsWith("<rss") || lower.startsWith("<feed");
+    }
+
+    /**
+     * Drops a leading UTF-8 byte-order mark. {@code String.stripLeading} does
+     * NOT remove U+FEFF — it is not whitespace — so a BOM-prefixed feed would
+     * silently fail the gate above and choke StAX in the prolog. Perfectly
+     * ordinary feeds ship one (Anadolu's economy feed does).
+     */
+    private static String stripBom(String s) {
+        return !s.isEmpty() && s.charAt(0) == '\uFEFF' ? s.substring(1) : s;
     }
 
     /**
@@ -56,7 +66,7 @@ public final class FeedParser {
      */
     public static List<Article> parse(String xml, String publisher) {
         if (xml == null || xml.isBlank()) return List.of();
-        String clean = truncateAfterRoot(xml);
+        String clean = truncateAfterRoot(stripBom(xml));
         List<Article> out = new ArrayList<>();
         try {
             XMLStreamReader r = XML_FACTORY.createXMLStreamReader(new StringReader(clean));

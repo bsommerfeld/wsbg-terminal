@@ -101,6 +101,7 @@ public final class ReutersNewsSource extends AbstractWebSource implements Collec
             // The bot wall answers 200-shaped HTML challenges — a status
             // proves nothing, only content does.
             LOG.debug("Reuters news-sitemap answered a 200 that is not a sitemap — miss");
+            reportWall(SITEMAP_URL);
             return List.of();
         }
         return parse(body);

@@ -81,6 +81,7 @@ public final class CuratedFeedSource implements CollectorSource {
                 }
                 if (!FeedParser.looksLikeFeed(resp.body())) {
                     LOG.debug("'{}' feed {} answered a 200 that is not a feed", row.name(), url);
+                    fetcher.reportWall(url);
                     continue;
                 }
                 for (Article a : FeedParser.parse(resp.body(), row.publisher())) {

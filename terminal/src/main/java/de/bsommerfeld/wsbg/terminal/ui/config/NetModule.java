@@ -94,11 +94,18 @@ final class NetModule extends AbstractModule {
      * handshake legs (probed 2026-07-16); with the browser disabled the
      * binding degrades to transport-failure answers and the source yields
      * empty instead of breaking.
+     *
+     * <p>The transport is its own, but the HOST MEMORY is not: cooldowns are
+     * an IP budget, and this leg talks to the same yahoo hosts the instrument
+     * fan hammers. It therefore borrows the house fetcher's memory — asking it
+     * before knocking and reporting its own blocks back — instead of the old
+     * {@code hostCoolingDown → false}, which made this the one source in the
+     * process with no restraint at all.
      */
     @Provides
     @Singleton
     @com.google.inject.name.Named("openweb")
-    WebFetcher provideOpenWebFetcher(GlobalConfig config, CefHost cefHost) {
+    WebFetcher provideOpenWebFetcher(GlobalConfig config, CefHost cefHost, WebFetcher house) {
         final de.bsommerfeld.wsbg.terminal.ui.net.OpenWebConversationFetcher openWeb =
                 config.getYahoo().isBrowserFetchEnabled()
                         ? new de.bsommerfeld.wsbg.terminal.ui.net.OpenWebConversationFetcher(cefHost)
@@ -111,9 +118,17 @@ final class NetModule extends AbstractModule {
             public de.bsommerfeld.wsbg.terminal.web.fetch.WebResponse fetch(String url,
                     java.util.Map<String, String> headers, java.time.Duration timeout,
                     FetchUtil... modes) throws Exception {
-                return openWeb == null
-                        ? de.bsommerfeld.wsbg.terminal.web.fetch.WebResponse.failure()
-                        : openWeb.fetch(url, headers, timeout);
+                if (openWeb == null) {
+                    return de.bsommerfeld.wsbg.terminal.web.fetch.WebResponse.failure();
+                }
+                if (house.hostCoolingDown(url)) {
+                    return de.bsommerfeld.wsbg.terminal.web.fetch.WebResponse.text(429, "",
+                            java.util.Map.of());
+                }
+                de.bsommerfeld.wsbg.terminal.web.fetch.WebResponse r =
+                        openWeb.fetch(url, headers, timeout);
+                if (r.status() == 429 || r.status() == 403) house.reportWall(url);
+                return r;
             }
 
             @Override
@@ -133,7 +148,12 @@ final class NetModule extends AbstractModule {
 
             @Override
             public boolean hostCoolingDown(String url) {
-                return false;
+                return house.hostCoolingDown(url);
+            }
+
+            @Override
+            public void reportWall(String url) {
+                house.reportWall(url);
             }
         };
     }

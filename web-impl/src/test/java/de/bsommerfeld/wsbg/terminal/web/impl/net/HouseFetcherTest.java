@@ -129,6 +129,50 @@ class HouseFetcherTest {
     }
 
     @Test
+    void chainWide403TripsTheHostCooldownToo() throws Exception {
+        // A bot wall answers 403 and never 429. Before this counted, the house
+        // kept knocking at full cadence for as long as it ran.
+        FakeTransport direct = new FakeTransport(FetchUtil.DIRECT)
+                .answer(WebResponse.text(403, "", Map.of()));
+        HouseFetcher fetcher = new HouseFetcher(Set.of(direct));
+
+        fetcher.fetch("https://walled.example/a", Map.of(), T, FetchUtil.DIRECT);
+        assertTrue(fetcher.hostCoolingDown("https://walled.example/b"));
+    }
+
+    @Test
+    void aReportedWallCoolsTheHostDown() throws Exception {
+        // The 200-shaped challenge: only the source can tell, so it says so.
+        FakeTransport direct = new FakeTransport(FetchUtil.DIRECT)
+                .answer(WebResponse.text(200, "<html>are you a robot</html>", Map.of()));
+        HouseFetcher fetcher = new HouseFetcher(Set.of(direct));
+
+        WebResponse r = fetcher.fetch("https://sneaky.example/feed", Map.of(), T, FetchUtil.DIRECT);
+        assertEquals(200, r.status());
+        assertFalse(fetcher.hostCoolingDown("https://sneaky.example/feed"),
+                "a healthy status alone tells the fetcher nothing");
+
+        fetcher.reportWall("https://sneaky.example/feed");
+        assertTrue(fetcher.hostCoolingDown("https://sneaky.example/other"));
+    }
+
+    @Test
+    void retryAfterAsAnHttpDateIsHonoured() throws Exception {
+        // "come back in an hour" used to collapse onto the 120 s base backoff.
+        String inAnHour = java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME.format(
+                java.time.ZonedDateTime.now(java.time.ZoneOffset.UTC).plusHours(1));
+        FakeTransport direct = new FakeTransport(FetchUtil.DIRECT)
+                .answer(WebResponse.text(429, "", Map.of("Retry-After", inAnHour)));
+        HouseFetcher fetcher = new HouseFetcher(Set.of(direct));
+
+        fetcher.fetch("https://patient.example/a", Map.of(), T, FetchUtil.DIRECT);
+        assertTrue(fetcher.hostCoolingDown("https://patient.example/a"));
+        // The base backoff is 120 s; a date-form header must outlast it by far.
+        assertTrue(fetcher.cooldownLeftMs("https://patient.example/a") > 600_000L,
+                "the HTTP-date form must not collapse onto the base backoff");
+    }
+
+    @Test
     void noModesMeansTheHouseDefaultOrder() throws Exception {
         FakeTransport direct = new FakeTransport(FetchUtil.DIRECT)
                 .answer(WebResponse.text(200, "default", Map.of()));
