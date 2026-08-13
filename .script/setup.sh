@@ -18,13 +18,11 @@
 set -e
 
 # ==============================================================================
-# CONFIG -- bump these to upgrade Ollama or change the models
+# CONFIG -- change the models here; the Ollama version resolves itself
 # ==============================================================================
-# Pinned Ollama version = the GitHub release tag WITHOUT the leading "v".
-# To upgrade: set the new version here. On the next launch the isolated binary
-# under <appData>/ollama is re-downloaded automatically (downloaded models kept).
+# Ollama is NOT pinned: on every launch we ask GitHub for the current release
+# and install it if the local binary is older. Nothing to bump by hand.
 #   Releases: https://github.com/ollama/ollama/releases
-OLLAMA_VERSION="0.32.9"
 
 # Models reconciled into our ISOLATED store (<appData>/ollama/models): section 3
 # installs/updates these to the latest registry build and removes anything else.
@@ -91,21 +89,54 @@ export OLLAMA_MODELS="$AI_MODELS"
 mkdir -p "$AI_MODELS"
 
 # ------------------------------------------------------------------------------
-# 1. Install / update OUR isolated Ollama binary (pinned; never the system one)
+# 1. Install / update OUR isolated Ollama binary (latest; never the system one)
 # ------------------------------------------------------------------------------
+# The current release tag, without the leading "v", or "" if GitHub is out of
+# reach. Two ways in, both unauthenticated:
+#   1. the /releases/latest redirect -- a plain HTTP hop, no API rate limit
+#   2. the release API, in case the redirect is blocked/rewritten by a proxy
+# Prereleases never appear on /releases/latest, so this only ever yields a
+# stable version.
+resolve_latest_ollama() {
+    local v=""
+    v=$(curl -fsSLI -m 15 -o /dev/null -w '%{url_effective}' \
+            "https://github.com/ollama/ollama/releases/latest" 2>/dev/null \
+        | grep -oE '[0-9]+\.[0-9]+\.[0-9]+$') || true
+    if [ -z "$v" ]; then
+        v=$(curl -fsSL -m 15 "https://api.github.com/repos/ollama/ollama/releases/latest" 2>/dev/null \
+            | grep -oE '"tag_name"[[:space:]]*:[[:space:]]*"v?[0-9]+\.[0-9]+\.[0-9]+"' \
+            | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1) || true
+    fi
+    printf '%s' "$v"
+}
+
 install_ollama() {
-    local want="$OLLAMA_VERSION"
-    local have=""
+    local want have arch base url tmp
+    have=""
     [ -x "$OLLAMA" ] && have=$("$OLLAMA" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
-    if [ "$have" = "$want" ]; then
-        echo "[*] Isolated Ollama $want already present."
+
+    want="$(resolve_latest_ollama)"
+    if [ -z "$want" ] && [ -n "$have" ]; then
+        # Offline or GitHub blocked: an installed runtime is worth more than a
+        # failed upgrade, so we keep it and try again on the next launch.
+        warn "Could not resolve the latest Ollama version -- keeping installed $have."
         return 0
     fi
-    echo "[*] Installing isolated Ollama $want into $AI_DIR ..."
 
-    local arch base url tmp
+    if [ "$have" = "$want" ] && [ -n "$want" ]; then
+        echo "[*] Isolated Ollama $want (latest) already present."
+        return 0
+    fi
+    echo "[*] Installing isolated Ollama ${want:-latest} into $AI_DIR ..."
+
     arch="$(uname -m)"
-    base="https://github.com/ollama/ollama/releases/download/v${want}"
+    # No version resolved and nothing installed: let GitHub pick the release for
+    # us via the /latest/download alias -- still the latest, just unnamed.
+    if [ -n "$want" ]; then
+        base="https://github.com/ollama/ollama/releases/download/v${want}"
+    else
+        base="https://github.com/ollama/ollama/releases/latest/download"
+    fi
 
     # Remove only the runtime (keep downloaded models under $AI_MODELS).
     rm -rf "$AI_DIR/bin" "$AI_DIR/lib" "$AI_DIR/ollama"
@@ -191,8 +222,8 @@ fi
 # (SHA-256 of the manifest, fetched WITHOUT downloading the model) and pull only
 # when missing or stale -- so models stay current with no blind re-pull. Anything
 # in the store that is NOT desired is removed, so a model switch leaves no
-# Altlasten. To switch models, edit DESIRED_MODELS (and OLLAMA_VERSION above if
-# the new model needs a newer runtime); the check URL, pull, and GC all follow.
+# Altlasten. To switch models, edit DESIRED_MODELS; the check URL, pull, and GC
+# all follow (the runtime is always the latest release, see section 1).
 #
 # FUTURE (separate, larger step): today this reconcile-against-local pattern
 # ("declare the desired set, diff it against what is actually installed, GC the

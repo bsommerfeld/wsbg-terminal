@@ -14,12 +14,12 @@
 # ==============================================================================
 
 # ==============================================================================
-# CONFIG -- bump these to upgrade Ollama or change the models
+# CONFIG -- change the models here; the Ollama version resolves itself
 # ==============================================================================
-# Pinned Ollama version = the GitHub release tag WITHOUT the leading "v".
-# Bump -> the isolated binary under <appData>\ollama re-downloads on next launch
-# (downloaded models are kept). Releases: https://github.com/ollama/ollama/releases
-$OllamaVersion = "0.32.9"
+# Ollama is NOT pinned: on every launch we ask GitHub for the current release
+# and re-download the isolated binary under <appData>\ollama if it is older
+# (downloaded models are kept). Nothing to bump by hand.
+#   Releases: https://github.com/ollama/ollama/releases
 
 # Models reconciled into our ISOLATED store (<appData>\ollama\models): section 3
 # installs/updates these to the latest registry build and removes anything else.
@@ -80,8 +80,34 @@ $env:OLLAMA_MODELS = $aiModels
 New-Item -ItemType Directory -Force -Path $aiModels | Out-Null
 
 # ------------------------------------------------------------------------------
-# 1. Install / update OUR isolated Ollama binary (pinned; never the system one)
+# 1. Install / update OUR isolated Ollama binary (latest; never the system one)
 # ------------------------------------------------------------------------------
+# The current release tag, without the leading "v", or $null if GitHub is out of
+# reach. Two ways in, both unauthenticated:
+#   1. the /releases/latest redirect -- a plain HTTP hop, no API rate limit
+#   2. the release API, in case the redirect is blocked/rewritten by a proxy
+# Prereleases never appear on /releases/latest, so this only ever yields a
+# stable version. curl.exe (ships with Windows 10+) does the redirect hop for
+# the same reason it does the download: Invoke-WebRequest is slow and picky
+# about redirects across PowerShell versions.
+function Get-LatestOllamaVersion {
+    $latestUrl = "https://github.com/ollama/ollama/releases/latest"
+    try {
+        $final = & curl.exe -fsSLI -m 15 -o NUL -w "%{url_effective}" $latestUrl 2>$null
+        # Same TLS revocation-check dead end as the download below.
+        if ($LASTEXITCODE -eq 35) {
+            $final = & curl.exe -fsSLI --ssl-no-revoke -m 15 -o NUL -w "%{url_effective}" $latestUrl 2>$null
+        }
+        if ("$final" -match "(\d+\.\d+\.\d+)\s*$") { return $matches[1] }
+    } catch {}
+    try {
+        $json = & curl.exe -fsSL --ssl-no-revoke -m 15 -H "User-Agent: wsbg-terminal" `
+            "https://api.github.com/repos/ollama/ollama/releases/latest" 2>$null | Out-String
+        if ($json -match '"tag_name"\s*:\s*"v?(\d+\.\d+\.\d+)"') { return $matches[1] }
+    } catch {}
+    return $null
+}
+
 $haveVer = $null
 if (Test-Path $ollamaExe) {
     # Out-String collapses the multi-line output into ONE string. Without it,
@@ -92,12 +118,25 @@ if (Test-Path $ollamaExe) {
     if ($out -match "(\d+\.\d+\.\d+)") { $haveVer = $matches[1] }
 }
 
-if ($haveVer -eq $OllamaVersion) {
-    Write-Host "[*] Isolated Ollama $OllamaVersion already present." -ForegroundColor Gray
+$OllamaVersion = Get-LatestOllamaVersion
+
+if (-not $OllamaVersion -and $haveVer) {
+    # Offline or GitHub blocked: an installed runtime is worth more than a failed
+    # upgrade, so we keep it and try again on the next launch.
+    Write-Warn "Could not resolve the latest Ollama version -- keeping installed $haveVer."
+} elseif ($OllamaVersion -and $haveVer -eq $OllamaVersion) {
+    Write-Host "[*] Isolated Ollama $OllamaVersion (latest) already present." -ForegroundColor Gray
 } else {
-    Write-Host "[*] Installing isolated Ollama $OllamaVersion into $aiDir ..." -ForegroundColor Cyan
+    $shownVer = if ($OllamaVersion) { $OllamaVersion } else { "latest" }
+    Write-Host "[*] Installing isolated Ollama $shownVer into $aiDir ..." -ForegroundColor Cyan
     $arch = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "arm64" } else { "amd64" }
-    $url = "https://github.com/ollama/ollama/releases/download/v$OllamaVersion/ollama-windows-$arch.zip"
+    # No version resolved and nothing installed: let GitHub pick the release for
+    # us via the /latest/download alias -- still the latest, just unnamed.
+    $url = if ($OllamaVersion) {
+        "https://github.com/ollama/ollama/releases/download/v$OllamaVersion/ollama-windows-$arch.zip"
+    } else {
+        "https://github.com/ollama/ollama/releases/latest/download/ollama-windows-$arch.zip"
+    }
     $tmpZip = Join-Path $env:TEMP "ollama-windows-$PID.zip"
     try {
         # Remove only the runtime (keep downloaded models under $aiModels).
@@ -155,18 +194,34 @@ if ($haveVer -eq $OllamaVersion) {
 # child inheriting that CWD locks the install folder on Windows (an orphaned
 # ollama then makes the folder undeletable). Pin it to TEMP.
 $ollamaProcess = $null
-if (Test-Path $ollamaExe) {
+
+# Is one of OUR servers already listening on the private port? Only a previous
+# run of this app can answer there (the user's own instance sits on 11434), so
+# we reuse it instead of spawning a second 'serve' that cannot bind the port --
+# and that we would then leave behind, because section 7 only kills the process
+# WE started. Mirrors the curl pre-check in setup.sh.
+function Test-OllamaUp {
+    try {
+        Invoke-RestMethod -Uri "http://$($env:OLLAMA_HOST)/api/tags" -TimeoutSec 2 | Out-Null
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+if ((Test-Path $ollamaExe) -and (Test-OllamaUp)) {
+    Write-Host "[*] Our Ollama server already running on $($env:OLLAMA_HOST)." -ForegroundColor Gray
+} elseif (Test-Path $ollamaExe) {
     Write-Host "[*] Starting isolated Ollama server on $($env:OLLAMA_HOST) ..."
     try {
         $ollamaProcess = Start-Process -FilePath $ollamaExe -ArgumentList "serve" -WorkingDirectory $env:TEMP -PassThru -WindowStyle Hidden -ErrorAction Stop
         $ready = $false
         for ($i = 0; $i -lt 30; $i++) {
             Start-Sleep -Milliseconds 500
-            try {
-                Invoke-RestMethod -Uri "http://$($env:OLLAMA_HOST)/api/tags" -TimeoutSec 2 | Out-Null
+            if (Test-OllamaUp) {
                 $ready = $true
                 break
-            } catch {}
+            }
         }
         if ($ready) {
             Write-Host "    Server ready." -ForegroundColor Green
@@ -185,8 +240,8 @@ if (Test-Path $ollamaExe) {
 # manifest digest ('ollama list' ID) against the registry's manifest digest
 # (Docker-Content-Digest, fetched WITHOUT downloading the model) and pull only
 # when missing or stale. Anything in the store that is NOT desired is removed, so
-# a model switch leaves no Altlasten. To switch models, edit $desiredModels (and
-# $OllamaVersion above if the new model needs a newer runtime).
+# a model switch leaves no Altlasten. To switch models, edit $desiredModels (the
+# runtime is always the latest release, see section 1).
 #
 # FUTURE (separate, larger step): today this reconcile-against-local pattern
 # ("declare the desired set, diff it against what is actually installed, GC the
