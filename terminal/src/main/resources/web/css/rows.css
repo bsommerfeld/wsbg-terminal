@@ -142,9 +142,9 @@ a.glyph:hover { opacity: .7; }
    both sides. */
 .row:has(+ .row.time-gap) { border-bottom: 0; }
 .row.time-gap {
-  margin-top: 22.5px;
+  margin-top: 27px;
   border-top: 1px solid var(--line);
-  padding-top: calc(var(--row-pad-y) + 22.5px);
+  padding-top: calc(var(--row-pad-y) + 27px);
 }
 
 .row .time {
