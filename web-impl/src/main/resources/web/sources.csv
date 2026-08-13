@@ -70,8 +70,10 @@ ukrinform;Ukrinform;en;UA;DIRECT,BROWSER;5;10;false;;https://www.ukrinform.net/r
 # CTK via ceskenoviny.cz: the Czech domestic wire. Skoda/VW, CEZ, industrial output.
 ctk;CTK;cs;CZ;DIRECT,BROWSER;8;15;false;;https://www.ceskenoviny.cz/sluzby/rss/cr.php
 # MercoPress, the South Atlantic wire out of Montevideo: Mercosur, Argentina,
-# fisheries, Falklands. Ten items a day - hence the slower cadence.
-mercopress;MercoPress;en;LATAM;DIRECT,BROWSER;8;15;false;;https://www.mercopress.com/rss/
+# fisheries, Falklands. Ten items a day - hence the slower cadence. The
+# www. host 301s onto en. and the browser leg fails behind it, so the row
+# names the final URL: a redirect the transport cannot follow is a dead source.
+mercopress;MercoPress;en;LATAM;DIRECT,BROWSER;8;15;false;;https://en.mercopress.com/rss/
 # Prensa Latina (Cuban state agency, Spanish). Here not for market relevance
 # but because Latin America is otherwise told only through InfoMoney.
 prensa-latina;Prensa Latina;es;CU;DIRECT,BROWSER;15;30;false;;https://www.prensa-latina.cu/feed/
@@ -172,11 +174,15 @@ wiwo;WirtschaftsWoche;de;DE;DIRECT,BROWSER;10;20;false;;https://www.wiwo.de/cont
 # 4investors stocks-to-watch. Answers 406 to a feed-shaped Accept - it wants */*.
 4investors;4investors;de;DE;DIRECT,BROWSER;10;20;false;*/*;https://www.4investors.de/xml/stocks_to_watch.rss
 # Russian wires. The sphere the western desks report ABOUT rather than FROM -
-# energy, sanctions, metals. Kommersant also insists on */*.
+# energy, sanctions, metals. Kommersant also insists on */*, and it rides its
+# ECONOMY and BUSINESS desks rather than the /RSS/news.xml firehose: that one
+# answered 722 items in a single pass - a tenth of the whole basin from one
+# paper, general news included. Breadth is worth nothing if one house crowds
+# out the rest. (Lowercase /rss/ path; the uppercase one 301s.)
 tass;TASS;ru;RU;DIRECT,BROWSER;10;20;false;;https://tass.ru/rss/v2.xml
 rbc;RBC;ru;RU;DIRECT,BROWSER;10;20;false;;https://rssexport.rbc.ru/rbcnews/news/30/full.rss
 interfax;Interfax;ru;RU;DIRECT,BROWSER;10;20;false;;https://www.interfax.ru/rss.asp
-kommersant;Kommersant;ru;RU;DIRECT,BROWSER;10;20;false;*/*;https://www.kommersant.ru/RSS/news.xml
+kommersant;Kommersant;ru;RU;DIRECT,BROWSER;10;20;false;*/*;https://www.kommersant.ru/rss/section-economics.xml|https://www.kommersant.ru/rss/section-business.xml
 # Asian desks. Nikkei rides an RDF (RSS 1.0) mirror - top-level <item>, parses fine.
 eastmoney;Eastmoney;zh;CN;DIRECT,BROWSER;10;20;false;;http://rss.eastmoney.com/rss_partener.xml
 scmp;South China Morning Post;en;HK;DIRECT,BROWSER;10;20;false;;https://www.scmp.com/rss/91/feed/
