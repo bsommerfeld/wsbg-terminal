@@ -397,6 +397,87 @@
 .dbg-log-row[data-tone="bad"] .dbg-log-msg { color: var(--txt); }
 .dbg-log-error { color: var(--red); }
 
+/* ---- subjects: identity pair ----------------------------------------- */
+/* The claimed identity and the resolved one sit side by side on one row —
+   the whole point of the panel is that the two can be read against each
+   other without comparing columns. Tone paints the block's left edge, the
+   diverging chip carries the colour. */
+.dbg-ident-list { display: flex; flex-direction: column; gap: 8px; }
+.dbg-ident {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 10px 12px; border-radius: 8px;
+  border: 1px solid var(--line); border-left: 3px solid var(--mute-2);
+  background: var(--bg);
+}
+.dbg-ident[data-tone="warn"] { border-left-color: var(--amber); }
+.dbg-ident[data-tone="bad"]  { border-left-color: var(--red); background: var(--red-soft); }
+.dbg-ident-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dbg-ident-name { font-size: 12.5px; color: var(--txt); font-weight: 600; }
+.dbg-ident-age { margin-left: auto; font-size: 10.5px; color: var(--mute-2); }
+.dbg-ident-pair { display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.dbg-ident-side { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.dbg-ident-side-label {
+  font-size: 9.5px; letter-spacing: .09em; text-transform: uppercase; color: var(--mute);
+}
+.dbg-ident-arrow { align-self: center; color: var(--mute-2); font-size: 14px; }
+.dbg-ident-flags { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.dbg-ident-flags li { font-size: 11.5px; color: var(--txt-2); padding-left: 14px; position: relative; }
+.dbg-ident-flags li::before {
+  content: ""; position: absolute; left: 0; top: 6px;
+  width: 6px; height: 6px; border-radius: 50%; background: var(--mute-2);
+}
+.dbg-ident-flags li[data-tone="warn"]::before { background: var(--amber); }
+.dbg-ident-flags li[data-tone="bad"]::before { background: var(--red); }
+.dbg-ident-flags li[data-tone="bad"] { color: var(--txt); }
+
+.dbg-chip-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.dbg-chip {
+  display: flex; flex-direction: column; gap: 1px;
+  padding: 4px 8px; border-radius: 6px;
+  border: 1px solid var(--line-soft); background: var(--bg-1);
+}
+.dbg-chip-label {
+  font-size: 9px; letter-spacing: .08em; text-transform: uppercase; color: var(--mute);
+}
+.dbg-chip-value {
+  font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 11.5px; color: var(--txt-2);
+  max-width: 210px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dbg-chip[data-tone="warn"] { border-color: var(--amber); }
+.dbg-chip[data-tone="warn"] .dbg-chip-value { color: var(--amber); }
+.dbg-chip[data-tone="bad"] { border-color: var(--red); background: var(--red-soft); }
+.dbg-chip[data-tone="bad"] .dbg-chip-value { color: var(--red); }
+
+/* ---- subjects: compose backlog --------------------------------------- */
+.dbg-backlog { display: flex; flex-direction: column; gap: 10px; }
+.dbg-backlog-row {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 9px 11px; border-radius: 8px;
+  border: 1px solid var(--line-soft); background: var(--bg);
+}
+.dbg-backlog-row[data-tone="bad"] { border-color: var(--red); background: var(--red-soft); }
+.dbg-backlog-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dbg-backlog-name { font-size: 12px; color: var(--txt); }
+.dbg-backlog-note { margin-left: auto; font-size: 10.5px; color: var(--mute); }
+.dbg-backlog-line { margin: 0; font-size: 11.5px; color: var(--txt-2); }
+
+/* ---- subjects: register table + expandable detail --------------------- */
+.dbg-subjects tbody tr.dbg-row-head { cursor: pointer; }
+.dbg-caret { display: inline-block; width: 12px; color: var(--mute-2); }
+.dbg-row-name { color: inherit; }
+.dbg-row-detail > td { background: var(--bg); padding: 0; }
+.dbg-row-detail:hover > td { background: var(--bg); }
+.dbg-detail { display: flex; flex-direction: column; gap: 12px; padding: 12px 14px 14px 26px; }
+.dbg-detail-bars { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+@media (max-width: 900px) { .dbg-detail-bars { grid-template-columns: 1fr; } }
+.dbg-headline {
+  display: flex; flex-direction: column; gap: 5px;
+  padding: 9px 11px; border-radius: 8px;
+  background: var(--bg-1); border-left: 2px solid var(--blue);
+}
+.dbg-headline-meta { display: flex; align-items: center; gap: 8px; font-size: 10.5px; color: var(--mute); }
+.dbg-headline-text { margin: 0; font-size: 12.5px; line-height: 1.45; color: var(--txt); }
+
 /* ---- reddit chain ---------------------------------------------------- */
 .dbg-chain { display: flex; flex-wrap: wrap; gap: 8px; }
 .dbg-chain-item {

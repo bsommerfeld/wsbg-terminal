@@ -23,11 +23,12 @@ import * as runtime from './panels/runtime.js';
 import * as config from './panels/config.js';
 import * as log from './panels/log.js';
 import * as reddit from './panels/reddit.js';
+import * as subjects from './panels/subjects.js';
 
-const PANELS = [overview, sources, collectors, basin, runtime, config, log, reddit];
+const PANELS = [overview, sources, collectors, basin, runtime, subjects, config, log, reddit];
 // Commands that feed a header beacon; `config` is not among them (it does not
 // change on its own, so it is only fetched when its panel is open).
-const BEACON_COMMANDS = ['overview', 'sources', 'collectors', 'basin', 'runtime', 'log', 'reddit'];
+const BEACON_COMMANDS = ['overview', 'sources', 'collectors', 'basin', 'runtime', 'subjects', 'log', 'reddit'];
 const SWEEP_MS = 20_000;
 const RATES = [[2000, '2 s'], [5000, '5 s'], [10_000, '10 s'], [0, 'manual']];
 const SPANS = [[5 * 60_000, '5 m'], [15 * 60_000, '15 m'], [60 * 60_000, '1 h'], [6 * 60 * 60_000, '6 h']];

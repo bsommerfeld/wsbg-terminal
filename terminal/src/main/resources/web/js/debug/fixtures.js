@@ -19,7 +19,7 @@ export function fixtures(now = Date.now(), { runner = 'mlx' } = {}) {
       heapUsedBytes: 1_284_000_000,
       heapMaxBytes: 4_294_967_296,
       processors: 12,
-      commands: ['overview', 'sources', 'collectors', 'basin', 'runtime', 'config', 'log', 'reddit'],
+      commands: ['overview', 'sources', 'collectors', 'basin', 'runtime', 'config', 'log', 'reddit', 'subjects'],
     }),
 
     sources: () => {
@@ -231,6 +231,116 @@ export function fixtures(now = Date.now(), { runner = 'mlx' } = {}) {
           errorCount: lines.filter(l => l.level === 'ERROR').length,
           warnAndErrorByLogger,
         },
+      };
+    },
+
+    // The register, with both real misresolutions in it: "Gemini" (Google's
+    // model) landed on a junk coin, and "IREN" got the right letters off the
+    // wrong exchange. Plus legitimately foreign paper (Rheinmetall) so the
+    // identity check can be seen NOT firing on a correct German listing.
+    subjects: () => {
+      const u = (o) => ({
+        isin: null, instrument: true, dirty: false,
+        evidenceCount: 0, seenEvidenceCount: 0, newsCount: 0, coveredNewsCount: 0,
+        headlineCount: 0, lastHeadline: null,
+        uncomposedEvidence: false, lastComposedAtMs: 0, dirtySinceMs: 0, evidenceVersion: 0,
+        firstPrice: null, firstPriceAtMs: null, market: null,
+        firstSeenMs: now - 6 * 3600_000, lastActivityMs: now - 4 * MIN,
+        ...o,
+      });
+      const units = [
+        u({
+          id: 'GEMINI', canonicalName: 'Gemini', ticker: 'GEMINI', dirty: true,
+          firstSeenMs: now - 2 * 3600_000, lastActivityMs: now - 90_000,
+          evidenceCount: 14, seenEvidenceCount: 6, newsCount: 9, coveredNewsCount: 1,
+          headlineCount: 1, uncomposedEvidence: true,
+          lastComposedAtMs: now - 71 * MIN, dirtySinceMs: now - 24 * MIN, evidenceVersion: 31,
+          lastHeadline: { text: 'Gemini fällt um 41 % - der Markt hat das Update offenbar anders gelesen', atMs: now - 71 * MIN, sentiment: 'BEARISH' },
+          firstPrice: 0.000131, firstPriceAtMs: now - 2 * 3600_000,
+          market: { symbol: 'GEMINI-USD', price: 0.0001042, dayChangePercent: -41.2, currency: 'USD', exchange: 'CCC' },
+        }),
+        u({
+          id: 'IREN', canonicalName: 'IREN Limited', ticker: 'IREN', isin: 'IT0003027817',
+          firstSeenMs: now - 9 * 3600_000, lastActivityMs: now - 6 * MIN,
+          evidenceCount: 22, seenEvidenceCount: 22, newsCount: 12, coveredNewsCount: 8,
+          headlineCount: 4, lastComposedAtMs: now - 18 * MIN, evidenceVersion: 57,
+          lastHeadline: { text: 'IREN meldet Rekord-Hashrate - Nasdaq-Papier zieht nachbörslich an', atMs: now - 18 * MIN, sentiment: 'BULLISH' },
+          firstPrice: 1.79, firstPriceAtMs: now - 9 * 3600_000,
+          market: { symbol: 'IREN.MI', price: 1.842, dayChangePercent: 0.6, currency: 'EUR', exchange: 'MIL' },
+        }),
+        u({
+          id: 'NVDA', canonicalName: 'NVIDIA', ticker: 'NVDA', isin: 'US67066G1040',
+          lastActivityMs: now - 40_000, dirty: true, dirtySinceMs: now - 3 * MIN, uncomposedEvidence: true,
+          evidenceCount: 48, seenEvidenceCount: 44, newsCount: 26, coveredNewsCount: 21,
+          headlineCount: 9, lastComposedAtMs: now - 12 * MIN, evidenceVersion: 140,
+          lastHeadline: { text: 'NVIDIA über 1.200 $ - die Affen im Käfig feiern die dritte Woche in Folge', atMs: now - 12 * MIN, sentiment: 'FOMO' },
+          firstPrice: 1104.2, firstPriceAtMs: now - 26 * 3600_000,
+          market: { symbol: 'NVDA', price: 1208.44, dayChangePercent: 2.4, currency: 'USD', exchange: 'NMS' },
+        }),
+        u({
+          id: 'RHM', canonicalName: 'Rheinmetall', ticker: 'RHM', isin: 'DE0007030009',
+          lastActivityMs: now - 22 * MIN,
+          evidenceCount: 17, seenEvidenceCount: 17, newsCount: 11, coveredNewsCount: 9,
+          headlineCount: 3, lastComposedAtMs: now - 46 * MIN, evidenceVersion: 61,
+          lastHeadline: { text: 'Rheinmetall zieht an - neuer Rahmenvertrag beflügelt', atMs: now - 46 * MIN, sentiment: 'BULLISH' },
+          firstPrice: 512.4, firstPriceAtMs: now - 30 * 3600_000,
+          market: { symbol: 'RHM.DE', price: 528.8, dayChangePercent: 1.1, currency: 'EUR', exchange: 'GER' },
+        }),
+        u({
+          id: 'PLTR', canonicalName: 'Palantir', ticker: 'PLTR', isin: 'US69608A1088',
+          lastActivityMs: now - 28 * MIN, dirty: true, dirtySinceMs: now - 27 * MIN, uncomposedEvidence: true,
+          evidenceCount: 31, seenEvidenceCount: 12, newsCount: 14, coveredNewsCount: 6,
+          headlineCount: 2, lastComposedAtMs: now - 3 * 3600_000, evidenceVersion: 88,
+          lastHeadline: { text: 'Palantir nach Behördendeal - Hopium hält', atMs: now - 3 * 3600_000, sentiment: 'BULLISH' },
+          firstPrice: 24.1, firstPriceAtMs: now - 40 * 3600_000,
+          market: { symbol: 'PLTR', price: 27.62, dayChangePercent: -0.8, currency: 'USD', exchange: 'NMS' },
+        }),
+        u({
+          id: 'zinsentscheid-ezb', canonicalName: 'Zinsentscheid der EZB', ticker: null, instrument: false,
+          lastActivityMs: now - 11 * MIN,
+          evidenceCount: 9, seenEvidenceCount: 9, newsCount: 7, coveredNewsCount: 5,
+          headlineCount: 2, lastComposedAtMs: now - 34 * MIN, evidenceVersion: 24,
+          lastHeadline: { text: 'EZB lässt die Zinsen liegen - kein Blut, kein Mond', atMs: now - 34 * MIN, sentiment: 'MIXED' },
+        }),
+        u({
+          id: 'TSLA', canonicalName: 'Tesla', ticker: 'TSLA', isin: 'US88160R1014',
+          lastActivityMs: now - 2 * MIN,
+          evidenceCount: 26, seenEvidenceCount: 26, newsCount: 19, coveredNewsCount: 19,
+          headlineCount: 6, lastComposedAtMs: now - 8 * MIN, evidenceVersion: 102,
+          lastHeadline: { text: 'Tesla verliert 4 % - der Robotaxi-Termin rutscht wieder', atMs: now - 8 * MIN, sentiment: 'BEARISH' },
+          firstPrice: 262.1, firstPriceAtMs: now - 20 * 3600_000,
+          market: { symbol: 'TSLA', price: 248.9, dayChangePercent: -4.1, currency: 'USD', exchange: 'NMS' },
+        }),
+        u({
+          id: 'SMCI', canonicalName: 'Super Micro Computer', ticker: 'SMCI', isin: 'US86800U3023',
+          lastActivityMs: now - 52 * MIN,
+          evidenceCount: 6, seenEvidenceCount: 6, newsCount: 4, coveredNewsCount: 0,
+          headlineCount: 0, lastComposedAtMs: 0, evidenceVersion: 12,
+          market: { symbol: 'SMCI', price: 41.2, dayChangePercent: 0.3, currency: 'USD', exchange: 'NMS' },
+        }),
+        u({
+          id: 'sam-altman', canonicalName: 'Sam Altman', ticker: null, instrument: false,
+          lastActivityMs: now - 64 * MIN,
+          evidenceCount: 4, seenEvidenceCount: 4, newsCount: 3, coveredNewsCount: 1,
+          headlineCount: 1, lastComposedAtMs: now - 80 * MIN, evidenceVersion: 9,
+          lastHeadline: { text: 'Altman deutet neues Modell an - die Affen spekulieren', atMs: now - 80 * MIN, sentiment: 'FOMO' },
+        }),
+        u({
+          id: 'BAYN', canonicalName: 'Bayer', ticker: 'BAYN', isin: 'DE000BAY0017',
+          lastActivityMs: now - 3 * 3600_000,
+          evidenceCount: 11, seenEvidenceCount: 11, newsCount: 8, coveredNewsCount: 8,
+          headlineCount: 2, lastComposedAtMs: now - 3 * 3600_000, evidenceVersion: 40,
+          lastHeadline: { text: 'Bayer bleibt im Blut - Glyphosat-Urteil kassiert', atMs: now - 3 * 3600_000, sentiment: 'BEARISH' },
+          firstPrice: 27.9, firstPriceAtMs: now - 50 * 3600_000,
+          market: { symbol: 'BAYN.DE', price: 26.4, dayChangePercent: -1.9, currency: 'EUR', exchange: 'GER' },
+        }),
+      ];
+      return {
+        total: units.length + 34,
+        dirtyCount: units.filter(x => x.dirty).length,
+        instrumentCount: units.filter(x => x.instrument).length + 28,
+        shown: units.length,
+        units,
       };
     },
 
