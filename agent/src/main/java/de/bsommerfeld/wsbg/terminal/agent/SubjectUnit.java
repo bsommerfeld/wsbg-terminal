@@ -310,6 +310,64 @@ public final class SubjectUnit {
 
     public synchronized Set<String> coveredNewsIds() { return newsBox.coveredIdsCopy(); }
 
+    /**
+     * O(1) scalar copy of this unit's state for the debug layer ({@code subjects}
+     * command). Deliberately narrow: it holds the monitor only long enough to read
+     * counters, gate scalars and the LAST headline — it never iterates evidence,
+     * news or headlines under the lock (the prep threads contend on this same
+     * monitor, and a 22-subject cluster would feel a long hold). Everything
+     * returned is a primitive or an immutable String; no reference into the
+     * unit's collections or articles leaves, so a retained {@code DebugStats}
+     * cannot pin anything past its eviction.
+     */
+    public synchronized DebugStats debugStats() {
+        UnitHeadline last = headlines.isEmpty() ? null : headlines.get(headlines.size() - 1);
+        MarketSnapshot snap = this.snapshot; // one volatile read, consistent below
+        return new DebugStats(
+                id, canonicalName, ticker, isin, isInstrument(),
+                firstSeen.getEpochSecond(), lastActivity.getEpochSecond(),
+                evidence.size(), seenEvidence.size(),
+                newsBox.news().size(), newsBox.coveredCount(),
+                headlines.size(),
+                last == null ? null : last.text(),
+                last == null ? null : last.atEpoch(),
+                last == null ? null : last.sentiment(),
+                composeGate.hasUncomposedEvidence(),
+                composeGate.lastComposedAtMs(),
+                composeGate.dirtySinceMs(),
+                composeGate.evidenceVersion(),
+                firstPrice,
+                firstPriceAt == null ? null : firstPriceAt.getEpochSecond(),
+                snap == null ? null : snap.symbol(),
+                snap == null || !snap.hasPrice() ? null : snap.price(),
+                snap == null || !Double.isFinite(snap.dayChangePercent()) ? null : snap.dayChangePercent(),
+                snap == null ? null : snap.currency(),
+                snap == null ? null : snap.exchangeName());
+    }
+
+    /**
+     * Scalar-only debug view of one unit — primitives and immutable Strings, no
+     * collection or article references (see {@link #debugStats()}). Times are
+     * epoch <b>seconds</b> here (matching the unit's internal clocks); the bridge
+     * converts to the wire's epoch millis. {@code snapshotSymbol} is the symbol
+     * Yahoo actually resolved — held NEXT to {@code ticker}/{@code isin}/
+     * {@code exchange}/{@code currency} on purpose: a "Gemini" resolved to a
+     * junk coin or an "IREN" priced off a Milan utility is visible exactly in
+     * this identity row.
+     */
+    public record DebugStats(
+            String id, String canonicalName, String ticker, String isin, boolean instrument,
+            long firstSeenEpoch, long lastActivityEpoch,
+            int evidenceCount, int seenEvidenceCount, int newsCount, int coveredNewsCount,
+            int headlineCount, String lastHeadlineText, Long lastHeadlineAtEpoch,
+            String lastHeadlineSentiment,
+            boolean uncomposedEvidence, long lastComposedAtMs, long dirtySinceMs,
+            long evidenceVersion,
+            Double firstPrice, Long firstPriceAtEpoch,
+            String snapshotSymbol, Double price, Double dayChangePercent,
+            String currency, String exchange) {
+    }
+
     /** Captures the unit's full state for short-TTL session persistence (see the restore ctor). */
     public synchronized Snapshot toSnapshot() {
         return new Snapshot(id, canonicalName, ticker, isin,

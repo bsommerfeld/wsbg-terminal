@@ -7,6 +7,8 @@ import de.bsommerfeld.jshepherd.annotation.Section;
 import de.bsommerfeld.wsbg.terminal.agent.AgentBrain;
 import de.bsommerfeld.wsbg.terminal.agent.EditorialQueue;
 import de.bsommerfeld.wsbg.terminal.agent.LlmGate;
+import de.bsommerfeld.wsbg.terminal.agent.SubjectRegistry;
+import de.bsommerfeld.wsbg.terminal.agent.SubjectUnit;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.core.debug.BasinInflow;
 import de.bsommerfeld.wsbg.terminal.core.debug.CollectorClock;
@@ -120,6 +122,28 @@ import java.util.Objects;
  *     lastRatelimitSeenAtMs}, sourceEvents: [{atMs, kind:
  *     "active"|"switch"|"demote"|"degraded"|"healthy", detail}],
  *     chain: [{name, active, demotedUntilMs (0 = not demoted)}]}}</dd>
+ *
+ * <dt>{@code subjects} — the living subject register (limit: units, default 100)</dt>
+ * <dd>{@code {total, dirtyCount, instrumentCount, shown, units: [{id,
+ *     canonicalName, ticker (null = theme/person), isin, instrument, dirty,
+ *     firstSeenMs, lastActivityMs, evidenceCount, seenEvidenceCount, newsCount,
+ *     coveredNewsCount, headlineCount, lastHeadline: {text, atMs, sentiment}
+ *     (null = never published), uncomposedEvidence, lastComposedAtMs (0 =
+ *     never), dirtySinceMs (0 = clean), evidenceVersion, firstPrice,
+ *     firstPriceAtMs, market: {symbol, price, dayChangePercent, currency,
+ *     exchange} (null = never resolved)}]}}.
+ *     <b>Order is interesting-first, NOT oldest-first:</b> dirty units, then
+ *     units with uncomposed evidence, then by {@code lastActivityMs}
+ *     descending; {@code limit} caps the list AFTER sorting ({@code total}/
+ *     {@code dirtyCount} always count the whole register). {@code dirty} is a
+ *     read-only peek — the pipeline's drain semantics are untouched.
+ *     <b>Identity check is the point:</b> {@code market.symbol} is what Yahoo
+ *     actually resolved; render it NEXT to {@code ticker}, {@code isin},
+ *     {@code exchange} and {@code currency} — a subject "Gemini" carrying a
+ *     junk-coin symbol, or an "IREN" whose ISIN/currency/exchange belong to a
+ *     Milan utility instead of the Nasdaq paper, is visible exactly in that
+ *     row. Every per-unit value is a scalar copied under the unit's monitor —
+ *     no evidence/news/headline lists cross this seam.</dd>
  * </dl>
  *
  * <h2>All timestamps</h2> epoch millis; all durations millis. Every list is
@@ -133,7 +157,8 @@ import java.util.Objects;
 public final class DebugBridge {
 
     static final List<String> COMMANDS = List.of(
-            "overview", "sources", "collectors", "basin", "runtime", "config", "log", "reddit");
+            "overview", "sources", "collectors", "basin", "runtime", "config", "log", "reddit",
+            "subjects");
 
     private final PushHub hub;
     private final GlobalConfig config;
@@ -143,11 +168,12 @@ public final class DebugBridge {
     private final InMemoryArticlePool pool;
     private final HouseFetcher fetcher;
     private final RedditSource redditSource;
+    private final SubjectRegistry subjectRegistry;
 
     @Inject
     public DebugBridge(PushHub hub, GlobalConfig config, AgentBrain brain, LlmGate llmGate,
             EditorialQueue editorialQueue, InMemoryArticlePool pool, HouseFetcher fetcher,
-            RedditSource redditSource) {
+            RedditSource redditSource, SubjectRegistry subjectRegistry) {
         this.hub = hub;
         this.config = config;
         this.brain = brain;
@@ -156,6 +182,7 @@ public final class DebugBridge {
         this.pool = pool;
         this.fetcher = fetcher;
         this.redditSource = redditSource;
+        this.subjectRegistry = subjectRegistry;
         hub.on("debug", this::onRequest);
     }
 
@@ -188,6 +215,7 @@ public final class DebugBridge {
             case "log" -> 500;
             case "basin" -> 300;
             case "runtime" -> 50;
+            case "subjects" -> 100;
             default -> 200;
         };
     }
@@ -203,6 +231,7 @@ public final class DebugBridge {
                 case "config" -> configDiff(config);
                 case "log" -> log(limit);
                 case "reddit" -> reddit(limit);
+                case "subjects" -> subjects(limit);
                 default -> Map.of("error", "unknown command", "commands", COMMANDS);
             };
         } catch (Throwable t) {
@@ -335,6 +364,91 @@ public final class DebugBridge {
         out.put("lines", DebugLog.recent(limit));
         out.put("totalAppended", DebugLog.totalAppended());
         out.put("aggregate", DebugLog.aggregate());
+        return out;
+    }
+
+    /**
+     * The living subject register — one scalar row per unit, interesting-first.
+     * Reads {@link SubjectRegistry#peekDirty()} (a copy, never the draining
+     * {@code drainDirty()} — that would swallow the pipeline's pending compose)
+     * and {@link SubjectUnit#debugStats()} (scalars copied under the unit's
+     * monitor, released immediately; no list is iterated under a unit lock and
+     * no unit/article reference survives this call).
+     */
+    private Map<String, Object> subjects(int limit) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        if (subjectRegistry == null) {
+            out.put("total", 0);
+            out.put("dirtyCount", 0);
+            out.put("instrumentCount", 0);
+            out.put("shown", 0);
+            out.put("units", List.of());
+            return out;
+        }
+        java.util.Set<String> dirty = subjectRegistry.peekDirty(); // read-only peek
+        List<SubjectUnit.DebugStats> stats = new ArrayList<>();
+        for (SubjectUnit u : subjectRegistry.all()) stats.add(u.debugStats());
+        // Interesting-first: pending headline claims, then unconsumed evidence,
+        // then most recent activity. A register holds dozens of units; the ones
+        // the pipeline is about to act on belong on top.
+        stats.sort(java.util.Comparator
+                .comparing((SubjectUnit.DebugStats s) -> !dirty.contains(s.id()))
+                .thenComparing(s -> !s.uncomposedEvidence())
+                .thenComparing(SubjectUnit.DebugStats::lastActivityEpoch,
+                        java.util.Comparator.reverseOrder()));
+        int instruments = 0;
+        for (SubjectUnit.DebugStats s : stats) {
+            if (s.instrument()) instruments++;
+        }
+        List<Map<String, Object>> units = new ArrayList<>();
+        for (SubjectUnit.DebugStats s : stats.subList(0, Math.min(limit, stats.size()))) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", s.id());
+            row.put("canonicalName", s.canonicalName());
+            row.put("ticker", s.ticker());
+            row.put("isin", s.isin());
+            row.put("instrument", s.instrument());
+            row.put("dirty", dirty.contains(s.id()));
+            row.put("firstSeenMs", s.firstSeenEpoch() * 1000);
+            row.put("lastActivityMs", s.lastActivityEpoch() * 1000);
+            row.put("evidenceCount", s.evidenceCount());
+            row.put("seenEvidenceCount", s.seenEvidenceCount());
+            row.put("newsCount", s.newsCount());
+            row.put("coveredNewsCount", s.coveredNewsCount());
+            row.put("headlineCount", s.headlineCount());
+            if (s.lastHeadlineText() == null) {
+                row.put("lastHeadline", null);
+            } else {
+                Map<String, Object> last = new LinkedHashMap<>();
+                last.put("text", s.lastHeadlineText());
+                last.put("atMs", s.lastHeadlineAtEpoch() * 1000);
+                last.put("sentiment", s.lastHeadlineSentiment());
+                row.put("lastHeadline", last);
+            }
+            row.put("uncomposedEvidence", s.uncomposedEvidence());
+            row.put("lastComposedAtMs", s.lastComposedAtMs());
+            row.put("dirtySinceMs", s.dirtySinceMs());
+            row.put("evidenceVersion", s.evidenceVersion());
+            row.put("firstPrice", s.firstPrice());
+            row.put("firstPriceAtMs", s.firstPriceAtEpoch() == null ? null : s.firstPriceAtEpoch() * 1000);
+            if (s.snapshotSymbol() == null && s.price() == null) {
+                row.put("market", null);
+            } else {
+                Map<String, Object> market = new LinkedHashMap<>();
+                market.put("symbol", s.snapshotSymbol());
+                market.put("price", s.price());
+                market.put("dayChangePercent", s.dayChangePercent());
+                market.put("currency", s.currency());
+                market.put("exchange", s.exchange());
+                row.put("market", market);
+            }
+            units.add(row);
+        }
+        out.put("total", stats.size());
+        out.put("dirtyCount", dirty.size());
+        out.put("instrumentCount", instruments);
+        out.put("shown", units.size());
+        out.put("units", units);
         return out;
     }
 
