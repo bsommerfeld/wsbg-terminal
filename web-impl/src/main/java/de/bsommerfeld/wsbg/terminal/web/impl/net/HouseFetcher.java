@@ -334,6 +334,45 @@ public final class HouseFetcher implements WebFetcher {
         return host + '|' + t.util();
     }
 
+    /** One host's rate-limit cooldown, for the debug bridge. */
+    public record CooldownView(String host, long untilMs, long leftMs, int strikes) {
+    }
+
+    /** One muted host/transport pair, for the debug bridge. */
+    public record SilenceView(String hostTransport, int strikes, long mutedUntilMs, long leftMs) {
+    }
+
+    /**
+     * Debug read path (on-demand only): the live cooldown table as a copy.
+     * Iterates the {@link ConcurrentHashMap} weakly-consistent — no lock, no
+     * ordering edge, no behaviour change. Expired entries are reported with
+     * {@code leftMs == 0} rather than filtered, so the strike history stays
+     * visible until the next definitive answer clears the host.
+     */
+    public List<CooldownView> debugCooldowns() {
+        long now = System.currentTimeMillis();
+        List<CooldownView> out = new ArrayList<>();
+        hostCooldowns.forEach((host, c) -> out.add(new CooldownView(
+                host, c.untilMs(), Math.max(0L, c.untilMs() - now), c.strikes())));
+        out.sort(java.util.Comparator.comparingLong(CooldownView::leftMs).reversed());
+        return out;
+    }
+
+    /** Debug read path (on-demand only): the transport-silence table as a copy. */
+    public List<SilenceView> debugSilences() {
+        long now = System.currentTimeMillis();
+        List<SilenceView> out = new ArrayList<>();
+        transportSilence.forEach((key, s) -> out.add(new SilenceView(
+                key, s.strikes(), s.mutedUntilMs(), Math.max(0L, s.mutedUntilMs() - now))));
+        out.sort(java.util.Comparator.comparingLong(SilenceView::leftMs).reversed());
+        return out;
+    }
+
+    /** Debug read path: how many hosts have an active pacing gate. */
+    public int debugGateCount() {
+        return hostGates.size();
+    }
+
     /** Test seam: how much of a host's cooldown is left, 0 when it is clear. */
     long cooldownLeftMs(String url) {
         String host = hostOf(url);

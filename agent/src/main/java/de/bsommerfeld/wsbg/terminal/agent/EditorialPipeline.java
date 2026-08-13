@@ -160,6 +160,21 @@ public final class EditorialPipeline {
         this.subjectRegistry = subjectRegistry;
         this.queue = queue;
         this.config = config;
+        // Debug gauges (dev-only): the pipeline's otherwise private pressure
+        // state. Suppliers read concurrent collections / atomics — cheap,
+        // thread-safe, and sampled only when a debug request arrives.
+        if (de.bsommerfeld.wsbg.terminal.core.debug.Debug.ENABLED) {
+            var gauges = de.bsommerfeld.wsbg.terminal.core.debug.DebugGauges.get();
+            gauges.register("pipeline.prep.threads", () -> PREP_THREADS);
+            gauges.register("pipeline.worker.threads", () -> WORKER_THREADS);
+            gauges.register("pipeline.prep.active", activePreps::get);
+            gauges.register("pipeline.prep.inProgress", inProgress::size);
+            gauges.register("pipeline.prep.rerunRequested", rerunRequested::size);
+            gauges.register("pipeline.prep.deferred", deferredClusters::size);
+            gauges.register("pipeline.prep.emptyExtractionCooling", emptyExtraction::size);
+            gauges.register("pipeline.queue.size", queue::size);
+            gauges.register("pipeline.queue.inFlight", queue::inFlightCount);
+        }
     }
 
     /**

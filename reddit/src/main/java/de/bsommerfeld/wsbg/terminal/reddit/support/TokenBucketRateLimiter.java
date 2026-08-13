@@ -45,10 +45,20 @@ public final class TokenBucketRateLimiter {
             refill();
             if (tokens >= 1.0) {
                 tokens -= 1.0;
+                // Debug tap (dev-only, JIT-removed when off): count the grant so
+                // the timeline's throttle band has a denominator. Recording only.
+                if (de.bsommerfeld.wsbg.terminal.core.debug.Debug.ENABLED) {
+                    de.bsommerfeld.wsbg.terminal.core.debug.RedditPollDebug.get().countAcquire();
+                }
                 return;
             }
             double need = 1.0 - tokens;
             long sleepMs = Math.max(5, (long) Math.ceil(need / refillPerSecond * 1000.0));
+            // Debug tap: the blocked time was completely invisible before —
+            // this is the "how long did we wait in our own bucket" truth.
+            if (de.bsommerfeld.wsbg.terminal.core.debug.Debug.ENABLED) {
+                de.bsommerfeld.wsbg.terminal.core.debug.RedditPollDebug.get().addBucketWait(sleepMs);
+            }
             Thread.sleep(sleepMs);
         }
     }

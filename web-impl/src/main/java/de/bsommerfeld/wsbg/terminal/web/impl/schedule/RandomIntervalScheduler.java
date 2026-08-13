@@ -70,19 +70,38 @@ public final class RandomIntervalScheduler implements CollectorScheduler {
 
     private void bookFirst(CollectorSource source) {
         int delayS = ThreadLocalRandom.current().nextInt(5, FIRST_PASS_MAX_DELAY_S + 1);
+        // Debug tap (dev-only, JIT-removed when off): the booked appointment,
+        // so the clock view can show when a collector is DUE, not just when
+        // it last ran. Recording only — the schedule itself is unchanged.
+        if (de.bsommerfeld.wsbg.terminal.core.debug.Debug.ENABLED) {
+            de.bsommerfeld.wsbg.terminal.core.debug.CollectorClock.get()
+                    .recordBooked(source.sourceName(),
+                            System.currentTimeMillis() + delayS * 1_000L);
+        }
         executor.schedule("collect:" + source.sourceName(),
                 () -> pass(source), delayS, TimeUnit.SECONDS);
     }
 
     private void pass(CollectorSource source) {
         if (!running.get()) return;
+        long t0 = de.bsommerfeld.wsbg.terminal.core.debug.Debug.ENABLED ? System.nanoTime() : 0L;
         try {
             List<Article> yield = source.collect();
             int fresh = pool.add(source, yield == null ? List.of() : yield);
+            if (de.bsommerfeld.wsbg.terminal.core.debug.Debug.ENABLED) {
+                de.bsommerfeld.wsbg.terminal.core.debug.CollectorClock.get()
+                        .recordPass(source.sourceName(), (System.nanoTime() - t0) / 1_000_000,
+                                yield == null ? 0 : yield.size(), fresh, null);
+            }
             if (fresh > 0) {
                 LOG.debug("collector '{}' poured {} fresh item(s)", source.sourceName(), fresh);
             }
         } catch (Exception e) {
+            if (de.bsommerfeld.wsbg.terminal.core.debug.Debug.ENABLED) {
+                de.bsommerfeld.wsbg.terminal.core.debug.CollectorClock.get()
+                        .recordPass(source.sourceName(), (System.nanoTime() - t0) / 1_000_000,
+                                0, 0, e.toString());
+            }
             LOG.info("collector '{}' missed a pass: {}", source.sourceName(), e.toString());
         } finally {
             bookNext(source);
@@ -94,6 +113,11 @@ public final class RandomIntervalScheduler implements CollectorScheduler {
         FetchInterval interval = source.interval();
         int minutes = ThreadLocalRandom.current()
                 .nextInt(interval.minMinutes(), interval.maxMinutes() + 1);
+        if (de.bsommerfeld.wsbg.terminal.core.debug.Debug.ENABLED) {
+            de.bsommerfeld.wsbg.terminal.core.debug.CollectorClock.get()
+                    .recordBooked(source.sourceName(),
+                            System.currentTimeMillis() + minutes * 60_000L);
+        }
         executor.schedule("collect:" + source.sourceName(),
                 () -> pass(source), minutes, TimeUnit.MINUTES);
     }

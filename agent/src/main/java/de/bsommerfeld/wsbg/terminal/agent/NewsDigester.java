@@ -104,13 +104,31 @@ final class NewsDigester {
      * leaves the latency-sensitive editorial calls their slots — digesting is
      * cache-warming, serialising it is the right trade.
      */
-    private final ExecutorService digestExecutor = newDigestExecutor();
+    /**
+     * Digest jobs the {@code DiscardOldestPolicy} silently dropped — the queue's
+     * data loss made countable. Incremented only in dev mode; stays 0 shipped.
+     * Declared BEFORE the executor so it exists when the policy is built.
+     */
+    private final java.util.concurrent.atomic.AtomicLong discardedDigests =
+            new java.util.concurrent.atomic.AtomicLong();
 
-    private static ExecutorService newDigestExecutor() {
+    private final ThreadPoolExecutor digestExecutor = newDigestExecutor();
+
+    private ThreadPoolExecutor newDigestExecutor() {
         ThreadPoolExecutor pool = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
                 new ArrayBlockingQueue<>(DIGEST_QUEUE_DEPTH),
                 BackgroundThreads.single("news-digest"),
-                new ThreadPoolExecutor.DiscardOldestPolicy());
+                new ThreadPoolExecutor.DiscardOldestPolicy() {
+                    @Override
+                    public void rejectedExecution(Runnable r, ThreadPoolExecutor e) {
+                        // Debug tap (dev-only): count the silent loss, then do
+                        // exactly what the stock policy does. No behaviour change.
+                        if (de.bsommerfeld.wsbg.terminal.core.debug.Debug.ENABLED) {
+                            discardedDigests.incrementAndGet();
+                        }
+                        super.rejectedExecution(r, e);
+                    }
+                });
         return pool;
     }
 
@@ -124,6 +142,22 @@ final class NewsDigester {
         this.brain = brain;
         this.chatGateway = chatGateway;
         this.config = config;
+        // Debug gauges (dev-only): the otherwise package-private state the
+        // runtime tile needs — queue pressure, the discard counter, and the
+        // five cache sizes that have no other size() anywhere. Registered
+        // once; sampled only when a debug request arrives.
+        if (de.bsommerfeld.wsbg.terminal.core.debug.Debug.ENABLED) {
+            var gauges = de.bsommerfeld.wsbg.terminal.core.debug.DebugGauges.get();
+            gauges.register("digest.queue.depth", () -> digestExecutor.getQueue().size());
+            gauges.register("digest.queue.capacity", () -> DIGEST_QUEUE_DEPTH);
+            gauges.register("digest.queue.active", digestExecutor::getActiveCount);
+            gauges.register("digest.discarded", discardedDigests::get);
+            gauges.register("digest.cache.digests", byLink::size);
+            gauges.register("digest.cache.fulltexts", textByLink::size);
+            gauges.register("digest.cache.bodyHashes", bodySeen::size);
+            gauges.register("digest.shellStrikeHosts", shellStrikes::size);
+            gauges.register("digest.walledHosts", walledHosts::size);
+        }
     }
 
     /** Installs the shared web transport; until then the digester is inert. */

@@ -54,10 +54,22 @@ public final class RateLimitGuard {
     private void applyBackoff(WebResponse response) {
         response.header("x-ratelimit-remaining").ifPresent(remaining -> {
             try {
-                if (Double.parseDouble(remaining) < 2.0) {
+                double remainingBudget = Double.parseDouble(remaining);
+                // Debug tap (dev-only, JIT-removed when off): keep Reddit's own
+                // budget header — previously parsed and thrown away. The parse
+                // above replaces the identical inline parse; behaviour unchanged.
+                if (de.bsommerfeld.wsbg.terminal.core.debug.Debug.ENABLED) {
+                    de.bsommerfeld.wsbg.terminal.core.debug.RedditPollDebug.get()
+                            .recordBudgetRemaining(remainingBudget);
+                }
+                if (remainingBudget < 2.0) {
                     response.header("x-ratelimit-reset").ifPresent(reset -> {
                         int waitSecs = (int) Double.parseDouble(reset) + 1;
                         LOG.warn("Reddit rate limit near. Sleeping for {}s", waitSecs);
+                        if (de.bsommerfeld.wsbg.terminal.core.debug.Debug.ENABLED) {
+                            de.bsommerfeld.wsbg.terminal.core.debug.RedditPollDebug.get()
+                                    .recordBackoff(waitSecs * 1000L);
+                        }
                         try {
                             Thread.sleep(waitSecs * 1000L);
                         } catch (InterruptedException e) {

@@ -144,6 +144,11 @@ public final class FallbackRedditSource implements RedditSource {
                 lastResolvedAt = System.currentTimeMillis();
                 LOG.info("Reddit source active: {} (fell back from {}).",
                         next.sourceName(), start.sourceName());
+                if (de.bsommerfeld.wsbg.terminal.core.debug.Debug.ENABLED) {
+                    de.bsommerfeld.wsbg.terminal.core.debug.RedditPollDebug.get()
+                            .recordSourceEvent("switch",
+                                    start.sourceName() + " → " + next.sourceName());
+                }
                 reportHealthy();
                 return r;
             }
@@ -160,6 +165,11 @@ public final class FallbackRedditSource implements RedditSource {
         demoteUntil.put(s, System.currentTimeMillis() + DEMOTE_COOLDOWN_MS);
         LOG.info("Reddit source {} demoted for ~{} min (will retry the upgrade after).",
                 s.sourceName(), DEMOTE_COOLDOWN_MS / 60000);
+        if (de.bsommerfeld.wsbg.terminal.core.debug.Debug.ENABLED) {
+            de.bsommerfeld.wsbg.terminal.core.debug.RedditPollDebug.get()
+                    .recordSourceEvent("demote", s.sourceName()
+                            + " for " + (DEMOTE_COOLDOWN_MS / 60000) + " min");
+        }
     }
 
     private boolean isDemoted(RedditSource s) {
@@ -204,9 +214,33 @@ public final class FallbackRedditSource implements RedditSource {
         lastResolvedAt = now;
         if (chosen != previous) {
             LOG.info("Reddit source active: {}", chosen.sourceName());
+            if (de.bsommerfeld.wsbg.terminal.core.debug.Debug.ENABLED) {
+                de.bsommerfeld.wsbg.terminal.core.debug.RedditPollDebug.get()
+                        .recordSourceEvent("active", chosen.sourceName()
+                                + (previous == null ? "" : " (was " + previous.sourceName() + ")"));
+            }
         }
         active = chosen;
         return chosen;
+    }
+
+    /** One delegate's standing in the chain, for the debug bridge. */
+    public record DelegateView(String name, boolean active, long demotedUntilMs) {
+    }
+
+    /**
+     * Debug read path (on-demand only): the preference chain with each
+     * delegate's current standing — names and timestamps only.
+     */
+    public java.util.List<DelegateView> debugChain() {
+        RedditSource current = active;
+        java.util.List<DelegateView> out = new java.util.ArrayList<>(chain.size());
+        for (RedditSource s : chain) {
+            Long until = demoteUntil.get(s);
+            long demoted = until != null && until > System.currentTimeMillis() ? until : 0L;
+            out.add(new DelegateView(s.sourceName(), s == current, demoted));
+        }
+        return out;
     }
 
     // ---- aggregate health (transition-based; the delegates don't post their own) ----
@@ -214,6 +248,10 @@ public final class FallbackRedditSource implements RedditSource {
     private void reportHealthy() {
         if (degraded) {
             degraded = false;
+            if (de.bsommerfeld.wsbg.terminal.core.debug.Debug.ENABLED) {
+                de.bsommerfeld.wsbg.terminal.core.debug.RedditPollDebug.get()
+                        .recordSourceEvent("healthy", sourceName());
+            }
             postHealth(RedditHealthEvent.State.OK, 0L);
         }
     }
@@ -221,6 +259,10 @@ public final class FallbackRedditSource implements RedditSource {
     private void reportDegraded() {
         if (!degraded) {
             degraded = true;
+            if (de.bsommerfeld.wsbg.terminal.core.debug.Debug.ENABLED) {
+                de.bsommerfeld.wsbg.terminal.core.debug.RedditPollDebug.get()
+                        .recordSourceEvent("degraded", "whole chain down");
+            }
             postHealth(RedditHealthEvent.State.DEGRADED, System.currentTimeMillis());
         }
     }

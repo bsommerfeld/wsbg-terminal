@@ -110,6 +110,16 @@
                 <directory>src/main/resources</directory>
                 <excludes>
                     <exclude>web/_preview*.html</exclude>
+                    <!-- Debug-dashboard assets (reserved paths; see the
+                         DebugBridge Javadoc): dev-only, they must never ship —
+                         what is not in the JAR the AssetServer cannot serve,
+                         independent of any runtime flag. The exclusion is
+                         UNCONDITIONAL on purpose (no Maven profile a build
+                         path could forget). DebugPackagingTest nails it. -->
+                    <exclude>web/debug*.html</exclude>
+                    <exclude>web/debug/**</exclude>
+                    <exclude>web/js/debug/**</exclude>
+                    <exclude>web/css/debug*.css</exclude>
                 </excludes>
             </resource>
         </resources>

@@ -126,6 +126,16 @@ final class ChatGateway {
                 LOG.info("[LLM] gate-wait={}ms gen={}ms in={} out={}",
                         (tAcq - t0) / 1_000_000, (t1 - tAcq) / 1_000_000,
                         tu == null ? -1 : tu.inputTokenCount(), tu == null ? -1 : tu.outputTokenCount());
+                // Debug tap (dev-only, JIT-removed when off): keep what the line
+                // above throws away — Ollama's MEASURED token counts, the only
+                // honest counterpart to the declared num_ctx. Recording only.
+                if (de.bsommerfeld.wsbg.terminal.core.debug.Debug.ENABLED) {
+                    de.bsommerfeld.wsbg.terminal.core.debug.LlmDebug.get().record(
+                            Thread.currentThread().getName(),
+                            (tAcq - t0) / 1_000_000, (t1 - tAcq) / 1_000_000,
+                            tu == null || tu.inputTokenCount() == null ? -1 : tu.inputTokenCount(),
+                            tu == null || tu.outputTokenCount() == null ? -1 : tu.outputTokenCount());
+                }
                 return ai == null || ai.text() == null ? "" : ai.text();
             } catch (RuntimeException e) {
                 if (isClientReject(e)) {

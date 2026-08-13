@@ -266,7 +266,21 @@ public class PassiveMonitorService {
 
             ScrapeStats stats = new ScrapeStats();
             for (String sub : config.getReddit().getSubreddits()) {
-                stats.add(scraper.scanSubreddit(sub));
+                // Debug taps in this cycle (dev-only, JIT-removed when off)
+                // record each lane's time/duration/yield/failure — counts
+                // only, no thread references. The lanes themselves run
+                // exactly as before; the per-sub result is merely held in a
+                // local before the identical stats.add(...).
+                long tScan = de.bsommerfeld.wsbg.terminal.core.debug.Debug.ENABLED
+                        ? System.nanoTime() : 0L;
+                ScrapeStats subStats = scraper.scanSubreddit(sub);
+                if (de.bsommerfeld.wsbg.terminal.core.debug.Debug.ENABLED) {
+                    de.bsommerfeld.wsbg.terminal.core.debug.RedditPollDebug.get().recordLane(
+                            "scan", sub, (System.nanoTime() - tScan) / 1_000_000,
+                            subStats.newThreads, subStats.newUpvotes, subStats.newComments,
+                            subStats.scannedIds.size(), subStats.failed);
+                }
+                stats.add(subStats);
             }
 
             // The sub-wide comment stream — one request per subreddit for the
@@ -275,7 +289,16 @@ public class PassiveMonitorService {
             // editorial pipeline, so a busy foreign room cannot reach the
             // headlines. Its threads are also excluded from the gap-fill below.
             for (String sub : config.getReddit().getCommentStreamSubreddits()) {
+                long tStream = de.bsommerfeld.wsbg.terminal.core.debug.Debug.ENABLED
+                        ? System.nanoTime() : 0L;
                 ScrapeStats streamStats = scraper.scanComments(sub);
+                if (de.bsommerfeld.wsbg.terminal.core.debug.Debug.ENABLED) {
+                    de.bsommerfeld.wsbg.terminal.core.debug.RedditPollDebug.get().recordLane(
+                            "comments", sub, (System.nanoTime() - tStream) / 1_000_000,
+                            streamStats.newThreads, streamStats.newUpvotes,
+                            streamStats.newComments, streamStats.scannedIds.size(),
+                            streamStats.failed);
+                }
                 if (streamStats.newComments > 0) {
                     LOG.info("[STREAM] r/{}: +{} comment(s)", sub, streamStats.newComments);
                 }
@@ -296,7 +319,17 @@ public class PassiveMonitorService {
                     .map(RedditThread::id)
                     .collect(Collectors.toList());
             if (!idsToUpdate.isEmpty()) {
-                stats.add(scraper.updateThreadsBatch(idsToUpdate));
+                long tGap = de.bsommerfeld.wsbg.terminal.core.debug.Debug.ENABLED
+                        ? System.nanoTime() : 0L;
+                ScrapeStats gapStats = scraper.updateThreadsBatch(idsToUpdate);
+                if (de.bsommerfeld.wsbg.terminal.core.debug.Debug.ENABLED) {
+                    de.bsommerfeld.wsbg.terminal.core.debug.RedditPollDebug.get().recordLane(
+                            "gap-fill", idsToUpdate.size() + " thread(s)",
+                            (System.nanoTime() - tGap) / 1_000_000,
+                            gapStats.newThreads, gapStats.newUpvotes, gapStats.newComments,
+                            gapStats.scannedIds.size(), gapStats.failed);
+                }
+                stats.add(gapStats);
             }
 
             if (stats.threadUpdates.isEmpty() && clusterRegistry.isEmpty())

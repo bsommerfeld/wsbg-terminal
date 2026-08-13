@@ -130,4 +130,19 @@ public class LlmGate {
         inUse--;
         notifyAll();
     }
+
+    /** The gate's full state at one instant — for the debug bridge. */
+    public record GateSnapshot(int permits, int inUse, int interactiveWaiting,
+            int backgroundWaiting, int interactiveStreak, boolean priority) {
+    }
+
+    /**
+     * Debug read path (on-demand only): one consistent snapshot under the
+     * gate's own monitor — a leaf lock held for six field reads, taken only
+     * when a debug request arrives. Never called from a hot path.
+     */
+    public synchronized GateSnapshot snapshot() {
+        return new GateSnapshot(permits, inUse, interactiveWaiting, backgroundWaiting,
+                interactiveStreak, priority);
+    }
 }

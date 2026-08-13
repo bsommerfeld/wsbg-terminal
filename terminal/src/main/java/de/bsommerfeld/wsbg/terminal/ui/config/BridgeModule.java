@@ -45,5 +45,13 @@ final class BridgeModule extends AbstractModule {
         // an archive. LAST in the install order — the clock must not start
         // before the rest of the pipeline is wired.
         bind(WebWorldStarter.class).asEagerSingleton();
+        // The debug data interface — DEV-ONLY, the WebWorldStarter pattern:
+        // without this binding no "debug" handler exists on the PushHub and a
+        // shipped build simply never answers the type. The registries behind
+        // it are additionally write-guarded by the JIT-foldable Debug.ENABLED,
+        // so even a mis-bound release would collect nothing.
+        if (de.bsommerfeld.wsbg.terminal.core.debug.DevMode.active()) {
+            bind(de.bsommerfeld.wsbg.terminal.ui.bridge.DebugBridge.class).asEagerSingleton();
+        }
     }
 }
