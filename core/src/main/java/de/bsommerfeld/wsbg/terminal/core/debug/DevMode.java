@@ -40,6 +40,20 @@ public final class DevMode {
         return ACTIVE;
     }
 
+    /**
+     * One line naming the verdict AND the evidence, for the boot log. A probe
+     * that silently answers "no" is indistinguishable from a broken console —
+     * which is exactly how the first version of this class cost a session.
+     */
+    public static String explain() {
+        String forced = System.getProperty("wsbg.debug");
+        if (forced != null) {
+            return "debug console " + (ACTIVE ? "ON" : "OFF") + " — forced by -Dwsbg.debug=" + forced;
+        }
+        return "debug console " + (ACTIVE ? "ON" : "OFF") + " — classpath "
+                + (ACTIVE ? "carries" : "carries no") + " build output (…/classes)";
+    }
+
     private static boolean detect() {
         String forced = System.getProperty("wsbg.debug");
         if (forced != null) return Boolean.parseBoolean(forced);

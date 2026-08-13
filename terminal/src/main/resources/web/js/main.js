@@ -172,9 +172,15 @@ socket.on('debug-overview', payload => {
     .then(m => m.initDebug(socket))
     .catch(e => console.warn('[debug] dashboard unavailable:', e));
 });
+// Keep asking until ANSWERED, not until the send succeeds. A successful send
+// only means the socket was open — the DebugBridge registers its handler when
+// Guice builds it, and a page that connects first has its probe dropped on the
+// floor with no answer and no retry. That race left the button missing for a
+// whole session; six seconds of asking costs nothing and closes it.
 (function probeDebug(tries = 0) {
-  if (socket.send('debug', { command: 'overview', requestId: 'probe' })) return;
-  if (tries < 20) setTimeout(() => probeDebug(tries + 1), 250);   // wait for the socket, then stop
+  if (debugProbed) return;
+  socket.send('debug', { command: 'overview', requestId: 'probe' });
+  if (tries < 12) setTimeout(() => probeDebug(tries + 1), 500);
 })();
 
 socket.connect();

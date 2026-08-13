@@ -50,6 +50,11 @@ final class BridgeModule extends AbstractModule {
         // shipped build simply never answers the type. The registries behind
         // it are additionally write-guarded by the JIT-foldable Debug.ENABLED,
         // so even a mis-bound release would collect nothing.
+        // Say the verdict out loud either way. A console that fails to appear
+        // and a console that is correctly absent look identical from the
+        // outside, and that ambiguity already cost one session of hunting.
+        org.slf4j.LoggerFactory.getLogger(BridgeModule.class)
+                .info(de.bsommerfeld.wsbg.terminal.core.debug.DevMode.explain());
         if (de.bsommerfeld.wsbg.terminal.core.debug.DevMode.active()) {
             bind(de.bsommerfeld.wsbg.terminal.ui.bridge.DebugBridge.class).asEagerSingleton();
         }
