@@ -233,6 +233,7 @@
   border: 1px solid oklch(0.3 0.01 60);
   border-radius: 999px;
   opacity: 0;
+  cursor: pointer;
   animation: intro-skip-in 400ms ease-out 900ms forwards;
   transition: color .15s, border-color .15s;
 }

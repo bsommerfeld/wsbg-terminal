@@ -7,7 +7,7 @@
 //   1. seeds the dust — each puff gets its own vector/size/opacity as custom
 //      properties, so the smoke isn't a symmetric CSS clone of itself,
 //   2. tears the plate out of the DOM once the fade is over,
-//   3. lets the user skip it (click / any key) into a short fade.
+//   3. lets the user skip it via the skip button into a short fade.
 //
 // The plate is markup, not JS-injected, so it is on screen with the first
 // paint — no flash of a half-built app before the logo lands. If this module
@@ -158,17 +158,20 @@ export function initIntro(socket) {
     setTimeout(teardown, skipDur + 40);
   };
 
-  // The key belongs to the intro and to nothing else: while the plate is up it
-  // covers the whole app, so a keystroke aimed at "get this out of the way"
-  // must not also reach whatever sits underneath. Escape used to skip the
-  // intro AND close the changelog overlay behind it — which reports `seen`,
-  // so the release notes were gone before anyone read them.
+  // Skipping is the button's job alone — a stray click anywhere on the plate
+  // used to end the intro, which is far too easy to trigger by accident.
+  const btn = plate.querySelector('.intro-skip');
+  if (btn) btn.addEventListener('click', skip);
+
+  // Keys don't skip either, but they must not fall through: while the plate is
+  // up it covers the whole app, so a keystroke aimed at it must not also reach
+  // whatever sits underneath. Escape used to close the changelog overlay behind
+  // the plate — which reports `seen`, so the release notes were gone before
+  // anyone read them.
   const onKey = e => {
     e.stopImmediatePropagation();
-    skip();
   };
 
-  plate.addEventListener('click', skip);
   window.addEventListener('keydown', onKey, true);
 
   // The plate leaves on its own even if nothing is clicked. A little slack
