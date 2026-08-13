@@ -158,4 +158,23 @@ safeInit('keyboard-copy', () => initKeyboardCopy());
 // that still needs to initialise.
 safeInit('intro', () => initIntro(socket));
 
+// Debug dashboard (developer runs only). The DebugBridge is bound behind
+// DevMode, so in a shipped build nothing answers `debug` — the probe simply
+// goes unanswered, no module is imported and the titlebar stays as it is. The
+// assets under web/js/debug/** and web/css/debug.css are excluded from the
+// JAR, so even a hand-crafted answer could not conjure the view.
+// One probe, once — no ticker: the dashboard itself asks on demand.
+let debugProbed = false;
+socket.on('debug-overview', payload => {
+  if (debugProbed || !payload?.data?.devMode) return;
+  debugProbed = true;
+  import('./debug/dashboard.js')
+    .then(m => m.initDebug(socket))
+    .catch(e => console.warn('[debug] dashboard unavailable:', e));
+});
+(function probeDebug(tries = 0) {
+  if (socket.send('debug', { command: 'overview', requestId: 'probe' })) return;
+  if (tries < 20) setTimeout(() => probeDebug(tries + 1), 250);   // wait for the socket, then stop
+})();
+
 socket.connect();
