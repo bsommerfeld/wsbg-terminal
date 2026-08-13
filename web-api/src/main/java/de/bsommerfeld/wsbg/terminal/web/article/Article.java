@@ -96,6 +96,17 @@ public record Article(
     }
 
     /**
+     * The basin identity every consumer keys this article by: the source's own
+     * stable id, the permalink as fallback, empty when neither exists. Lives on
+     * the record so the pool and the tagger can never disagree about who an
+     * article is.
+     */
+    public String identity() {
+        if (uuid != null && !uuid.isBlank()) return uuid;
+        return link == null ? "" : link;
+    }
+
+    /**
      * Convenience constructor for sources that carry no ISIN / teaser /
      * sponsored flag / image (e.g. plain search results).
      */

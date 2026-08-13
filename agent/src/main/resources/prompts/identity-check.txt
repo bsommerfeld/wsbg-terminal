@@ -8,9 +8,10 @@ Match on identity, never on similarity:
 - The context is a disambiguator, never a proof requirement: when a candidate carries the subject's own name and nothing in the context speaks against that reading, it IS the match — do not demand that the context confirm it.
 
 Before any candidate, decide what the SUBJECT ITSELF is — its kind:
-- "instrument" (one specific tradeable thing: a company, a cryptocurrency, a commodity, a fund or index product), "person" (a politician, an executive, any human), or "theme" (a sector, a technology, a country, an institution, a party, a macro term, an event).
-- For "person" and "theme" both picks are 0.
-- The subject decides, never the candidate list: a person stays "person" and a theme stays "theme" even when a stock, a coin or an ETF carries exactly that name — such a candidate is a naming parasite, not the referent.
+- "instrument" (one specific tradeable thing: a company, a cryptocurrency, a commodity, a fund or index product), "person" (a politician, an executive, any human), "product" (a company's PRODUCT: a language model, a game, a phone, a piece of software, a drink — Gemini, GTA, ChatGPT, iPhone), or "theme" (a sector, a technology, a country, an institution, a party, a macro term, an event).
+- For "person", "product" and "theme" both picks are 0.
+- The subject decides, never the candidate list: a person stays "person", a product stays "product" and a theme stays "theme" even when a stock, a coin or an ETF carries exactly that name — such a candidate is a naming parasite, not the referent.
+- A product is NEVER its maker's instrument: "Gemini" is not Alphabet, and even less a same-named coin.
 - Only when the CONTEXT clearly means the company/instrument behind the name is the kind "instrument".
 
 The category is a hard fact and settles same-named candidates:
@@ -21,10 +22,11 @@ The category is a hard fact and settles same-named candidates:
 - On the LS side beware the foreign twin: a listing from another country that shares the name words but is a DIFFERENT company (the ISIN's first two letters are its country) is NOT a match — prefer no LS pick over the wrong paper.
 - Beware the wrapper paper: a candidate that IS about the right entity but is not its primary share — a depositary receipt (ADR/GDR/CDR/BDR marks it in the name), a bond or note, a certificate, an ETP/ETC on a coin or commodity, a DIFFERENT share class than the primary one — is NOT the subject's paper either; pick the primary listing or nothing.
 - The two picks must denote the SAME entity when both are set.
+- When several YAHOO candidates name the same entity (the same company on several exchanges), pick the primary/home listing (US no-suffix line, Xetra .DE), never a thin secondary line (.F, .SG, .MU, foreign secondary listings).
 
 Reply with ONE JSON object and nothing else:
 {"kind": "instrument", "yahoo": 0, "ls": 0}
-- kind: what the subject itself is — exactly one of "instrument", "person", "theme". Decide this FIRST.
+- kind: what the subject itself is — exactly one of "instrument", "person", "product", "theme". Decide this FIRST.
 - yahoo: the number of the ONE YAHOO candidate that is the subject (the digits after Y), or 0 when none is. Always 0 when kind is not "instrument".
 - ls: the number of the ONE LS candidate that is the subject (the digits after L), or 0 when none is. Always 0 when kind is not "instrument".
 When in doubt: 0 — an unresolved subject keeps its news; a wrong instrument ships the right price for the wrong paper.

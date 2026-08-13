@@ -108,6 +108,52 @@ class InMemoryArticlePoolTest {
     }
 
     @Test
+    void installedTaggerAnswersInstrumentQueries() {
+        java.util.List<Article> ingested = new java.util.ArrayList<>();
+        java.util.List<String> forgotten = new java.util.ArrayList<>();
+        // Poured BEFORE the tagger arrives — must be backfilled on install.
+        pool.add(press, List.of(article("early", "Poured before wiring", Instant.now())));
+        pool.setTagger(new de.bsommerfeld.wsbg.terminal.web.pool.ArticleTagger() {
+            @Override
+            public void ingest(java.util.Collection<Article> articles) {
+                ingested.addAll(articles);
+            }
+
+            @Override
+            public void forget(java.util.Collection<String> identities) {
+                forgotten.addAll(identities);
+            }
+
+            @Override
+            public java.util.Set<String> articlesFor(ResolvedInstrument instrument) {
+                return java.util.Set.of("judged");
+            }
+        });
+        pool.add(press, List.of(
+                article("judged", "Growth story about the actual company", Instant.now()),
+                article("noise", "Russian economy returns to growth", Instant.now())));
+
+        // The backfill and the pour both reached the tagger…
+        assertEquals(List.of("early", "judged", "noise"),
+                ingested.stream().map(Article::uuid).toList());
+        // …and the query answers from the judgment set, not from word guessing.
+        assertEquals(List.of("judged"),
+                pool.queryInstrument(ResolvedInstrument.ofName("Canopy Growth"), 10)
+                        .stream().map(Article::uuid).toList());
+        assertTrue(forgotten.isEmpty());
+    }
+
+    @Test
+    void withoutTaggerTheFallbackNeedsTheFullName() {
+        pool.add(press, List.of(
+                article("hit", "Canopy Growth kündigt Kapitalerhöhung an", Instant.now()),
+                article("noise", "Russian economy returns to growth", Instant.now())));
+        assertEquals(List.of("hit"),
+                pool.queryInstrument(ResolvedInstrument.ofName("Canopy Growth"), 10)
+                        .stream().map(Article::uuid).toList());
+    }
+
+    @Test
     void freshestFirstAndCapped() {
         Instant now = Instant.now();
         pool.add(press, List.of(

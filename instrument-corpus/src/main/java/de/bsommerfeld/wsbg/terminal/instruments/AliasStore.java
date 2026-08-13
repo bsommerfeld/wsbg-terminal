@@ -152,6 +152,14 @@ public final class AliasStore {
     public void learn(String name, String symbol, AliasProvenance provenance) {
         String key = NameKey.normalize(name);
         if (key.isEmpty() || symbol == null || symbol.isBlank()) return;
+        // A formally wrong symbol shape (junk crypto token, numeric-prefixed
+        // western secondary, Morningstar fund id, bare WKN) is never worth
+        // remembering: booking it is how the 2026-08 live errors burned in
+        // ("gemini" → GEMINI34655-USD re-earning its own trust on every mention).
+        if (SymbolShapes.isSuspectAliasSymbol(symbol)) {
+            LOG.info("[ALIAS] refused suspect reading '{}' → {} (formal shape)", key, symbol.trim());
+            return;
+        }
         book(key, symbol.trim().toUpperCase(Locale.ROOT), provenance);
     }
 
@@ -359,6 +367,7 @@ public final class AliasStore {
     private void load() {
         int lines = 0;
         int broken = 0;
+        int suspect = 0;
         try {
             if (!Files.exists(file)) return;
             List<String> all = Files.readAllLines(file, StandardCharsets.UTF_8);
@@ -367,7 +376,11 @@ public final class AliasStore {
                 if (line.isBlank()) continue;
                 lines++;
                 try {
-                    if (!replay(loaded, line)) broken++;
+                    switch (replay(loaded, line)) {
+                        case BROKEN -> broken++;
+                        case SUSPECT -> suspect++;
+                        default -> { }
+                    }
                 } catch (Exception e) {
                     broken++;
                 }
@@ -379,19 +392,29 @@ public final class AliasStore {
             LOG.warn("[ALIAS] load failed: {}", e.getMessage());
             return;
         }
-        LOG.info("[ALIAS] folded {} posting(s){} → {} live spelling(s) ← {}", lines,
-                broken > 0 ? " (" + broken + " broken line(s) skipped)" : "", size(), file);
+        LOG.info("[ALIAS] folded {} posting(s){}{} → {} live spelling(s) ← {}", lines,
+                broken > 0 ? " (" + broken + " broken line(s) skipped)" : "",
+                suspect > 0 ? " (" + suspect + " formally suspect posting(s) muted)" : "",
+                size(), file);
         if (lines > COMPACT_LINES) compact(lines);
     }
 
-    /** Replays one ledger line into the fold. False = unusable line. */
-    private boolean replay(Map<String, Map<String, Cell>> into, String line) throws IOException {
+    private enum Replay { OK, BROKEN, SUSPECT }
+
+    /** Replays one ledger line into the fold. */
+    private Replay replay(Map<String, Map<String, Cell>> into, String line) throws IOException {
         JsonNode n = JSON.readTree(line);
         String name = NameKey.normalize(n.path("name").asText(""));
-        if (name.isEmpty()) return false;
+        if (name.isEmpty()) return Replay.BROKEN;
         boolean none = n.path("none").asBoolean(false);
         String symbol = n.path("symbol").asText("").trim().toUpperCase(Locale.ROOT);
-        if (!none && symbol.isEmpty()) return false;
+        if (!none && symbol.isEmpty()) return Replay.BROKEN;
+        // The one-time (and permanent) ledger muck-out: postings whose symbol is
+        // formally wrong (junk crypto, non-major coin, numeric-prefixed western
+        // secondary, 0P… fund id, bare WKN) stay in the FILE — nothing is ever
+        // rewritten — but they no longer fold into an answer. Decay alone would
+        // have carried a burned-in error for weeks (IREN-class: 38 days).
+        if (!none && SymbolShapes.isSuspectAliasSymbol(symbol)) return Replay.SUSPECT;
         // "at" is the ledger's stamp; "learnedAt" is what the pre-ledger lines wrote.
         long at = n.hasNonNull("at") ? n.path("at").asLong() : n.path("learnedAt").asLong(0);
         if (at <= 0) at = nowSeconds();
@@ -406,7 +429,7 @@ public final class AliasStore {
         } else {
             cell.add(at, p);
         }
-        return true;
+        return Replay.OK;
     }
 
     private static String text(JsonNode n, String field) {

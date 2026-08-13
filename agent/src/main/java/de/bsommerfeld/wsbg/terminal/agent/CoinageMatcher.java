@@ -35,17 +35,21 @@ import java.util.function.Supplier;
  * with a mechanism that learns the fourteenth by itself.
  *
  * <h3>How</h3>
- * Two cheap proposals, then one judgement:
+ * One cheap proposal channel, then one judgement:
  * <ol>
  *   <li><b>Near misses from the corpus</b> — a trigram-indexed lookup for names
  *       within a couple of edits of the spelling. „Keinmetall" is two edits from
  *       „Rheinmetall", „SpaceEx" one from „SpaceX".</li>
- *   <li><b>What this very thread already resolved</b> — a coinage in a thread that is
- *       demonstrably about one company almost always means that company. This catches
- *       the nicknames that look nothing like the name (a logo, a person, a joke), which
- *       distance alone can never reach.</li>
  * </ol>
- * The identity judge then picks one or none, with the thread title as context — the
+ * <p>The second channel this stage used to have — offering the thread's own resolved
+ * instruments as candidates for ANY unresolved word — was a theme-word trap and is
+ * gone (2026-08-13): in an oil thread it made „Hormuz" and „Midterms" into the oil
+ * paper, because a 4B judge shown a plausible instrument next to an unplaceable word
+ * takes the instrument. The nickname-that-looks-like-nothing case it was built for
+ * („Kranich" for the airline) is now out of scope for this stage: better an
+ * unresolved coinage than a thread's every noun annexed by its main instrument.
+ *
+ * <p>The identity judge then picks one or none, with the thread title as context — the
  * same fail-closed contract every other judge call uses. <b>One call per novel
  * spelling, ever</b>: the verdict is written into the learned memory, positive or
  * negative, so the next occurrence is answered from the ledger. That is what makes
@@ -64,8 +68,6 @@ final class CoinageMatcher implements SubjectMatcher {
 
     /** How many near misses the judge sees at most. */
     private static final int NEAREST_CANDIDATES = 6;
-    /** How many of the thread's own resolved instruments ride along. */
-    private static final int NEIGHBOUR_CANDIDATES = 4;
     /**
      * Below this length a spelling carries no signal — the tower already sits behind
      * Yahoo and the corpus, so anything this short that got here is room noise.
@@ -136,26 +138,16 @@ final class CoinageMatcher implements SubjectMatcher {
     }
 
     /**
-     * The proposal set: near misses from the corpus first (they carry the concrete
-     * ground-truth line), then the instruments this same thread already settled, so a
-     * nickname that resembles nothing still has its context on the table. Deduplicated
-     * by symbol, order preserved — the judge reads a numbered list, and a duplicate
-     * would split its own vote.
+     * The proposal set: near misses from the corpus ONLY — the orthographic channel
+     * carries a concrete ground-truth line and proposes nothing a couple of edits
+     * cannot explain. Deduplicated by symbol, order preserved — the judge reads a
+     * numbered list, and a duplicate would split its own vote. (The thread-neighbour
+     * channel that used to ride along here was the theme-word trap; see class doc.)
      */
     private List<InstrumentEntry> candidates(InstrumentCorpus corpus, MatchContext ctx, String query) {
         Map<String, InstrumentEntry> bySymbol = new LinkedHashMap<>();
         for (InstrumentEntry e : corpus.nearest(query, NEAREST_CANDIDATES)) {
             bySymbol.putIfAbsent(e.symbol().toUpperCase(Locale.ROOT), e);
-        }
-        int taken = 0;
-        for (String neighbour : ctx.neighbours()) {
-            if (taken >= NEIGHBOUR_CANDIDATES) break;
-            for (InstrumentEntry e : corpus.search(neighbour, 2)) {
-                if (bySymbol.putIfAbsent(e.symbol().toUpperCase(Locale.ROOT), e) == null) {
-                    taken++;
-                    break;
-                }
-            }
         }
         return List.copyOf(bySymbol.values());
     }

@@ -440,12 +440,8 @@ public class BoerseDeNewsClient extends AbstractWebSource
 
     /** True when the text carries at least one significant word of the queried name. */
     static boolean titleMatches(String text, Set<String> nameWords) {
-        if (text == null || nameWords.isEmpty()) return false;
-        String t = normalize(text);
-        for (String w : nameWords) {
-            if (Pattern.compile("\\b" + Pattern.quote(w) + "\\b").matcher(t).find()) return true;
-        }
-        return false;
+        // The house relevance match, once — the private regex copy is gone.
+        return de.bsommerfeld.wsbg.terminal.web.impl.text.TextMatch.matchesAny(text, nameWords);
     }
 
     /** Significant (length ≥ 3, non-generic) words of the queried name. */

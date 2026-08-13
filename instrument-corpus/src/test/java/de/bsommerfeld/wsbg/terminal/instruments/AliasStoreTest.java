@@ -84,8 +84,10 @@ class AliasStoreTest {
 
     @Test
     void twoReadingsOfTheSameSpellingBothSurvive() {
+        // Two clean venue readings — the historical pair used 0O8X.IL, whose
+        // numeric-prefixed-secondary shape the store now refuses outright.
         AliasStore store = new AliasStore(file());
-        store.learn("wirecard ag", "0O8X.IL");
+        store.learn("wirecard ag", "WDI.DE");
         store.learn("wirecard ag", "WDI.HM");
         List<AliasCandidate> live = store.candidatesFor("wirecard ag");
         assertEquals(2, live.size(), "a second listing must not overwrite the first");

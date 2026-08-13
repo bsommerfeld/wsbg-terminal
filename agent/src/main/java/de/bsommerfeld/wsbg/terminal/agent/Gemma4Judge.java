@@ -32,6 +32,39 @@ final class Gemma4Judge {
     }
 
     /**
+     * The article tagger's sense arbiter: ONE discrete verdict per (instrument,
+     * usage cluster) — "articles whose context looks like these words: are they
+     * about this instrument?" — cached upstream, so the whole ambiguity class
+     * costs a single call ever, never one per article. Fail semantics: abstain
+     * ({@code Optional.empty()}), the deterministic tagging outcome stands.
+     */
+    java.util.Optional<Boolean> senseAboutInstrument(String instrumentLine,
+            List<String> clusterTerms, List<String> sampleTitles) {
+        ChatModel model = brain.getAgentModel();
+        if (model == null || instrumentLine == null || instrumentLine.isBlank()
+                || clusterTerms == null || clusterTerms.isEmpty()) {
+            return java.util.Optional.empty();
+        }
+        try {
+            String sys = PromptLoader.loadLocalized("article-sense", brain.getUserLanguage().code());
+            StringBuilder user = new StringBuilder("INSTRUMENT: ").append(instrumentLine).append('\n');
+            user.append("CONTEXT WORDS: ").append(String.join(", ", clusterTerms)).append('\n');
+            if (sampleTitles != null && !sampleTitles.isEmpty()) {
+                user.append("HEADLINES:\n");
+                for (String t : sampleTitles) {
+                    user.append("- ").append(t).append('\n');
+                }
+            }
+            JsonNode obj = JsonReplies.parseJson(chatGateway.chat(model, sys, user.toString()));
+            if (obj == null || !obj.has("about")) return java.util.Optional.empty();
+            return java.util.Optional.of(obj.path("about").asBoolean(false));
+        } catch (Exception e) {
+            LOG.debug("sense arbiter failed (abstain): {}", e.getMessage());
+            return java.util.Optional.empty();
+        }
+    }
+
+    /**
      * The resolver's identity judge ({@link TickerResolver.MatchJudge}): a discrete
      * gemma4 pick — "which of these search candidates IS the subject, or none" —
      * where the old embedding-cosine ranker matched on sounds-alike and promoted
@@ -79,11 +112,16 @@ final class Gemma4Judge {
             this(yahoo, ls, "instrument");
         }
 
-        /** True when the subject itself is a person or theme — never an instrument pick. */
+        /** True when the subject itself is a person, theme or PRODUCT — never an instrument pick.
+         *  Product (2026-08-13): a language model, a game, a phone, a drink is not the
+         *  instrument of its maker and even less a same-named coin — "Gemini", "GTA",
+         *  "ChatGPT", "Claude", "Grok" were all stamped onto naming parasites because
+         *  the kind vocabulary had no word for what they are. */
         boolean nonInstrument() {
             if (kind == null) return false;
             String k = kind.trim().toLowerCase(java.util.Locale.ROOT);
-            return k.startsWith("person") || k.startsWith("them"); // theme / thema
+            return k.startsWith("person") || k.startsWith("them")  // theme / thema
+                    || k.startsWith("produ");                      // product / produkt
         }
     }
 

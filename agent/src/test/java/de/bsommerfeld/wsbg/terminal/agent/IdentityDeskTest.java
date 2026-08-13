@@ -44,12 +44,67 @@ class IdentityDeskTest {
 
     private IdentityDesk desk(List<InstrumentCandidate> venue) {
         IdentityDesk d = new IdentityDesk(judge, () -> true);
-        d.installLookup(q -> venue);
+        // The stub venue prices every candidate at the Yahoo reference (100.0):
+        // since "unpriceable ⇒ no stamp" (2026-08-13), a stamp-expecting test needs
+        // a venue that can price its pick.
+        d.installLookup(new de.bsommerfeld.wsbg.terminal.web.facts.InstrumentLookup() {
+            @Override
+            public List<InstrumentCandidate> search(String query) {
+                return venue;
+            }
+
+            @Override
+            public Optional<Double> lastPrice(InstrumentCandidate candidate) {
+                return Optional.of(100.0);
+            }
+        });
         return d;
     }
 
     private static MatchContext ctx(String query, List<YahooQuote> quotes) {
         return new MatchContext(query, "thread title", quotes);
+    }
+
+    @Test
+    void aJudgePickOnAThinSecondaryLineIsRerankedToThePrimaryListing() {
+        // Krispy Kreme, 2026-08-13: the judge confirmed 9YM.F (Frankfurt secondary)
+        // with DNUT (Nasdaq primary) in the same list. Identity is the judge's call,
+        // venue quality is not — the rerank picks the primary among same-paper quotes.
+        nextPick.set(new Gemma4Judge.DeskPick(2, 0));
+        IdentityDesk d = desk(List.of());
+
+        // Single-word subject on purpose: no exact-name bypass, the rerank itself decides.
+        SubjectMatch m = d.decide(ctx("Krispy", List.of(
+                yq("DNUT", "Krispy Kreme, Inc.", "EQUITY"),
+                yq("9YM.F", "Krispy Kreme, Inc.", "EQUITY")))).orElseThrow();
+        assertEquals("DNUT", m.symbol(), "the primary listing wins over the Frankfurt line");
+    }
+
+    @Test
+    void rerankNeverCrossesToADifferentPaper() {
+        nextPick.set(new Gemma4Judge.DeskPick(2, 0));
+        IdentityDesk d = desk(List.of());
+
+        SubjectMatch m = d.decide(ctx("Siemens Energy", List.of(
+                yq("SIE.DE", "Siemens AG", "EQUITY"),
+                yq("ENR.F", "Siemens Energy AG", "EQUITY")))).orElseThrow();
+        assertEquals("ENR.F", m.symbol(),
+                "a different company on a better venue is no rerank target");
+    }
+
+    @Test
+    void aWrapperCategoryVenuePickIsDropped() {
+        // The venue search returns every category; a warrant carries the company
+        // name too. The stamp must not execute a wrapper paper.
+        nextPick.set(new Gemma4Judge.DeskPick(1, 1));
+        IdentityDesk d = desk(List.of(
+                ls(9, "DE000VX1AAA1", "675054", "VONT.O.END RHEINMETALL", "WNT", "Optionsschein")));
+
+        SubjectMatch m = d.decide(ctx("Rheinmetall",
+                List.of(yq("RHM.DE", "Rheinmetall AG", "EQUITY")))).orElseThrow();
+        assertEquals("RHM.DE", m.symbol());
+        assertNull(m.isin(), "the warrant's stamp is dropped");
+        assertEquals(0L, m.venueId());
     }
 
     @Test

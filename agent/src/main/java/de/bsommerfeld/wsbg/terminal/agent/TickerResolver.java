@@ -64,12 +64,15 @@ public final class TickerResolver {
      */
     private static final int MAX_QUOTES = 8;
     /**
-     * How many Yahoo news items to carry per subject. Kept moderate not for any
-     * technical limit (the search endpoint returns them in the same response, so
-     * more news is free) but to keep the compose prompt readable; the desk wants
-     * breadth of evidence, so this is deliberately generous.
+     * How many news items to carry per subject. Historically 6 from the Yahoo
+     * fan era, when every item cost a network call — today this is a LIMIT on a
+     * RAM query against the basin ({@code pool().queryInstrument}), so the cap
+     * was pure legacy. Raised to match {@link NewsBox#MAX_NEWS} (12): the box is
+     * the real ceiling, so fetching fewer than it holds just starved the merge,
+     * while fetching more would be discarded. The compose prompt is protected
+     * downstream by {@link UnitBriefWriter#NEWS_CHAR_BUDGET}, not by this count.
      */
-    private static final int NEWS_COUNT = 6;
+    private static final int NEWS_COUNT = NewsBox.MAX_NEWS;
 
     /**
      * Cap on the second-hop: distinct {@code relatedTickers} mentioned across a
@@ -155,6 +158,13 @@ public final class TickerResolver {
      */
     private IdentityDesk identityDesk;
 
+    /**
+     * The venue lookup (candidate search + last price) — read live via supplier by
+     * the alias-replay stage so a remembered stamp is price-checked instead of
+     * trusted. Null in tests.
+     */
+    private volatile de.bsommerfeld.wsbg.terminal.web.facts.InstrumentLookup instrumentLookup;
+
     // ---- The guard tower and its stages ----
     // Single shared stage instances: the veto/corpus/coinage verdict caches are instance
     // fields of these, so caching survives across calls. The judge/corpus/desk/alias deps
@@ -169,7 +179,7 @@ public final class TickerResolver {
     private final JudgeMatcher judgeMatcher = new JudgeMatcher(() -> matchJudge);
     private final CorpusMatcher corpusMatcher = new CorpusMatcher(() -> matchJudge, () -> corpus);
     private final AliasMemoryMatcher aliasMemoryMatcher =
-            new AliasMemoryMatcher(() -> aliasStore, () -> corpus);
+            new AliasMemoryMatcher(() -> aliasStore, () -> corpus, () -> instrumentLookup);
     private final CoinageMatcher coinageMatcher =
             new CoinageMatcher(() -> matchJudge, () -> corpus, () -> aliasStore);
     private final MatchTower tower = new MatchTower(List.of(
@@ -189,6 +199,16 @@ public final class TickerResolver {
     /** Installs the identity desk. Forwarded by {@code EditorialAgent}; null in tests (stage abstains). */
     void setIdentityDesk(IdentityDesk identityDesk) {
         this.identityDesk = identityDesk;
+    }
+
+    /**
+     * Installs the venue candidate search/price seam for the ALIAS REPLAY's price
+     * plausibility check (see {@link AliasMemoryMatcher}): a remembered venue
+     * stamp is verified against the live venue price before it ships again.
+     * Forwarded by {@code EditorialAgent}; null in tests (replay unverified).
+     */
+    void setInstrumentLookup(de.bsommerfeld.wsbg.terminal.web.facts.InstrumentLookup lookup) {
+        this.instrumentLookup = lookup;
     }
 
     /** Installs the tier-3 instrument corpus. Forwarded by {@code EditorialAgent}; null in tests. */
@@ -302,8 +322,14 @@ public final class TickerResolver {
                 // guess a tickerless unit, and don't fan out into more calls.
                 return Pending.rateLimited(query);
             }
+            // Candidate-space hygiene BEFORE any stage: junk coins, non-major
+            // coins, 0P… fund ids and numeric-prefixed western secondaries never
+            // become candidates — every tower stage (desk, judge, token matcher)
+            // then works on a clean table (the literature's "vergifteter
+            // Kandidatenraum" is fixed at the door, not argued with downstream).
+            List<YahooQuote> candidates = QuoteClassifier.admissibleQuotes(sr.quotes());
             MatchTower.Claim claim =
-                    tower.claim(new MatchContext(query, context, sr.quotes(), neighbours)).orElse(null);
+                    tower.claim(new MatchContext(query, context, candidates, neighbours)).orElse(null);
             SubjectMatch match = claim == null ? null : claim.match();
             String ownTicker = match == null ? null : match.symbol();
             String canonical = match == null ? query : match.canonicalName();
@@ -322,11 +348,16 @@ public final class TickerResolver {
             // (wallstreet-online) answer the name, closing the German small-cap gap. A
             // ticker-less theme keeps Yahoo's query-news (the only handle without a
             // symbol); the tests (no aggregator) also keep the search news.
-            List<Article> news = resolveNews(ownTicker, canonical, sr);
+            List<Article> news = resolveNews(ownTicker, canonical, isin, sr);
             Map<String, List<Article>> relNews = new LinkedHashMap<>();
             List<String> relSyms = collectRelated(news, ownTicker, maxRelated, relNews);
+            // A claim WITHOUT a symbol is the desk's/veto's considered news-only —
+            // distinct from "no stage claimed it" (an ordinary theme). Carried on the
+            // result so consolidation can respect the verdict (a judged non-instrument
+            // must not out-rank a real instrument as the event's primary).
+            boolean newsOnly = match != null && match.symbol() == null;
             return new Pending(query, canonical, ownTicker, isin, venueId, category, venueRuledOut,
-                    news, relSyms, relNews, false);
+                    newsOnly, news, relSyms, relNews, false);
         } catch (Exception e) {
             LOG.debug("Subject resolution failed for '{}': {}", query, e.getMessage());
             return Pending.empty(query);
@@ -351,10 +382,20 @@ public final class TickerResolver {
      * is the only one that actually looked at candidates before saying no; booking a
      * negative for every unresolved macro theme would teach the memory nothing except
      * that most words are not tickers.
+     *
+     * <p><b>The memory never writes itself</b> (2026-08-13): a claim the
+     * {@link AliasMemoryMatcher} answered FROM the ledger is not booked back INTO the
+     * ledger. Booking it created a self-reinforcement loop — memory answers, the
+     * answer is posted, the posting strengthens the memory — that carried a single
+     * wrong judge call past the 7-day half-life forever (live: 'Vontobel' → 675054
+     * re-earning its trust on every mention). Now a remembered reading decays unless
+     * a stage that actually investigated (desk, judge, coinage, catalogue) re-earns
+     * it, which is exactly the vitality contract the store documents.
      */
     private void remember(String query, String canonical, SubjectMatch match, String stage,
             String context) {
         if (aliasStore == null || match == null) return;
+        if (AliasMemoryMatcher.class.getSimpleName().equals(stage)) return;
         String ownTicker = match.symbol();
         if (ownTicker == null || ownTicker.isBlank()) return;
         AliasProvenance p = new AliasProvenance(stage, match.isin(), match.venueId(),
@@ -369,11 +410,12 @@ public final class TickerResolver {
      * {@code NewsSource.dossierOnly}) — the loom needs the day's catalyst, not
      * every venue note ever filed under the name.
      */
-    private List<Article> resolveNews(String ownTicker, String canonical, SearchResult sr) {
+    private List<Article> resolveNews(String ownTicker, String canonical, String isin,
+            SearchResult sr) {
         if (webGateway == null || ownTicker == null) {
             return sr.news() != null ? sr.news() : List.of();
         }
-        ResolvedInstrument key = instrumentKey(ownTicker, canonical);
+        ResolvedInstrument key = instrumentKey(ownTicker, canonical, isin);
         List<Article> pooled = webGateway.pool().queryInstrument(key, NEWS_COUNT);
         if (pooled != null && !pooled.isEmpty()) return pooled;
 
@@ -404,9 +446,16 @@ public final class TickerResolver {
      * the subject's news (bounded by {@code maxRelated}), each with its own news,
      * collected into {@code outRelNews}. Returns the ordered related symbols.
      */
-    /** The basin's instrument key for a wire query: ticker + optional name. */
-    private static ResolvedInstrument instrumentKey(String symbol, String name) {
-        return new ResolvedInstrument(java.util.Optional.empty(),
+    /**
+     * The basin's instrument key for a wire query: every hard key the resolver
+     * holds rides along. The ISIN used to be dropped here ({@code
+     * Optional.empty()}) although the identity desk had stamped it — the
+     * strongest key thrown away exactly at the pool boundary.
+     */
+    private static ResolvedInstrument instrumentKey(String symbol, String name, String isin) {
+        return new ResolvedInstrument(
+                isin == null ? java.util.Optional.empty()
+                        : de.bsommerfeld.wsbg.terminal.web.instrument.Isin.parse(isin),
                 Ticker.parse(symbol), name == null ? "" : name);
     }
 
@@ -425,7 +474,7 @@ public final class TickerResolver {
                 if (sym.isEmpty() || !seen.add(sym)) continue;
                 relSyms.add(sym);
                 List<Article> rn = webGateway != null
-                        ? webGateway.pool().queryInstrument(instrumentKey(sym, null), RELATED_NEWS_COUNT)
+                        ? webGateway.pool().queryInstrument(instrumentKey(sym, null, null), RELATED_NEWS_COUNT)
                         : yahoo.search(sym, 0, RELATED_NEWS_COUNT).news();
                 outRelNews.put(sym, rn == null ? List.of() : rn);
                 if (relSyms.size() >= maxRelated) break collect;
@@ -489,7 +538,7 @@ public final class TickerResolver {
             }
             if (p.rateLimited()) rateLimited++;
             out.add(new ResolvedSubject(p.query(), p.canonical(), p.ownTicker(), p.isin(),
-                    ownSnap, p.news(), related, p.rateLimited()));
+                    ownSnap, p.news(), related, p.rateLimited(), p.newsOnly()));
         }
         if (rateLimited > 0) {
             LOG.warn("[RESOLVE] Yahoo rate-limited — {} subject(s) un-enriched this pass "
@@ -522,16 +571,16 @@ public final class TickerResolver {
     /** Per-subject scratch between phase 1 (collect) and phase 3 (assemble). */
     private record Pending(String query, String canonical, String ownTicker,
             String isin, long venueId, String category, boolean venueRuledOut,
-            List<Article> news, List<String> relSyms,
+            boolean newsOnly, List<Article> news, List<String> relSyms,
             Map<String, List<Article>> relNews, boolean rateLimited) {
         static Pending empty(String query) {
-            return new Pending(query, query, null, null, 0, null, false,
+            return new Pending(query, query, null, null, 0, null, false, false,
                     List.of(), List.of(), Map.of(), false);
         }
 
         /** Search skipped/throttled by Yahoo — the subject is left unresolved, not tickerless. */
         static Pending rateLimited(String query) {
-            return new Pending(query, query, null, null, 0, null, false,
+            return new Pending(query, query, null, null, 0, null, false, false,
                     List.of(), List.of(), Map.of(), true);
         }
     }
@@ -558,13 +607,26 @@ public final class TickerResolver {
             // NOT enriched — a marker, NOT a skip. It's still attributed + headlined
             // from the room evidence (Yahoo only enriches); it re-resolves to its
             // ticker on the next evidence, and the identity-merge folds any duplicate.
-            boolean unresolved) {
+            boolean unresolved,
+            // newsOnly: a stage CLAIMED the subject and struck every candidate — the
+            // desk's considered "this is a person/theme/no instrument". Distinct from
+            // an unclaimed theme (false there too, but nothing judged it). The
+            // consolidation reads it: a judged non-instrument never out-ranks a real
+            // instrument as the event's primary (2026-08-13).
+            boolean newsOnly) {
+
+        /** Pre-newsOnly shape (tests, older call sites): not desk-judged. */
+        public ResolvedSubject(String query, String canonicalName, String ticker, String isin,
+                MarketSnapshot snapshot, List<Article> news,
+                List<RelatedInstrument> related, boolean unresolved) {
+            this(query, canonicalName, ticker, isin, snapshot, news, related, unresolved, false);
+        }
 
         /** Pre-stamp shape (tests, older call sites): no ISIN. */
         public ResolvedSubject(String query, String canonicalName, String ticker,
                 MarketSnapshot snapshot, List<Article> news,
                 List<RelatedInstrument> related, boolean unresolved) {
-            this(query, canonicalName, ticker, null, snapshot, news, related, unresolved);
+            this(query, canonicalName, ticker, null, snapshot, news, related, unresolved, false);
         }
 
         public boolean isInstrument() {

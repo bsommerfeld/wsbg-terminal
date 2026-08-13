@@ -46,6 +46,7 @@
         <jshepherd.version>4.0.1</jshepherd.version>
         <jna.version>5.14.0</jna.version>
         <tess4j.version>5.13.0</tess4j.version>
+        <lucene.version>9.12.1</lucene.version>
         <logback.version>1.4.14</logback.version>
         <flatten-maven-plugin.version>1.6.0</flatten-maven-plugin.version>
         <test.excludedGroups>integration</test.excludedGroups>
@@ -239,6 +240,16 @@
                         <artifactId>*</artifactId>
                     </exclusion>
                 </exclusions>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.lucene</groupId>
+                <artifactId>lucene-core</artifactId>
+                <version>${lucene.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.lucene</groupId>
+                <artifactId>lucene-analysis-common</artifactId>
+                <version>${lucene.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

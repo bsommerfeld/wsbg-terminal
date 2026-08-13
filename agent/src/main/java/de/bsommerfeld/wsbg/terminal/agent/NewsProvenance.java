@@ -85,8 +85,9 @@ final class NewsProvenance {
     /**
      * Same, gated on textual CONTINUITY when {@code newHeadline} is given: a citation
      * only inherits when the new line demonstrably shares content with the cited one
-     * (significant-token overlap, the woven-in test's sibling). A schema-required
-     * array makes a 4B cite EAGERLY — live, nearly every line cited [1] — and an
+     * (significant-token overlap, the woven-in test's sibling). A required array
+     * (prompt-demanded on every runner, grammar-backed on GGUF) makes a 4B cite
+     * EAGERLY — live, nearly every line cited [1] — and an
      * unconnected citation then launders whatever the old record carried (including
      * pool-scoped refs from before the line-scoped cutover) onto an unrelated line.
      * Citation is the model's claim; the overlap is the evidence check.

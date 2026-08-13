@@ -113,6 +113,14 @@ public class AgentConfig {
      * pushed the machine 10.6 GB into swap, and sustained generation collapsed
      * from ~78 to ~18 tok/s across five calls. Weight size is therefore the
      * second axis, not a footnote.
+     *
+     * <p>
+     * Honesty note (verified live 2026-08-13): the KV arithmetic below describes
+     * the GGUF runner. The MLX runner — the Apple-Silicon default — ignores
+     * num_ctx entirely (no reservation: resident set identical at 8192 and
+     * 24576) and grows memory with the ACTUAL prompt instead. There the window
+     * is a budget the app enforces via its own prompt budgeting, not a limit
+     * the runner enforces.
      */
     public int resolveContextTokens() {
         return contextTokensFor(totalPhysicalMemoryBytes(), weightsGbFor(resolveModelTag()));
@@ -137,7 +145,9 @@ public class AgentConfig {
         String t = tag == null ? "" : tag.strip().toLowerCase();
         if (t.startsWith("gemma4:e2b")) return 6.5;
         if (t.startsWith("gemma4:e4b")) return 8.8;
-        if (t.startsWith("gemma4:12b")) return 7.7;
+        // (No gemma4:12b entry: the dense 12B tier was struck from the catalog on
+        // 2026-08-11 — a leftover 12b tag now sizes as the anchor below, which
+        // errs large, never small.)
         if (t.startsWith("gemma4:26b")) return 18.0;
         if (t.startsWith("nemotron-3.5-lightning:")) return 23.0;
         return 8.8;

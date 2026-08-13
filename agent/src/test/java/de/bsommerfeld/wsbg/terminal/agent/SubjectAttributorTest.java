@@ -451,6 +451,63 @@ class SubjectAttributorTest {
     }
 
     @Test
+    void deskVetoedModelPrimaryLosesToAnInstrumentCandidate() {
+        // The desk judged the model's protagonist news-only (an OCR artefact, a CFD
+        // product name). The verdict must be respected: while an instrument candidate
+        // exists, the vetoed subject never becomes the event's primary — the live
+        // 2026-08-13 failure ('wealth cash a} brokerage' published as primary).
+        long now = System.currentTimeMillis() / 1000;
+        var thread = new RedditThread("t3_1", "wsb", "Mein Depot", "op",
+                "US Tech 100 CFD im Depot, dazu Nvidia", now, "/p", 10, 0.9, 1, now, null);
+        var c1 = new RedditComment("t1_a", "t3_1", "t3_1", "ape",
+                "Nvidia trägt das ganze Depot", 5, now, now, now);
+        var repository = mock(RedditRepository.class);
+        when(repository.getThread("t3_1")).thenReturn(thread);
+        when(repository.getCommentsForThread("t3_1", 0)).thenReturn(List.of(c1));
+        var brain = mock(AgentBrain.class);
+        when(brain.describeImageIfCached(org.mockito.ArgumentMatchers.anyString())).thenReturn("");
+
+        var cluster = new InvestigationCluster(thread);
+        var registry = new SubjectRegistry();
+        var vetoed = new ResolvedSubject("US Tech 100 CFD", "US Tech 100 CFD", null, null,
+                null, List.of(), List.of(), false, true); // desk said news-only
+        new SubjectAttributor(repository, brain).attribute(registry, cluster,
+                List.of(vetoed, instrument("Nvidia", "NVIDIA Corporation", "NVDA")),
+                "US Tech 100 CFD");
+
+        Set<String> dirty = registry.drainDirty();
+        assertTrue(dirty.contains("NVDA"), "the instrument composes as primary");
+        assertFalse(dirty.contains("name:us tech 100 cfd"),
+                "the desk-vetoed subject never composes as primary");
+    }
+
+    @Test
+    void allDeskVetoedCandidatesStillYieldAPrimary() {
+        // A pure person/theme thread: every candidate is desk-vetoed news-only —
+        // then the veto filter must not leave the event without a line.
+        long now = System.currentTimeMillis() / 1000;
+        var thread = new RedditThread("t3_1", "wsb", "Trump kriegt einen Preis", "op",
+                "Trump und nichts als Trump", now, "/p", 10, 0.9, 1, now, null);
+        var c1 = new RedditComment("t1_a", "t3_1", "t3_1", "ape",
+                "Trump schon wieder", 5, now, now, now);
+        var repository = mock(RedditRepository.class);
+        when(repository.getThread("t3_1")).thenReturn(thread);
+        when(repository.getCommentsForThread("t3_1", 0)).thenReturn(List.of(c1));
+        var brain = mock(AgentBrain.class);
+        when(brain.describeImageIfCached(org.mockito.ArgumentMatchers.anyString())).thenReturn("");
+
+        var cluster = new InvestigationCluster(thread);
+        var registry = new SubjectRegistry();
+        var trump = new ResolvedSubject("Trump", "Trump", null, null,
+                null, List.of(), List.of(), false, true);
+        new SubjectAttributor(repository, brain).attribute(registry, cluster,
+                List.of(trump), "Trump");
+
+        assertTrue(registry.drainDirty().contains("name:trump"),
+                "a theme-only thread keeps its theme line");
+    }
+
+    @Test
     void coInstrumentSharingAllEvidenceWithThePrimaryStaysSilent() {
         // "Juli-Saisonalität bei Apple und Microsoft": both title-named, both in the
         // same comment — ONE story, so only the primary composes (no near-dup pair).

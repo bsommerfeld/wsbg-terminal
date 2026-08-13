@@ -60,9 +60,11 @@ public final class HeadlineWriter {
     }
 
     /**
-     * One headline as drafted by the editorial model — exactly the four fields the
-     * schema-constrained compose output carries. Ticker, price and subjects are the
-     * unit's resolver-validated facts and never the model's.
+     * One headline as drafted by the editorial model — the four text fields of the
+     * compose reply (prompt-requested; validated and, where needed, normalised by
+     * {@link ComposeReplyParser} + the reconcilers, since only the GGUF runner
+     * enforces the schema). Ticker, price and subjects are the unit's
+     * resolver-validated facts and never the model's.
      */
     public record Draft(
             String headline,
@@ -142,8 +144,9 @@ public final class HeadlineWriter {
         }
         MarketSnapshot snapshot = tickerSymbol == null ? null : unit.snapshot();
 
-        // The slim compose output is just {headline, highlight, mode} — the model no longer
-        // cites source ids; the unit IS the evidence, so we don't track per-headline citations.
+        // The compose output carries no Reddit source ids — the unit IS the evidence,
+        // so we don't track per-headline thread/comment citations (news provenance
+        // rides newsUsed/derivedFrom instead).
         List<String> threadIds = List.of();
         List<String> commentIds = List.of();
 
@@ -157,22 +160,25 @@ public final class HeadlineWriter {
         }
 
         HeadlineHighlight modelHighlight = HeadlineHighlight.fromString(draft.highlight());
-        HeadlineHighlight highlight =
-                HighlightReconciler.reconcileHighlight(modelHighlight, draft.trigger(), unit.snapshot());
+        HeadlineHighlight highlight = HighlightReconciler.reconcileHighlight(
+                modelHighlight, draft.trigger(), unit.snapshot(), headline);
         if (highlight != modelHighlight) {
             LOG.info("[WRITE] demote IMPORTANT→NORMAL for unit {} — trigger '{}' {}",
                     unit.id, draft.trigger(),
-                    HighlightReconciler.isPriceShaped(draft.trigger())
-                            ? "is price-shaped but the unit has no verified price"
-                            : "does not justify red");
+                    HighlightReconciler.isAnalystAction(headline)
+                            ? "is a rating/price-target move (the rubric's exclusion list)"
+                            : HighlightReconciler.isPriceShaped(draft.trigger())
+                                    ? "is price-shaped but the unit has no verified price"
+                                    : "does not justify red");
         }
 
         // Price move is DERIVED from the resolver snapshot, not asked of the model.
-        // Sentiment IS the model's (schema-forced enum since 2026-07-01): the slim
-        // 3-key contract had left every line NEUTRAL, which starved the mood badge
-        // and the unit's sentiment arc — the room's read is editorial data the
-        // price can't supply. reconcileSentiment still flips a camp that
-        // contradicts a hard day-move.
+        // Sentiment IS the model's (a required enum field since 2026-07-01 — enforced
+        // by the grammar on GGUF only, prompt-requested on MLX, with fromString's
+        // defensive parse as the net): the earlier 3-key contract had left every line
+        // NEUTRAL, which starved the mood badge and the unit's sentiment arc — the
+        // room's read is editorial data the price can't supply. reconcileSentiment
+        // still flips a camp that contradicts a hard day-move.
         Double priceMove = SentimentReconciler.sanePriceMove(
                 snapshot != null && snapshot.hasPrice() ? snapshot.dayChangePercent() : null, headline);
         List<String> sectors = List.of();
@@ -190,7 +196,11 @@ public final class HeadlineWriter {
 
         agentRepository.saveHeadline(unit.id, headline, "",
                 threadIds, commentIds, highlight, tickerSymbol, subjects, priceMove,
-                sectors, assetClass, sentiment, snapshot, newsEnriched, newsRefs);
+                sectors, assetClass, sentiment, snapshot, newsEnriched, newsRefs,
+                // The model's DECLARED trigger, archived verbatim (normalised) even
+                // when the reconciler demoted the highlight — the archive answers
+                // "which trigger kinds predicted movement", so the claim is the datum.
+                HighlightReconciler.normalizeTrigger(draft.trigger()));
 
         LOG.info("[WRITE] unit {} [{}{} {}{}]: {}", unit.id,
                 highlight == HeadlineHighlight.IMPORTANT

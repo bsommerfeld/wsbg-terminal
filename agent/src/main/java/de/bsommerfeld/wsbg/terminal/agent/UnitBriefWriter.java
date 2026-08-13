@@ -50,6 +50,16 @@ final class UnitBriefWriter {
      */
     static final int NEWS_CHAR_BUDGET = 3000;
 
+    /**
+     * Secondary budget for the COMPACT tail: once the full-render budget is spent,
+     * further fresh items still appear as title-only lines (with their [N#]
+     * ordinal, so they stay citable) instead of vanishing into the omitted count.
+     * With the fetch cap raised from 6 to {@link NewsBox#MAX_NEWS} items this is
+     * what keeps breadth affordable: ~200 tokens buys up to ~6 more headlines
+     * where a full render would have cost ~1k.
+     */
+    static final int NEWS_COMPACT_CHAR_BUDGET = 700;
+
     /** Already-told titles rendered before the block collapses to the newest few. */
     static final int TOLD_NEWS_SHOWN = 3;
 
@@ -148,11 +158,28 @@ final class UnitBriefWriter {
             // context ladder that is the difference between a brief and a silently
             // truncated one.
             int newsBudget = NEWS_CHAR_BUDGET;
+            int compactBudget = NEWS_COMPACT_CHAR_BUDGET;
             int newsOmitted = 0;
             int newsOrdinal = 0;
             for (Article n : freshNews) {
                 if (newsBudget <= 0) {
-                    newsOmitted++;
+                    // Compact tail: title-only, still numbered — the model can cite
+                    // it, the reader-facing refs stay reachable, and the token cost
+                    // is a line, not a digest. Only when even this budget is spent
+                    // does an item fall into the omitted count.
+                    String title = n.title() == null ? "" : n.title();
+                    int cost = title.length() + 12;
+                    if (compactBudget - cost < 0) {
+                        // Stop rendering entirely from here on: the [N#] ordinals must
+                        // stay a strict PREFIX of the fresh list (the citation
+                        // resolution indexes into it), so no later, shorter title may
+                        // jump the queue.
+                        compactBudget = -1;
+                        newsOmitted++;
+                        continue;
+                    }
+                    compactBudget -= cost;
+                    sb.append("  - [N").append(++newsOrdinal).append("] ").append(title).append('\n');
                     continue;
                 }
                 int before = sb.length();

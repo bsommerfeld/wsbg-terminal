@@ -74,6 +74,24 @@ class AliasMemoryMatcherTest {
     }
 
     @Test
+    void withoutACorpusRowTheRoomsSpellingIsTheName_neverTheSymbol() throws Exception {
+        // The old fallback was `name = symbol`, which shipped "675054 (675054)" and
+        // "BE (BE)" units whose canonical name no sentence can carry (2026-08-13).
+        // (A bare-WKN reading itself is muted outright these days — see the shape
+        // hygiene — so this uses a clean venue symbol without a corpus row.)
+        AliasStore store = ledger(
+                "{\"name\":\"vontobel\",\"symbol\":\"VONN.SW\",\"at\":$AT,\"tier\":\"DeskMatcher\"}", 5);
+        AliasMemoryMatcher m = new AliasMemoryMatcher(() -> store, this::corpus);
+
+        Optional<SubjectMatch> match = m.match(ctx("Vontobel"));
+
+        assertTrue(match.isPresent());
+        assertEquals("VONN.SW", match.get().symbol());
+        assertEquals("Vontobel", match.get().canonicalName(),
+                "the query spelling is the display name when the corpus has no row");
+    }
+
+    @Test
     void aLoneVerdictIsNotAllowedToAnswerForItself() {
         // The live ledger holds exactly this shape: a single judge call that put the
         // key figure „EPS" on a Japanese printer maker. One posting must never
@@ -90,8 +108,11 @@ class AliasMemoryMatcherTest {
         Path f = dir.resolve("aliases.jsonl");
         long base = System.currentTimeMillis() / 1000 - 12 * 3600;
         List<String> lines = new ArrayList<>();
+        // Two clean readings of comparable strength. (The historical pair used
+        // 0O8X.IL, which the shape hygiene now mutes on load as a numeric-prefixed
+        // western secondary — the contest itself is what this test is about.)
         for (int i = 0; i < 5; i++) {
-            lines.add("{\"name\":\"wirecard ag\",\"symbol\":\"0O8X.IL\",\"at\":" + (base + i * 3601L) + "}");
+            lines.add("{\"name\":\"wirecard ag\",\"symbol\":\"WDI.DE\",\"at\":" + (base + i * 3601L) + "}");
             lines.add("{\"name\":\"wirecard ag\",\"symbol\":\"WDI.HM\",\"at\":" + (base + i * 3601L) + "}");
         }
         Files.write(f, lines);

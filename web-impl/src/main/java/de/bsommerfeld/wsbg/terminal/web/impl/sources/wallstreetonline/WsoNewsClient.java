@@ -151,12 +151,8 @@ public class WsoNewsClient extends AbstractWebSource implements InstrumentSource
 
     /** True when the title carries at least one significant word of the queried name. */
     static boolean titleMatches(String title, Set<String> nameWords) {
-        if (nameWords.isEmpty()) return false;
-        String t = normalize(title);
-        for (String w : nameWords) {
-            if (t.matches(".*\\b" + Pattern.quote(w) + "\\b.*")) return true;
-        }
-        return false;
+        // The house relevance match, once — the private regex copy is gone.
+        return de.bsommerfeld.wsbg.terminal.web.impl.text.TextMatch.matchesAny(title, nameWords);
     }
 
     /** Significant (length ≥ 3, non-generic) words of the queried name, umlaut-normalised. */

@@ -38,15 +38,6 @@ public class AgentBrain {
     private ChatModel agentModel;
     /** Same gemma4 model as {@link #agentModel}, but a TIGHT numPredict — for headline composition. */
     private ChatModel composeModel;
-    /**
-     * The judge lane. Free-form, and NOT a thinking lane despite the name -
-     * thinking was struck from the fleet 2026-08-05 and the factory hands this
-     * seam a sober, sampled model. The name survives so the judge lanes stay
-     * separately routable if they ever need their own decode again.
-     */
-    private ChatModel deliberateModel;
-    /** Same gemma4, DETERMINISTIC decode (temp 0, top-k 1, fixed seed) — the verdict lane. */
-    private ChatModel verdictModel;
     private String activeAgentModel;
 
     private final GlobalConfig config;
@@ -112,8 +103,6 @@ public class AgentBrain {
         OllamaModelFactory.Models models = modelFactory.build(config, askOllama);
         this.agentModel = models.agentModel();
         this.composeModel = models.composeModel();
-        this.deliberateModel = models.deliberateModel();
-        this.verdictModel = models.verdictModel();
         this.activeAgentModel = models.activeAgentModel();
         this.userLanguage = this.config.getUser().getUserLanguage();
 
@@ -227,28 +216,10 @@ public class AgentBrain {
         return composeModel;
     }
 
-    /**
-     * The DELIBERATE judge seam: same gemma4, free-form. Reserved for the
-     * few-call VERDICT judges (formcheck, final instance, reclaim). It once
-     * ran with thinking on (2026-07-17 A/B), which is where the name comes
-     * from; thinking was struck from the whole fleet on 2026-08-05 after it
-     * was measured spiralling to the num_predict ceiling with the visible
-     * verdict truncated to nothing, so this returns a sober, sampled model
-     * today.
-     */
-    public ChatModel getDeliberateModel() {
-        return deliberateModel;
-    }
-
-    /**
-     * The VERDICT model: same gemma4, but decoded greedily against a fixed
-     * seed. Exactly one caller - the closing assessment's single stance pass -
-     * because that section promises the reader that the same fact base yields
-     * the same number, and a sampled decode would quietly break the promise.
-     */
-    public ChatModel getVerdictModel() {
-        return verdictModel;
-    }
+    // The deliberate + verdict lanes were removed 2026-08-13 — dead handles since
+    // the closing assessment left with the KI-DD, and the verdict lane's
+    // determinism promise was measured broken on the resident MLX runner (see
+    // OllamaModelFactory for the full note).
 
     /** Returns the resolved Ollama model name used by {@link #getAgentModel()}. */
     public String getAgentModelName() {

@@ -46,9 +46,16 @@ final class IdentityLedger {
      * change, so every verdict decided under the old rules is re-judged instead of
      * replayed (and superseded by append on the next decide) — a semantics fix must
      * not wait out {@link #MAX_AGE_DAYS} on a wrong stamp. History: 2 = the kind
-     * gate + crypto-wrapper veto (2026-07-13: "trump"→DJT, "bitcoin"→ETP stamp).
+     * gate + crypto-wrapper veto (2026-07-13: "trump"→DJT, "bitcoin"→ETP stamp);
+     * 3 = venue rerank + venue category gate (2026-08-13: 'Krispy Kreme'→9YM.F
+     * instead of DNUT, wrapper categories stamped as underlyings — pre-rerank
+     * verdicts are re-judged instead of replayed);
+     * 4 = candidate-space hygiene + product kind + corpus veto + missing-venue-price
+     * rule (2026-08-13 identity hardening: 'Gemini'→GEMINI34655-USD,
+     * 'Munich Re'→1MUV2.MI, 'Rockstar'→0P0001L7U0.SA, 'IREN' with an Italian
+     * utility's ISIN — every verdict decided before these gates is re-judged).
      */
-    static final int SCHEMA_VERSION = 2;
+    static final int SCHEMA_VERSION = 4;
 
     /**
      * One stamped verdict. {@code symbol} is the unit/display identifier (a Yahoo
@@ -85,9 +92,25 @@ final class IdentityLedger {
         load();
     }
 
-    /** The replayable verdict for a normalised subject name, or null. */
+    /**
+     * The replayable verdict for a normalised subject name, or null. The
+     * {@link #MAX_AGE_DAYS} bound is enforced HERE too, not only on load: a
+     * process that runs across the boundary must stop replaying an expired
+     * verdict mid-flight — {@code decidedAt} existed and was never read on this
+     * path (2026-08-13). The expired entry is dropped from the replay map only;
+     * the file keeps its history, and the next decide supersedes by append.
+     */
     Entry get(String key) {
-        return key == null ? null : entries.get(normalize(key));
+        if (key == null) return null;
+        String k = normalize(key);
+        Entry e = entries.get(k);
+        if (e == null) return null;
+        long cutoff = Instant.now().minusSeconds(MAX_AGE_DAYS * 24 * 3600).getEpochSecond();
+        if (e.decidedAt() < cutoff) {
+            entries.remove(k, e);
+            return null;
+        }
+        return e;
     }
 
     /** Records a fresh verdict: in-memory immediately, appended to disk (supersede-by-append). */

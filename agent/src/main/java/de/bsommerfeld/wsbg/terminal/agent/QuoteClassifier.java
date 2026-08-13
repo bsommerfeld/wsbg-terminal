@@ -60,6 +60,61 @@ public final class QuoteClassifier {
         return sym.endsWith("-USD") || sym.endsWith("-EUR") || type.equals("CRYPTOCURRENCY");
     }
 
+    /**
+     * A crypto quote that is admissible as a SUBJECT: on the declared
+     * {@link de.bsommerfeld.wsbg.terminal.instruments.SymbolShapes#MAJOR_CRYPTO}
+     * positive list. Every other coin is a naming parasite by measurement
+     * (~57% wrong referents in the live ledger) and is struck from the
+     * candidate space before any stage — including the judge — ever sees it.
+     */
+    public static boolean isAdmissibleCrypto(YahooQuote q) {
+        return isCryptoQuote(q)
+                && de.bsommerfeld.wsbg.terminal.instruments.SymbolShapes
+                        .isMajorCryptoPair(q.symbol());
+    }
+
+    /**
+     * Candidate-space hygiene over ONE Yahoo search response — the cheapest place
+     * to stop a naming parasite is before it becomes a candidate at all (the
+     * 2026-08 live-run failure classes, each rule-based):
+     * <ul>
+     *   <li><b>random-number coins</b> ({@code GEMINI34655-USD}) — minted namesake
+     *       tokens, list-free form rule;</li>
+     *   <li><b>non-major coins</b> — the declared crypto positive list (see
+     *       {@link #isAdmissibleCrypto});</li>
+     *   <li><b>Morningstar fund ids</b> ({@code 0P0001L7U0.SA} — the "Rockstar"
+     *       Brazilian fund) — never an equity room's subject;</li>
+     *   <li><b>numeric-prefixed western secondaries</b> ({@code 1MUV2.MI}) —
+     *       dropped only while at least one OTHER candidate survives: a thin
+     *       secondary line is the right referent at the wrong venue, and as the
+     *       lone handle it is better than nothing.</li>
+     * </ul>
+     * Never returns null; an all-struck list returns empty (the subject stays
+     * news-only rather than mis-stamped).
+     */
+    public static java.util.List<YahooQuote> admissibleQuotes(java.util.List<YahooQuote> quotes) {
+        if (quotes == null || quotes.isEmpty()) return java.util.List.of();
+        java.util.List<YahooQuote> kept = new java.util.ArrayList<>(quotes.size());
+        java.util.List<YahooQuote> numericSecondaries = new java.util.ArrayList<>(2);
+        for (YahooQuote q : quotes) {
+            if (q == null) continue;
+            String sym = q.symbol() == null ? "" : q.symbol();
+            if (de.bsommerfeld.wsbg.terminal.instruments.SymbolShapes.isJunkNumberedCrypto(sym)) continue;
+            if (isCryptoQuote(q) && !isAdmissibleCrypto(q)) continue;
+            if (de.bsommerfeld.wsbg.terminal.instruments.SymbolShapes.isMorningstarFundId(sym)) continue;
+            if (de.bsommerfeld.wsbg.terminal.instruments.SymbolShapes
+                    .isNumericPrefixedWesternSecondary(sym)) {
+                numericSecondaries.add(q);
+                continue;
+            }
+            kept.add(q);
+        }
+        // Lone-handle exception: a numeric-prefixed secondary comes back only when
+        // NOTHING else survived — the right referent at a thin venue beats no
+        // referent at all; with any peer present the peer is the better listing.
+        return kept.isEmpty() ? java.util.List.copyOf(numericSecondaries) : kept;
+    }
+
     /** True when the query is a generic theme/macro acronym that must not exact-match its ticker. */
     public static boolean isThemeWord(String query) {
         return query != null && THEME_WORDS.contains(query.trim().toUpperCase(Locale.ROOT));

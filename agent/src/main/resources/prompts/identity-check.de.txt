@@ -8,9 +8,10 @@ Prüfe auf Identität, nie auf Ähnlichkeit:
 - Der Kontext ist ein Disambiguator, nie eine Beweispflicht: Trägt ein Kandidat den eigenen Namen des Subjekts und spricht im Kontext nichts gegen diese Lesart, IST er der Treffer — verlange nicht, dass der Kontext ihn bestätigt.
 
 Entscheide vor jedem Kandidaten, was das SUBJEKT SELBST ist — seine Art:
-- "instrument" (EIN konkretes handelbares Ding: eine Firma, eine Kryptowährung, ein Rohstoff, ein Fonds- oder Indexprodukt), "person" (ein Politiker, ein Manager, jeder Mensch) oder "theme" (eine Branche, eine Technologie, ein Land, eine Institution, eine Partei, ein Makro-Begriff, ein Ereignis).
-- Für "person" und "theme" sind beide Picks 0.
-- Das Subjekt entscheidet, niemals die Kandidatenliste: Eine Person bleibt "person" und ein Thema bleibt "theme", selbst wenn eine Aktie, ein Coin oder ein ETF exakt diesen Namen trägt — so ein Kandidat ist ein Namens-Parasit, nicht der Referent.
+- "instrument" (EIN konkretes handelbares Ding: eine Firma, eine Kryptowährung, ein Rohstoff, ein Fonds- oder Indexprodukt), "person" (ein Politiker, ein Manager, jeder Mensch), "product" (ein PRODUKT einer Firma: ein Sprachmodell, ein Spiel, ein Handy, eine Software, ein Getränk — Gemini, GTA, ChatGPT, iPhone) oder "theme" (eine Branche, eine Technologie, ein Land, eine Institution, eine Partei, ein Makro-Begriff, ein Ereignis).
+- Für "person", "product" und "theme" sind beide Picks 0.
+- Das Subjekt entscheidet, niemals die Kandidatenliste: Eine Person bleibt "person", ein Produkt bleibt "product" und ein Thema bleibt "theme", selbst wenn eine Aktie, ein Coin oder ein ETF exakt diesen Namen trägt — so ein Kandidat ist ein Namens-Parasit, nicht der Referent.
+- Ein Produkt ist NIE das Instrument seines Herstellers: "Gemini" ist nicht Alphabet und erst recht kein gleichnamiger Coin.
 - Nur wenn der CONTEXT klar die Firma/das Instrument hinter dem Namen meint, ist die Art "instrument".
 
 Die Kategorie ist ein harter Fakt und entscheidet zwischen gleichnamigen Kandidaten:
@@ -21,10 +22,11 @@ Die Kategorie ist ein harter Fakt und entscheidet zwischen gleichnamigen Kandida
 - Auf der LS-Seite hüte dich vor dem ausländischen Zwilling: Eine Notiz aus einem anderen Land, die die Namenswörter teilt, aber eine ANDERE Firma ist (die ersten zwei Buchstaben der ISIN sind ihr Land), ist KEIN Treffer — lieber kein LS-Pick als das falsche Papier.
 - Hüte dich vor dem Hüllen-Papier: Ein Kandidat, der zwar zum richtigen Gegenstand gehört, aber nicht dessen Stammaktie ist — ein Hinterlegungsschein (ADR/GDR/CDR/BDR steht im Namen), eine Anleihe oder Note, ein Zertifikat, ein ETP/ETC auf einen Coin oder Rohstoff, eine ANDERE Aktienklasse als die Stammnotiz — ist ebenfalls NICHT das Papier des Subjekts; wähle die Hauptnotiz oder nichts.
 - Beide Picks müssen DENSELBEN Gegenstand bezeichnen, wenn beide gesetzt sind.
+- Nennen mehrere YAHOO-Kandidaten denselben Gegenstand (dieselbe Firma an mehreren Börsen), wähle die Haupt-/Heimatbörse (US-Notiz ohne Suffix, Xetra .DE), nie eine dünne Nebenbörsen-Zweitnotiz (.F, .SG, .MU, ausländische Nebenlinien).
 
 Antworte mit EINEM JSON-Objekt und sonst nichts:
 {"kind": "instrument", "yahoo": 0, "ls": 0}
-- kind: was das Subjekt selbst ist — exakt eines von "instrument", "person", "theme". Entscheide das ZUERST.
+- kind: was das Subjekt selbst ist — exakt eines von "instrument", "person", "product", "theme". Entscheide das ZUERST.
 - yahoo: die Nummer des EINEN YAHOO-Kandidaten, der das Subjekt ist (die Ziffern nach Y), oder 0, wenn keiner es ist. Immer 0, wenn kind nicht "instrument" ist.
 - ls: die Nummer des EINEN LS-Kandidaten, der das Subjekt ist (die Ziffern nach L), oder 0, wenn keiner es ist. Immer 0, wenn kind nicht "instrument" ist.
 Im Zweifel: 0 — ein unaufgelöstes Subjekt behält seine News; ein falsches Instrument liefert den richtigen Preis fürs falsche Papier.

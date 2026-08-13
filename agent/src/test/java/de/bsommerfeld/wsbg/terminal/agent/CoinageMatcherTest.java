@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -89,28 +90,28 @@ class CoinageMatcherTest {
     }
 
     @Test
-    void aNicknameThatResemblesNothingRidesInOnTheThreadsOwnSubjects() {
-        // „Kranich" shares no letters worth counting with Lufthansa — distance can
-        // never find it. What CAN find it is that this very thread already resolved
-        // the airline, which is the whole reason the neighbours travel along.
+    void theThreadsOwnSubjectsAreNoLongerOfferedAsCandidates() {
+        // The neighbour channel was the theme-word trap (2026-08-13): in an oil
+        // thread it made „Hormuz" and „Midterms" into the oil paper, because a 4B
+        // judge shown a plausible instrument next to an unplaceable word takes the
+        // instrument. A word with NO orthographic near miss now yields no candidates
+        // at all — no judge call, no claim — even when the thread has resolved
+        // subjects to offer.
         AtomicInteger calls = new AtomicInteger();
         List<List<String>> seen = new ArrayList<>();
         CoinageMatcher m = new CoinageMatcher(() -> firstPick(seen, calls), this::corpus, this::store);
 
         InstrumentEntry picked = m.pick(new MatchContext(
-                "Kranich", "Streik bei der Lufthansa", List.of(), List.of("Deutsche Lufthansa AG")));
+                "Hormuz", "Öl Long wegen Hormuz", List.of(), List.of("Deutsche Lufthansa AG")));
 
-        assertNotNull(picked);
-        assertEquals("LHA.DE", picked.symbol());
+        assertNull(picked, "no near miss → no candidates → no claim");
+        assertEquals(0, calls.get(), "and no judge call to pay for");
     }
 
     @Test
-    void bothSignalsReachTheJudgeInOneCall() {
-        // A corruption is not handed to distance alone: the near miss AND what this
-        // thread already resolved land on the SAME numbered list, so the judge weighs
-        // the letters against the context instead of getting only one of the two. That
-        // matters when a spelling looks like one company but the thread is about
-        // another — distance would answer confidently and wrongly on its own.
+    void theOrthographicChannelAloneFeedsTheJudge() {
+        // A corruption with a real near miss still reaches the judge — but the
+        // thread's resolved subjects no longer ride along on the list.
         AtomicInteger calls = new AtomicInteger();
         List<List<String>> seen = new ArrayList<>();
         CoinageMatcher m = new CoinageMatcher(() -> firstPick(seen, calls), this::corpus, this::store);
@@ -118,10 +119,11 @@ class CoinageMatcherTest {
         m.pick(new MatchContext("Keinmetall", "Lufthansa und der ganze Rest",
                 List.of(), List.of("Deutsche Lufthansa AG")));
 
-        assertEquals(1, calls.get(), "still exactly one call — the signals merge, they do not stack");
+        assertEquals(1, calls.get(), "exactly one call for the near-miss candidates");
         String offered = String.join(" | ", seen.get(0));
         assertTrue(offered.contains("Rheinmetall"), "the near miss is on the list");
-        assertTrue(offered.contains("Lufthansa"), "and so is what the thread is actually about");
+        assertFalse(offered.contains("Lufthansa"),
+                "the thread neighbour is NOT — that channel was the theme-word trap");
     }
 
     @Test

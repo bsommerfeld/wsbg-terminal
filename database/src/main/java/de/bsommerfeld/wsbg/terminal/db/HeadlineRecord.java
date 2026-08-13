@@ -24,7 +24,12 @@ public record HeadlineRecord(
         HeadlineSentiment sentiment,
         MarketSnapshot snapshot,
         boolean newsEnriched,
-        List<HeadlineNewsRef> newsRefs) {
+        List<HeadlineNewsRef> newsRefs,
+        // The compose model's declared red trigger (HARD_CATALYST, RUNNER, …,
+        // NONE), archived so trigger kinds can be evaluated against realised
+        // moves after the fact. Additive on the JSONL archive: old lines
+        // deserialize with null (unknown, pre-field).
+        String trigger) {
 
     /**
      * Archive lines that predate {@code newsRefs} deserialize with a
@@ -33,6 +38,21 @@ public record HeadlineRecord(
      */
     public HeadlineRecord {
         newsRefs = newsRefs == null ? List.of() : newsRefs;
+    }
+
+    /**
+     * Pre-{@code trigger} constructor — existing positional call sites and
+     * records that predate the archived trigger (2026-08-13). Null = unknown.
+     */
+    public HeadlineRecord(String clusterId, String headline, String context,
+            long createdAt, List<String> sourceThreadIds, List<String> sourceCommentIds,
+            HeadlineHighlight highlight, String tickerSymbol, List<HeadlineSubject> subjects,
+            Double priceMovePercent, List<String> sectors, String assetClass,
+            HeadlineSentiment sentiment, MarketSnapshot snapshot, boolean newsEnriched,
+            List<HeadlineNewsRef> newsRefs) {
+        this(clusterId, headline, context, createdAt, sourceThreadIds, sourceCommentIds,
+                highlight, tickerSymbol, subjects, priceMovePercent, sectors, assetClass,
+                sentiment, snapshot, newsEnriched, newsRefs, null);
     }
 
     /**

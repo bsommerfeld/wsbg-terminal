@@ -232,6 +232,36 @@ public class EditorialAgent {
     }
 
     /**
+     * Installs the sense arbiter onto the article tagger — the model's ONE seat
+     * in the article→instrument judgment: a cached verdict per (instrument,
+     * usage cluster), through the same judge + gate machinery as every other
+     * discrete call. Optional Guice method-injection: absent in tests, where
+     * the tagger stays deterministic-only.
+     */
+    @com.google.inject.Inject(optional = true)
+    void setArticleTagger(de.bsommerfeld.wsbg.terminal.web.pool.ArticleTagger tagger) {
+        if (tagger instanceof de.bsommerfeld.wsbg.terminal.agent.tagging.LuceneArticleTagger lucene) {
+            lucene.setArbiter(gemma4Judge::senseAboutInstrument);
+            // The corpus veto's evidence seam: the desk asks the SAME in-RAM index
+            // "which basin documents name this subject" and strikes candidates the
+            // house's own coverage contradicts; the universe's entity-DF supplies
+            // the filler-vs-distinctive axis.
+            identityDesk.installEvidence(new IdentityDesk.SubjectEvidence() {
+                @Override
+                public java.util.List<java.util.Set<String>> docsNaming(String name) {
+                    return lucene.docsNaming(name);
+                }
+
+                @Override
+                public int entityDf(String token) {
+                    return lucene.nameTokenEntityDf(token);
+                }
+            });
+            LOG.info("[TAG] sense arbiter + desk evidence installed on the article tagger.");
+        }
+    }
+
+    /**
      * Installs the venue candidate search (L&amp;S) + the persistent verdict ledger
      * onto the identity desk. Optional Guice method-injection: present in production
      * (AppModule binds {@link de.bsommerfeld.wsbg.terminal.web.facts.InstrumentLookup}),
@@ -240,6 +270,9 @@ public class EditorialAgent {
     @com.google.inject.Inject(optional = true)
     void setInstrumentLookup(de.bsommerfeld.wsbg.terminal.web.facts.InstrumentLookup lookup) {
         identityDesk.installLookup(lookup);
+        // The alias-replay price veto reads the same seam: a remembered venue stamp
+        // is verified against the live venue price before it ships again.
+        tickerResolver.setInstrumentLookup(lookup);
         identityDesk.installLedger(new IdentityLedger(
                 de.bsommerfeld.wsbg.terminal.core.util.StorageUtils.getAppDataDir()
                         .resolve("identity-ledger.jsonl")));
@@ -353,9 +386,10 @@ public class EditorialAgent {
         }
         // Fully localized compose scaffold (German prompt + German room-slang + German brief
         // labels). This was held to English while the compose OUTPUT was a fat 9-field JSON —
-        // the German scaffold on top of that big task whitespace-looped the 4B model. Now that
-        // the output is slimmed to {headline, highlight, mode}, the model's job is tiny and it
-        // commits cleanly regardless of scaffold language (proven: 0 whiffs in run27).
+        // the German scaffold on top of that big task whitespace-looped the 4B model. The
+        // output is the six-field object {headline, trigger, highlight, sentiment,
+        // derivedFrom, newsUsed} and the model commits cleanly regardless of scaffold
+        // language (proven: 0 whiffs in run27).
         String lang = brain.getUserLanguage().code();
         String sys = PromptLoader.loadLocalized("headline-compose-unit", lang)
                 .replace("{{LANGUAGE}}", brain.getUserLanguage().displayName());
@@ -375,9 +409,36 @@ public class EditorialAgent {
         // redundant UPDATE against the unit's OWN priors. The 4B model sometimes lazily returns
         // empty on a thin/question thread even with no priors — retry (its seed varies) before
         // accepting an empty/garbage first compose.
+        boolean schemaRetried = false;
         for (int attempt = 0; ; attempt++) {
             text = chatGateway.chat(model, sys, user);
             ComposeReplyParser.ParsedCompose pc = ComposeReplyParser.parse(text, hasPriors);
+            // The compose schema is only enforced by the GGUF runner; on the MLX
+            // default path it is a prompt-side request. So the contract's real
+            // enforcement is here: when a usable line arrives with an out-of-
+            // vocabulary enum, hold the concrete deviation up to the model ONCE
+            // (same pattern as the name repair below). If the retry still
+            // deviates, the deterministic normalisation downstream absorbs it
+            // (HighlightReconciler demotes, HeadlineSentiment defaults).
+            if (pc.draft() != null && !pc.schemaViolations().isEmpty() && !schemaRetried) {
+                schemaRetried = true;
+                LOG.info("[COMPOSE] schema violation for {} ({}) — corrective retry: {}",
+                        unit.id, unit.canonicalName(), pc.schemaViolations());
+                String fixUser = user + "\n\n" + text + "\n\n"
+                        + PromptLoader.loadLocalized("compose-schema-repair", lang)
+                                .replace("{{VIOLATIONS}}", String.join("; ", pc.schemaViolations()));
+                String fixText = chatGateway.chat(model, sys, fixUser);
+                ComposeReplyParser.ParsedCompose fixed =
+                        ComposeReplyParser.parse(fixText, hasPriors);
+                if (fixed.draft() != null && fixed.schemaViolations().isEmpty()) {
+                    text = fixText;
+                    pc = fixed;
+                } else {
+                    LOG.info("[COMPOSE] corrective retry did not conform for {} ({}) — "
+                            + "keeping first reply, downstream normalisation applies",
+                            unit.id, unit.canonicalName());
+                }
+            }
             draft = pc.draft();
             salvaged = pc.salvaged();
             redundant = pc.redundant();
@@ -396,7 +457,17 @@ public class EditorialAgent {
         // alone. Restructuring the prompt raised the hit rate but cannot guarantee it —
         // instruction-following is a property of the model, so the guarantee has to sit
         // here: hold the concrete deviation up ONCE and let the model repair it.
-        if (draft != null && !namesTheSubject(draft.headline(), unit)) {
+        if (draft != null && !namesTheSubject(draft.headline(), unit)
+                && !speakableName(unit.canonicalName())) {
+            // The repair injects {{NAME}} as the sentence's grammatical subject. A name
+            // that is no speakable company name — a WKN, a venue symbol, a derivative
+            // product string ("WTI-QU.COM. DLA") — forces broken German out of the
+            // model (empty predicate, abandoned Rektion; 18% of e4b lines, 2026-08-13).
+            // Such a line ships as written; the real cure is upstream, where units
+            // with such names should no longer be born.
+            LOG.info("[COMPOSE] line for {} ({}) did not name the subject — repair skipped, "
+                    + "name is not a speakable subject", unit.id, unit.canonicalName());
+        } else if (draft != null && !namesTheSubject(draft.headline(), unit)) {
             String repairUser = user + "\n\n"
                     + PromptLoader.loadLocalized("headline-name-repair", lang)
                             .replace("{{NAME}}", unit.canonicalName());
@@ -447,6 +518,29 @@ public class EditorialAgent {
      * <p>A name whose words are all stop-words or too short leaves nothing to check -
      * then there is no deviation to hold up, and the line stands as written.
      */
+    /**
+     * Whether the name can serve as the grammatical SUBJECT of a German sentence —
+     * the precondition for the name-repair stage forcing it into the line. True when
+     * the name carries at least one plain letter word of ≥3 characters that is
+     * either normally cased ("Krispy", "hynix") or the name's ONLY token (acronym
+     * brands: "SAP", "BMW", "HSBC"). Ticker strings ("0O8X.IL", "WINTER-USD"),
+     * WKNs ("675054"), venue abbreviations ("WTI-QU.COM. DLA") and two-letter
+     * fragments ("BE") all fail. Deliberately strict: a skipped repair costs an
+     * unrepaired line (which ships as written anyway), a forced repair on a garbage
+     * name costs broken German.
+     */
+    static boolean speakableName(String name) {
+        if (name == null || name.isBlank()) return false;
+        String[] tokens = name.trim().split("\\s+");
+        for (String t : tokens) {
+            if (t.length() < 3) continue;
+            if (!t.chars().allMatch(Character::isLetter)) continue;
+            boolean allCaps = t.equals(t.toUpperCase(java.util.Locale.ROOT));
+            if (!allCaps || tokens.length == 1) return true;
+        }
+        return false;
+    }
+
     static boolean namesTheSubject(String headline, SubjectUnit unit) {
         if (headline == null || headline.isBlank()) return true;
         Set<String> nameWords = NameMatcher.significantWords(unit.canonicalName());

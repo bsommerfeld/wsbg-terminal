@@ -150,6 +150,17 @@ final class SubjectExtractor {
     private static final Pattern SPACED_TICKER =
             Pattern.compile("\\b([A-Z](?:\\s+[A-Z]){2,5})\\b");
 
+    /**
+     * Characters that never occur in a real subject name but do occur in OCR
+     * artefacts and markup fragments ({@code "Wealth Cash A} Brokerage"} — a broker
+     * screenshot read as a subject, 2026-08-13). A name carrying one is dropped,
+     * not cleaned: what remains after stripping brace salad is still no name.
+     */
+    private static final Pattern GARBAGE_CHARS = Pattern.compile("[{}\\[\\]<>|\\\\`~^=_@#*\"„“”]");
+
+    /** Longer than any real instrument/theme name — a transcribed sentence, not a subject. */
+    private static final int MAX_NAME_LENGTH = 80;
+
     static String cleanSubjectName(String name) {
         if (name == null) return "";
         String cut = PRICE_TAIL.matcher(name.strip()).replaceFirst("").strip();
@@ -158,6 +169,14 @@ final class SubjectExtractor {
         if (m.find()) {
             cut = m.replaceAll(mr -> mr.group(1).replaceAll("\\s+", ""));
         }
+        cut = cut.replaceAll("\\s+", " ").strip();
+        // The validity gate the whole path was missing (2026-08-13): no character
+        // class, no length bound anywhere between extraction and unit creation let
+        // OCR salad and transcribed sentences become subjects. A name that fails
+        // here yields "" and is dropped by every caller.
+        if (cut.length() < 2 || cut.length() > MAX_NAME_LENGTH) return "";
+        if (GARBAGE_CHARS.matcher(cut).find()) return "";
+        if (!cut.chars().anyMatch(Character::isLetter)) return ""; // pure digits/symbols
         return cut;
     }
 

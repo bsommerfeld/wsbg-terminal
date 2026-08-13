@@ -48,12 +48,24 @@ final class JsonReplies {
         return m.find() ? m.group(1).replace("\\\"", "\"").trim() : null;
     }
 
-    /** Integers out of a JSON array node; non-numbers and anything else → skipped. */
+    private static final Pattern EMBEDDED_INT = Pattern.compile("\\d+");
+
+    /**
+     * Integers out of a JSON array node. Textual elements carrying a number are
+     * read too ({@code "N2"}, {@code "[N2]"} — the shapes the runners that do NOT
+     * enforce the schema actually emit; verified live against gemma4:e4b-mlx,
+     * 2026-08-13); anything without a digit is skipped.
+     */
     static List<Integer> readInts(JsonNode node) {
         List<Integer> out = new ArrayList<>();
         if (node != null && node.isArray()) {
             for (JsonNode el : node) {
-                if (el.canConvertToInt()) out.add(el.asInt());
+                if (el.canConvertToInt()) {
+                    out.add(el.asInt());
+                } else if (el.isTextual()) {
+                    Matcher m = EMBEDDED_INT.matcher(el.asText());
+                    if (m.find()) out.add(Integer.parseInt(m.group()));
+                }
             }
         }
         return out;

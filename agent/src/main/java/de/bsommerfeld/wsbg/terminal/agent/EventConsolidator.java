@@ -66,9 +66,20 @@ final class EventConsolidator {
         // unit accumulates its evidence feed-wide; the primary always composes.
         // A co-subject composes TOO only when it is its own story (own-pick rule
         // below) — otherwise it is context of the primary's event and stays silent.
-        Candidate primary = pickModelPrimary(candidates, modelPrimary);
+        //
+        // Desk veto respected (2026-08-13): a subject the identity desk JUDGED to be
+        // no instrument (news-only/person/theme) may not out-rank an unjudged or
+        // instrument candidate as the event's primary — the model's own primary pick
+        // included (live: an OCR artefact and a CFD product name, both judged
+        // news-only, published as primaries anyway). Only when EVERY candidate is
+        // desk-vetoed does the full set stay eligible: a pure person/theme thread
+        // keeps its theme line.
+        List<Candidate> eligible = candidates.stream()
+                .filter(c -> !c.rs().newsOnly()).toList();
+        if (eligible.isEmpty()) eligible = candidates;
+        Candidate primary = pickModelPrimary(eligible, modelPrimary);
         boolean modelPicked = primary != null;
-        if (primary == null) primary = pickPrimary(cluster, candidates, ambiguous);
+        if (primary == null) primary = pickPrimary(cluster, eligible, ambiguous);
         Set<String> primaryKeys = new HashSet<>();
         for (EvidenceRef ref : primary.found()) primaryKeys.add(ref.key());
 

@@ -1,0 +1,308 @@
+{"symbol":"NVDA","name":"NVIDIA CORP","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"AAPL","name":"Apple Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"GOOGL","name":"Alphabet Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"MSFT","name":"MICROSOFT CORP","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"AMZN","name":"AMAZON COM INC","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"AVGO","name":"Broadcom Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"META","name":"Meta Platforms, Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"TSLA","name":"Tesla, Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"BRK-B","name":"BERKSHIRE HATHAWAY INC","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"WMT","name":"Walmart Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"V","name":"VISA INC.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"INTC","name":"INTEL CORP","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"MA","name":"Mastercard Inc","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"CSCO","name":"CISCO SYSTEMS, INC.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"BAC","name":"BANK OF AMERICA CORP /DE/","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"ABBV","name":"AbbVie Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"AMAT","name":"APPLIED MATERIALS INC /DE","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"COST","name":"COSTCO WHOLESALE CORP /NEW","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"ORCL","name":"ORACLE CORP","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"LRCX","name":"LAM RESEARCH CORP","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"CYATY","name":"Contemporary Amperex Technology Co., Limited/ADR","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"PLTR","name":"Palantir Technologies Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"UNH","name":"UNITEDHEALTH GROUP INC","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"CVX","name":"CHEVRON CORP","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"GS","name":"GOLDMAN SACHS GROUP INC","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"DELL","name":"Dell Technologies Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"RTX","name":"RTX Corp","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"RY","name":"ROYAL BANK OF CANADA","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"NVS","name":"NOVARTIS AG","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"KLAC","name":"KLA CORP","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"IBM","name":"INTERNATIONAL BUSINESS MACHINES CORP","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"TM","name":"TOYOTA MOTOR CORP/","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"APH","name":"AMPHENOL CORP /DE/","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"SNDK","name":"Sandisk Corp","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"TD","name":"TORONTO DOMINION BANK","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"STX","name":"Seagate Technology Holdings plc","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"MRVL","name":"Marvell Technology, Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"SCHW","name":"SCHWAB CHARLES CORP","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"UBS","name":"UBS Group AG","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"UNP","name":"UNION PACIFIC CORP","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"DTEGY","name":"DEUTSCHE TELEKOM AG","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"SMERY","name":"Siemens Energy AG/ADR","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"UBER","name":"Uber Technologies, Inc","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"BMO","name":"BANK OF MONTREAL /CAN/","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"HDB","name":"HDFC BANK LTD","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"CM","name":"CANADIAN IMPERIAL BANK OF COMMERCE /CAN/","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"BNY","name":"Bank of New York Mellon Corp","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"BNS","name":"BANK OF NOVA SCOTIA","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"TT","name":"Trane Technologies plc","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"SPOT","name":"Spotify Technology S.A.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"IFNNY","name":"INFINEON TECHNOLOGIES AG","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"HOOD","name":"Robinhood Markets, Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"ASX","name":"ASE Technology Holding Co., Ltd.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"DB","name":"DEUTSCHE BANK AKTIENGESELLSCHAFT","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"KEYS","name":"Keysight Technologies, Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"LHX","name":"L3HARRIS TECHNOLOGIES, INC. /DE/","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"GALDY","name":"Galderma Group AG/ADR","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"WAB","name":"WESTINGHOUSE AIR BRAKE TECHNOLOGIES CORP","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"MCHP","name":"MICROCHIP TECHNOLOGY INC","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"CRDO","name":"Credo Technology Group Holding Ltd","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"BMWKY","name":"Bayerische Motoren Werke AG/ADR","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"A","name":"AGILENT TECHNOLOGIES, INC.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"SCMWY","name":"SWISSCOM AG","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"ROP","name":"ROPER TECHNOLOGIES INC","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"BBD","name":"BANK BRADESCO","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"MTB","name":"M&T BANK CORP","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"GEHC","name":"GE HealthCare Technologies Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"CBOE","name":"Cboe Global Markets, Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"CHLSY","name":"Chocoladefabriken Lindt & Spruengli AG/ADR","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"CTSH","name":"COGNIZANT TECHNOLOGY SOLUTIONS CORP","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"SOFI","name":"SoFi Technologies, Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"BCH","name":"BANK OF CHILE","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"MTSI","name":"MACOM Technology Solutions Holdings, Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"SMCI","name":"Super Micro Computer, Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"SSNC","name":"SS&C Technologies Holdings Inc","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"SOAGY","name":"Sartorius AG/ADR","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"AKAM","name":"AKAMAI TECHNOLOGIES INC","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"ZBRA","name":"ZEBRA TECHNOLOGIES CORP","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"BAWAY","name":"BAWAG Group AG/ADR","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"BWXT","name":"BWX Technologies, Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"LNTCY","name":"Lens Technology Co., Ltd./ADR","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"AMKR","name":"AMKOR TECHNOLOGY, INC.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"FMS","name":"Fresenius Medical Care AG","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"ONON","name":"On Holding AG","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"ALGN","name":"ALIGN TECHNOLOGY INC","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"BLMOY","name":"BELIMO Holding AG/ADR","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"DLAKY","name":"DEUTSCHE LUFTHANSA A G /FI","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"SSB","name":"SouthState Bank Corp","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"TTD","name":"Trade Desk, Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"SIMO","name":"Silicon Motion Technology CORP","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"BJGPY","name":"Beijing Geekplus Technology Co., Ltd./ADR","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"BCHMY","name":"Bachem Holding AG/ADR","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"INGM","name":"Ingram Micro Holding Corp","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"SGHC","name":"Super Group (SGHC) Ltd","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"FIGR","name":"Figure Technology Solutions, Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"FLG","name":"FLAGSTAR BANK, NATIONAL ASSOCIATION","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"BMA","name":"Macro Bank Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"OZK","name":"Bank OZK","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"RKGRY","name":"RENK Group AG/ADR","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"OTF","name":"Blue Owl Technology Finance Corp.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"APLE","name":"Apple Hospitality REIT, Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"IMKTA","name":"INGLES MARKETS INC","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"AMBQ","name":"Ambiq Micro, Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"CTO","name":"CTO Realty Growth, Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"HDL","name":"SUPER HI INTERNATIONAL HOLDING LTD.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"RMT","name":"ROYCE MICRO-CAP TRUST, INC.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"RVI","name":"Robinhood Ventures Fund I","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"VLGEA","name":"VILLAGE SUPER MARKET INC","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"VREOF","name":"Vireo Growth Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"KFII","name":"K&F GROWTH ACQUISITION CORP. II","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"CGC","name":"Canopy Growth Corp","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"AEF","name":"abrdn Emerging Markets ex-China Fund, Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"JRI","name":"Nuveen Real Asset Income & Growth Fund","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"ASG","name":"LIBERTY ALL STAR GROWTH FUND INC.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"EMF","name":"TEMPLETON EMERGING MARKETS FUND","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"TEI","name":"TEMPLETON EMERGING MARKETS INCOME FUND","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"RWAY","name":"Runway Growth Finance Corp.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"LTGR","name":"Long Table Growth Corp.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"TPVG","name":"TriplePoint Venture Growth BDC Corp.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"ECF","name":"ELLSWORTH GROWTH & INCOME FUND LTD","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"RENEF","name":"Cartesian Growth Corp II","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"MSD","name":"MORGAN STANLEY EMERGING MARKETS DEBT FUND INC","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"SRG","name":"Seritage Growth Properties","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"RPID","name":"RAPID MICRO BIOSYSTEMS, INC.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"FRMM","name":"FORUM MARKETS Inc","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"GRF","name":"EAGLE CAPITAL GROWTH FUND, INC.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"SMSI","name":"SMITH MICRO SOFTWARE, INC.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"AAPI","name":"Apple iSports Group, Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"SLE","name":"Super League Enterprise, Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"CUPPF","name":"Super Copper Corp.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"TW","name":"Tradeweb Markets Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"IAUM","name":"iShares Gold Trust Micro","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"EDF","name":"Virtus Stone Harbor Emerging Markets Income Fund","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"IHD","name":"Voya Emerging Markets High Dividend Equity Fund","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"DGAC","name":"DISCIPLINED GROWTH ACQUISITION Corp","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"CGCF","name":"Cartesian Growth Corp IV","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"RVII","name":"Robinhood Ventures Fund II","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"EDD","name":"Morgan Stanley Emerging Markets Domestic Debt Fund, Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"STK","name":"Columbia Seligman Premium Technology Growth Fund, Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"AMD","name":"ADVANCED MICRO DEVICES INC","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"MGF","name":"ABERDEEN GOVERNMENT MARKETS INCOME FUND","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"EMD","name":"WESTERN ASSET EMERGING MARKETS DEBT FUND INC.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"MU","name":"MICRON TECHNOLOGY INC","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"WMK","name":"WEIS MARKETS INC","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"DTEGF","name":"DEUTSCHE TELEKOM AG","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"DLAKF","name":"DEUTSCHE LUFTHANSA A G /FI","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"SMCIP","name":"Super Micro Computer, Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"TXEMF","name":"TEMPLETON EMERGING MARKETS INCOME FUND","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"DGP","name":"DEUTSCHE BANK AKTIENGESELLSCHAFT","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"DGZ","name":"DEUTSCHE BANK AKTIENGESELLSCHAFT","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"ADZCF","name":"DEUTSCHE BANK AKTIENGESELLSCHAFT","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"DEENF","name":"DEUTSCHE BANK AKTIENGESELLSCHAFT","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"DZZ","name":"DEUTSCHE BANK AKTIENGESELLSCHAFT","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"OLOXF","name":"DEUTSCHE BANK AKTIENGESELLSCHAFT","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"SPHIF","name":"SUPER HI INTERNATIONAL HOLDING LTD.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"DBK.DE","name":"DEUTSCHE BANK AG NA O.N.","isin":"DE0005140008","exchange":"XETRA","type":"EQUITY","source":"xetra"}
+{"symbol":"DHL.DE","name":"DEUTSCHE POST AG NA O.N.","isin":"DE0005552004","exchange":"XETRA","type":"EQUITY","source":"xetra"}
+{"symbol":"DTE.DE","name":"DT.TELEKOM AG NA","isin":"DE0005557508","exchange":"XETRA","type":"EQUITY","source":"xetra"}
+{"symbol":"DB1.DE","name":"DEUTSCHE BOERSE NA O.N.","isin":"DE0005810055","exchange":"XETRA","type":"EQUITY","source":"xetra"}
+{"symbol":"RHM.DE","name":"RHEINMETALL AG","isin":"DE0007030009","exchange":"XETRA","type":"EQUITY","source":"xetra"}
+{"symbol":"DEQ.DE","name":"DEUTSCHE EUROSHOP NA O.N.","isin":"DE0007480204","exchange":"XETRA","type":"EQUITY","source":"xetra"}
+{"symbol":"DWNI.DE","name":"DEUTSCHE WOHNEN SE INH","isin":"DE000A0HN5C6","exchange":"XETRA","type":"EQUITY","source":"xetra"}
+{"symbol":"BAYN.DE","name":"BAYER AG NA O.N.","isin":"DE000BAY0017","exchange":"XETRA","type":"EQUITY","source":"xetra"}
+{"symbol":"TUI1.DE","name":"TUI AG NA O.N.","isin":"DE000TUAG505","exchange":"XETRA","type":"EQUITY","source":"xetra"}
+{"symbol":"APC.DE","name":"APPLE INC.","isin":"US0378331005","exchange":"XETRA","type":"EQUITY","source":"xetra"}
+{"symbol":"9MW.DE","name":"MARVELL TECH. GRP DL-,002","isin":"US5738741041","exchange":"XETRA","type":"EQUITY","source":"xetra"}
+{"symbol":"MTE.DE","name":"MICRON TECHN. INC. DL-,10","isin":"US5951121038","exchange":"XETRA","type":"EQUITY","source":"xetra"}
+{"symbol":"NVD.DE","name":"NVIDIA CORP.      DL-,001","isin":"US67066G1040","exchange":"XETRA","type":"EQUITY","source":"xetra"}
+{"symbol":"6B0.DE","name":"SOFI TECHNOLOGIES","isin":"US83406F1021","exchange":"XETRA","type":"EQUITY","source":"xetra"}
+{"symbol":"MS51.DE","name":"SUPER MICRO O.N.","isin":"US86800U3023","exchange":"XETRA","type":"EQUITY","source":"xetra"}
+{"symbol":"TL0.DE","name":"TESLA INC. DL -,001","isin":"US88160R1014","exchange":"XETRA","type":"EQUITY","source":"xetra"}
+{"symbol":"TT8.DE","name":"THE TRA.DESK A DL-,000001","isin":"US88339J1051","exchange":"XETRA","type":"EQUITY","source":"xetra"}
+{"symbol":"JL","name":"J-Long Group Ltd","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"BFST","name":"Business First Bancshares, Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"TIRXF","name":"TIAN RUIXIANG HOLDINGS LTD","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"STO3.DE","name":"STO SE+CO.KGAA VZO O.N.","isin":"DE0007274136","exchange":"XETRA","type":"EQUITY","source":"xetra"}
+{"symbol":"COKE","name":"Coca-Cola Consolidated, Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"LGND","name":"LIGAND PHARMACEUTICALS INC","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"JBEM.DE","name":"BNPPE-JPM TEMUGOVBDIG UEC","isin":"LU1481202692","exchange":"XETRA","type":"ETF","source":"xetra"}
+{"symbol":"BCENF","name":"BCE INC","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"STNG","name":"Scorpio Tankers Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"DRMA","name":"Dermata Therapeutics, Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"ZSINF","name":"Zhejiang Sanhua Intelligent Controls Co., Ltd./ADR","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"HLI","name":"HOULIHAN LOKEY, INC.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"OZKAP","name":"Bank OZK","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"SAR","name":"SARATOGA INVESTMENT CORP.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"PFGC","name":"Performance Food Group Co","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"BFH","name":"BREAD FINANCIAL HOLDINGS, INC.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"JBK","name":"LEHMAN ABS CORP GOLDMAN SACHS CAP 1 SEC BACKED SER 2004-6","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"VPV","name":"Invesco Pennsylvania Value Municipal Income Trust","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"RUSHA","name":"RUSH ENTERPRISES INC \\TX\\","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"CBFV","name":"CB Financial Services, Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"TAC","name":"TRANSALTA CORP","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"APOS","name":"Apollo Global Management, Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"GSL","name":"Global Ship Lease, Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"ATR","name":"APTARGROUP, INC.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"UEFE.DE","name":"UBSJPMEMMFEHLCBD ADDL","isin":"LU1720938841","exchange":"XETRA","type":"ETF","source":"xetra"}
+{"symbol":"RNKGF","name":"RENK Group AG/ADR","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"BVC","name":"BitVentures Ltd","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"CNDT","name":"CONDUENT Inc","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"PMTRW","name":"Perimeter Acquisition Corp. I","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"CSTUF","name":"Constellation Acquisition Corp I","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"MMTXW","name":"Miluna Acquisition Corp","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"EQX","name":"Equinox Gold Corp.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"IGACR","name":"Invest Green Acquisition Corp","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"BIXIW","name":"Bitcoin Infrastructure Acquisition Corp Ltd","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"MWG","name":"Multi Ways Holdings Ltd","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"TFII","name":"TFI International Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"CDPMF","name":"Cerro de Pasco Resources Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"WBS","name":"WEBSTER FINANCIAL CORP","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"NOEMU","name":"CO2 Energy Transition Corp.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"DXSP.DE","name":"XTR.EU.ST.50 SH.DA.SW. 1C","isin":"LU0292106753","exchange":"XETRA","type":"ETF","source":"xetra"}
+{"symbol":"FLO","name":"FLOWERS FOODS INC","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"BDCO","name":"BLUE DOLPHIN ENERGY CO","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"DAN","name":"DANA Inc","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"CNL","name":"Collective Mining Ltd.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"BACRP","name":"BANK OF AMERICA CORP /DE/","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"ATEN","name":"A10 Networks, Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"VNO-PN","name":"VORNADO REALTY TRUST","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"DYAI","name":"DYADIC INTERNATIONAL INC","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"SSACU","name":"SPACSphere Acquisition Corp.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"SEAC.DE","name":"UBSMSCIWLDSOCRES AADL","isin":"LU0950674332","exchange":"XETRA","type":"ETF","source":"xetra"}
+{"symbol":"BCY.DE","name":"BARCLAYS PLC      LS 0,25","isin":"GB0031348658","exchange":"XETRA","type":"EQUITY","source":"xetra"}
+{"symbol":"VGM","name":"Invesco Trust for Investment Grade Municipals","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"AD","name":"ARRAY DIGITAL INFRASTRUCTURE, INC.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"DAAQW","name":"Digital Asset Acquisition Corp.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"TMTSW","name":"Spartacus Acquisition Corp. II","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"VXT.DE","name":"VIDINEXT AG      N.EO-,20","isin":"CH0557519201","exchange":"XETRA","type":"EQUITY","source":"xetra"}
+{"symbol":"KRSP","name":"Rice Acquisition Corp 3","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"PLTYF","name":"Plastec Technologies, Ltd.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"BKU","name":"BankUnited, Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"NE-WT","name":"Noble Corp plc","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"IE1A.DE","name":"ISHS COR B EOA","isin":"IE000F6G1DE0","exchange":"XETRA","type":"ETF","source":"xetra"}
+{"symbol":"AAON","name":"AAON, INC.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"TMTNF","name":"Toromont Industries Ltd./ADR","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"KYMR","name":"Kymera Therapeutics, Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"GEGGL","name":"Great Elm Group, Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"ZIP","name":"ZIPRECRUITER, INC.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"APSI","name":"AQUA POWER SYSTEMS INC.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"6IV.DE","name":"INVENTIVA S.A.(PROM.)-,01","isin":"FR0013233012","exchange":"XETRA","type":"EQUITY","source":"xetra"}
+{"symbol":"CFG-PI","name":"CITIZENS FINANCIAL GROUP INC/RI","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"GJO","name":"STRATS SM TRUST FOR WAL-MART STORES, INC. SECURITIES, SERIES 2005-4","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"VAGY.DE","name":"VANGUARD USD CO DL ACC","isin":"IE00BGYWSV06","exchange":"XETRA","type":"ETF","source":"xetra"}
+{"symbol":"RAPH","name":"Raphael Pharmaceutical Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"STT-PG","name":"STATE STREET CORP","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"THM","name":"INTERNATIONAL TOWER HILL MINES LTD","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"SRRE","name":"SUNRISE REAL ESTATE GROUP INC","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"GMHS","name":"Gamehaus Holdings Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"SMJF","name":"SMJ International Holdings Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"AW13.DE","name":"UIE-EUR.C.P.A. AEOA","isin":"IE00BN4Q0933","exchange":"XETRA","type":"ETF","source":"xetra"}
+{"symbol":"NML","name":"Neuberger Energy Infrastructure & Income Fund Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"EUN1.DE","name":"ISHS II-STXX EUR.50 EODIS","isin":"IE0008470928","exchange":"XETRA","type":"ETF","source":"xetra"}
+{"symbol":"3SUD.DE","name":"ISHSII-JPM DL EM BD EOHA","isin":"IE00BJ5JPH63","exchange":"XETRA","type":"ETF","source":"xetra"}
+{"symbol":"ORMP","name":"ORAMED PHARMACEUTICALS INC.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"CUZ","name":"COUSINS PROPERTIES INC","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"UAC-UN","name":"United Acquisition Corp. I","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"MAMO","name":"Massimo Group","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"EQH-PC","name":"Equitable Holdings, Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"CPWR","name":"Ocean Thermal Energy Corp","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"FIV.DE","name":"FISERV INC.        DL-,01","isin":"US3377381088","exchange":"XETRA","type":"EQUITY","source":"xetra"}
+{"symbol":"CYDX","name":"CYduct Diagnostics, Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"NTSZ.DE","name":"WTI-EO EF.C EOA","isin":"IE000OV4XWA3","exchange":"XETRA","type":"ETF","source":"xetra"}
+{"symbol":"ESP","name":"ESPEY MFG & ELECTRONICS CORP","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"GNTA","name":"Genenta Science S.p.A.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"TCMEF","name":"Tencent Music Entertainment Group","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"AROC","name":"Archrock, Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"MLCO","name":"Melco Resorts & Entertainment LTD","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"PCG-PA","name":"PG&E Corp","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"CITR","name":"CitroTech Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"JBI","name":"Janus International Group, Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"J7Z.DE","name":"JAZZ PHARMACEUT. DL-,0001","isin":"IE00B4Q5ZN47","exchange":"XETRA","type":"EQUITY","source":"xetra"}
+{"symbol":"ARTW","name":"ARTS WAY MANUFACTURING CO INC","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"BLMN","name":"Bloomin' Brands, Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"BRCNF","name":"Burcon NutraScience Corp","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"ELFTY","name":"Element Fleet Management Corp./ADR","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"WPC","name":"W. P. Carey Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"EL4L.DE","name":"DK IB EO LIQ.SOV.DIV.1-3","isin":"DE000ETFL128","exchange":"XETRA","type":"ETF","source":"xetra"}
+{"symbol":"JMKE","name":"Jersey Mike's Subs Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"XUEN.DE","name":"X(IE)-MSCI USA ENERGY 1D","isin":"IE00BCHWNS19","exchange":"XETRA","type":"ETF","source":"xetra"}
+{"symbol":"XRPNU","name":"Armada Acquisition Corp. II","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"TRGSU","name":"TRG Latin America Acquisitions Corp.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"XDEX.DE","name":"XTIE-MSCIEMEXCH 1CLSA","isin":"IE00BM67HJ62","exchange":"XETRA","type":"ETF","source":"xetra"}
+{"symbol":"98W.DE","name":"FLUENCE ENER. CL.A-,00001","isin":"US34379V1035","exchange":"XETRA","type":"EQUITY","source":"xetra"}
+{"symbol":"B8TC.DE","name":"MUL-AM.DL FED F.RATE UE A","isin":"LU1233598447","exchange":"XETRA","type":"ETF","source":"xetra"}
+{"symbol":"QNCX","name":"Quince Therapeutics, Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"NEWH","name":"NewHydrogen, Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"JEQE.DE","name":"JPM-NASDAQ EPI UE EOHD","isin":"IE0006FIW9Z0","exchange":"XETRA","type":"ETF","source":"xetra"}
+{"symbol":"DTSS","name":"Datasea Intelligent Technology Ltd.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"HQWWW","name":"Horizon Quantum Holdings Ltd.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"SHMP","name":"NaturalShrimp Inc","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"TVACU","name":"Texas Ventures Acquisition III Corp","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"CEMR.DE","name":"ISHSIV-E.MSCI EO M.F.EO A","isin":"IE00BQN1K786","exchange":"XETRA","type":"ETF","source":"xetra"}
+{"symbol":"KGC","name":"KINROSS GOLD CORP","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"RGLD","name":"ROYAL GOLD INC","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"PHYS","name":"Sprott Physical Gold Trust","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"AGI","name":"ALAMOS GOLD INC","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"EGO","name":"ELDORADO GOLD CORP /FI","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"LPGCY","name":"Laopu Gold Co. Ltd./ADR","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"MAUTF","name":"Montage Gold Corp.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"CGAU","name":"Centerra Gold Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"AYA","name":"Aya Gold & Silver Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"SA","name":"SEABRIDGE GOLD INC","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"AAUC","name":"Allied Gold Corp","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"SXGCF","name":"Southern Cross Gold Consolidated Ltd.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"USAS","name":"Americas Gold & Silver Corp","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"IAUX","name":"i-80 Gold Corp.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"GOLD","name":"Gold.com, Inc.","exchange":"US","type":"EQUITY","source":"sec"}
+{"symbol":"OGG","name":"Osisko Gold Group Inc.","exchange":"US","type":"EQUITY","source":"sec"}

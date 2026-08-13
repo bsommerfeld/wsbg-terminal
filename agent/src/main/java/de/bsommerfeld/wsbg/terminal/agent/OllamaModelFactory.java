@@ -20,11 +20,12 @@ import java.util.regex.Pattern;
 
 /**
  * Builds the Ollama {@link ChatModel} instances the {@link AgentBrain} runs on
- * (extracted from {@code AgentBrain.initialize}). All of them are the same resident
+ * (extracted from {@code AgentBrain.initialize}). Both are the same resident
  * gemma4 (same model name + num_ctx, so ONE loaded runner): the agent model
- * (subject extraction + judge calls), the schema-constrained compose model, and the
- * free-form deliberate/verdict judge variants. Also resolves the model name against
- * the live Ollama tag list, falling back to any installed model of the same family.
+ * (subject extraction + judge calls) and the compose model (schema attached —
+ * see the honesty note at the compose builder for what that does and does not
+ * guarantee). Also resolves the model name against the live Ollama tag list,
+ * falling back to any installed model of the same family.
  */
 final class OllamaModelFactory {
 
@@ -41,15 +42,22 @@ final class OllamaModelFactory {
     }
 
     /** The built models plus the resolved model names (for the init log line). */
-    record Models(ChatModel agentModel, ChatModel composeModel, ChatModel deliberateModel,
-            ChatModel verdictModel, String activeAgentModel) {
+    record Models(ChatModel agentModel, ChatModel composeModel, String activeAgentModel) {
     }
 
     /**
-     * The fixed seed of the verdict lane. Any constant does the job - what
-     * matters is that it never changes between two runs of the same sheet.
+     * The closed compose vocabulary — single source for the schema sent as
+     * {@code format} AND for {@link ComposeReplyParser}'s validation. The two must
+     * never drift: the schema is only enforced by the GGUF runner, so the parser's
+     * check against these same lists is what actually holds on the MLX default path.
      */
-    static final int VERDICT_SEED = 20260804;
+    static final java.util.List<String> TRIGGER_VALUES = java.util.List.of(
+            "NONE", "RUNNER", "SQUEEZE", "BREAKOUT",
+            "HARD_CATALYST", "POOLED_CALL", "EXTREME_DIRECTION");
+    static final java.util.List<String> HIGHLIGHT_VALUES = java.util.List.of("NORMAL", "IMPORTANT");
+    static final java.util.List<String> SENTIMENT_VALUES = java.util.List.of(
+            "BULLISH", "BEARISH", "MIXED", "FOMO", "CAPITULATION",
+            "SQUEEZE", "REVERSAL", "BREAKOUT", "NEUTRAL");
 
     /**
      * The ONE output ceiling for every lane. It used to be six hand-tuned
@@ -137,9 +145,13 @@ final class OllamaModelFactory {
         final boolean think = false;
 
         // Editorial agent — every call in the deterministic pipeline expects a
-        // JSON reply, so Ollama's JSON mode (constrained decoding) is on. Plain JSON
-        // (no schema) because this one model instance serves TWO output shapes
-        // (extraction + judge). Low temperature + tightened nucleus keep the
+        // JSON reply, so Ollama's JSON mode is requested. Honesty (verified live
+        // 2026-08-13): only the GGUF runner enforces it via constrained decoding;
+        // the MLX runner — the Apple-Silicon DEFAULT — ignores `format` entirely
+        // (no grammar in x/mlxrunner/sample, Ollama issue #16563), so there the
+        // JSON shape rests on the prompt and on JsonReplies' lenient parsing.
+        // Plain JSON (no schema) because this one model instance serves TWO output
+        // shapes (extraction + judge). Low temperature + tightened nucleus keep the
         // headlines faithful (no creative drift away from the cluster evidence).
         ChatModel agentModel = OllamaChatModel.builder()
                 .baseUrl(baseUrl).modelName(agentName)
@@ -152,14 +164,16 @@ final class OllamaModelFactory {
                 .timeout(timeout)
                 .build();
 
-        // Compose model — the SAME gemma4 (no extra load), with the compose output
-        // SCHEMA-constrained (not just JSON mode): the grammar forces exactly the
-        // {headline, trigger, highlight, sentiment, derivedFrom, newsUsed} shape with
-        // the enums closed, so a malformed or truncated compose object is mechanically
-        // impossible. trigger is the IMPORTANT anchor: the model must NAME the concrete
-        // red trigger BEFORE it sets highlight (property order matters — the grammar
-        // emits trigger first), and HeadlineWriter.reconcileHighlight demotes an
-        // IMPORTANT whose trigger doesn't hold up.
+        // Compose model — the SAME gemma4 (no extra load), with the compose SCHEMA
+        // attached as `format`: {headline, trigger, highlight, sentiment, derivedFrom,
+        // newsUsed} with closed enums. Honesty about what that buys (verified live
+        // 2026-08-13): on the GGUF runner the grammar enforces the shape; on the MLX
+        // runner — the Apple-Silicon DEFAULT — `format` is ignored, the schema is a
+        // prompt-side request and nothing more. The actual guarantee therefore lives
+        // in ComposeReplyParser (validate → one corrective retry → salvage), which
+        // holds on every runner. trigger is the IMPORTANT anchor: red must name its
+        // concrete trigger, and HighlightReconciler demotes an IMPORTANT whose
+        // trigger doesn't hold up — deterministically, after the model.
         ChatModel composeModel = OllamaChatModel.builder()
                 .baseUrl(baseUrl).modelName(agentName)
                 .temperature(agentModelEnum.getTemperature()).topP(0.9).topK(40)
@@ -169,53 +183,24 @@ final class OllamaModelFactory {
                 .timeout(timeout)
                 .build();
 
-        // Deliberate model — the SAME gemma4 (same name + num_ctx, still ONE
-        // runner), FREE-FORM: no responseFormat at all. The judge seam for
-        // free-running replies that a JSON envelope would only wrap in
-        // escaping risk.
-        //
-        // Thinking is STRUCK from the fleet (user decree 2026-08-05): it only
-        // ever existed for the tool-call era, and on the judge tables it was
-        // measured spiralling to the num_predict ceiling with the visible
-        // verdict truncated to NOTHING (14/14 truncated calls, every
-        // conference abstaining). The "deliberate" seam stays as a name so
-        // the judge lanes remain separately routable, but it is a sober,
-        // sampled lane.
-        ChatModel deliberateModel = OllamaChatModel.builder()
-                .baseUrl(baseUrl).modelName(agentName)
-                .temperature(agentModelEnum.getTemperature()).topP(0.9).topK(40)
-                .numCtx(ctxTokens).numPredict(NUM_PREDICT)
-                .think(think)
-                .timeout(timeout)
-                .build();
-
-        // Verdict model - the SAME gemma4 (same name + num_ctx, still ONE
-        // runner: temperature, top-k/p and seed are PER-REQUEST parameters and
-        // do not fork a second weight copy), but decoded DETERMINISTICALLY.
-        // The closing assessment's whole construction rests on "same fact base
-        // -> same number"; the house owns the arithmetic, and the one thing the
-        // model still decides - which anchor to follow, downgrade or reject -
-        // must not come out differently on a second run of the same sheet.
-        // temperature 0 + topK 1 makes the decode greedy, topP 1 keeps the
-        // nucleus from re-introducing a cut, and the fixed seed pins whatever
-        // tie-breaking is left. Free-form output: the reply is closed move
-        // lines, which a JSON envelope would only wrap in escaping risk.
-        ChatModel verdictModel = OllamaChatModel.builder()
-                .baseUrl(baseUrl).modelName(agentName)
-                .temperature(0.0).topP(1.0).topK(1)
-                .seed(VERDICT_SEED)
-                .numCtx(ctxTokens).numPredict(NUM_PREDICT)
-                .think(think)
-                .timeout(timeout)
-                .build();
-
-        return new Models(agentModel, composeModel, deliberateModel, verdictModel, agentName);
+        // The former deliberate + verdict lanes (free-form judge / greedy seeded
+        // "same sheet -> same number" decode) were REMOVED 2026-08-13: their only
+        // caller, the closing assessment, left with the KI-DD, so both were dead
+        // handles — and the verdict lane's determinism promise was measured broken
+        // on the MLX runner anyway (a warm long-lived runner returned 3 different
+        // answers for an identical prompt at T=0, topK=1, fixed seed; Ollama issue
+        // #16860). If a reproducible-verdict lane ever returns, it must NOT be
+        // built as "seed + T=0 on the resident MLX runner": either pin it to the
+        // GGUF tag (second runner) or unload the runner before each verdict call.
+        return new Models(agentModel, composeModel, agentName);
     }
 
     /**
-     * The schema-constrained compose response format: exactly
+     * The compose response format sent as {@code format}: exactly
      * {@code {headline, trigger, highlight, sentiment, derivedFrom, newsUsed}} with
-     * the enums closed and the provenance ordinal arrays.
+     * the enums closed and the provenance ordinal arrays. Enforced as a grammar by
+     * the GGUF runner only; the MLX runner ignores it (see the compose builder),
+     * so the shape's real enforcement is {@link ComposeReplyParser}.
      */
     private static ResponseFormat buildComposeSchema() {
         return ResponseFormat.builder()
@@ -224,13 +209,9 @@ final class OllamaModelFactory {
                         .name("headline")
                         .rootElement(JsonObjectSchema.builder()
                                 .addStringProperty("headline")
-                                .addEnumProperty("trigger", java.util.List.of(
-                                        "NONE", "RUNNER", "SQUEEZE", "BREAKOUT",
-                                        "HARD_CATALYST", "POOLED_CALL", "EXTREME_DIRECTION"))
-                                .addEnumProperty("highlight", java.util.List.of("NORMAL", "IMPORTANT"))
-                                .addEnumProperty("sentiment", java.util.List.of(
-                                        "BULLISH", "BEARISH", "MIXED", "FOMO", "CAPITULATION",
-                                        "SQUEEZE", "REVERSAL", "BREAKOUT", "NEUTRAL"))
+                                .addEnumProperty("trigger", TRIGGER_VALUES)
+                                .addEnumProperty("highlight", HIGHLIGHT_VALUES)
+                                .addEnumProperty("sentiment", SENTIMENT_VALUES)
                                 // Provenance chaining: the ordinals of the numbered prior
                                 // headlines this line builds on (empty when none) — small
                                 // integers on a short numbered list, which a 4B cites far

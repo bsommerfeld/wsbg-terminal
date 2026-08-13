@@ -134,6 +134,24 @@ public class AgentRepository {
             Double priceMovePercent,
             List<String> sectors, String assetClass, HeadlineSentiment sentiment,
             MarketSnapshot snapshot, boolean newsEnriched, List<HeadlineNewsRef> newsRefs) {
+        saveHeadline(clusterId, headline, context, sourceThreadIds, sourceCommentIds,
+                highlight, tickerSymbol, subjects, priceMovePercent, sectors, assetClass,
+                sentiment, snapshot, newsEnriched, newsRefs, null);
+    }
+
+    /**
+     * Full form with the compose model's declared red {@code trigger}
+     * (HARD_CATALYST, RUNNER, …, NONE; null = unknown/legacy) — archived so
+     * trigger kinds can later be evaluated against the moves they predicted.
+     */
+    public void saveHeadline(String clusterId, String headline, String context,
+            List<String> sourceThreadIds, List<String> sourceCommentIds,
+            HeadlineHighlight highlight, String tickerSymbol,
+            List<HeadlineSubject> subjects,
+            Double priceMovePercent,
+            List<String> sectors, String assetClass, HeadlineSentiment sentiment,
+            MarketSnapshot snapshot, boolean newsEnriched, List<HeadlineNewsRef> newsRefs,
+            String trigger) {
         long now = System.currentTimeMillis() / 1000;
         HeadlineRecord record = new HeadlineRecord(
                 clusterId,
@@ -151,7 +169,8 @@ public class AgentRepository {
                 sentiment == null ? HeadlineSentiment.NEUTRAL : sentiment,
                 snapshot,
                 newsEnriched,
-                newsRefs == null ? List.of() : List.copyOf(newsRefs));
+                newsRefs == null ? List.of() : List.copyOf(newsRefs),
+                trigger);
         headlineCache.add(record);
         session.markLive(record); // live-published this session
         if (archive != null) archive.append(record); // permanent — survives everything

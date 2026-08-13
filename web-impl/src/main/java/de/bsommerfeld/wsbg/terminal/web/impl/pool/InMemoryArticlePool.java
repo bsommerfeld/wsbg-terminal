@@ -5,6 +5,7 @@ import de.bsommerfeld.wsbg.terminal.web.article.Article;
 import de.bsommerfeld.wsbg.terminal.web.impl.text.TextMatch;
 import de.bsommerfeld.wsbg.terminal.web.instrument.ResolvedInstrument;
 import de.bsommerfeld.wsbg.terminal.web.pool.ArticlePool;
+import de.bsommerfeld.wsbg.terminal.web.pool.ArticleTagger;
 import de.bsommerfeld.wsbg.terminal.web.source.WebSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,13 +22,23 @@ import java.util.function.Predicate;
 /**
  * The in-memory Sammelbecken. Insertion-ordered and bounded: when the basin
  * is full the oldest POUR falls out first (the freshest window survives,
- * whatever its sources). De-duplication by {@link Article#uuid()} with the
- * link as fallback identity. Press and sentiment are filed apart at the pour,
- * by the source's own {@code socialSentiment()} declaration — the reader can
- * never mix the streams by accident.
+ * whatever its sources). De-duplication by {@link Article#identity()}. Press
+ * and sentiment are filed apart at the pour, by the source's own
+ * {@code socialSentiment()} declaration — the reader can never mix the streams
+ * by accident.
  *
- * <p>All access synchronized on {@code this}: pours are batched and queries
- * are read-mostly; contention is not the bottleneck, the network is.
+ * <p><b>Instrument assignment is judged, not guessed.</b> With an
+ * {@link ArticleTagger} installed (production), every pour is handed over for
+ * a one-time per-article judgment and {@link #queryInstrument} becomes a set
+ * lookup over those verdicts. Without a tagger (tests, degraded boot) a
+ * deliberately conservative fallback answers: hard keys (ISIN, ticker tag)
+ * plus the FULL significant name — never the old any-word guess that let
+ * "Canopy Growth" catch every growth story in the basin.
+ *
+ * <p>Mutations are synchronized on {@code this}; the tagger is only ever
+ * called OUTSIDE that lock ({@code ingest}/{@code forget} are cheap hand-offs,
+ * {@code articlesFor} does real work), so no lock ordering exists between pool
+ * and tagger.
  */
 @Singleton
 public final class InMemoryArticlePool implements ArticlePool {
@@ -59,10 +70,17 @@ public final class InMemoryArticlePool implements ArticlePool {
             boolean durable, Instant pouredAt) {
     }
 
-    /** key: uuid (blank-guarded) or link. Insertion order = pour order. */
+    /** key: {@link Article#identity()}. Insertion order = pour order. */
     private final LinkedHashMap<String, Entry> basin = new LinkedHashMap<>(4096, 0.75f, false);
 
     private final java.time.Clock clock;
+
+    /**
+     * The judgment seam — absent in tests and until the agent module is wired,
+     * installed once via optional injection. Volatile: set from the injector
+     * thread, read from pour/query threads.
+     */
+    private volatile ArticleTagger tagger;
 
     public InMemoryArticlePool() {
         this(java.time.Clock.systemUTC());
@@ -73,19 +91,55 @@ public final class InMemoryArticlePool implements ArticlePool {
         this.clock = clock;
     }
 
+    /**
+     * Installs the article→instrument judge. Optional Guice method injection —
+     * the binding lives with the agent wiring; web-impl only knows the
+     * {@code web-api} interface.
+     */
+    @com.google.inject.Inject(optional = true)
+    public void setTagger(ArticleTagger tagger) {
+        this.tagger = tagger;
+        // Whatever poured before the wiring arrived is backfilled — a
+        // collector that beat the agent module to the basin must not stay
+        // invisible to instrument queries.
+        List<Article> standing = new ArrayList<>();
+        synchronized (this) {
+            for (Entry e : basin.values()) standing.add(e.article());
+        }
+        if (!standing.isEmpty()) tagger.ingest(standing);
+        LOG.info("pool: article tagger installed — instrument queries answer from judgments"
+                + (standing.isEmpty() ? "" : " (" + standing.size() + " backfilled)"));
+    }
+
     @Override
-    public synchronized int add(WebSource source, Collection<Article> items) {
+    public int add(WebSource source, Collection<Article> items) {
         if (items == null || items.isEmpty()) return 0;
-        purgeExpired();
+        List<Article> fresh = new ArrayList<>();
+        List<String> evicted = new ArrayList<>();
+        int poured = pour(source, items, fresh, evicted);
+        // Hand-offs happen OUTSIDE the basin lock: ingest/forget are cheap
+        // enqueues by contract, but the tagger stays free to take its own
+        // locks without ever nesting inside ours.
+        ArticleTagger t = tagger;
+        if (t != null) {
+            if (!fresh.isEmpty()) t.ingest(fresh);
+            if (!evicted.isEmpty()) t.forget(evicted);
+        }
+        return poured;
+    }
+
+    private synchronized int pour(WebSource source, Collection<Article> items,
+            List<Article> freshOut, List<String> evictedOut) {
+        purgeExpired(evictedOut);
         Instant now = clock.instant();
         // Collector pours are the durable stream (they stay until the ceiling
-        // pushes them out); everything else is a live answer on the 5-min clock.
+        // pushes them out); everything else is a live answer on the 15-min clock.
         boolean durable = source instanceof de.bsommerfeld.wsbg.terminal.web.source.CollectorSource;
         int fresh = 0;
         for (Article raw : items) {
             if (raw == null) continue;
             Article article = raw.withOrigin(source.origin());
-            String key = identity(article);
+            String key = article.identity();
             if (key.isEmpty()) continue;
             Entry existing = basin.get(key);
             if (existing != null) {
@@ -100,13 +154,14 @@ public final class InMemoryArticlePool implements ArticlePool {
             }
             basin.put(key, new Entry(article, source.sourceName(), source.socialSentiment(),
                     durable, now));
+            freshOut.add(article);
             fresh++;
         }
         int overflow = basin.size() - MAX_ITEMS;
         if (overflow > 0) {
             var it = basin.entrySet().iterator();
             for (int i = 0; i < overflow && it.hasNext(); i++) {
-                it.next();
+                evictedOut.add(it.next().getKey());
                 it.remove();
             }
         }
@@ -117,9 +172,13 @@ public final class InMemoryArticlePool implements ArticlePool {
     }
 
     /** Drops live entries whose window has passed. Called under the lock. */
-    private void purgeExpired() {
+    private void purgeExpired(List<String> evictedOut) {
         Instant cutoff = clock.instant().minus(LIVE_TTL);
-        basin.values().removeIf(e -> !e.durable() && e.pouredAt().isBefore(cutoff));
+        basin.entrySet().removeIf(e -> {
+            boolean gone = !e.getValue().durable() && e.getValue().pouredAt().isBefore(cutoff);
+            if (gone) evictedOut.add(e.getKey());
+            return gone;
+        });
     }
 
     @Override
@@ -153,14 +212,20 @@ public final class InMemoryArticlePool implements ArticlePool {
     }
 
     /**
-     * An entry matches an instrument when a HARD key hits (ISIN tag, ticker
-     * tag) or a significant name word appears in the text — the same additive
-     * fan the sources used to answer, now local.
+     * The instrument membership test. With a tagger: the judged set — computed
+     * here, OUTSIDE the basin lock, then a plain contains inside it. Without:
+     * hard keys plus the full significant name (all words), the conservative
+     * floor that keeps tests and degraded boots honest instead of generous.
      */
     private Predicate<Entry> instrumentMatch(ResolvedInstrument instrument) {
+        ArticleTagger t = tagger;
+        if (t != null) {
+            Set<String> judged = t.articlesFor(instrument);
+            return e -> judged.contains(e.article().identity());
+        }
         String isin = instrument.isin().map(i -> i.value()).orElse("");
-        String ticker = instrument.ticker().map(t -> t.value()).orElse("");
-        String base = instrument.ticker().map(t -> t.baseSymbol()).orElse("");
+        String ticker = instrument.ticker().map(tk -> tk.value()).orElse("");
+        String base = instrument.ticker().map(tk -> tk.baseSymbol()).orElse("");
         Set<String> nameWords = TextMatch.significantWords(instrument.name());
         return e -> {
             Article a = e.article();
@@ -171,18 +236,29 @@ public final class InMemoryArticlePool implements ArticlePool {
                 if (a.summary() != null && a.summary().toUpperCase(java.util.Locale.ROOT).contains(isin)) return true;
             }
             if (!ticker.isEmpty() && a.relatedTickers() != null) {
-                for (String t : a.relatedTickers()) {
-                    if (t == null) continue;
-                    if (t.equalsIgnoreCase(ticker) || t.equalsIgnoreCase(base)) return true;
+                for (String rt : a.relatedTickers()) {
+                    if (rt == null) continue;
+                    if (rt.equalsIgnoreCase(ticker) || rt.equalsIgnoreCase(base)) return true;
                 }
             }
-            return !nameWords.isEmpty() && TextMatch.matchesAny(haystack(a), nameWords);
+            return !nameWords.isEmpty() && TextMatch.matchesAll(haystack(a), nameWords);
         };
     }
 
-    private synchronized List<Article> select(int limit, Predicate<Entry> filter) {
+    private List<Article> select(int limit, Predicate<Entry> filter) {
         if (limit <= 0) return List.of();
-        purgeExpired();
+        List<String> evicted = new ArrayList<>();
+        List<Article> hits = selectLocked(limit, filter, evicted);
+        if (!evicted.isEmpty()) {
+            ArticleTagger t = tagger;
+            if (t != null) t.forget(evicted);
+        }
+        return hits;
+    }
+
+    private synchronized List<Article> selectLocked(int limit, Predicate<Entry> filter,
+            List<String> evictedOut) {
+        purgeExpired(evictedOut);
         List<Article> hits = new ArrayList<>();
         for (Entry e : basin.values()) {
             if (filter.test(e)) hits.add(e.article());
@@ -197,10 +273,5 @@ public final class InMemoryArticlePool implements ArticlePool {
         String title = a.title() == null ? "" : a.title();
         String summary = a.summary() == null ? "" : a.summary();
         return summary.isEmpty() ? title : title + ' ' + summary;
-    }
-
-    private static String identity(Article a) {
-        if (a.uuid() != null && !a.uuid().isBlank()) return a.uuid();
-        return a.link() == null ? "" : a.link();
     }
 }

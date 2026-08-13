@@ -60,23 +60,30 @@ final class ChatGateway {
     }
 
     String chat(ChatModel model, String systemPrompt, String userMessage) {
-        // Ollama TRUNCATES a prompt beyond num_ctx silently — the model then sees a
-        // cut-off brief and produces exactly the confused output that looks like
-        // sudden dumbness, with no error anywhere. Estimate and at least make the
-        // overflow visible.
-        //
-        // Two corrections over the first cut, both of which hid real overflow:
-        // the ~4 chars/token rule is an ENGLISH figure — German compounds plus
-        // the brief's markdown run nearer 3.2, so the old estimate flattered
-        // every prompt by a fifth. And the reply needs num_predict of room, not
-        // 512: reserving a seventh of what the model may actually emit meant the
-        // warning stayed silent right up to the truncation it was built to catch.
+        // Prompt-budget guard. What actually happens beyond the window depends on
+        // the runner (both verified live 2026-08-13):
+        //  - GGUF: Ollama silently TRUNCATES the prompt, and not at num_ctx but at
+        //    numCtx - max((numCtx - numKeep) / 2, 1) with numKeep = 5 — deliberate
+        //    generation headroom (contextShiftPromptLimit, Ollama PR #16856;
+        //    measured 5/5 ladder steps to the token, e.g. 24576 → 12291). The old
+        //    threshold here (ctx - num_predict = 20992) sat ABOVE that limit, so
+        //    between 12291 and 20992 tokens Ollama mangled the brief silently and
+        //    this warning stayed quiet — the exact failure it was built to catch.
+        //  - MLX (the Apple-Silicon default): num_ctx is not enforced at all
+        //    (routes.go: `if m.IsMLX() { truncate = false }`); the whole prompt is
+        //    read and memory grows with it. No truncation, but the budget below is
+        //    the only thing bounding memory — the runner enforces nothing.
+        // So this warns at the GGUF truncation limit, which is also the honest
+        // budget line for MLX. The ~3.2 chars/token divisor is the measured German
+        // figure (the ~4 rule is English and flattered every prompt by a fifth).
         int estTokens = (int) ((systemPrompt.length() + userMessage.length()) / 3.2);
         int ctx = brain.contextTokens();
-        if (estTokens > ctx - brain.numPredict()) {
-            LOG.warn("[CTX] prompt ~{} tok vs num_ctx {} — Ollama will silently truncate; "
-                    + "brief should have been budgeted tighter (sys={} chars, user={} chars)",
-                    estTokens, ctx, systemPrompt.length(), userMessage.length());
+        int truncationLimit = ctx - Math.max((ctx - 5) / 2, 1);
+        if (estTokens > truncationLimit) {
+            LOG.warn("[CTX] prompt ~{} tok vs GGUF truncation limit {} (num_ctx {}) — "
+                    + "on GGUF Ollama silently truncates from there; on MLX it all loads "
+                    + "but unbounded (sys={} chars, user={} chars)",
+                    estTokens, truncationLimit, ctx, systemPrompt.length(), userMessage.length());
         }
         List<ChatMessage> messages = List.of(
                 SystemMessage.from(systemPrompt), UserMessage.from(userMessage));
@@ -121,6 +128,23 @@ final class ChatGateway {
                         tu == null ? -1 : tu.inputTokenCount(), tu == null ? -1 : tu.outputTokenCount());
                 return ai == null || ai.text() == null ? "" : ai.text();
             } catch (RuntimeException e) {
+                if (isClientReject(e)) {
+                    // An HTTP 4xx is a VERDICT on this request, not a transient:
+                    // retrying the identical body would 400 again, forever. Today
+                    // this branch is practically unreachable (~7.5k-token prompts
+                    // against a 131k model window), but Ollama PR #17232 would turn
+                    // an unsupported `format` into exactly this 400 on the MLX
+                    // default path — and then every compose/agent call on Apple
+                    // Silicon would rip through the retry ladder as an uncaught
+                    // RuntimeException and kill its lane. Degrade to an empty reply
+                    // instead: every caller already treats "" as a whiff (retry /
+                    // salvage / park), so the pipeline survives and the log names
+                    // the real cause.
+                    LOG.error("[LLM] Ollama rejected the request (HTTP 4xx) — returning "
+                            + "empty reply so the lane degrades instead of dying: {}",
+                            e.toString());
+                    return "";
+                }
                 if (!isConnectFailure(e)) throw e;
                 lastConnectFailure = e;
             } finally {
@@ -133,75 +157,28 @@ final class ChatGateway {
     /** Backoff ladder for a transiently unreachable server — ~45 s total patience. */
     private static final long[] CONNECT_RETRY_BACKOFF_MS = {3_000, 12_000, 30_000};
 
-    /** Shared HTTP client for the raw tool lane. */
-    private static final java.net.http.HttpClient RAW_HTTP = java.net.http.HttpClient.newBuilder()
-            .connectTimeout(java.time.Duration.ofSeconds(5)).build();
-
-    /**
-     * The RAW TOOL lane: one {@code /api/chat} round with tool definitions,
-     * spoken directly to the managed Ollama — the langchain4j binding carries
-     * no tool surface for our loop, and the question lives in Ollama's native
-     * protocol anyway. Same semaphore bracket, same connect-retry ladder as
-     * {@link #chat}; the caller builds and parses the JSON body. Thinking
-     * stays ON for tool rounds (measured 2026-07-17 against the live server:
-     * with {@code think=false} gemma4:e4b answers prose instead of a
-     * tool_call, 3/3 — thinking is load-bearing exactly here, while every
-     * non-tool call keeps the proven {@code think=false} speedup).
-     */
-    String rawToolChat(String requestBody) {
-        RuntimeException lastConnectFailure = null;
-        for (int attempt = 0; attempt <= CONNECT_RETRY_BACKOFF_MS.length; attempt++) {
-            if (attempt > 0) {
-                if (appShutdown) throw lastConnectFailure;
-                long backoff = CONNECT_RETRY_BACKOFF_MS[attempt - 1];
-                LOG.warn("[LLM] Ollama unreachable (tool lane) — retry {}/{} in {} ms",
-                        attempt, CONNECT_RETRY_BACKOFF_MS.length, backoff);
-                try {
-                    Thread.sleep(backoff);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    throw lastConnectFailure;
-                }
-            }
-            long t0 = System.nanoTime();
-            if (INTERACTIVE.get()) llmGate.acquireInteractive();
-            else llmGate.acquire();
-            long tAcq = System.nanoTime();
-            try {
-                java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
-                        .uri(java.net.URI.create(AgentBrain.OLLAMA_BASE_URL + "/api/chat"))
-                        .timeout(java.time.Duration.ofMinutes(5))
-                        .header("Content-Type", "application/json")
-                        .POST(java.net.http.HttpRequest.BodyPublishers.ofString(requestBody))
-                        .build();
-                java.net.http.HttpResponse<String> response = RAW_HTTP.send(
-                        request, java.net.http.HttpResponse.BodyHandlers.ofString());
-                if (response.statusCode() != 200) {
-                    throw new IllegalStateException("Ollama /api/chat answered HTTP "
-                            + response.statusCode() + ": " + response.body());
-                }
-                LOG.info("[LLM] tool round gate-wait={}ms round={}ms",
-                        (tAcq - t0) / 1_000_000, (System.nanoTime() - tAcq) / 1_000_000);
-                return response.body();
-            } catch (java.net.ConnectException | java.net.http.HttpConnectTimeoutException e) {
-                lastConnectFailure = new RuntimeException(e);
-            } catch (java.io.IOException e) {
-                throw new RuntimeException(e);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new RuntimeException(e);
-            } finally {
-                llmGate.release();
-            }
-        }
-        throw lastConnectFailure;
-    }
-
     /** True when the failure is connection-level (server down/restarting), not a model error. */
     private static boolean isConnectFailure(Throwable t) {
         for (Throwable c = t; c != null; c = c.getCause() == c ? null : c.getCause()) {
             if (c instanceof java.net.ConnectException
                     || c instanceof java.net.http.HttpConnectTimeoutException) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * True when the server REJECTED the request as malformed/unsupported (HTTP 4xx —
+     * langchain4j maps it to {@link dev.langchain4j.exception.InvalidRequestException},
+     * with the raw {@link dev.langchain4j.exception.HttpException} in the chain).
+     * Deterministic per request body, so never retried. Package-private for testing.
+     */
+    static boolean isClientReject(Throwable t) {
+        for (Throwable c = t; c != null; c = c.getCause() == c ? null : c.getCause()) {
+            if (c instanceof dev.langchain4j.exception.InvalidRequestException) return true;
+            if (c instanceof dev.langchain4j.exception.HttpException he
+                    && he.statusCode() >= 400 && he.statusCode() < 500) {
                 return true;
             }
         }
