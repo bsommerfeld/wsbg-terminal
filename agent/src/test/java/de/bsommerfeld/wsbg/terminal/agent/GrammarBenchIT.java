@@ -20,6 +20,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -79,6 +80,10 @@ class GrammarBenchIT {
         era26.print("    26b-Ära ");
         eraE4.print("    e4b-Ära ");
 
+        System.out.println("[BENCH:D1] archive trigger baseline (as production wrote it):");
+        printTriggerDist("    archiv  ", lines, n -> n.path("trigger").asText("NONE"),
+                n -> n.path("highlight").asText("NORMAL"));
+
         String model = System.getProperty("bench.model", "gemma4:e4b-mlx");
         int n = Integer.getInteger("bench.compose.n", 20);
         List<JsonNode> sample = sampleWithSnapshots(lines, n);
@@ -86,9 +91,18 @@ class GrammarBenchIT {
             System.out.println("[BENCH:D1] no archive entries with snapshots — live replay skipped");
             return;
         }
-        String sys = PromptLoader.loadLocalized("headline-compose-unit", "de")
+        // The prompt under test. Default is the shipped resource; -Dbench.prompt.file
+        // points at a file instead, so an A/B against an older revision needs no
+        // source edit (git show <rev>:<path> > /tmp/old.txt).
+        String promptFile = System.getProperty("bench.prompt.file", "");
+        String sys = (promptFile.isBlank()
+                        ? PromptLoader.loadLocalized("headline-compose-unit", "de")
+                        : Files.readString(Path.of(promptFile), StandardCharsets.UTF_8))
                 .replace("{{LANGUAGE}}", "Deutsch");
+        if (!promptFile.isBlank()) System.out.println("[BENCH:D1] prompt override: " + promptFile);
         Stats live = new Stats();
+        java.util.Map<String, Integer> liveTriggers = new java.util.LinkedHashMap<>();
+        int liveRed = 0;
         int calls = 0;
         long briefChars = 0;
         int citedLines = 0;
@@ -96,6 +110,9 @@ class GrammarBenchIT {
         for (JsonNode entry : sample) {
             String brief = briefOf(entry);
             briefChars += brief.length();
+            if (Boolean.getBoolean("bench.print.brief")) {
+                System.out.println("    ---- brief ----\n" + brief.indent(4) + "    ---------------");
+            }
             String reply = ollama(model, sys, brief);
             if (reply == null) {
                 System.out.println("[BENCH:D1] Ollama unreachable — live replay skipped after "
@@ -108,6 +125,16 @@ class GrammarBenchIT {
                 live.add(pc.draft().headline());
                 parsedLines++;
                 if (pc.newsUsed() != null && !pc.newsUsed().isEmpty()) citedLines++;
+                // The red gauge: the model's own trigger/highlight, held against the
+                // one production wrote for the SAME subject — the reconciler is not in
+                // this path, so this is the model's raw call.
+                String t = HighlightReconciler.normalizeTrigger(pc.draft().trigger());
+                String h = String.valueOf(pc.draft().highlight()).toUpperCase(Locale.ROOT);
+                liveTriggers.merge(t.isBlank() ? "NONE" : t, 1, Integer::sum);
+                if (h.contains("IMPORTANT")) liveRed++;
+                System.out.printf(Locale.ROOT, "    [%s] %s → %s/%s%n",
+                        entry.path("tickerSymbol").asText(""),
+                        entry.path("trigger").asText("NONE"), t, h);
                 System.out.println("    → " + pc.draft().headline());
             } else {
                 live.whiffs++;
@@ -119,6 +146,12 @@ class GrammarBenchIT {
                     "[BENCH:D1] live replay: model=%s, %d call(s), %d whiff(s)%n",
                     model, calls, live.whiffs);
             live.print("    live    ");
+            StringBuilder td = new StringBuilder();
+            liveTriggers.entrySet().stream().sorted((a, b) -> b.getValue() - a.getValue())
+                    .forEach(e -> td.append(e.getKey()).append(' ').append(e.getValue()).append("  "));
+            System.out.printf(Locale.ROOT, "    live    Rot %.1f%% (%d von %d) | Trigger: %s%n",
+                    parsedLines == 0 ? 0.0 : 100.0 * liveRed / parsedLines, liveRed, parsedLines,
+                    td.toString().trim());
             // Teil-2 gauges: brief size (chars ≈ tokens·4) and the citation share
             // (lines that leaned on at least one [N#] item).
             System.out.printf(Locale.ROOT,
@@ -189,6 +222,24 @@ class GrammarBenchIT {
         }
     }
 
+    /** Trigger + red share over a set of archived lines — the production baseline. */
+    private static void printTriggerDist(String label, List<JsonNode> lines,
+            java.util.function.Function<JsonNode, String> trigger,
+            java.util.function.Function<JsonNode, String> highlight) {
+        java.util.Map<String, Integer> dist = new java.util.LinkedHashMap<>();
+        int red = 0;
+        for (JsonNode n : lines) {
+            dist.merge(trigger.apply(n), 1, Integer::sum);
+            if ("IMPORTANT".equals(highlight.apply(n))) red++;
+        }
+        StringBuilder d = new StringBuilder();
+        dist.entrySet().stream().sorted((a, b) -> b.getValue() - a.getValue())
+                .forEach(e -> d.append(e.getKey()).append(' ').append(e.getValue()).append("  "));
+        System.out.printf(Locale.ROOT, "%s n=%d | Rot %.1f%% (%d) | Trigger: %s%n",
+                label, lines.size(), lines.isEmpty() ? 0.0 : 100.0 * red / lines.size(), red,
+                d.toString().trim());
+    }
+
     // ------------------------------------------------------------------ archive → brief
 
     private static List<JsonNode> readArchive(Path archive) throws Exception {
@@ -209,10 +260,17 @@ class GrammarBenchIT {
 
     /** The newest {@code n} entries that carry a ticker + a priced snapshot. */
     private static List<JsonNode> sampleWithSnapshots(List<JsonNode> lines, int n) {
+        // -Dbench.only=RDDT,WDAY narrows the replay to named tickers — a probe on the
+        // handful of cases a change is actually about, without a 40-call full run.
+        Set<String> only = new java.util.LinkedHashSet<>();
+        for (String s : System.getProperty("bench.only", "").split(",")) {
+            if (!s.isBlank()) only.add(s.trim().toUpperCase(Locale.ROOT));
+        }
         List<JsonNode> out = new ArrayList<>();
         for (int i = lines.size() - 1; i >= 0 && out.size() < n; i--) {
             JsonNode e = lines.get(i);
             if (e.path("tickerSymbol").asText("").isBlank()) continue;
+            if (!only.isEmpty() && !only.contains(e.path("tickerSymbol").asText(""))) continue;
             if (!e.path("snapshot").isObject()) continue;
             if (e.path("headline").asText("").isBlank()) continue;
             out.add(e);
@@ -270,7 +328,8 @@ class GrammarBenchIT {
             msgs.addObject().put("role", "system").put("content", sys);
             msgs.addObject().put("role", "user").put("content", user);
             HttpRequest req = HttpRequest.newBuilder()
-                    .uri(URI.create("http://localhost:11434/api/chat"))
+                    .uri(URI.create(System.getProperty("bench.ollama.url",
+                            "http://localhost:11434") + "/api/chat"))
                     .timeout(java.time.Duration.ofMinutes(5))
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
