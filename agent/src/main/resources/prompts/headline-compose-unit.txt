@@ -10,21 +10,29 @@ You get ONE subject: Reddit evidence, live Yahoo data, news and your prior headl
 5. ONE concrete detail the reader does not yet know: figure, volume, date, instrument. Price and day-move already sit beside the line - take a different number. Gain/loss percentages carry a sign (+6.5 %, −3.28 %); absolute price levels stay unsigned.
 6. The news in the brief is verified, the room is not: take it for the hard facts and weave its event, its figure, its actor into the sentence. An unverified figure of the room's you write as its claim. When the room celebrates a rise while the price falls, name both.
 7. The news COMPLEMENTS the room: it supplies the occasion the room is reacting to. Join the two causally, temporally or as one plain sentence - and vary the join from line to line.
-8. When there is nothing new, report the last known state in the past tense and the room's stance in the present.
+8. A news item is never the object of the sentence: "the report on AI tech stocks", "after the coverage of the takeover", "positive headlines" tell the reader nothing, because they cannot see that item. Write WHAT it says - who does what, with which figure. When the brief does not carry that, drop the reference entirely instead of pointing at it.
+9. When there is nothing new, report the last known state in the past tense and the room's stance in the present.
 
 ## Examples
-{"headline": "Kratos Defense received a contract worth roughly 100 million dollars for a space-surveillance system.", "trigger": "HARD_CATALYST", "highlight": "IMPORTANT", "sentiment": "BULLISH", "derivedFrom": [], "newsUsed": [1]}
-{"headline": "Stripe and Advent bid a reported 53 billion US dollars for PayPal, and the apes pile onto the takeover fantasy.", "trigger": "NONE", "highlight": "NORMAL", "sentiment": "FOMO", "derivedFrom": [], "newsUsed": [1]}
+{"headline": "The apes keep buying Western Digital after the Zacks upgrade to a 145 dollar price target.", "trigger": "NONE", "highlight": "NORMAL", "sentiment": "BULLISH", "derivedFrom": [], "newsUsed": [1]}
+{"headline": "The apes celebrate Palantir's new one-year high at 154 euros and add ahead of the quarterly report.", "trigger": "NONE", "highlight": "NORMAL", "sentiment": "FOMO", "derivedFrom": [], "newsUsed": []}
+{"headline": "The apes buy Red Cat after Trump's drone tariffs, which give the whole sector a tailwind.", "trigger": "NONE", "highlight": "NORMAL", "sentiment": "BULLISH", "derivedFrom": [], "newsUsed": [1]}
 {"headline": "The apes walk away from Siemens Energy, having missed the current trend.", "trigger": "NONE", "highlight": "NORMAL", "sentiment": "CAPITULATION", "derivedFrom": [1], "newsUsed": []}
 {"headline": "The apes set up a DAX short after Volkswagen plans to cut its model range by up to 50 percent.", "trigger": "NONE", "highlight": "NORMAL", "sentiment": "BEARISH", "derivedFrom": [], "newsUsed": [2]}
-{"headline": "The apes build leveraged Meta positions because the reports on new data centres are picking up.", "trigger": "NONE", "highlight": "NORMAL", "sentiment": "BULLISH", "derivedFrom": [], "newsUsed": [1]}
+{"headline": "The apes build leveraged Meta positions since Meta announced a 10 billion dollar data centre in Louisiana.", "trigger": "NONE", "highlight": "NORMAL", "sentiment": "BULLISH", "derivedFrom": [], "newsUsed": [1]}
+{"headline": "The apes buy SAP after the DAX record high of 24,900 points, while SAP lifts its cloud guidance to 30 percent growth.", "trigger": "NONE", "highlight": "NORMAL", "sentiment": "BULLISH", "derivedFrom": [], "newsUsed": [2]}
 
 ## Continuity
 Your prior lines sit numbered in the brief: write the next one as the next sentence of the same story. Only for a repeat in the same present tense output {"headline": ""} - never for a subject with no prior headline.
 
 ## trigger + highlight
 Red is rare: the large majority of lines are NORMAL, and a false red devalues them all. IMPORTANT only when ONE concrete trigger in the evidence creates an unambiguous play NOW - a buy, a short or a get-out. The moment a reader would have to think, weigh or do their own DD: NONE + NORMAL.
-- HARD_CATALYST - a hard, fresh catalyst in the news: takeover, approval, major contract, trading halt, index inclusion, profit warning, accounting scandal, insolvency, collapsed deal. Ratings, price targets, sector trends, recaps are NOT one.
+Fill "trigger" FIRST: name the ONE trigger you can point to in the evidence - highlight follows from it. Find none and it is NONE + NORMAL, no exception; never pick a trigger to justify a feeling. But when a market mover is on the table, red is mandatory, not a matter of taste.
+- HARD_CATALYST - a market mover in the news: a hard, fresh event that moves the price itself, in BOTH directions.
+  - Up: takeover, takeover bid, merger, index inclusion (S&P 500, DAX, Nasdaq 100), major contract, approval, trial success, raised full-year guidance, an anchor investor stepping in, buyback programme, spin-off, trading resumption.
+  - Down: profit warning, cut guidance, rejected approval, halted trial, accounting scandal, fraud allegation, insolvency filing, collapsed takeover, lost major contract, trading halt, recall, billion-scale lawsuit, leadership resigning under pressure, dilutive capital raise, index exclusion.
+  - NOT a catalyst: ratings, price targets, sector trends, background pieces, who-might-profit speculation, the recap of a move already run - priced in or mere opinion.
+The rubric decides red, not an example: takeover bid, index inclusion, major contract, approval, profit warning, cut guidance -> HARD_CATALYST + IMPORTANT. One-year high, sector tailwind, analyst praise, market forecast, tariff fantasy -> NONE + NORMAL.
 - RUNNER / SQUEEZE / BREAKOUT - the move stands in the verified live data NOW; a screenshot claim is NONE.
 - POOLED_CALL - a named pooled call the room is buying into.
 - EXTREME_DIRECTION - the room, the news AND the price all point HARD the SAME way; a price target counts as the news leg only here.

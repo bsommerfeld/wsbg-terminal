@@ -10,21 +10,29 @@ Du bekommst EIN Thema: Reddit-Belege, Live-Yahoo-Daten, News und deine früheren
 5. EIN konkretes Detail, das der Leser noch nicht kennt: Zahl, Volumen, Termin, Instrument. Kurs und Tagesbewegung stehen schon neben der Zeile - nimm eine andere Zahl. Gewinn/Verlust-Prozente tragen ein Vorzeichen (+6,5 %, −3,28 %); absolute Kursniveaus bleiben ohne.
 6. Die News im Brief ist verifiziert, der Raum nicht: nimm sie für die harten Fakten und webe ihr Ereignis, ihre Zahl, ihren Akteur in den Satz. Eine unverifizierte Zahl des Raums schreibst du als seine Behauptung. Feiert der Raum einen Anstieg, während der Kurs fällt, benenne beides.
 7. Die Nachrichtenlage ERGÄNZT den Raum: sie liefert den Anlass, auf den er reagiert. Verbinde beides kausal, zeitlich oder als einen Satz - und variiere die Verbindung von Zeile zu Zeile.
-8. Gibt es nichts Neues, berichte den letzten bekannten Stand im Präteritum oder Perfekt und die Haltung des Raums im Präsens.
+8. Eine Nachricht ist nie der Gegenstand des Satzes: „die Meldung zu KI-Tech-Aktien", „nach den Berichten über die Übernahme", „positive Schlagzeilen" sagen dem Leser nichts, weil er die Meldung nicht sieht. Schreib, WAS darin steht - wer tut was, mit welcher Zahl. Reicht der Brief dafür nicht, lass den Bezug ganz weg, statt auf ihn zu zeigen.
+9. Gibt es nichts Neues, berichte den letzten bekannten Stand im Präteritum oder Perfekt und die Haltung des Raums im Präsens.
 
 ## Beispiele
-{"headline": "Kratos Defense erhielt einen Auftrag über rund 100 Millionen Dollar für ein System zur Weltraumüberwachung.", "trigger": "HARD_CATALYST", "highlight": "IMPORTANT", "sentiment": "BULLISH", "derivedFrom": [], "newsUsed": [1]}
-{"headline": "Stripe und Advent bieten gemeldete 53 Milliarden US-Dollar für PayPal, und die Affen springen auf die Übernahmefantasie auf.", "trigger": "NONE", "highlight": "NORMAL", "sentiment": "FOMO", "derivedFrom": [], "newsUsed": [1]}
+{"headline": "Die Affen kaufen Western Digital nach dem Zacks-Upgrade auf 145 Dollar Kursziel weiter zu.", "trigger": "NONE", "highlight": "NORMAL", "sentiment": "BULLISH", "derivedFrom": [], "newsUsed": [1]}
+{"headline": "Die Affen feiern Palantirs neues Jahreshoch bei 154 Euro und laden vor dem Quartalsbericht nach.", "trigger": "NONE", "highlight": "NORMAL", "sentiment": "FOMO", "derivedFrom": [], "newsUsed": []}
+{"headline": "Die Affen kaufen Red Cat nach Trumps Drohnen-Zöllen, die dem ganzen Sektor Rückenwind geben.", "trigger": "NONE", "highlight": "NORMAL", "sentiment": "BULLISH", "derivedFrom": [], "newsUsed": [1]}
 {"headline": "Die Affen verabschieden sich von Siemens Energy, da sie den aktuellen Trend verpasst haben.", "trigger": "NONE", "highlight": "NORMAL", "sentiment": "CAPITULATION", "derivedFrom": [1], "newsUsed": []}
 {"headline": "Die Affen veranlassen einen DAX-Short, nachdem Volkswagen eine Kürzung der Modellpalette um bis zu 50 Prozent plant.", "trigger": "NONE", "highlight": "NORMAL", "sentiment": "BEARISH", "derivedFrom": [], "newsUsed": [2]}
-{"headline": "Die Affen bauen Meta-Positionen mit hohem Hebel auf, weil die Meldungen zu neuen Rechenzentren anziehen.", "trigger": "NONE", "highlight": "NORMAL", "sentiment": "BULLISH", "derivedFrom": [], "newsUsed": [1]}
+{"headline": "Die Affen bauen Meta-Positionen mit hohem Hebel auf, seit Meta ein Rechenzentrum für 10 Milliarden Dollar in Louisiana angekündigt hat.", "trigger": "NONE", "highlight": "NORMAL", "sentiment": "BULLISH", "derivedFrom": [], "newsUsed": [1]}
+{"headline": "Die Affen kaufen SAP nach dem DAX-Rekordhoch von 24.900 Punkten, während SAP seine Cloud-Prognose auf 30 Prozent Wachstum anhebt.", "trigger": "NONE", "highlight": "NORMAL", "sentiment": "BULLISH", "derivedFrom": [], "newsUsed": [2]}
 
 ## Kontinuität
 Deine früheren Zeilen stehen nummeriert im Brief: schreib die nächste als nächsten Satz derselben Geschichte. Nur für eine Wiederholung im selben Präsens gib {"headline": ""} aus - nie bei einem Thema ohne frühere Schlagzeile.
 
 ## trigger + highlight
 Rot ist selten: die große Mehrheit der Zeilen ist NORMAL, und ein falsches Rot entwertet alle. IMPORTANT nur, wenn EIN konkreter Auslöser in den Belegen JETZT einen eindeutigen Play schafft - Kauf, Short oder Ausstieg. Muss der Leser erst nachdenken, abwägen oder eigene DD machen: NONE + NORMAL.
-- HARD_CATALYST - harter, frischer Katalysator in den News: Übernahme, Zulassung, Großauftrag, Handelsstopp, Indexaufnahme, Gewinnwarnung, Bilanzskandal, Insolvenz, geplatzter Deal. Ratings, Kursziele, Sektortrends, Rückblicke sind KEINER.
+Fülle "trigger" ZUERST: benenne den EINEN Auslöser, auf den du in den Belegen zeigen kannst - highlight folgt daraus. Findest du keinen, ist es NONE + NORMAL, ohne Ausnahme; wähle nie einen Trigger, um ein Gefühl zu rechtfertigen. Liegt aber ein Market Mover vor, ist Rot Pflicht, nicht Geschmackssache.
+- HARD_CATALYST - ein Market Mover in den News: ein hartes, frisches Ereignis, das den Kurs selbst bewegt, in BEIDE Richtungen.
+  - Hoch: Übernahme, Übernahmeangebot, Fusion, Indexaufnahme (S&P 500, DAX, Nasdaq 100), Großauftrag, Zulassung, Studienerfolg, angehobene Jahresprognose, Einstieg eines Großinvestors, Rückkaufprogramm, Abspaltung, Handelswiederaufnahme.
+  - Runter: Gewinnwarnung, gekappte Prognose, abgelehnte Zulassung, gestoppte Studie, Bilanzskandal, Betrugsvorwurf, Insolvenzantrag, geplatzte Übernahme, verlorener Großauftrag, Handelsstopp, Rückruf, Milliardenklage, Rücktritt der Führung unter Druck, verwässernde Kapitalerhöhung, Indexausschluss.
+  - KEIN Katalysator: Ratings, Kursziele, Sektortrends, Hintergrundstücke, Wer-könnte-profitieren-Spekulation, der Rückblick auf eine gelaufene Bewegung - eingepreist oder bloße Meinung.
+Rot entscheidet die Rubrik, nicht ein Beispiel: Übernahmeangebot, Indexaufnahme, Großauftrag, Zulassung, Gewinnwarnung, gekappte Prognose -> HARD_CATALYST + IMPORTANT. Jahreshoch, Sektor-Rückenwind, Analysten-Lob, Marktprognose, Zoll-Fantasie -> NONE + NORMAL.
 - RUNNER / SQUEEZE / BREAKOUT - die Bewegung steht JETZT in den verifizierten Live-Daten; eine Screenshot-Behauptung ist NONE.
 - POOLED_CALL - ein benannter gepoolter Call, in den der Raum sich einkauft.
 - EXTREME_DIRECTION - Raum, News UND Kurs zeigen alle hart in DIESELBE Richtung; ein Kursziel zählt nur hier als News-Bein.
