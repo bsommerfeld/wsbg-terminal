@@ -36,6 +36,9 @@ export function highlightTickers(text, explicitSymbol) {
 // the ticker — the prompt forbids a ticker label), so the name is the cue, not the symbol.
 // Longest names first (so "Munich Re" wins over a stray "Munich"), first occurrence only,
 // never inside an existing tag. Escapes the text itself — pass RAW text, like highlightTickers.
+// The German genitive "s" is part of the match ("Reddits S&P-Einzug" gilds "Reddits"): the
+// back-end gilder accepts it and hands back the bare name, so a strict word boundary here
+// would silently drop the gild on every genitive line.
 export function highlightSubjects(text, subjects) {
   if (!text) return '';
   let html = escapeHtml(text);
@@ -47,12 +50,12 @@ export function highlightSubjects(text, subjects) {
   for (const name of names) {
     const esc = escapeHtml(name);
     if (!esc) continue;
-    const re = new RegExp(`(?<![\\w])${escapeRegExp(esc)}(?![\\w])`);
+    const re = new RegExp(`(?<![\\w])${escapeRegExp(esc)}s?(?![\\w])`);
     const m = re.exec(html);
     if (m && !insideTag(html, m.index)) {
       html = html.slice(0, m.index)
-           + `<span class="subject">${esc}</span>`
-           + html.slice(m.index + esc.length);
+           + `<span class="subject">${m[0]}</span>`
+           + html.slice(m.index + m[0].length);
     }
   }
   return html;
