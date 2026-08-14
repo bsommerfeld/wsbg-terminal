@@ -84,6 +84,14 @@ public class EditorialAgent {
      */
     private static final int MAX_COMPOSE_RETRIES = 1;
 
+    /**
+     * Article digests warmed synchronously per compose ({@link #warmArticleDigests}).
+     * Each one costs a fetch (~seconds) + a model call on the compose worker, so
+     * the cap is what bounds a first compose's added latency; everything warmed
+     * stays cached for every later compose of any unit sharing the item.
+     */
+    private static final int DIGESTS_PER_COMPOSE = 2;
+
     private final AgentBrain brain;
     /** The ONE shared gemma4 concurrency gate (NUM_PARALLEL=2) — passed to {@link ChatGateway}. */
     private final LlmGate llmGate;
@@ -104,8 +112,20 @@ public class EditorialAgent {
     private final IdentityDesk identityDesk;
     /** Stage 1 — subject extraction (brief + cluster → names + model primary). */
     private final SubjectExtractor subjectExtractor;
-    /** The news pre-stage: full article → key-fact digest, cached per link (vision pattern). */
+    /** The news pre-stage: full article → key-fact digest, cached per link, warmed on the compose path. */
     private final NewsDigester newsDigester;
+    /** Post-compose distiller: fresh room evidence → the unit's rolling room sheet. */
+    private final FactSheetUpdater factSheetUpdater;
+    /**
+     * The permanent per-subject news dossier (optional injection; absent in
+     * tests, where minting and the brief's dossier block are simply inert).
+     * Ticker subjects only — a {@code name:} unit has no stable key to file under.
+     */
+    private volatile de.bsommerfeld.wsbg.terminal.db.SubjectDossierArchive dossierArchive;
+    /** Folds an overgrown dossier into summary lines — built when the archive is installed. */
+    private volatile DossierConsolidator dossierConsolidator;
+    /** The daily sentiment sheet (optional injection) — read-only here, fed by {@link SentimentDailyService}. */
+    private volatile de.bsommerfeld.wsbg.terminal.db.SubjectSentimentDailyArchive sentimentDailyArchive;
     /**
      * Per-unit count of consecutive compose whiffs (cleared on a publish, a
      * redundant-empty, or once the unit is parked). Bounds {@link #MAX_COMPOSE_RETRIES}.
@@ -160,6 +180,7 @@ public class EditorialAgent {
         this.attributor = new SubjectAttributor(redditRepository, brain);
         this.subjectExtractor = new SubjectExtractor(brain, redditRepository, chatGateway);
         this.newsDigester = new NewsDigester(brain, chatGateway, config);
+        this.factSheetUpdater = new FactSheetUpdater(brain, chatGateway);
         this.subjectRegistry = subjectRegistry;
         this.config = config;
     }
@@ -181,9 +202,22 @@ public class EditorialAgent {
                 config.getHeadlines().isReadArticles());
     }
 
-    /** The article digester — the shared session-cached article read. */
-    NewsDigester newsDigester() {
-        return newsDigester;
+    /**
+     * Installs the permanent subject dossier — the cross-session news fact
+     * store the compose brief reads and the compose path feeds. Optional Guice
+     * method-injection: present in production, absent in tests.
+     */
+    @com.google.inject.Inject(optional = true)
+    void setDossierArchive(de.bsommerfeld.wsbg.terminal.db.SubjectDossierArchive archive) {
+        this.dossierArchive = archive;
+        this.dossierConsolidator = new DossierConsolidator(brain, chatGateway, archive);
+        LOG.info("[DOSSIER] subject dossier archive installed ({} fact(s)).", archive.size());
+    }
+
+    /** Installs the daily sentiment sheet the brief's history block reads. Optional; absent in tests. */
+    @com.google.inject.Inject(optional = true)
+    void setSentimentDailyArchive(de.bsommerfeld.wsbg.terminal.db.SubjectSentimentDailyArchive archive) {
+        this.sentimentDailyArchive = archive;
     }
 
     /**
@@ -342,12 +376,6 @@ public class EditorialAgent {
         // commodity talk) apart from Kakao Corp when both spell the same.
         List<ResolvedSubject> resolved =
                 tickerResolver.resolveAll(subjects.names(), relatedAlloc, cluster.initialTitle);
-        // Warm the article-digest cache for every fetched news item (fire-and-forget,
-        // one background worker): by the time this unit composes — the settle delay
-        // alone is 30 s — the digests are usually in, and the brief reads cache-only.
-        for (ResolvedSubject rs : resolved) {
-            newsDigester.prefetch(rs.news());
-        }
         return resolved;
     }
 
@@ -394,7 +422,7 @@ public class EditorialAgent {
         String sys = PromptLoader.loadLocalized("headline-compose-unit", lang)
                 .replace("{{LANGUAGE}}", brain.getUserLanguage().displayName());
         String user = UnitBriefWriter.unitBrief(unit, config.getHeadlines().isNewsCoverageEnabled(),
-                BriefLabels.of(lang), newsDigester::ifCached);
+                BriefLabels.of(lang), newsDigester::ifCached, dossierFor(unit), sentimentDaysFor(unit));
 
         boolean hasPriors = !unit.headlines().isEmpty();
         long t0 = System.nanoTime();
@@ -645,7 +673,93 @@ public class EditorialAgent {
         // mid-compose leaves the unit eligible for a genuine follow-up.
         long composedV = u.evidenceVersion();
         seedHeadlineHistoryIfEmpty(u);
+        // The fact-sheet inbox, captured BEFORE composing (a mid-compose arrival
+        // stays unabsorbed for the next round), and the article warm-up for the
+        // items THIS unit's brief renders — wire work, on this worker, at wire
+        // priority (the background prefetch that used to compete with compose
+        // for the model gate is gone).
+        List<SubjectUnit.EvidenceRef> unabsorbed = u.evidenceSince(u.factsUpToEpoch());
+        warmArticleDigests(u);
+        mintDossierFacts(u);
         UnitDraft ud = composeUnit(u);
+        try {
+            return publishComposed(u, composedV, ud);
+        } finally {
+            // AFTER the publish decision, so the distill call never delays the
+            // headline. A whiff keeps the inbox untouched: the model failed, the
+            // same evidence re-feeds the next absorb.
+            if (!ud.whiffed()) factSheetUpdater.absorb(u, unabsorbed);
+            // Dossier upkeep rides the same tail: fold an overgrown Steckbrief
+            // into summary lines (rare — only past the fact cap).
+            DossierConsolidator dc = dossierConsolidator;
+            if (dc != null) dc.consolidateIfOvergrown(u);
+        }
+    }
+
+    /**
+     * Files every digested article of THIS unit's brief onto the subject's
+     * permanent dossier — the source value-copied at mint time (articles live
+     * nowhere durable, a bare link would dangle). Idempotent per (subject,
+     * article) in the archive, so re-offering on every compose is free. Ticker
+     * subjects only: a {@code name:} unit has no stable cross-session key.
+     */
+    private void mintDossierFacts(SubjectUnit u) {
+        de.bsommerfeld.wsbg.terminal.db.SubjectDossierArchive archive = dossierArchive;
+        if (archive == null || !u.isInstrument()) return;
+        String key = u.ticker().trim().toUpperCase(java.util.Locale.ROOT);
+        for (Article n : NewsProvenance.briefNews(u, config.getHeadlines().isNewsCoverageEnabled())) {
+            if (n == null || n.link() == null || n.link().isBlank()) continue;
+            String digest = newsDigester.ifCached(n.link());
+            if (digest == null || digest.isBlank()) continue;
+            archive.append(new de.bsommerfeld.wsbg.terminal.db.DossierFact(
+                    key, u.isin(), u.canonicalName(), digest,
+                    java.time.Instant.now().getEpochSecond(),
+                    n.title(), n.publisher(), n.link().trim(),
+                    n.publishedAt() == null ? null : n.publishedAt().getEpochSecond(),
+                    false));
+        }
+    }
+
+    /** The unit's permanent dossier (ticker OR ISIN union) — empty without an archive or for name units. */
+    private List<de.bsommerfeld.wsbg.terminal.db.DossierFact> dossierFor(SubjectUnit unit) {
+        de.bsommerfeld.wsbg.terminal.db.SubjectDossierArchive archive = dossierArchive;
+        if (archive == null || !unit.isInstrument()) return List.of();
+        return archive.bySubject(unit.ticker(), unit.isin());
+    }
+
+    /** How many archived day-sheets the brief's sentiment-history block shows. */
+    private static final int SENTIMENT_HISTORY_DAYS = 3;
+
+    /** The unit's newest daily sentiment sheets (unit id IS the fold's subject key). */
+    private List<de.bsommerfeld.wsbg.terminal.db.SubjectSentimentDayRecord> sentimentDaysFor(SubjectUnit unit) {
+        de.bsommerfeld.wsbg.terminal.db.SubjectSentimentDailyArchive archive = sentimentDailyArchive;
+        if (archive == null) return List.of();
+        List<de.bsommerfeld.wsbg.terminal.db.SubjectSentimentDayRecord> days =
+                archive.bySubject(unit.id);
+        return days.size() <= SENTIMENT_HISTORY_DAYS ? days
+                : days.subList(days.size() - SENTIMENT_HISTORY_DAYS, days.size());
+    }
+
+    /**
+     * Warms the digest cache for the articles THIS unit's brief is about to
+     * render — synchronously, before composing. Capped per compose to bound the
+     * added latency; the remainder enriches the next compose (every digest is
+     * session-cached, so each article costs its fetch + call exactly once).
+     */
+    private void warmArticleDigests(SubjectUnit u) {
+        if (!newsDigester.readsArticles()) return;
+        int warmed = 0;
+        for (Article n : NewsProvenance.briefNews(u, config.getHeadlines().isNewsCoverageEnabled())) {
+            if (warmed >= DIGESTS_PER_COMPOSE) break;
+            if (n == null || n.link() == null || n.link().isBlank()) continue;
+            if (newsDigester.attempted(n.link())) continue;
+            newsDigester.digestNow(n.link());
+            warmed++;
+        }
+    }
+
+    /** The publish decision for one composed unit — extracted so the fact-sheet absorb can run after it. */
+    private boolean publishComposed(SubjectUnit u, long composedV, UnitDraft ud) {
         Draft d = ud.draft();
         if (d == null || d.headline() == null || d.headline().isBlank()) {
             handleEmptyCompose(u, ud);

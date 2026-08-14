@@ -9,6 +9,8 @@ import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.db.AgentRepository;
 import de.bsommerfeld.wsbg.terminal.db.RedditRepository;
 import de.bsommerfeld.wsbg.terminal.db.RedditSnapshotStore;
+import de.bsommerfeld.wsbg.terminal.db.SubjectDossierArchive;
+import de.bsommerfeld.wsbg.terminal.db.SubjectSentimentDailyArchive;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,12 +36,16 @@ public final class DataWipeService {
     private final RedditSnapshotStore redditSnapshotStore;
     private final AgentSnapshotStore agentSnapshotStore;
     private final HeadlinePublisher headlinePublisher;
+    private final SubjectDossierArchive subjectDossierArchive;
+    private final SubjectSentimentDailyArchive subjectSentimentDailyArchive;
 
     @Inject
     public DataWipeService(GlobalConfig config, AgentRepository agentRepository,
             RedditRepository redditRepository, ClusterRegistry clusterRegistry,
             SubjectRegistry subjectRegistry, RedditSnapshotStore redditSnapshotStore,
-            AgentSnapshotStore agentSnapshotStore, HeadlinePublisher headlinePublisher) {
+            AgentSnapshotStore agentSnapshotStore, HeadlinePublisher headlinePublisher,
+            SubjectDossierArchive subjectDossierArchive,
+            SubjectSentimentDailyArchive subjectSentimentDailyArchive) {
         this.config = config;
         this.agentRepository = agentRepository;
         this.redditRepository = redditRepository;
@@ -48,6 +54,8 @@ public final class DataWipeService {
         this.redditSnapshotStore = redditSnapshotStore;
         this.agentSnapshotStore = agentSnapshotStore;
         this.headlinePublisher = headlinePublisher;
+        this.subjectDossierArchive = subjectDossierArchive;
+        this.subjectSentimentDailyArchive = subjectSentimentDailyArchive;
     }
 
     /**
@@ -71,6 +79,8 @@ public final class DataWipeService {
         clusterRegistry.clear();
         subjectRegistry.clear();
         agentRepository.clearAll();
+        subjectDossierArchive.clear();
+        subjectSentimentDailyArchive.clear();
         // Also wipe the on-disk session snapshots so a quick restart can't restore the cleared state.
         redditSnapshotStore.clear();
         agentSnapshotStore.clear();

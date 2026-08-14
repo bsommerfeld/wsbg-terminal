@@ -7,6 +7,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -85,6 +86,33 @@ public final class SubjectUnit {
     /** Headlines already published for this unit — context for the NEW/UPDATE call. */
     private final List<UnitHeadline> headlines = new ArrayList<>();
 
+    /**
+     * The unit's rolling fact sheet: everything the room has said about this
+     * subject, distilled into short dated fact lines by {@link FactSheetUpdater}
+     * after each compose. Unlike raw evidence it survives the TTL prune — the
+     * sheet is the unit's KNOWLEDGE, the evidence map is only its inbox. Facts
+     * already told in a headline stay on the sheet on purpose: they are the
+     * anchor the next development hangs on (the brief renders the sheet as
+     * known context, never as news). Guarded by this unit's monitor.
+     */
+    private final List<FactLine> factSheet = new ArrayList<>();
+
+    /**
+     * Evidence watermark (epoch seconds): evidence added on/before this instant
+     * has been distilled into {@link #factSheet}. The brief omits it raw (the
+     * sheet carries its substance) and {@link FactSheetUpdater} only feeds
+     * evidence NEWER than this to the next distillation. 0 = nothing absorbed.
+     */
+    private volatile long factsUpToEpoch;
+
+    /**
+     * Sheet cap: oldest lines fall off first. At ~1–2 lines per absorbed
+     * evidence batch this holds several hours of story; older facts live on in
+     * the published headlines (story memory), so the loss is a duplicate, not
+     * a hole.
+     */
+    static final int MAX_FACT_LINES = 14;
+
     public SubjectUnit(String id, String canonicalName) {
         this.id = id;
         this.canonicalName = canonicalName == null ? id : canonicalName;
@@ -121,6 +149,8 @@ public final class SubjectUnit {
             }
         }
         if (s.headlines() != null) headlines.addAll(s.headlines());
+        if (s.factSheet() != null) factSheet.addAll(s.factSheet());
+        if (s.factsUpToEpoch() != null) factsUpToEpoch = s.factsUpToEpoch();
         newsBox.restore(s.coveredNewsIds());
     }
 
@@ -195,6 +225,39 @@ public final class SubjectUnit {
     public synchronized List<EvidenceRef> evidence() { return new ArrayList<>(evidence.values()); }
     public synchronized int evidenceCount() { return evidence.size(); }
 
+    /** The rolling fact sheet, chronological (see {@link #factSheet}). */
+    public synchronized List<FactLine> factSheet() { return new ArrayList<>(factSheet); }
+
+    /** The fact-sheet evidence watermark — see {@link #factsUpToEpoch}. */
+    public synchronized long factsUpToEpoch() { return factsUpToEpoch; }
+
+    /** Evidence added strictly AFTER {@code epoch} — the not-yet-absorbed inbox for the fact sheet. */
+    public synchronized List<EvidenceRef> evidenceSince(long epoch) {
+        List<EvidenceRef> fresh = new ArrayList<>();
+        for (EvidenceRef e : evidence.values()) {
+            if (e.addedAtEpoch() > epoch) fresh.add(e);
+        }
+        return fresh;
+    }
+
+    /**
+     * Appends distilled fact lines and advances the watermark to {@code upToEpoch}
+     * (monotonic). An empty {@code lines} still advances it: the absorbed evidence
+     * carried nothing factual, and re-distilling it forever would burn a model call
+     * per compose. Oldest lines fall off past {@link #MAX_FACT_LINES}.
+     */
+    public synchronized void appendFacts(List<String> lines, long upToEpoch) {
+        long now = Instant.now().getEpochSecond();
+        if (lines != null) {
+            for (String l : lines) {
+                if (l == null || l.isBlank()) continue;
+                factSheet.add(new FactLine(l.strip(), now));
+            }
+        }
+        while (factSheet.size() > MAX_FACT_LINES) factSheet.remove(0);
+        if (upToEpoch > factsUpToEpoch) factsUpToEpoch = upToEpoch;
+    }
+
     /** False until this unit's FIRST headline publishes — lets the dispatch give a never-seen subject priority. */
     public synchronized boolean hasPublishedHeadline() { return !headlines.isEmpty(); }
 
@@ -236,6 +299,17 @@ public final class SubjectUnit {
             seenEvidence.putIfAbsent(seen.getKey(), seen.getValue());
         }
         headlines.addAll(other.headlines());
+        // The victim's distilled knowledge rides along, kept chronological. One
+        // watermark can't represent two histories exactly — take the LOWER one
+        // (when the victim brought evidence), so nothing is lost to a too-high
+        // mark; the distiller sees the sheet and skips what it already carries,
+        // so the worst case is one redundant re-distill, not a hole.
+        factSheet.addAll(other.factSheet());
+        factSheet.sort(Comparator.comparingLong(FactLine::atEpoch));
+        while (factSheet.size() > MAX_FACT_LINES) factSheet.remove(0);
+        if (other.evidenceCount() > 0) {
+            factsUpToEpoch = Math.min(factsUpToEpoch, other.factsUpToEpoch());
+        }
     }
 
     /** Copy of the seen-evidence memory — for {@link #absorb} (lock order: absorber, then victim). */
@@ -376,7 +450,9 @@ public final class SubjectUnit {
                 snapshot,
                 new ArrayList<>(evidence.values()),
                 new ArrayList<>(headlines),
-                new ArrayList<>(newsBox.coveredIdsCopy()));
+                new ArrayList<>(newsBox.coveredIdsCopy()),
+                new ArrayList<>(factSheet),
+                factsUpToEpoch);
     }
 
     /**
@@ -391,7 +467,16 @@ public final class SubjectUnit {
             MarketSnapshot snapshot,
             List<EvidenceRef> evidence,
             List<UnitHeadline> headlines,
-            List<String> coveredNewsIds) {
+            List<String> coveredNewsIds,
+            List<FactLine> factSheet,
+            Long factsUpToEpoch) {
+    }
+
+    /**
+     * One distilled fact on the unit's rolling fact sheet: what is known, and
+     * when it was distilled (epoch seconds — the brief renders the age).
+     */
+    public record FactLine(String text, long atEpoch) {
     }
 
     /**

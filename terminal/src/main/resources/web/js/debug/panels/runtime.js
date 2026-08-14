@@ -116,17 +116,7 @@ export function create() {
       root.appendChild(callCard.card);
 
       const gauges = data.gauges || {};
-      const gaugeCard = card('Gauges', 'live counters from the digest and pipeline pools');
-      // Queue depths get a bar (fill level against a real ceiling); the rest
-      // are counters and stay counters.
-      const depth = gauges['digest.queue.depth'], cap = gauges['digest.queue.capacity'];
-      if (cap) {
-        gaugeCard.body.appendChild(meter(depth, cap, {
-          tone: depth / cap > 0.8 ? 'bad' : depth / cap > 0.5 ? 'warn' : 'ok',
-          caption: `digest queue ${num(depth)} of ${num(cap)}`,
-          right: gauges['digest.discarded'] ? `${num(gauges['digest.discarded'])} discarded` : 'nothing discarded',
-        }));
-      }
+      const gaugeCard = card('Gauges', 'live counters from the digest caches and pipeline pools');
       for (const [group, entries] of gaugeGroups(gauges)) {
         gaugeCard.body.appendChild(el('h4', 'dbg-sub', group));
         gaugeCard.body.appendChild(hbars(

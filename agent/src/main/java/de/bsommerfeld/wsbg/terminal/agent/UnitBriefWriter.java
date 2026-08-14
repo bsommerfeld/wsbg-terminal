@@ -63,6 +63,22 @@ final class UnitBriefWriter {
     /** Already-told titles rendered before the block collapses to the newest few. */
     static final int TOLD_NEWS_SHOWN = 3;
 
+    /**
+     * Rough char budget for the room-sheet block (~450 tokens). The sheet is
+     * already line-capped ({@link SubjectUnit#MAX_FACT_LINES}), but 14 full lines
+     * are ~2.5k chars — orientation must not outweigh the fresh material it
+     * frames. Newest lines are kept, the rest counted off explicitly.
+     */
+    static final int FACT_SHEET_CHAR_BUDGET = 1800;
+
+    /**
+     * Rough char budget for the permanent dossier block (~400 tokens). The
+     * dossier is consolidation-bounded, not render-bounded — this budget only
+     * decides how much of it one brief affords. Newest facts kept, the rest
+     * counted off explicitly.
+     */
+    static final int DOSSIER_CHAR_BUDGET = 1500;
+
     /** Builds the per-unit brief: Yahoo data + the room's evidence about this subject + its story memory. Static for testability. */
     static String unitBrief(SubjectUnit unit, boolean newsCoverageEnabled) {
         return unitBrief(unit, newsCoverageEnabled, BriefLabels.EN);
@@ -72,14 +88,32 @@ final class UnitBriefWriter {
         return unitBrief(unit, newsCoverageEnabled, lbl, null);
     }
 
+    static String unitBrief(SubjectUnit unit, boolean newsCoverageEnabled, BriefLabels lbl,
+            java.util.function.Function<String, String> digestLookup) {
+        return unitBrief(unit, newsCoverageEnabled, lbl, digestLookup, List.of(), List.of());
+    }
+
+    static String unitBrief(SubjectUnit unit, boolean newsCoverageEnabled, BriefLabels lbl,
+            java.util.function.Function<String, String> digestLookup,
+            List<de.bsommerfeld.wsbg.terminal.db.DossierFact> dossier) {
+        return unitBrief(unit, newsCoverageEnabled, lbl, digestLookup, dossier, List.of());
+    }
+
     /**
      * Full form: {@code digestLookup} resolves an article link to its cached
      * key-fact digest ({@link NewsDigester#ifCached}) — rendered under the news
      * title in place of the source teaser, so the compose model sees the article's
      * substance. Null (tests, digester off) falls back to the teaser-only brief.
+     * {@code dossier} is the subject's permanent news dossier
+     * ({@link de.bsommerfeld.wsbg.terminal.db.SubjectDossierArchive#bySubject}),
+     * rendered as established knowledge; {@code sentimentDays} the newest
+     * archived day-sheets (oldest-first). Empty lists (tests, name units, no
+     * archive) skip their blocks.
      */
     static String unitBrief(SubjectUnit unit, boolean newsCoverageEnabled, BriefLabels lbl,
-            java.util.function.Function<String, String> digestLookup) {
+            java.util.function.Function<String, String> digestLookup,
+            List<de.bsommerfeld.wsbg.terminal.db.DossierFact> dossier,
+            List<de.bsommerfeld.wsbg.terminal.db.SubjectSentimentDayRecord> sentimentDays) {
         StringBuilder sb = new StringBuilder();
         sb.append(lbl.subjectHeader(unit.canonicalName(), unit.isInstrument() ? unit.ticker() : null));
 
@@ -213,23 +247,94 @@ final class UnitBriefWriter {
             }
         }
 
+        // The permanent dossier: verified news facts collected across sessions —
+        // the subject's established knowledge, framed as NOT news. Facts whose
+        // article currently renders fresh above are skipped (their digest already
+        // stands under the title); newest facts kept within budget.
+        if (dossier != null && !dossier.isEmpty()) {
+            java.util.Set<String> freshLinks = new java.util.HashSet<>();
+            for (Article n : freshNews) {
+                if (n.link() != null && !n.link().isBlank()) freshLinks.add(n.link().trim());
+            }
+            List<de.bsommerfeld.wsbg.terminal.db.DossierFact> shownFacts = new ArrayList<>();
+            for (de.bsommerfeld.wsbg.terminal.db.DossierFact f : dossier) {
+                if (f.sourceUrl() != null && freshLinks.contains(f.sourceUrl().trim())) continue;
+                shownFacts.add(f);
+            }
+            if (!shownFacts.isEmpty()) {
+                sb.append(lbl.dossierHeader());
+                int dStart = shownFacts.size();
+                int dBudget = DOSSIER_CHAR_BUDGET;
+                while (dStart > 0 && dBudget - shownFacts.get(dStart - 1).text().length() - 24 >= 0) {
+                    dStart--;
+                    dBudget -= shownFacts.get(dStart).text().length() + 24;
+                }
+                if (dStart > 0) {
+                    sb.append(lbl.dossierOmitted(dStart));
+                }
+                for (de.bsommerfeld.wsbg.terminal.db.DossierFact f : shownFacts.subList(dStart, shownFacts.size())) {
+                    sb.append("  - [").append(lbl.ago(age(Instant.ofEpochSecond(f.atEpoch()), now)));
+                    String src = f.consolidated() ? lbl.dossierConsolidatedTag() : f.sourcePublisher();
+                    if (src != null && !src.isBlank()) sb.append(", ").append(src);
+                    sb.append("] ").append(f.text().replace('\n', ' ').strip()).append('\n');
+                }
+            }
+        }
+
+        // The daily sentiment history: how the room stood on past days — folded
+        // deterministically from the archive, rendered as context. Short by
+        // construction (a handful of one-liners), so no budget machinery.
+        if (sentimentDays != null && !sentimentDays.isEmpty()) {
+            sb.append(lbl.sentimentHistoryHeader());
+            for (de.bsommerfeld.wsbg.terminal.db.SubjectSentimentDayRecord d : sentimentDays) {
+                sb.append(lbl.sentimentDayLine(d.date(), d.majority(), d.headlineCount(), d.arc()));
+            }
+        }
+
+        // The unit's room sheet: the room's older story, distilled — orientation
+        // and anchor, explicitly framed as NOT news. Rendered before the raw
+        // evidence so the fresh material below reads as the development ON TOP of
+        // this known state. Newest lines kept within budget, the same economy as
+        // every other block.
+        List<SubjectUnit.FactLine> facts = unit.factSheet();
+        if (!facts.isEmpty()) {
+            sb.append(lbl.factSheetHeader());
+            int factStart = facts.size();
+            int factBudget = FACT_SHEET_CHAR_BUDGET;
+            while (factStart > 0 && factBudget - facts.get(factStart - 1).text().length() - 16 >= 0) {
+                factStart--;
+                factBudget -= facts.get(factStart).text().length() + 16;
+            }
+            if (factStart > 0) {
+                sb.append(lbl.factSheetOmitted(factStart));
+            }
+            for (SubjectUnit.FactLine f : facts.subList(factStart, facts.size())) {
+                sb.append("  - [").append(lbl.ago(age(Instant.ofEpochSecond(f.atEpoch()), now)))
+                        .append("] ").append(f.text()).append('\n');
+            }
+        }
+
         // Coverage boundary: evidence added on/before the unit's most recent
         // published headline was already in view when that line was written, so it
         // must NOT seed another headline. We OMIT that covered material here — the
         // story-memory headlines below ARE its context — and show only what arrived
         // SINCE the last headline. Time-based (not model-citation-based): a 4B model
         // under-cites sources, but the unit's own evidence + headline timestamps are
-        // exact. Mirrors the per-cluster ReportBuilder coverage.
+        // exact. Mirrors the per-cluster ReportBuilder coverage. Evidence already
+        // distilled into the fact sheet (the watermark) is omitted the same way —
+        // its substance stands condensed above, so showing it raw would re-sell it.
         long lastHeadlineEpoch = 0L;
         for (SubjectUnit.UnitHeadline h : unit.headlines()) {
             if (h.atEpoch() > lastHeadlineEpoch) lastHeadlineEpoch = h.atEpoch();
         }
+        long absorbedUpTo = unit.factsUpToEpoch();
+        long coveredBoundary = Math.max(lastHeadlineEpoch, absorbedUpTo);
         List<SubjectUnit.EvidenceRef> visible = new ArrayList<>();
         int coveredOmitted = 0;
         for (SubjectUnit.EvidenceRef e : unit.evidence()) {
-            if (lastHeadlineEpoch > 0 && e.addedAtEpoch() <= lastHeadlineEpoch) {
+            if (coveredBoundary > 0 && e.addedAtEpoch() <= coveredBoundary) {
                 coveredOmitted++;
-                continue; // already reflected in a prior headline → omit
+                continue; // already reflected in a prior headline / the fact sheet → omit
             }
             visible.add(e);
         }
@@ -245,7 +350,9 @@ final class UnitBriefWriter {
         boolean haveHeadlines = lastHeadlineEpoch > 0;
         sb.append(lbl.evidenceHeader(haveHeadlines));
         if (coveredOmitted > 0) {
-            sb.append(lbl.coveredOmitted(coveredOmitted));
+            sb.append(absorbedUpTo > 0
+                    ? lbl.absorbedOmitted(coveredOmitted)
+                    : lbl.coveredOmitted(coveredOmitted));
         }
         if (start > 0) {
             sb.append(lbl.budgetOmitted(start));

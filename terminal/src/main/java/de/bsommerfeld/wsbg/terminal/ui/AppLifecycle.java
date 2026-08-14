@@ -212,6 +212,8 @@ final class AppLifecycle {
         // also ride the browser-joker fetch chain, so they start here too.
         safeStart(() -> injector.getInstance(MarketMemoryService.class).start(), "MarketMemoryService");
         LOG.info("Deferred background workload is up.");
+        safeStart(() -> injector.getInstance(de.bsommerfeld.wsbg.terminal.agent.SentimentDailyService.class).start(),
+                "SentimentDailyService");
     }
 
     private static void safeStart(Runnable r, String name) {
@@ -236,6 +238,8 @@ final class AppLifecycle {
         safeStop(() -> injector.getInstance(PassiveMonitorService.class).shutdown(), "PassiveMonitorService");
         safeStop(() -> injector.getInstance(MarketMemoryService.class).shutdown(), "MarketMemoryService");
         safeStop(() -> injector.getInstance(EditorialPipeline.class).shutdown(), "EditorialPipeline");
+        safeStop(() -> injector.getInstance(de.bsommerfeld.wsbg.terminal.agent.SentimentDailyService.class).shutdown(),
+                "SentimentDailyService");
         safeStop(() -> injector.getInstance(AgentCoordinator.class).shutdown(), "AgentCoordinator");
         safeStop(() -> injector.getInstance(RedditRepository.class).shutdown(), "RedditRepository");
         safeStop(() -> injector.getInstance(AgentRepository.class).shutdown(), "AgentRepository");

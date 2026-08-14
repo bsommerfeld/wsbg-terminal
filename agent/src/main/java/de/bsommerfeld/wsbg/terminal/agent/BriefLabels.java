@@ -182,6 +182,83 @@ final class BriefLabels {
                 + "itself, but the thread of discussion it was named in):\n";
     }
 
+    /** The permanent news dossier — verified facts, the subject's established knowledge. */
+    String dossierHeader() {
+        return de
+                ? "\nFAKTENBLATT (verifizierte News-Fakten zu diesem Thema, über alle Sitzungen"
+                + " gesammelt — dein gesicherter Wissensstand; NICHTS davon ist eine Neuigkeit):\n"
+                : "\nFACT SHEET (verified news facts on this subject, collected across sessions"
+                + " — your established knowledge; NONE of it is news):\n";
+    }
+
+    /** Said when the dossier block had to be cut to fit the window. */
+    String dossierOmitted(int n) {
+        return de
+                ? "  (" + n + " ältere Faktenzeile(n) weggelassen, um ins Kontext-Budget zu passen)\n"
+                : "  (" + n + " older fact line(s) omitted to fit the context budget)\n";
+    }
+
+    /** Source tag of a consolidated dossier line — several folded facts, no single source. */
+    String dossierConsolidatedTag() {
+        return de ? "Sammelstand" : "consolidated";
+    }
+
+    /** The daily sentiment history — how the room stood on past days, folded from the archive. */
+    String sentimentHistoryHeader() {
+        return de
+                ? "\nSTIMMUNGSHISTORIE (Tagesbilanz deiner früheren Schlagzeilen zu diesem Thema"
+                + " — Kontext, NICHTS davon ist neu):\n"
+                : "\nSENTIMENT HISTORY (daily balance of your prior headlines on this subject"
+                + " — context, NONE of it is new):\n";
+    }
+
+    /** One archived day: date, majority label, line count, optional intra-day arc. */
+    String sentimentDayLine(String date, String majority, int count, String arc) {
+        StringBuilder sb = new StringBuilder("  - ").append(date).append(": ").append(majority);
+        sb.append(de ? " (" + count + " Zeile(n)" : " (" + count + " line(s)");
+        if (arc != null && !arc.isBlank()) sb.append(", ").append(arc);
+        return sb.append(")\n").toString();
+    }
+
+    /** The session room sheet — what the ROOM has claimed/done, distilled; sentiment domain. */
+    String factSheetHeader() {
+        return de
+                ? "\nRAUM-BLATT (was der Raum bisher behauptet und getan hat — Stimmung,"
+                + " unverifiziert; Orientierung, NICHTS davon ist neu):\n"
+                : "\nROOM SHEET (what the room has claimed and done so far — sentiment,"
+                + " unverified; orientation, NONE of it is new):\n";
+    }
+
+    /** Said when the room sheet itself had to be cut to fit the window. */
+    String factSheetOmitted(int n) {
+        return de
+                ? "  (" + n + " ältere Raum-Zeile(n) weggelassen, um ins Kontext-Budget zu passen)\n"
+                : "  (" + n + " older room line(s) omitted to fit the context budget)\n";
+    }
+
+    /** Replaces {@link #coveredOmitted} once a room sheet exists: the content lives condensed above. */
+    String absorbedOmitted(int n) {
+        return de
+                ? "  (" + n + " frühere Erwähnung(en) bereits ins Raum-Blatt oben verdichtet —"
+                + " weggelassen; schreibe einen Nachschlag nur aus dem neuen Material hier)\n"
+                : "  (" + n + " earlier mention(s) already condensed into the room sheet above —"
+                + " omitted; write a follow-up only from the new material here)\n";
+    }
+
+    // ---- FactSheetUpdater input scaffold ----
+
+    String factsInputSubject(String name) {
+        return (de ? "THEMA: " : "SUBJECT: ") + name + "\n";
+    }
+
+    String factsInputKnown() {
+        return de ? "\nFAKTENBLATT BISHER:\n" : "\nFACT SHEET SO FAR:\n";
+    }
+
+    String factsInputFresh() {
+        return de ? "\nNEUE WORTMELDUNGEN AUS DEM RAUM:\n" : "\nNEW MENTIONS FROM THE ROOM:\n";
+    }
+
     String storyMemoryHeader() {
         return de
                 ? "\nDEINE BISHERIGEN SCHLAGZEILEN ZU DIESEM THEMA (die Geschichte bisher —"

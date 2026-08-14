@@ -38,6 +38,8 @@ public class AgentBrain {
     private ChatModel agentModel;
     /** Same gemma4 model as {@link #agentModel}, but a TIGHT numPredict — for headline composition. */
     private ChatModel composeModel;
+    /** Same gemma4 model again, but WITHOUT JSON mode — for prose replies. */
+    private ChatModel proseModel;
     private String activeAgentModel;
 
     private final GlobalConfig config;
@@ -103,6 +105,7 @@ public class AgentBrain {
         OllamaModelFactory.Models models = modelFactory.build(config, askOllama);
         this.agentModel = models.agentModel();
         this.composeModel = models.composeModel();
+        this.proseModel = models.proseModel();
         this.activeAgentModel = models.activeAgentModel();
         this.userLanguage = this.config.getUser().getUserLanguage();
 
@@ -214,6 +217,16 @@ public class AgentBrain {
     /** The tight-numPredict compose model (headline composition); see {@link #composeModel}. */
     public ChatModel getComposeModel() {
         return composeModel;
+    }
+
+    /**
+     * The same resident gemma4 without JSON mode — for the lanes whose prompt asks
+     * for plain sentences (the article digest). Using {@link #getAgentModel()}
+     * there hands the GGUF runner a JSON grammar for a prose prompt, and the
+     * digest comes back as JSON.
+     */
+    public ChatModel getProseModel() {
+        return proseModel;
     }
 
     // The deliberate + verdict lanes were removed 2026-08-13 — dead handles since

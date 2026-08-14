@@ -74,6 +74,11 @@ class PipelineSmokeIT {
             OllamaServerManager osm = new OllamaServerManager();
             LlmGate gate = new LlmGate();
             AgentBrain brain = new AgentBrain(config, bus, osm, gate);
+            // Boot the private Ollama server exactly as production does
+            // (AppLifecycle → AgentBrain.start() → OllamaServerManager.ensureRunning);
+            // relying on a leftover server from a running app made the smoke die
+            // with ConnectException whenever none happened to be up.
+            brain.start();
             ClusterRegistry registry = new ClusterRegistry();
             SubjectRegistry subjectRegistry = new SubjectRegistry();
             WebFetcher house = new HouseFetcher(java.util.Set.of(new DirectTransport()));
@@ -92,16 +97,28 @@ class PipelineSmokeIT {
             YahooMarketClient yahoo = new YahooMarketClient(house);
             RssRedditScraper rss = new RssRedditScraper(redditRepo, config, bus, direct);
 
-            // Production clustering. The ctor self-starts the scan loop.
+            // Production clustering. start() kicks off the scan loop (the ctor
+            // stopped self-starting when AppLifecycle took over the lifecycle —
+            // without this call the smoke waits 14 min for clusters that can
+            // never form).
             ClusterEngine clusterEngine = new ClusterEngine(registry);
             new PassiveMonitorService(rss, brain, bus, redditRepo, agentRepo,
                     new RedditSnapshotStore(), new AgentSnapshotStore(), registry,
-                    subjectRegistry, clusterEngine, config);
+                    subjectRegistry, clusterEngine, config).start();
 
             // The production editorial pipeline (same wiring as PipelineStagesIT).
             EditorialAgent editorial = new EditorialAgent(brain, gate, registry, agentRepo, redditRepo,
                     bus, new I18nService(config), yahoo,
                     subjectRegistry, config);
+            // Fact machinery on its production path: the article digester (compose-path
+            // warm-up) and the permanent dossier on a throwaway file — the smoke then
+            // exercises mint → brief → (rarely) consolidation exactly as shipped.
+            Path dossierFile = Files.createTempDirectory("smoke-dossier")
+                    .resolve("subject-dossiers.jsonl");
+            de.bsommerfeld.wsbg.terminal.db.SubjectDossierArchive dossier =
+                    new de.bsommerfeld.wsbg.terminal.db.SubjectDossierArchive(dossierFile);
+            editorial.setDossierArchive(dossier);
+            editorial.setArticleFetcher(house);
 
             // RSS cold-start is slow: scanSubreddit fetches every thread context
             // serially (anon rate limiter, ~7s each) and only clusters the whole
@@ -153,6 +170,35 @@ class PipelineSmokeIT {
                 printUnitOutcome(unit, published, agentRepo, totalHeadlines, tickerHeadlines, withMarketData);
             }
             if (toCompose.isEmpty()) System.out.println("    (none — no dirty units)");
+
+            // --- the fact machinery's outcome, human-judgeable from the transcript ---
+            System.out.println("\n[SMOKE] DOSSIER: " + dossier.size() + " fact(s) minted this run.");
+            for (SubjectUnit unit : toCompose) {
+                if (!unit.isInstrument()) continue;
+                List<de.bsommerfeld.wsbg.terminal.db.DossierFact> facts =
+                        dossier.bySubject(unit.ticker(), unit.isin());
+                if (facts.isEmpty()) continue;
+                System.out.println("  " + unit.ticker() + " (" + unit.canonicalName() + "):");
+                for (de.bsommerfeld.wsbg.terminal.db.DossierFact f : facts) {
+                    System.out.println("    - [" + f.sourcePublisher() + "] " + cap(f.text(), 220));
+                }
+            }
+            System.out.println("[SMOKE] ROOM SHEETS (post-compose distills):");
+            int sheets = 0;
+            for (SubjectUnit unit : toCompose) {
+                List<SubjectUnit.FactLine> sheet = unit.factSheet();
+                if (sheet.isEmpty()) continue;
+                sheets++;
+                System.out.println("  " + unit.id + " (" + unit.canonicalName() + "):");
+                for (SubjectUnit.FactLine l : sheet) {
+                    System.out.println("    - " + cap(l.text(), 220));
+                }
+            }
+            if (sheets == 0) System.out.println("    (none — every compose whiffed or absorb found nothing)");
+            // Persistence proof: a cold reload of the dossier file reads the same facts.
+            org.junit.jupiter.api.Assertions.assertEquals(dossier.size(),
+                    new de.bsommerfeld.wsbg.terminal.db.SubjectDossierArchive(dossierFile).size(),
+                    "dossier reload must read back every minted fact");
 
             printSummary(clusters.size(), totalHeadlines.get(), tickerHeadlines.get(),
                     withMarketData.get(), newsBackedSubjects.get());
@@ -268,9 +314,16 @@ class PipelineSmokeIT {
         List<Path> parked = new ArrayList<>();
         for (String name : List.of("reddit-snapshot.json", "agent-snapshot.json")) {
             Path f = appDir.resolve(name);
+            Path bak = appDir.resolve(name + ".pipesmoke-bak");
             if (Files.exists(f)) {
-                Path bak = appDir.resolve(name + ".pipesmoke-bak");
-                Files.move(f, bak);
+                // REPLACE: a bak left behind by a crashed earlier run must not
+                // block this one — the file being parked NOW is the live state.
+                Files.move(f, bak, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                parked.add(f);
+            } else if (Files.exists(bak)) {
+                // No live file but a leftover bak: an earlier run parked and died
+                // before its own snapshot saver recreated the file. Adopt the bak
+                // for restoration so the user's session state still comes back.
                 parked.add(f);
             }
         }

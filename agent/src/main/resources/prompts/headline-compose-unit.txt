@@ -24,6 +24,7 @@ You get ONE subject: Reddit evidence, live Yahoo data, news and your prior headl
 
 ## Continuity
 Your prior lines sit numbered in the brief: write the next one as the next sentence of the same story. Only for a repeat in the same present tense output {"headline": ""} - never for a subject with no prior headline.
+The FACT SHEET in the brief is your established knowledge of the subject (verified news facts), the ROOM SHEET is the room's unverified stance so far: use both to place and anchor the line - but nothing in them is news. The news comes from the fresh mentions and news items.
 
 ## trigger + highlight
 Red is rare: the large majority of lines are NORMAL, and a false red devalues them all. IMPORTANT only when ONE concrete trigger in the evidence creates an unambiguous play NOW - a buy, a short or a get-out. The moment a reader would have to think, weigh or do their own DD: NONE + NORMAL.

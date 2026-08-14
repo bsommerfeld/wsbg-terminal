@@ -171,9 +171,7 @@ export function fixtures(now = Date.now(), { runner = 'mlx' } = {}) {
         gate: { permits: 2, inUse: 2, interactiveWaiting: 1, backgroundWaiting: 3, interactiveStreak: 2, priority: 'interactive' },
         editorialQueue: { size: 7, inFlight: 2 },
         gauges: {
-          'digest.queue.depth': 34, 'digest.queue.capacity': 64, 'digest.queue.active': 4,
-          'digest.discarded': 3,
-          'digest.cache.digests': 812, 'digest.cache.fulltexts': 402, 'digest.cache.bodyHashes': 1204,
+          'digest.cache.digests': 812, 'digest.cache.bodyHashes': 1204,
           'digest.shellStrikeHosts': 6, 'digest.walledHosts': 11,
           'pipeline.prep.threads': 4, 'pipeline.prep.active': 2, 'pipeline.prep.inProgress': 3,
           'pipeline.prep.rerunRequested': 0, 'pipeline.prep.deferred': 1, 'pipeline.prep.emptyExtractionCooling': 2,

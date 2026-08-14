@@ -1,34 +1,31 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
-import de.bsommerfeld.wsbg.terminal.core.util.BackgroundThreads;
 import de.bsommerfeld.wsbg.terminal.web.article.Article;
 import de.bsommerfeld.wsbg.terminal.web.fetch.WebFetcher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Collection;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 
 /**
- * The article-digest pre-stage: reads a news item's FULL article (via
+ * The article-digest stage: reads a news item's FULL article (via
  * {@link ArticleReader}) and distills it into a few key-fact sentences with one
- * dedicated gemma4 call, so the compose model receives substance instead of a bare
+ * dedicated model call, so the compose model receives substance instead of a bare
  * title — without carrying the article's length (or its HTML leftovers) into the
  * compose prompt. Source-neutral: keyed by {@link Article#link()}, so every
  * {@code NewsSource} (Yahoo, wallstreet-online, future legs) rides the same lane.
  *
- * <p>Follows the proven vision pattern exactly: a per-URL session cache (failures
- * cached too — a paywalled/empty article is not re-fetched), a single background
- * worker that warms the cache asynchronously, and a lookup-only read
- * ({@link #ifCached}) on the compose path — composing never blocks on a cold
- * article. The model call funnels through the shared {@link ChatGateway}
- * (semaphore-gated, NUM_PARALLEL=2), so digesting can never over-subscribe Ollama.
+ * <p>On-demand, on the compose path: the compose worker digests the few articles
+ * its unit's brief will actually render ({@link #digestNow}), synchronously,
+ * right before composing — wire work at wire priority. The former background
+ * prefetch worker is gone: it warmed articles nobody composed from and its calls
+ * competed with the compose workers for the shared model gate, halving the
+ * wire's capacity whenever it ran. Results are session-cached per URL (failures
+ * too — a paywalled/empty article is not re-fetched), so each article costs its
+ * fetch + call exactly once; the brief still reads cache-only via
+ * {@link #ifCached}.
  *
  * <p>Opt-out via {@code headlines.read-articles} (read live, like
  * {@code analyze-images}); without a {@link WebFetcher} (tests, lab harness) the
@@ -55,16 +52,6 @@ final class NewsDigester {
     private final Map<String, String> byLink = new ConcurrentHashMap<>();
 
     /**
-     * Raw-article-text cache for full-text reads (link → readable text;
-     * "" = attempted and failed). Separate from the digest cache: a full-text
-     * caller takes the WHOLE article, the wire keeps its compact digest lane.
-     */
-    private final Map<String, String> textByLink = new ConcurrentHashMap<>();
-
-    /** The full-article cap - chunked downstream, never summarized. */
-    static final int FULL_ARTICLE_MAX_CHARS = 24_000;
-
-    /**
      * Boilerplate net: extracted-body hash → the first link it appeared under.
      * Real articles are never byte-identical across links, so the SAME body under
      * a second link is an interstitial shell (consent wall, error page) that
@@ -87,51 +74,6 @@ final class NewsDigester {
     /** Hosts declared consent-walled for this session (announced once at WARN). */
     private final Map<String, Boolean> walledHosts = new ConcurrentHashMap<>();
 
-    /**
-     * How deep the digest backlog may grow. Digesting is cache-warming: an item
-     * that has waited behind two hundred others is long past the compose it was
-     * meant to enrich, so the OLDEST waiting job is dropped to make room. The
-     * unbounded queue this replaces was the pipeline's real ceiling — with a
-     * full article pool the worker fell hours behind, and because every digest
-     * spends a slot of the shared gemma4 gate, the compose workers starved
-     * behind cache-warming for stories nobody was writing about anymore.
-     */
-    private static final int DIGEST_QUEUE_DEPTH = 200;
-
-    /**
-     * Single background worker, mirroring the vision pool's sizing rationale: the
-     * digest shares the one gemma4 model with extraction + compose, so one worker
-     * leaves the latency-sensitive editorial calls their slots — digesting is
-     * cache-warming, serialising it is the right trade.
-     */
-    /**
-     * Digest jobs the {@code DiscardOldestPolicy} silently dropped — the queue's
-     * data loss made countable. Incremented only in dev mode; stays 0 shipped.
-     * Declared BEFORE the executor so it exists when the policy is built.
-     */
-    private final java.util.concurrent.atomic.AtomicLong discardedDigests =
-            new java.util.concurrent.atomic.AtomicLong();
-
-    private final ThreadPoolExecutor digestExecutor = newDigestExecutor();
-
-    private ThreadPoolExecutor newDigestExecutor() {
-        ThreadPoolExecutor pool = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
-                new ArrayBlockingQueue<>(DIGEST_QUEUE_DEPTH),
-                BackgroundThreads.single("news-digest"),
-                new ThreadPoolExecutor.DiscardOldestPolicy() {
-                    @Override
-                    public void rejectedExecution(Runnable r, ThreadPoolExecutor e) {
-                        // Debug tap (dev-only): count the silent loss, then do
-                        // exactly what the stock policy does. No behaviour change.
-                        if (de.bsommerfeld.wsbg.terminal.core.debug.Debug.ENABLED) {
-                            discardedDigests.incrementAndGet();
-                        }
-                        super.rejectedExecution(r, e);
-                    }
-                });
-        return pool;
-    }
-
     private final AgentBrain brain;
     private final ChatGateway chatGateway;
     private final GlobalConfig config;
@@ -142,18 +84,12 @@ final class NewsDigester {
         this.brain = brain;
         this.chatGateway = chatGateway;
         this.config = config;
-        // Debug gauges (dev-only): the otherwise package-private state the
-        // runtime tile needs — queue pressure, the discard counter, and the
-        // five cache sizes that have no other size() anywhere. Registered
-        // once; sampled only when a debug request arrives.
+        // Debug gauges (dev-only): the otherwise package-private cache sizes that
+        // have no other size() anywhere. Registered once; sampled only when a
+        // debug request arrives.
         if (de.bsommerfeld.wsbg.terminal.core.debug.Debug.ENABLED) {
             var gauges = de.bsommerfeld.wsbg.terminal.core.debug.DebugGauges.get();
-            gauges.register("digest.queue.depth", () -> digestExecutor.getQueue().size());
-            gauges.register("digest.queue.capacity", () -> DIGEST_QUEUE_DEPTH);
-            gauges.register("digest.queue.active", digestExecutor::getActiveCount);
-            gauges.register("digest.discarded", discardedDigests::get);
             gauges.register("digest.cache.digests", byLink::size);
-            gauges.register("digest.cache.fulltexts", textByLink::size);
             gauges.register("digest.cache.bodyHashes", bodySeen::size);
             gauges.register("digest.shellStrikeHosts", shellStrikes::size);
             gauges.register("digest.walledHosts", walledHosts::size);
@@ -166,42 +102,6 @@ final class NewsDigester {
     }
 
     /**
-     * How many of one call's items are worth warming. The caller hands them
-     * newest-first, and a brief that renders at most a dozen articles gains
-     * little from the tail — while each extra job costs a fetch plus a slot of
-     * the shared model gate. Taking the freshest few keeps the backlog short
-     * enough that a digest still lands before the compose it belongs to.
-     */
-    private static final int PREFETCH_PER_CALL = 3;
-
-    /**
-     * Queues the freshest not-yet-digested items for background fetch + digest.
-     * Fire-and-forget: the compose brief reads cache-only ({@link #ifCached}), so a
-     * cold article simply isn't reflected this compose and enriches the next one.
-     */
-    void prefetch(Collection<Article> items) {
-        if (items == null || items.isEmpty() || articleReader == null || !readArticles()) return;
-        int queued = 0;
-        for (Article n : items) {
-            if (queued >= PREFETCH_PER_CALL) break;
-            if (n == null || n.link() == null || n.link().isBlank()) continue;
-            String link = n.link().trim();
-            if (byLink.containsKey(link)) continue;
-            digestExecutor.submit(() -> digest(link));
-            queued++;
-        }
-    }
-
-    /**
-     * Stops the background digest worker — called from the app shutdown sequence
-     * BEFORE Ollama goes down, so a digest mid-flight is interrupted instead of
-     * dying against the killed server and riding the retry machinery.
-     */
-    void shutdown() {
-        digestExecutor.shutdownNow();
-    }
-
-    /**
      * Lookup-only read for the brief renderer: the digest if this article has
      * already been read + distilled, otherwise empty — never triggers work.
      */
@@ -210,36 +110,19 @@ final class NewsDigester {
         return byLink.getOrDefault(link.trim(), "");
     }
 
-    /**
-     * Synchronous FULL-TEXT read for fact extraction: fetches the
-     * article's readable body ({@link #FULL_ARTICLE_MAX_CHARS} cap) with NO
-     * model call - the extraction downstream replaces the digest. Session-
-     * cached including failures; consent-walled hosts are fast misses.
-     */
-    String articleTextNow(String link) {
-        if (link == null || link.isBlank() || articleReader == null || !readArticles()) return "";
-        String trimmed = link.trim();
-        String cached = textByLink.get(trimmed);
-        if (cached != null) return cached;
-        String host = hostOf(trimmed);
-        if (host != null && walledHosts.containsKey(host)) {
-            textByLink.put(trimmed, "");
-            return "";
-        }
-        String text = articleReader.fetchArticleText(trimmed, FULL_ARTICLE_MAX_CHARS).orElse("");
-        if (text.length() < MIN_ARTICLE_CHARS) text = "";
-        textByLink.put(trimmed, text);
-        if (!text.isEmpty()) {
-            LOG.info("[NEWS] article text read ({} chars): {}", text.length(), trimmed);
-        }
-        return text;
+    /** Whether this link was already digested this session (success OR cached miss). */
+    boolean attempted(String link) {
+        return link != null && byLink.containsKey(link.trim());
     }
 
-    String digestNow(String link) {
-        if (link == null || link.isBlank() || articleReader == null || !readArticles()) return "";
-        String trimmed = link.trim();
-        digest(trimmed);
-        return byLink.getOrDefault(trimmed, "");
+    /**
+     * Synchronous fetch + distill for one article — the compose worker's warm-up
+     * call. Every outcome (including failure) is cached, so a link costs its
+     * fetch + model call once per session; a repeat call is a cache hit.
+     */
+    void digestNow(String link) {
+        if (link == null || link.isBlank() || articleReader == null || !readArticles()) return;
+        digest(link.trim());
     }
 
     /** Fetch + distill one article; every outcome (including failure) is cached. */
@@ -278,7 +161,9 @@ final class NewsDigester {
                     firstLink, link);
             return;
         }
-        var model = brain.getAgentModel();
+        // Prose handle, NOT the agent handle: article-extract asks for 2–4 German
+        // sentences, and the agent handle carries JSON mode.
+        var model = brain.getProseModel();
         if (model == null) return; // brain not ready — leave uncached so a later pass retries
         try {
             String sys = PromptLoader.loadLocalized("article-extract", brain.getUserLanguage().code());
@@ -296,7 +181,7 @@ final class NewsDigester {
                         text.length(), digest.length(), link);
             }
         } catch (Exception e) {
-            if (digestExecutor.isShutdown()) {
+            if (Thread.currentThread().isInterrupted()) {
                 // Interrupted by teardown, not a real miss — don't cache, don't warn.
                 LOG.debug("[NEWS] digest aborted by shutdown: {}", link);
                 return;

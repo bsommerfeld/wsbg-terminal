@@ -20,11 +20,12 @@ import java.util.regex.Pattern;
 
 /**
  * Builds the Ollama {@link ChatModel} instances the {@link AgentBrain} runs on
- * (extracted from {@code AgentBrain.initialize}). Both are the same resident
+ * (extracted from {@code AgentBrain.initialize}). All are the same resident
  * gemma4 (same model name + num_ctx, so ONE loaded runner): the agent model
- * (subject extraction + judge calls) and the compose model (schema attached —
- * see the honesty note at the compose builder for what that does and does not
- * guarantee). Also resolves the model name against the live Ollama tag list,
+ * (subject extraction + judge calls, JSON mode), the compose model (schema
+ * attached — see the honesty note at the compose builder for what that does and
+ * does not guarantee) and the prose model (no {@code format} at all, for the one
+ * lane that asks for sentences). Also resolves the model name against the live Ollama tag list,
  * falling back to any installed model of the same family.
  */
 final class OllamaModelFactory {
@@ -42,7 +43,8 @@ final class OllamaModelFactory {
     }
 
     /** The built models plus the resolved model names (for the init log line). */
-    record Models(ChatModel agentModel, ChatModel composeModel, String activeAgentModel) {
+    record Models(ChatModel agentModel, ChatModel composeModel, ChatModel proseModel,
+            String activeAgentModel) {
     }
 
     /**
@@ -183,6 +185,22 @@ final class OllamaModelFactory {
                 .timeout(timeout)
                 .build();
 
+        // Prose model — the SAME gemma4 again (same tag, same num_ctx, so still ONE
+        // runner), but WITHOUT `format`. The one lane whose prompt asks for plain
+        // German sentences instead of JSON is the article digest: it wants 2–4
+        // prose sentences, and it used to run on agentModel's JSON handle. On the
+        // GGUF runner that grammar is enforced, so the digest came back as JSON —
+        // either pasted into the brief as a JSON string or shorter than
+        // MIN_DIGEST_CHARS and dropped to the title fallback. On MLX `format` is
+        // ignored, which is why it never showed up on the default path.
+        ChatModel proseModel = OllamaChatModel.builder()
+                .baseUrl(baseUrl).modelName(agentName)
+                .temperature(agentModelEnum.getTemperature()).topP(0.9).topK(40)
+                .numCtx(ctxTokens).numPredict(NUM_PREDICT)
+                .think(think)
+                .timeout(timeout)
+                .build();
+
         // The former deliberate + verdict lanes (free-form judge / greedy seeded
         // "same sheet -> same number" decode) were REMOVED 2026-08-13: their only
         // caller, the closing assessment, left with the KI-DD, so both were dead
@@ -192,7 +210,7 @@ final class OllamaModelFactory {
         // #16860). If a reproducible-verdict lane ever returns, it must NOT be
         // built as "seed + T=0 on the resident MLX runner": either pin it to the
         // GGUF tag (second runner) or unload the runner before each verdict call.
-        return new Models(agentModel, composeModel, agentName);
+        return new Models(agentModel, composeModel, proseModel, agentName);
     }
 
     /**

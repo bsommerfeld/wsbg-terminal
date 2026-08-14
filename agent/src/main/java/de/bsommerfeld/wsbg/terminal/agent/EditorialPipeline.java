@@ -452,10 +452,6 @@ public final class EditorialPipeline {
         prepPool.shutdownNow();
         workerPool.shutdownNow();
         mergeScheduler.shutdownNow();
-        // The digest worker is the only editorial LLM lane outside these pools —
-        // stop it here too, while Ollama is still up, so it can't die mid-call
-        // against the killed server.
-        agent.newsDigester().shutdown();
         LOG.info("EditorialPipeline stopped.");
     }
 
