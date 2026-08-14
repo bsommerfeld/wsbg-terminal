@@ -1,5 +1,7 @@
 package de.bsommerfeld.updater.launcher;
 
+import de.bsommerfeld.updater.catalog.ModelCatalog;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -28,7 +30,15 @@ final class ModelSelection {
     /** Env var carrying the resolved tag into setup.sh / setup.ps1. */
     static final String MODEL_ENV = "WSBG_REASONING_MODEL";
 
-    /** Machine-readable probe result for model-choice UIs (e.g. terminal settings). */
+    /**
+     * Machine-readable probe result — a diagnostic record of what THIS
+     * launcher run saw and resolved. NOT a data feed for other UIs: a file
+     * written "whenever the launcher last ran" goes stale the moment the app
+     * updates without a launcher start (measured 2026-08-13, when a settings
+     * UI briefly rendered it and missed three fresh catalog tiers); anything
+     * that needs the ladder reads the compiled-in
+     * {@code de.bsommerfeld.updater.catalog.ModelCatalog} instead.
+     */
     static final String RECOMMENDATION_FILE = "hardware-recommendation.json";
 
     /**

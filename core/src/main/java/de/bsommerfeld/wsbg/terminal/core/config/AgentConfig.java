@@ -16,8 +16,10 @@ public class AgentConfig {
     private String editorialModel = "REASONING_POWER";
 
     @Key("agent.model-tag")
-    @Comment("Ollama model tag override for the one resident model (gemma4:e2b..26b, "
-            + "-mlx twins on Apple Silicon). Empty = the managed default tier: gemma4:e4b, "
+    @Comment("Ollama model tag override for the one resident model (the catalog ladder: "
+            + "granite4.1:3b/8b, gemma4:e2b..26b, qwen3.6:35b, nemotron-3.5-lightning:30b; "
+            + "-mlx twins on Apple Silicon where the registry has one). "
+            + "Empty = the managed default tier: gemma4:e4b, "
             + "as gemma4:e4b-mlx on Apple Silicon. The launcher reads this key too and "
             + "installs the matching model on the next start, so runtime and installed model "
             + "stay in sync. Only tags of a deployed family are honored; anything else degrades to "
@@ -135,22 +137,24 @@ public class AgentConfig {
     private static final double HOST_RESERVE_GB = 12.0;
 
     /**
-     * Approximate RESIDENT weight footprint in GB per model tag. Mirrors the
-     * launcher's {@code ModelCatalog} disk sizes (MLX twin where it differs) -
-     * the two must agree, the same way the deployed-family gates do. An
-     * unknown tag gets the anchor's size rather than zero: guessing small is
-     * the one error that reintroduces the swap collapse.
+     * Approximate RESIDENT weight footprint in GB per model tag — read from
+     * the ONE shared catalog ({@code ModelCatalog.residentGb()}, the same
+     * definition the launcher's choice screen and the settings' model section
+     * render), so the number that sizes the context window can never drift
+     * from the number the UIs promise. This used to be a hand-maintained
+     * mirror of the launcher's sizes. A tag matches its tier by base-tag
+     * prefix ({@code -mlx} twins included); an unknown tag gets the anchor's
+     * size rather than zero: guessing small is the one error that
+     * reintroduces the swap collapse. (A leftover {@code gemma4:12b} from the
+     * tier struck 2026-08-11 sizes as the anchor too — errs large, never
+     * small.)
      */
     static double weightsGbFor(String tag) {
         String t = tag == null ? "" : tag.strip().toLowerCase();
-        if (t.startsWith("gemma4:e2b")) return 6.5;
-        if (t.startsWith("gemma4:e4b")) return 8.8;
-        // (No gemma4:12b entry: the dense 12B tier was struck from the catalog on
-        // 2026-08-11 — a leftover 12b tag now sizes as the anchor below, which
-        // errs large, never small.)
-        if (t.startsWith("gemma4:26b")) return 18.0;
-        if (t.startsWith("nemotron-3.5-lightning:")) return 23.0;
-        return 8.8;
+        for (var tier : de.bsommerfeld.updater.catalog.ModelCatalog.values()) {
+            if (t.startsWith(tier.baseTag())) return tier.residentGb();
+        }
+        return de.bsommerfeld.updater.catalog.ModelCatalog.DEFAULT.residentGb();
     }
 
     /**

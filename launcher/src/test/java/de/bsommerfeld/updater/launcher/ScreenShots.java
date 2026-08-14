@@ -1,5 +1,7 @@
 package de.bsommerfeld.updater.launcher;
 
+import de.bsommerfeld.updater.catalog.ModelCatalog;
+
 import javax.imageio.ImageIO;
 import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
@@ -78,11 +80,11 @@ final class ScreenShots {
             };
             rows.add(new ModelChoicePanel.Row(tag, tier.displayName(), tier.quality(),
                     tier.speed(), String.format(Locale.GERMAN, "%.1f GB", tier.diskGbFor(true)),
-                    fit, rec, verdict));
+                    fit, rec, verdict, tag.endsWith("-mlx")));
         }
         return new ModelChoicePanel(rows, recTag, new ModelChoicePanel.Labels(
-                "Wähle dein KI-Modell", "Qualität", "Tempo",
-                "Die Empfehlung passt zu deinem Rechner", "Ok"), logo, v -> {});
+                "Wähle dein KI-Modell", "Qualität", "Tempo", "Ok", "Ohne MLX"),
+                logo, v -> {});
     }
 
     private static BufferedImage renderLogo() {

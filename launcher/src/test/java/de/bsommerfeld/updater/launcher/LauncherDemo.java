@@ -1,5 +1,7 @@
 package de.bsommerfeld.updater.launcher;
 
+import de.bsommerfeld.updater.catalog.ModelCatalog;
+
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -128,15 +130,15 @@ final class LauncherDemo {
                     "de".equals(i18n.language()) ? Locale.GERMAN : Locale.ROOT,
                     "%.1f GB", tier.diskGbFor(mlx));
             rows.add(new ModelChoicePanel.Row(tag, tier.displayName(), tier.quality(),
-                    tier.speed(), size, fit, rec, verdict));
+                    tier.speed(), size, fit, rec, verdict, tag.endsWith("-mlx")));
         }
 
         ModelChoicePanel.Labels labels = new ModelChoicePanel.Labels(
                 i18n.get("Choose your AI model"),
                 i18n.get("Quality"),
                 i18n.get("Speed"),
-                i18n.get("The recommendation fits your machine"),
-                i18n.get("OK"));
+                i18n.get("OK"),
+                i18n.get("Without MLX"));
 
         log.log("[demo] model: " + window.showModelChoice(rows, recTag, labels).get());
     }

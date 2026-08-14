@@ -19,28 +19,15 @@ public enum Model {
     REASONING_POWER("gemma4:e4b", "gemma4", 0.2);
 
     /**
-     * The families the app deploys tags from: the anchor above plus the
-     * Nemotron rung at the top of the ladder. Mirrors the launcher's model
-     * catalog - the two must agree, or the launcher installs a tag the runtime
-     * then refuses and silently falls back to the anchor, leaving the machine
-     * with a model it never downloaded. Adding a family stays a one-line
-     * change here; it also needs its resident size in
-     * {@code AgentConfig.weightsGbFor}, or the context window is sized against
-     * the wrong weights.
-     */
-    private static final String[] DEPLOYED_FAMILIES = {"gemma4:", "nemotron-3.5-lightning:"};
-
-    /**
      * Whether {@code tag} names a family the app deploys - the gate on
      * {@code agent.model-tag}. Family-level, not tag-level: a sibling size
      * within a deployed family stays selectable, a foreign model name never
-     * reaches the model factory.
+     * reaches the model factory. Delegates to the ONE shared catalog
+     * ({@code updater-core}) - this used to be a hand-maintained mirror of the
+     * launcher's list, which is exactly the kind of register that drifts.
      */
     public static boolean isDeployedFamily(String tag) {
-        for (String family : DEPLOYED_FAMILIES) {
-            if (tag.startsWith(family)) return true;
-        }
-        return false;
+        return de.bsommerfeld.updater.catalog.ModelCatalog.isDeployedFamily(tag);
     }
 
     private final String modelName;

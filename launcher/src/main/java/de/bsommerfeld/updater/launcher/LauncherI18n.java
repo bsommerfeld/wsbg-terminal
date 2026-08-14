@@ -53,7 +53,8 @@ final class LauncherI18n {
             Map.entry("Good fit", "Passt gut"),
             Map.entry("Tight fit", "Passt knapp"),
             Map.entry("Too large", "Zu groß"),
-            Map.entry("The recommendation fits your machine", "Die Empfehlung passt zu deinem Rechner"),
+            // "MLX" itself is a product name and stays untranslated.
+            Map.entry("Without MLX", "Ohne MLX"),
             Map.entry("Which updates do you want?", "Welche Updates willst du?"),
             Map.entry("Stable", "Stabil"),
             Map.entry("Risk management", "Risikomanagement"),

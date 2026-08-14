@@ -102,6 +102,19 @@ class EnvironmentSetupTest {
     }
 
     @Test
+    void classify_shouldDetectPullsForTheNewCatalogFamilies() {
+        // The pull detector is tag-generic, but the new families' tags carry a
+        // dot (granite4.1) — pin that the classifier passes them through
+        // untouched, since the launcher renders the phase from this exact name.
+        for (String tag : List.of("granite4.1:3b", "granite4.1:8b", "qwen3.6:35b-mlx")) {
+            List<String[]> emissions = collect(new ScriptOutputClassifier(),
+                    "> Pulling " + tag + "...");
+            assertFalse(emissions.isEmpty(), "no emission for " + tag);
+            assertEquals("Pulling " + tag, emissions.get(0)[0]);
+        }
+    }
+
+    @Test
     void classify_shouldDetectOllamaProgress() {
         List<String[]> emissions = collect(new ScriptOutputClassifier(),
                 "42% ▕██████████░░░░░░░░░░▏ 1.2 GB / 3.3 GB");
@@ -264,6 +277,23 @@ class EnvironmentSetupTest {
         assertEquals("Cleaning up old models", emissions.get(0)[0]);
         // The model name rides as detail (log only; the label stays translated).
         assertEquals("embeddinggemma:latest", emissions.get(0)[1]);
+    }
+
+    @Test
+    void classify_shouldDetectStoreHygieneLines() {
+        // The file-level safety net (aborted-download pieces, orphaned blobs)
+        // rides under the same cleanup phase with the file name as detail.
+        List<String[]> partial = collect(new ScriptOutputClassifier(),
+                "    > Removing partial download sha256-ab12cd-partial (1/2)...");
+        assertFalse(partial.isEmpty());
+        assertEquals("Cleaning up old models", partial.get(0)[0]);
+        assertEquals("sha256-ab12cd-partial", partial.get(0)[1]);
+
+        List<String[]> orphan = collect(new ScriptOutputClassifier(),
+                "    > Removing orphaned blob sha256-99ffee (2/2)...");
+        assertFalse(orphan.isEmpty());
+        assertEquals("Cleaning up old models", orphan.get(0)[0]);
+        assertEquals("sha256-99ffee", orphan.get(0)[1]);
     }
 
     @Test

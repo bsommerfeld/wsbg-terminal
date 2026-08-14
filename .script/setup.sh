@@ -28,11 +28,10 @@ set -e
 # installs/updates these to the latest registry build and removes anything else.
 # ONE model tag serves the whole editorial pipeline -- the single deployed model.
 # The launcher passes the resolved tag via WSBG_REASONING_MODEL (hardware check
-# + the user's config.toml choice live in ModelSelection there; valid tiers are
-# gemma4:e2b/e4b/26b and nemotron-3.5-lightning:30b, with the -mlx twins as the
-# STANDARD on Apple Silicon). The
-# fallback below only applies to standalone script runs without the launcher
-# and mirrors that platform split.
+# + the user's config.toml choice live in ModelSelection there; the valid tiers
+# are the launcher's ModelCatalog, -mlx twins as the STANDARD on Apple Silicon
+# where the registry has them). The fallback below only applies to standalone
+# script runs without the launcher and mirrors that platform split.
 DEFAULT_MODEL="gemma4:e4b"
 [ "$(uname -s)" = "Darwin" ] && [ "$(uname -m)" = "arm64" ] && DEFAULT_MODEL="gemma4:e4b-mlx"
 REASONING_MODEL="${WSBG_REASONING_MODEL:-$DEFAULT_MODEL}"   # the editorial agent model
@@ -225,6 +224,11 @@ fi
 # Altlasten. To switch models, edit DESIRED_MODELS; the check URL, pull, and GC
 # all follow (the runtime is always the latest release, see section 1).
 #
+# The same pass doubles as a SAFETY NET so the store matches what the terminal
+# believes: leftovers of aborted downloads (*-partial*), blobs no manifest
+# references, and broken entries (manifest present, blobs missing) are cleaned
+# -- conservatively: only what is PROVABLY unreferenced goes; in doubt, keep.
+#
 # FUTURE (separate, larger step): today this reconcile-against-local pattern
 # ("declare the desired set, diff it against what is actually installed, GC the
 # rest") governs ONLY the Ollama models. It should grow to cover the WHOLE
@@ -278,6 +282,87 @@ remote_digest() {
     rm -f "$tmp"
 }
 
+# The model's manifest file inside OUR store, or "" -- path ends /<name>/<tag>,
+# found under any registry host dir (registry.ollama.ai today).
+manifest_file() {
+    local name="${1%%:*}" tag="${1#*:}"
+    [ "$tag" = "$1" ] && tag="latest"
+    find "$AI_MODELS/manifests" -type f -path "*/$name/$tag" 2>/dev/null | head -1
+}
+
+# Whether the model's entry is COMPLETE: a manifest exists and every blob it
+# references is present. 'ollama list' happily lists a manifest whose blobs are
+# gone -- such a model looks installed but cannot load.
+model_complete() {
+    local mf blob
+    mf=$(manifest_file "$1")
+    [ -n "$mf" ] || return 1
+    while read -r blob; do
+        [ -f "$AI_MODELS/blobs/sha256-${blob#sha256:}" ] || return 1
+    done < <(grep -oE 'sha256:[0-9a-f]{64}' "$mf" 2>/dev/null)
+    return 0
+}
+
+# GC keep decision for one installed tag: kept exactly when it IS a desired
+# (pulled) tag -- everything else in the store is an Altlast.
+keep_model() {
+    local inst_lc m
+    inst_lc=$(printf '%s' "$1" | tr 'A-Z' 'a-z')
+    for m in "${DESIRED_MODELS[@]}"; do
+        [ "$inst_lc" = "$(printf '%s' "$m" | tr 'A-Z' 'a-z')" ] && return 0
+    done
+    return 1
+}
+
+# ==============================================================================
+# ABSOLUTE BOUNDARY -- deliberate, not incidental. This helper is the ONLY way
+# the safety net below deletes a file, and it deletes nothing it cannot PROVE
+# to live inside OUR isolated store ($AI_MODELS). Rationale: everything above
+# only ever calls '$OLLAMA rm' under OLLAMA_MODELS, but direct file surgery
+# means a path bug would no longer be cosmetic -- it would delete models in the
+# user's private ~/.ollama/models, the worst possible outcome of this script.
+# Hence: canonical paths only (symlinks and '..' resolved via cd/pwd -P), the
+# root itself pre-canonicalized by the caller, refusal on ANY doubt (empty
+# root, unresolvable parent, symlinked file), and never a recursive delete.
+# ==============================================================================
+safe_store_rm() {
+    local f="$1" root="$2" dir real
+    if [ -z "$root" ]; then
+        warn "Store root unset -- refusing to delete anything."
+        return 1
+    fi
+    # Only plain files; a symlink here is nothing this store ever creates and
+    # could point anywhere -- refuse rather than reason about it.
+    if [ ! -f "$f" ] || [ -L "$f" ]; then
+        warn "Refusing to delete (not a regular file): $f"
+        return 1
+    fi
+    dir=$(cd "$(dirname "$f")" 2>/dev/null && pwd -P) || {
+        warn "Refusing to delete (cannot canonicalize): $f"
+        return 1
+    }
+    real="$dir/$(basename "$f")"
+    case "$real" in
+        "$root"/*)
+            rm -f -- "$real"
+            ;;
+        *)
+            warn "Refusing to delete outside the isolated store: $real"
+            return 1
+            ;;
+    esac
+}
+
+# One "[*] Cleaning up old models..." phase header for the whole cleanup pass,
+# emitted lazily -- only when something is actually removed (parsed token, see
+# ScriptOutputClassifier).
+CLEANUP_HEADER_SHOWN=false
+cleanup_header() {
+    [ "$CLEANUP_HEADER_SHOWN" = true ] && return 0
+    CLEANUP_HEADER_SHOWN=true
+    echo "[*] Cleaning up old models..."
+}
+
 # Install-or-update each desired model. Track full presence so the GC below never
 # deletes the old model while a new one failed to land (e.g. an offline switch).
 # Guarded on the binary (mirrors setup.ps1): without it every pull would just
@@ -295,6 +380,19 @@ if [ -x "$OLLAMA" ]; then
         midx=$((midx + 1))
         have=$(local_digest "$model")
         want=$(remote_digest "$model")
+        # The CONFIGURED model is the one entry this script may only REPAIR,
+        # never remove: with it gone the terminal starts with no model at all
+        # -- the exact state the settings UI's trash lock exists to prevent,
+        # and the script must not produce it through the back door. An entry
+        # whose blobs are missing therefore falls into the pull branch (same
+        # "> Pulling" output, so the launcher progress stays correct). If the
+        # pull fails, the broken entry STAYS (plus a warning, and ALL_PRESENT
+        # keeps the whole cleanup pass away) -- honest, and fixable on the
+        # next run or via the settings.
+        if [ -n "$have" ] && ! model_complete "$model"; then
+            echo "    Repairing incomplete model $model (missing blobs) -- re-pulling..."
+            have=""
+        fi
         if [ -z "$have" ]; then
             echo "    > Pulling $model ($midx/$mtotal)..."
             "$OLLAMA" pull "$model" || { warn "Failed to pull $model -- continuing"; ALL_PRESENT=false; }
@@ -309,29 +407,27 @@ if [ -x "$OLLAMA" ]; then
         fi
     done
 
-    # GC: drop every isolated-store model that is no longer desired. Skipped when
-    # a desired pull failed, so we never remove the old model before the new one
-    # is safely in place. Collect the stale set FIRST so the launcher gets one
-    # "[*] Cleaning up old models..." phase header (emitted ONLY when there is
-    # actually something to remove -- an empty run stays silent) plus an
-    # "(idx/total)" on each removal line.
+    # GC + safety net. Skipped entirely when a desired pull failed, so we never
+    # remove anything while the configured model is not safely in place.
+    #
+    # Pass 1 -- stale models: everything 'ollama list' shows that keep_model()
+    # rejects (not a desired tag) is an Altlast and goes -- broken or intact,
+    # it is not desired. (The configured model was already repaired above,
+    # never removed.)
+    # Pass 2 -- file-level leftovers: *-partial* pieces of aborted downloads
+    # and blobs no manifest references. Both are recomputed AFTER the rm
+    # pass and deleted only through safe_store_rm (see the boundary above).
     if [ "$ALL_PRESENT" = true ]; then
         STALE_MODELS=()
         while read -r inst; do
             [ -z "$inst" ] && continue
-            keep=false
-            for model in "${DESIRED_MODELS[@]}"; do
-                [ "$(printf '%s' "$inst" | tr 'A-Z' 'a-z')" = "$(printf '%s' "$model" | tr 'A-Z' 'a-z')" ] && { keep=true; break; }
-            done
-            [ "$keep" = false ] && STALE_MODELS+=("$inst")
+            keep_model "$inst" || STALE_MODELS+=("$inst")
         done < <("$OLLAMA" list 2>/dev/null | tail -n +2 | awk '{print $1}')
 
         if [ "${#STALE_MODELS[@]}" -gt 0 ]; then
-            # Phase header the launcher (ScriptOutputClassifier) turns into the
-            # "Räume Altlasten weg" step -- keep this exact wording, it is a
-            # parsed token. Same for the "> Removing stale model <m> (idx/total)"
-            # line below.
-            echo "[*] Cleaning up old models..."
+            # Phase header + removal lines are parsed tokens (the launcher's
+            # "Räume Altlasten weg" step) -- keep the exact wording.
+            cleanup_header
             sidx=0
             stotal=${#STALE_MODELS[@]}
             for inst in "${STALE_MODELS[@]}"; do
@@ -339,6 +435,63 @@ if [ -x "$OLLAMA" ]; then
                 echo "    > Removing stale model $inst ($sidx/$stotal)..."
                 "$OLLAMA" rm "$inst" >/dev/null 2>&1 || warn "Could not remove $inst"
             done
+        fi
+
+        # Pass 2: file-level hygiene, strictly inside the canonical store root.
+        STORE_ROOT=$(cd "$AI_MODELS" 2>/dev/null && pwd -P) || STORE_ROOT=""
+        if [ -n "$STORE_ROOT" ] && [ -d "$STORE_ROOT/blobs" ]; then
+            # 2a: leftovers of aborted downloads. Never listed by 'ollama list',
+            # never cleaned by anyone -- and with every desired pull verified
+            # complete above, no live download can still need them.
+            PARTIALS=()
+            while read -r f; do
+                [ -n "$f" ] && PARTIALS+=("$f")
+            done < <(find "$STORE_ROOT/blobs" -maxdepth 1 -type f -name '*-partial*' 2>/dev/null)
+            if [ "${#PARTIALS[@]}" -gt 0 ]; then
+                cleanup_header
+                pidx=0
+                ptotal=${#PARTIALS[@]}
+                for f in "${PARTIALS[@]}"; do
+                    pidx=$((pidx + 1))
+                    echo "    > Removing partial download $(basename "$f") ($pidx/$ptotal)..."
+                    safe_store_rm "$f" "$STORE_ROOT" || true
+                done
+            fi
+
+            # 2b: orphaned blobs -- blob files no manifest references anymore
+            # (a half-done rm or pull leaves these). The reference set is
+            # rebuilt AFTER the rm passes above, so blobs freed by them are
+            # caught in the same run. Conservative by construction: a blob is
+            # deleted only when it is PROVABLY absent from every manifest.
+            if [ -d "$STORE_ROOT/manifests" ]; then
+                REFERENCED=$(grep -rhoE 'sha256:[0-9a-f]{64}' "$STORE_ROOT/manifests" 2>/dev/null \
+                    | sed 's/^sha256:/sha256-/' | sort -u)
+            else
+                REFERENCED=""
+            fi
+            ORPHANS=()
+            while read -r f; do
+                [ -n "$f" ] || continue
+                case "$(basename "$f")" in
+                    sha256-*) ;;
+                    *) continue ;;   # unknown layout -- in doubt, keep
+                esac
+                if ! printf '%s\n' "$REFERENCED" | grep -qxF "$(basename "$f")"; then
+                    ORPHANS+=("$f")
+                fi
+            done < <(find "$STORE_ROOT/blobs" -maxdepth 1 -type f ! -name '*-partial*' 2>/dev/null)
+            if [ "${#ORPHANS[@]}" -gt 0 ]; then
+                cleanup_header
+                oidx=0
+                ototal=${#ORPHANS[@]}
+                for f in "${ORPHANS[@]}"; do
+                    oidx=$((oidx + 1))
+                    echo "    > Removing orphaned blob $(basename "$f") ($oidx/$ototal)..."
+                    safe_store_rm "$f" "$STORE_ROOT" || true
+                done
+            fi
+        elif [ -z "$STORE_ROOT" ]; then
+            warn "Could not canonicalize $AI_MODELS -- store hygiene skipped."
         fi
     fi
 else

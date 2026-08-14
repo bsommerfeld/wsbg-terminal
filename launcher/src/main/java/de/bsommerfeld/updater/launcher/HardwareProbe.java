@@ -1,5 +1,7 @@
 package de.bsommerfeld.updater.launcher;
 
+import de.bsommerfeld.updater.catalog.ModelCatalog;
+
 import java.lang.management.ManagementFactory;
 
 /**

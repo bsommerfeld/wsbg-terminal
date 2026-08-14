@@ -25,10 +25,9 @@
 # installs/updates these to the latest registry build and removes anything else.
 # ONE model tag serves the whole editorial pipeline -- the single deployed model.
 # The launcher passes the resolved tag via WSBG_REASONING_MODEL (hardware check
-# + the user's config.toml choice live in ModelSelection there; valid tiers are
-# gemma4:e2b/e4b/26b and nemotron-3.5-lightning:30b -- MLX twins are macOS-only,
-# so they never apply here). The
-# fallback below only applies to standalone script runs without the launcher.
+# + the user's config.toml choice live in ModelSelection there; the valid tiers
+# are the launcher's ModelCatalog -- MLX twins are macOS-only, so they never
+# apply here). The fallback below only applies to standalone script runs.
 $ReasoningModel = if ($env:WSBG_REASONING_MODEL) { $env:WSBG_REASONING_MODEL } else { "gemma4:e4b" }
 
 # Private endpoint -- our instance binds here, NEVER the user's default 11434.
@@ -243,6 +242,12 @@ if ((Test-Path $ollamaExe) -and (Test-OllamaUp)) {
 # a model switch leaves no Altlasten. To switch models, edit $desiredModels (the
 # runtime is always the latest release, see section 1).
 #
+# The same pass doubles as a SAFETY NET so the store matches what the terminal
+# believes: leftovers of aborted downloads (*-partial*), blobs no manifest
+# references, and a broken CONFIGURED entry (manifest present, blobs missing)
+# are cleaned/repaired -- conservatively: only what is PROVABLY unreferenced
+# goes; in doubt, keep. (Mirrors setup.sh.)
+#
 # FUTURE (separate, larger step): today this reconcile-against-local pattern
 # ("declare the desired set, diff it against what is actually installed, GC the
 # rest") governs ONLY the Ollama models. It should grow to cover the WHOLE
@@ -295,6 +300,89 @@ function Get-RemoteDigest($model) {
     }
 }
 
+# The model's manifest file inside OUR store, or $null -- path ends \<name>\<tag>,
+# found under any registry host dir (registry.ollama.ai today).
+function Get-ManifestFile($model) {
+    $parts = $model -split ':', 2
+    $name = $parts[0]
+    $tag = if ($parts.Count -gt 1 -and $parts[1]) { $parts[1] } else { "latest" }
+    $manifestsDir = Join-Path $aiModels "manifests"
+    if (-not (Test-Path $manifestsDir)) { return $null }
+    $suffix = [System.IO.Path]::Combine($name.Replace('/', [System.IO.Path]::DirectorySeparatorChar), $tag)
+    return Get-ChildItem -Path $manifestsDir -Recurse -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName.ToLower().EndsWith(([System.IO.Path]::DirectorySeparatorChar + $suffix).ToLower()) } |
+        Select-Object -First 1 -ExpandProperty FullName
+}
+
+# Whether the model's entry is COMPLETE: a manifest exists and every blob it
+# references is present. 'ollama list' happily lists a manifest whose blobs
+# are gone -- such a model looks installed but cannot load.
+function Test-ModelComplete($model) {
+    $mf = Get-ManifestFile $model
+    if (-not $mf) { return $false }
+    $refs = Select-String -Path $mf -Pattern 'sha256:[0-9a-f]{64}' -AllMatches -ErrorAction SilentlyContinue |
+        ForEach-Object { $_.Matches } | ForEach-Object { $_.Value }
+    foreach ($r in $refs) {
+        $blob = Join-Path (Join-Path $aiModels "blobs") ("sha256-" + $r.Substring(7))
+        if (-not (Test-Path $blob -PathType Leaf)) { return $false }
+    }
+    return $true
+}
+
+# GC keep decision for one installed tag: kept exactly when it IS a desired
+# (pulled) tag -- everything else in the store is an Altlast.
+function Test-KeepModel($inst) {
+    $instLower = $inst.ToLower()
+    foreach ($m in $desiredModels) {
+        if ($instLower -eq $m.ToLower()) { return $true }
+    }
+    return $false
+}
+
+# ==============================================================================
+# ABSOLUTE BOUNDARY -- deliberate, not incidental. This helper is the ONLY way
+# the safety net below deletes a file, and it deletes nothing it cannot PROVE
+# to live inside OUR isolated store ($aiModels). Rationale: everything above
+# only ever calls '& $ollamaExe rm' under OLLAMA_MODELS, but direct file
+# surgery means a path bug would no longer be cosmetic -- it would delete
+# models in the user's private %USERPROFILE%\.ollama\models, the worst
+# possible outcome of this script. Hence: canonical paths only (symlinks and
+# '..' resolved), the root pre-canonicalized by the caller, refusal on ANY
+# doubt (empty root, reparse point), and never a recursive delete.
+# ==============================================================================
+function Remove-StoreFileSafely($file, $rootReal) {
+    if ([string]::IsNullOrWhiteSpace($rootReal)) {
+        Write-Warn "Store root unset -- refusing to delete anything."
+        return $false
+    }
+    $item = Get-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
+    # Only plain files; a reparse point (symlink/junction) is nothing this
+    # store ever creates and could point anywhere -- refuse.
+    if (-not $item -or $item.PSIsContainer -or ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+        Write-Warn "Refusing to delete (not a regular file): $file"
+        return $false
+    }
+    $real = [System.IO.Path]::GetFullPath($item.FullName)
+    $prefix = $rootReal.TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
+    if (-not $real.ToLower().StartsWith($prefix.ToLower())) {
+        Write-Warn "Refusing to delete outside the isolated store: $real"
+        return $false
+    }
+    Remove-Item -LiteralPath $real -Force -ErrorAction SilentlyContinue
+    return $true
+}
+
+# One "[*] Cleaning up old models..." phase header for the whole cleanup pass,
+# emitted lazily -- only when something is actually removed (parsed token, see
+# ScriptOutputClassifier).
+$script:CleanupHeaderShown = $false
+function Write-CleanupHeader {
+    if (-not $script:CleanupHeaderShown) {
+        $script:CleanupHeaderShown = $true
+        Write-Host "[*] Cleaning up old models..."
+    }
+}
+
 if (Test-Path $ollamaExe) {
     $allPresent = $true
     # 1-based position + total in the desired set, appended to each "> Pulling"
@@ -307,6 +395,18 @@ if (Test-Path $ollamaExe) {
         $midx++
         $have = Get-LocalDigest $model
         $want = Get-RemoteDigest $model
+        # The CONFIGURED model is the one entry this script may only REPAIR,
+        # never remove: with it gone the terminal starts with no model at all
+        # -- the exact state the settings UI's trash lock exists to prevent,
+        # and the script must not produce it through the back door. An entry
+        # whose blobs are missing therefore falls into the pull branch (same
+        # "> Pulling" output, so the launcher progress stays correct). If the
+        # pull fails, the broken entry STAYS (plus a warning, and $allPresent
+        # keeps the whole cleanup pass away). (Mirrors setup.sh.)
+        if ($have -and -not (Test-ModelComplete $model)) {
+            Write-Host "    Repairing incomplete model $model (missing blobs) -- re-pulling..."
+            $have = $null
+        }
         # The launcher tracks model names from the exact "> Pulling <model>..."
         # wording -- keep extra detail on its own line, never appended.
         if (-not $have) {
@@ -328,28 +428,79 @@ if (Test-Path $ollamaExe) {
         }
     }
 
-    # GC: remove any isolated-store model no longer desired. Skipped if a desired
-    # pull failed, so the old model is never dropped before the new one lands.
-    # Collect the stale set FIRST so the launcher gets one "[*] Cleaning up old
-    # models..." phase header (emitted ONLY when there is something to remove)
-    # plus an "(idx/total)" on each removal line. (Mirrors setup.sh.)
+    # GC + safety net. Skipped entirely when a desired pull failed, so we never
+    # remove anything while the configured model is not safely in place.
+    # Pass 1 -- stale models: everything not desired is an Altlast and goes --
+    # broken or intact, it is not desired. (The configured model was already
+    # repaired above, never removed.)
+    # Pass 2 -- file-level leftovers (*-partial* pieces, orphaned blobs),
+    # recomputed AFTER the rm pass and deleted only through
+    # Remove-StoreFileSafely (see the boundary above). (Mirrors setup.sh.)
     if ($allPresent) {
         $installed = @()
         try { $installed = (& $ollamaExe list 2>$null | Select-Object -Skip 1 | ForEach-Object { ($_ -split '\s+')[0] }) } catch {}
-        $desiredLower = $desiredModels | ForEach-Object { $_.ToLower() }
-        $stale = @($installed | Where-Object { $_ -and ($desiredLower -notcontains $_.ToLower()) })
+        $installed = @($installed | Where-Object { $_ })
+        $stale = @($installed | Where-Object { -not (Test-KeepModel $_) })
+
         if ($stale.Count -gt 0) {
-            # Phase header the launcher (ScriptOutputClassifier) turns into the
-            # "Räume Altlasten weg" step -- keep this exact wording, it is a
-            # parsed token. Same for the "> Removing stale model <m> (idx/total)"
-            # line below.
-            Write-Host "[*] Cleaning up old models..."
+            # Phase header + removal lines are parsed tokens (the launcher's
+            # "Räume Altlasten weg" step) -- keep the exact wording.
+            Write-CleanupHeader
             $sidx = 0
             foreach ($inst in $stale) {
                 $sidx++
                 Write-Host "    > Removing stale model $inst ($sidx/$($stale.Count))..."
                 & $ollamaExe rm $inst 2>$null | Out-Null
             }
+        }
+
+        # Pass 2: file-level hygiene, strictly inside the canonical store root.
+        $storeRoot = $null
+        try { $storeRoot = (Resolve-Path -LiteralPath $aiModels -ErrorAction Stop).ProviderPath } catch {}
+        $blobsDir = if ($storeRoot) { Join-Path $storeRoot "blobs" } else { $null }
+        if ($storeRoot -and (Test-Path $blobsDir)) {
+            # 2a: leftovers of aborted downloads. Never listed by 'ollama list',
+            # never cleaned by anyone -- and with every desired pull verified
+            # complete above, no live download can still need them.
+            $partials = @(Get-ChildItem -Path $blobsDir -File -Filter "*-partial*" -ErrorAction SilentlyContinue)
+            if ($partials.Count -gt 0) {
+                Write-CleanupHeader
+                $pidx = 0
+                foreach ($f in $partials) {
+                    $pidx++
+                    Write-Host "    > Removing partial download $($f.Name) ($pidx/$($partials.Count))..."
+                    Remove-StoreFileSafely $f.FullName $storeRoot | Out-Null
+                }
+            }
+
+            # 2b: orphaned blobs -- blob files no manifest references anymore.
+            # The reference set is rebuilt AFTER the rm passes above, so blobs
+            # freed by them are caught in the same run. Conservative: a blob is
+            # deleted only when it is PROVABLY absent from every manifest.
+            $manifestsDir = Join-Path $storeRoot "manifests"
+            $referenced = @{}
+            if (Test-Path $manifestsDir) {
+                Get-ChildItem -Path $manifestsDir -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
+                    Select-String -Path $_.FullName -Pattern 'sha256:[0-9a-f]{64}' -AllMatches -ErrorAction SilentlyContinue |
+                        ForEach-Object { $_.Matches } | ForEach-Object {
+                            $referenced["sha256-" + $_.Value.Substring(7)] = $true
+                        }
+                }
+            }
+            $orphans = @(Get-ChildItem -Path $blobsDir -File -ErrorAction SilentlyContinue | Where-Object {
+                $_.Name -like "sha256-*" -and $_.Name -notlike "*-partial*" -and -not $referenced.ContainsKey($_.Name)
+            })
+            if ($orphans.Count -gt 0) {
+                Write-CleanupHeader
+                $oidx = 0
+                foreach ($f in $orphans) {
+                    $oidx++
+                    Write-Host "    > Removing orphaned blob $($f.Name) ($oidx/$($orphans.Count))..."
+                    Remove-StoreFileSafely $f.FullName $storeRoot | Out-Null
+                }
+            }
+        } elseif (-not $storeRoot) {
+            Write-Warn "Could not canonicalize $aiModels -- store hygiene skipped."
         }
     }
 } else {

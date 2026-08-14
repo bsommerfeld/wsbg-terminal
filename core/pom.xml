@@ -12,6 +12,15 @@
     <artifactId>core</artifactId>
 
     <dependencies>
+        <!-- The shared, dependency-free module carrying the ONE model catalog
+             (de.bsommerfeld.updater.catalog.ModelCatalog) both the launcher
+             and this side consume - deployed-family gate and resident weights
+             derive from it instead of mirroring it. -->
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>updater-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
          <dependency>
             <groupId>com.google.inject</groupId>
             <artifactId>guice</artifactId>

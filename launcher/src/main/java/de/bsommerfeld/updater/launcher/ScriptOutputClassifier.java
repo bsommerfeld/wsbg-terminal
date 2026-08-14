@@ -74,6 +74,14 @@ final class ScriptOutputClassifier {
     private static final Pattern MODEL_REMOVE_PATTERN = Pattern.compile(
             "(?i)>\\s*removing\\s+stale\\s+model\\s+(\\S+)");
 
+    // The safety net's file-level lines: "> Removing partial download <file>
+    // (idx/total)..." and "> Removing orphaned blob <file> (idx/total)...".
+    // Same cleanup phase, the file name as detail — without this they would
+    // fall through to the generic environment phase and flip the label
+    // mid-cleanup.
+    private static final Pattern STORE_HYGIENE_PATTERN = Pattern.compile(
+            "(?i)>\\s*removing\\s+(?:partial\\s+download|orphaned\\s+blob)\\s+(\\S+)");
+
     // Extracts trailing percentage from curl-style progress lines
     // (e.g. "####   8.8%" → group 1 = "8.8").
     private static final Pattern CURL_PROGRESS_PATTERN = Pattern.compile(
@@ -343,6 +351,13 @@ final class ScriptOutputClassifier {
             installingOllama = false;
             installingBrowser = false;
             consumer.accept("Cleaning up old models", m.group(1).strip());
+            return true;
+        }
+        Matcher h = STORE_HYGIENE_PATTERN.matcher(line);
+        if (h.find()) {
+            installingOllama = false;
+            installingBrowser = false;
+            consumer.accept("Cleaning up old models", h.group(1).strip());
             return true;
         }
         return false;

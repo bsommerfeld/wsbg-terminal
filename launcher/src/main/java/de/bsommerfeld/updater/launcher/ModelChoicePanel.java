@@ -1,5 +1,7 @@
 package de.bsommerfeld.updater.launcher;
 
+import de.bsommerfeld.updater.catalog.ModelCatalog;
+
 import javax.swing.Timer;
 import java.awt.Color;
 import java.awt.Font;
@@ -40,14 +42,31 @@ import java.util.function.Consumer;
  */
 final class ModelChoicePanel extends ChoiceScreen {
 
-    /** One selectable tier card, fully pre-localized by the caller. */
+    /**
+     * One selectable tier card, fully pre-localized by the caller.
+     *
+     * <p>{@code mlx} marks a tier whose EFFECTIVE tag is the Apple-Silicon MLX
+     * build — derived by the caller from what {@link ModelCatalog#tagFor}
+     * actually returned, never from a second list. Since the catalog grew
+     * tiers without an MLX twin (Granite), this is real information on an
+     * Apple-Silicon machine: some cards run as MLX builds and some do not.
+     * On Windows/Linux no tag ever ends in {@code -mlx}, so the chip never
+     * appears there by construction.
+     */
     record Row(String tag, String name, int quality, int speed, String sizeText,
-            ModelCatalog.Fit fit, boolean recommended, String verdictText) {
+            ModelCatalog.Fit fit, boolean recommended, String verdictText, boolean mlx) {
     }
 
-    /** The localized strings the panel renders. */
+    /**
+     * The localized strings the panel renders. {@code qualityWord} /
+     * {@code speedWord} no longer appear on the cards — they caption the two
+     * glyphs ONCE, in the footer legend where the recommendation note used to
+     * sit. {@code baseToggleWord} labels the "install without MLX" toggle in
+     * the nav strip, which only ever surfaces on machines where an MLX choice
+     * exists at all.
+     */
     record Labels(String title, String qualityWord, String speedWord,
-            String hint, String okText) {
+            String okText, String baseToggleWord) {
     }
 
     private static final int STACK_TOP = 72;
@@ -83,10 +102,17 @@ final class ModelChoicePanel extends ChoiceScreen {
     private static final Color VERDICT_TOO_LARGE = new Color(0xB0, 0x5A, 0x5A);
 
     private static final Font NAME_FONT = new Font("SansSerif", Font.BOLD, 15);
-    private static final Font SCORE_FONT = new Font("SansSerif", Font.BOLD, 16);
+    // ONE size for the whole metrics line (user decision 2026-08-14): with the
+    // "Qualität"/"Tempo" words moved off the card into the footer legend,
+    // nothing on the line justifies a second type size anymore. Weight and
+    // colour still separate the scores (bold, primary) from the quiet
+    // companions MLX + size (plain, dim).
+    private static final Font METRIC_FONT = new Font("SansSerif", Font.BOLD, 14);
+    private static final Font METRIC_QUIET_FONT = new Font("SansSerif", Font.PLAIN, 14);
     private static final Font LEGEND_FONT = new Font("SansSerif", Font.PLAIN, 10);
-    private static final Font SIZE_FONT = new Font("SansSerif", Font.PLAIN, 12);
     private static final Font VERDICT_FONT = new Font("SansSerif", Font.PLAIN, 11);
+    /** The toggle word at control size - same visual weight as the chevrons. */
+    private static final Font TOGGLE_FONT = new Font("SansSerif", Font.PLAIN, 13);
 
     private final List<Row> rows;
     private final Labels labels;
@@ -97,10 +123,23 @@ final class ModelChoicePanel extends ChoiceScreen {
     private float position;
     private final Timer flipTimer;
 
+    /**
+     * The exception lever: install the BASE (GGUF) build instead of the MLX
+     * twin on Apple Silicon. Default off — MLX stays the standard there; this
+     * only widens {@link #confirmedValue()} to the un-suffixed tag. The
+     * toggle lives in the nav strip's free middle (between the page dots and
+     * the chevrons — deliberately none of the existing tap zones) and shows
+     * ONLY while the front card actually has an MLX twin: a control that
+     * stands around inert on a Granite card would be the worst variant, and
+     * on Windows/Linux no row is ever MLX, so it never appears at all.
+     */
+    private boolean baseVariant;
+
     private int hoveredDot = -1;
     private boolean upHovered;
     private boolean downHovered;
     private boolean stackHovered;
+    private boolean toggleHovered;
 
     ModelChoicePanel(List<Row> rows, String preselectTag, Labels labels,
             BufferedImage logo, Consumer<String> onOk) {
@@ -121,7 +160,12 @@ final class ModelChoicePanel extends ChoiceScreen {
 
     @Override
     protected String hint() {
-        return labels.hint();
+        // The footer's text slot is empty on purpose: paintLegend() draws the
+        // glyph legend (diamond = quality, bolt = speed) into that exact spot
+        // — glyphs cannot travel through the plain hint string. The old
+        // recommendation note fell away with it (user decision 2026-08-14),
+        // as did the MLX explainer sentence ("irrelevant", same decision).
+        return "";
     }
 
     @Override
@@ -131,7 +175,14 @@ final class ModelChoicePanel extends ChoiceScreen {
 
     @Override
     protected String confirmedValue() {
-        return rows.get(target).tag();
+        // The lever widens the choice to the base build: the confirmed tag
+        // simply loses its -mlx suffix. Everything downstream
+        // (ModelConfigWriter → config.toml → WSBG_REASONING_MODEL) carries
+        // the tag verbatim, so this is the ONLY place the choice is made.
+        String tag = rows.get(target).tag();
+        return baseVariant && tag.endsWith("-mlx")
+                ? tag.substring(0, tag.length() - "-mlx".length())
+                : tag;
     }
 
     // =====================================================================
@@ -169,6 +220,11 @@ final class ModelChoicePanel extends ChoiceScreen {
 
     @Override
     protected void pressBody(int x, int y) {
+        if (toggleVisible() && toggleBounds().contains(x, y)) {
+            baseVariant = !baseVariant;
+            repaint();
+            return;
+        }
         if (upBounds().contains(x, y)) {
             flipTo(target - 1);
             return;
@@ -194,12 +250,14 @@ final class ModelChoicePanel extends ChoiceScreen {
         boolean down = downBounds().contains(x, y);
         int dot = dotAt(x, y);
         boolean stack = topPeekBounds().contains(x, y) || bottomPeekBounds().contains(x, y);
+        boolean toggle = toggleVisible() && toggleBounds().contains(x, y);
         boolean dirty = up != upHovered || down != downHovered
-                || dot != hoveredDot || stack != stackHovered;
+                || dot != hoveredDot || stack != stackHovered || toggle != toggleHovered;
         upHovered = up;
         downHovered = down;
         hoveredDot = dot;
         stackHovered = stack;
+        toggleHovered = toggle;
         return dirty;
     }
 
@@ -207,6 +265,7 @@ final class ModelChoicePanel extends ChoiceScreen {
     protected boolean bodyHitsControl(int x, int y) {
         return upBounds().contains(x, y) || downBounds().contains(x, y)
                 || dotAt(x, y) >= 0
+                || (toggleVisible() && toggleBounds().contains(x, y))
                 || topPeekBounds().contains(x, y) || bottomPeekBounds().contains(x, y);
     }
 
@@ -250,6 +309,27 @@ final class ModelChoicePanel extends ChoiceScreen {
         return PAD_X + 4;
     }
 
+    /** Whether the base-build lever applies to the FRONT card at all. */
+    private boolean toggleVisible() {
+        return rows.get(target).mlx();
+    }
+
+    /**
+     * The "without MLX" toggle: checkbox + word in the nav strip's free
+     * middle. Bounded left by the page dots and right by the chevrons, so it
+     * can never overlay or blur any of the existing tap zones (peek edges,
+     * dots, chevrons). Package-visible for the toggle test.
+     */
+    Rectangle toggleBounds() {
+        int left = dotsLeft() + rows.size() * DOT_GAP + 8;
+        int right = getWidth() - PAD_X - 2 * (2 * CHEVRON_R) - 6 - 10;
+        int cy = navCenterY();
+        // Height matches the chevron circles (2 × CHEVRON_R) - the toggle is
+        // a control-sized control now, and its hit zone grew with it while
+        // the left/right bounds still fence it off dots and chevrons.
+        return new Rectangle(left, cy - CHEVRON_R, Math.max(0, right - left), 2 * CHEVRON_R);
+    }
+
     private int dotAt(int x, int y) {
         int cy = navCenterY();
         if (Math.abs(y - cy) > 10) return -1;
@@ -283,6 +363,32 @@ final class ModelChoicePanel extends ChoiceScreen {
         g2.setClip(oldClip);
 
         paintNav(g2);
+        paintLegend(g2);
+    }
+
+    /**
+     * The glyph legend — diamond = quality, bolt = speed — painted once for
+     * all cards, in the footer slot the recommendation note used to hold
+     * (hint() returns "" so the slot is genuinely ours). This is what allowed
+     * the words to leave the cards: the meaning is stated here instead of
+     * repeated seven times.
+     */
+    private void paintLegend(Graphics2D g2) {
+        Rectangle ok = okBounds();
+        double cy = ok.getCenterY();
+        g2.setFont(LEGEND_FONT);
+        FontMetrics fm = g2.getFontMetrics();
+        int textY = (int) Math.round(cy + (fm.getAscent() - fm.getDescent()) / 2.0);
+
+        int x = PAD_X;
+        paintDiamond(g2, x + 5, cy, 5, LauncherTheme.ACCENT);
+        g2.setColor(LauncherTheme.TEXT_DIM);
+        g2.drawString(labels.qualityWord(), x + 13, textY);
+        x += 13 + fm.stringWidth(labels.qualityWord()) + 16;
+
+        paintBolt(g2, x + 5, cy, 5.5, LauncherTheme.TEXT_PRIMARY);
+        g2.setColor(LauncherTheme.TEXT_DIM);
+        g2.drawString(labels.speedWord(), x + 13, textY);
     }
 
     /**
@@ -354,13 +460,18 @@ final class ModelChoicePanel extends ChoiceScreen {
         g2.setColor(verdictColor);
         g2.drawString(row.verdictText(), pillX + 9, nameY);
 
+        // The name gets the full run up to the verdict pill back — the MLX
+        // marker moved down into the metrics line after it cut long names
+        // short here (seen live 2026-08-14 on "Nemotron 3.5 Lightning").
         g2.setFont(NAME_FONT);
         g2.setColor(LauncherTheme.TEXT_PRIMARY);
         g2.drawString(fitted(g2, row.name(), pillX - (x + 20) - 10), x + 20, nameY);
 
-        // Quality and speed as glyph + number + word, so the two scales explain
-        // themselves on the card instead of needing a legend in the header.
-        g2.setFont(SCORE_FONT);
+        // The metrics line: glyph + number for both scales, then the quiet
+        // MLX marker, size right-aligned — everything at ONE type size. The
+        // words moved into the footer legend (paintLegend), stated once for
+        // all cards instead of repeated on each.
+        g2.setFont(METRIC_FONT);
         FontMetrics fm = g2.getFontMetrics();
         double cy = metricsY - fm.getAscent() / 2.0 + 1;
 
@@ -370,23 +481,23 @@ final class ModelChoicePanel extends ChoiceScreen {
         g2.drawString(String.valueOf(row.quality()), qx + 13, metricsY);
         int qNumW = fm.stringWidth(String.valueOf(row.quality()));
 
-        g2.setFont(LEGEND_FONT);
-        FontMetrics lfm = g2.getFontMetrics();
-        g2.setColor(LauncherTheme.TEXT_DIM);
-        g2.drawString(labels.qualityWord(), qx + 17 + qNumW, metricsY);
-        int qWordW = lfm.stringWidth(labels.qualityWord());
-
-        int sx = qx + 17 + qNumW + qWordW + 20;
-        g2.setFont(SCORE_FONT);
+        int sx = qx + 13 + qNumW + 22;
         paintBolt(g2, sx, cy, 7, LauncherTheme.TEXT_PRIMARY);
-        g2.setColor(LauncherTheme.TEXT_PRIMARY);
         g2.drawString(String.valueOf(row.speed()), sx + 13, metricsY);
         int sNumW = fm.stringWidth(String.valueOf(row.speed()));
-        g2.setFont(LEGEND_FONT);
-        g2.setColor(LauncherTheme.TEXT_DIM);
-        g2.drawString(labels.speedWord(), sx + 17 + sNumW, metricsY);
 
-        g2.setFont(SIZE_FONT);
+        // The MLX marker, in line with the scores (Apple-Silicon MLX builds
+        // only, see Row.mlx). "MLX" is a product name and never translated.
+        // It shows the EFFECTIVE build: with the base-variant lever active the
+        // install is not MLX, so the marker disappears rather than lie. Plain
+        // and dim like the size text — it joins the line, it does not lead it.
+        if (row.mlx() && !baseVariant) {
+            g2.setFont(METRIC_QUIET_FONT);
+            g2.setColor(LauncherTheme.TEXT_DIM);
+            g2.drawString("MLX", sx + 13 + sNumW + 22, metricsY);
+        }
+
+        g2.setFont(METRIC_QUIET_FONT);
         FontMetrics zfm = g2.getFontMetrics();
         g2.setColor(LauncherTheme.TEXT_DIM);
         g2.drawString(row.sizeText(), x + w - 20 - zfm.stringWidth(row.sizeText()), metricsY);
@@ -408,6 +519,53 @@ final class ModelChoicePanel extends ChoiceScreen {
 
         paintChevron(g2, upBounds(), true, upHovered, target > 0);
         paintChevron(g2, downBounds(), false, downHovered, target < rows.size() - 1);
+
+        if (toggleVisible()) paintBaseToggle(g2);
+    }
+
+    /**
+     * The base-build lever: a small checkbox and its word, quiet like the
+     * dots beside it. "MLX" inside the label is a product name and arrives
+     * untranslated; everything around it came through {@code LauncherI18n}.
+     */
+    private void paintBaseToggle(Graphics2D g2) {
+        Rectangle b = toggleBounds();
+        // Control-sized (user decision 2026-08-14): the box matches the
+        // chevrons' visual weight instead of hiding at page-dot scale.
+        int box = 16;
+        int by = b.y + (b.height - box) / 2;
+
+        g2.setStroke(new java.awt.BasicStroke(1.2f));
+        if (baseVariant) {
+            g2.setColor(LauncherTheme.ACCENT);
+            g2.fill(new RoundRectangle2D.Double(b.x, by, box, box, 5, 5));
+            g2.setColor(LauncherTheme.ON_ACCENT);
+            Path2D check = new Path2D.Double();
+            check.moveTo(b.x + 4, by + 8);
+            check.lineTo(b.x + 7, by + 11.2);
+            check.lineTo(b.x + 12, by + 4.8);
+            g2.setStroke(new java.awt.BasicStroke(1.8f, java.awt.BasicStroke.CAP_ROUND,
+                    java.awt.BasicStroke.JOIN_ROUND));
+            g2.draw(check);
+        } else {
+            g2.setColor(toggleHovered ? LauncherTheme.TEXT_DIM : DOT_IDLE);
+            g2.draw(new RoundRectangle2D.Double(b.x + 0.5, by + 0.5, box - 1, box - 1, 5, 5));
+        }
+
+        // The word gives up type size rather than running into the chevrons -
+        // some languages are longer than the German "Ohne MLX".
+        Font word = TOGGLE_FONT;
+        int room = b.width - box - 7;
+        while (word.getSize() > 9
+                && g2.getFontMetrics(word).stringWidth(labels.baseToggleWord()) > room) {
+            word = word.deriveFont((float) word.getSize() - 1);
+        }
+        g2.setFont(word);
+        FontMetrics fm = g2.getFontMetrics();
+        g2.setColor(baseVariant || toggleHovered
+                ? LauncherTheme.TEXT_PRIMARY : LauncherTheme.TEXT_DIM);
+        g2.drawString(labels.baseToggleWord(), b.x + box + 7,
+                b.y + (b.height + fm.getAscent() - fm.getDescent()) / 2);
     }
 
     private void paintChevron(Graphics2D g2, Rectangle b, boolean up, boolean hovered,

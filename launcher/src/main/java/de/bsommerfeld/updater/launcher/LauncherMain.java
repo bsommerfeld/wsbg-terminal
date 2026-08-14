@@ -1,5 +1,7 @@
 package de.bsommerfeld.updater.launcher;
 
+import de.bsommerfeld.updater.catalog.ModelCatalog;
+
 import de.bsommerfeld.updater.api.ConnectivityProbe;
 import de.bsommerfeld.updater.api.GitHubRepository;
 import de.bsommerfeld.updater.api.ReleaseChannel;
@@ -369,16 +371,21 @@ public final class LauncherMain {
             String size = String.format(
                     "de".equals(i18n.language()) ? java.util.Locale.GERMAN : java.util.Locale.ROOT,
                     "%.1f GB", tier.diskGbFor(modelChoice.appleSilicon()));
+            // The MLX chip derives from the EFFECTIVE tag, never a second
+            // list: only tags tagFor() actually suffixed carry it, so tiers
+            // without an MLX twin (Granite) stay unmarked on Apple Silicon
+            // and no card is ever marked on Windows/Linux.
             rows.add(new ModelChoicePanel.Row(tag, tier.displayName(),
-                    tier.quality(), tier.speed(), size, fit, recommended, verdict));
+                    tier.quality(), tier.speed(), size, fit, recommended, verdict,
+                    tag.endsWith("-mlx")));
         }
 
         ModelChoicePanel.Labels labels = new ModelChoicePanel.Labels(
                 i18n.get("Choose your AI model"),
                 i18n.get("Quality"),
                 i18n.get("Speed"),
-                i18n.get("The recommendation fits your machine"),
-                i18n.get("OK"));
+                i18n.get("OK"),
+                i18n.get("Without MLX"));
 
         log.log("Model choice UI shown (no explicit choice on record)");
         String chosen = window.showModelChoice(rows, modelChoice.recommendedTag(), labels).get();
