@@ -47,15 +47,6 @@ public final class SymbolShapes {
     private static final Pattern JUNK_NUMBER_RUN = Pattern.compile(".*\\d{4,}.*");
 
     /**
-     * Venues whose HOME listings are genuinely numeric (Hong Kong {@code 1211.HK},
-     * Tokyo {@code 285A.T}, Korea {@code 000660.KS}/KOSDAQ, Taiwan, Shenzhen,
-     * Shanghai, Saudi) — there a leading digit is the primary notation, never a
-     * secondary-line marker.
-     */
-    private static final Set<String> NUMERIC_HOME_SUFFIXES =
-            Set.of("HK", "T", "KS", "KQ", "TW", "TWO", "SZ", "SS", "SR");
-
-    /**
      * Western venues where a numeric PREFIX marks a foreign secondary line
      * ({@code 1MUV2.MI}, {@code 9YM.F}, {@code 4HEI.TI}, {@code 0DHC.IL},
      * {@code 1ELF.MI}): Borsa Italiana &amp; the German regionals prefix their

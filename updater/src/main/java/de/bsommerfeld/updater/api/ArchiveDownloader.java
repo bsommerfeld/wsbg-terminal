@@ -2,7 +2,6 @@ package de.bsommerfeld.updater.api;
 
 import de.bsommerfeld.updater.download.Downloader;
 
-import java.io.IOException;
 import java.util.function.Consumer;
 
 /**

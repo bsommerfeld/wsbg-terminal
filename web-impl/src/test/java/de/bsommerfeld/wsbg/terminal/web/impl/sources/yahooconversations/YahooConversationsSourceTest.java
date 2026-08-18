@@ -1,6 +1,5 @@
 package de.bsommerfeld.wsbg.terminal.web.impl.sources.yahooconversations;
 
-import de.bsommerfeld.wsbg.terminal.web.article.Article;
 import de.bsommerfeld.wsbg.terminal.web.fetch.FetchUtil;
 import de.bsommerfeld.wsbg.terminal.web.fetch.WebFetcher;
 import de.bsommerfeld.wsbg.terminal.web.fetch.WebResponse;
@@ -11,7 +10,6 @@ import org.junit.jupiter.api.Test;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;

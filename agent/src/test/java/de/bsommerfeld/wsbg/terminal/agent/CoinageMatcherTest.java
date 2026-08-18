@@ -1,6 +1,5 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
-import de.bsommerfeld.wsbg.terminal.instruments.AliasProvenance;
 import de.bsommerfeld.wsbg.terminal.instruments.AliasStore;
 import de.bsommerfeld.wsbg.terminal.instruments.CorpusSource;
 import de.bsommerfeld.wsbg.terminal.instruments.InstrumentCorpus;
