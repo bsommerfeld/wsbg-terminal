@@ -32,7 +32,7 @@ class DebugBridgeTest {
 
     private static DebugBridge bridge(GlobalConfig config, SubjectRegistry registry) {
         return new DebugBridge(new PushHub(), config, null, null, null,
-                new InMemoryArticlePool(), null, null, registry);
+                new InMemoryArticlePool(), null, null, registry, null);
     }
 
     @SuppressWarnings("unchecked")
@@ -64,6 +64,26 @@ class DebugBridgeTest {
         assertEquals(Boolean.TRUE, data.get("devMode"));
         assertEquals(DebugBridge.COMMANDS, data.get("commands"));
         assertTrue((Long) data.get("heapMaxBytes") > 0);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void overviewMeasuresThisProcessAgainstTheMachineAndTheAppDataDir() {
+        Map<String, Object> data = data(bridge(new GlobalConfig()).respond("overview", Map.of()));
+
+        Map<String, Object> memory = (Map<String, Object>) data.get("memory");
+        List<Map<String, Object>> processes = (List<Map<String, Object>>) memory.get("processes");
+        assertEquals(1, processes.size(), "no Ollama manager — only this JVM is listed");
+        assertEquals(ProcessHandle.current().pid(), processes.get(0).get("pid"));
+        if (Boolean.TRUE.equals(memory.get("available"))) {
+            // RSS, not heap: the JVM's footprint is always the larger number.
+            assertTrue((Long) memory.get("terminalRssBytes") > (Long) data.get("heapUsedBytes"));
+        }
+
+        Map<String, Object> storage = (Map<String, Object>) data.get("storage");
+        assertNotNull(storage.get("path"));
+        assertNotNull(storage.get("entries"));
+        assertTrue((Long) storage.get("totalBytes") >= 0);
     }
 
     @Test

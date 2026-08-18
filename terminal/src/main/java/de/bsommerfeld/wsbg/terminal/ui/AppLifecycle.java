@@ -7,6 +7,7 @@ import de.bsommerfeld.wsbg.terminal.agent.EditorialPipeline;
 import de.bsommerfeld.wsbg.terminal.agent.MarketMemoryService;
 import de.bsommerfeld.wsbg.terminal.agent.OllamaServerManager;
 import de.bsommerfeld.wsbg.terminal.agent.PassiveMonitorService;
+import de.bsommerfeld.wsbg.terminal.agent.tagging.LuceneArticleTagger;
 import de.bsommerfeld.wsbg.terminal.web.impl.sources.currency.EurUsdMonitorService;
 import de.bsommerfeld.wsbg.terminal.web.impl.sources.feargreed.CryptoFearGreedMonitorService;
 import de.bsommerfeld.wsbg.terminal.web.impl.sources.feargreed.FearGreedMonitorService;
@@ -211,9 +212,9 @@ final class AppLifecycle {
         // Market memory: the ad-hoc register + Fear&Greed history harvests
         // also ride the browser-joker fetch chain, so they start here too.
         safeStart(() -> injector.getInstance(MarketMemoryService.class).start(), "MarketMemoryService");
-        LOG.info("Deferred background workload is up.");
         safeStart(() -> injector.getInstance(de.bsommerfeld.wsbg.terminal.agent.SentimentDailyService.class).start(),
                 "SentimentDailyService");
+        LOG.info("Deferred background workload is up.");
     }
 
     private static void safeStart(Runnable r, String name) {
@@ -237,9 +238,14 @@ final class AppLifecycle {
         // submitted while the services it depends on are torn down below.
         safeStop(() -> injector.getInstance(PassiveMonitorService.class).shutdown(), "PassiveMonitorService");
         safeStop(() -> injector.getInstance(MarketMemoryService.class).shutdown(), "MarketMemoryService");
-        safeStop(() -> injector.getInstance(EditorialPipeline.class).shutdown(), "EditorialPipeline");
         safeStop(() -> injector.getInstance(de.bsommerfeld.wsbg.terminal.agent.SentimentDailyService.class).shutdown(),
                 "SentimentDailyService");
+        safeStop(() -> injector.getInstance(EditorialPipeline.class).shutdown(), "EditorialPipeline");
+        // The tagger's sense arbiter talks to Ollama too, so it has to stop
+        // BEFORE the server does — otherwise its in-flight request dies with the
+        // socket and surfaces as a stack trace ("header parser received no
+        // bytes", then ConnectException on the retries).
+        safeStop(() -> closeQuietly(injector.getInstance(LuceneArticleTagger.class)), "ArticleTagger");
         safeStop(() -> injector.getInstance(AgentCoordinator.class).shutdown(), "AgentCoordinator");
         safeStop(() -> injector.getInstance(RedditRepository.class).shutdown(), "RedditRepository");
         safeStop(() -> injector.getInstance(AgentRepository.class).shutdown(), "AgentRepository");
@@ -248,6 +254,14 @@ final class AppLifecycle {
         safeStop(() -> injector.getInstance(PushHub.class).stop(), "PushHub");
         safeStop(() -> injector.getInstance(AssetServer.class).stop(), "AssetServer");
         safeStop(SingleInstance::release, "SingleInstance");
+    }
+
+    private static void closeQuietly(java.io.Closeable c) {
+        try {
+            c.close();
+        } catch (java.io.IOException e) {
+            throw new java.io.UncheckedIOException(e);
+        }
     }
 
     private static void safeStop(Runnable r, String name) {

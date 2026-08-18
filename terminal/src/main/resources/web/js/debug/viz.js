@@ -218,8 +218,11 @@ export function splitBars(rows, { legend } = {}) {
   return wrap;
 }
 
-/** Ranked composition: label, bar, value. One hue for one series. */
-export function hbars(items, { tone = 'info', max } = {}) {
+/**
+ * Ranked composition: label, bar, value. One hue for one series. `format`
+ * renders the value (counts are numbers, footprints are bytes).
+ */
+export function hbars(items, { tone = 'info', max, format = num } = {}) {
   const wrap = el('div', 'dbg-hbars');
   const peak = max || Math.max(1, ...items.map(i => i.value));
   for (const it of items) {
@@ -233,7 +236,7 @@ export function hbars(items, { tone = 'info', max } = {}) {
     fill.style.background = toneColor(it.tone || tone);
     track.appendChild(fill);
     row.appendChild(track);
-    row.appendChild(el('span', 'dbg-hbar-value', num(it.value)));
+    row.appendChild(el('span', 'dbg-hbar-value', format(it.value)));
     wrap.appendChild(row);
   }
   if (!items.length) wrap.appendChild(el('p', 'dbg-empty', 'nothing yet'));

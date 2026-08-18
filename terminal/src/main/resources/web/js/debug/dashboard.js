@@ -36,6 +36,8 @@ const SPANS = [[5 * 60_000, '5 m'], [15 * 60_000, '15 m'], [60 * 60_000, '1 h'],
 const ICON = '<svg viewBox="0 0 24 24"><path d="M8 4h8l-1 3H9L8 4z"/><rect x="6" y="7" width="12" height="12" rx="5"/>'
   + '<path d="M3 11h3M18 11h3M3 16h3M18 16h3M9 21l1-2M15 21l-1-2M9 3 8 1M15 3l1-2"/></svg>';
 
+const REFRESH_ICON = '<svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v5h-5"/></svg>';
+
 export function initDebug(socket) {
   if (document.querySelector('.js-debug-toggle')) return;   // never twice
   const client = new DebugClient(socket);
@@ -79,7 +81,6 @@ function buildDashboard(client) {
   const brand = el('div', 'dbg-brand');
   brand.appendChild(el('span', 'dbg-brand-dot'));
   brand.appendChild(el('span', 'dbg-brand-name', 'DEBUG'));
-  brand.appendChild(el('span', 'dbg-brand-sub', 'dev build · on demand'));
   topRow.appendChild(brand);
 
   // The beacon strip gets its own row: it is the first thing to read, and it
@@ -91,7 +92,13 @@ function buildDashboard(client) {
   const rateSeg = segmented(RATES, 2000, v => { state.rateMs = v; restartLoop(); });
   controls.appendChild(labelled('window', spanSeg.node));
   controls.appendChild(labelled('refresh', rateSeg.node));
-  const refreshBtn = el('button', 'dbg-btn', 'refresh now');
+  // Icon, not a word: on a line that already carries two segmented controls a
+  // third labelled button is what makes the header read as a toolbar.
+  const refreshBtn = el('button', 'dbg-icon');
+  refreshBtn.type = 'button';
+  refreshBtn.title = 'Refresh now';
+  refreshBtn.setAttribute('aria-label', 'Refresh now');
+  refreshBtn.innerHTML = REFRESH_ICON;
   refreshBtn.addEventListener('click', () => { pullActive(); sweep(); });
   controls.appendChild(refreshBtn);
   const status = el('span', 'dbg-status', '');
@@ -129,8 +136,7 @@ function buildDashboard(client) {
     tabs.set(panel.meta.id, tab);
     rail.appendChild(tab);
   }
-  const railNote = el('p', 'dbg-rail-note',
-    'Only the open panel refreshes. The rail updates on a slow sweep.');
+  const railNote = el('p', 'dbg-rail-note', 'Only the open panel refreshes.');
   rail.appendChild(railNote);
 
   document.body.appendChild(view);

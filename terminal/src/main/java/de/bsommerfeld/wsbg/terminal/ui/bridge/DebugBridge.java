@@ -7,6 +7,7 @@ import de.bsommerfeld.jshepherd.annotation.Section;
 import de.bsommerfeld.wsbg.terminal.agent.AgentBrain;
 import de.bsommerfeld.wsbg.terminal.agent.EditorialQueue;
 import de.bsommerfeld.wsbg.terminal.agent.LlmGate;
+import de.bsommerfeld.wsbg.terminal.agent.OllamaServerManager;
 import de.bsommerfeld.wsbg.terminal.agent.SubjectRegistry;
 import de.bsommerfeld.wsbg.terminal.agent.SubjectUnit;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
@@ -14,9 +15,12 @@ import de.bsommerfeld.wsbg.terminal.core.debug.BasinInflow;
 import de.bsommerfeld.wsbg.terminal.core.debug.CollectorClock;
 import de.bsommerfeld.wsbg.terminal.core.debug.DebugGauges;
 import de.bsommerfeld.wsbg.terminal.core.debug.DevMode;
+import de.bsommerfeld.wsbg.terminal.core.debug.DirectoryUsage;
 import de.bsommerfeld.wsbg.terminal.core.debug.LlmDebug;
+import de.bsommerfeld.wsbg.terminal.core.debug.ProcessMemory;
 import de.bsommerfeld.wsbg.terminal.core.debug.RedditPollDebug;
 import de.bsommerfeld.wsbg.terminal.core.debug.SourceHealthRegistry;
+import de.bsommerfeld.wsbg.terminal.core.util.StorageUtils;
 import de.bsommerfeld.wsbg.terminal.reddit.FallbackRedditSource;
 import de.bsommerfeld.wsbg.terminal.reddit.RedditSource;
 import de.bsommerfeld.wsbg.terminal.ui.debug.DebugLog;
@@ -61,7 +65,20 @@ import java.util.Objects;
  * <dl>
  * <dt>{@code overview}</dt>
  * <dd>{@code {devMode, pid, javaVersion, os, uptimeMs, heapUsedBytes,
- *     heapMaxBytes, processors, commands: [names]}}</dd>
+ *     heapMaxBytes, processors, commands: [names],
+ *     memory: {machineTotalBytes, machineFreeBytes, available: bool,
+ *     terminalRssBytes, ollamaRssBytes, totalRssBytes,
+ *     processes: [{pid, role, rssBytes (null = pid gone/unprobeable), own}]},
+ *     storage: {path, totalBytes, files, unreadable, sampledAtMs,
+ *     volumeTotalBytes, volumeFreeBytes,
+ *     entries: [{name, bytes, directory, files}] (largest first)}}}.
+ *     <b>Heap is not footprint:</b> {@code heapUsedBytes} is a fraction of the
+ *     JVM's RSS, and the model's gigabytes sit in Ollama's {@code runner} child,
+ *     not in the server process — hence per-process RSS from the OS, summed, and
+ *     held against the machine's total. {@code available=false} (Windows, or no
+ *     {@code ps}) means the RSS numbers are absent, never zero. Storage is the
+ *     app data dir, the one directory the app owns; the walk is cached ~15 s, so
+ *     {@code sampledAtMs} can lag the response's {@code at}.</dd>
  *
  * <dt>{@code sources} — the Quellenmesser (limit: events, default 200)</dt>
  * <dd>{@code {health: [{source, lastStatus, lastRunMs, lastSuccessMs,
@@ -169,11 +186,14 @@ public final class DebugBridge {
     private final HouseFetcher fetcher;
     private final RedditSource redditSource;
     private final SubjectRegistry subjectRegistry;
+    private final OllamaServerManager ollama;
 
     @Inject
     public DebugBridge(PushHub hub, GlobalConfig config, AgentBrain brain, LlmGate llmGate,
             EditorialQueue editorialQueue, InMemoryArticlePool pool, HouseFetcher fetcher,
-            RedditSource redditSource, SubjectRegistry subjectRegistry) {
+            RedditSource redditSource, SubjectRegistry subjectRegistry,
+            OllamaServerManager ollama) {
+        this.ollama = ollama;
         this.hub = hub;
         this.config = config;
         this.brain = brain;
@@ -254,6 +274,106 @@ public final class DebugBridge {
         out.put("heapMaxBytes", rt.maxMemory());
         out.put("processors", rt.availableProcessors());
         out.put("commands", COMMANDS);
+        // Both probe the OS and can fail on their own (no ps, an unreadable
+        // directory) — that must cost the failing block, not the whole overview.
+        out.put("memory", guarded(this::memory));
+        out.put("storage", guarded(this::storage));
+        return out;
+    }
+
+    private static Map<String, Object> guarded(java.util.function.Supplier<Map<String, Object>> block) {
+        try {
+            return block.get();
+        } catch (Throwable t) {
+            return Map.of("error", String.valueOf(t));
+        }
+    }
+
+    /**
+     * What this app takes from the machine's RAM: this JVM plus every process of
+     * our isolated Ollama, each as OS-reported RSS, against total physical memory.
+     * Heap says nothing here — the model lives in a foreign process.
+     */
+    private Map<String, Object> memory() {
+        Map<String, Object> out = new LinkedHashMap<>();
+        long total = 0, free = 0;
+        try {
+            if (java.lang.management.ManagementFactory.getOperatingSystemMXBean()
+                    instanceof com.sun.management.OperatingSystemMXBean os) {
+                total = os.getTotalMemorySize();
+                free = os.getFreeMemorySize();
+            }
+        } catch (Throwable ignored) {
+            // no com.sun bean — the machine scale is simply missing
+        }
+        out.put("machineTotalBytes", total);
+        out.put("machineFreeBytes", free);
+        out.put("available", ProcessMemory.available());
+
+        long selfPid = ProcessHandle.current().pid();
+        Map<Long, String> roles = new LinkedHashMap<>();
+        roles.put(selfPid, "terminal");
+        List<Map<String, Object>> ollamaProcs =
+                ollama == null ? List.of() : ollama.debugProcesses();
+        for (Map<String, Object> p : ollamaProcs) {
+            roles.put(((Number) p.get("pid")).longValue(), "ollama " + p.get("role"));
+        }
+
+        Map<Long, Long> rss = ProcessMemory.rssBytes(roles.keySet());
+        List<Map<String, Object>> processes = new ArrayList<>();
+        long terminalRss = 0, ollamaRss = 0;
+        for (Map.Entry<Long, String> e : roles.entrySet()) {
+            Long bytes = rss.get(e.getKey());
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("pid", e.getKey());
+            row.put("role", e.getValue());
+            row.put("rssBytes", bytes);
+            row.put("own", e.getKey() == selfPid);
+            processes.add(row);
+            if (bytes == null) continue;
+            if (e.getKey() == selfPid) terminalRss += bytes;
+            else ollamaRss += bytes;
+        }
+        out.put("processes", processes);
+        out.put("terminalRssBytes", terminalRss);
+        out.put("ollamaRssBytes", ollamaRss);
+        out.put("totalRssBytes", terminalRss + ollamaRss);
+        return out;
+    }
+
+    /**
+     * Disk: the app data dir, broken down by top-level entry, against the volume
+     * it sits on. One directory holds everything the app ever writes, so this
+     * total is the whole footprint — and the number an uninstall frees.
+     */
+    private Map<String, Object> storage() {
+        Map<String, Object> out = new LinkedHashMap<>();
+        java.nio.file.Path dir = StorageUtils.getAppDataDir();
+        DirectoryUsage.Snapshot snap = DirectoryUsage.of(dir);
+        out.put("path", dir.toString());
+        out.put("totalBytes", snap.totalBytes());
+        out.put("files", snap.files());
+        out.put("unreadable", snap.unreadable());
+        out.put("sampledAtMs", snap.sampledAtMs());
+        List<Map<String, Object>> entries = new ArrayList<>();
+        for (DirectoryUsage.Entry e : snap.entries()) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("name", e.name());
+            row.put("bytes", e.bytes());
+            row.put("directory", e.directory());
+            row.put("files", e.files());
+            entries.add(row);
+        }
+        out.put("entries", entries);
+        try {
+            java.nio.file.FileStore store = java.nio.file.Files.getFileStore(
+                    java.nio.file.Files.exists(dir) ? dir : dir.getRoot());
+            out.put("volumeTotalBytes", store.getTotalSpace());
+            out.put("volumeFreeBytes", store.getUsableSpace());
+        } catch (Exception e) {
+            out.put("volumeTotalBytes", 0L);
+            out.put("volumeFreeBytes", 0L);
+        }
         return out;
     }
 
