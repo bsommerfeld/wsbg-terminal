@@ -13,10 +13,14 @@
  * the plate stops swallowing clicks on its own — the app can never end up
  * locked behind a stuck intro.
  *
- * The glyph is the real logo, split into its two connected components
+ * The glyph is the real app icon, split into its two connected components
  * (icons/intro-hands.png + icons/intro-diamond.png) on ONE shared canvas —
  * both layers are stretched over the same box, so they line up pixel-exact
- * and can still be animated apart.
+ * and can still be animated apart. Both files are CUT OUT OF THE ICON by
+ * .script/build-icons.py, glass shading and drop shadow included: what lands
+ * here is the same artwork the Dock shows, not a second drawing of it. That
+ * script also prints the landing points the rules below are pinned to —
+ * re-run it after every icon change and carry the numbers over.
  */
 
 .intro {
@@ -96,7 +100,7 @@
 .intro-shaker {
   position: relative;
   width: min(46vh, 42vw, 460px);
-  aspect-ratio: 1044 / 924;
+  aspect-ratio: 596 / 531;
   animation:
     intro-shake-hard var(--d-shake) ease-out var(--t-hands-impact) both,
     intro-shake-soft var(--d-shake) ease-out var(--t-diamond-impact) both,
@@ -114,19 +118,20 @@
   will-change: transform;
 }
 
-/* Hands land on their own base — squash from the bottom edge. */
+/* Hands land on their own base — squash from the wrist line (96% down the
+   shared canvas; the rest is the shadow they throw). */
 .intro-hands {
   background-image: url("/icons/intro-hands.png");
-  transform-origin: 50% 100%;
+  transform-origin: 50% 96%;
   transform: translate3d(0, -8%, 0) scale(var(--from));
   opacity: 0;
   animation: intro-drop var(--d-drop) var(--t-hands) both;
 }
 
-/* The diamond lands on its tip (≈70% down the shared canvas). */
+/* The diamond lands on its tip (≈68% down the shared canvas). */
 .intro-diamond {
   background-image: url("/icons/intro-diamond.png");
-  transform-origin: 50% 70%;
+  transform-origin: 50% 68%;
   /* Lands nearer than the hands did — a wide, spread-out diamond reads as
      four red spikes, not as a stone. */
   --from: 2.1;
@@ -134,13 +139,41 @@
   opacity: 0;
   animation:
     intro-drop var(--d-drop) var(--t-diamond) both,
-    intro-diamond-glow var(--d-shine) ease-in-out var(--t-shine) both;
+    intro-diamond-lit var(--d-shine) ease-in-out var(--t-shine) both;
 }
 
-/* --- shimmer --------------------------------------------------------- */
+/* --- the stone catches the light ------------------------------------- */
 
-/* A light bar swept across the plate, masked by the diamond's own alpha —
-   so only the facets catch it. */
+/* The light lands in three parts, all on the same beat (--t-shine): the room
+   brightens behind the stone, the stone itself lights up, and a bar sweeps
+   across its facets. Each one alone reads as a filter over the picture;
+   together they read as light.
+   Behind the stone: a tight pool centred on the diamond's own middle (40%
+   down the shared canvas), painted BEHIND the glyph because ::before is the
+   stage's first child. Deliberately small — a halo the size of the plate is
+   fog, not a stone throwing light. */
+.intro-stage::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 34%;
+  width: 86%;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(closest-side,
+    oklch(0.93 0.10 78 / .34) 0%,
+    oklch(0.88 0.11 68 / .13) 42%,
+    transparent 72%);
+  mix-blend-mode: screen;
+  opacity: 0;
+  pointer-events: none;
+  animation: intro-bloom var(--d-shine) ease-out var(--t-shine) both;
+}
+
+/* A light bar swept across the plate, masked by the stone's SILHOUETTE —
+   icons/intro-diamond-mask.png, not the layer itself. The layer carries its
+   drop shadow in its alpha, and a sweep masked with that drags a bright
+   smear through the shadow instead of running across the facets. */
 .intro-shine {
   position: absolute;
   inset: 0;
@@ -155,8 +188,8 @@
   background-repeat: no-repeat;
   background-size: 240% 100%;
   background-position: 150% 0;
-  -webkit-mask-image: url("/icons/intro-diamond.png");
-          mask-image: url("/icons/intro-diamond.png");
+  -webkit-mask-image: url("/icons/intro-diamond-mask.png");
+          mask-image: url("/icons/intro-diamond-mask.png");
   -webkit-mask-size: contain;
           mask-size: contain;
   -webkit-mask-position: center;
@@ -172,7 +205,7 @@
 .intro-ring {
   position: absolute;
   left: 50%;
-  bottom: 0;
+  bottom: 4%;
   width: 76%;
   aspect-ratio: 1;
   margin-left: -38%;
@@ -186,7 +219,7 @@
   animation: intro-ring var(--d-ring) cubic-bezier(.15, .7, .3, 1) both;
 }
 .intro-ring[data-burst="hands"]   { animation-delay: var(--t-hands-impact); }
-.intro-ring[data-burst="diamond"] { animation-delay: var(--t-diamond-impact); bottom: 30%; width: 46%; margin-left: -23%; }
+.intro-ring[data-burst="diamond"] { animation-delay: var(--t-diamond-impact); bottom: 32%; width: 46%; margin-left: -23%; }
 
 /* Dust kicked sideways along the floor, then drifting up and apart.
    Each puff carries its own vector (--dx/--dy), end size (--s), opacity
@@ -194,11 +227,11 @@
 /* Both bursts start a touch above their impact line: dust seeded exactly at
    the floor stays hidden behind the glyph's own mass and never reads. */
 .intro-smoke { position: absolute; inset: 0; pointer-events: none; }
-.intro-smoke[data-burst="hands"]   { bottom: 4%; }
-/* Higher than the diamond's own contact point (30%, where its shockwave
+.intro-smoke[data-burst="hands"]   { bottom: 8%; }
+/* Higher than the diamond's own contact point (32%, where its shockwave
    sits): the stone drives into the cradle, so its dust leaves from inside
    the hands rather than from underneath them. */
-.intro-smoke[data-burst="diamond"] { bottom: 40%; }
+.intro-smoke[data-burst="diamond"] { bottom: 42%; }
 
 .intro-puff {
   position: absolute;
@@ -314,9 +347,19 @@
   100% { opacity: 0; background-position: -60% 0; }
 }
 
-@keyframes intro-diamond-glow {
-  0%, 100% { filter: drop-shadow(0 0 0 transparent); }
-  45%      { filter: drop-shadow(0 0 26px oklch(0.9 0.09 80 / .55)); }
+/* The stone brightens from within and picks up a narrow rim of light. The
+   rim is kept tight on purpose: a wide drop-shadow blurs the whole
+   silhouette — shadow included — into a formless halo, while 12px stays on
+   the edges of the facets, which is where a stone actually glows. */
+@keyframes intro-diamond-lit {
+  0%, 100% { filter: brightness(1) drop-shadow(0 0 0 transparent); }
+  42%      { filter: brightness(1.3) drop-shadow(0 0 12px oklch(0.93 0.10 78 / .55)); }
+}
+
+@keyframes intro-bloom {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(.72); }
+  38%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.14); }
 }
 
 @keyframes intro-floor-in { to { opacity: 1; } }

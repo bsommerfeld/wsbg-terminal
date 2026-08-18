@@ -1,0 +1,22 @@
+{
+  "fill" : { "solid" : "extended-srgb:0.0588,0.0471,0.0392,1.0000" },
+  "groups" : [
+    {
+      "layers" : [
+        { "image-name" : "diamond.png", "name" : "Diamant", "is-glass" : true }
+      ],
+      "shadow" : { "kind" : "neutral", "opacity" : 0.7 },
+      "specular" : true,
+      "translucency" : { "enabled" : false, "value" : 0.5 }
+    },
+    {
+      "layers" : [
+        { "image-name" : "hands.png", "name" : "Haende", "is-glass" : true }
+      ],
+      "shadow" : { "kind" : "neutral", "opacity" : 0.5 },
+      "specular" : true,
+      "translucency" : { "enabled" : false, "value" : 0.5 }
+    }
+  ],
+  "supported-platforms" : { "circles" : [ "watchOS" ], "squares" : "shared" }
+}

@@ -11,3 +11,4 @@
 - Aktien ohne deutsche Notierung zeigen jetzt den Kurs ihrer Heimatbörse - Zürich, Wien, Sydney, Toronto, Hongkong, Tokio, Stockholm.
 - Bei diesen Aktien fehlte in den Schlagzeilen der Vergleich über mehrere Tage - gefixt.
 - Auf macOS lagen zwei App-Symbole im Dock, eines davon „Java" - gefixt.
+- Neues App-Symbol in Glas-Optik - auf allen Plattformen, im Starter und in der Startanimation.

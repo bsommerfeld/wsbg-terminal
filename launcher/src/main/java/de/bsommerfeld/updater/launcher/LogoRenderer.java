@@ -19,7 +19,8 @@ import java.net.URL;
 final class LogoRenderer {
 
     // Freed hands+diamond glyph (no card background), sized to fill the upper
-    // area. The box preserves the glyph's 781:670 source aspect ratio.
+    // area. The box roughly matches the glyph's 648:576 source aspect ratio;
+    // the exact fit is computed below, so a re-exported glyph cannot distort.
     private static final int LOGO_W = 210;
     private static final int LOGO_H = 180;
 
