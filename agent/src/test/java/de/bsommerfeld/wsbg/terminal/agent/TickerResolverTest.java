@@ -9,7 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 /**
- * Exchange-preference (#8) of {@link TickerResolver#strongMatch}: among the
+ * Exchange-preference (#8) of {@link StrongTokenMatcher#strongMatch}: among the
  * quotes that match the subject name, the primary/home listing must win over
  * foreign secondary lines, OTC ADRs and same-name ETFs — without a brittle
  * exchange whitelist. Load-neutral: this only re-ranks quotes already in one

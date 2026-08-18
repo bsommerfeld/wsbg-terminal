@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 /**
  * Live, side-by-side comparison of the OLD single-token matcher (exact token
  * equality — the stop-word "cat and mouse") against the NEW one (Yahoo's own
- * relevance score, {@link TickerResolver#strongMatch}). For a battery of subject
+ * relevance score, {@link StrongTokenMatcher#strongMatch}). For a battery of subject
  * names it hits Yahoo search ONCE each and runs both matchers over the very same
  * quotes, printing every divergence with the score that drove it — so the
  * trade-off can be judged on real data, not anecdotes.
