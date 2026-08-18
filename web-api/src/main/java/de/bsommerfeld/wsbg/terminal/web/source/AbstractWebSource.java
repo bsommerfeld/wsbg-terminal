@@ -33,12 +33,6 @@ public abstract class AbstractWebSource implements WebSource {
         return get(url, headers, DEFAULT_TIMEOUT);
     }
 
-    /** The image path: bytes stay undecoded. */
-    protected final WebResponse getBinary(String url, Map<String, String> headers, Duration timeout)
-            throws Exception {
-        return fetcher.fetchBinary(url, headers, timeout, mode());
-    }
-
     /** The outlier door: a POST over this source's declared transport order. */
     protected final WebResponse post(String url, Map<String, String> headers, String body,
             String contentType, Duration timeout) throws Exception {

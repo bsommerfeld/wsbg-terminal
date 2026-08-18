@@ -90,14 +90,4 @@ public final class IndexCatalog {
         return symbol != null && symbol.startsWith("^");
     }
 
-    /**
-     * The clean display name for a catalogued {@code ^}-symbol („^GDAXI" → „DAX"),
-     * or {@code null} for anything uncatalogued — callers keep their own fallback.
-     * Used to keep raw caret symbols out of user-facing prose.
-     */
-    public static String displayNameFor(String symbol) {
-        if (symbol == null || symbol.isBlank()) return null;
-        Index idx = BY_SYMBOL.get(symbol.trim().toUpperCase(java.util.Locale.ROOT));
-        return idx == null ? null : idx.displayName();
-    }
 }

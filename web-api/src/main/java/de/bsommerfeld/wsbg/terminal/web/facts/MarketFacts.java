@@ -41,11 +41,4 @@ public record MarketFacts(
             Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
             Optional.empty(), Optional.empty());
 
-    /** {@code true} when at least one block is filled. */
-    public boolean hasAny() {
-        return price.isPresent() || venueStats.isPresent() || orderBook.isPresent()
-                || profile.isPresent() || analystView.isPresent() || analystActions.isPresent()
-                || shortInterest.isPresent() || insiderDealings.isPresent()
-                || hedgeFundPopularity.isPresent() || usListingStats.isPresent();
-    }
 }

@@ -637,9 +637,6 @@ public final class TickerResolver {
             return news != null && !news.isEmpty();
         }
 
-        public boolean hasRelated() {
-            return related != null && !related.isEmpty();
-        }
     }
 
     /**

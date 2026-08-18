@@ -136,16 +136,6 @@ public class EditorialAgent {
     private final Map<String, Integer> composeRetries = new ConcurrentHashMap<>();
 
     /**
-     * Free model permits right now — for the pipeline's contention logging. The gate is the
-     * shared {@link LlmGate} {@code @Singleton} (the same instance the vision prefetch acquires,
-     * since both hit the one model); prep extraction + compose + vision together never exceed
-     * Ollama's NUM_PARALLEL=2.
-     */
-    public int availableLlmPermits() {
-        return llmGate.availablePermits();
-    }
-
-    /**
      * Live config — read fresh each tick, NOT cached in the ctor, so the Settings
      * view (SettingsBridge mutates this same instance) takes effect without a
      * restart: news-coverage and the context-relief window switch live.

@@ -125,14 +125,6 @@ public class RedditRepository {
         return all;
     }
 
-    /** Returns up to {@code limit} most recently active threads. */
-    public List<RedditThread> getRecentThreads(int limit) {
-        return threadCache.values().stream()
-                .sorted(Comparator.comparingLong(RedditThread::lastActivityUtc).reversed())
-                .limit(limit > 0 ? limit : Long.MAX_VALUE)
-                .toList();
-    }
-
     /**
      * Removes threads whose {@code lastActivityUtc} is older than
      * {@code maxAgeSeconds} ago, along with their comment trees.

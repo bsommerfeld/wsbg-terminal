@@ -118,10 +118,6 @@ public abstract class PollingMonitor<T> {
         listeners.add(listener);
     }
 
-    public void removeListener(Consumer<T> listener) {
-        listeners.remove(listener);
-    }
-
     /** Stops the scheduler for good. Intended for test teardown / shutdown hooks. */
     public void shutdown() {
         scheduler.shutdownNow();

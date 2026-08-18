@@ -56,11 +56,6 @@ public class LlmGate {
         return permits - inUse;
     }
 
-    /** Whether the background lane is currently parked. */
-    public synchronized boolean isPriority() {
-        return priority;
-    }
-
     /** Background callers waiting right now — the UI's "wie viel steht still" hint. */
     public synchronized int backgroundWaiting() {
         return backgroundWaiting;

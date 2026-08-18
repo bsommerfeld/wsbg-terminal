@@ -76,10 +76,6 @@ public final class PushHub {
         openListeners.add(listener);
     }
 
-    public boolean hasClients() {
-        return !clients.isEmpty();
-    }
-
     /** Broadcasts a typed JSON message to every connected client. */
     public void broadcast(String type, Object payload) {
         if (clients.isEmpty()) {
