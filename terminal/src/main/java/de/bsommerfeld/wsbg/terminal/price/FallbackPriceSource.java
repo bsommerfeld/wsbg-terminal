@@ -55,6 +55,7 @@ public class FallbackPriceSource implements PriceSource {
     private final LangSchwarzSource ls;
     private final WallstreetOnlineClient wso;
     private final YahooMarketClient yahoo;
+    private final HomeVenueQuotes homeVenue;
     private final EurNormalizer eur;
     private final SnapshotCache cache = new SnapshotCache();
     /** Read fresh each call so the Settings toggle takes effect live; null in tests/lab. */
@@ -62,17 +63,19 @@ public class FallbackPriceSource implements PriceSource {
 
     @Inject
     public FallbackPriceSource(LangSchwarzSource ls, WallstreetOnlineClient wso,
-            YahooMarketClient yahoo, EurUsdMonitorService fx, GlobalConfig config) {
+            YahooMarketClient yahoo, HomeVenueQuotes homeVenue, EurUsdMonitorService fx,
+            GlobalConfig config) {
         this.ls = ls;
         this.wso = wso;
         this.yahoo = yahoo;
+        this.homeVenue = homeVenue;
         this.eur = new EurNormalizer(fx);
         this.config = config;
     }
 
     @Override
     public String name() {
-        return "chain[L&S (EUR) | (US opt-in fallback) Yahoo]";
+        return "chain[L&S (EUR) | home exchange (native) | Yahoo | CNBC]";
     }
 
     @Override
@@ -160,12 +163,22 @@ public class FallbackPriceSource implements PriceSource {
             String label = ref.isCategory("CUR") ? "L&S 24/7" : "L&S";
             return safe(() -> ls.fetchSnapshot(fi, label));
         });
+        // The paper's OWN exchange, between the EUR venue and the net. It fires only
+        // when the ISIN country (or, for an unstamped ref, the ticker suffix) names a
+        // venue we cover, so it never competes with L&S for a German listing — it
+        // catches the Swiss, Australian, Canadian, Hong Kong and Nordic papers that
+        // used to fall straight through to a Yahoo line. Native currency, like the
+        // Yahoo net below.
+        attempts.add(() -> homeVenue.snapshot(ref));
         // US fallback — Yahoo only (opt-in for equities; always on for index points / crypto).
         attempts.add(() -> {
             if (!usAllowed || !ref.hasTicker()) return Optional.empty();
             MarketSnapshot s = yahooSnapshotRaw(ref.ticker());
             return s == null ? Optional.empty() : Optional.of(convertUs ? eur.toEur(s) : s);
         });
+        // Last net: a broad international quote for a symbol shape Yahoo does not
+        // match. Behind Yahoo on purpose — it is a second chance, not a competitor.
+        attempts.add(() -> ref.hasTicker() ? homeVenue.broadQuote(ref.ticker()) : Optional.empty());
 
         MarketSnapshot freshestStale = null;
         for (Supplier<Optional<MarketSnapshot>> attempt : attempts) {
