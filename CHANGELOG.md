@@ -8,3 +8,5 @@
 - Rot findet die harten Auslöser wieder - Übernahme, Indexaufnahme, Großauftrag, Zulassung, Gewinnwarnung.
 - Namen im Genitiv blieben ungoldet („Reddits S&P-Einzug") - gefixt.
 - Artikel-Zusammenfassungen kamen je nach Modell-Backend als Roh-JSON an - gefixt.
+- Aktien ohne deutsche Notierung zeigen jetzt den Kurs ihrer Heimatbörse - Zürich, Wien, Sydney, Toronto, Hongkong, Tokio, Stockholm.
+- Bei diesen Aktien fehlte in den Schlagzeilen der Vergleich über mehrere Tage - gefixt.

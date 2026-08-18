@@ -141,7 +141,7 @@ CuratedFeedSource). Daneben: `reddit` (Reddit-Zugang), `instrument-corpus`
 | finanzen.net Kurse | Börse | `www.finanzen.net` | web-impl · sources.finanzennet.FinanzenNetMarketClient |
 | finanznachrichten.de | News | `www.finanznachrichten.de` | web-impl · sources.fnnews.FnInstrumentNewsClient; web-impl · sources.briefing.FnRssClient |
 | FINRA Short Volume | Filings | `cdn.finra.org` | web-impl · sources.finra.FinraShortVolumeClient; web-impl · sources.briefing.FinraShortVolumeClient |
-| Firmen-Websites (dynamisch) | News · Filings | <Firmen-Hostfamilie> | agent · CompanySiteCrawler, CompanyPressScout, CompanyLogoFetcher |
+| Firmen-Websites (dynamisch) | News · Filings | <Firmen-Hostfamilie> | agent · CompanySiteCrawler, CompanyPressScout |
 | FIRMS (NASA-Waldbrände) | Welt | `firms.modaps.eosdis.nasa.gov` | web-impl · sources.briefing.WildfireClient |
 | Forex Factory Kalender | Kalender | `nfs.faireconomy.media` | web-impl · sources.briefing.EconCalendarClient; terminal · CefWebFetcher |
 | Frankfurter (Wechselkurse) | Börse | `api.frankfurter.dev` | web-impl · sources.currency.EurUsdClient |
@@ -395,7 +395,7 @@ CuratedFeedSource). Daneben: `reddit` (Reddit-Zugang), `instrument-corpus`
 
 ## Notizen zur Reichweite
 
-- **Firmen-Websites haben keinen festen Host:** Die Firmensite-Kette (`CompanySiteCrawler`, `CompanyPressScout`, `CompanyLogoFetcher`) ruft die Domain an, die zur jeweiligen Firma aufgelöst wurde - sie taucht deshalb im Prüfbefehl NIE auf, weil im Quelltext keine URL steht. Sie zählt trotzdem als Quelle und steht darum als eigene Zeile im Register.
+- **Firmen-Websites haben keinen festen Host:** Die Firmensite-Kette (`CompanySiteCrawler`, `CompanyPressScout`) ruft die Domain an, die zur jeweiligen Firma aufgelöst wurde - sie taucht deshalb im Prüfbefehl NIE auf, weil im Quelltext keine URL steht. Sie zählt trotzdem als Quelle und steht darum als eigene Zeile im Register.
 - **Kuratierte Feeds stehen in der CSV, nicht in Java:** `web-impl/src/main/resources/web/sources.csv` - eine Zeile je Quelle, gefahren vom generischen CuratedFeedSource. Der Java-Prüfbefehl allein ist darum NICHT mehr vollständig; die zweite Grep-Zeile über die CSV gehört immer dazu.
 - **Handelsblatt/WiWo-Feeds laufen über Umleitung:** Die `www.*`-Feed-URLs antworten 301 auf die `feeds.cms.*`-Hosts; der Transport folgt der Umleitung. Im Code (und darum hier) stehen nur die `www.*`-Hosts.
 - **Tradegate ist umgezogen:** Kalenderdaten laufen über `www.tradegatebsx.com`, Kurse weiter über `www.tradegate.de`.
