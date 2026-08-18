@@ -8,7 +8,7 @@ package de.bsommerfeld.updater.catalog;
  * needs the bigger machine).
  *
  * <p>
- * It lives in {@code updater-core} because that is the one dependency-free
+ * It lives in {@code updater} because that is the one dependency-free
  * module BOTH processes share: the launcher (model choice screen, setup-script
  * tag resolution) and the terminal runtime (via {@code core}). It used to
  * live in the launcher alone, mirrored by hand into the runtime's family gate

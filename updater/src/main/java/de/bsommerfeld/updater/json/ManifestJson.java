@@ -55,24 +55,51 @@ final class ManifestJson {
     private static List<FileEntry> parseFileEntries(String json) {
         List<FileEntry> entries = new ArrayList<>();
 
+        /*
+         * Find the key, not the array. A first-hit search is safe here only
+         * because the manifest is machine-emitted and carries no free text in
+         * which the literal "files" could appear as a value.
+        */
         int arrayStart = json.indexOf("\"files\"");
         if (arrayStart == -1)
             throw new JsonParseException("Missing 'files' array");
 
+        /*
+         * Step from the key to the value. Separate from the lookup above so a
+         * manifest with a "files" key but no array reports that, not a missing key.
+        */
         arrayStart = json.indexOf('[', arrayStart);
         if (arrayStart == -1)
             throw new JsonParseException("Malformed 'files' array — no opening bracket");
 
+        /*
+         * Depth-counted rather than indexOf(']'), because the array's own file
+         * objects are nested and a path may legally contain a bracket.
+        */
         int arrayEnd = JsonScan.findMatchingBracket(json, arrayStart, '[', ']');
 
+        /*
+         * Narrow the working window to the array interior, so the loop below can
+         * never wander into keys that follow the array and happen to be named
+         * "path" or "size".
+        */
         String arrayContent = json.substring(arrayStart + 1, arrayEnd);
 
         int cursor = 0;
         while (cursor < arrayContent.length()) {
             int objStart = arrayContent.indexOf('{', cursor);
+
+            /*
+             * No further object: the rest is whitespace, or "files" was empty.
+             * An empty array is legal and yields an empty entry list.
+            */
             if (objStart == -1)
                 break;
 
+            /*
+             * Cut the entry out whole, so the field lookups below cannot bleed
+             * into the next entry when a key is missing from this one.
+            */
             int objEnd = JsonScan.findMatchingBracket(arrayContent, objStart, '{', '}');
             String obj = arrayContent.substring(objStart, objEnd + 1);
 
@@ -81,6 +108,11 @@ final class ManifestJson {
             long size = extractLong(obj, "size");
 
             entries.add(new FileEntry(path, sha256, size));
+
+            /*
+             * Resume past the entry just consumed - without this the indexOf
+             * above would keep finding the same '{' and never terminate.
+            */
             cursor = objEnd + 1;
         }
 
@@ -99,18 +131,38 @@ final class ManifestJson {
      *                            number
      */
     private static long extractLong(String json, String key) {
+
+        /*
+         * Quoted on both sides so that looking for "size" cannot match a
+         * longer key such as "size_hint" or "filesize".
+        */
         String pattern = "\"" + key + "\"";
         int keyIdx = json.indexOf(pattern);
         if (keyIdx == -1)
             throw new JsonParseException("Missing key: " + key);
 
+        /*
+         * Search past the key itself, so the colon found is this key's own
+         * separator and not one from an earlier pair.
+        */
         int colonIdx = json.indexOf(':', keyIdx + pattern.length());
 
+        /*
+         * JSON permits arbitrary whitespace between colon and value, and the
+         * action pretty-prints the manifest, so the value rarely starts at
+         * colonIdx + 1.
+        */
         int start = colonIdx + 1;
         while (start < json.length() && Character.isWhitespace(json.charAt(start))) {
             start++;
         }
 
+        /*
+         * Run to the first character that cannot belong to a number; the ',' or
+         * '}' that ends the pair is what stops this. The scan stays permissive
+         * (it would accept "1-2") because parseLong below rejects what it must -
+         * the same route a missing colon takes, which lands here on an empty span.
+        */
         int end = start;
         while (end < json.length() && (Character.isDigit(json.charAt(end)) || json.charAt(end) == '-')) {
             end++;

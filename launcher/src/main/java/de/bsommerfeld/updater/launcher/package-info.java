@@ -7,7 +7,7 @@
  * exclusively for the update progress window. Its responsibilities:
  * <ol>
  * <li><strong>Update</strong> — downloads the latest release artifacts
- * from GitHub via the {@code updater-core} library</li>
+ * from GitHub via the {@code updater} library</li>
  * <li><strong>Environment setup</strong> — runs platform-specific scripts
  * that install prerequisites like Ollama and pull AI models</li>
  * <li><strong>Application launch</strong> — spawns the JavaFX application

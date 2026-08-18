@@ -23,7 +23,7 @@ public enum Model {
      * {@code agent.model-tag}. Family-level, not tag-level: a sibling size
      * within a deployed family stays selectable, a foreign model name never
      * reaches the model factory. Delegates to the ONE shared catalog
-     * ({@code updater-core}) - this used to be a hand-maintained mirror of the
+     * ({@code updater}) - this used to be a hand-maintained mirror of the
      * launcher's list, which is exactly the kind of register that drifts.
      */
     public static boolean isDeployedFamily(String tag) {

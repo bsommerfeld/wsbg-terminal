@@ -21,27 +21,56 @@ final class ReleaseJson {
      * GitHub release JSON payload, or {@code null} if no such asset exists.
      */
     static String extractAssetUrl(String releaseJson, String assetName) {
-        // A literal "assets" (with unescaped quotes) cannot occur inside a
-        // JSON string value, so the first hit is the real assets key.
+
+        /*
+         * A literal "assets" (with unescaped quotes) cannot occur inside a
+         * JSON string value, so the first hit is the real assets key.
+        */
         int keyIdx = releaseJson.indexOf("\"assets\"");
         if (keyIdx == -1)
             return null;
         int arrayStart = releaseJson.indexOf('[', keyIdx);
         if (arrayStart == -1)
             return null;
+
+        /*
+         * Depth-counted and string-aware: the release body sits in the same
+         * payload and markdown brackets there would otherwise close the array
+         * early.
+        */
         int arrayEnd = JsonScan.findMatchingBracket(releaseJson, arrayStart, '[', ']');
 
+        /*
+         * Walk the asset objects in order. Scanning the full payload with an
+         * explicit arrayEnd bound (rather than a substring) keeps the reported
+         * indices aligned with the original input.
+        */
         int cursor = arrayStart + 1;
         while (cursor < arrayEnd) {
             int objStart = releaseJson.indexOf('{', cursor);
+
+            /*
+             * indexOf searches to the end of the payload, so an object *after*
+             * the assets array must not be mistaken for another asset.
+            */
             if (objStart == -1 || objStart > arrayEnd)
                 break;
             int objEnd = JsonScan.findMatchingBracket(releaseJson, objStart, '{', '}');
             String obj = releaseJson.substring(objStart, objEnd + 1);
 
+            /*
+             * Depth-1 lookup, not a first-hit scan: every asset object embeds an
+             * "uploader" object that carries a "name" of its own, which a naive
+             * search would return instead of the file name.
+            */
             if (assetName.equals(topLevelString(obj, "name"))) {
                 return topLevelString(obj, "browser_download_url");
             }
+
+            /*
+             * Resume past the asset just examined, otherwise the indexOf above
+             * returns the same '{' forever.
+            */
             cursor = objEnd + 1;
         }
         return null;
@@ -59,6 +88,11 @@ final class ReleaseJson {
      * Returns {@code null} when the payload holds no publishable release.
      */
     static String firstPublished(String releasesJson) {
+
+        /*
+         * The listing is a bare top-level array, so the first '[' is the array
+         * itself - no key to locate first, unlike the assets scan above.
+        */
         int arrayStart = releasesJson.indexOf('[');
         if (arrayStart == -1)
             return null;
@@ -72,6 +106,12 @@ final class ReleaseJson {
             int objEnd = JsonScan.findMatchingBracket(releasesJson, objStart, '{', '}');
             String obj = releasesJson.substring(objStart, objEnd + 1);
 
+            /*
+             * "draft" is an unquoted JSON boolean, so it needs the literal
+             * reader - topLevelString would return null for it. Anything that is
+             * not exactly true (absent, unreadable, false) counts as published:
+             * erring towards offering an update beats silently having none.
+            */
             if (!"true".equals(topLevelLiteral(obj, "draft"))) {
                 return obj;
             }
@@ -99,14 +139,29 @@ final class ReleaseJson {
         int i = topLevelValueStart(obj, key);
         if (i < 0)
             return null;
+
+        /*
+         * The returned index sits just past the key's closing quote, so the
+         * colon and any padding still have to be stepped over.
+        */
         while (i < obj.length() && (Character.isWhitespace(obj.charAt(i)) || obj.charAt(i) == ':')) {
             i++;
         }
+
+        /*
+         * A bare literal runs until the pair or container ends.
+        */
         int start = i;
         while (i < obj.length() && ",}]".indexOf(obj.charAt(i)) < 0 && !Character.isWhitespace(obj.charAt(i))) {
             i++;
         }
         String literal = obj.substring(start, i);
+
+        /*
+         * A leading quote means the value is a string, and the caller wanted a
+         * literal - refusing it keeps the string "true" from passing as boolean
+         * true.
+        */
         return literal.isEmpty() || literal.charAt(0) == '"' ? null : literal;
     }
 
@@ -122,6 +177,12 @@ final class ReleaseJson {
         int depth = 0;
         for (int i = 0; i < obj.length(); i++) {
             char c = obj.charAt(i);
+
+            /*
+             * Inside a value nothing is structural: braces, brackets and the key
+             * pattern itself are just characters there. This is what makes a
+             * release body full of markdown harmless.
+            */
             if (inString) {
                 if (c == '\\')
                     i++; // skip escaped char
@@ -133,6 +194,13 @@ final class ReleaseJson {
                 case '{', '[' -> depth++;
                 case '}', ']' -> depth--;
                 case '"' -> {
+
+                    /*
+                     * The object's own '{' pushed depth to 1, so depth 1 is where
+                     * its keys live; anything deeper belongs to a nested object.
+                     * Tested before entering string mode, because the key is
+                     * itself a string and would otherwise be skipped as a value.
+                    */
                     if (depth == 1 && obj.startsWith(pattern, i)) {
                         return i + pattern.length();
                     }
@@ -154,9 +222,22 @@ final class ReleaseJson {
         while (i < obj.length() && (Character.isWhitespace(obj.charAt(i)) || obj.charAt(i) == ':')) {
             i++;
         }
+
+        /*
+         * Not a quote means the value is a number, object or array; the caller
+         * asked for a string, so report absence rather than guess.
+        */
         if (i >= obj.length() || obj.charAt(i) != '"')
             return null;
 
+        /*
+         * Built up character by character rather than cut out with substring,
+         * because the value has to arrive unescaped - a download URL carrying
+         * \/ must come back as /. Only the backslash itself is consumed, which
+         * is enough for the fields read here (asset names, URLs); escape
+         * sequences that stand for another character - newline, tab, a unicode
+         * codepoint - would need real decoding and never occur in them.
+        */
         StringBuilder value = new StringBuilder();
         for (i++; i < obj.length(); i++) {
             char c = obj.charAt(i);
@@ -168,6 +249,10 @@ final class ReleaseJson {
                 value.append(c);
             }
         }
+
+        /*
+         * Ran off the end without a closing quote: the payload is truncated.
+        */
         return null;
     }
 }

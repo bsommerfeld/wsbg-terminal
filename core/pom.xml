@@ -18,7 +18,7 @@
              derive from it instead of mirroring it. -->
         <dependency>
             <groupId>de.bsommerfeld</groupId>
-            <artifactId>updater-core</artifactId>
+            <artifactId>updater</artifactId>
             <version>${project.version}</version>
         </dependency>
          <dependency>

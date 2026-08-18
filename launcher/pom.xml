@@ -16,7 +16,7 @@
     <dependencies>
         <dependency>
             <groupId>de.bsommerfeld</groupId>
-            <artifactId>updater-core</artifactId>
+            <artifactId>updater</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
