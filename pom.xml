@@ -16,7 +16,6 @@
         <module>web-api</module>
         <module>web-impl</module>
         <module>instrument-corpus</module>
-        <module>signals</module>
 
         <module>agent</module>
         <module>terminal</module>
@@ -85,12 +84,6 @@
                 <artifactId>web-impl</artifactId>
                 <version>${project.version}</version>
             </dependency>
-            <dependency>
-                <groupId>de.bsommerfeld</groupId>
-                <artifactId>signals</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
             <dependency>
                 <groupId>de.bsommerfeld</groupId>
                 <artifactId>agent</artifactId>

@@ -37,10 +37,6 @@
             <artifactId>web-impl</artifactId>
         </dependency>
         <dependency>
-            <groupId>de.bsommerfeld</groupId>
-            <artifactId>signals</artifactId>
-        </dependency>
-        <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-ollama</artifactId>
         </dependency>
