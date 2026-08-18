@@ -9,7 +9,7 @@ import java.time.Instant;
 import java.util.List;
 
 /**
- * The discrete gemma4 JSON-mode judge calls: the identity desk's two-venue pick,
+ * The discrete JSON-mode judge calls: the identity desk's two-venue pick,
  * the legacy resolver's identity/tier-2 instrument match, and the same-story
  * near-duplicate check. Each builds a numbered candidate/prior prompt, calls the
  * model through the shared {@link ChatGateway}, and parses a tiny JSON verdict.
@@ -19,14 +19,14 @@ import java.util.List;
  * fails CLOSED ({@code -1}, never a guess), {@link #isSameStoryRepeat} fails OPEN
  * ({@code false}, never blocks a publish).
  */
-final class Gemma4Judge {
+final class JudgeCalls {
 
-    private static final Logger LOG = LoggerFactory.getLogger(Gemma4Judge.class);
+    private static final Logger LOG = LoggerFactory.getLogger(JudgeCalls.class);
 
     private final AgentBrain brain;
     private final ChatGateway chatGateway;
 
-    Gemma4Judge(AgentBrain brain, ChatGateway chatGateway) {
+    JudgeCalls(AgentBrain brain, ChatGateway chatGateway) {
         this.brain = brain;
         this.chatGateway = chatGateway;
     }
@@ -66,7 +66,7 @@ final class Gemma4Judge {
 
     /**
      * The resolver's identity judge ({@link TickerResolver.MatchJudge}): a discrete
-     * gemma4 pick — "which of these search candidates IS the subject, or none" —
+     * The pick — "which of these search candidates IS the subject, or none" —
      * where the old embedding-cosine ranker matched on sounds-alike and promoted
      * themes to bogus tickers. Serves both the tier-2 fallback AND the tier-1 veto
      * (verdicts cached in the resolver, ~one call per unique subject). The thread
@@ -126,7 +126,7 @@ final class Gemma4Judge {
     }
 
     /**
-     * The identity desk's judge call ({@link IdentityDesk.PickJudge}): ONE gemma4
+     * The identity desk's judge call ({@link IdentityDesk.PickJudge}): ONE
      * JSON-mode pick over BOTH venues' numbered fact lines — "which YAHOO candidate
      * and which LS candidate IS the subject, or none each". The successor of
      * {@link #matchInstrument} for desk-decided subjects: same closed-choice
@@ -177,7 +177,7 @@ final class Gemma4Judge {
 
     /**
      * True when {@code line} is a re-tell of one of the unit's recent headlines
-     * (last {@link #SEMANTIC_DUP_WINDOW_SECS}): one small gemma4 verdict over the
+     * (last {@link #SEMANTIC_DUP_WINDOW_SECS}): one small verdict over the
      * fresh line + the numbered recent priors ({@code same-story-check} prompt) —
      * a discrete judgment that replaced the old embedding-cosine threshold, whose
      * calibration was language-sensitive and had to be re-tuned on live pairs.

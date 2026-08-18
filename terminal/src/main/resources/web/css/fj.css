@@ -113,13 +113,3 @@
 .row.placeholder { color: var(--mute); justify-content: center; }
 .row.placeholder .body { color: var(--mute); font-style: italic; }
 
-/* FX-options expiry grid inside an FJ row. */
-.fxgrid {
-  margin-top: 10px;
-  display: grid; grid-template-columns: 72px 1fr;
-  row-gap: 4px; column-gap: 16px;
-  font-size: 0.85em; color: var(--txt-2);
-}
-.fxgrid .pair { color: var(--mute); }
-.fxgrid .vals .v { color: var(--txt); }
-.fxgrid .vals .a { color: var(--mute-2); font-size: 0.85em; }

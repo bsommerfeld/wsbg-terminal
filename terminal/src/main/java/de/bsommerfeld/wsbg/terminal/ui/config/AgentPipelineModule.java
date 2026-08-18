@@ -65,7 +65,7 @@ final class AgentPipelineModule extends AbstractModule {
         bind(PriceSource.class).to(FallbackPriceSource.class).in(Singleton.class);
 
         // The identity desk's venue candidate search: L&S typed search results
-        // (STK/ETF/CUR/RES) feed the gemma4 identity judgment.
+        // (STK/ETF/CUR/RES) feed the identity judgment.
         bind(InstrumentLookup.class).to(LangSchwarzSource.class).in(Singleton.class);
 
         // The gateway's register door: whatever a caller typed resolves against

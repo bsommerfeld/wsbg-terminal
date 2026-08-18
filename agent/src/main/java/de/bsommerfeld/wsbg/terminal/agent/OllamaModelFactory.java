@@ -21,7 +21,7 @@ import java.util.regex.Pattern;
 /**
  * Builds the Ollama {@link ChatModel} instances the {@link AgentBrain} runs on
  * (extracted from {@code AgentBrain.initialize}). All are the same resident
- * gemma4 (same model name + num_ctx, so ONE loaded runner): the agent model
+ * one resident model (same name + num_ctx, so ONE loaded runner): the agent model
  * (subject extraction + judge calls, JSON mode), the compose model (schema
  * attached — see the honesty note at the compose builder for what that does and
  * does not guarantee) and the prose model (no {@code format} at all, for the one
@@ -135,7 +135,7 @@ final class OllamaModelFactory {
         LOG.info("[models] context window auto-scaled to {} tokens for this machine's memory.",
                 ctxTokens);
 
-        // gemma4 is a HYBRID THINKING model and Ollama defaults thinking ON — without an
+        // The deployed families are HYBRID THINKING models and Ollama defaults thinking ON — without an
         // explicit think=false every call silently generated ~2k chars of hidden English
         // "Thinking Process" (~500 tokens, 6–10 s GPU time) that nothing ever read. That,
         // not prefill and not parallelism, was the throughput ceiling (~5 calls/min): with
@@ -166,7 +166,7 @@ final class OllamaModelFactory {
                 .timeout(timeout)
                 .build();
 
-        // Compose model — the SAME gemma4 (no extra load), with the compose SCHEMA
+        // Compose model — the SAME model (no extra load), with the compose SCHEMA
         // attached as `format`: {headline, trigger, highlight, sentiment, derivedFrom,
         // newsUsed} with closed enums. Honesty about what that buys (verified live
         // 2026-08-13): on the GGUF runner the grammar enforces the shape; on the MLX
@@ -185,7 +185,7 @@ final class OllamaModelFactory {
                 .timeout(timeout)
                 .build();
 
-        // Prose model — the SAME gemma4 again (same tag, same num_ctx, so still ONE
+        // Prose model — the SAME model again (same tag, same num_ctx, so still ONE
         // runner), but WITHOUT `format`. The one lane whose prompt asks for plain
         // German sentences instead of JSON is the article digest: it wants 2–4
         // prose sentences, and it used to run on agentModel's JSON handle. On the

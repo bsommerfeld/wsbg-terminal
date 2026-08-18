@@ -25,7 +25,7 @@ class IdentityDeskTest {
     @TempDir
     Path dir;
 
-    private final AtomicReference<Gemma4Judge.DeskPick> nextPick = new AtomicReference<>();
+    private final AtomicReference<JudgeCalls.DeskPick> nextPick = new AtomicReference<>();
     private final AtomicInteger judgeCalls = new AtomicInteger();
 
     private final IdentityDesk.PickJudge judge = (subject, context, yahooLines, lsLines) -> {
@@ -70,7 +70,7 @@ class IdentityDeskTest {
         // Krispy Kreme, 2026-08-13: the judge confirmed 9YM.F (Frankfurt secondary)
         // with DNUT (Nasdaq primary) in the same list. Identity is the judge's call,
         // venue quality is not — the rerank picks the primary among same-paper quotes.
-        nextPick.set(new Gemma4Judge.DeskPick(2, 0));
+        nextPick.set(new JudgeCalls.DeskPick(2, 0));
         IdentityDesk d = desk(List.of());
 
         // Single-word subject on purpose: no exact-name bypass, the rerank itself decides.
@@ -82,7 +82,7 @@ class IdentityDeskTest {
 
     @Test
     void rerankNeverCrossesToADifferentPaper() {
-        nextPick.set(new Gemma4Judge.DeskPick(2, 0));
+        nextPick.set(new JudgeCalls.DeskPick(2, 0));
         IdentityDesk d = desk(List.of());
 
         SubjectMatch m = d.decide(ctx("Siemens Energy", List.of(
@@ -96,7 +96,7 @@ class IdentityDeskTest {
     void aWrapperCategoryVenuePickIsDropped() {
         // The venue search returns every category; a warrant carries the company
         // name too. The stamp must not execute a wrapper paper.
-        nextPick.set(new Gemma4Judge.DeskPick(1, 1));
+        nextPick.set(new JudgeCalls.DeskPick(1, 1));
         IdentityDesk d = desk(List.of(
                 ls(9, "DE000VX1AAA1", "675054", "VONT.O.END RHEINMETALL", "WNT", "Optionsschein")));
 
@@ -109,7 +109,7 @@ class IdentityDeskTest {
 
     @Test
     void bothVenuePicksStampTheMatch() {
-        nextPick.set(new Gemma4Judge.DeskPick(1, 2));
+        nextPick.set(new JudgeCalls.DeskPick(1, 2));
         IdentityDesk d = desk(List.of(
                 ls(1, "US0000000001", "A1AAAA", "WRONG TWIN CORP.", "STK", "Aktie"),
                 ls(2, "DE0007030009", "703000", "RHEINMETALL AG", "STK", "Aktie")));
@@ -124,7 +124,7 @@ class IdentityDeskTest {
 
     @Test
     void doubleZeroIsAConsideredNewsOnlyClaim() {
-        nextPick.set(new Gemma4Judge.DeskPick(0, 0));
+        nextPick.set(new JudgeCalls.DeskPick(0, 0));
         SubjectMatch m = desk(List.of(ls(9, "PL0000000001", "", "POLENERGIA SA", "STK", "Aktie")))
                 .decide(ctx("Polen", List.of(yq("PEG.WA", "Polenergia SA", "EQUITY")))).orElseThrow();
         assertNull(m.symbol(), "the judge saw all facts and struck every candidate → news-only");
@@ -151,7 +151,7 @@ class IdentityDeskTest {
 
     @Test
     void exactNameOverridesTheJudgesYahooPick() {
-        nextPick.set(new Gemma4Judge.DeskPick(1, 0)); // judge picks the wrong candidate
+        nextPick.set(new JudgeCalls.DeskPick(1, 0)); // judge picks the wrong candidate
         SubjectMatch m = desk(List.of())
                 .decide(ctx("Lithium Americas", List.of(
                         yq("XX", "Completely Different Inc.", "EQUITY"),
@@ -162,7 +162,7 @@ class IdentityDeskTest {
 
     @Test
     void venueOnlyPickCarriesTheWknAsSymbol() {
-        nextPick.set(new Gemma4Judge.DeskPick(0, 1));
+        nextPick.set(new JudgeCalls.DeskPick(0, 1));
         SubjectMatch m = desk(List.of(ls(7, "DE000A1TNV91", "A1TNV9", "GERMAN SMALLCAP SE", "STK", "Aktie")))
                 .decide(ctx("German Smallcap", List.of()))
                 .orElseThrow();
@@ -175,7 +175,7 @@ class IdentityDeskTest {
     void personKindNeverClaimsAnInstrument() {
         // 2026-07-13 live run: the judge picked DJT for the person "Trump" — the
         // kind gate makes the person/theme decision discrete and binding.
-        nextPick.set(new Gemma4Judge.DeskPick(1, 1, "person"));
+        nextPick.set(new JudgeCalls.DeskPick(1, 1, "person"));
         SubjectMatch m = desk(List.of(
                 ls(1, "US25400Q1058", "", "TRUMP MEDIA & TECHNOLOGY", "STK", "Aktie")))
                 .decide(ctx("Trump", List.of(yq("DJT", "Trump Media & Technology Group Corp.", "EQUITY"))))
@@ -187,7 +187,7 @@ class IdentityDeskTest {
     @Test
     void themeKindNeverClaimsAnInstrument() {
         // "Inflation" → IBCI.DE (a theme ETF) shipped live: a macro term names no instrument.
-        nextPick.set(new Gemma4Judge.DeskPick(1, 1, "theme"));
+        nextPick.set(new JudgeCalls.DeskPick(1, 1, "theme"));
         SubjectMatch m = desk(List.of(
                 ls(2, "LU0425308086", "", "ISHS € INFL.LINKED GOV.BD", "ETF", "ETF")))
                 .decide(ctx("Inflation", List.of(yq("IBCI.DE", "iShares € Inflation Linked Govt Bond UCITS ETF", "ETF"))))
@@ -198,7 +198,7 @@ class IdentityDeskTest {
     @Test
     void personVerdictIsSessionOnlyNeverPersisted() {
         Path file = dir.resolve("ledger.jsonl");
-        nextPick.set(new Gemma4Judge.DeskPick(1, 0, "person"));
+        nextPick.set(new JudgeCalls.DeskPick(1, 0, "person"));
         IdentityDesk d = desk(List.of());
         d.installLedger(new IdentityLedger(file));
         d.decide(ctx("Trump", List.of(yq("DJT", "Trump Media & Technology Group Corp.", "EQUITY"))));
@@ -224,7 +224,7 @@ class IdentityDeskTest {
     void cryptoWrapperVetoDropsANonCurrencyVenuePick() {
         // 2026-07-13 live run: "bitcoin" stamped a 21Shares ETP (category ETF) —
         // BTC-USD then priced at 18 EUR. A crypto's only venue paper is CUR.
-        nextPick.set(new Gemma4Judge.DeskPick(1, 1, "instrument"));
+        nextPick.set(new JudgeCalls.DeskPick(1, 1, "instrument"));
         SubjectMatch m = desk(List.of(
                 ls(982480, "CH0454664001", "", "21SHARES BITCOIN ETP", "ETF", "ETF")))
                 .decide(ctx("Bitcoin", List.of(yq("BTC-USD", "Bitcoin USD", "CRYPTOCURRENCY"))))
@@ -236,7 +236,7 @@ class IdentityDeskTest {
 
     @Test
     void cryptoPickStampsTheCurrencyNotation() {
-        nextPick.set(new Gemma4Judge.DeskPick(1, 2));
+        nextPick.set(new JudgeCalls.DeskPick(1, 2));
         SubjectMatch m = desk(List.of(
                 ls(451698, "DE000A1TNV91", "A1TNV9", "BITCOIN GROUP SE  O.N.", "STK", "Aktie"),
                 ls(3477757, "LS000LSOBTC1", "", "Bitcoin (BTC)", "CUR", "Währung")))
@@ -270,7 +270,7 @@ class IdentityDeskTest {
 
     @Test
     void priceVetoDropsAnImplausibleVenuePick() {
-        nextPick.set(new Gemma4Judge.DeskPick(1, 1)); // the judge falls for the CDR twin
+        nextPick.set(new JudgeCalls.DeskPick(1, 1)); // the judge falls for the CDR twin
         IdentityDesk d = deskWithPrices(List.of(
                 ls(4222103, "CA0000000001", "", "SAMENAME INC. CDR", "STK", "Aktie")), 20.70);
 
@@ -283,7 +283,7 @@ class IdentityDeskTest {
 
     @Test
     void plausibleVenuePriceKeepsTheStamp() {
-        nextPick.set(new Gemma4Judge.DeskPick(1, 1));
+        nextPick.set(new JudgeCalls.DeskPick(1, 1));
         IdentityDesk d = deskWithPrices(List.of(
                 ls(41789, "US0079031078", "", "SAMENAME INC.", "STK", "Aktie")), 305.0);
 
@@ -295,7 +295,7 @@ class IdentityDeskTest {
 
     @Test
     void nonComparableCurrencySkipsThePriceVeto() {
-        nextPick.set(new Gemma4Judge.DeskPick(1, 1));
+        nextPick.set(new JudgeCalls.DeskPick(1, 1));
         // A KRW listing: the raw units differ by orders of magnitude from the EUR
         // venue price without the paper being wrong — the veto must not fire.
         IdentityDesk d = deskWithPrices(List.of(
@@ -312,7 +312,7 @@ class IdentityDeskTest {
         // The 2026-07-10 live run: the judge stamped the SPDR ETF onto ^DJI, so the
         // price chain showed 458 EUR instead of index points. An index has no venue
         // paper — the mechanical guard strips any L&S pick from a ^-symbol verdict.
-        nextPick.set(new Gemma4Judge.DeskPick(1, 1));
+        nextPick.set(new JudgeCalls.DeskPick(1, 1));
         YahooQuote index = new YahooQuote("^DJI", "Dow Jones Industrial Average",
                 "Dow Jones Industrial Average", "INDEX", "DJI", "Dow Jones", "", "",
                 47000.0, 0.5, 200_000.0);
@@ -326,13 +326,13 @@ class IdentityDeskTest {
 
     @Test
     void consideredVenueStrikeRulesTheVenueOut() {
-        nextPick.set(new Gemma4Judge.DeskPick(1, 0)); // judge: yahoo yes, venue none
+        nextPick.set(new JudgeCalls.DeskPick(1, 0)); // judge: yahoo yes, venue none
         SubjectMatch m = desk(List.of(ls(9, "CA0000000002", "", "SILVER TWIN CORP.", "STK", "Aktie")))
                 .decide(ctx("BlackRock", List.of(yq("BLK", "BlackRock, Inc.", "EQUITY"))))
                 .orElseThrow();
         assertTrue(m.venueRuledOut(), "the desk saw venue candidates and struck them all");
 
-        nextPick.set(new Gemma4Judge.DeskPick(1, 0));
+        nextPick.set(new JudgeCalls.DeskPick(1, 0));
         SubjectMatch noVenue = desk(List.of())
                 .decide(ctx("Abivax", List.of(yq("ABVX", "Abivax SA", "EQUITY"))))
                 .orElseThrow();
@@ -342,7 +342,7 @@ class IdentityDeskTest {
     @Test
     void venueRuledOutSurvivesTheLedgerReplay() {
         Path file = dir.resolve("ledger.jsonl");
-        nextPick.set(new Gemma4Judge.DeskPick(1, 0));
+        nextPick.set(new JudgeCalls.DeskPick(1, 0));
         IdentityDesk first = desk(List.of(ls(9, "CA0000000002", "", "SILVER TWIN CORP.", "STK", "Aktie")));
         first.installLedger(new IdentityLedger(file));
         first.decide(ctx("BlackRock", List.of(yq("BLK", "BlackRock, Inc.", "EQUITY"))));
@@ -355,7 +355,7 @@ class IdentityDeskTest {
 
     @Test
     void disabledDeskAbstains() {
-        nextPick.set(new Gemma4Judge.DeskPick(1, 0));
+        nextPick.set(new JudgeCalls.DeskPick(1, 0));
         IdentityDesk d = new IdentityDesk(judge, () -> false);
         assertTrue(d.decide(ctx("NVIDIA", List.of(yq("NVDA", "NVIDIA Corporation", "EQUITY")))).isEmpty());
         assertEquals(0, judgeCalls.get(), "a disabled desk never calls the model");
@@ -363,14 +363,14 @@ class IdentityDeskTest {
 
     @Test
     void noFactsAtAllAbstains() {
-        nextPick.set(new Gemma4Judge.DeskPick(0, 0));
+        nextPick.set(new JudgeCalls.DeskPick(0, 0));
         assertTrue(desk(List.of()).decide(ctx("irgendwas", List.of())).isEmpty());
         assertEquals(0, judgeCalls.get(), "nothing to judge → no call");
     }
 
     @Test
     void sessionVerdictIsReusedWithoutASecondCall() {
-        nextPick.set(new Gemma4Judge.DeskPick(1, 0));
+        nextPick.set(new JudgeCalls.DeskPick(1, 0));
         IdentityDesk d = desk(List.of());
         MatchContext c = ctx("NVIDIA", List.of(yq("NVDA", "NVIDIA Corporation", "EQUITY")));
         d.decide(c);
@@ -381,7 +381,7 @@ class IdentityDeskTest {
     @Test
     void ledgerReplaysAcrossDeskInstancesWithoutAModelCall() {
         Path file = dir.resolve("ledger.jsonl");
-        nextPick.set(new Gemma4Judge.DeskPick(1, 1));
+        nextPick.set(new JudgeCalls.DeskPick(1, 1));
         IdentityDesk first = desk(List.of(ls(2, "DE0007030009", "703000", "RHEINMETALL AG", "STK", "Aktie")));
         first.installLedger(new IdentityLedger(file));
         first.decide(ctx("Rheinmetall", List.of(yq("RHM.DE", "Rheinmetall AG", "EQUITY"))));

@@ -67,7 +67,7 @@ export function price(v, currency) {
  * "what Yahoo answered" disagree. `field` names the resolved-side chip the
  * flag belongs to, so the divergence is marked where it is visible.
  */
-export function identityFlags(u) {
+function identityFlags(u) {
   const flags = [];
   const m = u.market;
   const ticker = norm(u.ticker);

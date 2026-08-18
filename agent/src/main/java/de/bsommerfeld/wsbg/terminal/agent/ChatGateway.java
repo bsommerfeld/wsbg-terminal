@@ -13,7 +13,7 @@ import org.slf4j.LoggerFactory;
 import java.util.List;
 
 /**
- * The single choke point for a gemma4 chat call: the num_ctx overflow estimate/warn,
+ * The single choke point for a chat call: the num_ctx overflow estimate/warn,
  * the {@link AgentBrain} semaphore bracket that caps concurrency at Ollama's
  * {@code NUM_PARALLEL=2}, and the {@code [LLM]} profiling line. Every model call in
  * the editorial pipeline funnels through here.
@@ -87,7 +87,7 @@ final class ChatGateway {
         }
         List<ChatMessage> messages = List.of(
                 SystemMessage.from(systemPrompt), UserMessage.from(userMessage));
-        // Gate the actual model call through AgentBrain's SHARED gemma4 gate so prep
+        // Gate the actual model call through AgentBrain's SHARED gate so prep
         // extraction + worker composition + vision together never exceed Ollama's
         // NUM_PARALLEL=2. Uninterruptible: a daemon worker shut down mid-acquire would
         // otherwise abandon a permit it never took.

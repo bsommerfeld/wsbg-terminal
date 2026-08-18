@@ -75,10 +75,10 @@ class IdentityHardeningTest {
 
     @Test
     void productKindStopsTheDeskLikePersonAndTheme() {
-        assertTrue(new Gemma4Judge.DeskPick(3, 1, "product").nonInstrument(),
+        assertTrue(new JudgeCalls.DeskPick(3, 1, "product").nonInstrument(),
                 "a product (Gemini, GTA, ChatGPT) never claims an instrument");
-        assertTrue(new Gemma4Judge.DeskPick(1, 1, "Produkt").nonInstrument());
-        assertFalse(new Gemma4Judge.DeskPick(1, 1, "instrument").nonInstrument());
+        assertTrue(new JudgeCalls.DeskPick(1, 1, "Produkt").nonInstrument());
+        assertFalse(new JudgeCalls.DeskPick(1, 1, "instrument").nonInstrument());
     }
 
     // ---- Fixture 3: Morningstar fund ids ----
@@ -125,8 +125,8 @@ class IdentityHardeningTest {
         // Even when the secondary line survives to the desk (lone-handle path or a
         // direct context), a judge pick on 1MUV2.MI must land on MUV2.DE: the two
         // NAMES share no word across the languages, the symbol STEM (MUV2) does.
-        AtomicReference<Gemma4Judge.DeskPick> pick = new AtomicReference<>(
-                new Gemma4Judge.DeskPick(1, 0));
+        AtomicReference<JudgeCalls.DeskPick> pick = new AtomicReference<>(
+                new JudgeCalls.DeskPick(1, 0));
         IdentityDesk desk = new IdentityDesk((s, c, y, l) -> pick.get(), () -> true);
         SubjectMatch m = desk.decide(new MatchContext("Munich Re", "Munich Re Rekordzahlen", List.of(
                 yq("1MUV2.MI", "Munich Re", "EQUITY", 480.0, 90_000),
@@ -137,8 +137,8 @@ class IdentityHardeningTest {
 
     @Test
     void stemRerankNeverFoldsDifferentPapers() {
-        AtomicReference<Gemma4Judge.DeskPick> pick = new AtomicReference<>(
-                new Gemma4Judge.DeskPick(2, 0));
+        AtomicReference<JudgeCalls.DeskPick> pick = new AtomicReference<>(
+                new JudgeCalls.DeskPick(2, 0));
         IdentityDesk desk = new IdentityDesk((s, c, y, l) -> pick.get(), () -> true);
         SubjectMatch m = desk.decide(new MatchContext("Siemens Energy", "t", List.of(
                 yq("SIE.DE", "Siemens AG", "EQUITY", 200.0, 500_000),
@@ -279,8 +279,8 @@ class IdentityHardeningTest {
 
     @Test
     void anUnpriceableVenuePickShipsTheSymbolWithoutTheStamp() {
-        AtomicReference<Gemma4Judge.DeskPick> pick = new AtomicReference<>(
-                new Gemma4Judge.DeskPick(1, 1));
+        AtomicReference<JudgeCalls.DeskPick> pick = new AtomicReference<>(
+                new JudgeCalls.DeskPick(1, 1));
         IdentityDesk desk = new IdentityDesk((s, c, y, l) -> pick.get(), () -> true);
         desk.installLookup(new InstrumentLookup() {
             @Override

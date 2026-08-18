@@ -102,11 +102,11 @@ public final class OllamaServerManager {
     }
 
     /**
-     * Concurrent gemma4 request slots — both Ollama's {@code NUM_PARALLEL} AND the app-side
+     * Concurrent request slots for the resident model — both Ollama's {@code NUM_PARALLEL} AND the app-side
      * LLM gate ({@link AgentBrain}) read this, so they always agree. Fixed at 2.
      *
      * <p>3 was tried (RAM-adaptive) on the theory that the dominant compose gate-wait was a
-     * permit shortage. Profiling refuted it: gemma4 is GPU-bound, so at 2 slots the GPU is
+     * permit shortage. Profiling refuted it: the resident model is GPU-bound, so at 2 slots the GPU is
      * already ~saturated — a 3rd concurrent request just time-slices the GPU, so every call's
      * gen-time rose (compose 8→12s, extraction 13→28s), gate-hold grew with it, and net
      * throughput FELL (4.0→3.5 composes/min). The real lever is less GPU work per call
@@ -356,7 +356,7 @@ public final class OllamaServerManager {
                 pb.directory(neutralDir);
             }
 
-            // Concurrent gemma4 slots — fixed at 2 (see llmParallelism(): gemma4 is
+            // Concurrent slots — fixed at 2 (see llmParallelism(): the model is
             // GPU-bound, so a 3rd concurrent request just time-slices the GPU and net
             // throughput FALLS). The KV cache scales with num_ctx × this.
             pb.environment().putIfAbsent("OLLAMA_NUM_PARALLEL", String.valueOf(llmParallelism()));
@@ -377,7 +377,7 @@ public final class OllamaServerManager {
             pb.environment().putIfAbsent("OLLAMA_FLASH_ATTENTION", "1");
             pb.environment().putIfAbsent("OLLAMA_KV_CACHE_TYPE", "q8_0");
 
-            // Keep the resident gemma4 pinned in memory. Without this Ollama unloads it
+            // Keep the resident model pinned in memory. Without this Ollama unloads it
             // after its 5-min default keep-alive; the next call then forces a reload that
             // has to wait for the GPU. The deployment is single-model now (the embedding
             // model was removed 2026-07-03), but MAX_LOADED_MODELS stays at 2 as harmless

@@ -43,7 +43,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * </ol>
  *
  * <p>The self-contained stages live in dedicated collaborators (all hand-built in the
- * constructor): {@link ChatGateway} (the semaphore-gated model call), {@link Gemma4Judge}
+ * constructor): {@link ChatGateway} (the semaphore-gated model call), {@link JudgeCalls}
  * (the two discrete judge calls), {@link SubjectExtractor}, {@link ComposeReplyParser},
  * {@link NewsProvenance} and {@link UnitBriefWriter}. This class is the orchestration
  * that wires them into the prep/attribute/compose-publish stages.
@@ -93,7 +93,7 @@ public class EditorialAgent {
     private static final int DIGESTS_PER_COMPOSE = 2;
 
     private final AgentBrain brain;
-    /** The ONE shared gemma4 concurrency gate (NUM_PARALLEL=2) — passed to {@link ChatGateway}. */
+    /** The ONE shared concurrency gate (NUM_PARALLEL=2) — passed to {@link ChatGateway}. */
     private final LlmGate llmGate;
     private final ClusterRegistry clusterRegistry;
     private final AgentRepository agentRepository;
@@ -106,8 +106,8 @@ public class EditorialAgent {
     private final SubjectRegistry subjectRegistry;
     /** The single semaphore-gated model-call seam (NUM_PARALLEL=2), shared by every stage below. */
     private final ChatGateway chatGateway;
-    /** The discrete gemma4 judge calls (identity desk pick, tier-2 instrument match, same-story dup). */
-    private final Gemma4Judge gemma4Judge;
+    /** The discrete judge calls (identity desk pick, tier-2 instrument match, same-story dup). */
+    private final JudgeCalls judge;
     /** The identity border control — constructed here, venue lookup + ledger installed via Guice. */
     private final IdentityDesk identityDesk;
     /** Stage 1 — subject extraction (brief + cluster → names + model primary). */
@@ -136,7 +136,7 @@ public class EditorialAgent {
     private final Map<String, Integer> composeRetries = new ConcurrentHashMap<>();
 
     /**
-     * Free gemma4 permits right now — for the pipeline's contention logging. The gate is the
+     * Free model permits right now — for the pipeline's contention logging. The gate is the
      * shared {@link LlmGate} {@code @Singleton} (the same instance the vision prefetch acquires,
      * since both hit the one model); prep extraction + compose + vision together never exceed
      * Ollama's NUM_PARALLEL=2.
@@ -167,13 +167,13 @@ public class EditorialAgent {
         this.reportBuilder = new ReportBuilder(redditRepository, brain);
         this.tickerResolver = new TickerResolver(yahooFinance);
         this.chatGateway = new ChatGateway(brain, llmGate);
-        this.gemma4Judge = new Gemma4Judge(brain, chatGateway);
-        this.tickerResolver.setMatchJudge(gemma4Judge::matchInstrument); // Tier 2 enabled
+        this.judge = new JudgeCalls(brain, chatGateway);
+        this.tickerResolver.setMatchJudge(judge::matchInstrument); // Tier 2 enabled
         // The identity desk (border control): identity decided ONCE per subject by a
-        // gemma4 judgment over the combined venue facts. The enabled flag reads the
+        // a model judgment over the combined venue facts. The enabled flag reads the
         // live config so the gate flips without a restart; without a config (tests)
         // the desk is on but inert (no venue lookup, judge fails to abstain).
-        this.identityDesk = new IdentityDesk(gemma4Judge::pickIdentity,
+        this.identityDesk = new IdentityDesk(judge::pickIdentity,
                 () -> config == null || config.getAgent() == null || config.getAgent().isIdentityDesk());
         this.tickerResolver.setIdentityDesk(identityDesk);
         this.headlineWriter = new HeadlineWriter(agentRepository, eventBus);
@@ -275,7 +275,7 @@ public class EditorialAgent {
     @com.google.inject.Inject(optional = true)
     void setArticleTagger(de.bsommerfeld.wsbg.terminal.web.pool.ArticleTagger tagger) {
         if (tagger instanceof de.bsommerfeld.wsbg.terminal.agent.tagging.LuceneArticleTagger lucene) {
-            lucene.setArbiter(gemma4Judge::senseAboutInstrument);
+            lucene.setArbiter(judge::senseAboutInstrument);
             // The corpus veto's evidence seam: the desk asks the SAME in-RAM index
             // "which basin documents name this subject" and strikes candidates the
             // house's own coverage contradicts; the universe's entity-DF supplies
@@ -782,7 +782,7 @@ public class EditorialAgent {
         // wie Nvidia" lines ~70 s apart) — token-Jaccard misses the paraphrase, the
         // gemma same-story verdict doesn't. Always on (the former strict-1:1 user
         // toggle was removed 2026-07-03).
-        if (gemma4Judge.isSameStoryRepeat(d.headline(), u.headlines())) {
+        if (judge.isSameStoryRepeat(d.headline(), u.headlines())) {
             LOG.info("[COMPOSE] semantic near-duplicate for unit {} — dropped (same story re-worded)", u.id);
             composeRetries.remove(u.id);
             u.markComposedAt(composedV);

@@ -12,7 +12,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Central AI brain managing Ollama model interactions. Coordinates the reasoning,
- * compose pipelines. All responses are blocking — gemma4 handles both
+ * compose pipelines. All responses are blocking — one resident model handles both
  * reasoning and language-appropriate output natively via system prompt injection.
  *
  * <p>The model construction lives in {@link OllamaModelFactory}, the per-URL
@@ -36,9 +36,9 @@ public class AgentBrain {
     private final OllamaModelFactory modelFactory = new OllamaModelFactory(OLLAMA_BASE_URL);
 
     private ChatModel agentModel;
-    /** Same gemma4 model as {@link #agentModel}, but a TIGHT numPredict — for headline composition. */
+    /** Same model as {@link #agentModel}, but a TIGHT numPredict — for headline composition. */
     private ChatModel composeModel;
-    /** Same gemma4 model again, but WITHOUT JSON mode — for prose replies. */
+    /** The same model again, but WITHOUT JSON mode — for prose replies. */
     private ChatModel proseModel;
     private String activeAgentModel;
 
@@ -47,7 +47,7 @@ public class AgentBrain {
     /** Guards {@link #start()} — the server is brought up exactly once. */
     private final java.util.concurrent.atomic.AtomicBoolean serverStarted =
             new java.util.concurrent.atomic.AtomicBoolean(false);
-    /** The ONE shared gemma4 concurrency gate for all model calls. */
+    /** The ONE shared concurrency gate for all model calls. */
     private final LlmGate llmGate;
     private UserLanguage userLanguage;
 
@@ -220,7 +220,7 @@ public class AgentBrain {
     }
 
     /**
-     * The same resident gemma4 without JSON mode — for the lanes whose prompt asks
+     * The same resident model without JSON mode — for the lanes whose prompt asks
      * for plain sentences (the article digest). Using {@link #getAgentModel()}
      * there hands the GGUF runner a JSON grammar for a prose prompt, and the
      * digest comes back as JSON.

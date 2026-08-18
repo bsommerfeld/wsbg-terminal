@@ -3,7 +3,7 @@ package de.bsommerfeld.wsbg.terminal.agent;
 import com.google.inject.Singleton;
 
 /**
- * The ONE gemma4 concurrency gate, shared across every model call in the agent module:
+ * The ONE concurrency gate, shared across every model call in the agent module:
  * the editorial subject extraction, per-unit composition, the discrete judge calls AND
  * the vision prefetch all hit the single resident model, so they all acquire the SAME
  * permit here. Sized to match Ollama's {@code NUM_PARALLEL}

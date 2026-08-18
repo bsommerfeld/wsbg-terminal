@@ -17,7 +17,7 @@
 import { el, svgEl, ms, clock, num } from './dom.js';
 
 const TONE = { ok: 'var(--green)', warn: 'var(--amber)', bad: 'var(--red)', info: 'var(--blue)', mute: 'var(--mute-2)' };
-export const toneColor = t => TONE[t] || TONE.info;
+const toneColor = t => TONE[t] || TONE.info;
 
 /**
  * Fill level: value against a ceiling. `tone` is the fill's severity; the

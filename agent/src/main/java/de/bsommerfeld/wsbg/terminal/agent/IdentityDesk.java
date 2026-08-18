@@ -18,7 +18,7 @@ import java.util.function.BooleanSupplier;
  * The identity desk — the ONE border-control checkpoint where a subject's identity
  * is decided. All the facts are laid on the table at once (the Yahoo search
  * candidates with type + exchange, the L&amp;S venue candidates with category + ISIN),
- * ONE gemma4 judge call picks per venue which candidate — if any — IS the subject,
+ * ONE judge call picks per venue which candidate — if any — IS the subject,
  * and the verdict is stamped onto the match ({@code isin} + {@code venueId} +
  * {@code category}) and recorded in the {@link IdentityLedger}. Downstream nobody
  * re-decides identity: the price chain executes the stamp, the registry keys on the
@@ -66,7 +66,7 @@ final class IdentityDesk {
 
     /** The judge seam: a per-venue pick over the numbered fact lines, or null on model failure. */
     interface PickJudge {
-        Gemma4Judge.DeskPick pick(String subject, String context,
+        JudgeCalls.DeskPick pick(String subject, String context,
                 List<String> yahooLines, List<String> lsLines);
     }
 
@@ -172,7 +172,7 @@ final class IdentityDesk {
         // the subject — mechanically, before any model judgment can strike it.
         int exactYahoo = indexOfNameEquivalent(query, quotes);
 
-        Gemma4Judge.DeskPick pick = judge == null ? null
+        JudgeCalls.DeskPick pick = judge == null ? null
                 : judge.pick(query, judgeContext(ctx), yahooLines(quotes), lsLines(venue));
         // The kind gate (2026-07-13, "Trump kriegt einen Preis"): the judge declares
         // what the subject ITSELF is BEFORE any candidate counts. A person or theme
@@ -193,9 +193,9 @@ final class IdentityDesk {
             // Model failure/absence: no considered verdict. Only the mechanical exact
             // fact may still claim; otherwise abstain to the legacy tower.
             if (exactYahoo < 0) return Optional.empty();
-            pick = new Gemma4Judge.DeskPick(exactYahoo + 1, 0);
+            pick = new JudgeCalls.DeskPick(exactYahoo + 1, 0);
         } else if (exactYahoo >= 0) {
-            pick = new Gemma4Judge.DeskPick(exactYahoo + 1, pick.ls());
+            pick = new JudgeCalls.DeskPick(exactYahoo + 1, pick.ls());
         }
 
         YahooQuote yq = pick.yahoo() >= 1 && pick.yahoo() <= quotes.size()

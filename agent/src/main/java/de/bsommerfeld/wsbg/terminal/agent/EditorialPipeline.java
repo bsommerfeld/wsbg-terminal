@@ -110,7 +110,7 @@ public final class EditorialPipeline {
     // The per-unit settle/cooldown/stale enqueue timing lives in {@link EnqueueGate}.
 
     private final EditorialAgent agent;
-    /** The shared gemma4 gate — read for contention logging at worker pickup time. */
+    /** The shared model gate — read for contention logging at worker pickup time. */
     private final LlmGate llmGate;
     private final ClusterRegistry clusterRegistry;
     private final SubjectRegistry subjectRegistry;

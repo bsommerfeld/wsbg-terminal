@@ -41,7 +41,7 @@ export function currentTheme() {
 }
 
 /** Explicit user choice (only meaningful while NOT following the system). */
-export function setTheme(theme) {
+function setTheme(theme) {
   write(STORAGE_KEY, theme);
   if (!isFollowingSystem()) apply(theme);
 }

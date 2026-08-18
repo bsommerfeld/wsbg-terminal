@@ -33,7 +33,7 @@ export function initKeyboardCopy() {
 
 // Shared with the widgets that copy a single value on a button press (the
 // ticker lookup): same silent semantics, same fallback — one clipboard path.
-export async function copyToClipboard(text) {
+async function copyToClipboard(text) {
   if (navigator.clipboard && navigator.clipboard.writeText) {
     return navigator.clipboard.writeText(text);
   }
