@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * The home-exchange link's two decisions, both made without a network: WHICH venue
@@ -39,11 +40,39 @@ class HomeVenueQuotesTest {
         }
 
         @Test
+        void theHistoryVenuesRouteToo() {
+            assertEquals(Venue.WIENER, HomeVenueQuotes.venueForCountry("AT"));
+            assertEquals(Venue.MINKABU, HomeVenueQuotes.venueForCountry("JP"));
+            assertEquals(Venue.EURONEXT, HomeVenueQuotes.venueForCountry("FR"));
+            assertEquals(Venue.EURONEXT, HomeVenueQuotes.venueForCountry("NO"));
+        }
+
+        @Test
+        void aHistoryVenueIsMarkedAsOne() {
+            // The chain must never read a daily bar as a running quote.
+            assertTrue(Venue.WIENER.isHistoryOnly());
+            assertTrue(Venue.MINKABU.isHistoryOnly());
+            assertTrue(Venue.EURONEXT.isHistoryOnly());
+            assertFalse(Venue.SIX.isHistoryOnly());
+            assertFalse(Venue.NYSE.isHistoryOnly());
+        }
+
+        @Test
+        void theEuronextMarketFollowsTheCountryThenTheSuffix() {
+            assertEquals("XPAR", HomeVenueQuotes.euronextMic(
+                    new PriceRef("Air Liquide", "AI.PA", "FR0000120073"), "FR0000120073"));
+            assertEquals("XAMS", HomeVenueQuotes.euronextMic(
+                    new PriceRef("ASML", "ASML.AS", "NL0010273215"), "NL0010273215"));
+            // No ISIN: the suffix decides.
+            assertEquals("XBRU", HomeVenueQuotes.euronextMic(
+                    new PriceRef("UCB", "UCB.BR"), null));
+            assertNull(HomeVenueQuotes.euronextMic(new PriceRef("SAP", "SAP.DE"), null));
+        }
+
+        @Test
         void aCountryTheLinkDoesNotCoverStaysUnrouted() {
             // German, French and Dutch papers belong to L&S or Yahoo, not here.
             assertNull(HomeVenueQuotes.venueForCountry("DE"));
-            assertNull(HomeVenueQuotes.venueForCountry("FR"));
-            assertNull(HomeVenueQuotes.venueForCountry("NL"));
             assertNull(HomeVenueQuotes.venueForCountry(null));
             assertNull(HomeVenueQuotes.venueForCountry(""));
         }

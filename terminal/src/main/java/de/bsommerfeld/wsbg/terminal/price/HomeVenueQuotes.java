@@ -6,14 +6,20 @@ import de.bsommerfeld.wsbg.terminal.core.domain.MarketSnapshot;
 import de.bsommerfeld.wsbg.terminal.web.facts.PriceRef;
 import de.bsommerfeld.wsbg.terminal.web.impl.sources.asx.AsxMarketClient;
 import de.bsommerfeld.wsbg.terminal.web.impl.sources.cnbc.CnbcQuoteClient;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.euronext.EuronextClient;
 import de.bsommerfeld.wsbg.terminal.web.impl.sources.hkex.HkexClient;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.minkabu.MinkabuClient;
 import de.bsommerfeld.wsbg.terminal.web.impl.sources.nordic.NordicMarketClient;
 import de.bsommerfeld.wsbg.terminal.web.impl.sources.nyse.NyseQuoteClient;
 import de.bsommerfeld.wsbg.terminal.web.impl.sources.six.SixMarketClient;
 import de.bsommerfeld.wsbg.terminal.web.impl.sources.tmx.TmxMarketClient;
+import de.bsommerfeld.wsbg.terminal.web.impl.sources.wienerboerse.WienerBoerseClient;
 import de.bsommerfeld.wsbg.terminal.web.instrument.Isin;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -54,11 +60,18 @@ public class HomeVenueQuotes {
     private final NordicMarketClient nordic;
     private final NyseQuoteClient nyse;
     private final CnbcQuoteClient cnbc;
+    private final WienerBoerseClient wiener;
+    private final MinkabuClient minkabu;
+    private final EuronextClient euronext;
 
     @Inject
     public HomeVenueQuotes(SixMarketClient six, AsxMarketClient asx, TmxMarketClient tmx,
             HkexClient hkex, NordicMarketClient nordic, NyseQuoteClient nyse,
-            CnbcQuoteClient cnbc) {
+            CnbcQuoteClient cnbc, WienerBoerseClient wiener, MinkabuClient minkabu,
+            EuronextClient euronext) {
+        this.wiener = wiener;
+        this.minkabu = minkabu;
+        this.euronext = euronext;
         this.six = six;
         this.asx = asx;
         this.tmx = tmx;
@@ -68,8 +81,33 @@ public class HomeVenueQuotes {
         this.cnbc = cnbc;
     }
 
-    /** The venues this link can answer for, as the routing table reads them. */
-    enum Venue { SIX, ASX, TMX, HKEX, NORDIC, NYSE }
+    /**
+     * The venues this link can answer for.
+     *
+     * <p>Two kinds, and the difference is not cosmetic. A QUOTE venue publishes the
+     * running price; a HISTORY venue publishes only daily bars, so its snapshot is
+     * a LAST CLOSE carrying its own daily series — stamped with the bar's date, which
+     * is what makes the chain above mark it stale and the UI dim it. Reading a
+     * history bar as a live quote would put yesterday's number on today's wire.
+     */
+    enum Venue {
+        SIX, ASX, TMX, HKEX, NORDIC, NYSE,
+        WIENER(true), MINKABU(true), EURONEXT(true);
+
+        private final boolean historyOnly;
+
+        Venue() {
+            this(false);
+        }
+
+        Venue(boolean historyOnly) {
+            this.historyOnly = historyOnly;
+        }
+
+        boolean isHistoryOnly() {
+            return historyOnly;
+        }
+    }
 
     /**
      * The quote from the ref's home exchange, or empty when no venue matches, the
@@ -82,6 +120,7 @@ public class HomeVenueQuotes {
         if (venue == null) return Optional.empty();
         String isin = ref.hasIsin() ? ref.isin() : null;
         String symbol = nativeSymbol(ref.ticker());
+        if (venue.isHistoryOnly()) return fromHistory(venue, ref, isin);
         try {
             return switch (venue) {
                 case SIX -> isin == null ? Optional.empty()
@@ -107,6 +146,9 @@ public class HomeVenueQuotes {
                         : nyse.tape(symbol).map(t -> of(t.symbol(), t.last(), t.previousClose(),
                                 t.changePercent(), t.dayHigh(), t.dayLow(), t.volume(),
                                 "USD", venueName(t.exchange()), t.yearHigh(), t.yearLow()));
+                // Named rather than swept into a default, so a NEW quote venue still
+                // makes the compiler ask for its branch.
+                case WIENER, MINKABU, EURONEXT -> Optional.empty(); // fromHistory, above
             };
         } catch (RuntimeException down) {
             return Optional.empty();
@@ -132,6 +174,124 @@ public class HomeVenueQuotes {
         } catch (RuntimeException down) {
             return Optional.empty();
         }
+    }
+
+    /**
+     * A last-close snapshot from a venue that publishes only daily bars. The newest
+     * bar is the price, the one before it the previous close, and the whole series
+     * becomes {@code dailyCloses} — which is the multi-day context the brief reads
+     * ({@code changeOverTradingDays}) and which, outside Lang &amp; Schwarz, no
+     * venue in the chain has ever filled.
+     */
+    private Optional<MarketSnapshot> fromHistory(Venue venue, PriceRef ref, String isin) {
+        try {
+            List<Double> closes;
+            List<double[]> lastBar = new ArrayList<>();
+            String currency;
+            LocalDate day;
+            switch (venue) {
+                case WIENER -> {
+                    if (isin == null) return Optional.empty();
+                    var h = wiener.history(isin, LocalDate.now(ZoneOffset.UTC).minusMonths(3));
+                    if (h.isEmpty() || h.get().bars().isEmpty()) return Optional.empty();
+                    var bars = h.get().bars();
+                    closes = bars.stream().map(b -> b.close()).toList();
+                    var last = bars.get(bars.size() - 1);
+                    lastBar.add(new double[] {last.high(), last.low(), last.volumeShares()});
+                    day = last.date();
+                    currency = "EUR";
+                }
+                case MINKABU -> {
+                    // The RIC IS the Tokyo ticker, venue suffix included (6758.T), so
+                    // this is the one venue that must NOT have its suffix stripped.
+                    String ric = ref.hasTicker() ? ref.ticker().trim() : null;
+                    if (ric == null) return Optional.empty();
+                    var h = minkabu.history(ric, 120);
+                    if (h.isEmpty() || h.get().bars().isEmpty()) return Optional.empty();
+                    var bars = h.get().bars();
+                    closes = bars.stream().map(b -> b.close()).toList();
+                    var last = bars.get(bars.size() - 1);
+                    lastBar.add(new double[] {last.high(), last.low(), last.volume()});
+                    day = last.date();
+                    currency = "JPY";
+                }
+                case EURONEXT -> {
+                    String mic = euronextMic(ref, isin);
+                    if (isin == null || mic == null) return Optional.empty();
+                    var h = euronext.history(isin, mic, "1M");
+                    if (h.isEmpty() || h.get().bars().isEmpty()) return Optional.empty();
+                    var bars = h.get().bars();
+                    closes = bars.stream().map(b -> b.close()).toList();
+                    var last = bars.get(bars.size() - 1);
+                    lastBar.add(new double[] {last.high(), last.low(), last.volume()});
+                    day = last.date();
+                    currency = "EUR";
+                }
+                default -> {
+                    return Optional.empty();
+                }
+            }
+            List<Double> series = closes.stream().filter(Double::isFinite).toList();
+            if (series.isEmpty()) return Optional.empty();
+            double price = series.get(series.size() - 1);
+            double prev = series.size() > 1 ? series.get(series.size() - 2) : Double.NaN;
+            double[] bar = lastBar.get(0);
+            return Optional.of(new MarketSnapshot(
+                    ref.hasTicker() ? ref.ticker() : isin,
+                    price,
+                    finite(prev) ? prev : 0.0,
+                    finite(prev) && prev > 0 ? (price - prev) / prev * 100.0 : 0.0,
+                    finite(bar[0]) ? bar[0] : 0.0,
+                    finite(bar[1]) ? bar[1] : 0.0,
+                    bar[2] > 0 ? (long) bar[2] : -1L,
+                    0.0, 0.0,
+                    currency,
+                    venueLabel(venue),
+                    day.atStartOfDay(ZoneOffset.UTC).toEpochSecond(),
+                    List.of(),
+                    series));
+        } catch (RuntimeException down) {
+            return Optional.empty();
+        }
+    }
+
+    /** The Euronext market the paper trades on, from its ISIN country or its ticker suffix. */
+    static String euronextMic(PriceRef ref, String isin) {
+        String country = isin == null ? null
+                : Isin.parse(isin).map(Isin::country).orElse(null);
+        String byCountry = country == null ? null : switch (country.toUpperCase(Locale.ROOT)) {
+            case "FR" -> "XPAR";
+            case "NL" -> "XAMS";
+            case "BE" -> "XBRU";
+            case "PT" -> "XLIS";
+            case "IE" -> "XMSM";
+            case "NO" -> "XOSL";
+            default -> null;
+        };
+        if (byCountry != null) return byCountry;
+        String ticker = ref != null && ref.hasTicker() ? ref.ticker() : null;
+        int dot = ticker == null ? -1 : ticker.lastIndexOf('.');
+        if (dot < 0 || dot == ticker.length() - 1) return null;
+        return switch (ticker.substring(dot + 1).toUpperCase(Locale.ROOT)) {
+            case "PA" -> "XPAR";
+            case "AS" -> "XAMS";
+            case "BR" -> "XBRU";
+            case "LS" -> "XLIS";
+            case "IR" -> "XMSM";
+            case "OL" -> "XOSL";
+            default -> null;
+        };
+    }
+
+    /** The venue label the chain logs and the UI shows. */
+    static String venueLabel(Venue venue) {
+        return switch (venue) {
+            case WIENER -> "Wiener Börse";
+            case MINKABU -> "Tokyo";
+            case EURONEXT -> "Euronext";
+            case NORDIC -> "Nasdaq Nordic";
+            default -> venue.name();
+        };
     }
 
     // ------------------------------------------------------------------ routing
@@ -161,6 +321,9 @@ public class HomeVenueQuotes {
             case "HK" -> Venue.HKEX;
             case "SE", "DK", "FI", "IS" -> Venue.NORDIC;
             case "US" -> Venue.NYSE;
+            case "AT" -> Venue.WIENER;
+            case "JP" -> Venue.MINKABU;
+            case "FR", "NL", "BE", "PT", "IE", "NO" -> Venue.EURONEXT;
             default -> null;
         };
     }
@@ -176,6 +339,9 @@ public class HomeVenueQuotes {
             case "TO", "V" -> Venue.TMX;
             case "HK" -> Venue.HKEX;
             case "ST", "CO", "HE", "IC" -> Venue.NORDIC;
+            case "VI" -> Venue.WIENER;
+            case "T" -> Venue.MINKABU;
+            case "PA", "AS", "BR", "LS", "IR", "OL" -> Venue.EURONEXT;
             default -> null;
         };
     }
