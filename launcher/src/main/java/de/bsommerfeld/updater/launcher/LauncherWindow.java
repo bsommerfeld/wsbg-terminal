@@ -252,6 +252,14 @@ final class LauncherWindow extends JFrame {
 
     private void configureFrame() {
         setUndecorated(true);
+
+        // macOS: the launcher is an accessory app without a dock tile (see
+        // LauncherMain) — so there is nothing to click when the splash ends up
+        // behind another window. It floats instead. Everywhere else the window
+        // has a taskbar button and keeps the normal stacking order.
+        if (System.getProperty("os.name", "").toLowerCase().contains("mac"))
+            setAlwaysOnTop(true);
+
         setSize(WIDTH, HEIGHT);
         setLocationRelativeTo(null);
         setBackground(new Color(0, 0, 0, 0));

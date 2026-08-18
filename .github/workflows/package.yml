@@ -188,7 +188,7 @@ jobs:
       # Build the bundled runtime ourselves. jpackage's own jlink run adds
       # --strip-native-commands, which REMOVES bin/java(.exe) from the runtime.
       # That breaks us: the launcher starts the terminal as a child "java"
-      # process (AppLauncher#resolveJava → java.home/bin/java), so a stripped
+      # process (JavaExecutableResolver → java.home/bin/…), so a stripped
       # runtime leaves end users with no java → "CreateProcess error=2". Plain
       # jlink keeps the launchers; we then bundle this image verbatim via
       # --runtime-image (jpackage does not re-strip a provided image).
@@ -207,6 +207,19 @@ jobs:
             --output runtime-image
           # Sanity: the launcher MUST exist in the bundled runtime.
           ls "runtime-image/bin/java"* || { echo "::error::jlink runtime has no java launcher"; exit 1; }
+          # macOS labels a dock tile by the FILE NAME of the running executable,
+          # so a terminal spawned as bin/java sat in the dock as "java" next to
+          # our own tile — same icon, different name. -Xdock:name does NOT fix
+          # that (it only renames the LaunchServices entry). A copy of the
+          # launcher binary under the app's name does: java.home is derived from
+          # the binary's path, not its name, and jpackage signs the copy along
+          # with the rest of the runtime. JavaExecutableResolver prefers it and
+          # falls back to bin/java wherever it is absent (dev runs).
+          if [ "${{ matrix.os }}" = "macos-latest" ]; then
+            cp runtime-image/bin/java "runtime-image/bin/WSBG Terminal"
+            ls -l "runtime-image/bin/WSBG Terminal" \
+              || { echo "::error::branded launcher copy missing"; exit 1; }
+          fi
 
       - name: Package with JPackage
         shell: bash

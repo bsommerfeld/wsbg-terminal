@@ -63,6 +63,17 @@ public final class LauncherMain {
         // Must be set before any AWT/JavaFX class touches the system.
         System.setProperty("apple.awt.application.name", "WSBG Terminal");
 
+        // No dock tile for the launcher. It spawns the terminal and exits
+        // within milliseconds, but LaunchServices keeps an exited app
+        // registered as long as processes it spawned are alive
+        // ("exited-with-subordinates") — so its tile stayed in the dock next
+        // to the terminal's own, both with our icon, for the whole session.
+        // A tile that never exists cannot linger. The window is unaffected
+        // (verified: type="UIElement", window still shown) and stays reachable
+        // via always-on-top, since an accessory app has no tile to click.
+        // Other platforms ignore the key.
+        System.setProperty("apple.awt.UIElement", "true");
+
         // Render the launcher via OpenGL instead of Metal on macOS. Java2D's
         // Metal pipeline presents the per-pixel-translucent splash window's
         // surface empty under animation load — the whole window blinks away

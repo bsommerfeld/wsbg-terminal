@@ -26,7 +26,7 @@
 .tb-actions {
   display: flex; align-items: center;
   padding: 0 14px;
-  gap: 10px;
+  gap: 7px;
 }
 /* Pin every child to an explicit column so the title is always centred.
    When a sibling carried an explicit grid-column but .tb-title was left

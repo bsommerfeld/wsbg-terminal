@@ -40,6 +40,9 @@ final class LauncherDemo {
         // animation load and blinks away to the desktop.
         System.setProperty("apple.awt.application.name", "WSBG Terminal");
         System.setProperty("sun.java2d.metal", "false");
+        // ... and the accessory-app switch, so the demo window behaves exactly
+        // like the real one (no dock tile, floats instead).
+        System.setProperty("apple.awt.UIElement", "true");
 
         pace = Double.parseDouble(System.getProperty("demo.pace", "1.0"));
         long ram = Long.getLong("demo.ram", 48);

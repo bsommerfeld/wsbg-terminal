@@ -182,6 +182,11 @@ final class AppLauncher {
     /**
      * Adds macOS dock icon/name flags. Silently skipped on other platforms
      * or if the icon file is absent.
+     *
+     * <p>{@code -Xdock:name} sets the menu-bar/LaunchServices name only — the
+     * dock tile is labelled by the file name of the running executable, which
+     * is what {@link JavaExecutableResolver} takes care of. Dropping either one
+     * brings "java" back somewhere.
      */
     private void addDockIconFlags(List<String> cmd) {
         if (!isMacOS())
