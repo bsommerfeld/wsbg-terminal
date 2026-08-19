@@ -13,17 +13,17 @@ Seien wir ehrlich: Keiner von uns kann sich das echte Bloomberg-Terminal leisten
 
 Das WSBG Terminal ist eure Kommandozentrale für [**r/wallstreetbetsGER**](https://www.reddit.com/r/wallstreetbetsGER/). Statt alle 2 Sekunden F5 zu hämmern und euch durch tausende Kommentare voller Degeneration zu wühlen, liefert euch das Terminal die Fakten.
 
-| Feature              | Beschreibung                                                                                                                                                   |
-|:---------------------|:---------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Auto-Fetch**       | Der Algo zieht sich die neusten Threads automatisch rein. Nie wieder F5 drücken, während der Kurs fällt.                                                       |
-| **KI-Headlines**     | Das Terminal fasst das Affengeschrei zusammen, damit ihr wisst, ob Long oder Short.   |
-| **Echtzeit-Kurse**   | Live-Kurs direkt an der Schlagzeile. Tagsüber von Lang & Schwarz, nachts die **US-Nachbörse bis 2 Uhr** (falls Micron mal wieder +600 % nach Earnings rennt)   |
-| **News-Ergänzungen** | Passend zum Thema zieht das Terminal Nachrichten aus **mehreren Quellen**, trianguliert und entdoppelt - damit die Headlines wenigstens *etwas* Substanz haben.|
-| **Raketen-Radar**    | Ein rotes Aufleuchten einer Headline um euch klar zu machen, wo ihr gerade massive Gewinne verpasst habt.                                                      |
-| **Fear & Greed-Tacho** | CNNs FEAR-and-GREED-Index als Tacho im Reddit-Header, damit ihr wisst, ob eure FOMO wenigstens Gesellschaft hat.                                               |
-| **Live News-Ticker** | Financial Juice & EUR/USD-Kurs laufen direkt mit - damit ihr wisst, warum euer Depot blutet, noch bevor es im Subreddit steht.                                 |
-| **Marktzeiten**      | Internationale Marktzeiten samt Urlaubstage direkt in der Fußnote. Wahre Affen wissen wann sie liquidiert werden.                                              |
-| **100 % Lokal**      | Die KI läuft komplett auf eurer Kiste. Keine Cloud, kein Abo, kein fremder Mensch - eure Verluste bleiben streng privat.                                       |
+| Feature              | Beschreibung                                                                                                                                                 |
+|:---------------------|:-------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Auto-Fetch**       | Der Algo zieht sich die neusten Threads automatisch rein. Nie wieder F5 drücken, während der Kurs fällt.                                                     |
+| **KI-Headlines**     | Das Terminal fasst das Affengeschrei zusammen, damit ihr wisst, ob Long oder Short.                                                                          |
+| **Echtzeit-Kurse**   | Live-Kurs direkt an der Schlagzeile. Tagsüber von Lang & Schwarz, nachts die **US-Nachbörse bis 2 Uhr** (falls Micron mal wieder +600 % nach Earnings rennt) |
+| **News-Ergänzungen** | Passend zum Thema zieht das Terminal Nachrichten aus **280+ Quellen**, trianguliert und entdoppelt - damit die Headlines wenigstens *etwas* Substanz haben.  |
+| **Raketen-Radar**    | Ein rotes Aufleuchten einer Headline um euch klar zu machen, wo ihr gerade massive Gewinne verpasst habt.                                                    |
+| **Fear & Greed-Tacho** | CNNs FEAR-and-GREED-Index als Tacho im Reddit-Header, damit ihr wisst, ob eure FOMO wenigstens Gesellschaft hat.                                             |
+| **Live News-Ticker** | Financial Juice & EUR/USD-Kurs laufen direkt mit - damit ihr wisst, warum euer Depot blutet, noch bevor es im Subreddit steht.                               |
+| **Marktzeiten**      | Internationale Marktzeiten samt Urlaubstage direkt in der Fußnote. Wahre Affen wissen wann sie liquidiert werden.                                            |
+| **100 % Lokal**      | Die KI läuft komplett auf eurer Kiste. Keine Cloud, kein Abo, kein fremder Mensch - eure Verluste bleiben streng privat.                                     |
 
 ### 📸 Loss Porn (Visuals)
 
@@ -46,7 +46,7 @@ Deshalb ist unser *Software-Setup* komplett idiotensicher. Der Installer nimmt e
 
 > [!NOTE]
 > Weil wir unser ganzes Geld in Optionen verzockt haben, statt die Apple- und Microsoft-Mafia für ihre teuren Developer-Zertifikate zu bezahlen (*Signing Culture ist Fettwerk*), werden eure Kisten beim Installieren erstmal meckern, dass das Terminal ein böser Virus sei. Keine Panik:
-> - **Mac-Affen:** Oben rechts aufs **"?"** am Fenster klicken, dann auf den Link zu Datenschutz & Sicherheit. Runterscrollen und auf **"Trotzdem öffnen"** klicken (oder einfach in die Mac-Settings zu Datenschutz & Sicherheit scrollen). Im Zweifel: Google, lol.
+> - **Mac-Affen:** Mittlerweile ist unser Installer Apple-verifiziert!
 > - **Windows-Degenerates:** Blauer SmartScreen poppt auf ➔ Klickt auf **"Weitere Informationen"** ➔ **"Trotzdem ausführen"**.
 
 Den Installer findet ihr hier: https://github.com/bsommerfeld/wsbg-terminal/releases/latest
@@ -55,12 +55,12 @@ Den Installer findet ihr hier: https://github.com/bsommerfeld/wsbg-terminal/rele
 
 Euer Computer sollte nicht nur schön blinken, sondern auch performen können. Ollama zieht gut was weg, besonders wenn das Affengeschrei groß ist, weil die Fetten kommen.
 
-| Spec | Anforderung                                                                                                                                                                                               |
-| :--- |:----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **OS** | Mac (Apple Silicon bevorzugt, M-Series fetzt), Windows (AMD/NVIDIA Long) oder Linux.                                                                                                                      |
+| Spec | Anforderung                                                                                                                                                                                  |
+| :--- |:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **OS** | Mac (Apple Silicon bevorzugt, M-Series fetzt), Windows (AMD/NVIDIA Long) oder Linux.                                                                                                         |
 | **RAM** | Mindestens **16 GB**, sonst läuft das Terminal genau wie eure Trades - nicht gut. Für High-Speed Headlines solltet ihr euch [mehr RAM installieren](https://downloadmoreram.com/index.html). |
-| **Speicherplatz** | **≈ 15 GB frei** (das Terminal lädt ein lokales KI-Modell plus Embedding-Modell auf die Platte, und die fressen nun mal Speicher).                                                                        |
-| **Prozessor** | M1/M2/M3/M4 aufwärts oder ein vernünftiger Mehrkerner mit GPU-Support. Ohne NPU/GPU ist die Textgenerierung langsamer als Trade Republic im Dip.                                                          |
+| **Speicherplatz** | **≈ 15+ GB frei** (das Terminal lädt ein lokales KI-Modell auf die Platte, und das frisst nun mal Speicher).                                                                                 |
+| **Prozessor** | M1/M2/M3/M4 aufwärts oder ein vernünftiger Mehrkerner mit GPU-Support. Ohne NPU/GPU ist die Textgenerierung langsamer als Trade Republic im Dip.                                             |
 
 ### 💎 Mitmachen
 
