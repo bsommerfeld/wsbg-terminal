@@ -41,8 +41,8 @@
      fixed raster. No aspect-ratio here. */
   border: 1px solid var(--line);
   border-radius: 14px;
-  background: var(--bg);
-  box-shadow: 0 26px 80px oklch(0 0 0 / .45);
+  background: var(--bg-elev);
+  box-shadow: 0 26px 80px oklch(from var(--sh-ink) l c h / .45);
   /* Visible: the icon straddles the lower edge and the name pill hangs BELOW
      the card. Content clipping moved onto the body. */
   overflow: visible;
@@ -53,14 +53,22 @@
   border-radius: 13px;
   overflow: hidden;
 }
-html[data-theme="light"] .main[data-view="grid"] > .widget,
-html[data-theme="light"] .main > .widget.exit-card {
-  box-shadow: 0 26px 80px oklch(0 0 0 / .18);
-}
 .main[data-view="grid"] > .widget:hover {
   transform: translateY(-6px) scale(1.02);
   border-color: var(--mute);
-  box-shadow: 0 34px 90px oklch(0 0 0 / .55);
+  box-shadow: 0 34px 90px oklch(from var(--sh-ink) l c h / .55);
+}
+/* …but not while a view transition plays (.view-busy, set by widget-nav.js).
+   The pointer is almost always parked over a card that is about to move, so
+   the hover state would run a 90px-blur shadow transition underneath a layer
+   in flight — a card-sized repaint per frame, in the exact frames the
+   software-OSR pipeline has none to spare, and invisible mid-transition. */
+.main[data-view="grid"].view-busy > .widget,
+.main.view-busy > .widget.exit-card { transition: none; }
+.main[data-view="grid"].view-busy > .widget:hover {
+  transform: none;
+  border-color: var(--line);
+  box-shadow: 0 26px 80px oklch(from var(--sh-ink) l c h / .45);
 }
 
 /* Cards are pure content: the widget header bar is chrome and disappears in
@@ -153,12 +161,8 @@ html[data-theme="light"] .main > .widget.exit-card {
   display: block;
   position: absolute; inset: 0; z-index: 6;
   border-radius: 14px;
-  background: linear-gradient(to top, oklch(0 0 0 / .30), transparent 36%);
+  background: linear-gradient(to top, var(--card-veil), transparent 36%);
   cursor: pointer;
-}
-html[data-theme="light"] .main[data-view="grid"] .grid-hit,
-html[data-theme="light"] .main > .widget.exit-card .grid-hit {
-  background: linear-gradient(to top, oklch(1 0 0 / .55), transparent 36%);
 }
 .grid-hit:focus-visible {
   outline: 2px solid var(--amber);
@@ -181,7 +185,7 @@ html[data-theme="light"] .main > .widget.exit-card .grid-hit {
 .grid-hit-icon {
   width: 34px; height: 34px;
   background-position: center; background-repeat: no-repeat; background-size: contain;
-  filter: drop-shadow(0 2px 6px oklch(0 0 0 / .45));
+  filter: drop-shadow(0 2px 6px oklch(from var(--sh-ink) l c h / .45));
 }
 .grid-hit-icon.icon-reddit { background-image: url("/icons/reddit.png"); }
 .grid-hit-icon.icon-fj     { background-image: url("/icons/financialjuice.png"); }
@@ -189,7 +193,7 @@ html[data-theme="light"] .main > .widget.exit-card .grid-hit {
   width: 44px; height: 28px;
   margin-top: 3px; /* optical: the gauge is flatter than the square marks */
   color: var(--txt);
-  filter: drop-shadow(0 2px 6px oklch(0 0 0 / .45));
+  filter: drop-shadow(0 2px 6px oklch(from var(--sh-ink) l c h / .45));
 }
 .grid-hit-label {
   white-space: nowrap;
@@ -218,20 +222,24 @@ html[data-theme="light"] .main > .widget.exit-card .grid-hit {
    controls live in the rail (filter, headline settings, the KI notice). The
    content column sits dead centre so the eyes never wander; the side padding
    keeps it clear of the floating rail on narrow windows. */
-.main[data-view="focus"] > .widget.focused { --focus-col: 920px; }
 .main[data-view="focus"] > .widget.focused > .widget-head { display: none; }
-/* Focus content scales with the window (widget-nav.js keeps --focus-zoom =
-   window width / screen width; 1 when maximized): on a smaller window the
-   whole column — text, charts, images — paints proportionally smaller
-   instead of reflowing at full-size type. The side padding is divided by
-   the zoom so its PAINTED width stays 96px — the floating rail sits outside
-   the zoomed subtree and must keep its clearance. */
+/* Focus content grows with the window. widget-nav.js (syncFocusLayout) sets
+   BOTH terms against a constant design width — --focus-zoom, how large the
+   content paints, and --focus-col, how wide the reading column runs. Neither
+   may be derived from the window on both sides of a ratio: the previous
+   --focus-zoom was, and sat at exactly 1.0000 forever (the post-mortem is on
+   syncFocusLayout). The fallbacks below are the design values, so the layout
+   still stands if the script never runs.
+
+   The side padding is divided by the zoom so its PAINTED width stays 96px —
+   the floating rail sits outside the zoomed subtree and must keep its
+   clearance. */
 .main[data-view="focus"] > .widget.focused .widget-body {
   zoom: var(--focus-zoom, 1);
   padding: 0 calc(96px / var(--focus-zoom, 1));
 }
 .main[data-view="focus"] > .widget.focused .widget-body > * {
-  max-width: var(--focus-col);
+  max-width: var(--focus-col, 920px);
   margin-inline: auto;
 }
 /* ---- transition helpers (set/cleared by widget-nav.js) ---- */
@@ -259,9 +267,8 @@ html[data-theme="light"] .main > .widget.exit-card .grid-hit {
   background: color-mix(in oklch, var(--bg-1) 78%, transparent);
   backdrop-filter: blur(14px) saturate(1.3);
   border: 1px solid var(--line);
-  box-shadow: 0 10px 28px oklch(0 0 0 / .30);
+  box-shadow: 0 10px 28px oklch(from var(--sh-ink) l c h / .30);
 }
-html[data-theme="light"] .widget-rail { box-shadow: 0 10px 28px oklch(0 0 0 / .12); }
 /* Vertically centred in the left gutter: as ONE compact capsule it is a single
    object the hand can aim at blind, and the middle is where the hand looks for
    it. (It can stay there because the about footnote sits in the OPPOSITE
@@ -350,16 +357,16 @@ html[data-theme="light"] .widget-rail { box-shadow: 0 10px 28px oklch(0 0 0 / .1
      the whole thing read cheap; at 93% the panel is a surface that happens to
      sit on glass. The lighter blur is also one cheaper composited layer for
      the OSR renderer. */
-  background: color-mix(in oklch, var(--bg) 93%, transparent);
+  background: color-mix(in oklch, var(--bg-elev) 93%, transparent);
   backdrop-filter: blur(12px) saturate(1.25);
   border: 1px solid var(--line);
   border-radius: 16px;
   /* Two-layer elevation + a top light edge: the tight contact shadow says the
      panel sits ABOVE something, the wide one gives it air, and the inset
      hairline is what turns a rectangle into a pane. */
-  box-shadow: 0 2px 6px oklch(0 0 0 / .28),
-              0 22px 60px oklch(0 0 0 / .34),
-              inset 0 1px 0 color-mix(in oklch, var(--txt) 9%, transparent);
+  box-shadow: 0 2px 6px oklch(from var(--sh-ink) l c h / .28),
+              0 22px 60px oklch(from var(--sh-ink) l c h / .34),
+              inset 0 1px 0 var(--sh-edge);
   /* Capped so a tall panel can never run out of the widget in a short window;
      the body scrolls inside (the about footnote opts out, see .about-pop). */
   max-height: min(72vh, 560px);
@@ -373,12 +380,6 @@ html[data-theme="light"] .widget-rail { box-shadow: 0 10px 28px oklch(0 0 0 / .1
   transition: clip-path .38s cubic-bezier(.3, .9, .32, 1),
               transform .38s cubic-bezier(.3, .9, .32, 1),
               opacity .22s ease, visibility 0s .38s;
-}
-html[data-theme="light"] .rail-pop {
-  background: color-mix(in oklch, var(--bg) 95%, transparent);
-  box-shadow: 0 2px 6px oklch(0 0 0 / .10),
-              0 22px 60px oklch(0 0 0 / .14),
-              inset 0 1px 0 oklch(1 0 0 / .7);
 }
 .rail-item.open .rail-pop {
   /* Radius from --rail-reveal (see above): tight enough that the reveal is

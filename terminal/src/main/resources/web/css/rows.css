@@ -26,7 +26,15 @@
   padding: 0 var(--pad-x);
   border-bottom: 1px solid var(--line);
   position: relative;       /* anchor for the centered rate-limit badge */
+  box-shadow: var(--head-shadow);
 }
+/* The header has to out-paint the list for its cast to be visible: .row is
+   position:relative too, so without this the first row draws straight over the
+   shadow. 5, not 2: it has to clear the unread portals (z-index 4) as well, or
+   a lit top portal would cut across the filter popover hanging out of the
+   header. Light only - in dark --head-shadow is none and the stacking order is
+   left exactly as it was. */
+html[data-theme="light"] .widget-head { z-index: 5; }
 .widget-head .ident {
   display: flex; align-items: center; gap: 12px; color: var(--amber);
   font-weight: 600; font-size: var(--font-chrome);
@@ -97,6 +105,9 @@ a.glyph:hover { opacity: .7; }
 }
 
 .widget-body {
+  /* The content surface. Identical to the ground in dark, a step above the
+     chrome in light - see --pane in tokens.css. */
+  background: var(--pane);
   overflow-y: auto; overflow-x: hidden; flex: 1;
   scrollbar-width: thin; scrollbar-color: var(--line) transparent;
 }

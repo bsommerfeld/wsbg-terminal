@@ -125,14 +125,6 @@ public final class InMemoryArticlePool implements ArticlePool {
             if (!fresh.isEmpty()) t.ingest(fresh);
             if (!evicted.isEmpty()) t.forget(evicted);
         }
-        // Debug tap (dev-only, JIT-removed when off): source name and counts
-        // only — no article references leave this method, so nothing here can
-        // outlive its eviction. size() is a brief re-take of the basin lock,
-        // a leaf with no ordering edge.
-        if (de.bsommerfeld.wsbg.terminal.core.debug.Debug.ENABLED) {
-            de.bsommerfeld.wsbg.terminal.core.debug.BasinInflow.get()
-                    .record(source.sourceName(), items.size(), poured, size());
-        }
         return poured;
     }
 
@@ -217,54 +209,6 @@ public final class InMemoryArticlePool implements ArticlePool {
     @Override
     public synchronized int size() {
         return basin.size();
-    }
-
-    /** The basin's state as counts — computed on demand for the debug bridge. */
-    public record BasinStats(int size, int maxItems, int durable, int live, int sentiment,
-            long oldestPouredAtMs, long newestPouredAtMs,
-            java.util.Map<String, Integer> bySource,
-            java.util.Map<String, Integer> ageBuckets) {
-    }
-
-    /**
-     * Debug read path (on-demand only, called by the dev-mode bridge): one
-     * pass over the basin under its own lock, returning counts and NAMES only
-     * — never an {@link Article} reference, so the snapshot cannot extend any
-     * entry's lifetime. Cost is one iteration over ≤ {@value #MAX_ITEMS}
-     * entries, paid only when a human asks.
-     */
-    public synchronized BasinStats debugStats() {
-        Instant now = clock.instant();
-        int durable = 0;
-        int live = 0;
-        int sentiment = 0;
-        long oldest = 0;
-        long newest = 0;
-        java.util.Map<String, Integer> bySource = new java.util.HashMap<>();
-        java.util.Map<String, Integer> ageBuckets = new java.util.LinkedHashMap<>();
-        for (String bucket : new String[] {"<15m", "15m-1h", "1-6h", "6-24h", ">24h"}) {
-            ageBuckets.put(bucket, 0);
-        }
-        for (Entry e : basin.values()) {
-            if (e.durable()) durable++;
-            else live++;
-            if (e.sentiment()) sentiment++;
-            long pouredMs = e.pouredAt().toEpochMilli();
-            if (oldest == 0 || pouredMs < oldest) oldest = pouredMs;
-            if (pouredMs > newest) newest = pouredMs;
-            bySource.merge(e.sourceName(), 1, Integer::sum);
-            long ageMin = java.time.Duration.between(e.pouredAt(), now).toMinutes();
-            String bucket = ageMin < 15 ? "<15m" : ageMin < 60 ? "15m-1h"
-                    : ageMin < 360 ? "1-6h" : ageMin < 1440 ? "6-24h" : ">24h";
-            ageBuckets.merge(bucket, 1, Integer::sum);
-        }
-        // Biggest contributors first, so the wire shape is stable and readable.
-        java.util.LinkedHashMap<String, Integer> sortedBySource = new java.util.LinkedHashMap<>();
-        bySource.entrySet().stream()
-                .sorted(java.util.Map.Entry.<String, Integer>comparingByValue().reversed())
-                .forEach(en -> sortedBySource.put(en.getKey(), en.getValue()));
-        return new BasinStats(basin.size(), MAX_ITEMS, durable, live, sentiment,
-                oldest, newest, sortedBySource, ageBuckets);
     }
 
     /**

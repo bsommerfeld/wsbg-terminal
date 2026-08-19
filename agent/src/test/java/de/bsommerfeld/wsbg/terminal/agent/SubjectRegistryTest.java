@@ -148,25 +148,6 @@ class SubjectRegistryTest {
     }
 
     @Test
-    void peekDirtyIsAReadOnlyCopyAndNeverDrains() {
-        // The debug layer's view: peeking must leave the pipeline's drain intact —
-        // a drained mark means "the headline never came".
-        SubjectRegistry reg = new SubjectRegistry();
-        reg.findOrCreate("NVDA", "NVIDIA");
-        reg.markDirty("NVDA");
-
-        assertEquals(java.util.Set.of("NVDA"), reg.peekDirty());
-        assertEquals(java.util.Set.of("NVDA"), reg.peekDirty(), "peek twice, still there");
-
-        // The returned set is the caller's own copy — mutating it changes nothing.
-        java.util.Set<String> peeked = reg.peekDirty();
-        peeked.clear();
-        assertEquals(java.util.Set.of("NVDA"), reg.drainDirty(),
-                "the pipeline still receives its full dirty set after debug peeks");
-        assertTrue(reg.peekDirty().isEmpty(), "after the drain the peek is empty too");
-    }
-
-    @Test
     void foldsASubsetNameUnitIntoTheFullerNameUnit() {
         // The live merz/friedrich-merz twins: same person, two name units, both
         // published the same Reformpaket line. Subset words + shared evidence → fold,

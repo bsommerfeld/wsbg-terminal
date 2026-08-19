@@ -110,15 +110,6 @@
                 <directory>src/main/resources</directory>
                 <excludes>
                     <exclude>web/_preview*.html</exclude>
-                    <!-- The debug-dashboard assets are NOT excluded here on
-                         purpose. A resource exclusion keeps a file out of
-                         target/classes, and target/classes is exactly what the
-                         AssetServer serves in a developer run - so excluding
-                         them here removed the console from the only build that
-                         is allowed to have it, while the packaging test went on
-                         passing because the JAR was indeed clean. They are
-                         stripped at the JAR step instead (maven-jar-plugin
-                         below), which is the step that decides what ships. -->
                 </excludes>
             </resource>
         </resources>
@@ -135,18 +126,6 @@
                             <mainClass>de.bsommerfeld.wsbg.terminal.ui.AppMain</mainClass>
                         </manifest>
                     </archive>
-                    <!-- Debug-dashboard assets (reserved paths; see the
-                         DebugBridge Javadoc): they belong in target/classes so
-                         a developer run can serve them, and NEVER in the JAR.
-                         Stripped here, at the step that decides what ships -
-                         UNCONDITIONAL on purpose, with no Maven profile a
-                         build path could forget. DebugPackagingTest nails it. -->
-                    <excludes>
-                        <exclude>web/debug*.html</exclude>
-                        <exclude>web/debug/**</exclude>
-                        <exclude>web/js/debug/**</exclude>
-                        <exclude>web/css/debug*.css</exclude>
-                    </excludes>
                 </configuration>
             </plugin>
 

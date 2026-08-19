@@ -9,7 +9,6 @@ import de.bsommerfeld.wsbg.terminal.agent.PassiveMonitorService;
 import de.bsommerfeld.wsbg.terminal.instruments.AliasStore;
 import de.bsommerfeld.wsbg.terminal.price.CorpusInstrumentRegister;
 import de.bsommerfeld.wsbg.terminal.price.FallbackPriceSource;
-import de.bsommerfeld.wsbg.terminal.ui.TimeTracker;
 import de.bsommerfeld.wsbg.terminal.web.facts.InstrumentLookup;
 import de.bsommerfeld.wsbg.terminal.web.facts.PriceSource;
 import de.bsommerfeld.wsbg.terminal.web.impl.gateway.FactsSources;
@@ -32,9 +31,9 @@ import de.bsommerfeld.wsbg.terminal.web.instrument.InstrumentRegister;
  * sequence (see CLAUDE.md): {@link EditorialPipeline} (its prep/compose/merge pools
  * must exist before any cluster change is submitted) → {@link AgentCoordinator}
  * (subscribes to ClusterRegistry changes before PassiveMonitorService emits them) →
- * {@link PassiveMonitorService} (starts the polling loop) → {@link TimeTracker}
- * (start/interval/stop checkpointing at boot). This whole quartet is kept in ONE
- * module so Guice instantiates them in this exact order; do not scatter it.
+ * {@link PassiveMonitorService} (starts the polling loop). This whole trio is
+ * kept in ONE module so Guice instantiates them in this exact order; do not
+ * scatter it.
  *
  * <p>The facts sources of the old per-interface bindings are bundled into the
  * {@link FactsSources} roster: the gateway's third pipeline grazes them all in
@@ -55,10 +54,6 @@ final class AgentPipelineModule extends AbstractModule {
         // injection finds it.
         bind(AliasStore.class).in(Singleton.class);
         bind(PassiveMonitorService.class).asEagerSingleton();
-        // TimeTracker must be eager so it starts its start/interval/stop
-        // checkpointing at boot; DonationStatsPublisher reads it for the
-        // footer banner's reciprocity copy.
-        bind(TimeTracker.class).asEagerSingleton();
 
         // The live price chain (EUR-first: L&S, then US fallback Yahoo).
         // Optionally injected into TickerResolver; Yahoo stays a search + news source.

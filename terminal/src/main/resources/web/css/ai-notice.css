@@ -54,7 +54,7 @@
   line-height: 1.45;
   white-space: normal;
   text-align: left;
-  box-shadow: 0 10px 30px oklch(0 0 0 / .4);
+  box-shadow: 0 10px 30px oklch(from var(--sh-ink) l c h / .4);
   opacity: 0;
   transform: translateY(-2px);
   pointer-events: none;

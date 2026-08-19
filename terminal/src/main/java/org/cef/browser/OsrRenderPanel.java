@@ -46,7 +46,7 @@ final class OsrRenderPanel extends JComponent {
 
     private final Object lock = new Object();
     // Grow-only, step-padded allocation: a live resize delivers a new
-    // frame size on nearly every frame, and reallocating a ~100MB ARGB
+    // frame size on nearly every frame, and reallocating a ~100MB 32-bit
     // raster plus a same-sized Metal texture per frame is GC/driver churn
     // that stutters the whole app. The live frame occupies the top-left
     // frameW_ x frameH_ of the (possibly larger) buffer; every blit is
@@ -181,6 +181,25 @@ final class OsrRenderPanel extends JComponent {
     // once per 256 device px instead of once per frame.
     private static final int ALLOC_STEP = 256;
 
+    // Pixel format of the main frame buffer. The browser is created OPAQUE
+    // (CefHost.createBrowser passes transparent=false), so the alpha byte CEF
+    // delivers is 0xFF on every pixel and carries nothing. Declaring the raster
+    // TYPE_INT_ARGB anyway made Java2D treat it as NON-PREMULTIPLIED alpha and
+    // take a converting path on every sw->VRAM upload, which is the per-frame
+    // cost that scales with the window. TYPE_INT_RGB is the same int layout
+    // (0xAARRGGBB written, high byte simply ignored on read) into an opaque
+    // destination, so the upload is a straight blit.
+    // Measured on a deterministic full-viewport-damage load (4800x2600 device
+    // px, ~230 damaged frames, two runs each): the sw->VRAM upload fell from
+    // 7.03/6.99 to 1.76/1.07 ms per frame, and the EDT paints that clear the
+    // 4ms profiler threshold at all fell from 1822/1766ms to 25/9ms over the
+    // same load — i.e. painting a frame stopped being the EDT's problem.
+    // Pixel output is bit-identical: the written ints are the same, and an
+    // opaque source into an opaque destination is the same copy (verified
+    // against TYPE_INT_ARGB over the identical write/upload path).
+    // Popup buffers keep ARGB — those really can be transparent.
+    private static final int FRAME_TYPE = BufferedImage.TYPE_INT_RGB;
+
     // BGRA little-endian bytes read as a little-endian int yield 0xAARRGGBB
     // = ARGB, so the buffer copies straight into a TYPE_INT_ARGB raster.
     // (Popup buffers only — the main frame goes through blitFrame.)
@@ -201,7 +220,7 @@ final class OsrRenderPanel extends JComponent {
         if (image_ == null || image_.getWidth() < w || image_.getHeight() < h) {
             int aw = Math.max(pad(w), image_ == null ? 0 : image_.getWidth());
             int ah = Math.max(pad(h), image_ == null ? 0 : image_.getHeight());
-            image_ = new BufferedImage(aw, ah, BufferedImage.TYPE_INT_ARGB);
+            image_ = new BufferedImage(aw, ah, FRAME_TYPE);
         }
         int stride = image_.getWidth();
         int[] dst = ((DataBufferInt) image_.getRaster().getDataBuffer()).getData();

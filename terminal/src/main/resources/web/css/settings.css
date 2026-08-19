@@ -9,7 +9,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: var(--bg);
+  background: var(--pane);
   overflow: hidden;
 }
 /* The display:flex above would otherwise beat the UA [hidden] rule, leaving the

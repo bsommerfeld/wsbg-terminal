@@ -207,34 +207,6 @@ public final class OllamaServerManager {
                 .findFirst();
     }
 
-    /**
-     * Debug-only: every live process running OUR ollama binary — the server plus
-     * the {@code runner} children that actually hold the model in memory. The
-     * runners are the point: the server process itself is small, the gigabytes
-     * sit in its children, so a memory view built on the server pid alone would
-     * report a few hundred megabytes for a model that occupies twenty gigabytes.
-     *
-     * @return one entry per process: {@code {pid, role, owned}}, server first
-     */
-    public List<java.util.Map<String, Object>> debugProcesses() {
-        Path ollamaDir = appDataDir.resolve(OLLAMA_DIR);
-        ProcessHandle owned = ownedServer;
-        Long ownedPid = owned != null && owned.isAlive() ? owned.pid() : null;
-        List<java.util.Map<String, Object>> out = new java.util.ArrayList<>();
-        ProcessHandle.allProcesses()
-                .filter(h -> runsBinaryUnder(h, ollamaDir))
-                .forEach(h -> {
-                    String[] args = h.info().arguments().orElse(new String[0]);
-                    String role = args.length > 0 ? args[0] : "ollama";
-                    out.add(new java.util.LinkedHashMap<>(java.util.Map.of(
-                            "pid", h.pid(),
-                            "role", role,
-                            "owned", ownedPid != null && ownedPid == h.pid())));
-                });
-        out.sort(java.util.Comparator.comparing(m -> "serve".equals(m.get("role")) ? 0 : 1));
-        return out;
-    }
-
     /** Whether {@code h} runs an executable located inside {@code dir}. */
     private static boolean runsBinaryUnder(ProcessHandle h, Path dir) {
         String command = h.info().command().orElse("");

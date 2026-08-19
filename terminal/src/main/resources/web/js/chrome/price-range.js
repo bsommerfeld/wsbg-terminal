@@ -382,7 +382,7 @@ function fitCanvas(cv, [w, h]) {
 // once and fall back to a flat hex twin rather than painting everything black.
 const FALLBACK = {
   dark:  { txt: '#ece7dd', mute: '#8a8375', mute2: '#5f5a51', line: '#494540', amber: '#f5c268', bg1: '#2a2825' },
-  light: { txt: '#2f2c26', mute: '#8a8375', mute2: '#a8a297', line: '#d8d3cb', amber: '#8a6a18', bg1: '#f2f0eb' },
+  light: { txt: '#1f1c19', mute: '#736f6b', mute2: '#97938f', line: '#c9c6c2', amber: '#b56400', bg1: '#edebe7' },
 };
 
 function palette() {

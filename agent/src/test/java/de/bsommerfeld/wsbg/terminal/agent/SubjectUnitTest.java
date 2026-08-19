@@ -33,43 +33,6 @@ class SubjectUnitTest {
     }
 
     @Test
-    void debugStatsCopiesScalarsWithoutTouchingUnitState() {
-        SubjectUnit u = new SubjectUnit("NVDA", "NVIDIA");
-        u.updateResolved("NVIDIA Corporation", "NVDA", snap(180.0),
-                List.of(news("a", Instant.now())));
-        u.noteIsin("US67066G1040");
-        u.addEvidence(new SubjectUnit.EvidenceRef("t3_x", "t1_a", "Nvidia",
-                "reddit", Instant.now().getEpochSecond()));
-        u.addHeadline("NVIDIA (NVDA) +2%", "BULLISH");
-        u.markNewsCovered(List.of("a"));
-
-        SubjectUnit.DebugStats s = u.debugStats();
-        assertEquals("NVDA", s.id());
-        assertEquals("NVIDIA Corporation", s.canonicalName());
-        assertEquals("NVDA", s.ticker());
-        assertEquals("US67066G1040", s.isin());
-        assertTrue(s.instrument());
-        assertEquals(1, s.evidenceCount());
-        assertEquals(1, s.seenEvidenceCount());
-        assertEquals(1, s.newsCount());
-        assertEquals(1, s.coveredNewsCount());
-        assertEquals(1, s.headlineCount());
-        assertEquals("NVIDIA (NVDA) +2%", s.lastHeadlineText());
-        assertEquals("BULLISH", s.lastHeadlineSentiment());
-        assertTrue(s.uncomposedEvidence());
-        // The identity row: the snapshot's ACTUAL symbol/venue/currency ride along.
-        assertEquals("NVDA", s.snapshotSymbol());
-        assertEquals(180.0, s.price());
-        assertEquals("USD", s.currency());
-        assertEquals(180.0, s.firstPrice(), 0.0);
-
-        // Reading stats is a pure copy: evidence, headlines and gate are untouched.
-        assertEquals(1, u.evidenceCount());
-        assertEquals(1, u.headlines().size());
-        assertTrue(u.hasUncomposedEvidence(), "a debug read must not consume the compose gate");
-    }
-
-    @Test
     void newsIsMergedByUuidNotReplaced() {
         SubjectUnit u = new SubjectUnit("NVDA", "NVIDIA");
         Instant now = Instant.now();

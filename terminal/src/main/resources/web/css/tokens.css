@@ -57,6 +57,55 @@
   --blue:         oklch(0.78 0.12 230);
   --blue-deep:    oklch(0.55 0.16 255);
 
+  /* The LIT twin of an accent: the same colour as a piece of pure GRAPHIC -
+     a gauge arc, a bar, a swatch, light spilling from the edge of a list -
+     with no text on it. One rule decides which of the two a rule takes:
+     anything that CARRIES TEXT uses the plain accent with --bg as its ink
+     (that pairing flips correctly in both themes); anything that is only a
+     shape uses the lit one. On a dark ground the accent already emits, so the
+     two are the same colour and nothing here moves. */
+  --amber-lit:    var(--amber);
+  --green-lit:    var(--green);
+  --red-lit:      var(--red);
+
+  /* Elevation. --bg is the ground the app is painted on; --bg-elev is a surface
+     that FLOATS over it (popover, modal panel, grid card). On a dark ground an
+     elevated surface is separated by its shadow and its hairline alone, so the
+     two are the same colour here; on a light ground a shadow cannot carry that
+     job by itself and --bg-elev goes lighter than the ground (see the light
+     block). Every floating surface reads --bg-elev, so the difference lives in
+     ONE place instead of in every panel rule. */
+  --bg-elev:      var(--bg);
+  /* The scrolling CONTENT surface, as opposed to the chrome around it (title
+     bar, widget header, footer). On a dark ground the two are the same sheet -
+     the accents on it carry the depth. On a light one nothing glows, so the
+     frame has to be built out of tone: the chrome sits a step down, the content
+     a step up, and the list visibly runs UNDER its own header (--head-shadow).
+     Both are no-ops here (transparent paints nothing at all, so not a single
+     pixel of the dark theme moves), and it stays one continuous sheet. */
+  --pane:         transparent;
+  --head-shadow:  none;
+  /* A boxed read-out (a stat tile, the crypto panel): outlined only, because on
+     a dark ground an outline IS the box. On a light one an outline alone is a
+     wireframe, so it gets a filled body over there. */
+  --tile:         transparent;
+
+  /* Shadow ink. Every drop shadow in the app is `oklch(from var(--sh-ink) l c h
+     / <its own alpha>)` — the alphas stay where they are (each site knows how
+     hard it needs to sit), the INK is what the theme swaps. Black on a dark
+     ground; a light warm grey on a light one, where full-strength black turns a
+     soft elevation into a smear. */
+  --sh-ink:       oklch(0 0 0);
+  /* The inset hairline along a floating panel's top edge — what turns a
+     rectangle into a pane. Lit from above, so it is a lightening on both
+     grounds, but on a dark one it has to come from the text colour to be seen
+     at all. */
+  --sh-edge:      color-mix(in oklch, var(--txt) 9%, transparent);
+  /* The scrim behind a modal, and the veil that shades the lower edge of a grid
+     card so the name pill below it has ground to stand on. */
+  --scrim:        oklch(0.08 0.005 60 / .72);
+  --card-veil:    oklch(0 0 0 / .30);
+
   --titlebar-h:   38px;
   --widget-head-h: 47px; /* widget header row - the unread portals dock under it */
   --footer-h:     38px;   /* same height as the titlebar - the window frame reads symmetrical */
@@ -79,24 +128,58 @@
 }
 
 html[data-theme="light"] {
-  --bg:           oklch(0.985 0.003 80);
-  --bg-1:         oklch(0.965 0.003 80);
-  --bg-hover:     oklch(0.94 0.004 80);
-  --line:         oklch(0.86 0.005 80);
-  --line-soft:    oklch(0.92 0.004 80);
-  --txt:          oklch(0.22 0.006 60);
-  --txt-2:        oklch(0.36 0.006 60);
-  --mute:         oklch(0.55 0.006 70);
-  --mute-2:       oklch(0.68 0.006 70);
-  /* Accents sit on near-white here, so they carry the contrast themselves:
-     darker and less saturated than their dark-mode twins (print-gold instead
-     of glow-gold), else titles/chips glare and thin text becomes unreadable. */
-  --amber:        oklch(0.50 0.11 65);
-  --amber-soft:   oklch(0.50 0.11 65 / .10);
-  --green:        oklch(0.47 0.13 150);
-  --red:          oklch(0.50 0.15 28);
-  --red-soft:     oklch(0.50 0.15 28 / .08);
-  --blue:         oklch(0.48 0.11 240);
-  --blue-deep:    oklch(0.44 0.13 255);
-}
+  /* The ground is an off-white, NOT paper white: white is reserved for what
+     floats above it (--bg-elev). Without that headroom a popover over the app
+     is the same colour as the app and its only edge is a hairline - which is
+     what made every panel here read flat. */
+  --bg:           oklch(0.968 0.005 85);
+  --pane:         oklch(0.997 0.002 85);
+  --bg-elev:      oklch(1 0 0);
+  --tile:         oklch(0.955 0.005 85);
+  --head-shadow:  0 7px 16px -11px oklch(from var(--sh-ink) l c h / .95);
+  /* Inset fills (tags, inputs, chips at rest, code) go DOWN from the ground,
+     and by the same steps the dark theme goes up - a chip that is 0.02 off its
+     ground is not a chip, it is a rumour. */
+  --bg-1:         oklch(0.940 0.006 85);
+  --bg-hover:     oklch(0.930 0.007 85);
+  /* Rules need more separation on a light ground than the same ΔL buys on a
+     dark one: a light surface blooms and swallows a faint line. */
+  --line:         oklch(0.828 0.007 85);
+  --line-soft:    oklch(0.892 0.006 85);
+  --txt:          oklch(0.23 0.008 70);
+  --txt-2:        oklch(0.40 0.008 70);
+  --mute:         oklch(0.545 0.008 70);
+  --mute-2:       oklch(0.665 0.007 70);
+  /* Accents: MID lightness at the chroma ceiling of sRGB, not "the dark twin,
+     darkened". Pushed down to L≈0.48 - which is where they were - gold turns
+     brown and green turns bottle glass, because that far down sRGB has almost
+     no chroma left to give: every accent collapsed into the same dark smudge
+     and stopped telling the eye anything. Held at L 0.5-0.6 with the chroma
+     maxed out they are their own colour again, and they still carry white ink
+     on top (--bg is the ink on a filled accent in BOTH themes - it flips with
+     the theme, so one rule covers the pills and chips everywhere).
+     No amount of tuning makes gold read as gold at reading contrast on white;
+     a burnt amber is what this accent looks like down here, and that is a
+     colour, not mud. Where a shape needs the real gold, see the lit twins. */
+  --amber:        oklch(0.585 0.138 60);
+  --amber-soft:   oklch(0.585 0.138 60 / .14);
+  --green:        oklch(0.525 0.142 150);
+  --red:          oklch(0.525 0.205 27);
+  --red-soft:     oklch(0.525 0.205 27 / .10);
+  --blue:         oklch(0.525 0.118 240);
+  --blue-deep:    oklch(0.495 0.165 256);
+  /* …and the lit twins. A shape carries no text, so it is free to go where the
+     colour is actually vivid - which is the only way a fear→greed scale still
+     reads as red→gold→green down here instead of as three shades of mud. */
+  --amber-lit:    oklch(0.790 0.155 78);
+  --green-lit:    oklch(0.720 0.185 152);
+  --red-lit:      oklch(0.630 0.235 27);
 
+  /* Shadows: warm light grey, never black. The alphas at the call sites are
+     tuned for black on black; the same numbers with black ink over white paint
+     dirt, not depth. */
+  --sh-ink:       oklch(0.48 0.025 70);
+  --sh-edge:      oklch(1 0 0 / .8);
+  --scrim:        oklch(0.30 0.015 70 / .40);
+  --card-veil:    oklch(0.35 0.02 70 / .05);
+}

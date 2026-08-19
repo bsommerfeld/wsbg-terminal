@@ -1,4 +1,4 @@
-/* Stadium-banner footer: market chips + the donate-ad slide. */
+/* Stadium-banner footer: the market-chip strip. */
 
 .footer {
   display: flex; align-items: center;
@@ -7,7 +7,8 @@
   overflow: hidden;
 }
 
-.feed { flex: 1; position: relative; height: 100%; overflow: hidden; }
+/* The chip strip fills whatever the footer buttons leave over. */
+.markets { flex: 1; display: flex; align-items: center; height: 100%; overflow: hidden; }
 
 /* Settings gear in the footer (Win/Linux only — see index.html). Hidden
    by default so macOS keeps it in the titlebar; revealed on "other". The
@@ -21,17 +22,6 @@
   padding-left: 12px;
 }
 html[data-platform="other"] .footer-settings { display: inline-flex; }
-
-/* 3-position state machine: slides only ever travel right → center → left. */
-.slide {
-  position: absolute; inset: 0;
-  display: flex; align-items: center;
-  transform: translateX(100%);
-}
-.slide[data-pos="right"]  { transform: translateX(100%);  }
-.slide[data-pos="center"] { transform: translateX(0);     }
-.slide[data-pos="left"]   { transform: translateX(-100%); }
-.slide.animate { transition: transform .8s cubic-bezier(.65,.02,.2,1); }
 
 /* Exchange chips evenly spread the full strip width. Content never wraps —
    on a narrow window the countdown was stacking under the label (last cell
@@ -104,98 +94,3 @@ html[data-platform="other"] .footer-settings { display: inline-flex; }
   40%  { filter: blur(0);   opacity: 1; }
   100% { filter: blur(0);   opacity: 1; }
 }
-
-/* Donate ad slide. */
-.slide.ad { padding: 0; gap: 0; }
-.ad-inner {
-  flex: 1;
-  display: flex; align-items: center; justify-content: center;
-  gap: 12px;
-  padding: 0 24px;
-  color: var(--txt-2); font-size: var(--font-chrome); letter-spacing: .04em;
-  position: relative; overflow: hidden;
-}
-.ad-inner .heart {
-  color: var(--red); display: inline-flex;
-}
-.ad-inner .heart svg { width: 12px; height: 12px; fill: currentColor; }
-@keyframes beat {
-  0%, 100% { transform: scale(1); }
-  30%      { transform: scale(1.18); }
-  60%      { transform: scale(.96); }
-}
-.ad-inner .star {
-  color: var(--amber); display: inline-flex;
-}
-.ad-inner .star svg { width: 12px; height: 12px; fill: currentColor; }
-/* Wind up from a standstill (ease-in: slow → fast), snap back to the start
-   position (360deg ≡ 0deg), hold briefly, then wind up again. */
-@keyframes spin-pause {
-  0%   { transform: rotate(0deg);   animation-timing-function: ease-in; }
-  70%  { transform: rotate(360deg); }
-  100% { transform: rotate(360deg); }
-}
-
-/* The rest of the glyph set (slider.js ICONS). Shared sizing, each with its
-   own colour + a small signature motion — except the skull, which holds
-   perfectly still (it's dead). */
-.ad-inner .gem,
-.ad-inner .skull { display: inline-flex; }
-.ad-inner .gem svg,
-.ad-inner .skull svg { width: 12px; height: 12px; fill: currentColor; }
-
-.ad-inner .gem { color: var(--green); }
-@keyframes sparkle {
-  0%, 100% { opacity: 1;   transform: scale(1); }
-  50%      { opacity: .55; transform: scale(.9); }
-}
-
-.ad-inner .skull { color: var(--mute); }
-.ad-inner a {
-  color: var(--amber); text-decoration: none;
-  border-bottom: 1px dashed oklch(from var(--amber) l c h / .45);
-  padding-bottom: 1px;
-}
-.ad-inner a:hover { border-bottom-color: var(--amber); }
-.ad-inner .arrow { display: inline-block; margin-left: 4px; transition: transform .2s; }
-.ad-inner a:hover .arrow { transform: translateX(3px); }
-
-/* Shimmer sweep across the donate text.
-   Pseudo-element is 200% wide and absolutely positioned, swept by transform
-   (not background-position) — overflow:hidden on .ad-inner clips it cleanly
-   at both edges. The left offset is -150% (not -100%) so the gradient peak
-   starts off-screen left by 50% of the parent width, giving the shimmer room
-   to fade in symmetrically with how it fades out on the right. */
-.ad-inner::after {
-  content: "";
-  position: absolute;
-  top: 0; bottom: 0; left: -150%;
-  width: 200%;
-  pointer-events: none;
-  background: linear-gradient(
-      90deg,
-      transparent 35%,
-      oklch(from var(--amber) l c h / .08) 50%,
-      transparent 65%);
-}
-@keyframes shimmer {
-  0%   { transform: translateX(0); }
-  100% { transform: translateX(100%); }
-}
-
-/* THE BANNER ONLY MOVES WHILE IT IS ACTUALLY ON-SCREEN.
-   The ad slide is parked off-screen (translateX(100%)) for ~95 % of the time -
-   30 s of banner per 5-10 min window - but an animation on a parked slide keeps
-   ticking, and every tick damages the footer. The OSR path folds ALL dirty rects
-   of a frame into ONE union rectangle (OsrRenderPanel.onPaint) which drives both
-   the VRAM upload and the screen blit: footer damage at the bottom + anything
-   painting at the top = a full-window rect, 60x/s. That is what turned the gold
-   flash on a fresh headline into a stutter - the same trap the .heart-btn.hint
-   beat is kept finite for, and the reason .cell.exch.main .dot has no pulse.
-   data-pos="center" is set the moment the slide starts travelling in, so the
-   motion still carries the entry. */
-.slide.ad[data-pos="center"] .heart { animation: beat 1.6s ease-in-out infinite; }
-.slide.ad[data-pos="center"] .star  { animation: spin-pause 1.4s linear infinite; }
-.slide.ad[data-pos="center"] .gem   { animation: sparkle 1.8s ease-in-out infinite; }
-.slide.ad[data-pos="center"] .ad-inner::after { animation: shimmer 5s linear infinite; }
-

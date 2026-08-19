@@ -26,15 +26,6 @@ public record SourceOutcome(String sourceName, Status status, int itemCount, Str
 
     public SourceOutcome {
         if (note == null) note = "";
-        // Debug tap (dev-only, JIT-removed in shipped builds): every outcome
-        // line the house writes — gateway fan, facts graze, archive fan —
-        // funnels through this constructor, so recording HERE is the one
-        // collection point that sees them all without touching any call site.
-        // Records name/status/count/note copies only; no behaviour change.
-        if (de.bsommerfeld.wsbg.terminal.core.debug.Debug.ENABLED) {
-            de.bsommerfeld.wsbg.terminal.core.debug.SourceHealthRegistry.get()
-                    .record(sourceName, status == null ? "" : status.name(), itemCount, note);
-        }
     }
 
     public static SourceOutcome delivered(String source, int count) {

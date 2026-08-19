@@ -8,7 +8,6 @@ export const DICT = {
     // --- shared ---
     'common.live': 'Live',
     'common.degraded': 'Defekt',
-    'common.donate': 'WSBG unterstützen',
 
     // --- titlebar ---
     'titlebar.update.title': 'Update verfügbar - jetzt installieren',
@@ -211,19 +210,11 @@ export const DICT = {
     'region.ASIEN': 'ASIEN',
     'region.AUSTRALIEN': 'AUSTRALIEN',
 
-    // --- footer donate banner ---
-    'ad.gains': 'Zur Abwechslung mal Gewinne realisiert? Finanziere den nächsten Loss-Porn',
-    'ad.helped': 'Dir hat das WSBG-Terminal geholfen? Hilf beim Verlusttopf ausgleichen',
-    'ad.star': 'Alles verloren und trotzdem den Drang zu spenden? Ein Stern ist fast so viel Wert wie ein Euro',
-    'ad.etf': 'ETF oder Terminal, was wählst du?',
-    'ad.bug': 'Du hast einen Fehler gefunden? Erstelle ein Issue!',
-    'ad.feature': 'Dir fehlt das eine entscheidende Feature? Erstelle ein Issue!',
   },
   en: {
     // --- shared ---
     'common.live': 'Live',
     'common.degraded': 'Down',
-    'common.donate': 'Support WSBG',
 
     // --- titlebar ---
     'titlebar.update.title': 'Update available – install now',
@@ -425,12 +416,5 @@ export const DICT = {
     'region.ASIEN': 'ASIA',
     'region.AUSTRALIEN': 'AUSTRALIA',
 
-    // --- footer donate banner ---
-    'ad.gains': 'Booked a gain for once? Fund the next loss-porn',
-    'ad.helped': 'The WSBG Terminal helped you? Help balance the loss pot',
-    'ad.star': 'Lost it all and still feel like donating? A star is worth almost as much as a euro',
-    'ad.etf': 'ETF or Terminal — which do you pick?',
-    'ad.bug': 'Found a bug? Open an issue!',
-    'ad.feature': 'Missing that one crucial feature? Open an issue!',
   },
 };

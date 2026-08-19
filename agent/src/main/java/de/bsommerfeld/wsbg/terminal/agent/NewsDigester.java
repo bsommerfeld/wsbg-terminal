@@ -84,16 +84,6 @@ final class NewsDigester {
         this.brain = brain;
         this.chatGateway = chatGateway;
         this.config = config;
-        // Debug gauges (dev-only): the otherwise package-private cache sizes that
-        // have no other size() anywhere. Registered once; sampled only when a
-        // debug request arrives.
-        if (de.bsommerfeld.wsbg.terminal.core.debug.Debug.ENABLED) {
-            var gauges = de.bsommerfeld.wsbg.terminal.core.debug.DebugGauges.get();
-            gauges.register("digest.cache.digests", byLink::size);
-            gauges.register("digest.cache.bodyHashes", bodySeen::size);
-            gauges.register("digest.shellStrikeHosts", shellStrikes::size);
-            gauges.register("digest.walledHosts", walledHosts::size);
-        }
     }
 
     /** Installs the shared web transport; until then the digester is inert. */

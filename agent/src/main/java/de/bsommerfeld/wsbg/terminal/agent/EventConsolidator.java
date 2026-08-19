@@ -90,7 +90,7 @@ final class EventConsolidator {
         for (Candidate c : candidates) {
             Set<String> keys = new HashSet<>();
             for (EvidenceRef ref : c.found()) {
-                if (!"reddit-context".equals(ref.source())) keys.add(ref.key());
+                if (ref.isStory()) keys.add(ref.key());
             }
             for (String k : keys) namedBy.merge(k, 1, Integer::sum);
         }
@@ -114,7 +114,7 @@ final class EventConsolidator {
             boolean gained = false;
             for (EvidenceRef ref : c.found()) {
                 boolean added = unit.addEvidence(ref);
-                if (!"reddit-context".equals(ref.source())) gained |= added;
+                if (ref.isStory()) gained |= added;
             }
             if (c == primary) {
                 primaryUnit = unit;
@@ -135,7 +135,7 @@ final class EventConsolidator {
             // one story per name; the evidence still accumulates as context below.
             boolean ownStory = (c.rs().isInstrument() || c.rs().unresolved())
                     && c.found().stream().anyMatch(ref ->
-                            !"reddit-context".equals(ref.source())
+                            ref.isStory()
                                     && !primaryKeys.contains(ref.key())
                                     && namedBy.getOrDefault(ref.key(), 1) <= ENUMERATION_BREADTH);
             if (ownStory && gained) {
@@ -154,18 +154,25 @@ final class EventConsolidator {
             if (c == primary) continue;
             String label = displayName(c.rs());
             for (EvidenceRef ref : c.found()) {
-                if ("reddit-context".equals(ref.source())) continue; // don't chain context-of-context
+                if (!ref.isStory()) continue; // don't chain context-of-context
                 primaryGained |= primaryUnit.addEvidence(new EvidenceRef(ref.threadId(),
-                        ref.commentId(), "[" + label + "] " + ref.snippet(), "reddit-context",
+                        ref.commentId(), "[" + label + "] " + ref.snippet(), EvidenceRef.CONTEXT,
                         ref.addedAtEpoch()));
             }
         }
         // NOTHING from the thread is thrown away: comments that name NO subject at
         // all (mood, jokes, the room's voice around the event) still belong to the
-        // event's story — they attach to the PRIMARY as conversation context,
-        // "erwähnt im Verhältnis zu". Silent by design: atmosphere never wakes a
-        // unit (the brief's char budget bounds what the model ultimately sees, the
-        // TTL prune bounds retention, key-dedupe makes re-attribution a no-op).
+        // event's story — they attach to the PRIMARY as {@code MOOD} evidence.
+        // Silent by design: atmosphere never wakes a unit.
+        //
+        // The tag matters. This loop is unbounded — every cached comment of every
+        // active thread — and while it shared the CONTEXT tag it competed with the
+        // subject's own mentions for the compose window, which the char budget
+        // then resolved in ITS favour (the budget keeps the newest, and these are
+        // appended last): measured, 150 chatter comments pushed all 8 real
+        // mentions out of the brief, and the fact-sheet watermark then marked them
+        // absorbed, so they were gone for good. As MOOD they feed the room sheet
+        // only — read there as sentiment, where a sample is enough.
         Set<String> matchedKeys = new HashSet<>(primaryKeys);
         for (Candidate c : candidates) {
             for (EvidenceRef ref : c.found()) matchedKeys.add(ref.key());
@@ -176,7 +183,7 @@ final class EventConsolidator {
                 String key = threadId + "/" + cm.id();
                 if (matchedKeys.contains(key)) continue;
                 primaryUnit.addEvidence(new EvidenceRef(threadId, cm.id(),
-                        EvidenceText.contextSnippet(cm.body()), "reddit-context", now));
+                        EvidenceText.contextSnippet(cm.body()), EvidenceRef.MOOD, now));
             }
         }
 
@@ -235,7 +242,7 @@ final class EventConsolidator {
 
     /** Real mentions (reddit/vision), excluding conversation-context refs. */
     private static long realMentions(List<EvidenceRef> found) {
-        return found.stream().filter(r -> !"reddit-context".equals(r.source())).count();
+        return found.stream().filter(EvidenceRef::isStory).count();
     }
 
     /** The room-facing short name of a subject — the extracted form, not Yahoo's legal name. */

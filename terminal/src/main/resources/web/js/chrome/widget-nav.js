@@ -33,12 +33,9 @@ export function initWidgetNav() {
   if (!main) return;
   widgets = [...main.querySelectorAll(':scope > .widget')];
 
-  // Focus-view content scale: window width relative to the screen (1 when
-  // maximized — the fullscreen layout is the reference, like the grid's
-  // miniature zoom). Floored so type never shrinks past readable; below the
-  // floor the column reflows within its painted width instead.
-  syncFocusZoom();
-  window.addEventListener('resize', syncFocusZoom);
+  // Focus-view content scale + column width, recomputed on every resize.
+  syncFocusLayout();
+  window.addEventListener('resize', syncFocusLayout);
 
   document.querySelectorAll('.js-grid-toggle').forEach(b =>
     b.addEventListener('click', onGridButton));
@@ -75,11 +72,47 @@ export function initWidgetNav() {
   document.addEventListener('keydown', onKey);
 }
 
-function syncFocusZoom() {
+/**
+ * Focus-view geometry: how large the content PAINTS (--focus-zoom) and how wide
+ * the reading column is (--focus-col). Both are pure functions of the window.
+ *
+ * This used to be `main.clientWidth / max(clientWidth, screen.width)` — the
+ * same shape of mistake the post-mortem on naturalPaneW() in grid-layout.js
+ * describes, with the window on BOTH sides of the ratio. Under the OSR browser
+ * getScreenInfo() reports the BROWSER VIEW RECT as the screen (SwingCefBrowser
+ * .getScreenInfo), and .main spans 100vw, so both terms were the SAME NUMBER:
+ * measured live at a 1735px window, screen.width was also 1735 and the zoom
+ * came out 1.0000. It could never be anything else, at any window size — the
+ * scale has never once fired. And even repaired the formula only ever CAPPED at
+ * 1, so it could shrink, never grow: the one thing a large window needs.
+ *
+ * Now the reference is a CONSTANT design width, like the grid's. Above it the
+ * content grows, sublinearly (sqrt, the same idiom as tagScaleFor) and capped —
+ * a 4K window should read larger, not doubled. Below it nothing happens: the
+ * design width IS the small-window layout, and shrinking type there would make
+ * a narrow window worse, not better.
+ */
+const REF_FOCUS_W = 1920;     // window width the focus layout is designed for
+const FOCUS_ZOOM_MAX = 1.3;   // type never grows past a third over design
+const FOCUS_COL_REF = 920;    // design width of the reading column
+const FOCUS_COL_MAX = 1440;   // …and its ceiling, in the same (zoomed) units
+const FOCUS_FILL = 0.62;      // share of the window the column may claim
+
+function syncFocusLayout() {
   const W = main.clientWidth;
-  const ref = Math.max(W, (window.screen && window.screen.width) || 0);
-  const z = Math.min(1, Math.max(0.55, W / ref));
-  main.style.setProperty('--focus-zoom', z.toFixed(4));
+  if (!W) return;
+  const zoom = Math.min(FOCUS_ZOOM_MAX, Math.max(1, Math.sqrt(W / REF_FOCUS_W)));
+  // The column lives INSIDE the zoomed subtree, so it is expressed in zoomed
+  // units: painted width is col * zoom. Growing both is what fills a wide
+  // window — the zoom alone would leave the same gutters, only with bigger
+  // type, and a wider column alone would set 12px text across 1800px.
+  const col = Math.min(FOCUS_COL_MAX, Math.max(FOCUS_COL_REF, (W * FOCUS_FILL) / zoom));
+  main.style.setProperty('--focus-zoom', zoom.toFixed(4));
+  main.style.setProperty('--focus-col', `${Math.round(col)}px`);
+  // The detail widgets (F&G, EUR/USD) set their charts NARROWER than the
+  // reading column by design; keep that proportion instead of a second
+  // constant that would drift away from it.
+  main.style.setProperty('--detail-col', `${Math.round(col * 0.78)}px`);
 }
 
 function onGridButton() {
@@ -114,9 +147,19 @@ function onKey(e) {
   setView(view === 'focus' ? 'grid' : 'dashboard');
 }
 
-function isVisible(el) {
-  const r = el.getBoundingClientRect();
-  return r.width > 0 && r.height > 0;
+function isVisible(r) {
+  return !!r && r.width > 0 && r.height > 0;
+}
+
+/**
+ * Every widget's box in ONE layout pass. Reading a rect is only cheap while no
+ * style has been written since the last one — interleaving reads and writes
+ * makes the browser re-run layout for EVERY read (see setView's PLAY loop).
+ */
+function measureAll() {
+  const m = new Map();
+  for (const w of widgets) m.set(w, w.getBoundingClientRect());
+  return m;
 }
 
 function centerOf(r) {
@@ -134,9 +177,9 @@ function setView(next, focusEl = null, opts = {}) {
   const prev = view;
   const prevFocused = widgets.find(w => w.classList.contains('focused'));
 
-  // FIRST: capture every currently visible widget's box.
-  const before = new Map();
-  for (const w of widgets) if (isVisible(w)) before.set(w, w.getBoundingClientRect());
+  // FIRST: capture every widget's box (one layout pass; invisible ones come
+  // back as zero rects and are filtered at use).
+  const before = measureAll();
 
   // MUTATE: flip the state, let CSS lay out the target view. The grid's card
   // geometry is inline px (fixed raster) — applied on entry, removed on
@@ -152,18 +195,35 @@ function setView(next, focusEl = null, opts = {}) {
   if (opts.instant || reducedMotion()) return;
 
   busy = true;
-  setTimeout(() => { busy = false; }, DUR + 60);
+  // Hover chrome is suppressed for the duration (widget-grid.css): the pointer
+  // is almost always parked over a card that is about to move, and animating
+  // an 80px-blur shadow under a layer in flight is a card-sized repaint per
+  // frame that nobody can see mid-transition.
+  main.classList.add('view-busy');
+  setTimeout(() => {
+    busy = false;
+    main.classList.remove('view-busy');
+  }, DUR + 60);
+
+  // LAST: the new boxes, again in a SINGLE pass and BEFORE any animation runs.
+  // flip()/enter()/exit() all write inline styles (exit() even sets
+  // position:fixed), so a rect read after one of them forces a fresh
+  // full-document layout. Measuring inside the play loop therefore cost one
+  // forced layout PER WIDGET — measured at 20.7ms of blocking script with 220
+  // forced style+layout passes for a single view switch, which is exactly the
+  // hitch felt at the moment the grid is triggered.
+  const after = measureAll();
 
   // Radial anchor: zooming IN → the clicked card's old box; zooming OUT of
   // focus → the focused widget's new card box.
   let anchor = null;
   if (next === 'focus' && focusEl) anchor = centerOf(before.get(focusEl));
-  if (prev === 'focus' && prevFocused) anchor = centerOf(prevFocused.getBoundingClientRect());
+  if (prev === 'focus' && prevFocused) anchor = centerOf(after.get(prevFocused));
 
-  // LAST + INVERT + PLAY per widget.
+  // INVERT + PLAY per widget — writes only, no reads.
   for (const w of widgets) {
-    const was = before.get(w) || null;
-    const now = isVisible(w) ? w.getBoundingClientRect() : null;
+    const was = isVisible(before.get(w)) ? before.get(w) : null;
+    const now = isVisible(after.get(w)) ? after.get(w) : null;
     if (was && now) flip(w, was, now, w === focusEl || w === prevFocused);
     else if (!was && now) enter(w, anchor, now);
     else if (was && !now) exit(w, was, anchor);
@@ -249,7 +309,14 @@ function exit(el, was, awayFrom) {
     const vx = cx - awayFrom.x;
     const vy = cy - awayFrom.y;
     const len = Math.hypot(vx, vy) || 1;
-    const dist = Math.max(window.innerWidth, window.innerHeight) * 0.5;
+    // Travel is CAPPED, not a share of the window. It used to be
+    // `max(innerWidth, innerHeight) * 0.5` — 640px of sweep on a small window
+    // against 1720px on a wide one, and every pixel a card sweeps is viewport
+    // the software-OSR pipeline has to copy again that frame. That is the
+    // grid→focus case, the most expensive one measured. The cards fade to zero
+    // on the way out, so past a few hundred pixels the extra distance buys
+    // damage and nothing else.
+    const dist = Math.min(520, Math.max(window.innerWidth, window.innerHeight) * 0.5);
     end = {
       transform: `translate(${(vx / len) * dist}px, ${(vy / len) * dist}px) scale(1.12)`,
       opacity: 0,

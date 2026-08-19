@@ -7,8 +7,8 @@
 // ({type:'open-external'}), where Java opens the OS default browser.
 //
 // Registered in the CAPTURE phase so the click is claimed before any other
-// handler runs; other document-level listeners (e.g. the donate snooze in
-// donate.js) still fire — preventDefault only cancels the navigation.
+// handler runs; other document-level listeners still fire — preventDefault
+// only cancels the navigation.
 //
 // The MIDDLE button needs its own listener: Chromium fires `auxclick` (not
 // `click`) for non-primary buttons, so a click-only handler let the middle

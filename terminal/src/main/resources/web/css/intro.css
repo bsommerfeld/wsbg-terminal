@@ -58,38 +58,109 @@
 
 /* --- backdrop -------------------------------------------------------- */
 
-/* The logo's own near-black, with one small pool of light around the glyph
-   and nothing else — everything outside that pool just falls off into the
-   dark. Deliberately restrained: the backdrop is the room, not the show. */
+/* The logo's own near-black with ONE pool of light in it, centred on the glyph
+ * — everything outside falls off into the dark. Deliberately restrained: the
+ * backdrop is the room, not the show.
+ *
+ * ROUND, and centred on the glyph. It is a glow that holds the logo, not a
+ * lamp somewhere in a scene: no cone, no direction, no floor line, nothing
+ * that gives the picture a shape of its own to notice.
+ *
+ * What keeps a round glow from reading as a flat disc is the SCALE STACK, and
+ * that is the whole trick here: real scattering is tight and bright close in
+ * and enormous and faint far out, so this is three concentric circles at
+ * roughly 1× / 2× / 4× with falling peaks, not one gradient. Their sum is
+ * provably monotone over the whole radius — which is what makes stacking them
+ * safe, since a bump in the sum is the only thing that can draw a ring.
+ *
+ * Every falloff is the same windowed gaussian, sampled every 10%:
+ * α(t) = peak · (e^(−4t²) − e^−4) / (1 − e^−4). What draws a visible edge in a
+ * gradient is a KINK IN THE SLOPE, not a change in brightness — the old
+ * five-stop ramp fell to .006 and then to nothing, and that break drew a ring
+ * at exactly 85% of the radius (measurable: the strongest curvature in the
+ * frame). This curve reaches zero with its slope already flat.
+ *
+ * Radii are clamped against vw as well as vh: sized in vh alone, a tall narrow
+ * window inflates the whole stack across the frame and the room goes milky.
+ *
+ * There is deliberately NO grain/noise layer for "air", and adding one is a
+ * dead end rather than an oversight: Chromium dithers its own gradients, and
+ * that dither already sits at ~3.4 sigma of high-pass residual here. A haze
+ * fine enough not to read as noise measures at zero against that floor (1.435
+ * → 1.479 with it switched on), and one strong enough to measure reads as
+ * noise. The depth comes from the scale stack, not from grain.
+ */
 .intro-backdrop {
   position: absolute;
   inset: 0;
   background:
-    /* the pool: barely-there white, brightest on the logo but scattering
-       far out into the room before it gives up */
-    radial-gradient(circle 58vh at 50% 50%,
-      oklch(1 0 0 / .115) 0%,
-      oklch(1 0 0 / .075) 22%,
-      oklch(1 0 0 / .04) 45%,
-      oklch(1 0 0 / .018) 68%,
-      oklch(1 0 0 / .006) 85%,
-      transparent 100%),
-    /* the room: warm near-black in the middle, darker toward the edges */
+    /* the pool, three scales — tight and bright, wide and faint, vast and
+       barely there. Warm rather than pure white: white haze over a warm room
+       greys it out, and a grey room is the milky look this avoids. */
+    radial-gradient(circle min(32vh, 30vw) at 50% 50%,
+      oklch(0.96 0.032 70 / .05) 0%,
+      oklch(0.96 0.032 70 / .048) 10%,
+      oklch(0.96 0.032 70 / .0425) 20%,
+      oklch(0.96 0.032 70 / .0346) 30%,
+      oklch(0.96 0.032 70 / .0259) 40%,
+      oklch(0.96 0.032 70 / .0178) 50%,
+      oklch(0.96 0.032 70 / .0111) 60%,
+      oklch(0.96 0.032 70 / .0062) 70%,
+      oklch(0.96 0.032 70 / .003) 80%,
+      oklch(0.96 0.032 70 / .0011) 90%,
+      oklch(0.96 0.032 70 / 0) 100%),
+    radial-gradient(circle min(70vh, 62vw) at 50% 50%,
+      oklch(0.96 0.032 70 / .034) 0%,
+      oklch(0.96 0.032 70 / .0326) 10%,
+      oklch(0.96 0.032 70 / .0289) 20%,
+      oklch(0.96 0.032 70 / .0235) 30%,
+      oklch(0.96 0.032 70 / .0176) 40%,
+      oklch(0.96 0.032 70 / .0121) 50%,
+      oklch(0.96 0.032 70 / .0076) 60%,
+      oklch(0.96 0.032 70 / .0042) 70%,
+      oklch(0.96 0.032 70 / .002) 80%,
+      oklch(0.96 0.032 70 / .0007) 90%,
+      oklch(0.96 0.032 70 / 0) 100%),
+    radial-gradient(circle min(130vh, 92vw) at 50% 50%,
+      oklch(0.96 0.032 70 / .018) 0%,
+      oklch(0.96 0.032 70 / .0173) 10%,
+      oklch(0.96 0.032 70 / .0153) 20%,
+      oklch(0.96 0.032 70 / .0125) 30%,
+      oklch(0.96 0.032 70 / .0093) 40%,
+      oklch(0.96 0.032 70 / .0064) 50%,
+      oklch(0.96 0.032 70 / .004) 60%,
+      oklch(0.96 0.032 70 / .0022) 70%,
+      oklch(0.96 0.032 70 / .0011) 80%,
+      oklch(0.96 0.032 70 / .0004) 90%,
+      oklch(0.96 0.032 70 / 0) 100%),
+    /* the room: warm near-black in the middle, close to black at the edges.
+       Deeper than the pool needs, so the pool has somewhere to fall to — the
+       contrast between the two is what makes the light read as light. */
     radial-gradient(circle farthest-corner at 50% 50%,
-      #13100c 0%, #0d0a08 55%, #070606 100%);
+      #0d0a07 0%, #080605 52%, #030202 100%);
 }
 
-/* The light the impact kicks up: the pool brightens for a breath, then
-   settles back. Same white as the backdrop pool, never a second colour. */
+/* The light the impact kicks up: the pool brightens for a breath and stays up.
+   The same centre and the same curve as the pool above, one notch wider and a
+   good deal fainter — this is that pool swelling, never a second disc
+   switching on over it. */
 .intro-floor {
   position: absolute;
-  left: 50%;
-  top: 50%;
-  width: min(70vh, 60vw, 620px);
-  aspect-ratio: 1;
-  transform: translate(-50%, -50%);
-  background: radial-gradient(closest-side,
-    oklch(1 0 0 / .07), oklch(1 0 0 / .025) 52%, transparent 76%);
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle min(84vh, 74vw) at 50% 50%,
+      oklch(0.96 0.032 70 / .026) 0%,
+      oklch(0.96 0.032 70 / .025) 10%,
+      oklch(0.96 0.032 70 / .0221) 20%,
+      oklch(0.96 0.032 70 / .018) 30%,
+      oklch(0.96 0.032 70 / .0135) 40%,
+      oklch(0.96 0.032 70 / .0093) 50%,
+      oklch(0.96 0.032 70 / .0058) 60%,
+      oklch(0.96 0.032 70 / .0032) 70%,
+      oklch(0.96 0.032 70 / .0016) 80%,
+      oklch(0.96 0.032 70 / .0006) 90%,
+      oklch(0.96 0.032 70 / 0) 100%);
   opacity: 0;
   animation: intro-floor-in 900ms ease-out var(--t-hands-impact) forwards;
 }
@@ -161,9 +232,17 @@
   aspect-ratio: 1;
   transform: translate(-50%, -50%);
   background: radial-gradient(closest-side,
-    oklch(0.93 0.10 78 / .34) 0%,
-    oklch(0.88 0.11 68 / .13) 42%,
-    transparent 72%);
+    oklch(0.93 0.10 78 / .30) 0%,
+    oklch(0.92 0.10 76 / .288) 10%,
+    oklch(0.91 0.105 74 / .2548) 20%,
+    oklch(0.90 0.105 72 / .2076) 30%,
+    oklch(0.89 0.11 70 / .1555) 40%,
+    oklch(0.88 0.11 68 / .1068) 50%,
+    oklch(0.88 0.11 68 / .0668) 60%,
+    oklch(0.88 0.11 68 / .0374) 70%,
+    oklch(0.88 0.11 68 / .018) 80%,
+    oklch(0.88 0.11 68 / .0064) 90%,
+    oklch(0.88 0.11 68 / 0) 100%);
   mix-blend-mode: screen;
   opacity: 0;
   pointer-events: none;

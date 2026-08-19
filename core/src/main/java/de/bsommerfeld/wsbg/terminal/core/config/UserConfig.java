@@ -26,21 +26,6 @@ public class UserConfig {
             + "which is a downgrade by design.")
     private String experimentalUpdates = "";
 
-    @Key("open-count")
-    @Comment("How many times the software has been opened")
-    private long openCount = 0;
-
-    @Key("first-start-timestamp")
-    @Comment("Timestamp of the first start")
-    private long firstStartTimestamp = 0;
-
-    @Key("active-millis")
-    @Comment("Accurate cumulative time the app has been open (milliseconds), "
-            + "measured by TimeTracker from start/interval/stop timestamp deltas "
-            + "(not tick-counted, so it survives crashes and ignores machine sleep). "
-            + "Feeds the footer donation banner's personalised reciprocity copy.")
-    private long activeMillis = 0;
-
     @Key("last-seen-changelog-version")
     @Comment("Version tag whose release notes were already shown in the "
             + "'Was hat sich geändert' overlay. Differs from the installed version "
@@ -117,30 +102,6 @@ public class UserConfig {
     /** Whether this install accepts pre-releases. An unanswered question means no. */
     public boolean isExperimentalUpdates() {
         return "yes".equalsIgnoreCase(experimentalUpdates);
-    }
-
-    public long getOpenCount() {
-        return openCount;
-    }
-
-    public void setOpenCount(long openCount) {
-        this.openCount = openCount;
-    }
-
-    public long getFirstStartTimestamp() {
-        return firstStartTimestamp;
-    }
-
-    public void setFirstStartTimestamp(long firstStartTimestamp) {
-        this.firstStartTimestamp = firstStartTimestamp;
-    }
-
-    public long getActiveMillis() {
-        return activeMillis;
-    }
-
-    public void setActiveMillis(long activeMillis) {
-        this.activeMillis = activeMillis;
     }
 
     public String getLastSeenChangelogVersion() {

@@ -11,7 +11,6 @@
   <link rel="stylesheet" href="/css/reddit.css">
   <link rel="stylesheet" href="/css/fj.css">
   <link rel="stylesheet" href="/css/footer.css">
-  <link rel="stylesheet" href="/css/donate.css">
   <link rel="stylesheet" href="/css/settings.css">
   <link rel="stylesheet" href="/css/overlay.css">
   <link rel="stylesheet" href="/css/changelog.css">
@@ -75,12 +74,12 @@
       <span>Terminal</span>
     </div>
 
-    <!-- Action buttons (update / donate / settings). Always at the opposite
+    <!-- Action buttons (update / grid / settings). Always at the opposite
          end of the window controls so the chrome looks symmetric. The settings
          gear opens the Settings view (which now hosts the theme switch). -->
     <div class="tb-actions">
-      <!-- Update-available indicator (toward the window centre, inboard of the
-           heart): hidden until the backend reports a newer release while
+      <!-- Update-available indicator (toward the window centre): hidden
+           until the backend reports a newer release while
            auto-update is off. Click closes the app cleanly and relaunches the
            launcher to apply the update. Green download glyph. -->
       <button class="iconbtn update-btn js-update-apply" hidden
@@ -104,21 +103,12 @@
         </span>
       </button>
       <!-- Widget grid (fixed-raster overview): toggles the zoomed-out view
-           of all widgets; clicking a card zooms it to fullscreen. Sits
-           inboard of the heart, toward the window centre. -->
+           of all widgets; clicking a card zooms it to fullscreen. -->
       <button class="iconbtn grid-btn js-grid-toggle" title="Widget-Übersicht" aria-label="Widget-Übersicht öffnen"
               aria-pressed="false"
               data-i18n-title="grid.open" data-i18n-aria-label="grid.open">
         <svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.6"/></svg>
       </button>
-      <!-- Persistent donate "door": always visible, outline that fills + beats
-           on hover, click opens the donate page. Pulses as a hint while the
-           footer banner is active. -->
-      <a class="iconbtn heart-btn" href="https://wsbg.app/donate"
-         target="_blank" rel="noopener" title="WSBG unterstützen" aria-label="WSBG unterstützen"
-         data-i18n-title="common.donate" data-i18n-aria-label="common.donate">
-        <svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
-      </a>
       <!-- Settings gear: opens the Settings view (replaces the centre widgets).
            Spins on hover. Replaced the old standalone theme toggle. -->
       <button class="iconbtn gear-btn js-settings-toggle" title="Einstellungen" aria-label="Einstellungen öffnen"
@@ -592,19 +582,7 @@
   </main>
 
   <footer class="footer">
-    <div class="feed" id="feed">
-      <div class="slide markets" id="markets" data-pos="center"></div>
-      <div class="slide ad" id="ad" data-pos="right">
-        <div class="ad-inner"></div>
-      </div>
-    </div>
-    <!-- Donate heart for Linux, where the HTML titlebar (its usual home) is
-         hidden. Mirrors the footer theme toggle's platform visibility. -->
-    <a class="iconbtn heart-btn footer-heart" href="https://wsbg.app/donate"
-       target="_blank" rel="noopener" title="WSBG unterstützen" aria-label="WSBG unterstützen"
-       data-i18n-title="common.donate" data-i18n-aria-label="common.donate">
-      <svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
-    </a>
+    <div class="markets" id="markets"></div>
     <!-- Grid button twin for Linux, where the HTML titlebar (its usual home)
          is hidden. Mirrors the footer settings gear's platform visibility. -->
     <button class="iconbtn grid-btn js-grid-toggle footer-grid" title="Widget-Übersicht" aria-label="Widget-Übersicht öffnen"

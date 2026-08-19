@@ -1,5 +1,5 @@
-// Bootstraps every subsystem. Wires the Socket -> renderers, sets up
-// the chrome (titlebar / footer / settings), kicks the slide cycle.
+// Bootstraps every subsystem. Wires the Socket -> renderers and sets up
+// the chrome (titlebar / footer / settings).
 
 import { Socket } from './bridge/socket.js';
 import { applyPlatform } from './chrome/platform.js';
@@ -15,8 +15,6 @@ import { initHeadlineFilter } from './chrome/filter-popover.js';
 import { initWidgetNav } from './chrome/widget-nav.js';
 import { initWidgetRail } from './chrome/widget-rail.js';
 import { initFooter } from './chrome/footer.js';
-import { setDonationStats } from './chrome/slider.js';
-import { initDonate } from './chrome/donate.js';
 import { initExternalLinks } from './chrome/external-links.js';
 import { initKeyboardCopy } from './chrome/copy-fx.js';
 import { renderHeadlines, appendHeadlines, initHeadlineScroll, initUnreadPortals } from './widgets/reddit.js';
@@ -75,7 +73,6 @@ const WIDGETS = [
       renderFearGreedDetail(document.getElementById('fg-detail'), p);
     } },
   { topic: 'reddit-status',  relang: true, render: p => applyRedditStatus(p) },
-  { topic: 'donation-stats',               render: p => setDonationStats(p) },
   { topic: 'os-appearance',                render: p => { if (p) setSystemAppearance(p.mode); } },
 ];
 
@@ -150,37 +147,11 @@ safeInit('headline-search', () => initHeadlineSearch(socket));
 safeInit('unread-portals', () => initUnreadPortals());
 safeInit('titlebar', () => initTitlebar(socket));
 safeInit('footer', () => initFooter());
-safeInit('donate', () => initDonate());
 safeInit('external-links', () => initExternalLinks(socket));
 safeInit('keyboard-copy', () => initKeyboardCopy());
 // Last: the intro plate is already on screen from the markup, this only seeds
 // its dust and arms the skip - and it must not sit in front of anything else
 // that still needs to initialise.
 safeInit('intro', () => initIntro(socket));
-
-// Debug dashboard (developer runs only). The DebugBridge is bound behind
-// DevMode, so in a shipped build nothing answers `debug` — the probe simply
-// goes unanswered, no module is imported and the titlebar stays as it is. The
-// assets under web/js/debug/** and web/css/debug.css are excluded from the
-// JAR, so even a hand-crafted answer could not conjure the view.
-// One probe, once — no ticker: the dashboard itself asks on demand.
-let debugProbed = false;
-socket.on('debug-overview', payload => {
-  if (debugProbed || !payload?.data?.devMode) return;
-  debugProbed = true;
-  import('./debug/dashboard.js')
-    .then(m => m.initDebug(socket))
-    .catch(e => console.warn('[debug] dashboard unavailable:', e));
-});
-// Keep asking until ANSWERED, not until the send succeeds. A successful send
-// only means the socket was open — the DebugBridge registers its handler when
-// Guice builds it, and a page that connects first has its probe dropped on the
-// floor with no answer and no retry. That race left the button missing for a
-// whole session; six seconds of asking costs nothing and closes it.
-(function probeDebug(tries = 0) {
-  if (debugProbed) return;
-  socket.send('debug', { command: 'overview', requestId: 'probe' });
-  if (tries < 12) setTimeout(() => probeDebug(tries + 1), 500);
-})();
 
 socket.connect();

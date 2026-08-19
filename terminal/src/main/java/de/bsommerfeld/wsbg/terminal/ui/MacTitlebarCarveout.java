@@ -25,7 +25,7 @@ import java.util.List;
  * HTML titlebar draws flush over the native chrome. But the top ~28&nbsp;px stays
  * a native title-bar <em>drag</em> region: AppKit holds every mouse-down there to
  * disambiguate drag / double-click-zoom before delivering it. On the right, where
- * the HTML action buttons live (donate / gear / update), the click is held for
+ * the HTML action buttons live (grid / gear / update), the click is held for
  * that window — the 1-2&nbsp;s "Settings gear lag". Content-area clicks are
  * instant because they aren't in a drag region.
  *

@@ -56,17 +56,6 @@ public final class SubjectRegistry {
         return drained;
     }
 
-    /**
-     * Read-only copy of the current dirty ids — the debug counterpart to
-     * {@link #drainDirty()}. Removes NOTHING: a reader that drained would
-     * swallow the editorial layer's pending compose and the headline would
-     * never come. Weakly-consistent iteration over the concurrent key set,
-     * no lock; the returned set is the caller's own copy.
-     */
-    public Set<String> peekDirty() {
-        return new HashSet<>(dirty);
-    }
-
     public void remove(String id) {
         byId.remove(id);
         dirty.remove(id);

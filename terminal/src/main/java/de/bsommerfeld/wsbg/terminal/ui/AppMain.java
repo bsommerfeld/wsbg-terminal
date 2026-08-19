@@ -55,12 +55,6 @@ public final class AppMain {
         }
 
         LOG.info("Bootstrapping WSBG Terminal");
-        // Dev-only in-memory log window (the debug bridge's "log" command).
-        // Deliberately NOT in logback.xml: a shipped build must not hold log
-        // content in RAM, and this guard is a JIT-dead branch there.
-        if (de.bsommerfeld.wsbg.terminal.core.debug.Debug.ENABLED) {
-            de.bsommerfeld.wsbg.terminal.ui.debug.DebugLogAppender.install();
-        }
         Injector injector = Guice.createInjector(new AppModule());
         AppLifecycle lifecycle = new AppLifecycle(injector);
         LIFECYCLE = lifecycle; // for the in-app update relaunch / uninstall entry points

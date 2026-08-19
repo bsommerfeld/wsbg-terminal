@@ -1,4 +1,4 @@
-// Footer renderer: stadium-banner market chips + slide cycle.
+// Footer renderer: the stadium-banner market chips.
 //
 // Chips are built once from the calendar payload (or pre-seeded with
 // "—" until the first push arrives). A per-second tick recomputes
@@ -7,7 +7,6 @@
 
 import { regionStatus, onCalendarUpdate, regions } from '../markets/state.js';
 import { fmtDuration } from '../format/time.js';
-import { initSlideCycle } from './slider.js';
 import { restartAnimation } from './anim.js';
 import { t } from '../i18n/i18n.js';
 
@@ -46,8 +45,6 @@ export function initFooter() {
     });
     updateChips(markets);
   });
-
-  initSlideCycle();
 }
 
 /**

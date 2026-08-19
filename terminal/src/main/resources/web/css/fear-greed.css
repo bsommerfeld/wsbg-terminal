@@ -3,12 +3,20 @@
    are covered; the five band colors are the diverging fear↔greed scale the
    header badge already speaks (red → amber → green). */
 
-/* Band → color mapping, usable by any element carrying [data-band]. */
-[data-band="EXTREME_FEAR"]  { --band-c: var(--red); }
-[data-band="FEAR"]          { --band-c: color-mix(in oklch, var(--red) 50%, var(--amber)); }
-[data-band="NEUTRAL"]       { --band-c: var(--amber); }
-[data-band="GREED"]         { --band-c: color-mix(in oklch, var(--green) 55%, var(--amber)); }
-[data-band="EXTREME_GREED"] { --band-c: var(--green); }
+/* Band → color mapping, usable by any element carrying [data-band]. Two values
+   per band, the split described on --amber-lit in tokens.css: --band-c is the
+   band as INK or as a fill under text, --band-lit is the band as a pure shape
+   (the arc, a swatch, a bar). They are the same colour in the dark theme. */
+[data-band="EXTREME_FEAR"]  { --band-c: var(--red);
+                              --band-lit: var(--red-lit); }
+[data-band="FEAR"]          { --band-c: color-mix(in oklch, var(--red) 50%, var(--amber));
+                              --band-lit: color-mix(in oklch, var(--red-lit) 50%, var(--amber-lit)); }
+[data-band="NEUTRAL"]       { --band-c: var(--amber);
+                              --band-lit: var(--amber-lit); }
+[data-band="GREED"]         { --band-c: color-mix(in oklch, var(--green) 55%, var(--amber));
+                              --band-lit: color-mix(in oklch, var(--green-lit) 55%, var(--amber-lit)); }
+[data-band="EXTREME_GREED"] { --band-c: var(--green);
+                              --band-lit: var(--green-lit); }
 
 .fg-detail {
   display: flex; flex-direction: column; align-items: center;
@@ -21,7 +29,7 @@
 .fg-hero { display: flex; flex-direction: column; align-items: center; gap: 14px; }
 
 .fg-gauge-big { width: min(400px, 78vw); height: auto; overflow: visible; }
-.fg-gauge-big .fg-arc { stroke: var(--band-c); }
+.fg-gauge-big .fg-arc { stroke: var(--band-lit); }
 .fg-needle-big { stroke: var(--txt); stroke-width: 3; stroke-linecap: round; }
 .fg-hub-big { fill: var(--txt); }
 .fg-big-val {
@@ -66,7 +74,7 @@
 .fg-band-chip.current { border-color: var(--band-c); color: var(--txt); }
 .fg-band-swatch {
   width: 9px; height: 9px; border-radius: 50%;
-  background: var(--band-c);
+  background: var(--band-lit);
   flex-shrink: 0;
 }
 .fg-band-range { color: var(--mute-2); font-variant-numeric: tabular-nums; }
@@ -78,7 +86,7 @@
 .fg-prev-label { color: var(--mute); }
 .fg-prev-dot {
   width: 8px; height: 8px; border-radius: 50%;
-  background: var(--band-c);
+  background: var(--band-lit);
   flex-shrink: 0;
 }
 .fg-prev-val { color: var(--txt); font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -86,7 +94,7 @@
 /* ---- the seven sub-indicator bars (fg-comps) ---- */
 
 .fg-comps {
-  width: 100%; max-width: 720px;
+  width: 100%; max-width: var(--detail-col, 720px);
   display: flex; flex-direction: column; gap: 8px;
 }
 .fg-comps-title {
@@ -107,7 +115,7 @@
 }
 .fg-comp-fill {
   display: block; height: 100%; border-radius: inherit;
-  background: var(--band-c);
+  background: var(--band-lit);
 }
 .fg-comp-val {
   color: var(--txt); font-size: 0.84em; font-weight: 600;
@@ -117,7 +125,7 @@
 
 /* ---- history chart ---- */
 
-.fg-chart-block { width: 100%; max-width: 720px; }
+.fg-chart-block { width: 100%; max-width: var(--detail-col, 720px); }
 .fg-chart-title {
   color: var(--mute); font-size: 0.76em;
   letter-spacing: .14em; text-transform: uppercase;
@@ -160,12 +168,12 @@
   white-space: nowrap;
   padding: 5px 10px;
   border: 1px solid var(--line); border-radius: 8px;
-  background: color-mix(in oklch, var(--bg) 88%, transparent);
+  background: color-mix(in oklch, var(--bg-elev) 88%, transparent);
   backdrop-filter: blur(8px);
   font-size: 0.78em;
   pointer-events: none;
   z-index: 5;
-  box-shadow: 0 8px 24px oklch(0 0 0 / .3);
+  box-shadow: 0 8px 24px oklch(from var(--sh-ink) l c h / .3);
 }
 .fg-tip.flip { transform: translate(-100%, -50%); }
 .fg-tip-date { color: var(--mute); }
@@ -175,9 +183,10 @@
 /* ---- the crypto counterpart (fg-crypto) ---- */
 
 .fg-crypto {
-  width: 100%; max-width: 720px;
+  width: 100%; max-width: var(--detail-col, 720px);
   display: flex; flex-direction: column; gap: 10px;
   padding: 14px 18px;
+  background: var(--tile);
   border: 1px solid var(--line-soft); border-radius: 12px;
 }
 .fg-crypto-title {

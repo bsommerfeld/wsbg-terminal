@@ -60,7 +60,7 @@ final class MacWindowChrome implements WindowChrome {
         kick.start();
 
         // Carve the native title-bar interception out of the right-hand action
-        // buttons (donate / gear / update) so their clicks land instantly instead
+        // buttons (grid / gear / update) so their clicks land instantly instead
         // of waiting on AppKit's drag / double-click-zoom disambiguation. Deferred
         // past the kick so the window is fully on screen (and in [NSApp windows])
         // before we look it up. Best-effort; a failure just keeps the old lag.

@@ -74,11 +74,6 @@ final class NewsBox {
         return new HashSet<>(coveredNewsIds);
     }
 
-    /** O(1) size of the covered-id set — debug read, no copy. */
-    int coveredCount() {
-        return coveredNewsIds.size();
-    }
-
     /** Restore hook — seeds the covered ids from a snapshot (live news is not snapshotted). */
     void restore(Collection<String> coveredIds) {
         if (coveredIds != null) coveredNewsIds.addAll(coveredIds);

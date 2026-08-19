@@ -4,7 +4,6 @@ import com.google.inject.AbstractModule;
 import de.bsommerfeld.wsbg.terminal.web.impl.sources.currency.EurUsdMonitorService;
 import de.bsommerfeld.wsbg.terminal.web.impl.sources.feargreed.CryptoFearGreedMonitorService;
 import de.bsommerfeld.wsbg.terminal.web.impl.sources.feargreed.FearGreedMonitorService;
-import de.bsommerfeld.wsbg.terminal.ui.bridge.DonationStatsPublisher;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.EurUsdPublisher;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.FearGreedPublisher;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.FjNewsPublisher;
@@ -29,7 +28,6 @@ final class PublisherModule extends AbstractModule {
         bind(FjNewsPublisher.class).asEagerSingleton();
         bind(MarketHoursPublisher.class).asEagerSingleton();
         bind(RedditHealthPublisher.class).asEagerSingleton();
-        bind(DonationStatsPublisher.class).asEagerSingleton();
         // EurUsdMonitorService must come before EurUsdPublisher so the
         // publisher can register its listener against a running poll loop.
         bind(EurUsdMonitorService.class).asEagerSingleton();

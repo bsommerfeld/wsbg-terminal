@@ -329,23 +329,43 @@ final class UnitBriefWriter {
         }
         long absorbedUpTo = unit.factsUpToEpoch();
         long coveredBoundary = Math.max(lastHeadlineEpoch, absorbedUpTo);
-        List<SubjectUnit.EvidenceRef> visible = new ArrayList<>();
+        // MOOD evidence never enters this block. The room's undirected chatter is
+        // the ROOM SHEET's material — read there as sentiment, where a sample is
+        // enough to tell a mood — and it is unbounded, so letting it compete here
+        // meant it won: the budget below keeps the newest, and the chatter is
+        // appended last (see EventConsolidator). Measured before the split: 150
+        // chatter comments pushed all 8 of a subject's real mentions out.
+        List<SubjectUnit.EvidenceRef> mentions = new ArrayList<>();
+        List<SubjectUnit.EvidenceRef> context = new ArrayList<>();
         int coveredOmitted = 0;
         for (SubjectUnit.EvidenceRef e : unit.evidence()) {
+            if (e.isMood()) continue; // room-sheet material, not compose material
             if (coveredBoundary > 0 && e.addedAtEpoch() <= coveredBoundary) {
                 coveredOmitted++;
-                continue; // already reflected in a prior headline / the fact sheet → omit
+                continue; // already reflected in a prior headline / the room sheet → omit
             }
-            visible.add(e);
+            (e.isStory() ? mentions : context).add(e);
         }
 
-        // Char budget over the VISIBLE (fresh) refs: keep the NEWEST that fit, drop
-        // the oldest, and say so — never let Ollama truncate the prompt silently.
-        int start = visible.size();
+        // Char budget over the fresh refs: keep the NEWEST that fit, drop the
+        // oldest, and say so — never let Ollama truncate the prompt silently.
+        // The subject's OWN mentions are served FIRST and the reply chains get
+        // what is left. That is a priority inside one budget, not a fixed split:
+        // a subject with few mentions still gets its full context rendered. It is
+        // needed because the walk runs from the END of the list while the chains
+        // are appended after the mentions they belong to — without the priority
+        // the chains displace the very mentions they exist to explain (measured:
+        // 20 mentions + 40 chain refs → 0 mentions in the brief).
         int budget = EVIDENCE_CHAR_BUDGET;
-        while (start > 0 && budget - visible.get(start - 1).snippet().length() - 24 >= 0) {
-            start--;
-            budget -= visible.get(start).snippet().length() + 24;
+        int mStart = mentions.size();
+        while (mStart > 0 && budget - mentions.get(mStart - 1).snippet().length() - 24 >= 0) {
+            mStart--;
+            budget -= mentions.get(mStart).snippet().length() + 24;
+        }
+        int cStart = context.size();
+        while (cStart > 0 && budget - context.get(cStart - 1).snippet().length() - 24 >= 0) {
+            cStart--;
+            budget -= context.get(cStart).snippet().length() + 24;
         }
         boolean haveHeadlines = lastHeadlineEpoch > 0;
         sb.append(lbl.evidenceHeader(haveHeadlines));
@@ -354,24 +374,19 @@ final class UnitBriefWriter {
                     ? lbl.absorbedOmitted(coveredOmitted)
                     : lbl.coveredOmitted(coveredOmitted));
         }
-        if (start > 0) {
-            sb.append(lbl.budgetOmitted(start));
+        if (mStart > 0) {
+            sb.append(lbl.budgetOmitted(mStart));
         }
-        List<SubjectUnit.EvidenceRef> context = new ArrayList<>();
-        for (SubjectUnit.EvidenceRef e : visible.subList(start, visible.size())) {
-            if ("reddit-context".equals(e.source())) {
-                context.add(e); // a reply chain this subject was named in — rendered below
-                continue;
-            }
-            String loc = "vision".equals(e.source()) ? lbl.visionLoc()
+        for (SubjectUnit.EvidenceRef e : mentions.subList(mStart, mentions.size())) {
+            String loc = SubjectUnit.EvidenceRef.VISION.equals(e.source()) ? lbl.visionLoc()
                     : (e.commentId() == null ? e.threadId() : e.commentId());
             sb.append("  - [").append(loc).append(", ")
                     .append(lbl.ago(age(Instant.ofEpochSecond(e.addedAtEpoch()), now))).append("] ")
                     .append(e.snippet()).append('\n');
         }
-        if (!context.isEmpty()) {
-            sb.append(lbl.conversationContext());
-            for (SubjectUnit.EvidenceRef e : context) {
+        if (cStart < context.size()) {
+            sb.append(lbl.conversationContext(cStart));
+            for (SubjectUnit.EvidenceRef e : context.subList(cStart, context.size())) {
                 sb.append("    ↳ ").append(e.snippet()).append('\n');
             }
         }

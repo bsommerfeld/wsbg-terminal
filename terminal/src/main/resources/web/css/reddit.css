@@ -201,7 +201,7 @@
   pointer-events: none;
   opacity: 0;
   transition: opacity .7s ease;
-  background: oklch(from var(--amber) l c h / .045);
+  background: oklch(from var(--amber-lit) l c h / .045);
   border-left: 2px solid var(--amber);
   border-right: 1px solid oklch(from var(--amber) l c h / .22);
 }
@@ -267,8 +267,8 @@
      here", which is the opposite of what this edge is saying. The wandering
      light rides on top of this; the rim is the constant. */
   background-image: linear-gradient(to top,
-    oklch(from var(--amber) l c h / .26) 0%,
-    oklch(from var(--amber) l c h / .10) 30%,
+    oklch(from var(--amber-lit) l c h / .26) 0%,
+    oklch(from var(--amber-lit) l c h / .10) 30%,
     transparent 72%);
   mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
 }
@@ -289,8 +289,8 @@
   position: absolute;
   inset: -14px -40px -14px -40px;   /* blur bleeds inward, never a cut edge */
   background-image: linear-gradient(90deg,
-    transparent, oklch(from var(--amber) l c h / .17) 22%,
-    transparent 44%, oklch(from var(--amber) l c h / .12) 68%, transparent);
+    transparent, oklch(from var(--amber-lit) l c h / .17) 22%,
+    transparent 44%, oklch(from var(--amber-lit) l c h / .12) 68%, transparent);
   background-size: 620px 100%;
   background-repeat: repeat-x;
   filter: blur(11px);
@@ -311,7 +311,7 @@
   position: absolute;
   inset: 0;
   background-image: linear-gradient(90deg,
-    transparent, oklch(from var(--amber) l c h / .12) 34%, transparent 62%);
+    transparent, oklch(from var(--amber-lit) l c h / .12) 34%, transparent 62%);
   background-size: 380px 100%;
   background-repeat: repeat-x;
   filter: blur(9px);
@@ -328,7 +328,7 @@
   bottom: 1px;
   width: 2px; height: 2px;
   border-radius: 50%;
-  background: oklch(from var(--amber) l c h / .8);
+  background: oklch(from var(--amber-lit) l c h / .8);
   filter: blur(.5px);
   opacity: 0;
   animation: unread-mote 6s ease-out infinite;

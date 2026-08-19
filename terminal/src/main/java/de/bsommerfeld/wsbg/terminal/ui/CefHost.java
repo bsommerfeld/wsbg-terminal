@@ -226,7 +226,7 @@ public final class CefHost {
      * them in the OS default browser instead of inside the embedded
      * Chromium. The terminal page lives at 127.0.0.1 and never needs
      * to navigate away; anything else is a third-party link (e.g. the
-     * donate link in the footer) that belongs in the user's regular
+     * banner link in the footer) that belongs in the user's regular
      * browser.
      */
     private static final class ExternalLinkRouter extends CefRequestHandlerAdapter {

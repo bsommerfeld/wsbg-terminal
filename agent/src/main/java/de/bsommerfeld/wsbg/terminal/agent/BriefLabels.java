@@ -166,20 +166,31 @@ final class BriefLabels {
                 + " omitted; write a follow-up only from the new material here)\n";
     }
 
+    /**
+     * Said when the mention budget bit. It deliberately makes no claim about where
+     * the dropped material went: at this point it is neither in a headline nor on
+     * the room sheet (the absorb runs AFTER the compose), so the old
+     * "prior headlines reflect them" was simply untrue.
+     */
     String budgetOmitted(int n) {
         return de
-                ? "  (" + n + " weitere ältere Erwähnung(en) weggelassen, um ins Kontext-Budget zu passen —"
-                + " die Schlagzeilen unten spiegeln sie wider)\n"
-                : "  (" + n + " further older mention(s) omitted to fit the context budget —"
-                + " prior headlines below reflect them)\n";
+                ? "  (" + n + " weitere ältere Erwähnung(en) weggelassen, um ins Kontext-Budget zu passen)\n"
+                : "  (" + n + " further older mention(s) omitted to fit the context budget)\n";
     }
 
-    String conversationContext() {
-        return de
+    /** Header of the reply-chain block; {@code omitted} > 0 when the budget cut into it. */
+    String conversationContext(int omitted) {
+        String head = de
                 ? "Gespräch, auf das diese Erwähnungen eine Antwort waren (Kontext — NICHT das Thema"
-                + " selbst, sondern der Diskussionsstrang, in dem es genannt wurde):\n"
+                + " selbst, sondern der Diskussionsstrang, in dem es genannt wurde)"
                 : "Conversation those mentions were a reply to (context — NOT the subject "
-                + "itself, but the thread of discussion it was named in):\n";
+                + "itself, but the thread of discussion it was named in)";
+        if (omitted > 0) {
+            head += de
+                    ? ", " + omitted + " ältere weggelassen"
+                    : ", " + omitted + " older one(s) omitted";
+        }
+        return head + ":\n";
     }
 
     /** The permanent news dossier — verified facts, the subject's established knowledge. */
@@ -252,11 +263,24 @@ final class BriefLabels {
     }
 
     String factsInputKnown() {
-        return de ? "\nFAKTENBLATT BISHER:\n" : "\nFACT SHEET SO FAR:\n";
+        return de ? "\nRAUM-BLATT BISHER:\n" : "\nROOM SHEET SO FAR:\n";
     }
 
+    /** The refs that NAME the subject — what the room claims about it. */
     String factsInputFresh() {
-        return de ? "\nNEUE WORTMELDUNGEN AUS DEM RAUM:\n" : "\nNEW MENTIONS FROM THE ROOM:\n";
+        return de ? "\nNEUE WORTMELDUNGEN ZUM THEMA:\n" : "\nNEW MENTIONS OF THE SUBJECT:\n";
+    }
+
+    /**
+     * The rest of the room around those mentions — reply chains and undirected
+     * chatter. Held apart from the mentions so the distiller can tell "the room
+     * claims X" from "the room is in this mood", which are different sentences on
+     * the sheet.
+     */
+    String factsInputMood() {
+        return de
+                ? "\nDER RAUM DRUMHERUM (Gespräch und Geplänkel — die Stimmung, in der das gesagt wurde):\n"
+                : "\nTHE ROOM AROUND IT (conversation and banter — the mood it was said in):\n";
     }
 
     String storyMemoryHeader() {
