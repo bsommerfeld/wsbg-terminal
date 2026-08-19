@@ -28,7 +28,7 @@ Das WSBG Terminal ist eure Kommandozentrale für [**r/wallstreetbetsGER**](https
 ### 📸 Loss Porn (Visuals)
 
 <p align="center">
-  <img width="850" alt="Dashboard" src="https://github.com/user-attachments/assets/56cd68a9-7ce3-4387-bbfe-ab3a662020fc" />
+  <img width="850" alt="Dashboard" src="https://github.com/user-attachments/assets/0d635194-9773-4390-ba96-f783b2d6d38e" />
   <br>
   <em>Hier könnte Ihre Werbung stehen (wenn ihr noch Geld hättet).</em>
 </p>
@@ -40,7 +40,7 @@ Sind wir mal ehrlich: Wenn euer *Trade-Setup* im Nachhinein mal wieder komplette
 Deshalb ist unser *Software-Setup* komplett idiotensicher. Der Installer nimmt euch an die Hand, lädt im Hintergrund vollautomatisch **Ollama** runter und ballert euch direkt die passenden KI-Modelle auf die Platte, sodass ihr euch voll und ganz auf eure Rachehebel konzentrieren könnt.
 
 <p align="center">
-  <img width="450" alt="Screenshot vom Installer" src="https://github.com/user-attachments/assets/8be4922e-7c13-4960-9e92-ce0b2d6c0ff3">
+  <img width="450" alt="Screenshot vom Installer" src="https://github.com/user-attachments/assets/bb889697-1497-42f3-9307-85e72db35bfa">
   <br>
 </p>
 
