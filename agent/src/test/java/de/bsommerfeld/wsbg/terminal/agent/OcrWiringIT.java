@@ -33,7 +33,9 @@ class OcrWiringIT {
     @BeforeAll
     static void up() throws Exception {
         OllamaAvailability.ensureOllama();
-        brain = new AgentBrain(SmokeConfig.load(), new ApplicationEventBus(), new OllamaServerManager(), new LlmGate());
+        ApplicationEventBus bus = new ApplicationEventBus();
+        brain = new AgentBrain(SmokeConfig.load(), bus, new OllamaServerManager(), new LlmGate(),
+                new AiHealth(bus));
         assumeTrue(brain.imageReadingAvailable(), "no system Tesseract install — skipping OCR wiring IT");
         images = new LocalImageServer();
     }

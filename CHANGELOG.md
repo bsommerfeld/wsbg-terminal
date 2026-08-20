@@ -4,10 +4,15 @@
 
 **Heller Modus neu gebaut.** Panels, Popovers und Karten liegen sichtbar über der Oberfläche, die Listen heben sich von der Leiste darüber ab, und Gold, Grün und Rot sind wieder auseinanderzuhalten. Der dunkle Modus bleibt, wie er war.
 
+**Eigener KI-Server.** Adresse und Modell einer Maschine im Netz eintragen - im Starter unter „Erweitert" oder in den Einstellungen. Ollama, llama.cpp, LM Studio, vLLM: welche Schnittstelle dort läuft, findet der Verbindungstest selbst heraus. Das Terminal lädt dann kein Modell mehr herunter und fragt nur noch an. Antwortet die Maschine nicht, meldet das ein rotes Zeichen in der Titelleiste.
+
+> 📸 **[Bild einfügen: Einstellungen, Kategorie „Erweitert" aufgeklappt - „Eigener KI-Server" angehakt, darunter Adresse, Schnittstelle und Modell ausgefüllt]**
+
 ## Restliches
 
 - In vollen Threads verdrängte das Gerede ringsum die Wortmeldungen zum Thema selbst, die Schlagzeile entstand dann ohne sie. Gefixt: das Gerede zählt jetzt nur noch für die Stimmung.
 - Im Starter stehen neue KI-Modelle zur Auswahl.
+- Das KI-Modell lässt sich jetzt auch in den Einstellungen wechseln - der nächste Start lädt das neue und räumt das alte weg.
 - Rot findet die harten Auslöser wieder - Übernahme, Indexaufnahme, Großauftrag, Zulassung, Gewinnwarnung.
 - Namen im Genitiv blieben ungoldet („Reddits S&P-Einzug") - gefixt.
 - Artikel-Zusammenfassungen kamen je nach Modell-Backend als Roh-JSON an - gefixt.

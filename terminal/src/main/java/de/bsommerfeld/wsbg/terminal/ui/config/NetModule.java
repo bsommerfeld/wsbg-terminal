@@ -31,7 +31,7 @@ import java.util.List;
  * The terminal's contribution to the web world: the BROWSER transport (only
  * the terminal owns the embedded Chromium), the local instrument corpus, and
  * the auto-selecting {@link RedditSource}. The fetch seam itself — mode
- * resolution, cooldowns, conditional caching — lives in web-impl's
+ * resolution, cooldowns, conditional caching — lives in web/impl's
  * {@code HouseFetcher}; nothing here builds chains anymore.
  */
 final class NetModule extends AbstractModule {

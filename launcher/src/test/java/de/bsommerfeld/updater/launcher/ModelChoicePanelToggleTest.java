@@ -28,7 +28,10 @@ class ModelChoicePanelToggleTest {
                     tag.endsWith("-mlx")));
         }
         ModelChoicePanel p = new ModelChoicePanel(rows, preselectTag,
-                new ModelChoicePanel.Labels("t", "q", "s", "Ok", "Ohne MLX"),
+                new ModelChoicePanel.Labels("t", "q", "s", "Ok", "Ohne MLX", "Erweitert"),
+                new AdvancedEndpointSheet.Labels("Eigener KI-Server", "Adresse",
+                        "Modell", "Schlüssel", "Testen", "Frage ...", "Antwortet",
+                        "Keine Antwort", "Es wird dann nichts geladen", "Nicht für Remote-Anbieter geeignet. Kosten können stark variieren."),
                 new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB), v -> { });
         p.setSize(320, 330);
         return p;

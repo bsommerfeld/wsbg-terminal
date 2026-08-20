@@ -27,6 +27,67 @@ public class AgentConfig {
             + "recommendation lives in the launcher's hardware-recommendation.json.")
     private String modelTag = "";
 
+    // ---- External AI endpoint ------------------------------------------
+    // Together these six keys decide WHERE the model calls go; AiEndpoint#resolve
+    // is the only place that reads them. Left at their defaults they describe the
+    // managed local instance, i.e. exactly the behaviour that existed before they
+    // did - nothing here changes anything until endpoint-mode says "remote".
+
+    @Key("agent.endpoint-mode")
+    @Comment("Where the AI model runs. \"managed\" (default) = our own isolated Ollama, "
+            + "installed and started by the app on its private port. \"remote\" = an Ollama "
+            + "the user runs elsewhere (own machine on the LAN); the app then installs no "
+            + "model, starts no server and never shuts one down, and endpoint-url + "
+            + "endpoint-model must be set. An incomplete remote setup falls back to managed.")
+    private String endpointMode = "managed";
+
+    @Key("agent.endpoint-url")
+    @Comment("Base URL of the remote Ollama, e.g. http://192.168.1.20:11434 . A missing "
+            + "scheme is read as http://, a trailing slash is ignored. Only used when "
+            + "endpoint-mode = remote.")
+    private String endpointUrl = "";
+
+    @Key("agent.endpoint-api")
+    @Comment("Which API the remote server speaks. \"ollama\" (default) = the native "
+            + "Ollama API. \"openai\" = the OpenAI chat-completions API, which is what "
+            + "everything else speaks (llama.cpp server, vLLM, LM Studio, gateways, hosted "
+            + "providers). Normally detected by the connection test rather than set by hand. "
+            + "On \"openai\" three things do not carry over: the thinking switch, num_ctx "
+            + "as a request parameter, and enforced JSON schemas - see AiEndpoint.Api.")
+    private String endpointApi = "ollama";
+
+    @Key("agent.endpoint-model")
+    @Comment("Model tag to request from the remote server, e.g. qwen3:32b. Unlike "
+            + "agent.model-tag this is NOT limited to the families the app deploys - the "
+            + "remote store is the user's. Below roughly 4B parameters the editorial "
+            + "pipeline's output quality is not something we can vouch for.")
+    private String endpointModel = "";
+
+    @Key("agent.endpoint-auth")
+    @Comment("Value of the auth header sent to the remote endpoint, verbatim - e.g. "
+            + "\"Bearer abc123\". Empty = no auth (plain Ollama has none; a value is only "
+            + "needed behind a reverse proxy, LiteLLM or similar). Stored in clear text.")
+    private String endpointAuth = "";
+
+    @Key("agent.endpoint-auth-header")
+    @Comment("Header name carrying endpoint-auth. Default Authorization; set to e.g. "
+            + "x-api-key for gateways that expect their own header.")
+    private String endpointAuthHeader = "Authorization";
+
+    @Key("agent.endpoint-context-tokens")
+    @Comment("Context window (num_ctx) to run the remote model with. 0 = 8192, the same "
+            + "conservative floor an unprobeable machine gets. The automatic scaling used "
+            + "for the local instance cannot apply here: it is computed from THIS machine's "
+            + "memory minus the model's weights, and we know neither for a foreign box. The "
+            + "number is not cosmetic - the pipeline budgets its prompts against it.")
+    private int endpointContextTokens = 0;
+
+    @Key("agent.endpoint-parallelism")
+    @Comment("How many model calls the app sends to the remote server at once. 0 = 2, our "
+            + "own server's slot count. Match it to the remote server's OLLAMA_NUM_PARALLEL: "
+            + "too high queues on its side, too low leaves it idle.")
+    private int endpointParallelism = 0;
+
     @Key("agent.identity-desk")
     @Comment("The AI identity desk (border control): subject identity is decided by ONE "
             + "gemma4 judgment over the combined Yahoo + Lang & Schwarz search facts and the "
@@ -71,6 +132,70 @@ public class AgentConfig {
         this.modelTag = modelTag;
     }
 
+    public String getEndpointMode() {
+        return endpointMode;
+    }
+
+    public void setEndpointMode(String endpointMode) {
+        this.endpointMode = endpointMode;
+    }
+
+    public String getEndpointUrl() {
+        return endpointUrl;
+    }
+
+    public void setEndpointUrl(String endpointUrl) {
+        this.endpointUrl = endpointUrl;
+    }
+
+    public String getEndpointApi() {
+        return endpointApi;
+    }
+
+    public void setEndpointApi(String endpointApi) {
+        this.endpointApi = endpointApi;
+    }
+
+    public String getEndpointModel() {
+        return endpointModel;
+    }
+
+    public void setEndpointModel(String endpointModel) {
+        this.endpointModel = endpointModel;
+    }
+
+    public String getEndpointAuth() {
+        return endpointAuth;
+    }
+
+    public void setEndpointAuth(String endpointAuth) {
+        this.endpointAuth = endpointAuth;
+    }
+
+    public String getEndpointAuthHeader() {
+        return endpointAuthHeader;
+    }
+
+    public void setEndpointAuthHeader(String endpointAuthHeader) {
+        this.endpointAuthHeader = endpointAuthHeader;
+    }
+
+    public int getEndpointContextTokens() {
+        return endpointContextTokens;
+    }
+
+    public void setEndpointContextTokens(int endpointContextTokens) {
+        this.endpointContextTokens = endpointContextTokens;
+    }
+
+    public int getEndpointParallelism() {
+        return endpointParallelism;
+    }
+
+    public void setEndpointParallelism(int endpointParallelism) {
+        this.endpointParallelism = endpointParallelism;
+    }
+
     /**
      * Resolves the concrete Ollama tag the one resident model runs as: the
      * user's {@code agent.model-tag} choice when it names a tag of a deployed
@@ -91,7 +216,12 @@ public class AgentConfig {
         return isAppleSilicon() ? base + "-mlx" : base;
     }
 
-    private static boolean isAppleSilicon() {
+    /**
+     * Public because the settings' model list has to build the SAME tags the
+     * launcher installs ({@code ModelCatalog.tagFor(mlx)}); a second copy of
+     * this check is how a UI ends up offering a tag the installer never pulls.
+     */
+    public static boolean isAppleSilicon() {
         String os = System.getProperty("os.name", "").toLowerCase();
         String arch = System.getProperty("os.arch", "").toLowerCase();
         return os.contains("mac") && (arch.contains("aarch64") || arch.contains("arm64"));
@@ -127,6 +257,9 @@ public class AgentConfig {
     public int resolveContextTokens() {
         return contextTokensFor(totalPhysicalMemoryBytes(), weightsGbFor(resolveModelTag()));
     }
+    // NOTE: this is the MANAGED path only. It reads THIS machine's memory and
+    // the weight size of a tag from OUR catalog, so it says nothing about a
+    // remote server - see agent.endpoint-context-tokens, which replaces it there.
 
     /**
      * What the machine must keep for itself: the OS plus the terminal, whose
@@ -159,12 +292,13 @@ public class AgentConfig {
 
     /**
      * The context window is paid for TWICE: the server runs with
-     * {@code OLLAMA_NUM_PARALLEL=2} (see {@code OllamaServerManager}), so the
-     * runner allocates KV cache for two slots of {@code num_ctx} each. Any
-     * sizing that forgets this factor is off by 100 % on the one term it
-     * exists to bound.
+     * {@code OLLAMA_NUM_PARALLEL} slots (see {@link OllamaEndpoint#PARALLELISM}),
+     * so the runner allocates KV cache for that many slots of {@code num_ctx}
+     * each. Any sizing that forgets this factor is off by 100 % on the one term
+     * it exists to bound. Reads the shared constant rather than a private 2, so
+     * a change to the server's slot count cannot leave this maths behind.
      */
-    private static final int LLM_PARALLEL_SLOTS = 2;
+    private static final int LLM_PARALLEL_SLOTS = OllamaEndpoint.PARALLELISM;
 
     /**
      * GB of KV cache per 1000 slot-tokens, with q8_0 + flash attention.

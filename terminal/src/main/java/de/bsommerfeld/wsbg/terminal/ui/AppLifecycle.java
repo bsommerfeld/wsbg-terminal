@@ -93,6 +93,20 @@ final class AppLifecycle {
     }
 
     /**
+     * Closes the app cleanly and starts the launcher plainly - the exit behind
+     * the settings' "Jetzt neu starten", offered when a chosen model is not on
+     * the machine yet.
+     *
+     * <p>Plainly, i.e. WITHOUT {@code --force-update}: the model download is the
+     * launcher's ordinary setup step, which runs on every start. Forcing an app
+     * update on top would turn "fetch my model" into "also reinstall the
+     * terminal", which is not what the user asked for.
+     */
+    void relaunchForModelChange() {
+        exitAfter(this::spawnLauncher);
+    }
+
+    /**
      * Closes the app cleanly and hands the actual removal to a detached OS
      * process — the action behind the Settings view's "Deinstallieren" button
      * (UninstallService, which builds the platform-specific command). Same order
@@ -146,6 +160,25 @@ final class AppLifecycle {
             LOG.info("Relaunching launcher for update: {} --force-update", exe);
         } catch (Exception e) {
             LOG.error("Failed to relaunch launcher for update: {}", e.getMessage());
+        }
+    }
+
+    /** The plain launcher start - its setup step fetches whatever the config now names. */
+    private void spawnLauncher() {
+        String exe = System.getenv("WSBG_LAUNCHER_EXECUTABLE");
+        if (exe == null || exe.isBlank()) {
+            LOG.warn("Restart requested but WSBG_LAUNCHER_EXECUTABLE is unset — "
+                    + "this is a dev run without a launcher; nothing to relaunch.");
+            return;
+        }
+        try {
+            new ProcessBuilder(exe)
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                    .redirectError(ProcessBuilder.Redirect.DISCARD)
+                    .start();
+            LOG.info("Relaunching launcher for a model change: {}", exe);
+        } catch (Exception e) {
+            LOG.error("Failed to relaunch launcher: {}", e.getMessage());
         }
     }
 

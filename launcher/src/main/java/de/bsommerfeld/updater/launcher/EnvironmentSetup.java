@@ -57,6 +57,14 @@ final class EnvironmentSetup {
      */
     private String reasoningModelTag;
 
+    /**
+     * Whether the AI runtime is ours to install ({@link ModelSelection#MODE_ENV}).
+     * False = the user runs the model on their own server, so the script skips
+     * the Ollama binary, the private server and every model pull - the multi-GB
+     * part of a first install.
+     */
+    private boolean managedAi = true;
+
     EnvironmentSetup(Path appDirectory) {
         this(appDirectory, DEFAULT_IDLE_TIMEOUT);
     }
@@ -75,6 +83,11 @@ final class EnvironmentSetup {
     /** Sets the model tag the setup script should install (see {@link ModelSelection}). */
     void setReasoningModelTag(String tag) {
         this.reasoningModelTag = tag;
+    }
+
+    /** Sets whether the script installs an AI runtime at all (see {@link #managedAi}). */
+    void setManagedAi(boolean managedAi) {
+        this.managedAi = managedAi;
     }
 
     void killActiveProcess() {
@@ -109,6 +122,7 @@ final class EnvironmentSetup {
         if (reasoningModelTag != null && !reasoningModelTag.isBlank()) {
             pb.environment().put(ModelSelection.MODEL_ENV, reasoningModelTag);
         }
+        pb.environment().put(ModelSelection.MODE_ENV, managedAi ? "managed" : "remote");
         Process process = pb.start();
         activeProcess.set(process);
 

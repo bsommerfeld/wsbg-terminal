@@ -56,6 +56,42 @@ final class ScreenShots {
         // An 8 GB machine — the top tiers read "too large".
         write(model(logo, 8), new File(out, "6-model-small-machine.png"));
 
+        // The advanced sheet, mid-slide and fully up: the one screen state that
+        // is not reachable by just painting the panel.
+        ModelChoicePanel advanced = model(logo, 48);
+        advanced.setSize(W, H);
+        SwingUtilities.invokeAndWait(() -> advanced.dispatchEvent(new java.awt.event.MouseEvent(
+                advanced, java.awt.event.MouseEvent.MOUSE_PRESSED, System.currentTimeMillis(), 0,
+                (int) advanced.advancedBounds().getCenterX(),
+                (int) advanced.advancedBounds().getCenterY(), 1, false)));
+        Thread.sleep(110);
+        write(advanced, new File(out, "8-advanced-sliding.png"));
+        Thread.sleep(700);
+        write(advanced, new File(out, "9-advanced-open.png"));
+
+        // Filled in. The fields are REAL text components parented to the panel,
+        // so this is what a user typing into them actually produces - the wells
+        // are our paint, the text inside them is Swing's.
+        SwingUtilities.invokeAndWait(() -> {
+            javax.swing.JTextField[] fields = java.util.Arrays.stream(advanced.getComponents())
+                    .filter(c -> c instanceof javax.swing.JTextField)
+                    .toArray(javax.swing.JTextField[]::new);
+            if (fields.length >= 3) {
+                fields[0].setText("192.168.1.20:11434");
+                fields[1].setText("granite4.1:8b");
+                fields[2].setText("s3cret-token");
+            }
+        });
+        Thread.sleep(120);
+        write(advanced, new File(out, "10-advanced-filled.png"));
+
+        // The warning callout the red glyph opens.
+        SwingUtilities.invokeAndWait(() -> advanced.dispatchEvent(new java.awt.event.MouseEvent(
+                advanced, java.awt.event.MouseEvent.MOUSE_PRESSED, System.currentTimeMillis(), 0,
+                152, 110, 1, false)));
+        Thread.sleep(120);
+        write(advanced, new File(out, "11-advanced-warning.png"));
+
         ScreenTransition transition = new ScreenTransition(
                 paint(lang), paint(model(logo, 48)));
         transition.setSize(W, H);
@@ -83,7 +119,10 @@ final class ScreenShots {
                     fit, rec, verdict, tag.endsWith("-mlx")));
         }
         return new ModelChoicePanel(rows, recTag, new ModelChoicePanel.Labels(
-                "Wähle dein KI-Modell", "Qualität", "Tempo", "Ok", "Ohne MLX"),
+                "Wähle dein KI-Modell", "Qualität", "Tempo", "Ok", "Ohne MLX", "Erweitert"),
+                new AdvancedEndpointSheet.Labels("Eigener KI-Server", "Adresse",
+                        "Modell", "Schlüssel", "Testen", "Frage ...", "Antwortet",
+                        "Keine Antwort", "Es wird dann nichts geladen", "Nicht für Remote-Anbieter geeignet. Kosten können stark variieren."),
                 logo, v -> {});
     }
 

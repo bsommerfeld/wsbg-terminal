@@ -17,7 +17,7 @@ import java.nio.file.Path;
  * <ul>
  *   <li>{@link ConfigModule} — config instance binds + the wheel-scroll seam;</li>
  *   <li>{@link NetModule} — the BROWSER transport, instrument corpus, RedditSource;</li>
- *   <li>{@code WebSourcesModule} (web-impl) — the whole web world: fetcher, pool,
+ *   <li>{@code WebSourcesModule} (web/impl) — the whole web world: fetcher, pool,
  *       scheduler, gateway, curated catalog and every source registration;</li>
  *   <li>{@link AgentPipelineModule} — the editorial quartet + facts roster (ordered);</li>
  *   <li>{@link PublisherModule} — the Java→page publishers;</li>

@@ -42,7 +42,7 @@ public final class OllamaAvailability {
                 if (managed != null) managed.shutdown();
             }, "ollama-it-teardown"));
         }
-        managed.ensureRunning(OllamaServerManager.BASE_URL);
+        managed.ensureRunning();
     }
 
     private static boolean reachable() {

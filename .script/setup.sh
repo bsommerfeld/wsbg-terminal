@@ -13,6 +13,12 @@
 # Full isolation: we never touch a user's existing Ollama (binary, models, or
 # the server on the default port 11434). Everything lives under <appData>/ollama,
 # so uninstalling is just deleting the app data folder.
+#
+# EXTERNAL ENDPOINT: with agent.endpoint-mode = remote the user runs the model
+# on their own machine somewhere else, so steps 1-3 have nothing to do -- there
+# is no binary to install, no server to start and no model to pull, which is the
+# multi-GB part of a first install. They are skipped as a block; everything the
+# terminal itself needs (OCR, browser runtime, fonts, config) still runs.
 # ==============================================================================
 
 set -e
@@ -70,6 +76,22 @@ else
 fi
 CONFIG_FILE="$CONFIG_DIR/config.toml"
 
+# ------------------------------------------------------------------------------
+# Managed AI runtime, or the user's own endpoint?
+# ------------------------------------------------------------------------------
+# The launcher passes the answer in WSBG_ENDPOINT_MODE (it reads config.toml in
+# ModelSelection). A standalone script run has no launcher, so we read the same
+# key ourselves rather than defaulting to "managed" -- guessing wrong there costs
+# the user a multi-GB download they deliberately opted out of. Accepts the dotted
+# and the bare key form, exactly like the launcher's line scan.
+config_endpoint_mode() {
+    [ -f "$CONFIG_FILE" ] || return 0
+    grep -Ei '^[[:space:]]*(agent\.)?endpoint-mode[[:space:]]*=' "$CONFIG_FILE" 2>/dev/null \
+        | head -1 | sed -E 's/.*=[[:space:]]*"?([A-Za-z]+)"?.*/\1/' | tr 'A-Z' 'a-z'
+}
+AI_MODE="${WSBG_ENDPOINT_MODE:-$(config_endpoint_mode)}"
+if [ "$AI_MODE" = "remote" ]; then AI_MANAGED=false; else AI_MANAGED=true; fi
+
 # Everything AI lives under <appData>/ollama, fully isolated from any Ollama the
 # user already has. Our binary lands at ai/bin/ollama (linux tarball) or
 # ai/ollama (macOS tgz); we resolve both.
@@ -85,7 +107,7 @@ fi
 # serve, pulls). Pins our port + model store away from the user's instance.
 export OLLAMA_HOST="127.0.0.1:$OLLAMA_PORT"
 export OLLAMA_MODELS="$AI_MODELS"
-mkdir -p "$AI_MODELS"
+[ "$AI_MANAGED" = true ] && mkdir -p "$AI_MODELS"
 
 # ------------------------------------------------------------------------------
 # 1. Install / update OUR isolated Ollama binary (latest; never the system one)
@@ -182,13 +204,23 @@ install_ollama() {
     echo "    Isolated Ollama ready at $OLLAMA"
 }
 
-install_ollama || warn "Isolated Ollama install failed -- continuing."
+if [ "$AI_MANAGED" = true ]; then
+    install_ollama || warn "Isolated Ollama install failed -- continuing."
+else
+    # One line, and it is a phase of its own in the launcher: the user must see
+    # WHY the longest part of the install did not happen. The local model store
+    # is deliberately left alone -- a switch back to the managed runtime then
+    # costs no download, and silently deleting several GB the user paid for is
+    # not a side effect of ticking a box.
+    echo "[*] External AI endpoint configured -- skipping the isolated Ollama, its"
+    echo "    server and every model download. Existing local models are kept."
+fi
 
 # ------------------------------------------------------------------------------
 # 2. Start OUR server on the private port (stopped again at the end of setup)
 # ------------------------------------------------------------------------------
 OLLAMA_PID=""
-if [ -x "$OLLAMA" ]; then
+if [ "$AI_MANAGED" = true ] && [ -x "$OLLAMA" ]; then
     if curl -sf -m 2 "http://$OLLAMA_HOST/api/tags" > /dev/null 2>&1; then
         echo "[*] Our Ollama server already running on $OLLAMA_HOST."
     else
@@ -242,8 +274,10 @@ fi
 # thing wired into it.
 DESIRED_MODELS=("$REASONING_MODEL")
 
-echo "[*] Models (isolated store: $AI_MODELS):"
-for m in "${DESIRED_MODELS[@]}"; do echo "    - $m"; done
+if [ "$AI_MANAGED" = true ]; then
+    echo "[*] Models (isolated store: $AI_MODELS):"
+    for m in "${DESIRED_MODELS[@]}"; do echo "    - $m"; done
+fi
 
 # Local manifest digest (= 'ollama list' ID, 12 hex) for an installed tag, or "".
 local_digest() {
@@ -368,7 +402,9 @@ cleanup_header() {
 # Guarded on the binary (mirrors setup.ps1): without it every pull would just
 # fail noisily. The launcher tracks model names from the exact "> Pulling
 # <model>..." wording -- keep extra detail on its own line, never appended.
-if [ -x "$OLLAMA" ]; then
+# Guarded on the mode too: with an external endpoint there is no store of ours
+# to reconcile, and the GC must not run against models we no longer manage.
+if [ "$AI_MANAGED" = true ] && [ -x "$OLLAMA" ]; then
     ALL_PRESENT=true
     # 1-based position + total in the desired set, appended to each "> Pulling"
     # line as "(idx/total)". The launcher reads this to render one pip per model
@@ -494,7 +530,10 @@ if [ -x "$OLLAMA" ]; then
             warn "Could not canonicalize $AI_MODELS -- store hygiene skipped."
         fi
     fi
-else
+elif [ "$AI_MANAGED" = true ]; then
+    # Only a problem when the runtime is OURS to install. With an external
+    # endpoint there is deliberately no binary here, and warning about it would
+    # end the run in "Setup completed with warnings" over a non-event.
     warn "Isolated Ollama binary missing -- skipping model install."
 fi
 

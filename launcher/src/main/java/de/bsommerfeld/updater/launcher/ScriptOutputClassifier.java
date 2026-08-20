@@ -82,6 +82,14 @@ final class ScriptOutputClassifier {
     private static final Pattern STORE_HYGIENE_PATTERN = Pattern.compile(
             "(?i)>\\s*removing\\s+(?:partial\\s+download|orphaned\\s+blob)\\s+(\\S+)");
 
+    // The script's "[*] External AI endpoint configured -- skipping ..." line.
+    // It replaces the two longest steps of a first install, so it gets a phase
+    // of its own: without it the announcement would fall into the generic
+    // "Setting up environment" bucket and the user would just see the install
+    // finish suspiciously fast, with no word on why.
+    private static final Pattern EXTERNAL_ENDPOINT_PATTERN = Pattern.compile(
+            "(?i)\\[\\*]\\s*external\\s+ai\\s+endpoint");
+
     // Extracts trailing percentage from curl-style progress lines
     // (e.g. "####   8.8%" → group 1 = "8.8").
     private static final Pattern CURL_PROGRESS_PATTERN = Pattern.compile(
@@ -132,6 +140,8 @@ final class ScriptOutputClassifier {
      * most frequent output during model pulls.
      */
     void classify(String line, BiConsumer<String, String> consumer) {
+        if (tryEmitExternalEndpoint(line, consumer))
+            return;
         if (tryEmitOllamaInstall(line, consumer))
             return;
         if (tryEmitBrowserInstall(line, consumer))
@@ -264,6 +274,23 @@ final class ScriptOutputClassifier {
             };
         }
         return t + " B";
+    }
+
+    /**
+     * Surfaces the external-endpoint announcement under its own label. Nothing
+     * downloads, so it is a label and no more - but it must be a visible one:
+     * it is the script saying that the Ollama install and every model pull were
+     * skipped on purpose.
+     */
+    private boolean tryEmitExternalEndpoint(String line, BiConsumer<String, String> consumer) {
+        if (EXTERNAL_ENDPOINT_PATTERN.matcher(line).find()) {
+            installingOllama = false;
+            installingBrowser = false;
+            installingOcr = false;
+            consumer.accept("Using external AI endpoint", null);
+            return true;
+        }
+        return false;
     }
 
     /**

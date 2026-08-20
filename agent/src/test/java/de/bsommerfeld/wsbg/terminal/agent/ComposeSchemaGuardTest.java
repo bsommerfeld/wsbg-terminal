@@ -77,4 +77,37 @@ class ComposeSchemaGuardTest {
         assertFalse(ChatGateway.isClientReject(
                 new RuntimeException(new java.net.ConnectException("down"))));
     }
+
+    // ------------------------------------------------------------------
+    // What counts as a VERDICT, and what only as "not now"
+    // ------------------------------------------------------------------
+
+    @Test
+    void aRateLimitIsNotAVerdict() {
+        // The case that only appears on a hosted provider: HTTP 429 is 4xx, and
+        // the old blanket rule turned every one into a permanent empty reply -
+        // the compose lane going quiet under exactly the load it was busiest
+        // at. langchain4j already calls it retriable; we follow that.
+        assertFalse(ChatGateway.isClientReject(
+                new dev.langchain4j.exception.RateLimitException("429 Too Many Requests")));
+        assertFalse(ChatGateway.isClientReject(new RuntimeException(
+                new dev.langchain4j.exception.RateLimitException("rate limited"))));
+    }
+
+    @Test
+    void aServerErrorIsNotAVerdictEither() {
+        assertFalse(ChatGateway.isClientReject(
+                new dev.langchain4j.exception.InternalServerException("503")));
+        assertFalse(ChatGateway.isClientReject(
+                new dev.langchain4j.exception.TimeoutException("gateway timeout")));
+    }
+
+    @Test
+    void aBadRequestStaysAVerdict() {
+        // Retrying an identical malformed body just 400s again, forever.
+        assertTrue(ChatGateway.isClientReject(
+                new dev.langchain4j.exception.InvalidRequestException("bad schema")));
+        assertTrue(ChatGateway.isClientReject(
+                new dev.langchain4j.exception.AuthenticationException("401")));
+    }
 }

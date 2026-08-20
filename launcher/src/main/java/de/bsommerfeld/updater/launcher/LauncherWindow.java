@@ -209,10 +209,28 @@ final class LauncherWindow extends JFrame {
      * user flips through; the returned future completes with the chosen tag.
      * Safe to call from any thread; the caller blocks on the future.
      */
+    /**
+     * The model choice, held on to after it closes: the screen answers with a
+     * model TAG, but its advanced sheet may instead answer with an external
+     * endpoint - two different things that one {@code CompletableFuture<String>}
+     * cannot carry. The caller reads {@link #chosenEndpoint()} once the future
+     * completes.
+     */
+    private ModelChoicePanel modelChoicePanel;
+
     CompletableFuture<String> showModelChoice(List<ModelChoicePanel.Row> rows,
-            String preselectTag, ModelChoicePanel.Labels labels) {
-        return showChoice(logo ->
-                new ModelChoicePanel(rows, preselectTag, labels, logo, this::onChoiceConfirmed));
+            String preselectTag, ModelChoicePanel.Labels labels,
+            AdvancedEndpointSheet.Labels advancedLabels) {
+        return showChoice(logo -> {
+            modelChoicePanel = new ModelChoicePanel(rows, preselectTag, labels,
+                    advancedLabels, logo, this::onChoiceConfirmed);
+            return modelChoicePanel;
+        });
+    }
+
+    /** The external endpoint the model screen's advanced sheet held, or null. */
+    AdvancedEndpointSheet.Endpoint chosenEndpoint() {
+        return modelChoicePanel == null ? null : modelChoicePanel.chosenEndpoint();
     }
 
     /**

@@ -262,6 +262,29 @@ class EnvironmentSetupTest {
     }
 
     @Test
+    void classify_shouldDetectExternalEndpointSkip() {
+        // The line that replaces the two longest steps of a first install. It
+        // must NOT land in the generic "Setting up environment" bucket, or the
+        // user sees an install finish suspiciously fast with no word on why.
+        List<String[]> emissions = collect(new ScriptOutputClassifier(),
+                "[*] External AI endpoint configured -- skipping the isolated Ollama, its",
+                "    server and every model download. Existing local models are kept.");
+        assertFalse(emissions.isEmpty());
+        assertEquals("Using external AI endpoint", emissions.get(0)[0]);
+        assertNull(emissions.get(0)[1]);
+    }
+
+    @Test
+    void classify_shouldNotMistakeTheSkipLineForAnOllamaInstall() {
+        // The Ollama-install pattern matches any "[*] installing ... ollama";
+        // the skip line names Ollama too, so the order in classify() is what
+        // keeps it out of the download phase. Pin it.
+        List<String[]> emissions = collect(new ScriptOutputClassifier(),
+                "[*] External AI endpoint configured -- skipping the isolated Ollama, its");
+        assertEquals("Using external AI endpoint", emissions.get(0)[0]);
+    }
+
+    @Test
     void classify_shouldDetectModelCleanupHeader() {
         List<String[]> emissions = collect(new ScriptOutputClassifier(), "[*] Cleaning up old models...");
         assertFalse(emissions.isEmpty());

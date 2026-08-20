@@ -69,7 +69,7 @@ final class AgentPipelineModule extends AbstractModule {
 
         // The article→instrument judgment engine: judged once per article at
         // the pour, answered as a set lookup by the pool. The pool picks the
-        // binding up via optional injection (web-impl only knows the web-api
+        // binding up via optional injection (web/impl only knows the web/api
         // interface); EditorialAgent installs the model-backed sense arbiter.
         bind(de.bsommerfeld.wsbg.terminal.web.pool.ArticleTagger.class)
                 .to(de.bsommerfeld.wsbg.terminal.agent.tagging.LuceneArticleTagger.class)

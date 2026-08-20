@@ -66,7 +66,7 @@ final class ModelChoicePanel extends ChoiceScreen {
      * exists at all.
      */
     record Labels(String title, String qualityWord, String speedWord,
-            String okText, String baseToggleWord) {
+            String okText, String baseToggleWord, String advancedWord) {
     }
 
     private static final int STACK_TOP = 72;
@@ -116,6 +116,12 @@ final class ModelChoicePanel extends ChoiceScreen {
 
     private final List<Row> rows;
     private final Labels labels;
+    /**
+     * The "Erweitert" sheet. Always present, always closed to begin with: the
+     * screen's question is the stack, and this is the exception under it.
+     */
+    private final AdvancedEndpointSheet sheet;
+    private boolean advancedHovered;
 
     /** The card the stack is settling on - the one OK confirms. */
     private int target;
@@ -142,10 +148,12 @@ final class ModelChoicePanel extends ChoiceScreen {
     private boolean toggleHovered;
 
     ModelChoicePanel(List<Row> rows, String preselectTag, Labels labels,
+            AdvancedEndpointSheet.Labels advancedLabels,
             BufferedImage logo, Consumer<String> onOk) {
         super(logo, onOk);
         this.rows = rows;
         this.labels = labels;
+        this.sheet = new AdvancedEndpointSheet(this, advancedLabels);
         for (int i = 0; i < rows.size(); i++) {
             if (rows.get(i).tag().equals(preselectTag)) target = i;
         }
@@ -185,6 +193,16 @@ final class ModelChoicePanel extends ChoiceScreen {
                 : tag;
     }
 
+    /**
+     * The external endpoint the user filled in, or {@code null} when they did
+     * not - then the confirmed stack tag applies as before. Read by the
+     * launcher AFTER OK; the two are mutually exclusive by construction,
+     * because an endpoint means no model of ours is installed at all.
+     */
+    AdvancedEndpointSheet.Endpoint chosenEndpoint() {
+        return sheet.endpoint();
+    }
+
     // =====================================================================
     // Flipping through the stack
     // =====================================================================
@@ -215,11 +233,22 @@ final class ModelChoicePanel extends ChoiceScreen {
 
     @Override
     protected void wheelBody(int notches) {
+        // A wheel notch while the sheet is up would flip cards the user cannot
+        // even see.
+        if (sheet.isOpen()) return;
         if (notches != 0) flipTo(target + Integer.signum(notches));
     }
 
     @Override
     protected void pressBody(int x, int y) {
+        // The sheet is modal over the body: it consumes what it covers, so a
+        // click meant for a field can never reach a card underneath it.
+        if (sheet.press(x, y)) return;
+        if (advancedBounds().contains(x, y)) {
+            sheet.toggle();
+            repaint();
+            return;
+        }
         if (toggleVisible() && toggleBounds().contains(x, y)) {
             baseVariant = !baseVariant;
             repaint();
@@ -246,13 +275,26 @@ final class ModelChoicePanel extends ChoiceScreen {
 
     @Override
     protected boolean hoverBody(int x, int y) {
+        boolean advanced = advancedBounds().contains(x, y);
+        boolean dirtySheet = sheet.hover(x, y) || advanced != advancedHovered;
+        advancedHovered = advanced;
+        if (sheet.isOpen()) {
+            // Everything under the sheet is out of reach; leaving the stack's
+            // own hover states set would light up controls nobody can press.
+            boolean hadStackHover = upHovered || downHovered || stackHovered
+                    || toggleHovered || hoveredDot >= 0;
+            upHovered = downHovered = stackHovered = toggleHovered = false;
+            hoveredDot = -1;
+            return dirtySheet || hadStackHover;
+        }
         boolean up = upBounds().contains(x, y);
         boolean down = downBounds().contains(x, y);
         int dot = dotAt(x, y);
         boolean stack = topPeekBounds().contains(x, y) || bottomPeekBounds().contains(x, y);
         boolean toggle = toggleVisible() && toggleBounds().contains(x, y);
         boolean dirty = up != upHovered || down != downHovered
-                || dot != hoveredDot || stack != stackHovered || toggle != toggleHovered;
+                || dot != hoveredDot || stack != stackHovered || toggle != toggleHovered
+                || dirtySheet;
         upHovered = up;
         downHovered = down;
         hoveredDot = dot;
@@ -263,6 +305,11 @@ final class ModelChoicePanel extends ChoiceScreen {
 
     @Override
     protected boolean bodyHitsControl(int x, int y) {
+        if (advancedBounds().contains(x, y) || sheet.hitsControl(x, y)) return true;
+        // While the sheet is up nothing behind it is a control - including for
+        // the window drag, which must not slide the launcher out from under a
+        // field the user is typing in.
+        if (sheet.isOpen()) return true;
         return upBounds().contains(x, y) || downBounds().contains(x, y)
                 || dotAt(x, y) >= 0
                 || (toggleVisible() && toggleBounds().contains(x, y))
@@ -330,6 +377,21 @@ final class ModelChoicePanel extends ChoiceScreen {
         return new Rectangle(left, cy - CHEVRON_R, Math.max(0, right - left), 2 * CHEVRON_R);
     }
 
+    /**
+     * The "Erweitert" entry: a quiet word with a chevron in the footer, right
+     * -aligned against the OK button.
+     *
+     * <p>The footer, not the nav strip, because the strip is already full (page
+     * dots, the MLX lever, two chevrons) and this screen lives in a 320x330
+     * window - there is no free row to add. Right-aligned rather than beside
+     * the legend so it cannot collide with a longer translation of it.
+     */
+    Rectangle advancedBounds() {
+        Rectangle ok = okBounds();
+        int width = getFontMetrics(LEGEND_FONT).stringWidth(labels.advancedWord()) + 16;
+        return new Rectangle(ok.x - 12 - width, ok.y, width, ok.height);
+    }
+
     private int dotAt(int x, int y) {
         int cy = navCenterY();
         if (Math.abs(y - cy) > 10) return -1;
@@ -364,6 +426,38 @@ final class ModelChoicePanel extends ChoiceScreen {
 
         paintNav(g2);
         paintLegend(g2);
+        paintAdvancedEntry(g2);
+        // Last, so it lands over the stack and the nav strip - the footer sits
+        // below the body band and stays reachable, which is what OK needs.
+        sheet.paint(g2, STACK_TOP, bodyBottom());
+    }
+
+    /**
+     * The footer's "Erweitert" entry. Deliberately understated - dim text, a
+     * small chevron, no surface: almost nobody runs their own model server, and
+     * a button competing with OK would be a button most people have to decide
+     * about for nothing.
+     */
+    private void paintAdvancedEntry(Graphics2D g2) {
+        Rectangle b = advancedBounds();
+        g2.setFont(LEGEND_FONT);
+        FontMetrics fm = g2.getFontMetrics();
+        int textY = b.y + (b.height + fm.getAscent() - fm.getDescent()) / 2;
+        g2.setColor(advancedHovered || sheet.isOpen()
+                ? LauncherTheme.TEXT_PRIMARY : LauncherTheme.TEXT_DIM);
+        g2.drawString(labels.advancedWord(), b.x, textY);
+
+        // The chevron points the way the sheet will move.
+        double cx = b.x + b.width - 7;
+        double cy = b.getCenterY();
+        double dir = sheet.isOpen() ? -1 : 1;
+        Path2D chevron = new Path2D.Double();
+        chevron.moveTo(cx - 3.5, cy + 1.5 * dir);
+        chevron.lineTo(cx, cy - 2 * dir);
+        chevron.lineTo(cx + 3.5, cy + 1.5 * dir);
+        g2.setStroke(new java.awt.BasicStroke(1.5f, java.awt.BasicStroke.CAP_ROUND,
+                java.awt.BasicStroke.JOIN_ROUND));
+        g2.draw(chevron);
     }
 
     /**

@@ -167,6 +167,15 @@ public final class AppMain {
     }
 
     /**
+     * Closes cleanly and starts the launcher plainly, so its setup step fetches
+     * a model the user just chose but does not have - the settings' "Jetzt neu
+     * starten".
+     */
+    public static void relaunchForModelChange() {
+        LIFECYCLE.relaunchForModelChange();
+    }
+
+    /**
      * Closes the app cleanly because the launcher wants to apply an update
      * over our install. Called from the single-instance listener thread; the
      * teardown itself hops to the EDT. Before the lifecycle exists (a quit

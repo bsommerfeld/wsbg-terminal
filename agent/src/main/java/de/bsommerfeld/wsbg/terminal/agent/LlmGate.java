@@ -1,15 +1,23 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
 import com.google.inject.Singleton;
+import de.bsommerfeld.wsbg.terminal.core.config.AiEndpoint;
+import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
+import de.bsommerfeld.wsbg.terminal.core.config.OllamaEndpoint;
+import jakarta.inject.Inject;
 
 /**
  * The ONE concurrency gate, shared across every model call in the agent module:
  * the editorial subject extraction, per-unit composition, the discrete judge calls AND
  * the vision prefetch all hit the single resident model, so they all acquire the SAME
- * permit here. Sized to match Ollama's {@code NUM_PARALLEL}
- * ({@link OllamaServerManager#llmParallelism()}, fixed at 2) so the callers never
- * over-subscribe the server — vision used to run un-gated and starve the compose
- * workers.
+ * permit here. Sized to match the server's {@code NUM_PARALLEL} so the callers never
+ * over-subscribe it — vision used to run un-gated and starve the compose workers.
+ *
+ * <p>On our own instance that is {@link OllamaEndpoint#PARALLELISM}, the very number
+ * we start the server with. On a user's remote endpoint we do not set it and cannot
+ * read it, so it is configured ({@code agent.endpoint-parallelism}): throttling to 2
+ * on a box that serves four wastes it, and sending four to a box that serves one just
+ * queues on its side.
  *
  * <p><b>Two lanes, currently single-tenant.</b> The gate carries an INTERACTIVE lane
  * that overtakes the background lanes (wire, digest) at the next free permit, plus a
@@ -26,7 +34,7 @@ import com.google.inject.Singleton;
  * background waiting, the next grant goes to the background lane, so the wire keeps
  * publishing (throttled, never stalled).
  *
- * <p>This is a {@code @Singleton}: exactly ONE gate of {@code llmParallelism()} permits
+ * <p>This is a {@code @Singleton}: exactly ONE gate of {@link #permits} permits
  * exists per process, injected into {@link AgentBrain} (vision), {@link ChatGateway}
  * (every editorial chat call) and {@link EditorialPipeline} (contention logging).
  *
@@ -42,7 +50,7 @@ public class LlmGate {
     /** Every Nth grant under full contention goes to the background lane. */
     static final int BACKGROUND_GUARANTEE = 3;
 
-    private final int permits = OllamaServerManager.llmParallelism();
+    private final int permits;
     private int inUse;
     private int interactiveWaiting;
     private int backgroundWaiting;
@@ -50,6 +58,17 @@ public class LlmGate {
     private int interactiveStreak;
     /** Priority mode: the background lane is parked, the interactive lane owns every permit. */
     private boolean priority;
+
+    /** The managed default — our own server's slot count. */
+    public LlmGate() {
+        this.permits = OllamaEndpoint.PARALLELISM;
+    }
+
+    /** Production: the slot count of whatever endpoint this run talks to. */
+    @Inject
+    public LlmGate(GlobalConfig config) {
+        this.permits = AiEndpoint.resolve(config.getAgent()).parallelism();
+    }
 
     /** Free permits right now — for contention logging, not flow control. */
     public synchronized int availablePermits() {

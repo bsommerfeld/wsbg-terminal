@@ -77,8 +77,8 @@ public final class WsoIsinSource implements CorpusSource {
     /**
      * Derivative/certificate NAME shapes — the same heuristic the price chain's
      * WSO client uses as its poison filter ({@code WallstreetOnlineClient
-     * .looksLikeDerivative} in {@code web-impl}; kept as a local twin because this
-     * module cannot depend on {@code web-impl}). Format recognition, not a curated
+     * .looksLikeDerivative} in {@code web/impl}; kept as a local twin because this
+     * module cannot depend on {@code web/impl}). Format recognition, not a curated
      * instrument list.
      */
     static boolean looksLikeDerivative(String name) {

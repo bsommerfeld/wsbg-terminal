@@ -24,21 +24,28 @@
             <groupId>de.bsommerfeld</groupId>
             <artifactId>instrument-corpus</artifactId>
         </dependency>
-        <!-- The whole outside world rides the two web modules: web-api carries
-             the contracts (Article, WebFetcher, facts, gateway), web-impl the
+        <!-- The whole outside world rides the two web modules: web/api carries
+             the contracts (Article, WebFetcher, facts, gateway), web/impl the
              sources and the machinery. The forty per-source dependencies of
              the old world are gone. -->
         <dependency>
             <groupId>de.bsommerfeld</groupId>
-            <artifactId>web-api</artifactId>
+            <artifactId>api</artifactId>
         </dependency>
         <dependency>
             <groupId>de.bsommerfeld</groupId>
-            <artifactId>web-impl</artifactId>
+            <artifactId>impl</artifactId>
         </dependency>
         <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-ollama</artifactId>
+        </dependency>
+        <!-- The SECOND protocol: everything that is not Ollama speaks the
+             OpenAI chat API (llama.cpp's server, vLLM, LM Studio, gateways).
+             Which of the two an endpoint speaks is detected, not asked. -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-open-ai</artifactId>
         </dependency>
         <dependency>
             <groupId>dev.langchain4j</groupId>

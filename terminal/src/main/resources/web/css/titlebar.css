@@ -201,6 +201,15 @@ html[data-theme="light"] .tb-title .flag {
 .launcher-tip strong { color: var(--amber); font-size: .74rem; font-weight: 700; }
 .launcher-tip > span { color: var(--txt); font-weight: 400; }
 .launcher-btn:hover .launcher-tip { opacity: 1; }
+/* AI-endpoint alarm: the red sibling of the update/launcher indicators. Same
+   rules (pinned gone while hidden, own class so none of the three can override
+   another - all may show at once). It DOES pulse: unlike the launcher's calm
+   standing notice, this one means the terminal has stopped producing. */
+.ai-status-btn[hidden] { display: none; }
+.ai-status-btn { color: var(--red); }
+.ai-status-btn:hover { color: var(--red); background: var(--bg-1); }
+.ai-status-btn:not([hidden]) { animation: update-glow 2.4s ease-in-out 6; }
+
 @keyframes update-glow {
   0%, 100% { opacity: .65; }
   50%      { opacity: 1; }

@@ -55,6 +55,16 @@ public final class LauncherMain {
      */
     private static final int ENVIRONMENT_STEPS = 3;
 
+    /**
+     * The numbered setup steps for this run. With an external AI endpoint the
+     * Ollama install and the model pulls do not happen, so only the browser
+     * runtime is left - counting all three would leave the label stuck at
+     * "(3/5)" while the run is already finished.
+     */
+    private static int environmentSteps(boolean managedAi) {
+        return managedAi ? ENVIRONMENT_STEPS : 1;
+    }
+
     private LauncherMain() {
     }
 
@@ -146,6 +156,7 @@ public final class LauncherMain {
         // user's config.toml choice (agent.model-tag) or the managed default.
         ModelSelection.Result modelChoice = ModelSelection.resolve(appDir, log);
         envSetup.setReasoningModelTag(modelChoice.effectiveTag());
+        envSetup.setManagedAi(modelChoice.managedAi());
 
         // Ensures child processes (winget, ollama pull) are killed when the
         // launcher exits — not just on timeout. Without this, closing the
@@ -189,20 +200,39 @@ public final class LauncherMain {
 
                 // No explicit model choice on record yet: morph the window into
                 // the choice list and wait for the user's pick. One OK persists
-                // the key, so this shows exactly once per install.
-                if (!modelChoice.userChosen()) {
+                // the key, so this shows exactly once per install. With an
+                // external endpoint there is nothing to choose - no model of
+                // ours goes on this machine - so the screen never appears.
+                // Whether an AI runtime gets installed at all. Starts as what
+                // the config said and can still change HERE: the model screen's
+                // advanced sheet may answer with an external endpoint instead
+                // of a tier, and everything after this point - the step count,
+                // the setup script's env - has to follow that answer.
+                boolean managedAi = modelChoice.managedAi();
+                if (managedAi && !modelChoice.userChosen()) {
                     String chosen = runModelChoicePhase(window, i18n, modelChoice, log);
-                    ModelConfigWriter.write(appDir, chosen, log);
-                    envSetup.setReasoningModelTag(chosen);
+                    AdvancedEndpointSheet.Endpoint endpoint = window.chosenEndpoint();
+                    if (endpoint != null) {
+                        // The sheet wins over the stack: an endpoint means no
+                        // model of ours belongs on this machine at all.
+                        EndpointConfigWriter.write(appDir, endpoint, log);
+                        envSetup.setManagedAi(false);
+                        managedAi = false;
+                        log.log("External AI endpoint configured in the launcher: "
+                                + endpoint.url() + " (" + endpoint.model() + ")");
+                    } else {
+                        ModelConfigWriter.write(appDir, chosen, log);
+                        envSetup.setReasoningModelTag(chosen);
+                    }
                 }
                 int downloadSteps = runUpdatePhase(updateClient, window, log, firstRun, i18n,
-                        autoUpdate, forceUpdate, ENVIRONMENT_STEPS);
+                        autoUpdate, forceUpdate, environmentSteps(managedAi));
                 // Launcher self-update rides the same phase, quietly (log-only,
                 // no window steps): a newly staged jar takes over on the NEXT
                 // start, so there is nothing to show now. Same auto-update
                 // gate + --force-update override as the terminal update above.
                 StagedLauncher.sync(REPO, appDir, log, channel, autoUpdate, forceUpdate);
-                runEnvironmentPhase(envSetup, window, log, i18n, downloadSteps);
+                runEnvironmentPhase(envSetup, window, log, i18n, downloadSteps, managedAi);
                 runLaunchPhase(appDir, window, log, forwardArgs, i18n);
             } catch (Throwable e) {
                 LauncherDialogs.handleFatalError(appDir, window, log, e);
@@ -396,10 +426,24 @@ public final class LauncherMain {
                 i18n.get("Quality"),
                 i18n.get("Speed"),
                 i18n.get("OK"),
-                i18n.get("Without MLX"));
+                i18n.get("Without MLX"),
+                i18n.get("Advanced"));
+
+        AdvancedEndpointSheet.Labels advanced = new AdvancedEndpointSheet.Labels(
+                i18n.get("Your own AI server"),
+                i18n.get("Address"),
+                i18n.get("Model"),
+                i18n.get("Key"),
+                i18n.get("Test"),
+                i18n.get("Asking..."),
+                i18n.get("Answers"),
+                i18n.get("No answer"),
+                i18n.get("Nothing is downloaded then"),
+                i18n.get("Not suited to hosted providers. Costs can vary widely."));
 
         log.log("Model choice UI shown (no explicit choice on record)");
-        String chosen = window.showModelChoice(rows, modelChoice.recommendedTag(), labels).get();
+        String chosen = window.showModelChoice(rows, modelChoice.recommendedTag(), labels,
+                advanced).get();
         log.log("Model choice confirmed: " + chosen);
         return chosen;
     }
@@ -516,7 +560,8 @@ public final class LauncherMain {
      * {@link SetupProgressAdapter}; a non-zero exit is a warning, not a stop.
      */
     private static void runEnvironmentPhase(EnvironmentSetup setup,
-            LauncherWindow window, SessionLog log, LauncherI18n i18n, int downloadStepCount)
+            LauncherWindow window, SessionLog log, LauncherI18n i18n, int downloadStepCount,
+            boolean managedAi)
             throws IOException, InterruptedException {
 
         // Snap to dot before environment setup — clean transition from update phase
@@ -527,7 +572,7 @@ public final class LauncherMain {
         // and the browser (JCEF) runtime slot in as the final three numbered
         // steps. Fonts run after as a quick, unnumbered tail.
         SetupProgressAdapter adapter =
-                new SetupProgressAdapter(window, i18n, log, downloadStepCount);
+                new SetupProgressAdapter(window, i18n, log, downloadStepCount, managedAi);
 
         boolean success = setup.run(adapter);
 

@@ -11,6 +11,12 @@
 # Full isolation: we never touch a user's existing Ollama (binary, models, or
 # the server on the default port 11434). Everything lives under <appData>\ollama,
 # so uninstalling is just deleting the app data folder.
+#
+# EXTERNAL ENDPOINT: with agent.endpoint-mode = remote the user runs the model on
+# their own machine somewhere else, so steps 1-3 have nothing to do -- there is no
+# binary to install, no server to start and no model to pull, which is the multi-GB
+# part of a first install. They are skipped; everything the terminal itself needs
+# (OCR, browser runtime, fonts, config) still runs. (Mirrors setup.sh.)
 # ==============================================================================
 
 # ==============================================================================
@@ -62,6 +68,22 @@ if ([string]::IsNullOrEmpty($localAppData)) {
 $configDir = [System.IO.Path]::Combine($localAppData, "wsbg-terminal")
 $configFile = [System.IO.Path]::Combine($configDir, "config.toml")
 
+# ------------------------------------------------------------------------------
+# Managed AI runtime, or the user's own endpoint?
+# ------------------------------------------------------------------------------
+# The launcher passes the answer in WSBG_ENDPOINT_MODE (it reads config.toml in
+# ModelSelection). A standalone script run has no launcher, so we read the same
+# key ourselves rather than defaulting to "managed" -- guessing wrong there costs
+# the user a multi-GB download they deliberately opted out of. Accepts the dotted
+# and the bare key form, exactly like the launcher's line scan. (Mirrors setup.sh.)
+$aiMode = $env:WSBG_ENDPOINT_MODE
+if ([string]::IsNullOrWhiteSpace($aiMode) -and (Test-Path $configFile)) {
+    $line = Select-String -Path $configFile -Pattern '^\s*(agent\.)?endpoint-mode\s*=' |
+        Select-Object -First 1
+    if ($line -and $line.Line -match '=\s*"?([A-Za-z]+)"?') { $aiMode = $matches[1] }
+}
+$aiManaged = -not ("$aiMode".Trim().ToLower() -eq "remote")
+
 # Everything AI lives under <appData>\ollama, isolated from any Ollama the user
 # already has. The Windows zip extracts ollama.exe (+ lib\) at the root.
 $aiDir = [System.IO.Path]::Combine($configDir, "ollama")
@@ -76,7 +98,7 @@ if (-not (Test-Path $ollamaExe)) {
 # serve, pulls). Pins our port + model store away from the user's instance.
 $env:OLLAMA_HOST = "127.0.0.1:$OllamaPort"
 $env:OLLAMA_MODELS = $aiModels
-New-Item -ItemType Directory -Force -Path $aiModels | Out-Null
+if ($aiManaged) { New-Item -ItemType Directory -Force -Path $aiModels | Out-Null }
 
 # ------------------------------------------------------------------------------
 # 1. Install / update OUR isolated Ollama binary (latest; never the system one)
@@ -108,7 +130,7 @@ function Get-LatestOllamaVersion {
 }
 
 $haveVer = $null
-if (Test-Path $ollamaExe) {
+if ($aiManaged -and (Test-Path $ollamaExe)) {
     # Out-String collapses the multi-line output into ONE string. Without it,
     # 'ollama --version' returns a string[] and '-match' acts as an array filter
     # that never populates $matches -> '$matches[1]' threw "index into a null
@@ -117,9 +139,17 @@ if (Test-Path $ollamaExe) {
     if ($out -match "(\d+\.\d+\.\d+)") { $haveVer = $matches[1] }
 }
 
-$OllamaVersion = Get-LatestOllamaVersion
+$OllamaVersion = if ($aiManaged) { Get-LatestOllamaVersion } else { $null }
 
-if (-not $OllamaVersion -and $haveVer) {
+if (-not $aiManaged) {
+    # One announcement, and it is a phase of its own in the launcher: the user
+    # must see WHY the longest part of the install did not happen. The local
+    # model store is deliberately left alone -- a switch back to the managed
+    # runtime then costs no download, and silently deleting several GB the user
+    # paid for is not a side effect of ticking a box.
+    Write-Host "[*] External AI endpoint configured -- skipping the isolated Ollama, its" -ForegroundColor Cyan
+    Write-Host "    server and every model download. Existing local models are kept." -ForegroundColor Cyan
+} elseif (-not $OllamaVersion -and $haveVer) {
     # Offline or GitHub blocked: an installed runtime is worth more than a failed
     # upgrade, so we keep it and try again on the next launch.
     Write-Warn "Could not resolve the latest Ollama version -- keeping installed $haveVer."
@@ -208,9 +238,9 @@ function Test-OllamaUp {
     }
 }
 
-if ((Test-Path $ollamaExe) -and (Test-OllamaUp)) {
+if ($aiManaged -and (Test-Path $ollamaExe) -and (Test-OllamaUp)) {
     Write-Host "[*] Our Ollama server already running on $($env:OLLAMA_HOST)." -ForegroundColor Gray
-} elseif (Test-Path $ollamaExe) {
+} elseif ($aiManaged -and (Test-Path $ollamaExe)) {
     Write-Host "[*] Starting isolated Ollama server on $($env:OLLAMA_HOST) ..."
     try {
         $ollamaProcess = Start-Process -FilePath $ollamaExe -ArgumentList "serve" -WorkingDirectory $env:TEMP -PassThru -WindowStyle Hidden -ErrorAction Stop
@@ -259,8 +289,10 @@ if ((Test-Path $ollamaExe) -and (Test-OllamaUp)) {
 # reliance on the user having seen the intervening release. (Mirrors setup.sh.)
 $desiredModels = @($ReasoningModel)
 
-Write-Host "[*] Models (isolated store: $aiModels):" -ForegroundColor Gray
-foreach ($m in $desiredModels) { Write-Host "    - $m" -ForegroundColor Gray }
+if ($aiManaged) {
+    Write-Host "[*] Models (isolated store: $aiModels):" -ForegroundColor Gray
+    foreach ($m in $desiredModels) { Write-Host "    - $m" -ForegroundColor Gray }
+}
 
 # Local manifest digest (= 'ollama list' ID) for an installed tag, or $null.
 function Get-LocalDigest($model) {
@@ -383,7 +415,7 @@ function Write-CleanupHeader {
     }
 }
 
-if (Test-Path $ollamaExe) {
+if ($aiManaged -and (Test-Path $ollamaExe)) {
     $allPresent = $true
     # 1-based position + total in the desired set, appended to each "> Pulling"
     # line as "(idx/total)". The launcher reads this to render one pip per model
@@ -503,7 +535,10 @@ if (Test-Path $ollamaExe) {
             Write-Warn "Could not canonicalize $aiModels -- store hygiene skipped."
         }
     }
-} else {
+} elseif ($aiManaged) {
+    # Only a problem when the runtime is OURS to install. With an external
+    # endpoint there is deliberately no binary here, and warning about it would
+    # end the run in "Setup completed with warnings" over a non-event.
     Write-Warn "Isolated Ollama binary missing -- skipping model install."
 }
 

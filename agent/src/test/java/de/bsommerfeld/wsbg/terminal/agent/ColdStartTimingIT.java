@@ -44,7 +44,8 @@ class ColdStartTimingIT {
             ApplicationEventBus bus = new ApplicationEventBus();
             RedditRepository redditRepo = new RedditRepository();
             AgentRepository agentRepo = new AgentRepository();
-            AgentBrain brain = new AgentBrain(config, bus, new OllamaServerManager(), new LlmGate());
+            AgentBrain brain = new AgentBrain(config, bus, new OllamaServerManager(), new LlmGate(),
+                    new AiHealth(bus));
             ClusterRegistry registry = new ClusterRegistry();
             WebFetcher house = new HouseFetcher(java.util.Set.of(new DirectTransport()));
             RedditFetch direct = new RedditFetch() {

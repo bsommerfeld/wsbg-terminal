@@ -73,7 +73,7 @@ class PipelineSmokeIT {
             AgentRepository agentRepo = new AgentRepository();
             OllamaServerManager osm = new OllamaServerManager();
             LlmGate gate = new LlmGate();
-            AgentBrain brain = new AgentBrain(config, bus, osm, gate);
+            AgentBrain brain = new AgentBrain(config, bus, osm, gate, new AiHealth(bus));
             // Boot the private Ollama server exactly as production does
             // (AppLifecycle → AgentBrain.start() → OllamaServerManager.ensureRunning);
             // relying on a leftover server from a running app made the smoke die

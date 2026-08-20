@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <parent>
+        <artifactId>wsbg-terminal</artifactId>
+        <groupId>de.bsommerfeld</groupId>
+        <version>${revision}</version>
+    </parent>
+    <modelVersion>4.0.0</modelVersion>
+
+    <artifactId>web</artifactId>
+    <packaging>pom</packaging>
+
+    <!-- The web world, in two halves: api carries the contracts (fetch seam,
+         sources, gateway, facts), impl the machinery and every source. -->
+    <modules>
+        <module>api</module>
+        <module>impl</module>
+    </modules>
+
+</project>

@@ -54,7 +54,7 @@ class PipelineStagesIT {
         redditRepo = new RedditRepository();
         agentRepo = new AgentRepository();
         LlmGate gate = new LlmGate();
-        brain = new AgentBrain(config, bus, new OllamaServerManager(), gate);
+        brain = new AgentBrain(config, bus, new OllamaServerManager(), gate, new AiHealth(bus));
         registry = new ClusterRegistry();
         engine = new ClusterEngine(registry);
         editorial = new EditorialAgent(brain, gate, registry, agentRepo, redditRepo, bus,

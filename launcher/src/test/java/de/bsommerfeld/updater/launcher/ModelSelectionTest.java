@@ -10,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -160,6 +161,51 @@ class ModelSelectionTest {
 
         writeConfig(dir, "[agent]", "agent.model-tag = \"\"");
         assertEquals("", ModelSelection.configuredModelTag(dir));
+    }
+
+    @Test
+    void defaultsToTheManagedRuntime(@TempDir Path dir) throws IOException {
+        assertTrue(ModelSelection.isManagedAi(dir), "no config at all");
+
+        writeConfig(dir, "[agent]", "agent.model-tag = \"gemma4:e4b\"");
+        assertTrue(ModelSelection.isManagedAi(dir), "config without the key");
+
+        writeConfig(dir, "[agent]", "agent.endpoint-mode = \"managed\"");
+        assertTrue(ModelSelection.isManagedAi(dir));
+    }
+
+    @Test
+    void readsTheExternalEndpointMode(@TempDir Path dir) throws IOException {
+        writeConfig(dir, "[agent]", "agent.endpoint-mode = \"remote\"");
+        assertFalse(ModelSelection.isManagedAi(dir));
+
+        writeConfig(dir, "[agent]", "endpoint-mode = \"remote\"");
+        assertFalse(ModelSelection.isManagedAi(dir), "bare key form");
+    }
+
+    @Test
+    void endpointModelDoesNotMasqueradeAsEndpointMode(@TempDir Path dir) throws IOException {
+        // "endpoint-model" starts with "endpoint-mode". A prefix-only line scan
+        // reads the model tag as the mode, decides "not remote", and hands the
+        // user the multi-GB install they explicitly opted out of. The '=' is
+        // what tells the two keys apart.
+        writeConfig(dir, "[agent]",
+                "agent.endpoint-model = \"qwen3:32b\"",
+                "agent.endpoint-mode = \"remote\"");
+        assertFalse(ModelSelection.isManagedAi(dir));
+    }
+
+    @Test
+    void externalEndpointSkipsTheModelChoiceEntirely(@TempDir Path dir) throws IOException {
+        writeConfig(dir, "[agent]", "agent.endpoint-mode = \"remote\"");
+        ModelSelection.Result result = ModelSelection.resolve(dir, new SessionLog(dir));
+
+        assertFalse(result.managedAi());
+        assertEquals("", result.effectiveTag(), "nothing is installed");
+        assertTrue(result.userChosen(), "there is no choice left to ask about");
+        // The recommendation file must NOT be refreshed for an install that
+        // will not happen — a later UI would render it as advice.
+        assertFalse(Files.exists(dir.resolve(ModelSelection.RECOMMENDATION_FILE)));
     }
 
     @Test

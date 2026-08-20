@@ -46,6 +46,7 @@ final class LauncherI18n {
             Map.entry("Installing OCR runtime", "Texterkennung installieren"),
             Map.entry("Installing fonts", "Schriftarten installieren"),
             Map.entry("Cleaning up old models", "Räume Altlasten weg"),
+            Map.entry("Using external AI endpoint", "Externer KI-Endpunkt"),
             Map.entry("Choose your AI model", "Wähle dein KI-Modell"),
             Map.entry("Quality", "Qualität"),
             Map.entry("Speed", "Tempo"),
@@ -55,6 +56,20 @@ final class LauncherI18n {
             Map.entry("Too large", "Zu groß"),
             // "MLX" itself is a product name and stays untranslated.
             Map.entry("Without MLX", "Ohne MLX"),
+            // The advanced sheet: an external AI endpoint instead of the
+            // managed local runtime.
+            Map.entry("Advanced", "Erweitert"),
+            Map.entry("Your own AI server", "Eigener KI-Server"),
+            Map.entry("Address", "Adresse"),
+            Map.entry("Model", "Modell"),
+            Map.entry("Key", "Schlüssel"),
+            Map.entry("Test", "Testen"),
+            Map.entry("Asking...", "Frage nach ..."),
+            Map.entry("Answers", "Antwortet"),
+            Map.entry("No answer", "Keine Antwort"),
+            Map.entry("Nothing is downloaded then", "Dann wird nichts geladen"),
+            Map.entry("Not suited to hosted providers. Costs can vary widely.",
+                    "Nicht für Remote-Anbieter geeignet. Kosten können stark variieren."),
             Map.entry("Which updates do you want?", "Welche Updates willst du?"),
             Map.entry("Stable", "Stabil"),
             Map.entry("Risk management", "Risikomanagement"),

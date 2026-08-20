@@ -11,6 +11,7 @@ import { initSettings } from './chrome/settings.js';
 import { initChangelog } from './chrome/changelog.js';
 import { initNewsSources } from './chrome/news-sources.js';
 import { initAiNotice } from './chrome/ai-notice.js';
+import { initAiStatus, applyAiStatus } from './chrome/ai-status.js';
 import { initHeadlineFilter } from './chrome/filter-popover.js';
 import { initWidgetNav } from './chrome/widget-nav.js';
 import { initWidgetRail } from './chrome/widget-rail.js';
@@ -73,6 +74,9 @@ const WIDGETS = [
       renderFearGreedDetail(document.getElementById('fg-detail'), p);
     } },
   { topic: 'reddit-status',  relang: true, render: p => applyRedditStatus(p) },
+  // AI endpoint health — the red titlebar alarm. relang: the overlay copy is
+  // translated, so a live language switch must re-paint it from the cache.
+  { topic: 'ai-status',      relang: true, render: p => applyAiStatus(p) },
   { topic: 'os-appearance',                render: p => { if (p) setSystemAppearance(p.mode); } },
 ];
 
@@ -139,6 +143,7 @@ safeInit('widget-nav', () => initWidgetNav());
 safeInit('changelog', () => initChangelog(socket));
 safeInit('news-sources', () => initNewsSources());
 safeInit('ai-notice', () => initAiNotice());
+safeInit('ai-status', () => initAiStatus());
 safeInit('headline-filter', () => initHeadlineFilter());
 safeInit('widget-rail', () => initWidgetRail(socket));
 // AFTER the rail: the search button's own click handler must run after the

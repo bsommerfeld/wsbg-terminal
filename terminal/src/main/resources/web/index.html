@@ -78,6 +78,17 @@
          end of the window controls so the chrome looks symmetric. The settings
          gear opens the Settings view (which now hosts the theme switch). -->
     <div class="tb-actions">
+      <!-- AI-endpoint alarm (red): hidden while the model server answers.
+           Shown when it stops - which with an EXTERNAL endpoint is a state only
+           the user can fix (box asleep, address mistyped, model not pulled), so
+           it cannot stay a log line. Click opens the ai-status overlay naming
+           the address and the server's own message. -->
+      <button class="iconbtn ai-status-btn js-ai-status" hidden
+              aria-haspopup="dialog"
+              title="KI-Endpunkt antwortet nicht" aria-label="KI-Status öffnen"
+              data-i18n-title="ai.status.short" data-i18n-aria-label="ai.status.aria">
+        <svg viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      </button>
       <!-- Update-available indicator (toward the window centre): hidden
            until the backend reports a newer release while
            auto-update is off. Click closes the app cleanly and relaunches the
@@ -549,6 +560,176 @@
           </div>
         </section>
 
+        <!-- Advanced: which AI runs the terminal.
+             A DISCLOSURE, not a conditional block. Everything inside is always
+             present; the switch only enables the endpoint fields rather than
+             conjuring them into existence. Rows that appear and vanish as you
+             tick things read as unfinished, and they move the controls under
+             the pointer. -->
+        <section class="settings-cat settings-ai">
+          <button class="cat-toggle js-ai-toggle" type="button" aria-expanded="false"
+                  aria-controls="settings-advanced">
+            <h2 class="cat-title" data-i18n="settings.ai.title">Erweitert</h2>
+            <svg class="cat-chevron" viewBox="0 0 24 24" aria-hidden="true">
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </button>
+
+          <div class="cat-body" id="settings-advanced" hidden>
+            <!-- Plain lead-in, not a warning box: on a machine in your own
+                 network this is simply how it works. It is worth stating before
+                 the fields, not shouting after them. -->
+            <p class="cat-lead" data-i18n="settings.ai.lead">Standardmäßig läuft die KI auf diesem Rechner. Zeigst du das Terminal auf einen eigenen Server, gehen die verarbeiteten Inhalte an diese Adresse - im eigenen Netz ist das gewollt, bei einem fremden Anbieter verlassen sie deinen Rechner.</p>
+
+            <div class="setting-row">
+              <div class="setting-label">
+                <div class="setting-name-row">
+                  <span class="setting-name" data-i18n="settings.ai.model.name">KI-Modell</span>
+                  <button class="setting-info js-info" type="button" aria-expanded="false" title="Mehr Infos"
+                          aria-label="Mehr Infos" data-i18n-title="settings.more.aria" data-i18n-aria-label="settings.more.aria">
+                    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                  </button>
+                </div>
+                <span class="setting-hint" data-i18n="settings.ai.model.hint">Größer heißt klüger und langsamer. Grün liegt hier, gelb wird beim nächsten Start geladen.</span>
+                <p class="setting-more" hidden data-i18n="settings.ai.model.more">Der Wechsel passiert beim nächsten Start: das neue Modell wird geladen, das alte weggeräumt. Bis dahin läuft das bisherige weiter.</p>
+                <!-- The truth about right now. Filled by settings.js whenever
+                     the running model is not the configured one - which is what
+                     picking a model you do not have on disk looks like. -->
+                <span class="setting-state js-ai-model-state" hidden></span>
+                <!-- Only the launcher can fetch a model, and only on a start.
+                     A sentence saying so leaves the work with the user; the
+                     button does it. -->
+                <div class="restart-cta js-restart-cta" hidden>
+                  <button class="restart-btn js-restart" type="button"
+                          data-i18n="settings.ai.model.restart.btn">Jetzt neu starten</button>
+                  <span class="setting-hint" data-i18n="settings.ai.model.restart.hint">Lädt das gewählte Modell und startet neu.</span>
+                </div>
+              </div>
+              <!-- A custom listbox, not a <select>: an option element cannot
+                   hold an icon or a chip, and the one-line string it forced
+                   ("Gemma 4 · 26b - 18 GB - wird geladen") was cut off in the
+                   closed field - the very part that said whether the model is
+                   here. The popup is anchored to the right edge and opens
+                   leftwards over the label column, so it can be as wide as it
+                   needs without ever leaving the panel. -->
+              <div class="model-picker js-model-picker">
+                <button class="model-trigger js-model-trigger" type="button"
+                        aria-haspopup="listbox" aria-expanded="false"></button>
+                <ul class="model-list js-model-list" role="listbox" hidden></ul>
+              </div>
+            </div>
+
+            <div class="setting-row">
+              <div class="setting-label">
+                <div class="setting-name-row">
+                  <span class="setting-name" data-i18n="settings.ai.remote.name">Eigener KI-Server</span>
+                  <button class="setting-info js-info" type="button" aria-expanded="false" title="Mehr Infos"
+                          aria-label="Mehr Infos" data-i18n-title="settings.more.aria" data-i18n-aria-label="settings.more.aria">
+                    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                  </button>
+                  <button class="setting-info setting-warn js-warn" type="button" aria-expanded="false"
+                          title="Warnung" aria-label="Warnung anzeigen"
+                          data-i18n-title="settings.warn.aria" data-i18n-aria-label="settings.warn.aria">
+                    <svg viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                  </button>
+                </div>
+                <span class="setting-hint" data-i18n="settings.ai.remote.hint">Statt der eingebauten KI eine Maschine im Netzwerk nutzen.</span>
+                <p class="setting-more" hidden data-i18n="settings.ai.remote.more">Das Terminal lädt dann kein Modell mehr herunter und startet keinen eigenen KI-Server. Es adressiert nur noch - starten, stoppen und aktuell halten musst du die Maschine selbst.</p>
+                <!-- The warning rides as a glyph, not as prose: it concerns the
+                     minority who would point this at a paid provider, and a
+                     standing paragraph would tax everyone else for it. -->
+                <p class="setting-warn-text" hidden data-i18n="settings.ai.remote.warn">Nicht für Remote-Anbieter geeignet. Kosten können stark variieren.</p>
+              </div>
+              <label class="checkbox">
+                <input type="checkbox" class="js-ai-remote">
+                <span class="checkbox-box"></span>
+              </label>
+            </div>
+
+            <div class="setting-row">
+              <div class="setting-label">
+                <span class="setting-name" data-i18n="settings.ai.url.name">Adresse</span>
+                <span class="setting-hint" data-i18n="settings.ai.url.hint">Host und Port, z. B. 192.168.1.20:11434</span>
+              </div>
+              <input class="input js-ai-url" type="text" spellcheck="false" autocomplete="off"
+                     placeholder="192.168.1.20:11434">
+            </div>
+
+            <div class="setting-row">
+              <div class="setting-label">
+                <div class="setting-name-row">
+                  <span class="setting-name" data-i18n="settings.ai.api.name">Schnittstelle</span>
+                  <button class="setting-info js-info" type="button" aria-expanded="false" title="Mehr Infos"
+                          aria-label="Mehr Infos" data-i18n-title="settings.more.aria" data-i18n-aria-label="settings.more.aria">
+                    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                  </button>
+                </div>
+                <span class="setting-hint" data-i18n="settings.ai.api.hint">Setzt der Verbindungstest selbst.</span>
+                <p class="setting-more" hidden data-i18n="settings.ai.api.more">Ollama spricht seine eigene Schnittstelle, alles andere (llama.cpp, vLLM, LM Studio, Anbieter im Netz) die von OpenAI. Auf der OpenAI-Schnittstelle lassen sich das Nachdenken des Modells und die Fenstergröße nicht steuern - was das Modell an verstecktem Denken verbraucht, verbraucht es.</p>
+              </div>
+              <select class="select js-ai-api">
+                <option value="ollama">Ollama</option>
+                <option value="openai" data-i18n="settings.ai.api.openai">OpenAI-kompatibel</option>
+              </select>
+            </div>
+
+            <div class="setting-row">
+              <div class="setting-label">
+                <span class="setting-name" data-i18n="settings.ai.model2.name">Modell</span>
+                <span class="setting-hint" data-i18n="settings.ai.model2.hint">Der Tag auf dieser Maschine. Nach einem Test kannst du aus der Liste wählen.</span>
+              </div>
+              <!-- A datalist, not a select: the list is only known AFTER a
+                   successful test, and a field that refuses input until then
+                   would be unusable on a server that is briefly asleep. -->
+              <input class="input js-ai-model" type="text" spellcheck="false" autocomplete="off"
+                     list="ai-endpoint-models" placeholder="qwen3:32b">
+              <datalist id="ai-endpoint-models"></datalist>
+            </div>
+
+            <div class="setting-row">
+              <div class="setting-label">
+                <span class="setting-name" data-i18n="settings.ai.auth.name">Zugangsschlüssel</span>
+                <span class="setting-hint" data-i18n="settings.ai.auth.hint">Nur nötig, wenn ein Proxy davor einen verlangt. Ollama selbst hat keinen.</span>
+              </div>
+              <!-- type=password: editable but not readable over a shoulder or in
+                   a screenshot. Stored in plain text in the config either way. -->
+              <input class="input js-ai-auth" type="password" autocomplete="off"
+                     placeholder="Bearer ...">
+            </div>
+
+            <div class="setting-row">
+              <div class="setting-label">
+                <div class="setting-name-row">
+                  <span class="setting-name" data-i18n="settings.ai.ctx.name">Kontextfenster</span>
+                  <button class="setting-info js-info" type="button" aria-expanded="false" title="Mehr Infos"
+                          aria-label="Mehr Infos" data-i18n-title="settings.more.aria" data-i18n-aria-label="settings.more.aria">
+                    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                  </button>
+                </div>
+                <span class="setting-hint" data-i18n="settings.ai.ctx.hint">0 = Standard (8192).</span>
+                <p class="setting-more" hidden data-i18n="settings.ai.ctx.more">Wie viel Text das Modell auf einmal sieht. Bei der eingebauten KI rechnet das Terminal den Wert aus dem Arbeitsspeicher dieses Rechners aus - über den fremden weiß es nichts, also entscheidest du.</p>
+              </div>
+              <input class="input js-ai-ctx" type="number" min="0" step="1024" placeholder="0">
+            </div>
+
+            <div class="setting-row">
+              <div class="setting-label">
+                <span class="setting-name" data-i18n="settings.ai.slots.name">Parallele Anfragen</span>
+                <span class="setting-hint" data-i18n="settings.ai.slots.hint">0 = Standard (2). So viele, wie der Server gleichzeitig bedient.</span>
+              </div>
+              <input class="input js-ai-slots" type="number" min="0" max="16" step="1" placeholder="0">
+            </div>
+
+            <div class="setting-row">
+              <div class="setting-label">
+                <span class="setting-name" data-i18n="settings.ai.test.name">Verbindung testen</span>
+                <span class="setting-hint js-ai-test-result" data-i18n="settings.ai.test.hint">Fragt die Maschine, ob sie antwortet - und welche Modelle sie hat.</span>
+              </div>
+              <button class="plain-btn js-ai-test" data-i18n="settings.ai.test.btn">Testen</button>
+            </div>
+          </div>
+        </section>
+
         <!-- Destructive zone, set apart at the very bottom. -->
         <section class="settings-cat settings-danger">
           <h2 class="cat-title" data-i18n="settings.data.title">Daten</h2>
@@ -645,6 +826,39 @@
     </header>
     <div class="overlay-scroll">
       <ul class="news-src-list"></ul>
+    </div>
+  </div>
+</div>
+
+<!-- AI-status overlay: opened by the red titlebar alarm. Says which address
+     failed and what the server answered - the address IS the failure often
+     enough (a typo) that showing it is the whole point. The body text switches
+     on state (unreachable / rejected) and on whether the endpoint is our own
+     managed instance or the user's own machine; ai-status.js picks the keys. -->
+<div class="overlay ai-status-overlay" id="ai-status-overlay" hidden role="dialog" aria-modal="true"
+     aria-label="KI-Endpunkt" data-i18n-aria-label="ai.status.overlay.title">
+  <div class="overlay-panel overlay-panel-sm">
+    <header class="overlay-head">
+      <div class="overlay-head-text">
+        <h1 class="overlay-title js-ai-status-title" data-i18n="ai.status.overlay.title">KI-Endpunkt</h1>
+      </div>
+      <button class="overlay-close" title="Schließen" aria-label="Schließen"
+              data-i18n-title="overlay.close" data-i18n-aria-label="overlay.close">
+        <svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+      </button>
+    </header>
+    <div class="overlay-scroll">
+      <div class="ai-status-body">
+        <p class="js-ai-status-text"></p>
+        <dl class="ai-status-facts">
+          <dt data-i18n="ai.status.endpoint">Adresse</dt>
+          <dd class="js-ai-status-endpoint"></dd>
+          <dt data-i18n="ai.status.reason">Meldung</dt>
+          <!-- Verbatim, never translated: this is the server's own wording. -->
+          <dd class="js-ai-status-reason"></dd>
+        </dl>
+        <p class="ai-status-hint js-ai-status-hint"></p>
+      </div>
     </div>
   </div>
 </div>

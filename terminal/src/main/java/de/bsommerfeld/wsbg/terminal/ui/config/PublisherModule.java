@@ -10,6 +10,7 @@ import de.bsommerfeld.wsbg.terminal.ui.bridge.FjNewsPublisher;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.HeadlinePublisher;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.MarketHoursPublisher;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.OsAppearancePublisher;
+import de.bsommerfeld.wsbg.terminal.ui.bridge.AiHealthPublisher;
 import de.bsommerfeld.wsbg.terminal.ui.bridge.RedditHealthPublisher;
 
 /**
@@ -28,6 +29,9 @@ final class PublisherModule extends AbstractModule {
         bind(FjNewsPublisher.class).asEagerSingleton();
         bind(MarketHoursPublisher.class).asEagerSingleton();
         bind(RedditHealthPublisher.class).asEagerSingleton();
+        // AI endpoint health — matters most with an external endpoint, where
+        // only the user can fix a dead one.
+        bind(AiHealthPublisher.class).asEagerSingleton();
         // EurUsdMonitorService must come before EurUsdPublisher so the
         // publisher can register its listener against a running poll loop.
         bind(EurUsdMonitorService.class).asEagerSingleton();

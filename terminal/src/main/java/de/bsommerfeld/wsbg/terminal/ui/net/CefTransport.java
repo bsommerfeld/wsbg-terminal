@@ -10,8 +10,8 @@ import java.util.Map;
 /**
  * The {@link FetchUtil#BROWSER} transport of the new world: adapts the CEF
  * joker ({@link CefWebFetcher} — hidden Chromium tab per origin, real session
- * and cookies) onto the {@code web-api} {@link Transport} contract. The
- * terminal contributes this into web-impl's transport multibinder at
+ * and cookies) onto the {@code web/api} {@link Transport} contract. The
+ * terminal contributes this into web/impl's transport multibinder at
  * bootstrap, because only the terminal owns the embedded browser; without it
  * the house fetcher simply skips every BROWSER mode.
  *

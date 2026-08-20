@@ -68,6 +68,41 @@ class SetupScriptGcTest {
     }
 
     // ------------------------------------------------------------------
+    // config_endpoint_mode: the standalone-run fallback
+    // ------------------------------------------------------------------
+
+    @Test
+    void readsTheEndpointModeFromConfigToml(@TempDir Path dir) throws Exception {
+        // Without the launcher there is no WSBG_ENDPOINT_MODE, so the script
+        // reads the key itself. Defaulting to "managed" instead would hand a
+        // remote user the multi-GB install they opted out of.
+        assertEquals("remote", mode(dir, "[agent]", "agent.endpoint-mode = \"remote\""));
+        assertEquals("remote", mode(dir, "[agent]", "endpoint-mode = \"remote\""));
+        assertEquals("managed", mode(dir, "[agent]", "agent.endpoint-mode = \"managed\""));
+        assertEquals("", mode(dir, "[agent]", "agent.model-tag = \"gemma4:e4b\""));
+    }
+
+    @Test
+    void endpointModelIsNotMistakenForEndpointMode(@TempDir Path dir) throws Exception {
+        // "endpoint-model" starts with "endpoint-mode" — a prefix-only match
+        // would read the model tag as the mode and silently install. The '='
+        // in the pattern is what separates them. (Same trap as the launcher's
+        // Java line scan, pinned on both sides.)
+        assertEquals("remote", mode(dir, "[agent]",
+                "agent.endpoint-model = \"qwen3:32b\"",
+                "agent.endpoint-mode = \"remote\""));
+    }
+
+    /** Runs the script's real config_endpoint_mode against a written config.toml. */
+    private static String mode(Path dir, String... configLines) throws Exception {
+        Path cfg = dir.resolve("config.toml");
+        Files.write(cfg, List.of(configLines));
+        return bash(fn("config_endpoint_mode"),
+                "CONFIG_FILE='" + cfg + "'",
+                "config_endpoint_mode").strip();
+    }
+
+    // ------------------------------------------------------------------
     // safe_store_rm: the absolute boundary
     // ------------------------------------------------------------------
 

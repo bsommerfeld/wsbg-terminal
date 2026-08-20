@@ -31,6 +31,15 @@ final class ModelSelection {
     static final String MODEL_ENV = "WSBG_REASONING_MODEL";
 
     /**
+     * Env var telling the setup scripts whether the AI runtime is ours to
+     * install ({@code managed}) or the user's own machine somewhere else
+     * ({@code remote}). The scripts read {@code config.toml} themselves as a
+     * fallback for standalone runs, but the launcher always sets it - the two
+     * must agree, so the launcher's answer is the one that travels.
+     */
+    static final String MODE_ENV = "WSBG_ENDPOINT_MODE";
+
+    /**
      * Machine-readable probe result — a diagnostic record of what THIS
      * launcher run saw and resolved. NOT a data feed for other UIs: a file
      * written "whenever the launcher last ran" goes stale the moment the app
@@ -43,19 +52,36 @@ final class ModelSelection {
 
     /**
      * @param effectiveTag   the tag the setup script installs and the runtime uses
+     *                       (empty with an external endpoint - nothing is installed)
      * @param recommendedTag the hardware recommendation (platform-specific)
      * @param userChosen     whether effectiveTag came from config.toml
-     * @param totalRamGb     probed machine RAM (0 = unprobeable)
+     * @param totalRamGb     probed machine RAM (0 = unprobeable, and with an
+     *                       external endpoint: unprobed, because it decides nothing)
      * @param appleSilicon   whether the MLX twins apply on this machine
+     * @param managedAi      whether the AI runtime is ours to install. False means
+     *                       the user pointed the terminal at their own server:
+     *                       no binary, no model, no model-choice screen - THIS
+     *                       machine's memory then says nothing about what runs.
      */
     record Result(String effectiveTag, String recommendedTag, boolean userChosen,
-            long totalRamGb, boolean appleSilicon) {
+            long totalRamGb, boolean appleSilicon, boolean managedAi) {
     }
 
     private ModelSelection() {
     }
 
     static Result resolve(Path appDir, SessionLog log) {
+        if (!isManagedAi(appDir)) {
+            // Nothing to grade and nothing to recommend: no model of ours goes
+            // on this machine. The probe is skipped rather than run-and-ignored,
+            // and hardware-recommendation.json is deliberately NOT refreshed -
+            // a recommendation for an install that will not happen is a lie a
+            // later UI would happily render.
+            log.log("AI runtime: external endpoint configured (agent.endpoint-mode=remote) "
+                    + "- skipping hardware check, model choice and model install");
+            return new Result("", "", true, 0, false, false);
+        }
+
         HardwareProbe hw = HardwareProbe.probe();
         long ramGb = hw.totalMemoryGb();
         boolean mlx = hw.isAppleSilicon();
@@ -79,7 +105,18 @@ final class ModelSelection {
 
         writeRecommendationFile(appDir, hw, ramGb, mlx, recommendedTag, configured, effectiveTag, log);
 
-        return new Result(effectiveTag, recommendedTag, userChosen, ramGb, mlx);
+        return new Result(effectiveTag, recommendedTag, userChosen, ramGb, mlx, true);
+    }
+
+    /**
+     * Whether the AI runtime is ours to install - {@code agent.endpoint-mode}
+     * from {@code config.toml}, anything but {@code remote} meaning yes.
+     * Same tiny line-scan as {@link #configuredModelTag}: the launcher must
+     * start even on a half-written config, and an unreadable file simply means
+     * the managed default.
+     */
+    static boolean isManagedAi(Path appDir) {
+        return !"remote".equals(configuredValue(appDir, "endpoint-mode"));
     }
 
     /**
@@ -89,23 +126,40 @@ final class ModelSelection {
      * {@code ollama pull} verbatim.
      */
     static String configuredModelTag(Path appDir) {
+        String value = configuredValue(appDir, "model-tag");
+        return ModelCatalog.isDeployedFamily(value) ? value : "";
+    }
+
+    /**
+     * Reads one {@code agent.*} key out of {@code config.toml}, lower-cased and
+     * unquoted, or {@code ""}. jshepherd writes the fully-dotted key inside
+     * {@code [agent]}; the bare form is accepted too so a hand-edited config
+     * still works.
+     */
+    private static String configuredValue(Path appDir, String key) {
         Path configFile = appDir.resolve("config.toml");
         if (!Files.exists(configFile)) return "";
         try {
             for (String line : Files.readAllLines(configFile)) {
                 String trimmed = line.strip();
-                // jshepherd writes the fully-dotted key inside [agent]; accept
-                // the bare form too so a hand-edited config still works.
-                if (trimmed.startsWith("agent.model-tag") || trimmed.startsWith("model-tag")) {
-                    int eq = trimmed.indexOf('=');
-                    if (eq > 0) {
-                        String value = trimmed.substring(eq + 1).strip()
-                                .replace("\"", "").replace("'", "")
-                                .toLowerCase(Locale.ROOT);
-                        if (ModelCatalog.isDeployedFamily(value)) return value;
-                        return "";
-                    }
+                String rest;
+                if (trimmed.startsWith("agent." + key)) {
+                    rest = trimmed.substring(("agent." + key).length());
+                } else if (trimmed.startsWith(key)) {
+                    rest = trimmed.substring(key.length());
+                } else {
+                    continue;
                 }
+                // The '=' is what separates a key from a LONGER key that merely
+                // shares its prefix - "endpoint-model" starts with
+                // "endpoint-mode", so a prefix match alone would read the model
+                // tag as the mode and quietly install a model the user opted out
+                // of. Same trap for any future key pair.
+                rest = rest.strip();
+                if (!rest.startsWith("=")) continue;
+                return rest.substring(1).strip()
+                        .replace("\"", "").replace("'", "")
+                        .toLowerCase(Locale.ROOT);
             }
         } catch (IOException ignored) {
         }

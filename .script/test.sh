@@ -3,7 +3,7 @@ set -e
 
 cd "$(dirname "$0")/.."
 
-MODULES="core,database,reddit,web-api,web-impl,agent,updater,launcher"
+MODULES="core,database,reddit,web/api,web/impl,agent,updater,launcher"
 
 # Optional: single module via argument, e.g. ./test.sh agent
 if [ -n "$1" ]; then

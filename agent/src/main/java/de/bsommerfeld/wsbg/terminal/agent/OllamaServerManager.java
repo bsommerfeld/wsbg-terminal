@@ -96,47 +96,81 @@ public final class OllamaServerManager {
         return List.of(ai.resolve("bin").resolve("ollama"), ai.resolve("ollama"));
     }
 
+    /**
+     * The model tags actually lying in our isolated store, as
+     * {@code name:tag} - read off the manifest tree, not from the server, so
+     * the answer holds before it is up and while it is down.
+     *
+     * <p>The settings' model list needs this: it offers every tier the
+     * installer CAN fetch, and without knowing which are already here, picking
+     * one looks like it did nothing. Worse, a tag that is not here resolves at
+     * the next start to an installed sibling ({@link ChatModelFactory}) - so
+     * the panel would name one model while another runs.
+     */
+    public static java.util.Set<String> installedModelTags() {
+        return installedModelTags(StorageUtils.getAppDataDir());
+    }
+
+    /** Test seam: the same read against an explicit app data directory. */
+    static java.util.Set<String> installedModelTags(Path appDataDir) {
+        Path root = modelsDir(appDataDir).resolve("manifests");
+        java.util.Set<String> tags = new java.util.TreeSet<>();
+        if (!Files.isDirectory(root)) return tags;
+        // <manifests>/<registry>/<namespace>/<name>/<tag>
+        try (var paths = Files.walk(root, 4)) {
+            paths.filter(Files::isRegularFile).forEach(file -> {
+                Path name = file.getParent() == null ? null : file.getParent().getFileName();
+                if (name != null) tags.add(name + ":" + file.getFileName());
+            });
+        } catch (Exception e) {
+            LOG.debug("Could not read the model store: {}", e.getMessage());
+        }
+        return tags;
+    }
+
     /** Our isolated model store ({@code OLLAMA_MODELS}). */
     static Path modelsDir(Path appDataDir) {
         return appDataDir.resolve(OLLAMA_DIR).resolve("models");
     }
 
     /**
-     * Concurrent request slots for the resident model — both Ollama's {@code NUM_PARALLEL} AND the app-side
-     * LLM gate ({@link AgentBrain}) read this, so they always agree. Fixed at 2.
-     *
-     * <p>3 was tried (RAM-adaptive) on the theory that the dominant compose gate-wait was a
-     * permit shortage. Profiling refuted it: the resident model is GPU-bound, so at 2 slots the GPU is
-     * already ~saturated — a 3rd concurrent request just time-slices the GPU, so every call's
-     * gen-time rose (compose 8→12s, extraction 13→28s), gate-hold grew with it, and net
-     * throughput FELL (4.0→3.5 composes/min). The real lever is less GPU work per call
-     * (smaller prefill / killing the JSON whitespace-loop), not more parallelism.
+     * Concurrent request slots for OUR server's resident model — what we pass as
+     * {@code OLLAMA_NUM_PARALLEL}. The number itself, and why it is 2, lives in
+     * {@link OllamaEndpoint#PARALLELISM}: it is also what the KV-cache maths and
+     * the app-side gate read, and a figure three places need is a figure that
+     * must not be written down three times.
      */
     public static int llmParallelism() {
-        return 2;
+        return OllamaEndpoint.PARALLELISM;
     }
 
     /**
      * Ensures our isolated Ollama server on {@link #PORT} is reachable, starting
      * it from the bundled binary if needed.
      *
-     * @param baseUrl our private endpoint ({@link #BASE_URL}); a reachable server
-     *                here is always one we started, never the user's (which runs
-     *                on the default 11434)
+     * <p><b>Takes no address on purpose.</b> It used to accept any base URL,
+     * which made a method that <em>starts, adopts and later kills</em> a process
+     * aimable at a server we do not own. With the external-endpoint setting that
+     * stopped being theoretical: a user pointing the app at {@code
+     * localhost:11434} - the likeliest thing to type, because that is where a
+     * system Ollama listens - would have had their own instance claimed on start
+     * and shut down on exit. The address is therefore fixed to {@link #BASE_URL},
+     * and the remote path never calls this at all (see {@code AgentBrain#start}).
+     *
      * @throws IllegalStateException if the server cannot be reached after retries
      */
-    public void ensureRunning(String baseUrl) {
-        LOG.info("Checking our Ollama server at {}...", baseUrl);
+    public void ensureRunning() {
+        LOG.info("Checking our Ollama server at {}...", BASE_URL);
 
-        if (isReachable(baseUrl)) {
-            adoptRunningServer(baseUrl);
+        if (isReachable(BASE_URL)) {
+            adoptRunningServer(BASE_URL);
             return;
         }
 
-        LOG.warn("Our Ollama server not reachable at {} — starting isolated instance", baseUrl);
+        LOG.warn("Our Ollama server not reachable at {} — starting isolated instance", BASE_URL);
         startServer();
-        waitForServer(baseUrl);
-        LOG.info("Isolated Ollama server is ready at {}", baseUrl);
+        waitForServer(BASE_URL);
+        LOG.info("Isolated Ollama server is ready at {}", BASE_URL);
     }
 
     /**

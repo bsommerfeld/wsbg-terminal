@@ -1,5 +1,6 @@
 package de.bsommerfeld.wsbg.terminal.agent;
 
+import de.bsommerfeld.wsbg.terminal.core.config.AiEndpoint;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.SystemMessage;
@@ -96,10 +97,18 @@ final class ChatGateway {
         // concurrent calls in six seconds) is a transient, not a verdict:
         // retry with backoff, sleeping OUTSIDE the gate so a waiting worker
         // isn't blocked by a held permit.
+        AiEndpoint endpoint = brain.endpoint();
+        AiHealth health = brain.health();
         RuntimeException lastConnectFailure = null;
         for (int attempt = 0; attempt <= CONNECT_RETRY_BACKOFF_MS.length; attempt++) {
             if (attempt > 0) {
                 if (appShutdown) throw lastConnectFailure; // server was killed on purpose — no backoff
+                // Circuit breaker: the ladder is patience for a TRANSIENT. Once
+                // the endpoint is known down (see AiHealth), spending 45 s per
+                // call to rediscover that turns a visible failure into a silent
+                // stall. One attempt per call from here — and that attempt is
+                // the probe that clears the state again.
+                if (health.tripped()) break;
                 long backoff = CONNECT_RETRY_BACKOFF_MS[attempt - 1];
                 LOG.warn("[LLM] Ollama unreachable — retry {}/{} in {} ms",
                         attempt, CONNECT_RETRY_BACKOFF_MS.length, backoff);
@@ -126,6 +135,7 @@ final class ChatGateway {
                 LOG.info("[LLM] gate-wait={}ms gen={}ms in={} out={}",
                         (tAcq - t0) / 1_000_000, (t1 - tAcq) / 1_000_000,
                         tu == null ? -1 : tu.inputTokenCount(), tu == null ? -1 : tu.outputTokenCount());
+                health.noteOk(endpoint.baseUrl(), endpoint.managed());
                 return ai == null || ai.text() == null ? "" : ai.text();
             } catch (RuntimeException e) {
                 if (isClientReject(e)) {
@@ -143,19 +153,70 @@ final class ChatGateway {
                     LOG.error("[LLM] Ollama rejected the request (HTTP 4xx) — returning "
                             + "empty reply so the lane degrades instead of dying: {}",
                             e.toString());
+                    // Surfaced, not just logged: on a remote endpoint a 4xx is
+                    // nearly always "that model is not on this server", i.e. a
+                    // setting the user has to correct. Silently degrading every
+                    // lane to "" would show up as a terminal that composes
+                    // nothing, with the cause only in a log file.
+                    health.noteRejected(endpoint.baseUrl(), endpoint.managed(), describe(e));
                     return "";
                 }
-                if (!isConnectFailure(e)) throw e;
+                if (!isTransient(e)) throw e;
                 lastConnectFailure = e;
             } finally {
                 llmGate.release();
             }
         }
+        // Ladder spent, or skipped because the endpoint is already known down.
+        // Not during teardown: we killed the server ourselves, and painting the
+        // UI red on the way out would be a lie with no one left to read it.
+        if (!appShutdown) {
+            // Which kind of dead: nothing answered, or it answered and kept
+            // saying no. The overlay's wording turns on this, and so does the
+            // breaker - a server that talks is not one to stop calling.
+            if (isConnectFailure(lastConnectFailure)) {
+                health.noteUnreachable(endpoint.baseUrl(), endpoint.managed(),
+                        describe(lastConnectFailure));
+            } else {
+                health.noteRejected(endpoint.baseUrl(), endpoint.managed(),
+                        describe(lastConnectFailure));
+            }
+        }
         throw lastConnectFailure;
+    }
+
+    /**
+     * The shortest honest description of a failure. {@code getMessage()} alone
+     * is not enough - a {@link java.net.ConnectException} carries none, and
+     * "AI endpoint down: null" is exactly the message this codebase has
+     * criticised before.
+     */
+    private static String describe(Throwable t) {
+        String message = t == null ? null : t.getMessage();
+        if (message != null && !message.isBlank()) return message.strip();
+        return t == null ? "unknown" : t.toString();
     }
 
     /** Backoff ladder for a transiently unreachable server — ~45 s total patience. */
     private static final long[] CONNECT_RETRY_BACKOFF_MS = {3_000, 12_000, 30_000};
+
+    /**
+     * Worth waiting for. Two kinds: nothing answered (connection-level), or the
+     * server answered "not now" - a rate limit, a 5xx, a server-side timeout.
+     *
+     * <p>The second kind only started mattering with hosted providers, where a
+     * 429 is an ordinary Tuesday. langchain4j already sorts its exceptions into
+     * {@link dev.langchain4j.exception.RetriableException} and its
+     * non-retriable siblings, and that judgement is better than a status-code
+     * range of ours - so it is the one we follow.
+     */
+    private static boolean isTransient(Throwable t) {
+        if (isConnectFailure(t)) return true;
+        for (Throwable c = t; c != null; c = c.getCause() == c ? null : c.getCause()) {
+            if (c instanceof dev.langchain4j.exception.RetriableException) return true;
+        }
+        return false;
+    }
 
     /** True when the failure is connection-level (server down/restarting), not a model error. */
     private static boolean isConnectFailure(Throwable t) {
@@ -175,8 +236,21 @@ final class ChatGateway {
      * Deterministic per request body, so never retried. Package-private for testing.
      */
     static boolean isClientReject(Throwable t) {
+        // A retriable failure is NOT a verdict, however 4xx it looks. HTTP 429
+        // is the case that matters: on a hosted provider a rate limit is
+        // routine, and the blanket 4xx rule below turned every one of them into
+        // a permanent "" - the compose lane would have gone quiet under exactly
+        // the load it was busiest at, and the log would have called it a
+        // rejected request.
+        if (isTransient(t)) return false;
         for (Throwable c = t; c != null; c = c.getCause() == c ? null : c.getCause()) {
-            if (c instanceof dev.langchain4j.exception.InvalidRequestException) return true;
+            // The mirror of isTransient: langchain4j's own non-retriable family
+            // (bad request, auth, unknown model, content filter). Naming the
+            // family rather than each member means a new one lands on the right
+            // side by default.
+            if (c instanceof dev.langchain4j.exception.NonRetriableException) return true;
+            // Fallback for anything the client did not map - a raw 4xx is still
+            // a statement about THIS request.
             if (c instanceof dev.langchain4j.exception.HttpException he
                     && he.statusCode() >= 400 && he.statusCode() < 500) {
                 return true;

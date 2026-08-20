@@ -18,6 +18,28 @@ public final class OllamaEndpoint {
     public static final String HOST = "127.0.0.1";
     public static final String BASE_URL = "http://" + HOST + ":" + PORT;
 
+    /**
+     * Concurrent request slots on our own instance — Ollama's
+     * {@code OLLAMA_NUM_PARALLEL}, the app-side LLM gate, and the KV-cache
+     * arithmetic in {@link AgentConfig} all read THIS number, so they can never
+     * disagree. It sat in two places before (the agent's server manager and a
+     * private copy in the context-window maths), which is exactly the kind of
+     * hand-mirrored figure that drifts.
+     *
+     * <p>Fixed at 2. 3 was tried (RAM-adaptive) on the theory that the dominant
+     * compose gate-wait was a permit shortage. Profiling refuted it: the resident
+     * model is GPU-bound, so at 2 slots the GPU is already ~saturated — a 3rd
+     * concurrent request just time-slices it, so every call's gen-time rose
+     * (compose 8→12s, extraction 13→28s), gate-hold grew with it, and net
+     * throughput FELL (4.0→3.5 composes/min). The real lever is less GPU work per
+     * call, not more parallelism.
+     *
+     * <p>It is OUR server's number. A remote endpoint's slot count is its
+     * operator's business and is configured, not assumed
+     * ({@code agent.endpoint-parallelism}).
+     */
+    public static final int PARALLELISM = 2;
+
     private OllamaEndpoint() {
     }
 }

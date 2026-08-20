@@ -137,8 +137,9 @@ class MarketMemorySmokeIT {
         OllamaAvailability.ensureOllama();
         GlobalConfig config = SmokeConfig.load();
         LlmGate gate = new LlmGate();
-        AgentBrain brain = new AgentBrain(config, new ApplicationEventBus(),
-                new OllamaServerManager(), gate);
+        ApplicationEventBus bus = new ApplicationEventBus();
+        AgentBrain brain = new AgentBrain(config, bus,
+                new OllamaServerManager(), gate, new AiHealth(bus));
         AdhocClassifier classifier = new AdhocClassifier(brain, gate);
 
         Map<Integer, String> verdicts = classifier.classify(List.of(
@@ -162,8 +163,9 @@ class MarketMemorySmokeIT {
         OllamaAvailability.ensureOllama();
         GlobalConfig config = SmokeConfig.load();
         LlmGate gate = new LlmGate();
-        AgentBrain brain = new AgentBrain(config, new ApplicationEventBus(),
-                new OllamaServerManager(), gate);
+        ApplicationEventBus bus = new ApplicationEventBus();
+        AgentBrain brain = new AgentBrain(config, bus,
+                new OllamaServerManager(), gate, new AiHealth(bus));
 
         MarketEventArchive events = new MarketEventArchive(dir.resolve("macro.jsonl"));
         MarketMemoryService svc = new MarketMemoryService(

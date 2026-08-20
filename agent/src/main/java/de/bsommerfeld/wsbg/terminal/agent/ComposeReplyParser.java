@@ -84,7 +84,7 @@ final class ComposeReplyParser {
 
     /**
      * Validates one usable draft against the closed compose vocabulary
-     * ({@link OllamaModelFactory#TRIGGER_VALUES} etc. — the same lists the schema
+     * ({@link ChatModelFactory#TRIGGER_VALUES} etc. — the same lists the schema
      * carries), case/whitespace-normalised: a runner that enforces the grammar can
      * never land here with a violation, a runner that ignores it (MLX) can. The
      * returned names are meant to be quoted back at the model in the one corrective
@@ -92,14 +92,14 @@ final class ComposeReplyParser {
      */
     static List<String> schemaViolations(Draft draft) {
         List<String> out = new ArrayList<>();
-        if (!OllamaModelFactory.TRIGGER_VALUES.contains(normalize(draft.trigger()))) {
-            out.add("trigger \"" + draft.trigger() + "\" not one of " + OllamaModelFactory.TRIGGER_VALUES);
+        if (!ChatModelFactory.TRIGGER_VALUES.contains(normalize(draft.trigger()))) {
+            out.add("trigger \"" + draft.trigger() + "\" not one of " + ChatModelFactory.TRIGGER_VALUES);
         }
-        if (!OllamaModelFactory.HIGHLIGHT_VALUES.contains(normalize(draft.highlight()))) {
-            out.add("highlight \"" + draft.highlight() + "\" not one of " + OllamaModelFactory.HIGHLIGHT_VALUES);
+        if (!ChatModelFactory.HIGHLIGHT_VALUES.contains(normalize(draft.highlight()))) {
+            out.add("highlight \"" + draft.highlight() + "\" not one of " + ChatModelFactory.HIGHLIGHT_VALUES);
         }
-        if (!OllamaModelFactory.SENTIMENT_VALUES.contains(normalize(draft.sentiment()))) {
-            out.add("sentiment \"" + draft.sentiment() + "\" not one of " + OllamaModelFactory.SENTIMENT_VALUES);
+        if (!ChatModelFactory.SENTIMENT_VALUES.contains(normalize(draft.sentiment()))) {
+            out.add("sentiment \"" + draft.sentiment() + "\" not one of " + ChatModelFactory.SENTIMENT_VALUES);
         }
         return out;
     }

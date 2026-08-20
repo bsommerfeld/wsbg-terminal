@@ -29,16 +29,16 @@
             <groupId>de.bsommerfeld</groupId>
             <artifactId>database</artifactId>
         </dependency>
-        <!-- The web world: web-api carries the contracts (fetch seam, sources,
-             gateway, facts), web-impl the machinery and every source. The
+        <!-- The web world: web/api carries the contracts (fetch seam, sources,
+             gateway, facts), web/impl the machinery and every source. The
              forty per-source dependencies of the old world are gone. -->
         <dependency>
             <groupId>de.bsommerfeld</groupId>
-            <artifactId>web-api</artifactId>
+            <artifactId>api</artifactId>
         </dependency>
         <dependency>
             <groupId>de.bsommerfeld</groupId>
-            <artifactId>web-impl</artifactId>
+            <artifactId>impl</artifactId>
         </dependency>
 
         <!-- JCEF (embedded Chromium) + WebSocket push.

@@ -141,9 +141,17 @@ final class LauncherDemo {
                 i18n.get("Quality"),
                 i18n.get("Speed"),
                 i18n.get("OK"),
-                i18n.get("Without MLX"));
+                i18n.get("Without MLX"),
+                i18n.get("Advanced"));
+        AdvancedEndpointSheet.Labels advanced = new AdvancedEndpointSheet.Labels(
+                i18n.get("Your own AI server"), i18n.get("Address"), i18n.get("Model"),
+                i18n.get("Key"), i18n.get("Test"), i18n.get("Asking..."),
+                i18n.get("Answers"), i18n.get("No answer"),
+                i18n.get("Nothing is downloaded then"),
+                i18n.get("Not suited to hosted providers. Costs can vary widely."));
 
-        log.log("[demo] model: " + window.showModelChoice(rows, recTag, labels).get());
+        log.log("[demo] model: "
+                + window.showModelChoice(rows, recTag, labels, advanced).get());
     }
 
     // =====================================================================
@@ -229,7 +237,10 @@ final class LauncherDemo {
     private static void environmentPhase() {
         window.resetProgress();
         window.setSpeed(-1);
-        SetupProgressAdapter setup = new SetupProgressAdapter(window, i18n, log, DOWNLOAD_STEPS);
+        // managedAi=true: the demo walks the full install, AI platform and
+        // model pulls included.
+        SetupProgressAdapter setup =
+                new SetupProgressAdapter(window, i18n, log, DOWNLOAD_STEPS, true);
 
         // Step n+1: the AI platform.
         setup.accept("Installing AI platform", null);

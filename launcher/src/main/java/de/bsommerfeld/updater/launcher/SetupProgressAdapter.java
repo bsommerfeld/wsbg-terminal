@@ -13,7 +13,8 @@ import java.util.function.BiConsumer;
  *
  * <p>The Ollama install, the model pulls, and the browser (JCEF) runtime are
  * the final three numbered steps after the update download steps; fonts/config
- * run after as an unnumbered tail.
+ * run after as an unnumbered tail. With an external AI endpoint the first two
+ * never happen, so only the browser runtime is numbered.
  */
 final class SetupProgressAdapter implements BiConsumer<String, String> {
 
@@ -48,14 +49,20 @@ final class SetupProgressAdapter implements BiConsumer<String, String> {
     /**
      * @param downloadStepCount number of update-download steps already shown;
      *                          the platform step is numbered right after them
+     * @param managedAi         whether the AI runtime is installed at all. False
+     *                          drops the platform and model steps from the count -
+     *                          they are skipped by the script, and numbering steps
+     *                          that never run leaves the label short of its total
+     *                          for the whole run
      */
-    SetupProgressAdapter(LauncherWindow window, LauncherI18n i18n, SessionLog log, int downloadStepCount) {
+    SetupProgressAdapter(LauncherWindow window, LauncherI18n i18n, SessionLog log,
+            int downloadStepCount, boolean managedAi) {
         this.window = window;
         this.i18n = i18n;
         this.log = log;
         this.platformStep = downloadStepCount + 1;
         this.modelStep = platformStep + 1;
-        this.browserStep = modelStep + 1;
+        this.browserStep = managedAi ? modelStep + 1 : downloadStepCount + 1;
         this.totalSteps = browserStep;
     }
 

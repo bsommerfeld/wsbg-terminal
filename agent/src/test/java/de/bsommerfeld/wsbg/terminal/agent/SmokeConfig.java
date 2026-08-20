@@ -14,7 +14,7 @@ import java.nio.file.Path;
  * <p>A bare {@code new GlobalConfig()} carries only the compiled-in defaults,
  * so the user's {@code agent.model-tag} never reached the smokes: they resolved
  * to the managed default tier instead, and when that tag happened to not be
- * installed, {@code OllamaModelFactory}'s family fallback silently picked
+ * installed, {@code ChatModelFactory}'s family fallback silently picked
  * whatever gemma4 build Ollama listed first. A smoke that cannot say WHICH
  * model produced its transcript is not a smoke — so every live smoke reads the
  * real config and therefore the real, chosen model.

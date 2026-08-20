@@ -142,7 +142,7 @@ class ConfigDefaultsTest {
         assertEquals(24576, AgentConfig.contextTokensFor(48 * gb,
                 AgentConfig.weightsGbFor("gemma4:e4b-mlx")));
 
-        // Honesty note (mirrors OllamaModelFactory/ChatGateway): the MLX
+        // Honesty note (mirrors ChatModelFactory/ChatGateway): the MLX
         // runner — the Apple-Silicon default — ignores num_ctx; there the
         // smaller window binds through the app's OWN prompt budgeting
         // (contextTokens() feeds every brief/prompt budget), not through the

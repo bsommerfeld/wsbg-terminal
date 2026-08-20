@@ -2,9 +2,11 @@ package de.bsommerfeld.wsbg.terminal.agent;
 
 import com.google.inject.Singleton;
 import de.bsommerfeld.wsbg.terminal.core.config.AgentConfig;
+import de.bsommerfeld.wsbg.terminal.core.config.AiEndpoint;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
 import de.bsommerfeld.wsbg.terminal.core.config.UserLanguage;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
+import de.bsommerfeld.wsbg.terminal.core.event.ControlEvents;
 import dev.langchain4j.model.chat.ChatModel;
 import jakarta.inject.Inject;
 import org.slf4j.Logger;
@@ -15,7 +17,7 @@ import org.slf4j.LoggerFactory;
  * compose pipelines. All responses are blocking — one resident model handles both
  * reasoning and language-appropriate output natively via system prompt injection.
  *
- * <p>The model construction lives in {@link OllamaModelFactory}, the per-URL
+ * <p>The model construction lives in {@link ChatModelFactory}, the per-URL
  * image-text cache in {@link VisionCache}, and the image fetch IO in
  * {@link ImageFetcher}; this class is the runtime facade holding the three built
  * models and the shared LLM concurrency gate.
@@ -25,15 +27,11 @@ public class AgentBrain {
 
     private static final Logger LOG = LoggerFactory.getLogger(AgentBrain.class);
 
-    // Our isolated instance's endpoint (private port, own model store) — never
-    // the user's default-port Ollama. See OllamaServerManager.
-    public static final String OLLAMA_BASE_URL = OllamaServerManager.BASE_URL;
-
     private final ImageFetcher imageFetcher = new ImageFetcher();
     private final VisionCache visionCache = new VisionCache();
     /** Mechanical image read (Tesseract) — fills the per-URL image-text cache. */
     private final OcrEngine ocrEngine = new OcrEngine();
-    private final OllamaModelFactory modelFactory = new OllamaModelFactory(OLLAMA_BASE_URL);
+    private final ChatModelFactory modelFactory = new ChatModelFactory();
 
     private ChatModel agentModel;
     /** Same model as {@link #agentModel}, but a TIGHT numPredict — for headline composition. */
@@ -49,14 +47,17 @@ public class AgentBrain {
             new java.util.concurrent.atomic.AtomicBoolean(false);
     /** The ONE shared concurrency gate for all model calls. */
     private final LlmGate llmGate;
+    /** Endpoint health + the circuit breaker; fed by {@link ChatGateway}. */
+    private final AiHealth health;
     private UserLanguage userLanguage;
 
     @Inject
     public AgentBrain(GlobalConfig config, ApplicationEventBus eventBus,
-            OllamaServerManager serverManager, LlmGate llmGate) {
+            OllamaServerManager serverManager, LlmGate llmGate, AiHealth health) {
         this.config = config;
         this.serverManager = serverManager;
         this.llmGate = llmGate;
+        this.health = health;
         eventBus.register(this);
 
         // The model HANDLES are cheap to build and several collaborators expect
@@ -86,15 +87,30 @@ public class AgentBrain {
      */
     public void start() {
         if (!serverStarted.compareAndSet(false, true)) return;
-        serverManager.ensureRunning(OLLAMA_BASE_URL);
-        // NOW the tag can be verified: the handles are rebuilt against what is
-        // actually installed, so a configured tag that is missing falls back to
-        // an installed sibling instead of failing at the first call.
-        initialize(config.getAgent(), true);
+
+        AiEndpoint endpoint = AiEndpoint.resolve(config.getAgent());
+        boolean reachable;
+        if (endpoint.managed()) {
+            serverManager.ensureRunning();
+            reachable = true;   // ensureRunning() throws rather than return unready
+        } else {
+            // A server we do not own: address it, nothing more. No start, no
+            // adopt, no shutdown — see OllamaServerManager#ensureRunning for what
+            // that used to risk. Unreachable is NOT fatal here: the box may be
+            // asleep or the address mistyped, and an app that refuses to boot
+            // over it cannot even show the user where to fix it.
+            reachable = probeRemote(endpoint);
+        }
+
+        // NOW the tag can be verified against a server that is actually up: on
+        // the managed instance a configured tag that is missing falls back to an
+        // installed sibling instead of failing at the first call. Skipped when
+        // nothing answered — asking an unreachable endpoint proves nothing.
+        initialize(config.getAgent(), reachable);
     }
 
     /**
-     * Initializes all Ollama model instances via {@link OllamaModelFactory}. All
+     * Initializes all Ollama model instances via {@link ChatModelFactory}. All
      * are the resident gemma4:e4b (agent, compose, deliberate, verdict).
      */
     public void initialize(AgentConfig config) {
@@ -102,15 +118,17 @@ public class AgentBrain {
     }
 
     public void initialize(AgentConfig config, boolean askOllama) {
-        OllamaModelFactory.Models models = modelFactory.build(config, askOllama);
+        ChatModelFactory.Models models = modelFactory.build(config, askOllama);
         this.agentModel = models.agentModel();
         this.composeModel = models.composeModel();
         this.proseModel = models.proseModel();
         this.activeAgentModel = models.activeAgentModel();
         this.userLanguage = this.config.getUser().getUserLanguage();
 
-        LOG.info("Initializing AgentBrain -- Agent: {}, Language: {}",
-                models.activeAgentModel(), userLanguage.displayName());
+        AiEndpoint endpoint = AiEndpoint.resolve(config);
+        LOG.info("Initializing AgentBrain -- Agent: {}, Language: {}, Endpoint: {} ({})",
+                models.activeAgentModel(), userLanguage.displayName(),
+                endpoint.baseUrl(), endpoint.mode());
     }
 
     // -- Public API --
@@ -232,7 +250,84 @@ public class AgentBrain {
     // The deliberate + verdict lanes were removed 2026-08-13 — dead handles since
     // the closing assessment left with the KI-DD, and the verdict lane's
     // determinism promise was measured broken on the resident MLX runner (see
-    // OllamaModelFactory for the full note).
+    // ChatModelFactory for the full note).
+
+    /**
+     * Rebuilds the model handles after the endpoint settings changed, so a new
+     * address or model takes effect without a restart.
+     *
+     * <p>Off the caller's thread: the rebuild verifies the tag against the new
+     * server, and the caller is the settings socket - a sleeping box at the far
+     * end would otherwise freeze the panel for the length of a connect timeout.
+     * Only the handle fields are replaced, so calls already in flight finish on
+     * the old ones rather than failing mid-pipeline.
+     */
+    @com.google.common.eventbus.Subscribe
+    public void onEndpointChanged(ControlEvents.AiEndpointChangedEvent event) {
+        Thread.ofVirtual().name("ai-endpoint-rebuild").start(() -> {
+            try {
+                // Probe FIRST, and let the result reach the health channel. The
+                // rebuild asks the new address anyway; without this the answer
+                // only ever reached the log, so someone who mistyped an address
+                // in the settings saw nothing wrong until the next model call
+                // failed minutes later. Now the indicator follows the field.
+                AiEndpoint endpoint = AiEndpoint.resolve(config.getAgent());
+                if (!endpoint.managed()) probeRemote(endpoint);
+                initialize(config.getAgent(), true);
+            } catch (RuntimeException e) {
+                // A managed endpoint that cannot be reached still throws here
+                // (it is ours to run). Log it; the handles keep pointing at the
+                // previous endpoint, which is strictly better than none.
+                LOG.error("Rebuilding the model handles for the new endpoint failed: {}",
+                        e.toString());
+            }
+        });
+    }
+
+    /**
+     * Asks a remote endpoint whether it is there, and tells the health channel
+     * either way.
+     *
+     * <p>NOT {@code serverManager.isReachable()}: that asks the bare address
+     * for a 200, which is Ollama's "Ollama is running" root page and nothing
+     * else's. An OpenAI-compatible server answers 404 there and would be
+     * declared dead while working perfectly. This asks each protocol's model
+     * list - the same question the settings' connection test asks, so the two
+     * can never disagree.
+     *
+     * @return whether the endpoint answered
+     */
+    private boolean probeRemote(AiEndpoint endpoint) {
+        var auth = endpoint.headers().entrySet().stream().findFirst().orElse(null);
+        var probe = de.bsommerfeld.updater.endpoint.EndpointProbe.probe(
+                endpoint.baseUrl(),
+                auth == null ? "" : auth.getKey(),
+                auth == null ? "" : auth.getValue());
+        if (probe.ok()) {
+            health.noteOk(endpoint.baseUrl(), false);
+            LOG.info("Using the configured external AI endpoint at {} ({} API)",
+                    endpoint.baseUrl(), probe.api());
+        } else {
+            // Straight to the UI: the terminal runs either way, and the user is
+            // the only one who can fix this. Waiting for the first model call
+            // would leave minutes of silence with no reason given.
+            health.noteUnreachable(endpoint.baseUrl(), false, probe.reason());
+            LOG.error("External AI endpoint {} is not reachable ({}) — the terminal continues, "
+                    + "but every AI lane will fail until it answers.",
+                    endpoint.baseUrl(), probe.reason());
+        }
+        return probe.ok();
+    }
+
+    /** Endpoint health + circuit breaker - {@link ChatGateway} reports into it. */
+    AiHealth health() {
+        return health;
+    }
+
+    /** Where this run's model calls go. Resolved live, so a settings change lands. */
+    AiEndpoint endpoint() {
+        return AiEndpoint.resolve(config.getAgent());
+    }
 
     /** Returns the resolved Ollama model name used by {@link #getAgentModel()}. */
     public String getAgentModelName() {
@@ -245,7 +340,7 @@ public class AgentBrain {
      * because a silently-cut brief reads like the model suddenly got dumb.
      */
     public int contextTokens() {
-        return config.getAgent().resolveContextTokens();
+        return endpoint().contextTokens();
     }
 
     /**
@@ -256,6 +351,6 @@ public class AgentBrain {
      * over-promised the input budget until a pass came back truncated.
      */
     public int numPredict() {
-        return OllamaModelFactory.NUM_PREDICT;
+        return ChatModelFactory.NUM_PREDICT;
     }
 }

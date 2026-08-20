@@ -62,6 +62,12 @@
   color: var(--mute); margin-bottom: 14px;
 }
 
+/* .setting-row's display:flex beats the UA [hidden] rule, so a row the JS
+   hides would stay on screen - seen live: the managed model choice kept
+   standing there while "Eigener KI-Server" was on, promising a download that
+   is not going to happen. Same trap the titlebar indicators document. */
+.setting-row[hidden] { display: none; }
+
 .setting-row {
   display: flex; align-items: center; justify-content: space-between;
   gap: 28px; padding: 16px 0;
@@ -184,3 +190,209 @@ html[data-theme="dark"]  .daynight-icon.moon { color: var(--amber); }
 html[data-theme="light"] .daynight-icon.sun  { color: var(--amber); }
 /* Disabled when "follow system" is on. */
 .daynight[aria-disabled="true"] { opacity: .4; cursor: not-allowed; }
+
+/* ---- text/number inputs ----
+   Same shell as .select, and crucially the SAME WIDTH: these rows are a column
+   of label-left / control-right pairs, so controls of 220 / 150 / 110 px left a
+   ragged edge down the middle and made the group read as assembled from parts.
+   One width for every control in the category, set on .settings-ai below. */
+.input {
+  font-family: inherit; font-size: .92rem; color: var(--txt);
+  background-color: var(--bg-1); border: 1px solid var(--line); border-radius: 8px;
+  padding: 9px 14px;
+  transition: border-color .15s, opacity .15s;
+}
+.input::placeholder { color: var(--mute); }
+.input:hover:not(:disabled) { border-color: var(--mute); }
+.input:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+/* Spinners are noise at this size and would break the shared width. */
+.input[type="number"]::-webkit-outer-spin-button,
+.input[type="number"]::-webkit-inner-spin-button { appearance: none; margin: 0; }
+.input[type="number"] { appearance: textfield; }
+
+/* Off, not gone. A control that vanishes when a switch flips moves everything
+   under the pointer and reads as half-built; dimmed and dead says the same
+   thing and holds the layout still. */
+.input:disabled, .select:disabled { opacity: .38; cursor: not-allowed; }
+.setting-row.is-off .setting-label { opacity: .5; }
+
+/* ---- collapsible category ----
+   "Erweitert" is a disclosure: shut by default, because almost nobody runs
+   their own model server - and everything inside is present at all times once
+   it is open. */
+.cat-toggle {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 0; margin: 0;
+  background: none; border: 0; cursor: pointer;
+  color: inherit; text-align: left;
+}
+.cat-toggle .cat-title { margin: 0; }
+.cat-chevron {
+  width: 15px; height: 15px; flex: 0 0 auto;
+  stroke: var(--mute); stroke-width: 2; fill: none;
+  stroke-linecap: round; stroke-linejoin: round;
+  transition: transform .18s ease, stroke .15s;
+}
+.cat-toggle:hover .cat-chevron { stroke: var(--txt); }
+.cat-toggle[aria-expanded="true"] .cat-chevron { transform: rotate(180deg); }
+.cat-body[hidden] { display: none; }
+.cat-body { margin-top: 4px; }
+
+/* The lead-in above the fields. Deliberately NOT a boxed warning: on a machine
+   in your own network this is how the thing works, not something that went
+   wrong. It reads as the category's opening sentence, because that is what it
+   is. */
+.cat-lead {
+  margin: 0 0 6px;
+  max-width: 560px;
+  color: var(--txt-2);
+  font-size: .84rem;
+  line-height: 1.55;
+}
+
+/* ONE control width for the whole category. */
+/* Wide enough for the model row - icon, name, two chips and the caret.
+   The other controls follow it, because one column width is what keeps
+   the category from reading as assembled from parts. */
+.settings-ai { --control-w: 300px; }
+.settings-ai .input,
+.settings-ai .select {
+  width: var(--control-w);
+  min-width: 0;
+  flex: 0 0 auto;
+}
+.settings-ai .plain-btn { width: var(--control-w); }
+
+/* The test verdict replaces the row's hint in place - a result that appears
+   somewhere else on the page is a result the user has to go find. */
+.js-ai-test-result[data-state="ok"]   { color: var(--green); }
+.js-ai-test-result[data-state="fail"] { color: var(--red); }
+
+/* The red warning glyph - the info button's sibling, and deliberately the same
+   size and mechanics. It carries the one sentence that only concerns whoever
+   points this at a paid provider; as standing prose it would tax everyone else
+   who just runs a box in the basement. */
+.setting-warn { color: var(--red); }
+.setting-warn:hover { color: var(--red); background: var(--bg-1); }
+.setting-warn[aria-expanded="true"] { color: var(--red); background: var(--red-soft); }
+.setting-warn-text[hidden] { display: none; }
+.setting-warn-text {
+  margin: 4px 0 0;
+  max-width: 440px;
+  color: var(--red);
+  font-size: .8rem;
+  line-height: 1.45;
+}
+
+/* "What is running right now" under the model choice. Amber, because it is not
+   an error - the choice is saved, it simply has not taken effect yet. */
+.setting-state[hidden] { display: none; }
+.setting-state {
+  margin-top: 4px;
+  color: var(--amber);
+  font-size: .8rem;
+  line-height: 1.45;
+}
+
+/* ---- the model picker ----
+   A listbox of our own, because a native <option> takes no icon and no chip,
+   and the single string it forced was truncated in the closed field. */
+.model-picker { position: relative; flex: 0 0 auto; }
+
+.model-trigger,
+.model-list li {
+  display: flex; align-items: center; gap: 8px;
+  font-family: inherit; font-size: .92rem; color: var(--txt);
+  text-align: left;
+}
+
+.model-trigger {
+  width: var(--control-w);
+  padding: 9px 12px;
+  background: var(--bg-1); border: 1px solid var(--line); border-radius: 8px;
+  cursor: pointer;
+  transition: border-color .15s, opacity .15s;
+}
+.model-trigger:hover:not(:disabled) { border-color: var(--mute); }
+.model-trigger:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+.model-trigger:disabled { opacity: .38; cursor: not-allowed; }
+.model-trigger .model-caret { margin-left: auto; }
+
+/* The popup hangs off the RIGHT edge and grows leftwards - the label column is
+   empty space, and this way the list can be wider than the field without ever
+   reaching past the panel. */
+.model-list {
+  position: absolute; z-index: 60; right: 0; top: calc(100% + 6px);
+  min-width: 100%; width: max-content; max-width: 420px;
+  margin: 0; padding: 5px; list-style: none;
+  background: var(--bg-1); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 14px 38px oklch(from var(--sh-ink) l c h / .45);
+  max-height: 320px; overflow-y: auto;
+}
+.model-list[hidden] { display: none; }
+.model-list li {
+  padding: 8px 10px; border-radius: 7px; cursor: pointer;
+  transition: background .12s;
+}
+.model-list li:hover { background: var(--bg-2, rgba(255,255,255,.05)); }
+.model-list li[aria-selected="true"] { background: color-mix(in oklch, var(--blue) 18%, transparent); }
+
+/* The state glyph: a check for "on disk", a download arrow for "on next start". */
+.model-mark { display: inline-flex; flex: 0 0 auto; }
+.model-mark svg {
+  width: 15px; height: 15px;
+  stroke-width: 2; fill: none;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.model-mark.is-here svg    { stroke: var(--green); }
+.model-mark.is-pending svg { stroke: var(--amber); }
+.model-caret {
+  width: 13px; height: 13px; flex: 0 0 auto;
+  stroke: var(--mute); stroke-width: 2; fill: none;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+
+/* The only part allowed to shrink. Without min-width:0 a flex item
+   refuses to go below its content, so the caret was pushed straight
+   out of the button (seen in the render). Chips and caret never give.  */
+.model-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.model-list li .model-name { overflow: visible; }
+/* The numbers as chips - they cannot be truncated away without the row
+   shrinking first, which is the whole reason they left the name string. */
+.model-chip {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--txt) 10%, transparent);
+  border: 1px solid var(--line-soft);
+  color: var(--txt-2);
+  font-size: .72rem;
+  letter-spacing: .02em;
+  white-space: nowrap;
+}
+.model-chip.is-disk { color: var(--mute); }
+/* The disk figure sits right, away from the name+size pair it does not belong to. */
+.model-list li .model-chip.is-disk,
+.model-trigger .model-chip.is-disk { margin-left: auto; }
+.model-trigger .model-caret { margin-left: 8px; }
+
+/* ---- the restart call to action ----
+   A chosen model that is not on the machine needs the launcher, and the
+   launcher only runs on a start. Saying so is not enough - the button does it. */
+.restart-cta {
+  display: flex; align-items: center; gap: 10px;
+  margin-top: 6px;
+}
+.restart-cta[hidden] { display: none; }
+.restart-btn {
+  padding: 5px 12px;
+  font-family: inherit; font-size: .8rem; font-weight: 600;
+  color: var(--bg); background: var(--amber);
+  border: 0; border-radius: 7px; cursor: pointer;
+}
+.restart-btn:hover { filter: brightness(1.08); }

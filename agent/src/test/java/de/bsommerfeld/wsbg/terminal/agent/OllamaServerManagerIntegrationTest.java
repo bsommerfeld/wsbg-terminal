@@ -23,7 +23,10 @@ import static org.junit.jupiter.api.Assertions.*;
 @Tag("integration")
 class OllamaServerManagerIntegrationTest {
 
-    private static final String BASE_URL = "http://localhost:11434";
+    // Our OWN isolated instance, never the user's default-port server — the same
+    // address ensureRunning() now fixes itself to. This used to name 11434, which
+    // asserted against exactly the server the class exists to leave alone.
+    private static final String BASE_URL = OllamaServerManager.BASE_URL;
 
     private final OllamaServerManager manager = new OllamaServerManager();
 
@@ -34,25 +37,25 @@ class OllamaServerManagerIntegrationTest {
 
     @Test
     void ensureRunning_shouldMakeServerReachable() {
-        manager.ensureRunning(BASE_URL);
+        manager.ensureRunning();
         assertTrue(manager.isReachable(BASE_URL),
                 "Server must be reachable after ensureRunning()");
     }
 
     @Test
     void ensureRunning_isIdempotent() {
-        manager.ensureRunning(BASE_URL);
+        manager.ensureRunning();
         boolean managedFirst = manager.isManaged();
 
         // Second call must not crash or start a duplicate process
-        manager.ensureRunning(BASE_URL);
+        manager.ensureRunning();
         assertEquals(managedFirst, manager.isManaged(),
                 "Managed state should not change on second call");
     }
 
     @Test
     void shutdown_shouldTerminateManagedProcess() {
-        manager.ensureRunning(BASE_URL);
+        manager.ensureRunning();
 
         if (!manager.isManaged()) {
             // External Ollama was already running — shutdown is a no-op.
@@ -68,7 +71,7 @@ class OllamaServerManagerIntegrationTest {
 
     @Test
     void serverRespondsWithOllamaRunning() {
-        manager.ensureRunning(BASE_URL);
+        manager.ensureRunning();
 
         // Ollama's root endpoint returns "Ollama is running" as plain text.
         // This guards against API changes in future Ollama versions.
@@ -80,7 +83,7 @@ class OllamaServerManagerIntegrationTest {
 
     @Test
     void apiTagsEndpointReturnsValidJson() {
-        manager.ensureRunning(BASE_URL);
+        manager.ensureRunning();
 
         String json = fetchBody(BASE_URL + "/api/tags");
         assertNotNull(json, "/api/tags must return a response body");
@@ -93,7 +96,7 @@ class OllamaServerManagerIntegrationTest {
 
     @Test
     void apiVersionEndpointReturnsVersion() {
-        manager.ensureRunning(BASE_URL);
+        manager.ensureRunning();
 
         String json = fetchBody(BASE_URL + "/api/version");
         assertNotNull(json, "/api/version must return a response body");

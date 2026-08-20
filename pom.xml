@@ -13,8 +13,7 @@
         <module>core</module>
         <module>database</module>
         <module>reddit</module>
-        <module>web-api</module>
-        <module>web-impl</module>
+        <module>web</module>
         <module>instrument-corpus</module>
 
         <module>agent</module>
@@ -76,12 +75,12 @@
             </dependency>
             <dependency>
                 <groupId>de.bsommerfeld</groupId>
-                <artifactId>web-api</artifactId>
+                <artifactId>api</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>de.bsommerfeld</groupId>
-                <artifactId>web-impl</artifactId>
+                <artifactId>impl</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
@@ -158,6 +157,11 @@
             <dependency>
                 <groupId>dev.langchain4j</groupId>
                 <artifactId>langchain4j-ollama</artifactId>
+                <version>${langchain4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.langchain4j</groupId>
+                <artifactId>langchain4j-open-ai</artifactId>
                 <version>${langchain4j.version}</version>
             </dependency>
 

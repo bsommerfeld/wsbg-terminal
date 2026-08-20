@@ -137,3 +137,51 @@
   color: var(--txt);
   font-weight: 500;
 }
+
+/* --- the AI-STATUS overlay body (the red titlebar alarm's panel) ---
+   A different beast from the notice above: that one is a standing legal
+   disclosure, this one appears only when the model server has stopped
+   answering. Shares the notice's typography so the two AI panels read as a
+   family; red instead of amber, because this one means production stopped. */
+.ai-status-body {
+  padding: 20px 32px 26px;
+  color: var(--txt-2);
+  font-size: .92rem;
+  line-height: 1.55;
+}
+.ai-status-body p { margin: 0 0 14px; }
+
+/* Address + server message. A definition list, because that is what it is —
+   and both values are VERBATIM (the address is often the bug itself, the
+   message is the server's own wording), so they get monospace and may wrap
+   anywhere rather than pushing the panel wide. */
+.ai-status-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 14px;
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--bg-1);
+  border: 1px solid color-mix(in oklch, var(--red) 32%, transparent);
+}
+.ai-status-facts dt {
+  color: var(--txt-2);
+  font-size: var(--font-meta);
+  font-weight: 600;
+  letter-spacing: .04em;
+}
+/* No font-family: the whole app is already JetBrains Mono (base.css), so
+   naming a mono stack here would only risk a DIFFERENT face. */
+.ai-status-facts dd {
+  margin: 0;
+  color: var(--txt);
+  font-size: .84rem;
+  overflow-wrap: anywhere;
+}
+
+.ai-status-hint {
+  margin: 0;
+  color: var(--txt-2);
+  font-size: .86rem;
+}
