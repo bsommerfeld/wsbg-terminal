@@ -19,7 +19,16 @@ import java.util.concurrent.Executors;
 /**
  * Tiny HTTP server that streams the static web assets from
  * {@code /web/...} on the classpath. Bound to {@code 127.0.0.1} on a
- * random free port — the browser is the only consumer.
+ * FIXED port — the browser is the only consumer.
+ *
+ * <p>
+ * The port is fixed and must stay that way. It used to be ephemeral
+ * ({@code port 0}), which looks harmless for a loopback-only server but
+ * silently threw away everything the page keeps: the browser scopes
+ * {@code localStorage} to the ORIGIN, the origin contains the port, and a
+ * new port every start means a new, empty store every start. The theme
+ * choice and the read-headline marks were gone on every restart, and the
+ * app came up dark no matter what had been set.
  *
  * <p>
  * Using the built-in {@link HttpServer} keeps the dependency footprint
@@ -45,6 +54,14 @@ public final class AssetServer {
             Map.entry(".webp", "image/webp"),
             Map.entry(".gif", "image/gif"));
 
+    /**
+     * Fixed loopback port, one above {@code SingleInstance.PORT} and in the
+     * same untravelled range. Anything the page persists is bound to it (see
+     * the class comment), so this value is effectively part of the stored
+     * state - changing it wipes every user's theme and read marks once.
+     */
+    private static final int PORT = 19338;
+
     private HttpServer server;
     private int port = -1;
 
@@ -52,7 +69,7 @@ public final class AssetServer {
     public AssetServer() {}
 
     public void start() throws IOException {
-        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 32);
+        server = bindFixedOrAny();
         server.createContext("/", this::handle);
         server.setExecutor(Executors.newFixedThreadPool(4, r -> {
             Thread t = new Thread(r, "asset-http");
@@ -62,6 +79,24 @@ public final class AssetServer {
         server.start();
         port = server.getAddress().getPort();
         LOG.info("AssetServer listening on http://127.0.0.1:{}", port);
+    }
+
+    /**
+     * Binds the fixed port, or any free one if something else holds it. The
+     * fallback keeps the terminal starting at all costs - a page that loads is
+     * worth more than a page that remembers - but it does cost this run's
+     * stored state, so it says so out loud.
+     */
+    private static HttpServer bindFixedOrAny() throws IOException {
+        try {
+            return HttpServer.create(new InetSocketAddress("127.0.0.1", PORT), 32);
+        } catch (IOException e) {
+            HttpServer any = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 32);
+            LOG.warn("Port {} is taken ({}) — serving on {} instead. The page's stored state "
+                            + "(theme, read headlines) is scoped to the origin and will not be found this run.",
+                    PORT, e.getMessage(), any.getAddress().getPort());
+            return any;
+        }
     }
 
     public void stop() {

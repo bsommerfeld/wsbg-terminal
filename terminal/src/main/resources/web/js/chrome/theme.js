@@ -5,8 +5,11 @@
 // state and applies it. When "follow system" is on, the OS colour-scheme
 // wins and the explicit choice is ignored until it's turned off again.
 
+// These three keys are also read by chrome/theme-boot.js, the blocking script
+// that applies the theme before the first paint - change them in both places.
 const STORAGE_KEY = 'wsbg.theme.v1';
 const FOLLOW_KEY = 'wsbg.theme.follow-system.v1';
+const OS_KEY = 'wsbg.theme.os.v1';
 const mql = window.matchMedia('(prefers-color-scheme: dark)');
 
 // The host OS appearance, pushed from Java (OsAppearancePublisher). This is the
@@ -64,10 +67,18 @@ export function setFollowSystem(on) {
  */
 export function setSystemAppearance(mode) {
   osAppearance = (mode === 'dark' || mode === 'light') ? mode : null;
+  // Kept for the NEXT start: the push arrives over the socket, far too late
+  // for the first paint, so theme-boot.js goes by the last one we saw.
+  if (osAppearance) write(OS_KEY, osAppearance);
   if (isFollowingSystem()) apply(systemPrefersDark() ? 'dark' : 'light');
 }
 
 export function initTheme() {
+  // Until the first push arrives, the last known OS appearance beats `mql` -
+  // which is blind under OSR (see above).
+  const remembered = read(OS_KEY);
+  if (remembered === 'dark' || remembered === 'light') osAppearance = remembered;
+
   if (isFollowingSystem()) apply(systemPrefersDark() ? 'dark' : 'light');
   else { const s = read(STORAGE_KEY); if (s === 'dark' || s === 'light') apply(s); }
 

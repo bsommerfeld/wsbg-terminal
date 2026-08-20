@@ -21,6 +21,9 @@
  * here is the same artwork the Dock shows, not a second drawing of it. That
  * script also prints the landing points the rules below are pinned to —
  * re-run it after every icon change and carry the numbers over.
+ *
+ * The light theme keeps all of that and inverts only what carries the
+ * picture - room, dust and gleam - at the bottom of this file.
  */
 
 .intro {
@@ -41,6 +44,34 @@
   --t-diamond-impact: 1000ms; /* = --t-diamond + 59% of --d-drop */
   --t-shine: 1180ms;
   --t-out: 2280ms;            /* + --d-out = the plate is gone at ~2.9s */
+
+  /* --- how the stone lights up (intro-diamond-lit reads these) -------
+     In the pooled dark the stone can simply get brighter. On a light
+     ground it cannot: brightening a dark stone over white takes contrast
+     away and the glyph pales out at exactly the moment it is supposed to
+     catch fire. There the light has to arrive as COLOUR - saturation up,
+     brightness barely - so the two themes need different numbers for one
+     and the same keyframe. */
+  --lit-bright: 1.3;
+  --lit-sat: 1;
+  --lit-glow: oklch(0.93 0.10 78 / .55);
+
+  /* --- the shadow the glyph throws -----------------------------------
+     Off in the dark, and not for lack of effort: what separates the glyph
+     from a black room there is the light behind it, and a shadow cast onto
+     black is nothing at all. On paper that separation is gone, so the glyph
+     has to bring its own - two shadows, the way a real one works: one wide
+     and faint for the ambient, one tight and dark where the object meets
+     the ground. They are filters on the LAYERS, so they follow the alpha:
+     the hands cast hands, and the stone casts its wireframe, not a blob.
+     Each one is a whole filter FRAGMENT rather than a colour, and in the dark
+     it is empty - so the dark theme does not pay two extra filter passes per
+     frame for shadows that are fully transparent there. Every keyframe that
+     touches `filter` splices the same fragment in at the same place, which is
+     what keeps the function lists identical within a theme; the moment they
+     differ the browser stops interpolating and steps. */
+  --cast: ;      /* landed */
+  --cast-air: ;  /* …and while it is still falling */
 
   position: fixed;
   inset: 0;
@@ -196,6 +227,9 @@
   transform-origin: 50% 96%;
   transform: translate3d(0, -8%, 0) scale(var(--from));
   opacity: 0;
+  /* The implicit 100% frame of intro-drop reads its filter from here, so this
+     has to be the landed state AND the same function list the keyframes use. */
+  filter: blur(0) var(--cast);
   animation: intro-drop var(--d-drop) var(--t-hands) both;
 }
 
@@ -203,6 +237,9 @@
 .intro-diamond {
   background-image: url("/icons/intro-diamond.png");
   transform-origin: 50% 68%;
+  /* Reduced motion replaces both of this layer's animations, and then the base
+     style is the only thing carrying the shadow. */
+  filter: blur(0) var(--cast);
   /* Lands nearer than the hands did — a wide, spread-out diamond reads as
      four red spikes, not as a stone. */
   --from: 2.1;
@@ -362,14 +399,14 @@
   0% {
     transform: translate3d(0, -8%, 0) scale(var(--from));
     opacity: 0;
-    filter: blur(7px);
+    filter: blur(7px) var(--cast-air);
     animation-timing-function: cubic-bezier(.62, .03, .84, .18);
   }
   8%  { opacity: 1; }
   59% {
     transform: translate3d(0, 0, 0) scale(1);
     opacity: 1;
-    filter: blur(0);
+    filter: blur(0) var(--cast);
     animation-timing-function: cubic-bezier(.2, .8, .3, 1);
   }
   70% { transform: translate3d(0, 1.5%, 0) scale(1.09, .9); }
@@ -431,8 +468,10 @@
    silhouette — shadow included — into a formless halo, while 12px stays on
    the edges of the facets, which is where a stone actually glows. */
 @keyframes intro-diamond-lit {
-  0%, 100% { filter: brightness(1) drop-shadow(0 0 0 transparent); }
-  42%      { filter: brightness(1.3) drop-shadow(0 0 12px oklch(0.93 0.10 78 / .55)); }
+  0%, 100% { filter: brightness(1) saturate(1) var(--cast)
+                     drop-shadow(0 0 0 transparent); }
+  42%      { filter: brightness(var(--lit-bright)) saturate(var(--lit-sat)) var(--cast)
+                     drop-shadow(0 0 12px var(--lit-glow)); }
 }
 
 @keyframes intro-bloom {
@@ -457,6 +496,247 @@
 .intro.is-skipping .intro-shaker { animation: intro-stage-out var(--d-skip) ease-in both; }
 .intro.is-skipping .intro-skip   { opacity: 0; animation: none; }
 
+/* --- light mode: the same drop, lit from the other side -------------- */
+
+/* Everything above is built on ONE physical idea: a dark room with a pool of
+ * light in it, and a stone that throws light back. On a white ground that
+ * idea has no grip - a pale glow over pale paper is nothing, and every layer
+ * that works by ADDING light (screen, brightness, a white rim) works by
+ * removing contrast here, so the picture washes out exactly where it should
+ * get loud.
+ *
+ * So the light theme inverts what carries the picture, not the choreography:
+ * the room is bright and the glyph SHADES it - vignette instead of pool,
+ * dust as shadow instead of as haze, a warm gold gleam instead of a white
+ * one. The timeline, the drop, the impacts, the masks, the DOM: untouched.
+ *
+ * Only paint is overridden below - no `display`, no `animation`, no
+ * `transform`. That is deliberate: the reduced-motion block that follows
+ * switches those off at a LOWER specificity than these theme rules, and a
+ * colour-only override can never win an argument it should not be in.
+ */
+
+/* The room, and the pool in it. The dark theme adds three scales of LIGHT over
+   a near-black room; that move has no counterpart here, because paper is
+   already at the top of the range - white over white is nothing, and the whole
+   lift from the room to pure white is 15 levels. So the pool is built the only
+   way it can be built up here: the surround falls away from it. Same three
+   scales, same windowed gaussian, mirrored (α(t) = peak · (1 − f(t))) - tight
+   and close in, vast and faint far out. Their sum is monotone over the whole
+   radius, so nothing draws a ring; and because 1 − f is smooth wherever f is,
+   the mirrored ramp cannot kink either.
+   Three scales rather than one wide vignette is the whole point: one ramp
+   spreads the bright zone over half the frame and reads as a washed-out
+   picture, three keep it sitting close around the glyph and read as a pool.
+   The shade is a hair COOL against warm paper - warm light, cool shadow, which
+   is what makes the middle read as lit rather than as a grey filter over it.
+   The room UNDER all of that matters as much as the pool over it, and it is
+   easy to forget: with a flat paper base the two tighter scales are saturated
+   about 500 px out and everything beyond is one even grey - measured at 219
+   against 217 in the far corner, i.e. two levels across the whole rest of the
+   frame. The dark theme does not do that; its room keeps falling to the corner
+   long after its pool has died. So the paper falls too, and the pool's own
+   peaks come down by the same amount to keep the total depth where it was. */
+html[data-theme="light"] .intro-backdrop {
+  background:
+    /* tight and close in */
+    radial-gradient(circle min(32vh, 30vw) at 50% 50%,
+      oklch(0.54 0.010 240 / 0) 0%,
+      oklch(0.54 0.010 240 / 0.0048) 10%,
+      oklch(0.54 0.010 240 / 0.018) 20%,
+      oklch(0.54 0.010 240 / 0.037) 30%,
+      oklch(0.54 0.010 240 / 0.0578) 40%,
+      oklch(0.54 0.010 240 / 0.0773) 50%,
+      oklch(0.54 0.010 240 / 0.0934) 60%,
+      oklch(0.54 0.010 240 / 0.1051) 70%,
+      oklch(0.54 0.010 240 / 0.1128) 80%,
+      oklch(0.54 0.010 240 / 0.1174) 90%,
+      oklch(0.54 0.010 240 / 0.12) 100%),
+    /* the middle scale */
+    radial-gradient(circle min(70vh, 62vw) at 50% 50%,
+      oklch(0.54 0.010 240 / 0) 0%,
+      oklch(0.54 0.010 240 / 0.0032) 10%,
+      oklch(0.54 0.010 240 / 0.0121) 20%,
+      oklch(0.54 0.010 240 / 0.0249) 30%,
+      oklch(0.54 0.010 240 / 0.039) 40%,
+      oklch(0.54 0.010 240 / 0.0522) 50%,
+      oklch(0.54 0.010 240 / 0.063) 60%,
+      oklch(0.54 0.010 240 / 0.071) 70%,
+      oklch(0.54 0.010 240 / 0.0761) 80%,
+      oklch(0.54 0.010 240 / 0.0792) 90%,
+      oklch(0.54 0.010 240 / 0.081) 100%),
+    /* vast and barely there */
+    radial-gradient(circle min(130vh, 92vw) at 50% 50%,
+      oklch(0.54 0.010 240 / 0) 0%,
+      oklch(0.54 0.010 240 / 0.0018) 10%,
+      oklch(0.54 0.010 240 / 0.0066) 20%,
+      oklch(0.54 0.010 240 / 0.0136) 30%,
+      oklch(0.54 0.010 240 / 0.0212) 40%,
+      oklch(0.54 0.010 240 / 0.0283) 50%,
+      oklch(0.54 0.010 240 / 0.0342) 60%,
+      oklch(0.54 0.010 240 / 0.0385) 70%,
+      oklch(0.54 0.010 240 / 0.0414) 80%,
+      oklch(0.54 0.010 240 / 0.043) 90%,
+      oklch(0.54 0.010 240 / 0.044) 100%),
+    /* the paper: warm near-white under the glyph, a touch deeper at the rim */
+    radial-gradient(circle farthest-corner at 50% 50%,
+      oklch(0.995 0.006 85) 0%, oklch(0.978 0.007 84) 52%, oklch(0.955 0.008 82) 100%);
+}
+
+/* The impact does not kick up light down here, it kicks up SHADE: the ground
+   around the landing point takes a soft warm shadow and keeps it. Same
+   centre, same curve and the same beat as the dark version's swell. */
+html[data-theme="light"] .intro-floor {
+  background:
+    radial-gradient(circle min(84vh, 74vw) at 50% 50%,
+      oklch(0.58 0.025 68 / .10)   0%,
+      oklch(0.58 0.025 68 / .096)  10%,
+      oklch(0.58 0.025 68 / .085)  20%,
+      oklch(0.58 0.025 68 / .0692) 30%,
+      oklch(0.58 0.025 68 / .0518) 40%,
+      oklch(0.58 0.025 68 / .0356) 50%,
+      oklch(0.58 0.025 68 / .0222) 60%,
+      oklch(0.58 0.025 68 / .0124) 70%,
+      oklch(0.58 0.025 68 / .006)  80%,
+      oklch(0.58 0.025 68 / .0022) 90%,
+      oklch(0.58 0.025 68 / 0)     100%);
+}
+
+/* The stone's spill. `screen` is dead over white - it returns white - so the
+   halo lands as MULTIPLY in a light amber instead: light with a colour in it
+   tints the paper it falls on, which is what a warm caustic actually does.
+   Same geometry, same ramp, same beat as the dark bloom. */
+html[data-theme="light"] .intro-stage::before {
+  background: radial-gradient(closest-side,
+    oklch(0.90 0.13 80 / .34) 0%,
+    oklch(0.90 0.13 78 / .3264) 10%,
+    oklch(0.89 0.13 76 / .289) 20%,
+    oklch(0.88 0.13 74 / .2353) 30%,
+    oklch(0.87 0.13 72 / .1761) 40%,
+    oklch(0.86 0.13 70 / .1210) 50%,
+    oklch(0.86 0.13 68 / .0755) 60%,
+    oklch(0.86 0.13 68 / .0422) 70%,
+    oklch(0.86 0.13 68 / .0204) 80%,
+    oklch(0.86 0.13 68 / .0075) 90%,
+    oklch(0.86 0.13 68 / 0) 100%);
+  mix-blend-mode: multiply;
+}
+
+/* The sweep keeps its blend and its mask; only the bar changes colour. A
+   near-white bar screened onto the dark facets pushes them to white - i.e.
+   it ERASES the wireframe against a white room for the length of the sweep.
+   A saturated gold pushes the same strokes to gold: still a gleam, still
+   readable as a stone. */
+html[data-theme="light"] .intro-shine {
+  background-image: linear-gradient(103deg,
+    transparent 40%,
+    oklch(0.80 0.14 74 / .45) 47%,
+    oklch(0.88 0.16 84 / .95) 50%,
+    oklch(0.80 0.14 74 / .45) 53%,
+    transparent 60%);
+}
+
+/* Saturation carries the flare instead of brightness - see --lit-* above. */
+html[data-theme="light"] .intro {
+  --lit-bright: 1.06;
+  --lit-sat: 1.5;
+  --lit-glow: oklch(0.80 0.16 76 / .8);
+
+  /* Light from above and a touch in front, so the shadow drops and stays
+     under the glyph. Two of them: the wide faint one is the room's ambient,
+     the tight dark one is where the object meets the ground - a single
+     shadow gives either a hard sticker edge or a formless smudge, never
+     something that sits. While it is still in the air the pair goes wide,
+     far and faint, and pulls in as it lands, which is what makes the drop
+     read as distance rather than as scale. */
+}
+
+/* The shadow spot. A silhouette shadow argues with this artwork: the glyph is
+   drawn face-on, so a cast copy of its own outline reads as a second glyph
+   lying about where the floor is. The old sprite games solved this decades ago
+   with a plain dark oval under the character - it says "this stands here" and
+   claims nothing about the light beyond that, which is exactly as much as a
+   front-on symbol can honestly say.
+   So: one ellipse, flat, under the whole logo. Kept dense enough in the middle
+   to read as a shadow rather than a smudge (a light ground swallows anything
+   fainter), with a soft rim so it is not a drawn disc. It rides the hands'
+   drop on the same clock - small and pale while they are in the air, opening
+   out on the 59 % impact mark and taking the squash with them, which is what
+   sells the distance. ::after is free; ::before is the bloom behind the stone.
+   z-index -1 keeps it under the glyph and over the room. */
+html[data-theme="light"] .intro-stage::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  /* Sized against the two cuffs, not against the whole glyph: bigger and it
+     detaches, and a spot that does not touch what casts it reads as hovering.
+     Checked against 58/17 and 66/24 - this is the one that still sits. */
+  top: 102%;
+  width: 62%;
+  height: 20%;
+  z-index: -1;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(closest-side,
+    oklch(0.42 0.03 62 / .44) 0%,
+    oklch(0.42 0.03 62 / .425) 45%,
+    oklch(0.42 0.03 62 / .33) 62%,
+    oklch(0.44 0.03 62 / .18) 78%,
+    oklch(0.46 0.03 62 / .06) 90%,
+    oklch(0.46 0.03 62 / 0) 100%);
+  filter: blur(4px);
+  pointer-events: none;
+  animation: intro-shadow-drop var(--d-drop) var(--t-hands) both;
+}
+
+/* Same duration and delay as intro-drop, so 59 % is the same impact frame. */
+@keyframes intro-shadow-drop {
+  0%   { opacity: .16; transform: translate(-50%, -50%) scale(.42, .42);
+         animation-timing-function: cubic-bezier(.62, .03, .84, .18); }
+  59%  { opacity: 1;   transform: translate(-50%, -50%) scale(1, 1);
+         animation-timing-function: cubic-bezier(.2, .8, .3, 1); }
+  70%  { transform: translate(-50%, -50%) scale(1.12, 1.06); }
+  84%  { transform: translate(-50%, -50%) scale(.98, .99); }
+  100% { opacity: 1;   transform: translate(-50%, -50%) scale(1, 1); }
+}
+
+/* The stone gets its own, much shorter pair, and the reason is in the artwork:
+   it is a WIREFRAME. A shadow sized for a solid body blurs across the gaps
+   between the facet edges, the blurs meet in the middle, and the stone grows a
+   muddy grey body it does not have. Short throw, tight blur - each edge drops
+   its own line and the facets stay open. It also happens to be the truthful
+   version: the stone lies IN the hands, not a hand's width above them. */
+html[data-theme="light"] .intro-diamond {
+  --cast: drop-shadow(0 18px 18px oklch(0.44 0.025 62 / .22))
+          drop-shadow(0 6px 6px oklch(0.34 0.028 62 / .38));
+  --cast-air: drop-shadow(0 46px 38px oklch(0.44 0.025 62 / .12))
+              drop-shadow(0 20px 17px oklch(0.36 0.025 62 / .12));
+}
+
+/* Displaced ground reads as a dark rim on a light floor, never a white one -
+   and it needs roughly twice the alpha its white twin gets. Measured, not
+   guessed: at the ring's brightest frame the dark theme moves its pixels by
+   14/255 over a room sitting at 6, the light theme by 11 over a room at 237.
+   The same step is a shout down there and a rumour up here; .78 brings it to
+   ~22, which is where the rim reads again. */
+html[data-theme="light"] .intro-ring {
+  border-color: oklch(0.55 0.03 65 / .78);
+}
+
+/* Dust seen against a bright room is shadow, not haze. Carried heavier than
+   the dark theme's puffs on purpose: a light ground blooms and swallows a
+   faint mark, and these are already at .17-.34 element opacity. */
+html[data-theme="light"] .intro-puff {
+  background: radial-gradient(closest-side,
+    oklch(0.60 0.025 70 / .95), oklch(0.50 0.02 60 / .45) 52%, transparent 74%);
+}
+
+html[data-theme="light"] .intro-skip {
+  color: oklch(0.47 0.008 70);
+  border-color: oklch(0.79 0.008 70);
+}
+html[data-theme="light"] .intro-skip:hover { border-color: oklch(0.585 0.138 60 / .5); }
+
 /* --- reduced motion: no drop, no shake, no smoke --------------------- */
 
 @media (prefers-reduced-motion: reduce) {
@@ -475,4 +755,7 @@
   .intro-ring,
   .intro-smoke,
   .intro-floor { display: none; }
+  html[data-theme="light"] .intro-stage::after {
+    animation: intro-skip-in 500ms ease-out var(--t-hands) both;
+  }
 }

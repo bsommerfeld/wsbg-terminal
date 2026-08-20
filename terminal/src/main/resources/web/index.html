@@ -4,6 +4,9 @@
   <meta charset="utf-8" />
   <title>WSBG Terminal</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <!-- Blocking on purpose: the theme must be on <html> before the first paint,
+       or the intro plate shows the dark room for a frame in the light theme. -->
+  <script src="/js/chrome/theme-boot.js"></script>
   <link rel="stylesheet" href="/css/tokens.css">
   <link rel="stylesheet" href="/css/base.css">
   <link rel="stylesheet" href="/css/titlebar.css">

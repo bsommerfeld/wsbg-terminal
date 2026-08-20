@@ -1,18 +1,23 @@
 # Was hat sich geändert?
 
-**Lightmode neu interpretiert.** Der Lightmode hat neue Farben bekommen und sieht jetzt nicht mehr verwaschen aus. 
+**Lightmode neu interpretiert.** Der Lightmode hat neue Farben bekommen und sieht jetzt nicht mehr verwaschen aus. Auch die Startanimation gibt es jetzt im hellen Modus.
 
-<img width="1297" height="880" alt="Screenshot 2026-08-20 at 20 47 55" src="https://github.com/user-attachments/assets/e1850cd9-bb7d-4208-88a8-bcdd088d7775" />
+<p align="center">
+  <img width="800" alt="Heller Modus" src="https://github.com/user-attachments/assets/e1850cd9-bb7d-4208-88a8-bcdd088d7775" />
+</p>
 
-**Eigenes KI-Netzwerk.** Für die Tech-Affen unter euch ist es nun möglich, sein eigenes Heimnetzwerk mit eigen-konfigurierten LLMs zu nutzen. Dazu gibt es nun einen "Erweitert" Tab im Launcher & in den Settings.
+**Eigenes KI-Netzwerk.** Für die Tech-Affen unter euch ist es nun möglich, sein eigenes Heimnetzwerk mit eigen-konfigurierten LLMs zu nutzen. Dazu gibt es nun einen „Erweitert"-Tab im Launcher & in den Settings.
 
 Zeitgleich ist es jetzt möglich nachträglich das KI-Modell zu wechseln.
 
-<img width="747" height="985" alt="Screenshot 2026-08-20 at 20 47 29" src="https://github.com/user-attachments/assets/1573a034-bad3-4a77-9f43-39abd86aa5a6" />
+<p align="center">
+  <img width="450" alt="Eigenes KI-Netzwerk" src="https://github.com/user-attachments/assets/1573a034-bad3-4a77-9f43-39abd86aa5a6" />
+</p>
 
 ## Restliches
 
 - Im Starter stehen neue KI-Modelle zur Auswahl.
+- Die Theme-Wahl und die gelesenen Schlagzeilen überlebten keinen Neustart - gefixt.
 - Namen im Genitiv blieben ungoldet („Reddits S&P-Einzug") - gefixt.
 - Artikel-Zusammenfassungen kamen je nach Modell-Backend als Roh-JSON an - gefixt.
 - Aktien ohne deutsche Notierung zeigen jetzt den Kurs ihrer Heimatbörse - Zürich, Wien, Sydney, Toronto, Hongkong, Tokio, Stockholm.
