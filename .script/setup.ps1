@@ -157,7 +157,13 @@ if (-not $aiManaged) {
     Write-Host "[*] Isolated Ollama $OllamaVersion (latest) already present." -ForegroundColor Gray
 } else {
     $shownVer = if ($OllamaVersion) { $OllamaVersion } else { "latest" }
-    Write-Host "[*] Installing isolated Ollama $shownVer into $aiDir ..." -ForegroundColor Cyan
+    # An existing runtime makes this an update, not a first install -- the
+    # launcher reads the verb off this line to label the step accordingly.
+    if ($haveVer) {
+        Write-Host "[*] Updating isolated Ollama $haveVer -> $shownVer in $aiDir ..." -ForegroundColor Cyan
+    } else {
+        Write-Host "[*] Installing isolated Ollama $shownVer into $aiDir ..." -ForegroundColor Cyan
+    }
     $arch = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "arm64" } else { "amd64" }
     # No version resolved and nothing installed: let GitHub pick the release for
     # us via the /latest/download alias -- still the latest, just unnamed.

@@ -148,7 +148,13 @@ install_ollama() {
         echo "[*] Isolated Ollama $want (latest) already present."
         return 0
     fi
-    echo "[*] Installing isolated Ollama ${want:-latest} into $AI_DIR ..."
+    # An existing runtime makes this an update, not a first install -- the
+    # launcher reads the verb off this line to label the step accordingly.
+    if [ -n "$have" ]; then
+        echo "[*] Updating isolated Ollama $have -> ${want:-latest} in $AI_DIR ..."
+    else
+        echo "[*] Installing isolated Ollama ${want:-latest} into $AI_DIR ..."
+    fi
 
     arch="$(uname -m)"
     # No version resolved and nothing installed: let GitHub pick the release for

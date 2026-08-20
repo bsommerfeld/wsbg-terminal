@@ -41,6 +41,7 @@ final class LauncherI18n {
             Map.entry("Setup timed out", "Zeitüberschreitung beim Setup"),
             Map.entry("No setup script found", "Kein Setup-Skript gefunden"),
             Map.entry("Installing AI platform", "KI-Plattform installieren"),
+            Map.entry("Updating AI platform", "KI-Plattform updaten"),
             Map.entry("Installing AI models", "KI-Modelle installieren"),
             Map.entry("Installing browser runtime", "Browser-Runtime installieren"),
             Map.entry("Installing OCR runtime", "Texterkennung installieren"),

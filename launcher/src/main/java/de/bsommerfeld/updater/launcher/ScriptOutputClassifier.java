@@ -34,11 +34,15 @@ final class ScriptOutputClassifier {
     // Detects the script's Ollama install/update announcement to separate
     // platform setup from model downloads in the UI. Matches all wordings used
     // over time: "[*] Installing Ollama", "[*] Updating Ollama", the legacy
-    // "[*] Installing/updating Ollama", and the isolated-install line
-    // "[*] Installing isolated Ollama 0.24.0 into ..." — any "installing/
-    // updating ... ollama" on a "[*]" status line.
+    // "[*] Installing/updating Ollama", and the isolated lines
+    // "[*] Installing isolated Ollama 0.24.0 into ..." /
+    // "[*] Updating isolated Ollama 0.23.1 -> 0.24.0 in ..." — any
+    // "installing/updating ... ollama" on a "[*]" status line. Group 1 is the
+    // verb: it decides whether the launcher labels the step as a first install
+    // or as an update. Because the alternation matches leftmost-first right
+    // after the "[*]", the legacy "Installing/updating" reads as "installing".
     private static final Pattern OLLAMA_INSTALL_PATTERN = Pattern.compile(
-            "(?i)\\[\\*]\\s*(?:installing|updating)\\b.*\\bollama");
+            "(?i)\\[\\*]\\s*(installing|updating)\\b.*\\bollama");
 
     // The script's "[*] Installing browser runtime (macosx-arm64)..." line —
     // the JCEF (~150 MB Chromium) download, which is otherwise the slowest
@@ -128,6 +132,12 @@ final class ScriptOutputClassifier {
     /** Active while the script installs/updates the Ollama binary. */
     private boolean installingOllama;
 
+    /**
+     * The phase token that platform lines ride under — the install or the
+     * update variant, decided by the announcement line's verb.
+     */
+    private String platformPhase = "Installing AI platform";
+
     /** Active while the script downloads the JCEF (browser) runtime. */
     private boolean installingBrowser;
 
@@ -177,7 +187,7 @@ final class ScriptOutputClassifier {
             // Prefer the rich "pct% — downloaded / total" detail so the UI shows
             // speed + ETA for the (large) Ollama binary download, not just a bar.
             String detail = parseDownloadDetail(line);
-            consumer.accept("Installing AI platform", detail != null ? detail : line);
+            consumer.accept(platformPhase, detail != null ? detail : line);
             return;
         }
 
@@ -295,15 +305,21 @@ final class ScriptOutputClassifier {
 
     /**
      * Activates the Ollama install phase when the script announces
-     * "[*] Installing/updating Ollama...". All subsequent lines are
-     * emitted under "Installing AI platform" until model pulls begin.
+     * "[*] Installing/updating Ollama...". All subsequent lines are emitted
+     * under that announcement's phase token until model pulls begin. The verb
+     * decides the token: a runtime that is already there is being updated, and
+     * the user should read that instead of a first-install label.
      */
     private boolean tryEmitOllamaInstall(String line, BiConsumer<String, String> consumer) {
-        if (OLLAMA_INSTALL_PATTERN.matcher(line).find()) {
+        Matcher m = OLLAMA_INSTALL_PATTERN.matcher(line);
+        if (m.find()) {
             installingOllama = true;
             installingBrowser = false;
             installingOcr = false;
-            consumer.accept("Installing AI platform", null);
+            platformPhase = m.group(1).equalsIgnoreCase("updating")
+                    ? "Updating AI platform"
+                    : "Installing AI platform";
+            consumer.accept(platformPhase, null);
             return true;
         }
         return false;

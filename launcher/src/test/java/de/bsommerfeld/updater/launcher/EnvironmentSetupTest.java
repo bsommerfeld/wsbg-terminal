@@ -160,6 +160,29 @@ class EnvironmentSetupTest {
     }
 
     @Test
+    void classify_shouldDetectIsolatedOllamaUpdate() {
+        // An already installed runtime is updated, not installed - the phase
+        // token must differ so the launcher can label the step accordingly.
+        List<String[]> emissions = collect(new ScriptOutputClassifier(),
+                "[*] Updating isolated Ollama 0.23.1 -> 0.24.0 in /home/x/.wsbg-terminal/ai ...");
+        assertFalse(emissions.isEmpty());
+        assertEquals("Updating AI platform", emissions.get(0)[0]);
+        assertNull(emissions.get(0)[1]);
+    }
+
+    @Test
+    void classify_shouldKeepUpdatePhaseForCurlProgress() {
+        // Progress lines inherit the announcement's token - an update must not
+        // flip back to the install label mid-download.
+        ScriptOutputClassifier c = new ScriptOutputClassifier();
+        collect(c, "[*] Updating isolated Ollama 0.23.1 -> 0.24.0 in /home/x/.wsbg-terminal/ai ...");
+        List<String[]> emissions = collect(c, "####   8.8%");
+        assertFalse(emissions.isEmpty());
+        assertEquals("Updating AI platform", emissions.get(0)[0]);
+        assertEquals("8%", emissions.get(0)[1]);
+    }
+
+    @Test
     void classify_shouldDetectOllamaInstallLegacyFormat() {
         List<String[]> emissions = collect(new ScriptOutputClassifier(), "[*] Installing/updating Ollama");
         assertFalse(emissions.isEmpty());

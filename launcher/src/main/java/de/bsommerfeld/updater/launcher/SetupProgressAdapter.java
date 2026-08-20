@@ -91,7 +91,7 @@ final class SetupProgressAdapter implements BiConsumer<String, String> {
         }
 
         boolean isWork = phase.startsWith("Pulling")
-                || phase.equals("Installing AI platform")
+                || isPlatformPhase(phase)
                 || phase.equals("Installing browser runtime");
         if (!window.isVisible() && isWork) {
             SwingUtilities.invokeLater(() -> window.setVisible(true));
@@ -115,8 +115,8 @@ final class SetupProgressAdapter implements BiConsumer<String, String> {
 
         // Numbered work steps get a "(n/total)" label; everything else
         // (fonts, config) shows its plain translated phase.
-        if (phase.equals("Installing AI platform")) {
-            window.setStatus(i18n.get("Installing AI platform")
+        if (isPlatformPhase(phase)) {
+            window.setStatus(i18n.get(phase)
                     + " (" + platformStep + "/" + totalSteps + ")");
         } else if (phase.startsWith("Pulling")) {
             window.setStatus(i18n.get("Installing AI models")
@@ -162,6 +162,15 @@ final class SetupProgressAdapter implements BiConsumer<String, String> {
             return;
         }
         updateSpeedAnchor(currentBytes, now);
+    }
+
+    /**
+     * Whether the phase is the AI-platform step. The script announces a first
+     * install and an update under two different tokens - same step, same
+     * number, only the label differs.
+     */
+    private static boolean isPlatformPhase(String phase) {
+        return phase.equals("Installing AI platform") || phase.equals("Updating AI platform");
     }
 
     /**
