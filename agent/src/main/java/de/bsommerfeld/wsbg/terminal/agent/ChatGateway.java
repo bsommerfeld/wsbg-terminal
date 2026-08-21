@@ -61,6 +61,15 @@ final class ChatGateway {
     }
 
     String chat(ChatModel model, String systemPrompt, String userMessage) {
+        // The dev kill switch, checked before anything is built, gated or sent:
+        // an orphaned server from an earlier run may still be listening on our
+        // port, and a single call is all it takes to load the model back into
+        // memory - which is the drain the switch exists to prevent. Thrown, not
+        // answered with "", so a lane fails the way it fails against a dead
+        // endpoint instead of feeding an empty reply into the salvage paths.
+        if (AiSwitch.off()) {
+            throw new IllegalStateException("AI is off for this run (WSBG_NO_AI=true)");
+        }
         // Prompt-budget guard. What actually happens beyond the window depends on
         // the runner (both verified live 2026-08-13):
         //  - GGUF: Ollama silently TRUNCATES the prompt, and not at num_ctx but at

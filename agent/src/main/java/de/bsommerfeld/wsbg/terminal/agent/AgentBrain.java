@@ -89,6 +89,17 @@ public class AgentBrain {
         if (!serverStarted.compareAndSet(false, true)) return;
 
         AiEndpoint endpoint = AiEndpoint.resolve(config.getAgent());
+        if (AiSwitch.off()) {
+            // No spawn, no probe, no adoption - the switch's whole point is that
+            // no model runs on this machine. The endpoint is marked down right
+            // here rather than at the first failing call, so the UI says so from
+            // the start and ChatGateway's breaker is tripped before any lane
+            // queues behind it.
+            LOG.warn("WSBG_NO_AI=true -- no model server is started and every AI lane "
+                    + "stays down for this run.");
+            health.noteUnreachable(endpoint.baseUrl(), endpoint.managed(), "WSBG_NO_AI=true");
+            return;
+        }
         boolean reachable;
         if (endpoint.managed()) {
             serverManager.ensureRunning();
