@@ -11,4 +11,5 @@
 - Der Starter fragt beim ersten Start nur noch nach der Sprache. Update-Kanal und KI-Modell stehen in den Einstellungen.
 - „Eigener KI-Server": Der Schalter bleibt an, während du Adresse und Modell einträgst, und die Modellauswahl ist solange ausgegraut.
 - Ältere Installationen bekommen den Hinweis, den Starter zu erneuern. Danach steht im Dock nicht mehr „java" neben dem Terminal.
+- Im hellen Modus blitzt der Start nicht mehr kurz dunkel auf.
 - Das Logo im Starter ist wieder kleiner.
