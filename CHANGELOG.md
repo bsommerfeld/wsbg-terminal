@@ -8,5 +8,5 @@
 - Der Titel oben zeigt jetzt das geöffnete Widget mit Symbol und Namen; in den Einstellungen wird das Zahnrad zum Zurück-Pfeil.
 - In der Widget-Übersicht scrollen die Karten jetzt flüssig per Trackpad.
 - „Jetzt neu starten" nach einem Modellwechsel installiert das gewählte Modell jetzt direkt.
-- Die Modellauswahl im Starter zeigt wieder alle Modelle und den Punkt für den eigenen KI-Server.
+- Der Starter fragt beim ersten Start nur noch nach der Sprache. Update-Kanal und KI-Modell stehen in den Einstellungen.
 - Ältere Installationen bekommen den Hinweis, den Starter zu erneuern. Danach steht im Dock nicht mehr „java" neben dem Terminal.

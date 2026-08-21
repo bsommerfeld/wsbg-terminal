@@ -15,9 +15,9 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Pins the hardware→model ladder ({@link ModelCatalog}) and the config.toml
- * model-tag line-scan ({@link ModelSelection}) — the backend contract the
- * future model-choice UI builds on.
+ * Pins the model ladder ({@link ModelCatalog}) and the config.toml model-tag
+ * line-scan ({@link ModelSelection}) — the contract between the terminal's
+ * model picker, which writes the tag, and the launcher, which installs it.
  */
 class ModelSelectionTest {
 
@@ -196,16 +196,12 @@ class ModelSelectionTest {
     }
 
     @Test
-    void externalEndpointSkipsTheModelChoiceEntirely(@TempDir Path dir) throws IOException {
+    void externalEndpointInstallsNothingAtAll(@TempDir Path dir) throws IOException {
         writeConfig(dir, "[agent]", "agent.endpoint-mode = \"remote\"");
         ModelSelection.Result result = ModelSelection.resolve(dir, new SessionLog(dir));
 
         assertFalse(result.managedAi());
         assertEquals("", result.effectiveTag(), "nothing is installed");
-        assertTrue(result.userChosen(), "there is no choice left to ask about");
-        // The recommendation file must NOT be refreshed for an install that
-        // will not happen — a later UI would render it as advice.
-        assertFalse(Files.exists(dir.resolve(ModelSelection.RECOMMENDATION_FILE)));
     }
 
     @Test
@@ -232,16 +228,15 @@ class ModelSelectionTest {
     }
 
     @Test
-    void resolveWithoutUserChoiceStaysOnTheDefaultTier(@TempDir Path dir) {
+    void resolveWithoutAConfiguredTagInstallsTheDefaultTier(@TempDir Path dir) {
+        // A fresh install gets ONE tier, never a machine-dependent pick: the
+        // launcher asks nothing, so nobody is there to approve a swap. The
+        // default is platform-suffixed (MLX standard on Apple Silicon), so
+        // assert the tier, not one concrete tag.
         ModelSelection.Result result = ModelSelection.resolve(dir, new SessionLog(dir));
-        // The recommendation is advisory only — no silent TIER switch, ever.
-        // The default tier is platform-suffixed (MLX standard on Apple Silicon),
-        // so assert the tier, not one concrete tag.
         String expected = ModelCatalog.DEFAULT.tagFor(HardwareProbe.probe().isAppleSilicon());
         assertEquals(expected, result.effectiveTag());
         assertTrue(result.effectiveTag().startsWith("gemma4:e4b"));
-        assertTrue(ModelCatalog.isDeployedFamily(result.recommendedTag()));
-        assertTrue(Files.exists(dir.resolve(ModelSelection.RECOMMENDATION_FILE)));
     }
 
     @Test
@@ -249,23 +244,21 @@ class ModelSelectionTest {
         writeConfig(dir, "[agent]", "agent.model-tag = \"gemma4:e2b\"");
         ModelSelection.Result result = ModelSelection.resolve(dir, new SessionLog(dir));
         assertEquals("gemma4:e2b", result.effectiveTag());
-        assertTrue(result.userChosen());
     }
 
     @Test
     void aWrittenBaseTagIsNeverReSuffixedToMlx(@TempDir Path dir) throws IOException {
-        // The core of the "without MLX" lever: the choice screen writes the
-        // BASE tag, and from there the tag must travel VERBATIM — config scan,
+        // The core of the "without MLX" lever: the settings picker can write
+        // the BASE tag, and from there it must travel VERBATIM — config scan,
         // resolve, WSBG_REASONING_MODEL. The MLX suffix is only ever applied
-        // to the DEFAULT tier when no user choice exists; a configured tag
-        // that gets silently "completed" to -mlx would undo the lever exactly
-        // where the user cannot see it. Runs on real hardware, so on an
+        // to the DEFAULT tier when no tag is configured; a configured tag that
+        // gets silently "completed" to -mlx would undo the lever exactly where
+        // the user cannot see it. Runs on real hardware, so on an
         // Apple-Silicon machine this proves the platform default does NOT
         // override the choice (elsewhere it is trivially true).
         writeConfig(dir, "[agent]", "agent.model-tag = \"gemma4:e4b\"");
         ModelSelection.Result result = ModelSelection.resolve(dir, new SessionLog(dir));
         assertEquals("gemma4:e4b", result.effectiveTag());
-        assertTrue(result.userChosen());
 
         writeConfig(dir, "[agent]", "agent.model-tag = \"nemotron-3.5-lightning:30b\"");
         assertEquals("nemotron-3.5-lightning:30b",
@@ -277,9 +270,9 @@ class ModelSelectionTest {
         // The terminal's model picker and this launcher's catalog are separate
         // copies that CAN drift apart (the terminal updated, the staged
         // launcher jar did not). Measured 2026-08-21: a tag the terminal had
-        // just written read as an unknown family here, the choice collapsed to
-        // "nothing on record", and the first-run screen came back offering the
-        // stale tier list instead of installing what was picked.
+        // just written read as an unknown family here and the launcher quietly
+        // installed the default instead - after which the terminal asks for
+        // the very same restart again.
         writeConfig(dir, "[agent]", "agent.model-tag = \"tomorrow-model:9b\"");
 
         assertEquals("", ModelSelection.configuredModelTag(dir),
@@ -287,7 +280,6 @@ class ModelSelectionTest {
 
         ModelSelection.Result result = ModelSelection.resolve(dir, new SessionLog(dir), true);
         assertEquals("tomorrow-model:9b", result.effectiveTag());
-        assertTrue(result.userChosen(), "a choice IS on record — never re-ask");
     }
 
     @Test
@@ -295,27 +287,6 @@ class ModelSelectionTest {
         writeConfig(dir, "[agent]", "agent.model-tag = \"granite4.1:8b\"");
         ModelSelection.Result result = ModelSelection.resolve(dir, new SessionLog(dir), true);
         assertEquals("granite4.1:8b", result.effectiveTag());
-        assertTrue(result.userChosen());
-    }
-
-    @Test
-    void recommendationFileCarriesEveryTier(@TempDir Path dir) throws IOException {
-        ModelSelection.resolve(dir, new SessionLog(dir));
-        String json = Files.readString(dir.resolve(ModelSelection.RECOMMENDATION_FILE));
-        for (ModelCatalog tier : ModelCatalog.values()) {
-            assertTrue(json.contains(tier.tagFor(false)) || json.contains(tier.tagFor(true)),
-                    "missing tier in recommendation file: " + tier);
-        }
-        assertTrue(json.contains("\"recommendedTag\""));
-        assertTrue(json.contains("\"fit\""));
-        assertTrue(json.contains("\"quality\""));
-        assertTrue(json.contains("\"speed\""));
-        // The name travels with the tier - a UI reading this file must never
-        // have to reconstruct a label from the package coordinate.
-        for (ModelCatalog tier : ModelCatalog.values()) {
-            assertTrue(json.contains(tier.displayName()),
-                    "missing display name in recommendation file: " + tier);
-        }
     }
 
     @Test
@@ -377,40 +348,6 @@ class ModelSelectionTest {
             assertTrue(tier.speed() >= ModelCatalog.B26.speed(),
                     "no small rung may be slower than the 26B: " + tier);
         }
-    }
-
-    // ------------------------------------------------------------------
-    // ModelConfigWriter: persisting the UI choice
-    // ------------------------------------------------------------------
-
-    @Test
-    void writerReplacesAnExistingKeyInPlace(@TempDir Path dir) throws IOException {
-        writeConfig(dir, "# comment stays", "[agent]",
-                "agent.model-tag = \"\"", "agent.identity-desk = true");
-        assertTrue(ModelConfigWriter.write(dir, "gemma4:26b-mlx", new SessionLog(dir)));
-        String config = Files.readString(dir.resolve("config.toml"));
-        assertTrue(config.contains("agent.model-tag = \"gemma4:26b-mlx\""));
-        assertTrue(config.contains("# comment stays"));
-        assertTrue(config.contains("agent.identity-desk = true"));
-        assertEquals("gemma4:26b-mlx", ModelSelection.configuredModelTag(dir));
-    }
-
-    @Test
-    void writerInsertsUnderTheAgentSectionWhenTheKeyIsMissing(@TempDir Path dir)
-            throws IOException {
-        writeConfig(dir, "[agent]", "agent.identity-desk = true", "", "[user]",
-                "language = \"de\"");
-        assertTrue(ModelConfigWriter.write(dir, "gemma4:e2b", new SessionLog(dir)));
-        assertEquals("gemma4:e2b", ModelSelection.configuredModelTag(dir));
-        String config = Files.readString(dir.resolve("config.toml"));
-        // Must land inside [agent], never under a later section.
-        assertTrue(config.indexOf("agent.model-tag") < config.indexOf("[user]"));
-    }
-
-    @Test
-    void writerCreatesAMinimalConfigWhenNoneExists(@TempDir Path dir) {
-        assertTrue(ModelConfigWriter.write(dir, "gemma4:e4b-mlx", new SessionLog(dir)));
-        assertEquals("gemma4:e4b-mlx", ModelSelection.configuredModelTag(dir));
     }
 
     private static void writeConfig(Path dir, String... lines) throws IOException {

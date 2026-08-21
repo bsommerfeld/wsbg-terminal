@@ -30,7 +30,7 @@ class LanguageSelectionTest {
 
     @Test
     void configWithoutTheKeyStillCountsAsUnanswered(@TempDir Path dir) throws IOException {
-        // The model choice may have created the file before any language was
+        // The setup script writes a skeleton config before any language was
         // ever picked — that must not silently count as an answer.
         writeConfig(dir, "[agent]", "agent.model-tag = \"gemma4:e4b\"");
         assertFalse(new LauncherI18n(dir).explicit());

@@ -27,12 +27,12 @@ import java.util.concurrent.CompletableFuture;
  *     └─────────────────┘
  * </pre>
  *
- * <h3>One window, several screens</h3>
- * The questions the launcher asks (language, update channel, AI model) are
- * screens inside this same window, not windows of their own: the frame keeps
- * its size and shape from start to finish, and every screen change is a
- * dissolve between two snapshots ({@link ScreenTransition}). Choice screens
- * share their chrome via {@link ChoiceScreen}.
+ * <h3>One window, two screens</h3>
+ * The one question the launcher asks (the display language, on a fresh
+ * install) is a screen inside this same window, not a window of its own: the
+ * frame keeps its size and shape from start to finish, and the screen change
+ * is a dissolve between two snapshots ({@link ScreenTransition}). The choice
+ * screen takes its chrome from {@link ChoiceScreen}.
  *
  * <p>Two further concerns are delegated: {@link LogoRenderer} builds the
  * pre-scaled logo panel, and {@link EtaEstimator} owns the remaining-time
@@ -193,51 +193,10 @@ final class LauncherWindow extends JFrame {
     }
 
     /**
-     * Dissolves the window into the update-channel question; the returned
-     * future completes with the chosen answer ({@code "yes"}/{@code "no"}).
-     * Safe to call from any thread; the caller blocks on the future.
-     */
-    CompletableFuture<String> showChannelChoice(List<ChannelChoicePanel.Row> rows,
-            String preselectAnswer, ChannelChoicePanel.Labels labels) {
-        return showChoice(logo ->
-                new ChannelChoicePanel(rows, preselectAnswer, labels, logo,
-                        this::onChoiceConfirmed));
-    }
-
-    /**
-     * Dissolves the window into the model choice - a stack of tier cards the
-     * user flips through; the returned future completes with the chosen tag.
-     * Safe to call from any thread; the caller blocks on the future.
-     */
-    /**
-     * The model choice, held on to after it closes: the screen answers with a
-     * model TAG, but its advanced sheet may instead answer with an external
-     * endpoint - two different things that one {@code CompletableFuture<String>}
-     * cannot carry. The caller reads {@link #chosenEndpoint()} once the future
-     * completes.
-     */
-    private ModelChoicePanel modelChoicePanel;
-
-    CompletableFuture<String> showModelChoice(List<ModelChoicePanel.Row> rows,
-            String preselectTag, ModelChoicePanel.Labels labels,
-            AdvancedEndpointSheet.Labels advancedLabels) {
-        return showChoice(logo -> {
-            modelChoicePanel = new ModelChoicePanel(rows, preselectTag, labels,
-                    advancedLabels, logo, this::onChoiceConfirmed);
-            return modelChoicePanel;
-        });
-    }
-
-    /** The external endpoint the model screen's advanced sheet held, or null. */
-    AdvancedEndpointSheet.Endpoint chosenEndpoint() {
-        return modelChoicePanel == null ? null : modelChoicePanel.chosenEndpoint();
-    }
-
-    /**
-     * The shared entry for every choice screen: snapshots the splash logo for
+     * The shared entry for the choice screen: snapshots the splash logo for
      * the screen's corner, builds the view and dissolves the window into it.
-     * A pending return to the progress screen (from the previous question) is
-     * cancelled, so two questions in a row read as one continuous flow.
+     * A pending return to the progress screen is cancelled, so the question
+     * and the progress that follows read as one continuous flow.
      */
     private CompletableFuture<String> showChoice(
             java.util.function.Function<BufferedImage, ChoiceScreen> viewFactory) {

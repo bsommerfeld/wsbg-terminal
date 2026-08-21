@@ -1,7 +1,5 @@
 package de.bsommerfeld.updater.launcher;
 
-import de.bsommerfeld.updater.catalog.ModelCatalog;
-
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -10,8 +8,8 @@ import java.util.Locale;
 
 /**
  * Throwaway: plays the COMPLETE first-run launcher flow against the real
- * {@link LauncherWindow} - language choice, update channel, model choice,
- * update download, environment setup, launch - with every side effect faked.
+ * {@link LauncherWindow} - language choice, update download, environment
+ * setup, launch - with every side effect faked.
  * Nothing is downloaded, installed, written to the real app directory or
  * started; it exists purely so the whole sequence can be screen-recorded and
  * clicked through on demand. Not a test - delete after the recording.
@@ -19,8 +17,6 @@ import java.util.Locale;
  * <p>Knobs (all optional):
  * <pre>
  *   -Ddemo.pace=1.0     speed multiplier; 0.5 = twice as fast
- *   -Ddemo.ram=48       faked machine RAM in GB (drives the fit verdicts)
- *   -Ddemo.mlx=true     faked Apple Silicon (drives the model tags/sizes)
  *   -Ddemo.hold=4000    ms the finished "Launching..." screen stays up
  * </pre>
  */
@@ -45,8 +41,6 @@ final class LauncherDemo {
         System.setProperty("apple.awt.UIElement", "true");
 
         pace = Double.parseDouble(System.getProperty("demo.pace", "1.0"));
-        long ram = Long.getLong("demo.ram", 48);
-        boolean mlx = System.getProperty("demo.mlx", "true").equals("true");
 
         // A scratch app dir, so the demo never touches the real install:
         // config.toml, session log and rotation all land in /tmp.
@@ -68,12 +62,10 @@ final class LauncherDemo {
             Thread.ofPlatform().daemon().start(LauncherDemo::autoDrive);
         }
 
-        // The choice screens need real clicks; -Ddemo.choices=false jumps
+        // The choice screen needs a real click; -Ddemo.choices=false jumps
         // straight into the progress pipeline (handy to re-record just that).
         if (!"false".equals(System.getProperty("demo.choices"))) {
             i18n.switchTo(languageChoice());
-            channelChoice();
-            modelChoice(ram, mlx);
         }
 
         updatePhase();
@@ -85,7 +77,7 @@ final class LauncherDemo {
     }
 
     // =====================================================================
-    // Choice screens - the real panels, the real morph, the real futures
+    // Choice screen - the real panel, the real morph, the real future
     // =====================================================================
 
     private static String languageChoice() throws Exception {
@@ -100,58 +92,6 @@ final class LauncherDemo {
         String chosen = window.showLanguageChoice(rows, "de").get();
         log.log("[demo] language: " + chosen);
         return chosen;
-    }
-
-    private static void channelChoice() throws Exception {
-        List<ChannelChoicePanel.Row> rows = List.of(
-                new ChannelChoicePanel.Row(ChannelSelection.NO,
-                        i18n.get("Stable"), i18n.get("Risk management")),
-                new ChannelChoicePanel.Row(ChannelSelection.YES,
-                        i18n.get("Experimental"), i18n.get("100x leverage")));
-
-        ChannelChoicePanel.Labels labels = new ChannelChoicePanel.Labels(
-                i18n.get("Which updates do you want?"),
-                i18n.get("You can change this later in the settings"),
-                i18n.get("OK"));
-
-        log.log("[demo] channel: " + window.showChannelChoice(rows, ChannelSelection.NO, labels).get());
-    }
-
-    private static void modelChoice(long ram, boolean mlx) throws Exception {
-        List<ModelChoicePanel.Row> rows = new ArrayList<>();
-        String recTag = ModelCatalog.recommend(ram).tagFor(mlx);
-        for (ModelCatalog tier : ModelCatalog.values()) {
-            String tag = tier.tagFor(mlx);
-            boolean rec = tag.equals(recTag);
-            ModelCatalog.Fit fit = tier.fitFor(ram);
-            String verdict = i18n.get(switch (fit) {
-                case COMFORTABLE -> rec ? "Recommended" : "Good fit";
-                case TIGHT -> "Tight fit";
-                case TOO_LARGE -> "Too large";
-            });
-            String size = String.format(
-                    "de".equals(i18n.language()) ? Locale.GERMAN : Locale.ROOT,
-                    "%.1f GB", tier.diskGbFor(mlx));
-            rows.add(new ModelChoicePanel.Row(tag, tier.displayName(), tier.quality(),
-                    tier.speed(), size, fit, rec, verdict, tag.endsWith("-mlx")));
-        }
-
-        ModelChoicePanel.Labels labels = new ModelChoicePanel.Labels(
-                i18n.get("Choose your AI model"),
-                i18n.get("Quality"),
-                i18n.get("Speed"),
-                i18n.get("OK"),
-                i18n.get("Without MLX"),
-                i18n.get("Advanced"));
-        AdvancedEndpointSheet.Labels advanced = new AdvancedEndpointSheet.Labels(
-                i18n.get("Your own AI server"), i18n.get("Address"), i18n.get("Model"),
-                i18n.get("Key"), i18n.get("Test"), i18n.get("Asking..."),
-                i18n.get("Answers"), i18n.get("No answer"),
-                i18n.get("Nothing is downloaded then"),
-                i18n.get("Not suited to hosted providers. Costs can vary widely."));
-
-        log.log("[demo] model: "
-                + window.showModelChoice(rows, recTag, labels, advanced).get());
     }
 
     // =====================================================================

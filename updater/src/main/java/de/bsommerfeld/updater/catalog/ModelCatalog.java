@@ -9,7 +9,7 @@ package de.bsommerfeld.updater.catalog;
  *
  * <p>
  * It lives in {@code updater} because that is the one dependency-free
- * module BOTH processes share: the launcher (model choice screen, setup-script
+ * module BOTH processes share: the launcher (setup-script
  * tag resolution) and the terminal runtime (via {@code core}). It used to
  * live in the launcher alone, mirrored by hand into the runtime's family gate
  * and weight table — registers that drift silently. The catalog is

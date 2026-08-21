@@ -9,8 +9,8 @@ import java.util.List;
 /**
  * Persists a single key into {@code config.toml} — the launcher's write side,
  * mirroring the tiny line-scan readers ({@link LauncherI18n},
- * {@link ModelSelection}, {@link LaunchArgs}). Used by the launcher's choice
- * screens: the model tag ({@link ModelConfigWriter}) and the display language.
+ * {@link ModelSelection}, {@link LaunchArgs}). Used by the launcher's one
+ * choice screen, to persist the display language.
  *
  * <p>
  * The write is a minimal line-surgery: an existing line for the key has its

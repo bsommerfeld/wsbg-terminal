@@ -726,7 +726,7 @@ ui-reddit-visible = true
 agent.editorial-model = "REASONING_POWER"
 # Ollama model tag override (gemma4:e2b/e4b/26b, nemotron-3.5-lightning:30b,
 # -mlx twins on Apple Silicon).
-# Empty = managed default. Set by the launcher's model-choice screen; the launcher
+# Empty = managed default. Set in the terminal's settings; the launcher
 # reads it and installs the matching model on the next start.
 agent.model-tag = ""
 

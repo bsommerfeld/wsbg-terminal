@@ -6,16 +6,17 @@ package de.bsommerfeld.wsbg.terminal.core.config;
  * <p>
  * The deployment is single-model: {@link #REASONING_POWER} serves Chat and
  * the Editorial Agent in one resident model. Only the concrete TAG varies —
- * the hardware-based model choice ({@code agent.model-tag}, gemma4:e2b..26b
- * plus the Nemotron rung above them, with -mlx twins on Apple Silicon)
- * overrides the default tag via {@code AgentConfig.resolveModelTag()}. Exactly
- * one model is ever resident; the ladder only decides WHICH.
+ * the settings' model choice ({@code agent.model-tag}, the catalog ladder with
+ * -mlx twins on Apple Silicon) overrides the default tag via
+ * {@code AgentConfig.resolveModelTag()}. Exactly one model is ever resident;
+ * the ladder only decides WHICH.
  */
 public enum Model {
     /** gemma4:e4b — the default model and the family anchor. Drives Chat and
      *  the editorial agent in a single resident runner. Other
-     *  model tiers (gemma4:e2b..26b, -mlx builds on Apple Silicon) are selectable via
-     *  agent.model-tag; the launcher installs whatever tag is chosen. */
+     *  model tiers (the catalog ladder, -mlx builds on Apple Silicon) are selectable
+     *  in the settings via agent.model-tag; the launcher installs whatever tag is
+     *  chosen. */
     REASONING_POWER("gemma4:e4b", "gemma4", 0.2);
 
     /**

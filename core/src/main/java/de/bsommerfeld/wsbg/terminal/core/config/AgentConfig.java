@@ -23,8 +23,8 @@ public class AgentConfig {
             + "as gemma4:e4b-mlx on Apple Silicon. The launcher reads this key too and "
             + "installs the matching model on the next start, so runtime and installed model "
             + "stay in sync. Only tags of a deployed family are honored; anything else degrades to "
-            + "the default. Written by the launcher's model-choice screen — the hardware "
-            + "recommendation lives in the launcher's hardware-recommendation.json.")
+            + "the default. Written by the model picker in the terminal's settings - the only "
+            + "place the model is chosen.")
     private String modelTag = "";
 
     // ---- External AI endpoint ------------------------------------------

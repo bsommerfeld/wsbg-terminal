@@ -1,7 +1,5 @@
 package de.bsommerfeld.updater.launcher;
 
-import de.bsommerfeld.updater.catalog.ModelCatalog;
-
 import de.bsommerfeld.updater.api.ConnectivityProbe;
 import de.bsommerfeld.updater.api.GitHubRepository;
 import de.bsommerfeld.updater.api.ReleaseChannel;
@@ -18,6 +16,15 @@ import java.time.Duration;
 /**
  * Native launcher entry point. Orchestrates the full startup sequence:
  * <strong>update → environment setup → application launch</strong>.
+ *
+ * <h3>What it asks</h3>
+ * One thing, once: the display language, on a fresh install, because
+ * everything the launcher says afterwards has to be readable. Nothing else -
+ * the update channel and the AI model are settings, and settings live in the
+ * terminal, where they can be changed as often as the user likes instead of
+ * being decided once, blind, before the app has ever been seen. A fresh
+ * install therefore gets {@code ModelCatalog.DEFAULT}, and every later start
+ * installs whatever {@code config.toml} names.
  *
  * <h3>An already-running terminal</h3>
  * There is never a second terminal. A start that finds one raises its window
@@ -87,7 +94,7 @@ public final class LauncherMain {
         // Render the launcher via OpenGL instead of Metal on macOS. Java2D's
         // Metal pipeline presents the per-pixel-translucent splash window's
         // surface empty under animation load — the whole window blinks away
-        // to the desktop (visually confirmed during the model-choice morph;
+        // to the desktop (visually confirmed on a choice-screen morph;
         // the same pipeline also carries the known flusher SIGSEGV). Must be
         // set before AWT initializes; other platforms ignore the key.
         System.setProperty("sun.java2d.metal", "false");
@@ -140,18 +147,17 @@ public final class LauncherMain {
         log.log("auto-update=" + autoUpdate + (forceUpdate ? " (forced by in-app update)" : ""));
 
         // The terminal quit for one reason and told us which: fetch the model
-        // it just wrote to config.toml. That is a run with no questions in it -
-        // every first-run answer is on record by definition (a terminal only
-        // exists after a completed first run), so any choice screen appearing
-        // here would be a bug asking the user to decide something twice.
+        // it just wrote to config.toml. A run with no question in it - the
+        // language is on record by definition, since a terminal only exists
+        // after a completed first run.
         final boolean installModel = launchArgs.installModel();
         if (installModel) log.log("Started by the terminal to install its chosen model.");
 
         // Which releases this install accepts (config.toml:
         // user.experimental-updates). Unanswered means stable — nothing ever
-        // lands on a pre-release without being asked for it. The update client
-        // is built inside the pipeline below, once the answer is final.
-        ChannelSelection.Result channelChoice = ChannelSelection.resolve(appDir, log);
+        // lands on a pre-release without being asked for it; the switch itself
+        // lives in the terminal's settings.
+        final ReleaseChannel channel = ChannelSelection.resolve(appDir, log);
 
         // Read straight off version.txt: the channel decides what we may fetch,
         // never what is already installed, so this predates the client.
@@ -159,12 +165,12 @@ public final class LauncherMain {
         LauncherWindow window = new LauncherWindow();
         EnvironmentSetup envSetup = new EnvironmentSetup(appDir);
 
-        // Hardware check + model choice: probes the machine, persists the
-        // recommendation, and resolves the tag the setup script installs — the
-        // user's config.toml choice (agent.model-tag) or the managed default.
-        ModelSelection.Result modelChoice = ModelSelection.resolve(appDir, log, installModel);
-        envSetup.setReasoningModelTag(modelChoice.effectiveTag());
-        envSetup.setManagedAi(modelChoice.managedAi());
+        // Which model the setup script installs: the terminal's choice from
+        // config.toml (agent.model-tag) or, on a fresh install, the managed
+        // default tier. Nothing is asked here - the picker is in the settings.
+        ModelSelection.Result model = ModelSelection.resolve(appDir, log, installModel);
+        envSetup.setReasoningModelTag(model.effectiveTag());
+        envSetup.setManagedAi(model.managedAi());
 
         // Ensures child processes (winget, ollama pull) are killed when the
         // launcher exits — not just on timeout. Without this, closing the
@@ -175,26 +181,19 @@ public final class LauncherMain {
 
         Thread.ofVirtual().name("update-thread").start(() -> {
             try {
-                // No language on record yet — a fresh install, or a launcher
-                // that was closed before the choice was made. Ask first, so
-                // everything after it (including the model choice) speaks the
-                // user's language. One OK persists the key, so this shows
-                // exactly once.
+                // The one question the launcher still puts, and only on a
+                // fresh install: everything it says after this has to be
+                // readable. One OK persists the key, so it shows exactly once.
+                // The update channel and the model are NOT asked here - both
+                // live in the terminal's settings, where they can be changed
+                // as often as the user likes rather than once, blind, before
+                // the app has ever been seen.
                 if (!i18n.explicit() && !installModel) {
                     String language = runLanguageChoicePhase(window, log);
                     ConfigWriter.write(appDir, "[user]", "language", language, log);
                     i18n.switchTo(language);
                 }
 
-                // No answer on record for the update channel yet. Ask before
-                // anything talks to GitHub — the very next step already checks
-                // for updates, and it has to check the right channel.
-                ReleaseChannel channel = channelChoice.channel();
-                if (!channelChoice.userChosen() && !installModel) {
-                    String answer = runChannelChoicePhase(window, i18n, log);
-                    ConfigWriter.write(appDir, "[user]", ChannelSelection.CONFIG_KEY, answer, log);
-                    channel = ChannelSelection.channelOf(answer);
-                }
                 TinyUpdateClient updateClient = new TinyUpdateClient(REPO, appDir, channel);
 
                 // A terminal is already up: either there is nothing to apply
@@ -206,41 +205,14 @@ public final class LauncherMain {
                     System.exit(0);
                 }
 
-                // No explicit model choice on record yet: morph the window into
-                // the choice list and wait for the user's pick. One OK persists
-                // the key, so this shows exactly once per install. With an
-                // external endpoint there is nothing to choose - no model of
-                // ours goes on this machine - so the screen never appears.
-                // Whether an AI runtime gets installed at all. Starts as what
-                // the config said and can still change HERE: the model screen's
-                // advanced sheet may answer with an external endpoint instead
-                // of a tier, and everything after this point - the step count,
-                // the setup script's env - has to follow that answer.
-                boolean managedAi = modelChoice.managedAi();
-                if (managedAi && !modelChoice.userChosen() && !installModel) {
-                    String chosen = runModelChoicePhase(window, i18n, modelChoice, log);
-                    AdvancedEndpointSheet.Endpoint endpoint = window.chosenEndpoint();
-                    if (endpoint != null) {
-                        // The sheet wins over the stack: an endpoint means no
-                        // model of ours belongs on this machine at all.
-                        EndpointConfigWriter.write(appDir, endpoint, log);
-                        envSetup.setManagedAi(false);
-                        managedAi = false;
-                        log.log("External AI endpoint configured in the launcher: "
-                                + endpoint.url() + " (" + endpoint.model() + ")");
-                    } else {
-                        ModelConfigWriter.write(appDir, chosen, log);
-                        envSetup.setReasoningModelTag(chosen);
-                    }
-                }
                 int downloadSteps = runUpdatePhase(updateClient, window, log, firstRun, i18n,
-                        autoUpdate, forceUpdate, environmentSteps(managedAi));
+                        autoUpdate, forceUpdate, environmentSteps(model.managedAi()));
                 // Launcher self-update rides the same phase, quietly (log-only,
                 // no window steps): a newly staged jar takes over on the NEXT
                 // start, so there is nothing to show now. Same auto-update
                 // gate + --force-update override as the terminal update above.
                 StagedLauncher.sync(REPO, appDir, log, channel, autoUpdate, forceUpdate);
-                runEnvironmentPhase(envSetup, window, log, i18n, downloadSteps, managedAi);
+                runEnvironmentPhase(envSetup, window, log, i18n, downloadSteps, model.managedAi());
                 runLaunchPhase(appDir, window, log, forwardArgs, i18n);
             } catch (Throwable e) {
                 LauncherDialogs.handleFatalError(appDir, window, log, e);
@@ -366,93 +338,6 @@ public final class LauncherMain {
         log.log("Language choice UI shown (no explicit choice on record)");
         String chosen = window.showLanguageChoice(rows, DEFAULT_LANGUAGE).get();
         log.log("Language choice confirmed: " + chosen);
-        return chosen;
-    }
-
-    /**
-     * Blocks until the user has decided which releases this install accepts.
-     * Both rows name the thing plainly and carry the room's own reading of the
-     * decision beside it; the cautious answer arrives preselected, so taking
-     * the risky one is always a deliberate act.
-     */
-    private static String runChannelChoicePhase(LauncherWindow window, LauncherI18n i18n,
-            SessionLog log) throws Exception {
-        java.util.List<ChannelChoicePanel.Row> rows = java.util.List.of(
-                new ChannelChoicePanel.Row(ChannelSelection.NO,
-                        i18n.get("Stable"), i18n.get("Risk management")),
-                new ChannelChoicePanel.Row(ChannelSelection.YES,
-                        i18n.get("Experimental"), i18n.get("100x leverage")));
-
-        ChannelChoicePanel.Labels labels = new ChannelChoicePanel.Labels(
-                i18n.get("Which updates do you want?"),
-                i18n.get("You can change this later in the settings"),
-                i18n.get("OK"));
-
-        log.log("Channel choice UI shown (no answer on record)");
-        String chosen = window.showChannelChoice(rows, ChannelSelection.NO, labels).get();
-        log.log("Channel choice confirmed: " + chosen);
-        return chosen;
-    }
-
-    /**
-     * Blocks until the user has picked a model tier in the morphing choice
-     * list. The tiers are translated for a non-technical audience: the model's
-     * name plus quality and speed on a 0–10 scale and a plain-language fit
-     * verdict — never RAM figures or parameter counts. The name is the tier's
-     * own ({@link ModelCatalog#displayName()}), not the Ollama tag, and not
-     * translated: it is a product name. The hardware recommendation arrives
-     * preselected, so confirming the default is a single click.
-     */
-    private static String runModelChoicePhase(LauncherWindow window, LauncherI18n i18n,
-            ModelSelection.Result modelChoice, SessionLog log) throws Exception {
-        java.util.List<ModelChoicePanel.Row> rows = new java.util.ArrayList<>();
-        for (ModelCatalog tier : ModelCatalog.values()) {
-            String tag = tier.tagFor(modelChoice.appleSilicon());
-            boolean recommended = tag.equals(modelChoice.recommendedTag());
-            ModelCatalog.Fit fit = modelChoice.totalRamGb() <= 0
-                    ? ModelCatalog.Fit.COMFORTABLE
-                    : tier.fitFor(modelChoice.totalRamGb());
-            String verdict = i18n.get(switch (fit) {
-                case COMFORTABLE -> recommended ? "Recommended" : "Good fit";
-                case TIGHT -> "Tight fit";
-                case TOO_LARGE -> "Too large";
-            });
-            String size = String.format(
-                    "de".equals(i18n.language()) ? java.util.Locale.GERMAN : java.util.Locale.ROOT,
-                    "%.1f GB", tier.diskGbFor(modelChoice.appleSilicon()));
-            // The MLX chip derives from the EFFECTIVE tag, never a second
-            // list: only tags tagFor() actually suffixed carry it, so tiers
-            // without an MLX twin (Granite) stay unmarked on Apple Silicon
-            // and no card is ever marked on Windows/Linux.
-            rows.add(new ModelChoicePanel.Row(tag, tier.displayName(),
-                    tier.quality(), tier.speed(), size, fit, recommended, verdict,
-                    tag.endsWith("-mlx")));
-        }
-
-        ModelChoicePanel.Labels labels = new ModelChoicePanel.Labels(
-                i18n.get("Choose your AI model"),
-                i18n.get("Quality"),
-                i18n.get("Speed"),
-                i18n.get("OK"),
-                i18n.get("Without MLX"),
-                i18n.get("Advanced"));
-
-        AdvancedEndpointSheet.Labels advanced = new AdvancedEndpointSheet.Labels(
-                i18n.get("Your own AI server"),
-                i18n.get("Address"),
-                i18n.get("Model"),
-                i18n.get("Key"),
-                i18n.get("Test"),
-                i18n.get("Asking..."),
-                i18n.get("Answers"),
-                i18n.get("No answer"),
-                i18n.get("Nothing is downloaded then"),
-                i18n.get("Not suited to hosted providers. Costs can vary widely."));
-
-        log.log("Model choice UI shown (no explicit choice on record)");
-        String chosen = window.showModelChoice(rows, modelChoice.recommendedTag(), labels,
-                advanced).get();
-        log.log("Model choice confirmed: " + chosen);
         return chosen;
     }
 

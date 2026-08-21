@@ -14,10 +14,9 @@ import java.util.function.Consumer;
  * centred in the space the header and the footer leave - two options look
  * settled rather than stranded at the top.
  *
- * <p>Used by {@link LanguageChoicePanel} and {@link ChannelChoicePanel}, which
- * differ only in what they put in the two texts and where their labels come
- * from. The model choice needs more room per option than a row can give and
- * uses a card stack instead ({@link ModelChoicePanel}).
+ * <p>Used by {@link LanguageChoicePanel} - the launcher's one remaining
+ * question. The shape is deliberately kept general: a second list-shaped
+ * question would only have to fill in the two texts.
  */
 abstract class ListChoiceScreen extends ChoiceScreen {
 

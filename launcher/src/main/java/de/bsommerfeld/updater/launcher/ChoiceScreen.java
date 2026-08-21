@@ -25,8 +25,7 @@ import javax.swing.JComponent;
  * The shared chrome of every question the launcher asks: the logo tucked into
  * the top-left corner, the title beside it, and the footer with the hint and
  * the confirm button. Subclasses own only the body between the two -
- * {@link ListChoiceScreen} a list of options, {@link ModelChoicePanel} a stack
- * of cards.
+ * {@link ListChoiceScreen} a list of options.
  *
  * <h3>One window, one size</h3>
  * A choice screen fills the launcher's normal window exactly. Nothing resizes,

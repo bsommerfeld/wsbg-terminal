@@ -729,7 +729,7 @@ if (!(Test-Path $configFile)) {
         "agent.editorial-model = `"REASONING_POWER`"",
         "# Ollama model tag override (gemma4:e2b/e4b/26b, nemotron-3.5-lightning:30b).",
         "# Empty = managed default.",
-        "# Set by the launcher's model-choice screen; the launcher reads it and installs",
+        "# Set in the terminal's settings; the launcher reads it and installs",
         "# the matching model on the next start.",
         "agent.model-tag = `"`"",
         "",
