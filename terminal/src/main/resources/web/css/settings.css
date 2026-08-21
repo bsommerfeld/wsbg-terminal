@@ -223,6 +223,10 @@ html[data-theme="light"] .daynight-icon.sun  { color: var(--amber); }
    thing and holds the layout still. */
 .input:disabled, .select:disabled { opacity: .38; cursor: not-allowed; }
 .setting-row.is-off .setting-label { opacity: .5; }
+/* The label column alone is not enough for the model picker: its control sits
+   in the right column and, dimmed only by the UA's disabled styling, still
+   read as clickable next to a switched-on "Eigener KI-Server". */
+.setting-row.is-off .model-picker { opacity: .5; }
 
 /* ---- collapsible category ----
    "Erweitert" is a disclosure: shut by default, because almost nobody runs

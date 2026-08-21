@@ -251,8 +251,18 @@ public final class SettingsBridge {
         out.put("experimentalUpdates", config.getUser().isExperimentalUpdates());
 
         AgentConfig agent = config.getAgent();
-        // The RESOLVED mode, not the raw key: a half-filled remote setup runs
-        // as managed, and the panel must show what is actually in force.
+        // TWO answers, because the question has two: what the user asked for
+        // and what is actually running. They part company on a half-filled
+        // remote setup, which AiEndpoint.resolve() degrades to managed.
+        //
+        // The switch and everything it enables follow the STORED value. They
+        // used to follow the resolved one, which made the panel fight the
+        // user: ticking "Eigener KI-Server" writes remote, the echo comes
+        // back "managed" because the address is still empty, and the switch
+        // flips itself off again with the model picker still live beside it.
+        out.put("aiEndpointModeStored",
+                "remote".equalsIgnoreCase(agent.getEndpointMode()) ? "remote" : "managed");
+        // What is actually in force - the panel says so when the two differ.
         out.put("aiEndpointMode", AiEndpoint.resolve(agent).managed() ? "managed" : "remote");
         out.put("aiEndpointUrl", agent.getEndpointUrl());
         out.put("aiEndpointApi", AiEndpoint.resolve(agent).openAi() ? "openai" : "ollama");

@@ -656,6 +656,10 @@
                      minority who would point this at a paid provider, and a
                      standing paragraph would tax everyone else for it. -->
                 <p class="setting-warn-text" hidden data-i18n="settings.ai.remote.warn">Nicht für Remote-Anbieter geeignet. Kosten können stark variieren.</p>
+                <!-- Switched on but not yet in force: endpoint-mode says remote
+                     while the app still runs its own model, because the address
+                     or the model tag is missing. Filled by settings.js. -->
+                <span class="setting-state js-ai-remote-state" hidden></span>
               </div>
               <label class="checkbox">
                 <input type="checkbox" class="js-ai-remote">

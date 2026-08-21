@@ -240,6 +240,19 @@ export function initSettings(socket) {
     }
   }
 
+  /**
+   * The note under the switch for "on, but not yet in force": endpoint-mode
+   * says remote while the app still runs its own model, because the address or
+   * the model tag is missing. Without it the panel would show a dead model
+   * picker beside a local model that is quietly still running.
+   */
+  function showRemotePending(pending) {
+    const note = view.querySelector('.js-ai-remote-state');
+    if (!note) return;
+    note.hidden = !pending;
+    if (pending) note.textContent = t('settings.ai.remote.pending');
+  }
+
   function showTestResult(text, state) {
     if (!aiTestResult) return;
     aiTestResult.textContent = text;
@@ -322,8 +335,12 @@ export function initSettings(socket) {
     const effective = chosen || payload.aiModelDefault;
     // Only when they differ. Saying "running: X" when X is what you picked is
     // noise; saying it when they diverge is the whole point.
+    // Never on a remote setup - neither the one in force nor the one the user
+    // has switched on but not finished: no model of ours runs there, and a
+    // restart would fetch one nobody asked for.
     const diverges = active && effective && active !== effective
-      && payload.aiEndpointMode !== 'remote';
+      && payload.aiEndpointMode !== 'remote'
+      && payload.aiEndpointModeStored !== 'remote';
     if (state) {
       state.hidden = !diverges;
       if (diverges) state.textContent = `${t('settings.ai.model.running')} ${active}`;
@@ -349,14 +366,20 @@ export function initSettings(socket) {
     if (experimental && typeof payload.experimentalUpdates === 'boolean')
       experimental.checked = payload.experimentalUpdates;
 
-    // Advanced. The mode is the RESOLVED one (a half-filled remote setup runs
-    // as managed), so the switch always shows what is actually in force.
-    const remote = payload.aiEndpointMode === 'remote';
-    if (aiRemote) aiRemote.checked = remote;
-    applyEndpointEnabled(remote);
+    // Advanced. Two modes travel: what the user asked for (stored) and what is
+    // actually running (resolved). The switch and the enabling follow the
+    // STORED one - otherwise ticking the switch with an empty address makes
+    // the backend echo "managed" and the panel undoes the click.
+    const wantsRemote = payload.aiEndpointModeStored === 'remote';
+    const remoteInForce = payload.aiEndpointMode === 'remote';
+    if (aiRemote) aiRemote.checked = wantsRemote;
+    applyEndpointEnabled(wantsRemote);
+    // A switch that is on but not yet in force: the fields it needs are the
+    // ones still missing, so say that rather than let the app look broken.
+    showRemotePending(wantsRemote && !remoteInForce);
     // An endpoint that is actually in use should not be hidden behind a fold -
     // open the category once, so the configuration in force is visible.
-    if (remote && aiToggle && aiBody && aiToggle.getAttribute('aria-expanded') !== 'true') {
+    if (wantsRemote && aiToggle && aiBody && aiToggle.getAttribute('aria-expanded') !== 'true') {
       aiToggle.setAttribute('aria-expanded', 'true');
       aiBody.hidden = false;
     }

@@ -81,18 +81,36 @@ class SettingsBridgeTest {
     }
 
     @Test
-    void theModeIsReportedAsRESOLVED_notAsTyped() {
-        // A half-filled remote setup runs as managed. The panel must show what
-        // is in force, or the user stares at a switch that is on while the
-        // local model answers.
+    void bothModesTravel_whatWasAskedForAndWhatIsInForce() {
+        // A half-filled remote setup RUNS as managed, so the panel has to say
+        // so - but it must not answer the switch's own question with it. The
+        // switch and the model picker it greys out follow the STORED value;
+        // driving them off the resolved one made the panel undo the click
+        // (switch back off, model picker live again) for the whole time it
+        // takes to type an address, which is every time.
         GlobalConfig c = new GlobalConfig();
         assertTrue(SettingsBridge.apply(c, "aiEndpointMode", "remote"));
-        assertEquals("managed", SettingsBridge.snapshot(c).get("aiEndpointMode"),
-                "no address and no model yet");
+        var half = SettingsBridge.snapshot(c);
+        assertEquals("remote", half.get("aiEndpointModeStored"), "the switch stays on");
+        assertEquals("managed", half.get("aiEndpointMode"), "no address and no model yet");
 
         assertTrue(SettingsBridge.apply(c, "aiEndpointUrl", "192.168.1.20:11434"));
         assertTrue(SettingsBridge.apply(c, "aiEndpointModel", "qwen3:32b"));
-        assertEquals("remote", SettingsBridge.snapshot(c).get("aiEndpointMode"));
+        var full = SettingsBridge.snapshot(c);
+        assertEquals("remote", full.get("aiEndpointModeStored"));
+        assertEquals("remote", full.get("aiEndpointMode"));
+    }
+
+    @Test
+    void theStoredModeFollowsTheSwitchBackOffAgain() {
+        GlobalConfig c = new GlobalConfig();
+        assertEquals("managed", SettingsBridge.snapshot(c).get("aiEndpointModeStored"));
+
+        assertTrue(SettingsBridge.apply(c, "aiEndpointMode", "remote"));
+        assertEquals("remote", SettingsBridge.snapshot(c).get("aiEndpointModeStored"));
+
+        assertTrue(SettingsBridge.apply(c, "aiEndpointMode", "managed"));
+        assertEquals("managed", SettingsBridge.snapshot(c).get("aiEndpointModeStored"));
     }
 
     @Test
