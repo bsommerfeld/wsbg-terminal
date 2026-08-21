@@ -3,7 +3,7 @@
 
 import { Socket } from './bridge/socket.js';
 import { applyPlatform } from './chrome/platform.js';
-import { initTitlebar } from './chrome/titlebar.js';
+import { initTitlebar, initTitlebarTitle } from './chrome/titlebar.js';
 import { initIntro } from './chrome/intro.js';
 import { initTheme, setSystemAppearance } from './chrome/theme.js';
 import { initIdle } from './chrome/idle.js';
@@ -151,6 +151,9 @@ safeInit('widget-rail', () => initWidgetRail(socket));
 safeInit('headline-search', () => initHeadlineSearch(socket));
 safeInit('unread-portals', () => initUnreadPortals());
 safeInit('titlebar', () => initTitlebar(socket));
+// After widget-nav + settings: it renders from their state and listens to
+// the events they fire.
+safeInit('titlebar-title', () => initTitlebarTitle());
 safeInit('footer', () => initFooter());
 safeInit('external-links', () => initExternalLinks(socket));
 safeInit('keyboard-copy', () => initKeyboardCopy());

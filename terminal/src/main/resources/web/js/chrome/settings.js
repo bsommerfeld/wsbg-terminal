@@ -14,18 +14,52 @@ export function initSettings(socket) {
   const view = document.getElementById('settings-view');
   if (!main || !view) return;
 
-  const open = () => { view.hidden = false; main.classList.add('settings-open'); syncAppearance(); };
+  // The gear IS the back button while the view is open — it swaps its cog for
+  // the curved arrow and closes again. It carries the arrow instead of the
+  // centred title because only this action strip is carved out of the native
+  // title-bar drag region (MacTitlebarCarveout / WindowsCustomChrome); a button
+  // beside the title would never see the click on Windows.
+  const toggles = [...document.querySelectorAll('.js-settings-toggle')];
+
+  function syncToggles() {
+    const isOpen = !view.hidden;
+    const titleKey = isOpen ? 'settings.back' : 'titlebar.settings.title';
+    const ariaKey = isOpen ? 'settings.back' : 'titlebar.settings.aria';
+    for (const b of toggles) {
+      b.setAttribute('aria-expanded', String(isOpen));
+      // Keys, not literals: applyStatic() re-resolves them on a language switch.
+      b.setAttribute('data-i18n-title', titleKey);
+      b.setAttribute('data-i18n-aria-label', ariaKey);
+      b.setAttribute('title', t(titleKey));
+      b.setAttribute('aria-label', t(ariaKey));
+    }
+  }
+
+  const open = () => {
+    view.hidden = false;
+    main.classList.add('settings-open');
+    syncAppearance();
+    syncToggles();
+    // widget-nav parks a focused/grid view on the dashboard for the duration —
+    // the settings only ever render over the dashboard.
+    window.dispatchEvent(new CustomEvent('wsbg:settingsopen'));
+  };
   const close = () => {
     view.hidden = true;
     main.classList.remove('settings-open');
+    syncToggles();
     // widget-nav restores the view the settings were opened from (a focused
     // widget / the grid), which it parked on the dashboard while we were open.
     window.dispatchEvent(new CustomEvent('wsbg:settingsclosed'));
   };
 
-  document.querySelectorAll('.js-settings-toggle').forEach(b => b.addEventListener('click', open));
+  toggles.forEach(b => b.addEventListener('click', () => (view.hidden ? open() : close())));
   document.querySelectorAll('.js-settings-close').forEach(b => b.addEventListener('click', close));
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !view.hidden) close(); });
+  // widget-nav closes the view outright when the grid button is pressed (no
+  // wsbg:settingsclosed, which would race its own restore) — re-read the real
+  // state on every view switch so the gear can never keep the arrow.
+  window.addEventListener('wsbg:viewchange', syncToggles);
 
   // ---- Appearance (client-side) ----
   const sw = view.querySelector('.js-theme-switch');

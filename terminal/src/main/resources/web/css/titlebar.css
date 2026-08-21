@@ -105,12 +105,47 @@ html[data-platform="win"] .light.r::after {
 html[data-platform="win"] .light.r::before { transform: rotate(45deg); }
 html[data-platform="win"] .light.r::after  { transform: rotate(-45deg); }
 
-/* App title with German flag G. */
+/* Context title: the app brand by default, the focused widget's mark + name in
+   focus view, the settings heading while the settings view is open. titlebar.js
+   flips [hidden] between the variants; the grid overview and the split
+   dashboard both keep the brand. */
 .tb-title {
   display: flex; align-items: center; gap: 10px; color: var(--txt);
   font-family: "Inter", sans-serif; font-weight: 600; font-size: var(--font-title);
   letter-spacing: .22em; text-transform: uppercase;
 }
+/* The brand is three flex items of its own (WSBG · Terminal) — an own flex box
+   so hiding it as a unit keeps the 10px rhythm between them. */
+.tb-brand { display: flex; align-items: center; gap: 10px; }
+.tb-brand[hidden] { display: none; }
+
+/* Widget mark: a clone of the widget's GRID-CARD icon (.grid-hit-tag), i.e. the
+   symbol the user just clicked to open it — not the widget-head glyph, which
+   for Fear & Greed is a different drawing (amber outline vs the card's colour
+   gauge). Every icon is defined once by its own widget's CSS; the only thing
+   this file says is how big it is up here and that the card's drop shadow
+   (overview decoration) comes off. */
+.tb-mark {
+  flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.tb-mark[hidden] { display: none; }
+/* Each reset is written against the icon's own class, not `.tb-mark > *`: that
+   would tie with the card's rule on specificity and lose the cascade to
+   widget-grid.css, which loads later — the card's optical margin-top kept
+   pushing the mark down. */
+.tb-mark > .grid-hit-icon    { width: 22px; height: 22px; margin: 0; filter: none; }
+.tb-mark > .grid-hit-icon-fg { width: 30px; height: auto; margin: 0; filter: none; }
+/* The flag pair is far flatter than the other marks, so it needs a little more
+   width to carry the same weight — the same optical correction the card makes. */
+.tb-mark > .grid-hit-icon-fx { width: 34px; height: auto; margin: 0; filter: none; }
+
+/* The gauge is not centred inside its own viewBox: the arc leaves ~5 units of
+   air above it and ~1.6 below (0 0 40 26), so a box-centred mark still reads as
+   hanging on the baseline. Lift the drawing, not the box — `top` leaves the
+   flex layout around it untouched. */
+.tb-mark > .grid-hit-icon-fg { position: relative; top: -2px; }
+
 .tb-title .flag {
   background: linear-gradient(180deg,
               #525252 0, #525252 33%,
@@ -150,6 +185,19 @@ html[data-theme="light"] .tb-title .flag {
 /* Settings gear: the cog spins up on hover (a single smooth turn). */
 .gear-btn svg { transition: transform .6s cubic-bezier(.34, 1.2, .64, 1); }
 .gear-btn:hover svg { transform: rotate(180deg); }
+
+/* …and it IS the settings view's back button while that view is open: the cog
+   swaps for the same curved arrow the view's own header used to carry. It sits
+   in the action strip rather than beside the centred title because only this
+   strip is carved out of the native drag region (MacTitlebarCarveout /
+   WindowsCustomChrome) — a button mid-bar would be dead on Windows. */
+.gear-btn .back-glyph { display: none; }
+.gear-btn[aria-expanded="true"] .gear-glyph { display: none; }
+.gear-btn[aria-expanded="true"] .back-glyph { display: inline; }
+/* The arrow does NOT move on hover — the cog's spin is a cog thing. Only the
+   .iconbtn background/colour changes, like every other button up here. */
+.gear-btn[aria-expanded="true"] svg { transition: none; }
+.gear-btn[aria-expanded="true"]:hover svg { transform: none; }
 
 /* Update-available indicator: green, hidden until the backend reports a newer
    release (js sets/clears [hidden]). A soft pulse draws the eye when it appears. */

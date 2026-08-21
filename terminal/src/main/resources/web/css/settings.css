@@ -22,6 +22,14 @@
 .main.settings-open > .vdivider { display: none; }
 
 /* ---- header: curved back arrow + title ---- */
+/* Only Linux still needs it: everywhere else the HTML titlebar carries the
+   heading ("EINSTELLUNGEN") and the action strip's gear turns into this very
+   arrow (titlebar.js / settings.js), so the in-view header would say it twice.
+   Linux draws the native OS caption and hides the HTML titlebar — there this
+   stays the view's own heading. */
+html:not([data-platform="other"]) .settings-head { display: none; }
+html:not([data-platform="other"]) .settings-scroll { padding-top: 34px; }
+
 .settings-head {
   display: flex; align-items: center; gap: 16px;
   padding: 22px 32px 10px;

@@ -47,20 +47,21 @@ export function initWidgetNav() {
   });
 
   // The settings view replaces the centre widgets — it only ever opens over
-  // the dashboard, so leave grid/focus instantly (no animation) first, but
-  // remember where we were: the settings back arrow returns THERE.
-  document.querySelectorAll('.js-settings-toggle').forEach(b =>
-    b.addEventListener('click', () => {
-      if (view !== 'dashboard') {
-        settingsReturn = {
-          view,
-          focused: widgets.find(w => w.classList.contains('focused')) || null,
-        };
-        setView('dashboard', null, { instant: true });
-      } else {
-        settingsReturn = null;
-      }
-    }));
+  // the dashboard, so leave grid/focus instantly (no animation), but remember
+  // where we were: the settings back arrow returns THERE. Driven by the OPEN
+  // event, not the gear's click: the gear toggles now, and on a close the
+  // restore below must be the only thing that runs.
+  window.addEventListener('wsbg:settingsopen', () => {
+    if (view !== 'dashboard') {
+      settingsReturn = {
+        view,
+        focused: widgets.find(w => w.classList.contains('focused')) || null,
+      };
+      setView('dashboard', null, { instant: true });
+    } else {
+      settingsReturn = null;
+    }
+  });
 
   // Settings closed (back arrow / Escape): restore the parked view.
   window.addEventListener('wsbg:settingsclosed', () => {
