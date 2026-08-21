@@ -15,14 +15,26 @@ import java.net.URL;
  * it with progressive-bilinear HiDPI scaling so the thin diamond strokes
  * survive the reduction from the 2x-retina source. Extracted from
  * {@link LauncherWindow} as a self-contained rendering concern.
+ *
+ * <p>The panel keeps its size no matter what the glyph export looks like:
+ * everything below is measured from the glyph's INK (its non-transparent
+ * bounding box), never from the image's own edges. Fitting the image made the
+ * displayed size a property of the exporter's padding - re-exported trimmed,
+ * the logo silently grew by ~40 % (twice: once in July, again with the
+ * Liquid-Glass icon). Ink-fitting cannot drift that way.
  */
 final class LogoRenderer {
 
-    // Freed hands+diamond glyph (no card background), sized to fill the upper
-    // area. The box roughly matches the glyph's 648:576 source aspect ratio;
-    // the exact fit is computed below, so a re-exported glyph cannot distort.
-    private static final int LOGO_W = 210;
-    private static final int LOGO_H = 180;
+    /** The box the splash layout reserves, and what the choice screens snapshot. */
+    private static final int PANEL_W = 210;
+    private static final int PANEL_H = 180;
+
+    /** How large the glyph's ink is drawn; its aspect ratio is preserved. */
+    private static final int INK_W = 120;
+    private static final int INK_H = 106;
+
+    /** Alpha below this is the export's feathered edge, not ink. */
+    private static final int INK_ALPHA = 8;
 
     private LogoRenderer() {
     }
@@ -34,22 +46,24 @@ final class LogoRenderer {
         Image logoSource = loadLogoImage();
         if (logoSource == null) return new JPanel();
 
-        // Pre-render the glyph at full opacity, scaled to fit the LOGO_W×LOGO_H
-        // box while preserving its source aspect ratio. The glyph asset is
-        // shipped at 2x-retina resolution, so a single bilinear pass would
-        // undersample (2x2 taps across a ~7x reduction) and shred the thin
-        // diamond strokes — halve progressively until within 2x of the target,
-        // then do the final fractional step.
-        int sw = logoSource.getWidth(null);
-        int sh = logoSource.getHeight(null);
-        double scale = Math.min((double) LOGO_W / sw, (double) LOGO_H / sh);
+        // Scale the ink to fit the INK_W×INK_H box while preserving its aspect
+        // ratio. The glyph asset is shipped at 2x-retina resolution, so a
+        // single bilinear pass would undersample (2x2 taps across a ~7x
+        // reduction) and shred the thin diamond strokes — halve progressively
+        // until within 2x of the target, then do the final fractional step.
+        BufferedImage ink = trimToInk(logoSource);
+        if (ink == null) return new JPanel();
+
+        int sw = ink.getWidth();
+        int sh = ink.getHeight();
+        double scale = Math.min((double) INK_W / sw, (double) INK_H / sh);
         int w = Math.max(1, (int) Math.round(sw * scale));
         int h = Math.max(1, (int) Math.round(sh * scale));
 
         // Pre-render at 2x the logical size and draw scaled down in paint:
         // on a HiDPI (Retina) display the device transform then maps the
         // bitmap ~1:1 instead of upscaling a tiny pre-scaled image.
-        BufferedImage stage = toArgb(logoSource, sw, sh);
+        BufferedImage stage = ink;
         while (stage.getWidth() / 2 >= w * 2 && stage.getHeight() / 2 >= h * 2) {
             stage = resizeBilinear(stage, stage.getWidth() / 2, stage.getHeight() / 2);
         }
@@ -61,14 +75,40 @@ final class LogoRenderer {
                 Graphics2D g2d = (Graphics2D) g;
                 g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
                 g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+
                 int x = (getWidth() - w) / 2;
                 int y = (getHeight() - h) / 2;
                 g2d.drawImage(scaledLogo, x, y, w, h, null);
             }
         };
         panel.setOpaque(false);
-        panel.setPreferredSize(new Dimension(LOGO_W, LOGO_H));
+        panel.setPreferredSize(new Dimension(PANEL_W, PANEL_H));
         return panel;
+    }
+
+    /**
+     * The glyph cropped to its non-transparent bounding box — the drop shadow
+     * counts as ink, it is part of the artwork. Null if the image carries no
+     * pixel above {@link #INK_ALPHA} at all.
+     */
+    private static BufferedImage trimToInk(Image source) {
+        int sw = source.getWidth(null);
+        int sh = source.getHeight(null);
+        if (sw <= 0 || sh <= 0) return null;
+
+        BufferedImage img = toArgb(source, sw, sh);
+        int minX = sw, minY = sh, maxX = -1, maxY = -1;
+        for (int y = 0; y < sh; y++) {
+            for (int x = 0; x < sw; x++) {
+                if ((img.getRGB(x, y) >>> 24) <= INK_ALPHA) continue;
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                if (y < minY) minY = y;
+                if (y > maxY) maxY = y;
+            }
+        }
+        if (maxX < minX) return null;
+        return img.getSubimage(minX, minY, maxX - minX + 1, maxY - minY + 1);
     }
 
     private static BufferedImage toArgb(Image src, int w, int h) {

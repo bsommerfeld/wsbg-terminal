@@ -10,3 +10,4 @@
 - „Jetzt neu starten" nach einem Modellwechsel installiert das gewählte Modell jetzt direkt.
 - Der Starter fragt beim ersten Start nur noch nach der Sprache. Update-Kanal und KI-Modell stehen in den Einstellungen.
 - Ältere Installationen bekommen den Hinweis, den Starter zu erneuern. Danach steht im Dock nicht mehr „java" neben dem Terminal.
+- Das Logo im Starter ist wieder kleiner.
