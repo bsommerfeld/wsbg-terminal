@@ -11,7 +11,6 @@ import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -22,86 +21,33 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ModelSelectionTest {
 
     // ------------------------------------------------------------------
-    // ModelCatalog: recommendation ladder
+    // ModelCatalog: the RAM floors
     // ------------------------------------------------------------------
 
     @Test
-    void recommendedIsAlwaysMinPlusEight() {
-        // The ONE RAM-bar rule (user decision 2026-08-13): min is the honest
-        // floor, and "comfortable" begins exactly 8 GB above it — for every
-        // tier, no hand-set exceptions. A hand-tuned recommended value is how
-        // Nemotron ended up "comfortable" on the 48 GB machine it choked.
+    void theRamFloorsRiseWithTheLadder() {
+        // The ladder is ordered by the machine a tier needs, and the settings'
+        // picker renders it in that order. Nothing grades a machine against
+        // these numbers any more, but a floor that fell below its predecessor
+        // would put the ladder out of order with nothing to notice it.
+        int previous = 0;
         for (ModelCatalog tier : ModelCatalog.values()) {
-            assertEquals(tier.minRamGb() + 8, tier.recommendedRamGb(),
-                    "recommended must be min+8: " + tier);
+            assertTrue(tier.minRamGb() >= previous, "floors must not fall: " + tier);
+            previous = tier.minRamGb();
         }
     }
 
     @Test
-    void recommendsByTotalRam() {
-        // Below every comfortable bar the floor tier holds (min+8 puts even
-        // the 3B's comfort bar at 14).
-        assertEquals(ModelCatalog.GRANITE_3B, ModelCatalog.recommend(8));
-        assertEquals(ModelCatalog.GRANITE_3B, ModelCatalog.recommend(12));
-        assertEquals(ModelCatalog.GRANITE_3B, ModelCatalog.recommend(14));
-        assertEquals(ModelCatalog.E2B, ModelCatalog.recommend(16));
-        assertEquals(ModelCatalog.GRANITE_8B, ModelCatalog.recommend(18));
-        assertEquals(ModelCatalog.E4B, ModelCatalog.recommend(20));
-        assertEquals(ModelCatalog.E4B, ModelCatalog.recommend(24));
-        assertEquals(ModelCatalog.E4B, ModelCatalog.recommend(32));
-        assertEquals(ModelCatalog.B26, ModelCatalog.recommend(40));
-        assertEquals(ModelCatalog.B26, ModelCatalog.recommend(48));
-        // The ladder tops out at Nemotron on machines that actually carry it
-        // (min 48 → comfortable from 56) - the 35B sits BEFORE it in the
-        // ladder, so even where both grade comfortable the recommendation
-        // stays Nemotron.
-        assertEquals(ModelCatalog.NEMOTRON_LIGHTNING, ModelCatalog.recommend(56));
-        assertEquals(ModelCatalog.NEMOTRON_LIGHTNING, ModelCatalog.recommend(64));
-        assertEquals(ModelCatalog.NEMOTRON_LIGHTNING, ModelCatalog.recommend(128));
-    }
-
-    @Test
-    void fortyEightGbMustNeverGetTheBigRungsRecommended() {
-        // The exact regression measured 2026-08-13 on a 48 GB Apple-Silicon
-        // machine: Nemotron active meant 46 of 48 GB in use and a visibly
-        // slow machine, while the 26B sat at 42 of 48 GB and ran fine. The
-        // old bars (32/48) made recommend(48) hand out Nemotron as the best
-        // choice; that must stay dead. Same guarantee as the 35B's bars.
-        assertNotEquals(ModelCatalog.NEMOTRON_LIGHTNING, ModelCatalog.recommend(48));
-        assertNotEquals(ModelCatalog.QWEN_35B, ModelCatalog.recommend(48));
-        assertEquals(ModelCatalog.Fit.TIGHT, ModelCatalog.NEMOTRON_LIGHTNING.fitFor(48));
-        assertEquals(ModelCatalog.Fit.COMFORTABLE, ModelCatalog.NEMOTRON_LIGHTNING.fitFor(64));
-    }
-
-    @Test
-    void unprobeableMachineGetsTheSafeDefaultNotTheFloor() {
-        assertEquals(ModelCatalog.DEFAULT, ModelCatalog.recommend(0));
-        assertEquals(ModelCatalog.DEFAULT, ModelCatalog.recommend(-1));
-    }
-
-    @Test
-    void fitVerdictsGradePerTier() {
-        assertEquals(ModelCatalog.Fit.COMFORTABLE, ModelCatalog.E4B.fitFor(20));
-        assertEquals(ModelCatalog.Fit.TIGHT, ModelCatalog.E4B.fitFor(16));
-        assertEquals(ModelCatalog.Fit.TIGHT, ModelCatalog.E4B.fitFor(12));
-        assertEquals(ModelCatalog.Fit.TOO_LARGE, ModelCatalog.E4B.fitFor(8));
-        assertEquals(ModelCatalog.Fit.TOO_LARGE, ModelCatalog.B26.fitFor(24));
-        assertEquals(ModelCatalog.Fit.TIGHT, ModelCatalog.B26.fitFor(32));
-        assertEquals(ModelCatalog.Fit.COMFORTABLE, ModelCatalog.B26.fitFor(40));
-        assertEquals(ModelCatalog.Fit.TIGHT, ModelCatalog.GRANITE_3B.fitFor(8));
-        assertEquals(ModelCatalog.Fit.COMFORTABLE, ModelCatalog.GRANITE_3B.fitFor(14));
-        assertEquals(ModelCatalog.Fit.TIGHT, ModelCatalog.GRANITE_8B.fitFor(12));
-    }
-
-    @Test
-    void qwenRamBarsEncodeTheMeasuredSwapCollapse() {
-        // 48 GB is exactly the machine the 2026-08-11 measurement collapsed on
-        // (~78 → ~18 tok/s sustained as the 21 GB resident set hit swap). The
-        // rung is re-admitted, but 48 GB must grade TIGHT — never comfortable.
-        assertEquals(ModelCatalog.Fit.TOO_LARGE, ModelCatalog.QWEN_35B.fitFor(40));
-        assertEquals(ModelCatalog.Fit.TIGHT, ModelCatalog.QWEN_35B.fitFor(48));
-        assertEquals(ModelCatalog.Fit.COMFORTABLE, ModelCatalog.QWEN_35B.fitFor(56));
-        assertEquals(ModelCatalog.Fit.COMFORTABLE, ModelCatalog.QWEN_35B.fitFor(64));
+    void theTwoBigRungsKeepTheirMeasuredFloor() {
+        // 48 GB is the machine BOTH measurements broke on: the 35B collapsed
+        // from ~78 to ~18 tok/s into swap (2026-08-11), and Nemotron sat at
+        // 46 of 48 GB and ran visibly slow (2026-08-13) where the 26B held
+        // 42 of 48 GB and ran fine. 48 is their FLOOR, not their home - and
+        // it is what pins AgentConfig's context window to the 8k floor there
+        // (ConfigDefaultsTest holds that half).
+        assertEquals(32, ModelCatalog.B26.minRamGb());
+        assertEquals(48, ModelCatalog.QWEN_35B.minRamGb());
+        assertEquals(48, ModelCatalog.NEMOTRON_LIGHTNING.minRamGb());
     }
 
     @Test
@@ -298,55 +244,6 @@ class ModelSelectionTest {
             // A name is a label, never the package coordinate.
             assertTrue(!name.contains(":"), "name must not be the tag: " + tier);
             assertTrue(names.add(name), "duplicate tier name: " + name);
-        }
-    }
-
-    // ------------------------------------------------------------------
-    // Quality/speed scales: the non-technical parameter translation
-    // ------------------------------------------------------------------
-
-    @Test
-    void qualityScaleStaysHonestAcrossFamilies() {
-        // The ladder is ordered by the machine a tier needs, and quality is
-        // deliberately NOT monotonic along it: the dense Granite rungs beat
-        // the Gemma MoE beside them on quality per GB of machine.
-        assertTrue(ModelCatalog.GRANITE_3B.quality() > ModelCatalog.E2B.quality(),
-                "granite 3b outgrades e2b despite the smaller RAM bar");
-        assertTrue(ModelCatalog.GRANITE_8B.quality() > ModelCatalog.E4B.quality(),
-                "granite 8b (IFEval 87.1, BFCL 68.27) outgrades e4b");
-        // Within a family the bigger sibling must still win.
-        assertTrue(ModelCatalog.E4B.quality() > ModelCatalog.E2B.quality());
-        assertTrue(ModelCatalog.B26.quality() > ModelCatalog.E4B.quality());
-        assertTrue(ModelCatalog.GRANITE_8B.quality() > ModelCatalog.GRANITE_3B.quality());
-        // The top rungs carry the ceiling.
-        assertEquals(10, ModelCatalog.QWEN_35B.quality());
-        assertEquals(10, ModelCatalog.NEMOTRON_LIGHTNING.quality());
-    }
-
-    @Test
-    void speedScoresAreMeasuredNotDerivedFromActiveParams() {
-        // Within the small MoE half, speed still follows active params.
-        assertTrue(ModelCatalog.E2B.speed() > ModelCatalog.E4B.speed());
-        // The dense Granite rungs have few enough active params that the
-        // missing expert-skipping barely registers — the scores stay high.
-        assertTrue(ModelCatalog.GRANITE_3B.speed() >= ModelCatalog.E4B.speed());
-        assertTrue(ModelCatalog.GRANITE_8B.speed() >= ModelCatalog.E4B.speed());
-        // The two big rungs carry MEASURED sustained values, not the "only 3B
-        // active" derivation that once put Nemotron at 9: measured 2026-08-13
-        // it ran SLOWER than the 26B on the machine class it was recommended
-        // for (46 of 48 GB resident), and the 35B collapsed under swap on
-        // 2026-08-11 (~78 → ~18 tok/s). Do not raise either without a new
-        // measurement; the catalog's warning comments hold the details.
-        assertEquals(5, ModelCatalog.QWEN_35B.speed());
-        assertEquals(6, ModelCatalog.NEMOTRON_LIGHTNING.speed());
-        assertTrue(ModelCatalog.B26.speed() > ModelCatalog.NEMOTRON_LIGHTNING.speed(),
-                "the 26B held flat where Nemotron dragged — the scale must say so");
-        assertTrue(ModelCatalog.NEMOTRON_LIGHTNING.speed() > ModelCatalog.QWEN_35B.speed());
-        // Every rung BELOW the two measured-down big ones keeps the old rule.
-        for (ModelCatalog tier : ModelCatalog.values()) {
-            if (tier == ModelCatalog.QWEN_35B || tier == ModelCatalog.NEMOTRON_LIGHTNING) continue;
-            assertTrue(tier.speed() >= ModelCatalog.B26.speed(),
-                    "no small rung may be slower than the 26B: " + tier);
         }
     }
 
