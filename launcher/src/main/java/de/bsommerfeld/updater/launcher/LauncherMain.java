@@ -139,6 +139,14 @@ public final class LauncherMain {
         final String[] forwardArgs = launchArgs.forwardArgs();
         log.log("auto-update=" + autoUpdate + (forceUpdate ? " (forced by in-app update)" : ""));
 
+        // The terminal quit for one reason and told us which: fetch the model
+        // it just wrote to config.toml. That is a run with no questions in it -
+        // every first-run answer is on record by definition (a terminal only
+        // exists after a completed first run), so any choice screen appearing
+        // here would be a bug asking the user to decide something twice.
+        final boolean installModel = launchArgs.installModel();
+        if (installModel) log.log("Started by the terminal to install its chosen model.");
+
         // Which releases this install accepts (config.toml:
         // user.experimental-updates). Unanswered means stable — nothing ever
         // lands on a pre-release without being asked for it. The update client
@@ -154,7 +162,7 @@ public final class LauncherMain {
         // Hardware check + model choice: probes the machine, persists the
         // recommendation, and resolves the tag the setup script installs — the
         // user's config.toml choice (agent.model-tag) or the managed default.
-        ModelSelection.Result modelChoice = ModelSelection.resolve(appDir, log);
+        ModelSelection.Result modelChoice = ModelSelection.resolve(appDir, log, installModel);
         envSetup.setReasoningModelTag(modelChoice.effectiveTag());
         envSetup.setManagedAi(modelChoice.managedAi());
 
@@ -172,7 +180,7 @@ public final class LauncherMain {
                 // everything after it (including the model choice) speaks the
                 // user's language. One OK persists the key, so this shows
                 // exactly once.
-                if (!i18n.explicit()) {
+                if (!i18n.explicit() && !installModel) {
                     String language = runLanguageChoicePhase(window, log);
                     ConfigWriter.write(appDir, "[user]", "language", language, log);
                     i18n.switchTo(language);
@@ -182,7 +190,7 @@ public final class LauncherMain {
                 // anything talks to GitHub — the very next step already checks
                 // for updates, and it has to check the right channel.
                 ReleaseChannel channel = channelChoice.channel();
-                if (!channelChoice.userChosen()) {
+                if (!channelChoice.userChosen() && !installModel) {
                     String answer = runChannelChoicePhase(window, i18n, log);
                     ConfigWriter.write(appDir, "[user]", ChannelSelection.CONFIG_KEY, answer, log);
                     channel = ChannelSelection.channelOf(answer);
@@ -209,7 +217,7 @@ public final class LauncherMain {
                 // of a tier, and everything after this point - the step count,
                 // the setup script's env - has to follow that answer.
                 boolean managedAi = modelChoice.managedAi();
-                if (managedAi && !modelChoice.userChosen()) {
+                if (managedAi && !modelChoice.userChosen() && !installModel) {
                     String chosen = runModelChoicePhase(window, i18n, modelChoice, log);
                     AdvancedEndpointSheet.Endpoint endpoint = window.chosenEndpoint();
                     if (endpoint != null) {

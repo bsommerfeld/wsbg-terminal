@@ -273,6 +273,32 @@ class ModelSelectionTest {
     }
 
     @Test
+    void installModelRunTakesATagFromANewerCatalogAtFaceValue(@TempDir Path dir) throws IOException {
+        // The terminal's model picker and this launcher's catalog are separate
+        // copies that CAN drift apart (the terminal updated, the staged
+        // launcher jar did not). Measured 2026-08-21: a tag the terminal had
+        // just written read as an unknown family here, the choice collapsed to
+        // "nothing on record", and the first-run screen came back offering the
+        // stale tier list instead of installing what was picked.
+        writeConfig(dir, "[agent]", "agent.model-tag = \"tomorrow-model:9b\"");
+
+        assertEquals("", ModelSelection.configuredModelTag(dir),
+                "the ordinary start still gates hand-edited nonsense");
+
+        ModelSelection.Result result = ModelSelection.resolve(dir, new SessionLog(dir), true);
+        assertEquals("tomorrow-model:9b", result.effectiveTag());
+        assertTrue(result.userChosen(), "a choice IS on record — never re-ask");
+    }
+
+    @Test
+    void installModelRunLeavesAKnownTagExactlyAsItIs(@TempDir Path dir) throws IOException {
+        writeConfig(dir, "[agent]", "agent.model-tag = \"granite4.1:8b\"");
+        ModelSelection.Result result = ModelSelection.resolve(dir, new SessionLog(dir), true);
+        assertEquals("granite4.1:8b", result.effectiveTag());
+        assertTrue(result.userChosen());
+    }
+
+    @Test
     void recommendationFileCarriesEveryTier(@TempDir Path dir) throws IOException {
         ModelSelection.resolve(dir, new SessionLog(dir));
         String json = Files.readString(dir.resolve(ModelSelection.RECOMMENDATION_FILE));

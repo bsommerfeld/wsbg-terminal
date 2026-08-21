@@ -163,7 +163,20 @@ final class AppLifecycle {
         }
     }
 
-    /** The plain launcher start - its setup step fetches whatever the config now names. */
+    /**
+     * The launcher start behind "Jetzt neu starten" - its setup step fetches
+     * whatever the config now names.
+     *
+     * <p>{@code --install-model} states the purpose instead of leaving the
+     * launcher to infer it from the config file. The launcher then asks nothing
+     * (every first-run question is answered by definition - a terminal only
+     * exists after a completed first run) and takes {@code agent.model-tag} at
+     * face value even if its own catalog is a release behind ours. Without the
+     * flag a launcher jar older than this terminal reads the freshly written
+     * tag as an unknown family, i.e. as "no choice on record", and puts the
+     * first-run model screen in front of the user instead of installing what
+     * they picked.
+     */
     private void spawnLauncher() {
         String exe = System.getenv("WSBG_LAUNCHER_EXECUTABLE");
         if (exe == null || exe.isBlank()) {
@@ -172,11 +185,11 @@ final class AppLifecycle {
             return;
         }
         try {
-            new ProcessBuilder(exe)
+            new ProcessBuilder(exe, "--install-model")
                     .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                     .redirectError(ProcessBuilder.Redirect.DISCARD)
                     .start();
-            LOG.info("Relaunching launcher for a model change: {}", exe);
+            LOG.info("Relaunching launcher to install the chosen model: {} --install-model", exe);
         } catch (Exception e) {
             LOG.error("Failed to relaunch launcher: {}", e.getMessage());
         }

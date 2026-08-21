@@ -49,6 +49,28 @@ final class JavaExecutableResolver {
     }
 
     /**
+     * Whether the bundled runtime carries the branded launcher copy — i.e.
+     * whether the processes we spawn get our name in the Dock instead of
+     * "java". Off macOS there is nothing to brand and the answer is always
+     * yes. It doubles as the hull-generation probe in {@link AppLauncher}:
+     * the copy is made by the package step, so only a hull built with it can
+     * have one, and an installed hull cannot grow it by itself.
+     */
+    static boolean hasBrandedBinary() {
+        return hasBrandedBinary(System.getProperty("os.name", ""),
+                System.getProperty("java.home"));
+    }
+
+    /** Test seam: the same probe against an explicit OS name and runtime home. */
+    static boolean hasBrandedBinary(String os, String javaHome) {
+        if (!os.toLowerCase().contains("mac"))
+            return true;
+        if (javaHome == null || javaHome.isBlank())
+            return false;
+        return Files.isExecutable(Path.of(javaHome, "bin", MAC_BRANDED_BINARY));
+    }
+
+    /**
      * Test seam: the same resolution against an explicit OS name and the two
      * candidate homes, so every platform branch is verifiable off-platform.
      */

@@ -39,12 +39,15 @@ public final class LauncherUpdateService {
     private static final Logger LOG = LoggerFactory.getLogger(LauncherUpdateService.class);
 
     /**
-     * The hull generation this terminal requires. Generation 2 = the first
-     * hull that reports its generation at all. Bump ONLY together with the
-     * value {@code AppLauncher} sets, and only for changes an installed
-     * launcher cannot apply to itself (bundled runtime, packaging).
+     * The hull generation this terminal requires. Generation 2 = the first hull
+     * that reports its generation at all; generation 3 = a hull whose bundled
+     * runtime carries the branded launcher binary, without which everything the
+     * launcher starts - this terminal included - sits in the macOS Dock as
+     * "java". Bump ONLY together with the value {@code AppLauncher} sets, and
+     * only for changes an installed launcher cannot apply to itself (bundled
+     * runtime, packaging).
      */
-    static final int REQUIRED_GENERATION = 2;
+    static final int REQUIRED_GENERATION = 3;
 
     private static final String DOWNLOAD_BASE =
             "https://github.com/bsommerfeld/wsbg-terminal/releases/latest/download/";

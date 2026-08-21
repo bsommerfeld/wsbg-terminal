@@ -9,25 +9,40 @@ import java.util.List;
 /**
  * Command-line + config inputs to the launch pipeline.
  *
- * <p>{@code --force-update} is consumed here (not forwarded to the terminal):
- * the terminal's in-app "update now" button relaunches the launcher with this
- * flag so a one-off update still runs while auto-update is off. Everything else
- * is forwarded verbatim.
+ * <p>Both flags are consumed here (never forwarded to the terminal); the
+ * terminal sets them when one of its own buttons restarts us:
+ * <ul>
+ *   <li>{@code --force-update} — "update now", so a one-off update still runs
+ *       while auto-update is off;</li>
+ *   <li>{@code --install-model} — "Jetzt neu starten" after a model change.
+ *       The terminal has just written {@code agent.model-tag} and quit for the
+ *       one reason it cannot handle itself: fetching that model. The flag says
+ *       so out loud, so the run installs it and nothing else - no first-run
+ *       question gets asked again, and the tag is taken at face value even if
+ *       this launcher's catalog is older than the terminal's.</li>
+ * </ul>
+ * Everything else is forwarded verbatim.
  *
  * @param forceUpdate  whether {@code --force-update} was present
+ * @param installModel whether {@code --install-model} was present
  * @param forwardArgs  the remaining args to hand to the terminal's {@code main}
  */
-record LaunchArgs(boolean forceUpdate, String[] forwardArgs) {
+record LaunchArgs(boolean forceUpdate, boolean installModel, String[] forwardArgs) {
 
-    /** Splits the raw args into the force-update flag and the forwarded tail. */
+    /** The terminal's flag for a restart whose only purpose is the model pull. */
+    static final String INSTALL_MODEL_FLAG = "--install-model";
+
+    /** Splits the raw args into the launcher's own flags and the forwarded tail. */
     static LaunchArgs parse(String[] args) {
         boolean force = false;
+        boolean installModel = false;
         List<String> appArgs = new ArrayList<>();
         for (String a : args) {
             if ("--force-update".equals(a)) force = true;
+            else if (INSTALL_MODEL_FLAG.equals(a)) installModel = true;
             else appArgs.add(a);
         }
-        return new LaunchArgs(force, appArgs.toArray(new String[0]));
+        return new LaunchArgs(force, installModel, appArgs.toArray(new String[0]));
     }
 
     /**

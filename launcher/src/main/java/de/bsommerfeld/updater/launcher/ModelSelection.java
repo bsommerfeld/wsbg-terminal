@@ -70,7 +70,24 @@ final class ModelSelection {
     private ModelSelection() {
     }
 
+    /** The ordinary start: an unknown {@code agent.model-tag} degrades to the default. */
     static Result resolve(Path appDir, SessionLog log) {
+        return resolve(appDir, log, false);
+    }
+
+    /**
+     * @param trustConfiguredTag take {@code agent.model-tag} at face value even
+     *        when this catalog does not know its family. Set on the terminal's
+     *        {@code --install-model} restart and ONLY there: the tag was
+     *        written moments ago by the terminal's own model picker, so it is a
+     *        real tier by construction - just possibly one from a NEWER catalog
+     *        than this launcher jar carries. Without this the choice would read
+     *        as "nothing on record" and the first-run screen would come back,
+     *        offering the short, stale tier list instead of installing what was
+     *        asked for. The family gate stays in force for every other start,
+     *        where the value really can be hand-edited nonsense.
+     */
+    static Result resolve(Path appDir, SessionLog log, boolean trustConfiguredTag) {
         if (!isManagedAi(appDir)) {
             // Nothing to grade and nothing to recommend: no model of ours goes
             // on this machine. The probe is skipped rather than run-and-ignored,
@@ -89,8 +106,12 @@ final class ModelSelection {
         ModelCatalog recommended = ModelCatalog.recommend(ramGb);
         String recommendedTag = recommended.tagFor(mlx);
 
-        String configured = configuredModelTag(appDir);
+        String configured = configuredModelTag(appDir, trustConfiguredTag);
         boolean userChosen = !configured.isEmpty();
+        if (trustConfiguredTag && !ModelCatalog.isDeployedFamily(configured) && userChosen) {
+            log.log("Model tag " + configured + " is from a newer catalog than this launcher "
+                    + "- installing it as asked (terminal requested the install)");
+        }
         // No user choice = the managed default TIER, platform-suffixed: the MLX
         // build is the standard on Apple Silicon, the base tag everywhere else.
         // The recommendation may point at a bigger tier but never auto-applies.
@@ -126,7 +147,13 @@ final class ModelSelection {
      * {@code ollama pull} verbatim.
      */
     static String configuredModelTag(Path appDir) {
+        return configuredModelTag(appDir, false);
+    }
+
+    /** @param trustAnyFamily skip the deployed-family gate - see {@link #resolve(Path, SessionLog, boolean)}. */
+    static String configuredModelTag(Path appDir, boolean trustAnyFamily) {
         String value = configuredValue(appDir, "model-tag");
+        if (trustAnyFamily) return value;
         return ModelCatalog.isDeployedFamily(value) ? value : "";
     }
 

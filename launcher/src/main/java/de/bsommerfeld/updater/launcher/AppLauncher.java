@@ -86,6 +86,18 @@ final class AppLauncher {
 
         PathEnricher.enrich(pb);
 
+        // Our own "I am the staged jar" marker must NOT survive into the
+        // terminal. It would ride the terminal's environment straight back
+        // into the launcher the terminal spawns for its in-app relaunch
+        // buttons, where the hull reads it as "we ARE the staged jar" and
+        // skips the handoff — running its own embedded, possibly years-old
+        // jar instead of the OTA-synced one. Measured 2026-08-21: a
+        // "Jetzt neu starten" for a model change came up in a 2.0.0 hull
+        // whose model catalog did not know the tag the terminal had just
+        // written, so the first-run model screen appeared with a short,
+        // stale tier list instead of the model being installed.
+        pb.environment().remove(StagedLauncher.STAGED_ENV);
+
         // Hand the terminal the launcher executable path so its in-app "update
         // now" button can relaunch us (cleanly close → restart the launcher,
         // which applies the update). When we run as the staged OTA jar, our own
@@ -109,9 +121,24 @@ final class AppLauncher {
         // LauncherUpdateService.REQUIRED_GENERATION in the terminal module —
         // and only for hull changes an installed launcher cannot pick up
         // itself (runtime bump, packaging change), never for jar-level logic.
-        pb.environment().put("WSBG_LAUNCHER_GENERATION", "2");
+        pb.environment().put("WSBG_LAUNCHER_GENERATION", String.valueOf(hullGeneration()));
 
         pb.start();
+    }
+
+    /**
+     * The generation of the HULL we are running on - not of this jar. The two
+     * used to be the same number because the jar was the hull's; since the OTA
+     * self-update they are not, and a staged jar reporting its own generation
+     * would tell the terminal every hull is current. So the value is PROBED
+     * from something only a current hull has: the branded launcher binary the
+     * package step copies into the bundled runtime ({@code JavaExecutableResolver}),
+     * without which every process we spawn sits in the macOS Dock as "java".
+     * A hull that predates it can only be renewed by reinstalling, which is
+     * exactly what the terminal's amber button offers.
+     */
+    private static int hullGeneration() {
+        return JavaExecutableResolver.hasBrandedBinary() ? 3 : 2;
     }
 
     /**

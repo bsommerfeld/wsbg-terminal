@@ -42,6 +42,31 @@ class JavaExecutableResolverTest {
         assertEquals(java.toString(), JavaExecutableResolver.resolve(MAC, home.toString(), null));
     }
 
+    // ── The same probe, asked as a question: is this hull current? ─────────
+
+    @Test
+    void brandedBinaryProbe_seesTheCopyWhenItIsThere(@TempDir Path home) throws IOException {
+        binary(home, "java");
+        binary(home, "WSBG Terminal");
+        assertTrue(JavaExecutableResolver.hasBrandedBinary(MAC, home.toString()));
+    }
+
+    @Test
+    void brandedBinaryProbe_reportsAHullThatPredatesTheCopy(@TempDir Path home) throws IOException {
+        binary(home, "java");
+        // This is what drives the terminal's amber "renew launcher" button: an
+        // installed hull cannot grow the branded copy by itself, so everything
+        // it spawns keeps sitting in the Dock as "java" until it is reinstalled.
+        assertFalse(JavaExecutableResolver.hasBrandedBinary(MAC, home.toString()));
+    }
+
+    @Test
+    void brandedBinaryProbe_isAlwaysSatisfiedOffMac(@TempDir Path home) {
+        // Nothing to brand there — the tile takes its name from the icon/app.
+        assertTrue(JavaExecutableResolver.hasBrandedBinary(WINDOWS, home.toString()));
+        assertTrue(JavaExecutableResolver.hasBrandedBinary(LINUX, home.toString()));
+    }
+
     // ── The other platforms are untouched by the fix ───────────────────────
 
     @Test
