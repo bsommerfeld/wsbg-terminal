@@ -225,6 +225,7 @@ final class AppLifecycle {
             LOG.info("Boot gate opened during shutdown — skipping the workload.");
             return;
         }
+        if (OfflineMode.skipping("the background workload (model server, pipeline, monitors)")) return;
         LOG.info("Starting deferred background workload...");
         safeStart(() -> injector.getInstance(AgentBrain.class).start(), "AgentBrain");
         // The spawn above is the one step long enough for a close to slip in

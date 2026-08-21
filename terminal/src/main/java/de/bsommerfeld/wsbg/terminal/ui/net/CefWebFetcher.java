@@ -109,6 +109,9 @@ public final class CefWebFetcher {
     }
 
     public WebResponse fetch(String url, Map<String, String> headers, Duration timeout) throws Exception {
+        if (de.bsommerfeld.wsbg.terminal.ui.OfflineMode.ACTIVE) {
+            throw new java.io.IOException("WSBG_OFFLINE: no outbound requests");
+        }
         String requestOrigin = originOf(url);
         if (requestOrigin == null) {
             throw new IllegalArgumentException("Cannot derive origin from URL: " + url);

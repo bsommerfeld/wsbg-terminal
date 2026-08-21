@@ -19,6 +19,7 @@ final class WebWorldStarter {
 
     @Inject
     WebWorldStarter(WebLifecycle lifecycle) {
+        if (de.bsommerfeld.wsbg.terminal.ui.OfflineMode.skipping("the web collectors")) return;
         lifecycle.start();
         Runtime.getRuntime().addShutdownHook(new Thread(lifecycle::stop, "web-world-stop"));
     }

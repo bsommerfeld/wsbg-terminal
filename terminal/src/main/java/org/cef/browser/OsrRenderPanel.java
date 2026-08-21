@@ -19,6 +19,8 @@ import java.nio.IntBuffer;
 
 import javax.swing.JComponent;
 
+import de.bsommerfeld.wsbg.terminal.ui.UiQuietGate;
+
 /**
  * The on-screen surface. Holds the latest CEF frame as a BufferedImage and blits
  * it (scaled to the component size) each Swing paint. Popups (e.g.
@@ -36,13 +38,11 @@ import javax.swing.JComponent;
  */
 final class OsrRenderPanel extends JComponent {
 
-    // Paint-path diagnostics (WSBG_PAINT_PROFILE=true): logs slow EDT paints and
-    // the CEF dirty-rect sizes, to tell "CEF reports full-frame damage" apart
-    // from "the Swing blit is slow" when hunting size-dependent jank.
-    private static final boolean PAINT_PROFILE =
-            Boolean.parseBoolean(System.getenv("WSBG_PAINT_PROFILE"));
-
+    // Paint-path diagnostics live in OsrFrameProfiler (WSBG_FRAME_PROFILE=<csv>):
+    // every CEF frame and every EDT paint with its timings, plus an EDT heartbeat
+    // and a main-thread watchdog, for offline analysis of cadence and stalls.
     private final RenderContext ctx;
+    private javax.swing.Timer heartbeat_;
 
     private final Object lock = new Object();
     // Grow-only, step-padded allocation: a live resize delivers a new
@@ -78,6 +78,14 @@ final class OsrRenderPanel extends JComponent {
     public void addNotify() {
         super.addNotify();
         ctx.notifyParentChanged();
+        if (OsrFrameProfiler.ENABLED && heartbeat_ == null) {
+            // EDT liveness probe: a 4ms Swing timer; its actual tick times show
+            // when the EDT was busy (lateness) — pump, paint, socket handlers.
+            heartbeat_ = new javax.swing.Timer(4, e -> OsrFrameProfiler.mark("H", System.nanoTime(), ""));
+            heartbeat_.setRepeats(true);
+            heartbeat_.start();
+            OsrMainThreadWatchdog.start();
+        }
     }
 
     @Override
@@ -120,10 +128,10 @@ final class OsrRenderPanel extends JComponent {
         IntBuffer src = buffer.duplicate().order(ByteOrder.LITTLE_ENDIAN).asIntBuffer();
         Rectangle repaintArea = null; // null = repaint the whole component
         boolean resizedFrame = false;
-        long t0 = PAINT_PROFILE ? System.nanoTime() : 0;
-        long tLocked = 0;
+        int profW = -1, profH = -1; boolean profFull = false; // WSBG_FRAME_PROFILE
+        long pf0 = OsrFrameProfiler.ENABLED ? System.nanoTime() : 0, pfLocked = 0;
         synchronized (lock) {
-            if (PAINT_PROFILE) tLocked = System.nanoTime();
+            if (OsrFrameProfiler.ENABLED) pfLocked = System.nanoTime();
             if (popup) {
                 popupImage_ = blit(popupImage_, src, width, height);
                 if (popupVisible_) {
@@ -134,14 +142,7 @@ final class OsrRenderPanel extends JComponent {
                     && dirtyRects != null && dirtyRects.length > 0
                     && src.remaining() >= width * height) {
                 Rectangle devicePx = blitDirty(src, width, dirtyRects, height);
-                if (PAINT_PROFILE) {
-                    long now = System.nanoTime();
-                    System.out.println("[PAINT] cef dirty=" + devicePx.width + "x"
-                            + devicePx.height + " of " + width + "x" + height
-                            + " rects=" + dirtyRects.length
-                            + " lockWait=" + (tLocked - t0) / 1_000_000 + "ms"
-                            + " copy=" + (now - tLocked) / 1_000_000 + "ms");
-                }
+                profW = devicePx.width; profH = devicePx.height;
                 if (devicePx.isEmpty()) return false; // nothing visible changed
                 if (vramDirty_.isEmpty()) {
                     vramDirty_.setBounds(devicePx);
@@ -162,13 +163,17 @@ final class OsrRenderPanel extends JComponent {
                 resizedFrame = frameW_ != width || frameH_ != height;
                 blitFrame(src, width, height);
                 vramFull_ = true;
-                if (PAINT_PROFILE) {
-                    System.out.println("[PAINT] cef full=" + width + "x" + height
-                            + " resized=" + resizedFrame
-                            + " copy=" + (System.nanoTime() - tLocked) / 1_000_000 + "ms");
-                }
+                profW = width; profH = height; profFull = true;
             }
         }
+        if (OsrFrameProfiler.ENABLED) {
+            long pfEnd = System.nanoTime();
+            OsrFrameProfiler.cefFrame(pfEnd, profW, profH, profFull,
+                    (pfLocked - pf0) / 1000, (pfEnd - pfLocked) / 1000);
+        }
+        // The hidden fetch browsers paint into panels that are never showing;
+        // only the visible page's frames tell the quiet gate that something moves.
+        if (isShowing()) UiQuietGate.noteFrame();
         if (repaintArea == null) {
             repaint();
         } else {
@@ -303,9 +308,7 @@ final class OsrRenderPanel extends JComponent {
         Rectangle frame = new Rectangle(0, 0, frameW_, frameH_);
         Rectangle up = vramFull_ ? frame : vramDirty_.intersection(frame);
         if (!up.isEmpty()) {
-            long m0 = PAINT_PROFILE ? System.nanoTime() : 0;
             Graphics2D vg = vram_.createGraphics();
-            long m1 = PAINT_PROFILE ? System.nanoTime() : 0;
             try {
                 vg.setComposite(AlphaComposite.Src);
                 // Metal's sw→VRAM blit re-uploads the ENTIRE source image
@@ -319,15 +322,6 @@ final class OsrRenderPanel extends JComponent {
             } finally {
                 vg.dispose();
             }
-            if (PAINT_PROFILE) {
-                long m2 = System.nanoTime();
-                if ((m2 - m0) / 1_000_000 >= 3) {
-                    System.out.println("[PAINT] vram-up rect=" + up.width + "x" + up.height
-                            + " mkG=" + (m1 - m0) / 1_000_000 + "ms"
-                            + " draw+disp=" + (m2 - m1) / 1_000_000 + "ms"
-                            + " full=" + vramFull_);
-                }
-            }
         }
         vramDirty_.setBounds(0, 0, 0, 0);
         vramFull_ = false;
@@ -336,12 +330,11 @@ final class OsrRenderPanel extends JComponent {
 
     @Override
     protected void paintComponent(Graphics g) {
-        long t0 = PAINT_PROFILE ? System.nanoTime() : 0;
-        long tLocked = 0;
+        long tProf = OsrFrameProfiler.ENABLED ? System.nanoTime() : 0, pfLocked = 0, pfSynced = 0;
         super.paintComponent(g); // fills the (black) background
         Rectangle clip = g.getClipBounds();
         synchronized (lock) {
-            if (PAINT_PROFILE) tLocked = System.nanoTime();
+            if (OsrFrameProfiler.ENABLED) pfLocked = System.nanoTime();
             if (image_ != null) {
                 // Sync the GPU mirror: upload only the dirty device-px
                 // region of image_ into vram_ (a sub-rect sw→VRAM upload),
@@ -350,6 +343,7 @@ final class OsrRenderPanel extends JComponent {
                 // whole (unmanaged) buffer every paint. Falls back to the
                 // direct draw when a volatile surface isn't available.
                 java.awt.Image toDraw = syncVram();
+                if (OsrFrameProfiler.ENABLED) pfSynced = System.nanoTime();
 
                 // image_ is a device-pixel buffer; its intended on-screen
                 // size is bufferPx / deviceScale. Never draw it LARGER than
@@ -360,7 +354,6 @@ final class OsrRenderPanel extends JComponent {
                 // Only the clip region is drawn, mapped to its source rect
                 // with per-coordinate rounding so adjacent clips share
                 // identical source edges (no seams).
-                long tSync = PAINT_PROFILE ? System.nanoTime() : 0;
                 double s = ctx.renderScale() <= 0 ? 1.0 : ctx.renderScale();
                 int logW = (int) Math.round(frameW_ / s);
                 int logH = (int) Math.round(frameH_ / s);
@@ -382,30 +375,18 @@ final class OsrRenderPanel extends JComponent {
                     vramFull_ = true; // surface evicted mid-paint → redo fully
                     repaint();
                 }
-                if (PAINT_PROFILE) {
-                    long now = System.nanoTime();
-                    long total = (now - t0) / 1_000_000;
-                    if (total >= 4) {
-                        System.out.println("[PAINT] edt-split sync="
-                                + (tSync - tLocked) / 1_000_000 + "ms blit="
-                                + (now - tSync) / 1_000_000 + "ms vram=" + (toDraw == vram_));
-                    }
-                }
             }
             if (popupVisible_ && popupImage_ != null) {
                 g.drawImage(popupImage_, popupRect_.x, popupRect_.y,
                         popupRect_.width, popupRect_.height, null);
             }
         }
-        if (PAINT_PROFILE && clip != null) {
-            long now = System.nanoTime();
-            long ms = (now - t0) / 1_000_000;
-            if (ms >= 4) {
-                System.out.println("[PAINT] edt clip=" + clip.width + "x" + clip.height
-                        + " took=" + ms + "ms"
-                        + " lockWait=" + (tLocked - t0) / 1_000_000 + "ms"
-                        + " draw=" + (now - tLocked) / 1_000_000 + "ms");
-            }
+        if (OsrFrameProfiler.ENABLED) {
+            long pfEnd = System.nanoTime();
+            OsrFrameProfiler.edtPaint(tProf, pfEnd,
+                    clip == null ? getWidth() : clip.width, clip == null ? getHeight() : clip.height,
+                    (pfLocked - tProf) / 1000, pfSynced == 0 ? 0 : (pfSynced - pfLocked) / 1000,
+                    pfSynced == 0 ? 0 : (pfEnd - pfSynced) / 1000);
         }
     }
 

@@ -19,6 +19,9 @@ import org.cef.handler.CefLifeSpanHandlerAdapter;
 import org.cef.handler.CefLoadHandlerAdapter;
 import org.cef.handler.CefMessageRouterHandler;
 import org.cef.handler.CefRequestHandlerAdapter;
+import org.cef.handler.CefResourceRequestHandler;
+import org.cef.handler.CefResourceRequestHandlerAdapter;
+import org.cef.misc.BoolRef;
 import org.cef.network.CefRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -164,6 +167,23 @@ public final class CefHost {
                 "--enable-smooth-scrolling",
                 "--disable-background-timer-throttling",     // keep our intervals firing
                 "--disable-renderer-backgrounding",
+                // No out-of-process iframes. The terminal page has no iframes at
+                // all; the hidden fetch browsers load third-party anchor pages
+                // whose ad/consent iframes would each spawn a renderer process -
+                // and every one of those costs ~32 ms of browser-UI-thread time
+                // (RenderWidgetHost + GPU channel setup, measured 2026-08-21),
+                // during which no frame of the visible page can be delivered.
+                "--disable-site-isolation-trials",
+                // No real camera or microphone, ever. Scripts on the hidden
+                // anchor pages probe media devices and camera permission; on
+                // macOS each probe is a synchronous round trip to the privacy
+                // daemon (TCC) on the browser UI thread - measured 30-285 ms,
+                // during which the visible page freezes. Fake devices answer
+                // the probes without touching TCC. (Measured over 8 hidden page
+                // loads: 70 stalls, 8.2 s in total, became 3 stalls.)
+                "--use-fake-device-for-media-stream",
+                "--use-fake-ui-for-media-stream",
+                "--deny-permission-prompts",
                 "--disable-features=CalculateNativeWinOcclusion",
                 // Expose DevTools over HTTP on the loopback so we can
                 // inspect the page from any browser at:
@@ -173,6 +193,14 @@ public final class CefHost {
                 "--remote-debugging-port=9222",
                 // Loopback-only port; allow tooling (CDP scripts) to attach.
                 "--remote-allow-origins=*");
+        // Diagnostics hook: extra Chromium switches, ';'-separated, e.g.
+        // WSBG_CEF_EXTRA_ARGS="--trace-startup=cc,viz;--trace-startup-file=/tmp/t.json".
+        String extra = System.getenv("WSBG_CEF_EXTRA_ARGS");
+        if (extra != null && !extra.isBlank()) {
+            String[] args = extra.split(";");
+            builder.addJcefArgs(args);
+            LOG.info("Extra CEF args: {}", String.join(" ", args));
+        }
     }
 
     /** External-link interception: user navigations + target="_blank" popups. */
@@ -233,6 +261,10 @@ public final class CefHost {
         @Override
         public boolean onBeforeBrowse(CefBrowser browser, CefFrame frame, CefRequest request,
                                       boolean userGesture, boolean isRedirect) {
+            // A hidden fetch browser never navigates a sub-frame: its iframes
+            // are the ad/consent widgets of the anchor page, and a cross-site
+            // iframe navigation allocates a renderer before any request goes out.
+            if (frame != null && !frame.isMain() && isHeadless(browser)) return true;
             // Only intercept gestures — page-loads, XHR, WebSocket, and
             // internal scheme-handler hits all leave userGesture=false
             // and must be allowed through unchanged.
@@ -244,6 +276,13 @@ public final class CefHost {
             }
             openExternal(url);
             return true; // cancel in-browser navigation
+        }
+
+        @Override
+        public CefResourceRequestHandler getResourceRequestHandler(CefBrowser browser, CefFrame frame,
+                CefRequest request, boolean isNavigation, boolean isDownload, String requestInitiator,
+                BoolRef disableDefaultHandling) {
+            return isHeadless(browser) ? HEADLESS_RESOURCE_POLICY : null;
         }
     }
 
@@ -285,13 +324,55 @@ public final class CefHost {
         // what WindowsCustomChrome needs to hit-test the title bar natively.
         // createImmediately() does the native create now (no paint-triggered
         // lazy init like the GLCanvas had).
-        // OSR paints at windowless_frame_rate (CEF default 30, hard max 60). Set
-        // it to the cap at creation via CefBrowserSettings — the dynamic
-        // setWindowlessFrameRate() setter no-ops right after createImmediately()
-        // because the native browser isn't created yet. 120Hz is not reachable:
-        // it would need external begin-frame control, which JCEF exposes no Java
-        // API to drive (so enabling it only yields black frames — see initialize()).
-        return createBrowser(url, 60);
+        // OSR paints at windowless_frame_rate, set at creation via
+        // CefBrowserSettings — the dynamic setWindowlessFrameRate() setter no-ops
+        // right after createImmediately() because the native browser isn't
+        // created yet. The rate follows the display (see visibleFrameRate).
+        return createBrowser(url, visibleFrameRate(), false);
+    }
+
+    /** Never below the classic 60; never above what the pipeline was measured at. */
+    private static final int MIN_FPS = 60, MAX_FPS = 120;
+
+    /**
+     * Frame rate of the visible OSR browser: the refresh rate of the screen it
+     * opens on, clamped to [{@value #MIN_FPS}, {@value #MAX_FPS}].
+     *
+     * <p>Nothing synchronises CEF's frame timer with the display under OSR -
+     * JCEF exposes no begin-frame control - so a 60 fps timer on a 120 Hz panel
+     * drifts against the vsync and every so often a frame lands one tick late:
+     * a 25 ms frame in a row of 16.7 ms ones, the micro-judder most visible in
+     * slow, even motion (the intro's light sweep, a FLIP morph). Pacing at the
+     * panel's own rate maps one frame to one tick and halves the worst case.
+     * CEF 132 honours 120 (measured 2026-08-21: 288 frames in 2.4 s of intro,
+     * p50 8.3 ms, max 12.4 ms); the pipeline's cost per frame - ~2 ms memcpy on
+     * CEF's thread, 1-6 ms Java2D on the EDT - leaves headroom at that rate on
+     * this class of machine. Static content costs nothing at any rate: CEF only
+     * paints on damage.
+     *
+     * <p>{@code WSBG_OSR_FPS} overrides (diagnostics); an unknown refresh rate
+     * means 60. The rate is fixed at creation: a window dragged to a slower
+     * monitor keeps it, which wastes a little work but shows no artefact.
+     */
+    private static int visibleFrameRate() {
+        String v = System.getenv("WSBG_OSR_FPS");
+        if (v != null && !v.isBlank()) {
+            try {
+                int fps = Math.max(1, Integer.parseInt(v.trim()));
+                LOG.info("OSR frame rate override: {} fps", fps);
+                return fps;
+            } catch (NumberFormatException ignored) {}
+        }
+        int refresh = 0;
+        try {
+            refresh = java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment()
+                    .getDefaultScreenDevice().getDisplayMode().getRefreshRate();
+        } catch (Throwable t) {
+            LOG.debug("Display refresh rate unavailable: {}", t.toString());
+        }
+        int fps = refresh <= 0 ? MIN_FPS : Math.max(MIN_FPS, Math.min(MAX_FPS, refresh));
+        LOG.info("OSR frame rate: {} fps (display reports {} Hz)", fps, refresh);
+        return fps;
     }
 
     /**
@@ -303,17 +384,48 @@ public final class CefHost {
      * this, the hidden reddit.com renderer blits a full invisible page 60×/sec.
      */
     public CefBrowser createFetchBrowser(String url) {
-        return createBrowser(url, 1);
+        return createBrowser(url, 1, true);
     }
 
-    private CefBrowser createBrowser(String url, int frameRate) {
+    private CefBrowser createBrowser(String url, int frameRate, boolean headless) {
         CefBrowserSettings settings = new CefBrowserSettings();
         settings.windowless_frame_rate = frameRate;
         org.cef.browser.SwingCefBrowser browser = new org.cef.browser.SwingCefBrowser(
                 client(), url, false, null, wheelScrollPolicy, settings);
+        if (headless) browser.markHeadless();
         browser.createImmediately();
         return browser;
     }
+
+    /** A browser that only exists to borrow a site's session - never shown. */
+    private static boolean isHeadless(CefBrowser browser) {
+        return browser instanceof org.cef.browser.SwingCefBrowser s && s.isHeadless();
+    }
+
+    /**
+     * What a hidden fetch browser may load. Its page is a session anchor: the
+     * document and its scripts establish the cookies and the origin the in-page
+     * {@code fetch()} calls ride on. Everything that merely makes the page LOOK
+     * like a page is dead weight here - and expensive dead weight, because every
+     * hidden page shares the one browser UI thread with the visible terminal:
+     * ad iframes, images, media, fonts, pings. Blocking them at the request
+     * stage keeps the renderer, the GPU process and above all the browser UI
+     * thread free for the page the user actually sees. Runs on the IO thread.
+     */
+    private static final CefResourceRequestHandler HEADLESS_RESOURCE_POLICY =
+            new CefResourceRequestHandlerAdapter() {
+                @Override
+                public boolean onBeforeResourceLoad(CefBrowser browser, CefFrame frame, CefRequest request) {
+                    CefRequest.ResourceType type = request.getResourceType();
+                    if (type == null) return false;
+                    return switch (type) {
+                        case RT_SUB_FRAME, RT_IMAGE, RT_FONT_RESOURCE, RT_OBJECT, RT_MEDIA,
+                             RT_PREFETCH, RT_FAVICON, RT_PING, RT_CSP_REPORT, RT_PLUGIN_RESOURCE,
+                             RT_SHARED_WORKER, RT_NAVIGATION_PRELOAD_SUB_FRAME -> true; // cancel
+                        default -> false;
+                    };
+                }
+            };
 
     /**
      * Registers a handler on the shared headless-fetch message router. Triggers

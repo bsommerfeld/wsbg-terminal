@@ -3,6 +3,7 @@ package de.bsommerfeld.wsbg.terminal.ui.net;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import de.bsommerfeld.wsbg.terminal.ui.CefHost;
+import de.bsommerfeld.wsbg.terminal.ui.UiQuietGate;
 import org.cef.browser.CefBrowser;
 import org.cef.browser.CefFrame;
 import org.cef.callback.CefQueryCallback;
@@ -372,7 +373,10 @@ public final class CefFetchClient {
         browser = null;
         ready = false;
         if (b != null) {
-            SwingUtilities.invokeLater(() -> {
+            // Closing tears down a compositor on the browser UI thread (~60 ms,
+            // with a synchronous GPU finish) - the same thread that delivers
+            // every frame of the visible page. Wait for a still moment.
+            UiQuietGate.runOnEdtWhenQuiet("close hidden browser " + label, () -> {
                 try { b.setCloseAllowed(); } catch (Throwable ignored) {}
                 try { b.close(true); } catch (Throwable ignored) {}
             });
@@ -620,6 +624,11 @@ public final class CefFetchClient {
             if (SwingUtilities.isEventDispatchThread()) {
                 create.run();
             } else {
+                // CefBrowserHost::CreateBrowser holds the browser UI thread for
+                // ~80-95 ms, and under OSR no frame of the visible page gets
+                // through meanwhile. The fetchers run on their own threads and
+                // can afford to wait for a moment in which nothing moves.
+                UiQuietGate.awaitQuiet("create hidden browser " + label);
                 SwingUtilities.invokeAndWait(create);
             }
             LOG.info("CEF fetch browser '{}' created, loading anchor {}", label, anchorUrl);
@@ -683,12 +692,21 @@ public final class CefFetchClient {
                 return;
             }
             if (chunks.size() < total) return;
-            StringBuilder sb = new StringBuilder();
-            for (int i = 0; i < total; i++) {
-                String s = chunks.get(i);
-                if (s != null) sb.append(s);
-            }
-            future.complete(new HttpResult(status, sb.toString(), headers));
+            // This runs on CEF's browser UI thread (the router callback). Joining a
+            // multi-megabyte body there is a stall of every visible frame for as
+            // long as the copy takes; the waiting fetch thread can do it instead.
+            int n = total;
+            int st = status;
+            Map<String, String> h = headers;
+            Map<Integer, String> parts = new HashMap<>(chunks);
+            future.completeAsync(() -> {
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < n; i++) {
+                    String s = parts.get(i);
+                    if (s != null) sb.append(s);
+                }
+                return new HttpResult(st, sb.toString(), h);
+            });
         }
     }
 }

@@ -8,10 +8,8 @@ import com.sun.jna.Structure;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.swing.JFrame;
 import javax.swing.SwingUtilities;
 import java.awt.Component;
-import java.awt.Container;
 import java.awt.event.InputEvent;
 import java.awt.event.MouseEvent;
 import java.util.List;
@@ -101,23 +99,28 @@ final class MacTitlebarCarveout {
     // re-enters AppKit mouse-tracking and reintroduces the very lag we remove).
     private static volatile Component osrTarget;
 
-    private static volatile double pendingW, pendingH;
     private static boolean installed;
 
     private MacTitlebarCarveout() {}
 
     /**
      * Installs the carve-out. Call once, after the window is on screen (so it is
-     * in {@code [NSApp windows]}). Reads the frame size on the EDT, then hops to
-     * the AppKit main thread to build + attach the overlay.
+     * in {@code [NSApp windows]}) - and NOT on the EDT: the first touch of this
+     * class bootstraps JNA and resolves the objc/libdispatch symbols, which
+     * measured ~87 ms. Under OSR an EDT stall of that length is a frame stall
+     * (the CEF message pump is scheduled through the EDT), and this used to
+     * land 600 ms after show - squarely in the intro. {@link MacWindowChrome}
+     * therefore calls it from a background thread, at a quiet moment; only the
+     * AppKit hop ({@code dispatch_async_f}) touches the main thread.
+     *
+     * @param osrPanel the Swing OSR panel the {@code OsrInputRouter} listens on
+     *                 (the content pane's first child), captured on the EDT.
      */
-    static synchronized void install(JFrame frame) {
+    static synchronized void install(Component osrPanel) {
         if (!ENABLED || installed) return;
         if (!isMac() || PROC == null || objc_msgSend == null || dispatch_async_f == null) return;
         try {
-            pendingW = frame.getWidth();
-            pendingH = frame.getHeight();
-            osrTarget = findOsr(frame);
+            osrTarget = osrPanel;
             LOG.debug("mac carve-out: osr target = {}",
                     osrTarget == null ? "nil" : osrTarget.getClass().getName());
             dispatchWork = (DispatchFn) ctx -> attachOnMain();
@@ -255,15 +258,6 @@ final class MacTitlebarCarveout {
     }
 
     /** The OSR render panel is the single child added to the content pane in BrowserWindow. */
-    private static Component findOsr(JFrame frame) {
-        try {
-            Container cp = frame.getContentPane();
-            return cp.getComponentCount() > 0 ? cp.getComponent(0) : null;
-        } catch (Throwable t) {
-            return null;
-        }
-    }
-
     /** Adds an NSTrackingArea so {@code mouseMoved:} is delivered (drives HTML :hover). */
     private static void addTrackingArea(Pointer overlay) {
         try {

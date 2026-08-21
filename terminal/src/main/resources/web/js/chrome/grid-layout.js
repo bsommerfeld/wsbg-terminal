@@ -21,8 +21,9 @@
 //
 // widget-nav.js owns the views and calls applyGridLayout()/clearGridLayout()
 // around its FLIP measurements; this module owns geometry + activation.
-// Wheel over a card still scrolls the widget's own body (delta divided by
-// the miniature zoom); click / Enter on the .grid-hit activates the card.
+// Wheel over a card scrolls the widget's own body natively (widget-grid.css
+// leaves the pointer on the body); a click anywhere on the card, or Enter on
+// the .grid-hit button, activates it.
 
 const EDGE = 28;                // min padding to the container edges
 const COL_GAP = 36;             // horizontal gap between cards
@@ -204,24 +205,13 @@ export function initGridLayout(mainEl, opts = {}) {
   window.addEventListener('resize', () => { if (inGrid()) applyGridLayout(); });
 
   for (const card of cards()) {
-    const hit = card.querySelector('.grid-hit');
-    if (!hit) continue;
-
-    // Wheel over a card scrolls INSIDE the widget: the hit overlay owns the
-    // pointer (the miniature content is inert), so it forwards the wheel to
-    // the card's .widget-body — the one scroller every widget has. Delta is
-    // divided by the miniature zoom so the PAINTED scroll speed matches the
-    // wheel 1:1 (scrollTop lives in the body's own, un-zoomed units).
-    hit.addEventListener('wheel', e => {
-      if (!inGrid()) return;
-      const body = card.querySelector('.widget-body');
-      if (!body) return;
-      e.preventDefault();
-      const zoom = parseFloat(main.style.getPropertyValue('--grid-zoom')) || 1;
-      body.scrollTop += e.deltaY / zoom;
-    }, { passive: false });
-
-    hit.addEventListener('click', () => {
+    // The click bubbles up from whatever was hit: the inert miniature (its
+    // children take no pointer, so the body itself is the target) or the
+    // .grid-hit button when Enter is pressed on it. Not intercepting the wheel
+    // here is deliberate - a blocking wheel listener plus a scrollTop write per
+    // event was a main-thread scroll and a re-raster of the zoomed card for
+    // every trackpad event; the body scrolls natively now.
+    card.addEventListener('click', () => {
       if (inGrid()) onActivate(card);
     });
   }

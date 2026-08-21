@@ -76,6 +76,7 @@ public final class HolidayProvider {
     }
 
     private Set<LocalDate> fetchLive(String country, int year) {
+        if (de.bsommerfeld.wsbg.terminal.ui.OfflineMode.ACTIVE) return Collections.emptySet();
         try {
             HttpRequest req = HttpRequest.newBuilder()
                     .uri(URI.create(String.format(API, year, country)))

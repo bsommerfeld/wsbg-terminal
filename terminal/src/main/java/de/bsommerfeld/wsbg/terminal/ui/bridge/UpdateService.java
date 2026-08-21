@@ -63,7 +63,7 @@ public final class UpdateService {
         hub.on("update", this::onCommand);
         hub.onClientOpen(this::push);
 
-        if (enabled) {
+        if (enabled && !de.bsommerfeld.wsbg.terminal.ui.OfflineMode.skipping("the update check")) {
             ScheduledExecutorService scheduler = DaemonSchedulers.scheduled("update-check");
             scheduler.scheduleAtFixedRate(this::check,
                     INITIAL_DELAY_SECONDS, CHECK_INTERVAL_SECONDS, TimeUnit.SECONDS);

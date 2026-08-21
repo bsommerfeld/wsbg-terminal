@@ -4,7 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.swing.JFrame;
-import java.awt.Dimension;
+import java.awt.Component;
 
 /**
  * macOS window chrome: the {@code JFrame} stays decorated (JCEF reparenting
@@ -44,28 +44,26 @@ final class MacWindowChrome implements WindowChrome {
 
     @Override
     public void applyAfterShow(JFrame frame) {
-        // First-paint kick — deferred 250 ms so the reparenting that
-        // fires inside addNotify is fully done before we perturb the
-        // layout. JCEF on macOS lazily initialises the Chromium NSView
-        // and doesn't render until something invalidates its bounds;
-        // the page stays white until the user resizes manually.
-        // A Swing Timer (rather than invokeLater) lets the EDT run
-        // other queued work first.
-        javax.swing.Timer kick = new javax.swing.Timer(250, e -> {
-            Dimension size = frame.getSize();
-            frame.setSize(size.width + 1, size.height);
-            frame.setSize(size.width, size.height);
-        });
-        kick.setRepeats(false);
-        kick.start();
+        // (The former "first-paint kick" - setSize(w+1) then setSize(w) 250 ms
+        // after show - is gone. It dated from the windowed Chromium NSView, which
+        // would not render until its bounds were invalidated. The OSR browser
+        // sizes itself from the panel's componentResized; the kick only made
+        // Chromium lay the page out twice more right as the intro began.)
 
         // Carve the native title-bar interception out of the right-hand action
         // buttons (grid / gear / update) so their clicks land instantly instead
-        // of waiting on AppKit's drag / double-click-zoom disambiguation. Deferred
-        // past the kick so the window is fully on screen (and in [NSApp windows])
-        // before we look it up. Best-effort; a failure just keeps the old lag.
-        javax.swing.Timer carve = new javax.swing.Timer(600, e -> MacTitlebarCarveout.install(frame));
-        carve.setRepeats(false);
+        // of waiting on AppKit's drag / double-click-zoom disambiguation.
+        // Best-effort; a failure just keeps the old lag. The panel is captured
+        // here on the EDT; the JNA bootstrap (~87 ms) runs on its own thread and
+        // waits for a moment in which the page is still - under OSR an EDT stall
+        // is a frame stall, and this used to land in the middle of the intro.
+        java.awt.Container cp = frame.getContentPane();
+        Component osrPanel = cp.getComponentCount() > 0 ? cp.getComponent(0) : null;
+        Thread carve = new Thread(() -> {
+            UiQuietGate.awaitQuiet("mac title-bar carve-out", 10_000);
+            MacTitlebarCarveout.install(osrPanel);
+        }, "mac-titlebar-carveout");
+        carve.setDaemon(true);
         carve.start();
     }
 }

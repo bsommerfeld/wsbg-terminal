@@ -52,6 +52,7 @@ public final class FjNewsPublisher {
         this.pool = pool;
         this.hub = hub;
         hub.onClientOpen(this::sendSnapshot);
+        if (de.bsommerfeld.wsbg.terminal.ui.OfflineMode.skipping("the Financial Juice poll")) return;
         scheduler.schedule(this::poll, 2, TimeUnit.SECONDS);
         scheduler.scheduleAtFixedRate(this::poll, POLL_SECONDS, POLL_SECONDS, TimeUnit.SECONDS);
     }

@@ -63,6 +63,8 @@ public class SwingCefBrowser extends CefBrowser_N implements CefRenderHandler, R
     private Point screenPoint_ = new Point(0, 0);
     private double scaleFactor_ = 1.0;
     private final boolean isTransparent_;
+    private volatile boolean headless_;
+    private int lastCursorType_ = Integer.MIN_VALUE;
     private final WheelScrollPolicy wheelScrollPolicy_;
 
     private final CopyOnWriteArrayList<Consumer<CefPaintEvent>> onPaintListeners =
@@ -162,8 +164,57 @@ public class SwingCefBrowser extends CefBrowser_N implements CefRenderHandler, R
 
     @Override
     public boolean onCursorChange(CefBrowser browser, final int cursorType) {
-        SwingUtilities.invokeLater(() -> panel_.setCursor(new Cursor(cursorType)));
+        // CEF reports the cursor on nearly every element boundary the pointer
+        // crosses, mostly the same type again. Each setCursor is an AWT cursor
+        // update that round-trips to the WindowServer on the AppKit thread - the
+        // thread CEF's own UI work runs on - so only a CHANGE is forwarded, and
+        // the predefined cursors are shared instances rather than fresh objects
+        // (new Cursor(int) also walks a resource bundle for the name each time).
+        if (cursorType == lastCursorType_) return true;
+        lastCursorType_ = cursorType;
+        Cursor cursor;
+        try {
+            cursor = Cursor.getPredefinedCursor(cursorType);
+        } catch (IllegalArgumentException outOfRange) {
+            cursor = new Cursor(cursorType);
+        }
+        Cursor c = cursor;
+        SwingUtilities.invokeLater(() -> panel_.setCursor(c));
         return true; // OSR always handles the cursor change.
+    }
+
+    /** Marks this browser as a hidden session anchor (see CefHost.createFetchBrowser). */
+    public void markHeadless() {
+        headless_ = true;
+    }
+
+    /**
+     * A hidden session anchor never takes focus. CEF reports focus for its page
+     * (a script calling focus(), an autofocus field) through onGotFocus, which
+     * JCEF's CefClient answers with setFocus(true); that native call re-enters
+     * CEF's focus machinery and was measured at 25-70 ms on the browser UI
+     * thread per hidden page load - the thread every visible frame depends on.
+     * Nothing a fetch anchor does needs keyboard focus.
+     */
+    @Override
+    public void setFocus(boolean enable) {
+        if (headless_) return;
+        // Focus is the Swing panel's to give and take - it arrives here on the
+        // EDT from the focus listener (OsrInputRouter). A setFocus(true) on any
+        // other thread is JCEF's echo: CefClient.onGotFocus answers CEF's own
+        // got-focus notification with another setFocus(true), which CEF answers
+        // with another notification, three native round trips deep before it
+        // settles. Each of them re-runs the focus machinery against the page's
+        // renderer - measured 60-80 ms on the browser UI thread per activation,
+        // i.e. a frozen picture every time the window is clicked into. Under
+        // OSR the echo has nothing to add (there is no native window to raise),
+        // so it is dropped.
+        if (enable && !SwingUtilities.isEventDispatchThread()) return;
+        super.setFocus(enable);
+    }
+
+    public boolean isHeadless() {
+        return headless_;
     }
 
     @Override

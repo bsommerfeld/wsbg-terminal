@@ -51,8 +51,14 @@
 .main[data-view="grid"] > .widget > .widget-body,
 .main > .widget.exit-card > .widget-body {
   border-radius: 13px;
-  overflow: hidden;
+  /* Clips like overflow:hidden, but stays a real scroller: the miniature is
+     scrolled natively by the wheel (see the pointer-events note below), which
+     overflow:hidden would refuse. The scrollbar itself has no place on a card. */
+  overflow-y: auto; overflow-x: hidden;
+  scrollbar-width: none;
 }
+.main[data-view="grid"] > .widget > .widget-body::-webkit-scrollbar,
+.main > .widget.exit-card > .widget-body::-webkit-scrollbar { display: none; }
 .main[data-view="grid"] > .widget:hover {
   transform: translateY(-6px) scale(1.02);
   border-color: var(--mute);
@@ -81,11 +87,23 @@
    the widget at its natural size, painted smaller — and content scales WITH
    the card on every window resize. Both terms of that ratio must stay
    independent of the window, or the content stops tracking the card; the
-   post-mortem lives on naturalPaneW() in grid-layout.js. Inner links/rows are
-   inert; the .grid-hit overlay is the only click target. */
+   post-mortem lives on naturalPaneW() in grid-layout.js.
+
+   The body itself keeps the pointer, everything inside it is inert: a trackpad
+   wheel then scrolls the miniature NATIVELY - on the compositor, smooth-scroll
+   animated like the dashboard - instead of being intercepted by the overlay and
+   re-applied as a scrollTop write per event, which was a main-thread scroll,
+   commit and re-raster of the zoomed card for every one of the ~90 events a
+   swipe sends (the grid-view scroll lag). A click lands on the body, never on a
+   headline link, and bubbles up to the card (grid-layout.js activates it). */
 .main[data-view="grid"] > .widget > .widget-body,
 .main > .widget.exit-card > .widget-body {
   zoom: var(--grid-zoom, 0.58);
+  pointer-events: auto;
+  cursor: pointer;
+}
+.main[data-view="grid"] > .widget > .widget-body > *,
+.main > .widget.exit-card > .widget-body > * {
   pointer-events: none;
 }
 
@@ -153,16 +171,17 @@
   gap: 12px;
 }
 
-/* Full-card hit target + the name pill (bottom-centred, like the app names
-   under Mission Control windows — kept inside the card so the rounded-corner
-   clip stays intact). */
+/* Full-card veil + the name pill (bottom-centred, like the app names under
+   Mission Control windows — kept inside the card so the rounded-corner clip
+   stays intact) and the keyboard target (Tab + Enter). It lets the pointer
+   through: wheel and click go to the body underneath (see above). */
 .main[data-view="grid"] .grid-hit,
 .main > .widget.exit-card .grid-hit {
   display: block;
   position: absolute; inset: 0; z-index: 6;
   border-radius: 14px;
   background: linear-gradient(to top, var(--card-veil), transparent 36%);
-  cursor: pointer;
+  pointer-events: none;
 }
 .grid-hit:focus-visible {
   outline: 2px solid var(--amber);
@@ -181,6 +200,10 @@
   transform: translateX(-50%) scale(var(--grid-tag-scale, 1));
   transform-origin: 50% 0;
   display: flex; flex-direction: column; align-items: center; gap: 8px;
+  /* The pill hangs below the card, outside the body - it takes the pointer
+     itself so a click on the name still opens the widget. */
+  pointer-events: auto;
+  cursor: pointer;
 }
 .grid-hit-icon {
   width: 34px; height: 34px;

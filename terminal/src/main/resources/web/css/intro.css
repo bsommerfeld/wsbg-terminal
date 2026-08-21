@@ -124,6 +124,19 @@
 .intro-backdrop {
   position: absolute;
   inset: 0;
+  /* Keeps the whole plate "moving" for as long as it is up - an opacity
+     breath no eye can see (1 → .996). It is there for the capture side, not
+     the viewer: the off-screen browser hands frames over through Chromium's
+     video capturer, whose content sampler watches the damage rectangles and,
+     when one big rectangle recurs at a slow beat among many small ones, locks
+     onto that beat and hands over frames at THAT rate. During the light sweep
+     that is exactly the pattern the effects produce, and roughly every third
+     start the capturer went to 4 fps for a quarter second (measured 2026-08-21:
+     40 frames refused as "FpsRateLimited" while the compositor kept drawing at
+     120). With the full plate damaged every frame the sampler sees one steady
+     cadence and passes every frame through. Costs nothing extra: the sweep
+     damages most of the plate anyway. */
+  animation: intro-breathe 1s linear infinite;
   background:
     /* the pool, three scales — tight and bright, wide and faint, vast and
        barely there. Warm rather than pure white: white haze over a warm room
@@ -481,6 +494,7 @@
 }
 
 @keyframes intro-floor-in { to { opacity: 1; } }
+@keyframes intro-breathe  { 50% { opacity: .996; } }
 @keyframes intro-skip-in  { to { opacity: 1; } }
 /* visibility:hidden at the end is the failsafe — an opacity-0 plate would
    still eat every click if the script never got to remove it. */
