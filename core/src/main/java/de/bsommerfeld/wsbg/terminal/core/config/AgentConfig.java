@@ -17,7 +17,7 @@ public class AgentConfig {
 
     @Key("agent.model-tag")
     @Comment("Ollama model tag override for the one resident model (the catalog ladder: "
-            + "granite4.1:3b/8b, gemma4:e2b..26b, qwen3.6:35b, nemotron-3.5-lightning:30b; "
+            + "granite4.2:3b/8b, gemma4:e2b..26b, qwen3.6:35b, nemotron-3.5-lightning:30b; "
             + "-mlx twins on Apple Silicon where the registry has one). "
             + "Empty = the managed default tier: gemma4:e4b, "
             + "as gemma4:e4b-mlx on Apple Silicon. The launcher reads this key too and "

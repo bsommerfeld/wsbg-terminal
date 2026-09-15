@@ -98,14 +98,14 @@ class ConfigDefaultsTest {
         // Mirrors the launcher's catalog: both registers must list the new
         // families, or the launcher installs a tag the runtime then refuses
         // and silently degrades to a model that may not even be on disk.
-        assertTrue(Model.isDeployedFamily("granite4.1:3b"));
-        assertTrue(Model.isDeployedFamily("granite4.1:8b"));
+        assertTrue(Model.isDeployedFamily("granite4.2:3b"));
+        assertTrue(Model.isDeployedFamily("granite4.2:8b"));
         assertTrue(Model.isDeployedFamily("qwen3.6:35b"));
         assertTrue(Model.isDeployedFamily("qwen3.6:35b-mlx"));
 
         var config = new AgentConfig();
-        config.setModelTag("granite4.1:8b");
-        assertEquals("granite4.1:8b", config.resolveModelTag());
+        config.setModelTag("granite4.2:8b");
+        assertEquals("granite4.2:8b", config.resolveModelTag());
         config.setModelTag("qwen3.6:35b-mlx");
         assertEquals("qwen3.6:35b-mlx", config.resolveModelTag());
     }
@@ -115,8 +115,8 @@ class ConfigDefaultsTest {
         // Without catalog entries the context window is sized against the
         // 8.8 GB anchor — for the ~27 GB Qwen that is exactly the mispricing
         // that produced the 2026-08-11 swap collapse (~78 → ~18 tok/s).
-        assertEquals(2.1, AgentConfig.weightsGbFor("granite4.1:3b"));
-        assertEquals(5.3, AgentConfig.weightsGbFor("granite4.1:8b"));
+        assertEquals(2.2, AgentConfig.weightsGbFor("granite4.2:3b"));
+        assertEquals(5.3, AgentConfig.weightsGbFor("granite4.2:8b"));
         assertEquals(27.0, AgentConfig.weightsGbFor("qwen3.6:35b"));
         assertEquals(27.0, AgentConfig.weightsGbFor("qwen3.6:35b-mlx"));
 
@@ -127,7 +127,7 @@ class ConfigDefaultsTest {
         assertEquals(16384, AgentConfig.contextTokensFor(32 * gb, anchor));
         // The tiny Granite frees the window upward on the same machine.
         assertEquals(24576, AgentConfig.contextTokensFor(32 * gb,
-                AgentConfig.weightsGbFor("granite4.1:3b")));
+                AgentConfig.weightsGbFor("granite4.2:3b")));
     }
 
     @Test

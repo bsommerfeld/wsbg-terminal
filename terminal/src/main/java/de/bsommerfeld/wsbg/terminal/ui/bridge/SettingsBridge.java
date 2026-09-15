@@ -313,7 +313,7 @@ public final class SettingsBridge {
         return tiers;
     }
 
-    /** "Granite 4.1 · 3b" → "Granite 4.1"; a name without a size part is kept whole. */
+    /** "Granite 4.2 · 3b" → "Granite 4.2"; a name without a size part is kept whole. */
     private static String familyName(ModelCatalog tier) {
         String name = tier.displayName();
         int sep = name.lastIndexOf(" · ");

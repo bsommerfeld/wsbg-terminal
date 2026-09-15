@@ -66,14 +66,14 @@ class ModelSelectionTest {
 
     @Test
     void graniteHasNoMlxTwinAndMustNeverInventOne() {
-        // The registry carries NO -mlx build for granite4.1 (checked against
-        // ollama.com/library/granite4.1 on 2026-08-13). Appending the suffix
+        // The registry carries NO -mlx build for granite4.2 (checked against
+        // ollama.com/library/granite4.2/tags on 2026-08-26). Appending the suffix
         // anyway would hand `ollama pull` a tag it cannot find, and the
         // install would fail on every Apple-Silicon machine.
-        assertEquals("granite4.1:3b", ModelCatalog.GRANITE_3B.tagFor(true));
-        assertEquals("granite4.1:3b", ModelCatalog.GRANITE_3B.tagFor(false));
-        assertEquals("granite4.1:8b", ModelCatalog.GRANITE_8B.tagFor(true));
-        assertEquals("granite4.1:8b", ModelCatalog.GRANITE_8B.tagFor(false));
+        assertEquals("granite4.2:3b", ModelCatalog.GRANITE_3B.tagFor(true));
+        assertEquals("granite4.2:3b", ModelCatalog.GRANITE_3B.tagFor(false));
+        assertEquals("granite4.2:8b", ModelCatalog.GRANITE_8B.tagFor(true));
+        assertEquals("granite4.2:8b", ModelCatalog.GRANITE_8B.tagFor(false));
         // No MLX build also means no separate MLX size.
         assertEquals(ModelCatalog.GRANITE_8B.diskGbFor(false),
                 ModelCatalog.GRANITE_8B.diskGbFor(true));
@@ -161,15 +161,15 @@ class ModelSelectionTest {
     @Test
     void honorsTheNewFamiliesInBothDirections(@TempDir Path dir) throws IOException {
         // The launcher's gate and the runtime's Model.DEPLOYED_FAMILIES must
-        // agree on granite4.1 and qwen3.6, or the launcher installs a tag the
+        // agree on granite4.2 and qwen3.6, or the launcher installs a tag the
         // runtime then refuses (launcher half pinned here).
-        writeConfig(dir, "[agent]", "agent.model-tag = \"granite4.1:8b\"");
-        assertEquals("granite4.1:8b", ModelSelection.configuredModelTag(dir));
+        writeConfig(dir, "[agent]", "agent.model-tag = \"granite4.2:8b\"");
+        assertEquals("granite4.2:8b", ModelSelection.configuredModelTag(dir));
 
         writeConfig(dir, "[agent]", "agent.model-tag = \"qwen3.6:35b-mlx\"");
         assertEquals("qwen3.6:35b-mlx", ModelSelection.configuredModelTag(dir));
 
-        assertTrue(ModelCatalog.isDeployedFamily("granite4.1:3b"));
+        assertTrue(ModelCatalog.isDeployedFamily("granite4.2:3b"));
         assertTrue(ModelCatalog.isDeployedFamily("qwen3.6:35b"));
     }
 
@@ -230,9 +230,9 @@ class ModelSelectionTest {
 
     @Test
     void installModelRunLeavesAKnownTagExactlyAsItIs(@TempDir Path dir) throws IOException {
-        writeConfig(dir, "[agent]", "agent.model-tag = \"granite4.1:8b\"");
+        writeConfig(dir, "[agent]", "agent.model-tag = \"granite4.2:8b\"");
         ModelSelection.Result result = ModelSelection.resolve(dir, new SessionLog(dir), true);
-        assertEquals("granite4.1:8b", result.effectiveTag());
+        assertEquals("granite4.2:8b", result.effectiveTag());
     }
 
     @Test

@@ -104,9 +104,9 @@ class EnvironmentSetupTest {
     @Test
     void classify_shouldDetectPullsForTheNewCatalogFamilies() {
         // The pull detector is tag-generic, but the new families' tags carry a
-        // dot (granite4.1) — pin that the classifier passes them through
+        // dot (granite4.2) — pin that the classifier passes them through
         // untouched, since the launcher renders the phase from this exact name.
-        for (String tag : List.of("granite4.1:3b", "granite4.1:8b", "qwen3.6:35b-mlx")) {
+        for (String tag : List.of("granite4.2:3b", "granite4.2:8b", "qwen3.6:35b-mlx")) {
             List<String[]> emissions = collect(new ScriptOutputClassifier(),
                     "> Pulling " + tag + "...");
             assertFalse(emissions.isEmpty(), "no emission for " + tag);

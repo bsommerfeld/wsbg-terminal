@@ -68,10 +68,10 @@ class OllamaServerManagerTest {
                 .resolve("manifests/registry.ollama.ai/library");
         java.nio.file.Files.createDirectories(lib.resolve("gemma4"));
         java.nio.file.Files.writeString(lib.resolve("gemma4/26b-mlx"), "{}");
-        java.nio.file.Files.createDirectories(lib.resolve("granite4.1"));
-        java.nio.file.Files.writeString(lib.resolve("granite4.1/8b"), "{}");
+        java.nio.file.Files.createDirectories(lib.resolve("granite4.2"));
+        java.nio.file.Files.writeString(lib.resolve("granite4.2/8b"), "{}");
 
-        assertEquals(java.util.Set.of("gemma4:26b-mlx", "granite4.1:8b"),
+        assertEquals(java.util.Set.of("gemma4:26b-mlx", "granite4.2:8b"),
                 OllamaServerManager.installedModelTags(appData));
     }
 

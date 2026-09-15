@@ -168,6 +168,23 @@ final class ChatModelFactory {
         // "JSON-mode whitespace-loop" / empty-reply lore: with a tight numPredict the
         // thinking consumed the whole token budget and the visible content came back
         // truncated or empty — the loop was the model reasoning, invisibly.
+        //
+        // Granite 4.2 (in the catalog since 2026-08-26) documents that switch explicitly
+        // (ollama.com/library/granite4.2): `enable_thinking` defaults to TRUE and the chat
+        // template then opens the generation prompt with a literal `<think>` block that the
+        // model closes with `</think>` before its real answer; a second knob,
+        // `reasoning_effort` ("low" / "high", default "high"), only sets the DEPTH of that
+        // block. So on these rungs think=false is not a throughput lever any more, it is
+        // the thing that keeps a chain-of-thought out of a JSON reply. Both knobs travel as
+        // Ollama's single `think` parameter (false | "low" | "medium" | "high") — and
+        // LangChain4j 1.11 types it as a Boolean, so this app can send OFF or default-ON and
+        // nothing in between. A reasoning-effort LEVEL would need the request built past the
+        // LangChain4j builder; there is no lane here that has asked for one.
+        //
+        // What this cannot cover: the "openai" endpoint mode (see buildOpenAi) has no think
+        // parameter at all, and a remote Granite 4.2 therefore answers WITH the `<think>`
+        // block. ChatGateway strips it from every reply — that is the net that holds where
+        // this switch does not reach.
         final boolean think = false;
 
         // Editorial agent — every call in the deterministic pipeline expects a

@@ -145,7 +145,7 @@ final class ChatGateway {
                         (tAcq - t0) / 1_000_000, (t1 - tAcq) / 1_000_000,
                         tu == null ? -1 : tu.inputTokenCount(), tu == null ? -1 : tu.outputTokenCount());
                 health.noteOk(endpoint.baseUrl(), endpoint.managed());
-                return ai == null || ai.text() == null ? "" : ai.text();
+                return stripThinking(ai == null ? null : ai.text());
             } catch (RuntimeException e) {
                 if (isClientReject(e)) {
                     // An HTTP 4xx is a VERDICT on this request, not a transient:
@@ -192,6 +192,34 @@ final class ChatGateway {
             }
         }
         throw lastConnectFailure;
+    }
+
+    /**
+     * Ollama's {@code think} parameter returns a reply's chain-of-thought in a
+     * SEPARATE field, so a reply normally arrives clean. This strips a
+     * chain-of-thought that came back INSIDE the content anyway — a leading
+     * {@code <think> … </think>} block, exactly the shape Granite 4.2's chat
+     * template produces (ollama.com/library/granite4.2: thinking is on by
+     * default and the template opens the generation prompt with {@code <think>}).
+     *
+     * <p>It is not paranoia about the managed path — {@link ChatModelFactory}
+     * sends {@code think=false} there. It is the one net for the paths where
+     * that switch does not exist: the {@code openai} endpoint mode has no think
+     * parameter, and a foreign server may run a thinking model with its own
+     * defaults. Without this, the reasoning text lands verbatim in a headline or
+     * ahead of the JSON, where the lenient parsers would take it for content.
+     *
+     * <p>Deliberately narrow: only a block the reply OPENS with, and only when
+     * it is closed. An unterminated {@code <think>} means the token budget ran
+     * out mid-reasoning — there is no answer behind it to keep, and the empty
+     * string is what every caller already treats as a whiff.
+     */
+    static String stripThinking(String text) {
+        if (text == null) return "";
+        String t = text.stripLeading();
+        if (!t.regionMatches(true, 0, "<think>", 0, 7)) return text;
+        int end = t.toLowerCase().indexOf("</think>");
+        return end < 0 ? "" : t.substring(end + 8).strip();
     }
 
     /**

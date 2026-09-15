@@ -33,17 +33,23 @@ public enum ModelCatalog {
     // structured-JSON fidelity for their size. Dense means no expert-skipping
     // in the prefill — at 3B/8B active that barely registers. No MLX twin
     // exists on the registry (checked against
-    // ollama.com/library/granite4.1 on 2026-08-13: only quantization variants),
-    // hence hasMlxTwin=false — Apple Silicon runs the base tag.
-    GRANITE_3B("Granite 4.1 · 3b", "granite4.1:3b", false, 2.1, 2.1, 2.1, 6),
+    // ollama.com/library/granite4.2/tags on 2026-08-26: only quantization
+    // variants), hence hasMlxTwin=false — Apple Silicon runs the base tag.
+    // Moved 4.1 → 4.2 on 2026-08-26. 4.2 carries a BUILT-IN THINKING MODE that
+    // is ON by default; the app switches it off per request in
+    // ChatModelFactory — see the think=false note there, which is now a
+    // correctness requirement for these rungs and not just a throughput lever.
+    // A 30b rung also exists on the registry; it is deliberately NOT in the
+    // ladder — an unmeasured tier next to the 26B does not get a rung.
+    GRANITE_3B("Granite 4.2 · 3b", "granite4.2:3b", false, 2.2, 2.2, 2.2, 6),
     E2B("Gemma 4 · e2b", "gemma4:e2b", true, 7.2, 6.5, 6.5, 8),
     // The stronger frugal rung. Evidence for the placement: MMLU 73.84;
     // IFEval 87.1 (practically level with Qwen3.5-9B at 87.2); BFCL V3
     // tool-calling 68.27; IBM measures the 8B on instruction-following and
     // tool-calling on par with the former 32B-MoE Granite 4.0-H-Small.
     // Strengths: RAG, tool use, structured JSON, 12 languages incl. German,
-    // Apache 2.0.
-    GRANITE_8B("Granite 4.1 · 8b", "granite4.1:8b", false, 5.3, 5.3, 5.3, 10),
+    // Apache 2.0. Also the family's `latest` tag.
+    GRANITE_8B("Granite 4.2 · 8b", "granite4.2:8b", false, 5.3, 5.3, 5.3, 10),
     E4B("Gemma 4 · e4b", "gemma4:e4b", true, 9.6, 8.8, 8.8, 12),
     // 26B is MoE with 4B active — the strongest gemma4 rung. A dense 12B tier
     // stood between e4b and this one and was struck 2026-08-11: it was the
