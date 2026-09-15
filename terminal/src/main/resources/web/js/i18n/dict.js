@@ -102,6 +102,10 @@ export const DICT = {
     'settings.appearance.mode.aria': 'Hell/Dunkel umschalten',
     'settings.appearance.system.name': 'Aus Systemeinstellungen übernehmen',
     'settings.appearance.system.hint': 'Folgt automatisch dem hellen/dunklen Modus deines Systems.',
+    'settings.appearance.framerate.name': 'Bildrate',
+    'settings.appearance.framerate.hint': 'Wie der Monitor ist am flüssigsten, 60 Hz schont den Rechner. Gilt ab dem nächsten Start.',
+    'settings.appearance.framerate.display': 'Wie der Monitor',
+    'settings.appearance.framerate.60': '60 Hz',
     // --- changelog overlay ---
     'changelog.title': 'Was hat sich geändert?',
     'changelog.close': 'Schließen',
@@ -364,6 +368,10 @@ export const DICT = {
     'settings.appearance.mode.aria': 'Toggle light/dark',
     'settings.appearance.system.name': 'Use system setting',
     'settings.appearance.system.hint': "Automatically follows your system's light/dark mode.",
+    'settings.appearance.framerate.name': 'Frame rate',
+    'settings.appearance.framerate.hint': 'Matching the display is smoothest, 60 Hz is easier on the machine. Takes effect on the next start.',
+    'settings.appearance.framerate.display': 'Match the display',
+    'settings.appearance.framerate.60': '60 Hz',
     // --- changelog overlay ---
     'changelog.title': "What's changed?",
     'changelog.close': 'Close',

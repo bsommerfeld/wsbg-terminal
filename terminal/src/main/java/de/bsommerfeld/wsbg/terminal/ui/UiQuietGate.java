@@ -44,8 +44,15 @@ public final class UiQuietGate {
     private static volatile long lastFrameNanos = System.nanoTime();
     /** Before the first frame the page is still loading - that is not "quiet", it is "not yet". */
     private static volatile boolean anyFrame;
+    /** No visible page in this process at all ({@link ExternalShell}): nothing to protect. */
+    private static volatile boolean alwaysQuiet;
 
     private UiQuietGate() {}
+
+    /** Opens the gate for good - for a backend that hosts no visible page. */
+    public static void setAlwaysQuiet(boolean value) {
+        alwaysQuiet = value;
+    }
 
     /** A frame of the visible page was just delivered. Called from CEF's paint thread. */
     public static void noteFrame() {
@@ -55,6 +62,7 @@ public final class UiQuietGate {
 
     /** True when the visible page has been still for at least {@link #QUIET_MS}. */
     public static boolean isQuiet() {
+        if (alwaysQuiet) return true;
         return anyFrame && System.nanoTime() - lastFrameNanos >= QUIET_MS * 1_000_000L;
     }
 

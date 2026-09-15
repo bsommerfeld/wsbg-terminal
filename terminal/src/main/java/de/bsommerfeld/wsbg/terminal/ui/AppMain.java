@@ -47,6 +47,7 @@ public final class AppMain {
         BrowserWindow[] windowRef = new BrowserWindow[1];
         boolean isFirst = SingleInstance.claim(() -> {
             if (windowRef[0] != null) windowRef[0].raise();
+            else ExternalShell.command("raise"); // the shell owns the window
         }, AppMain::quitForLauncherUpdate);
         if (!isFirst) {
             LOG.info("Another instance already running — raised it and exiting.");
@@ -83,6 +84,11 @@ public final class AppMain {
         String entryUrl = String.format("http://127.0.0.1:%d/?ws=%d",
                 assetServer.port(), pushHub.port());
         LOG.info("Entry URL: {}", entryUrl);
+
+        if (ExternalShell.ACTIVE) {
+            openWithExternalShell(injector, lifecycle, pushHub, entryUrl);
+            return;
+        }
 
         SwingUtilities.invokeLater(() -> {
             BrowserWindow window = injector.getInstance(BrowserWindow.class);
@@ -154,6 +160,39 @@ public final class AppMain {
 
         System.setProperty("apple.awt.application.name", "WSBG Terminal");
         System.setProperty("apple.laf.useScreenMenuBar", "true");
+
+        // Without a window of its own the JVM is a background process: no Dock
+        // icon, no app menu - the shell owns those.
+        if (ExternalShell.ACTIVE) {
+            System.setProperty("apple.awt.UIElement", "true");
+        }
+    }
+
+    /**
+     * {@link ExternalShell} mode: no Swing window. The embedded Chromium is still
+     * brought up on the EDT (the hidden fetch browsers need it, and CEF's init has
+     * to happen on the AWT thread - see the deadlock note above), the quiet gate is
+     * opened for good, the boot gate is armed on the push hub as usual, and the
+     * entry URL is announced for the shell. Offline runs skip CEF entirely: nothing
+     * would ever create a hidden browser.
+     */
+    private static void openWithExternalShell(Injector injector, AppLifecycle lifecycle,
+            PushHub pushHub, String entryUrl) {
+        UiQuietGate.setAlwaysQuiet(true);
+        if (!OfflineMode.skipping("the embedded Chromium (no fetch browsers to host)")) {
+            try {
+                SwingUtilities.invokeAndWait(() -> injector.getInstance(CefHost.class).client());
+            } catch (Exception e) {
+                throw new RuntimeException("JCEF initialization for the fetch browsers failed", e);
+            }
+        }
+        new BootGate(lifecycle::startBackgroundWork).arm(pushHub);
+        ExternalShell.watchParent(lifecycle::quitFromShell);
+        ExternalShell.announceEntryUrl(entryUrl);
+        // The persisted frame-rate choice, so the shell applies it before the page shows.
+        ExternalShell.command("frame-rate=" + injector.getInstance(
+                de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig.class).getUser().getFrameRate());
+        LOG.info("External shell mode: no window of our own; the shell shows {}", entryUrl);
     }
 
     /**

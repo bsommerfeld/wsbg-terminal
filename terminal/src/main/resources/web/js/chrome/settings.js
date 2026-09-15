@@ -111,6 +111,14 @@ export function initSettings(socket) {
   const lang = view.querySelector('.js-language');
   const auto = view.querySelector('.js-auto-update');
   const experimental = view.querySelector('.js-experimental-updates');
+  // The redraw-rate cap exists only where the window can enforce it: the native
+  // shell says so through window.__WSBG_SHELL__ (an init script); under the old
+  // embedded browser, and on platforms without the cap, the row stays hidden.
+  const frameRate = view.querySelector('.js-frame-rate');
+  const frameRateRow = view.querySelector('.js-frame-rate-row');
+  if (frameRateRow) frameRateRow.hidden = !(window.__WSBG_SHELL__ && window.__WSBG_SHELL__.frameRateCap);
+  if (frameRate) frameRate.addEventListener('change',
+      () => socket.send('settings', { command: 'set', key: 'frameRate', value: frameRate.value }));
 
   if (lang) lang.addEventListener('change',
       () => socket.send('settings', { command: 'set', key: 'language', value: lang.value }));
@@ -362,6 +370,7 @@ export function initSettings(socket) {
     // handler per topic) — the focus-rail's Schlagzeilen settings sync off this.
     window.dispatchEvent(new CustomEvent('wsbg:settings', { detail: payload }));
     if (lang && payload.language) lang.value = payload.language;
+    if (frameRate && payload.frameRate) frameRate.value = payload.frameRate;
     if (auto && typeof payload.autoUpdate === 'boolean') auto.checked = payload.autoUpdate;
     if (experimental && typeof payload.experimentalUpdates === 'boolean')
       experimental.checked = payload.experimentalUpdates;

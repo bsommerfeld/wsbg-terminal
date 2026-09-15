@@ -9,10 +9,12 @@ import de.bsommerfeld.wsbg.terminal.agent.OllamaServerManager;
 import de.bsommerfeld.wsbg.terminal.core.config.AgentConfig;
 import de.bsommerfeld.wsbg.terminal.core.config.AiEndpoint;
 import de.bsommerfeld.wsbg.terminal.core.config.GlobalConfig;
+import de.bsommerfeld.wsbg.terminal.core.config.UserConfig;
 import de.bsommerfeld.wsbg.terminal.core.event.ApplicationEventBus;
 import de.bsommerfeld.wsbg.terminal.core.event.ControlEvents;
 import de.bsommerfeld.wsbg.terminal.core.util.StorageUtils;
 import de.bsommerfeld.wsbg.terminal.ui.CefHost;
+import de.bsommerfeld.wsbg.terminal.ui.ExternalShell;
 import de.bsommerfeld.wsbg.terminal.ui.web.PushHub;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -127,6 +129,17 @@ public final class SettingsBridge {
             }
             case "autoUpdate" -> {
                 config.getUser().setAutoUpdate(Payloads.asBool(value));
+                return true;
+            }
+            case "frameRate" -> {
+                // Two values only; anything else is the default. The shell owning
+                // the window is told at once; WebKit reads the cap when the page
+                // is created, so the change shows on the next start (measured
+                // 2026-09-15: the running page kept its rate).
+                String rate = UserConfig.FRAME_RATE_60.equals(Payloads.str(value))
+                        ? UserConfig.FRAME_RATE_60 : UserConfig.FRAME_RATE_DISPLAY;
+                config.getUser().setFrameRate(rate);
+                ExternalShell.command("frame-rate=" + rate);
                 return true;
             }
             case "experimentalUpdates" -> {
@@ -247,6 +260,7 @@ public final class SettingsBridge {
     static Map<String, Object> snapshot(GlobalConfig config) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("language", config.getUser().getLanguage());
+        out.put("frameRate", config.getUser().getFrameRate());
         out.put("autoUpdate", config.getUser().isAutoUpdate());
         out.put("experimentalUpdates", config.getUser().isExperimentalUpdates());
 

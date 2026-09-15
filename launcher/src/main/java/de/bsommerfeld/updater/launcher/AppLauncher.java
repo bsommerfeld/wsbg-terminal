@@ -6,6 +6,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Stream;
 
 /**
@@ -48,9 +49,15 @@ final class AppLauncher {
     private static final String APP_NAME = "WSBG Terminal";
 
     private final Path appDirectory;
+    private boolean usesShell;
 
     AppLauncher(Path appDirectory) {
         this.appDirectory = appDirectory;
+    }
+
+    /** Whether the last {@link #launch} went through the native shell. */
+    boolean usesShell() {
+        return usesShell;
     }
 
     /**
@@ -78,6 +85,16 @@ final class AppLauncher {
         String classpath = buildClasspath(libDir);
 
         List<String> command = buildCommand(mainClass, classpath, extraArgs);
+
+        // With the native shell installed, the shell is the process we start and
+        // the JVM becomes its sidecar (WSBG_SHELL=external is set by the shell).
+        // The environment below still reaches the JVM: the shell passes its own
+        // environment on. Without a shell the JVM opens its JCEF window as before.
+        Optional<Path> shell = ShellLocator.find(appDirectory);
+        usesShell = shell.isPresent();
+        if (shell.isPresent()) {
+            command = ShellLocator.wrap(shell.get(), command);
+        }
 
         ProcessBuilder pb = new ProcessBuilder(command);
         pb.directory(appDirectory.toFile());

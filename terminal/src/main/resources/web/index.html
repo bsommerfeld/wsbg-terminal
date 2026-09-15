@@ -519,6 +519,19 @@
               <span class="checkbox-box"></span>
             </label>
           </div>
+          <!-- Only where the window can actually cap its redraw rate: the native
+               shell on macOS reports that via window.__WSBG_SHELL__ (settings.js
+               hides the row everywhere else). -->
+          <div class="setting-row js-frame-rate-row" hidden>
+            <div class="setting-label">
+              <span class="setting-name" data-i18n="settings.appearance.framerate.name">Bildrate</span>
+              <span class="setting-hint" data-i18n="settings.appearance.framerate.hint">Wie der Monitor ist am flüssigsten, 60 Hz schont den Rechner. Gilt ab dem nächsten Start.</span>
+            </div>
+            <select class="select js-frame-rate">
+              <option value="display" data-i18n="settings.appearance.framerate.display">Wie der Monitor</option>
+              <option value="60" data-i18n="settings.appearance.framerate.60">60 Hz</option>
+            </select>
+          </div>
         </section>
 
         <!-- The "Schlagzeilen" category moved wholesale into the Schlagzeilen

@@ -498,6 +498,9 @@ public final class LauncherMain {
 
         AppLauncher launcher = new AppLauncher(appDir);
         launcher.launch(args);
+        log.log(launcher.usesShell()
+                ? "Started through the native shell (system webview)"
+                : "Started the terminal JVM directly (JCEF window)");
 
         if (wasVisible) {
             sleep(800);

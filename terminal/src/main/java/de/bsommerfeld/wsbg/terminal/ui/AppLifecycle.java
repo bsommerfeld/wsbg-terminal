@@ -132,6 +132,15 @@ final class AppLifecycle {
         exitAfter(() -> { });
     }
 
+    /**
+     * Closes the app cleanly because the shell that showed the page is gone
+     * ({@link ExternalShell}): services first (Ollama dies with us), then the
+     * embedded Chromium and its helpers, then exit.
+     */
+    void quitFromShell() {
+        exitAfter(() -> { });
+    }
+
     /** The shared exit orchestration: services → spawn step → CEF teardown → reap → exit. */
     private void exitAfter(Runnable spawnStep) {
         SwingUtilities.invokeLater(() -> {

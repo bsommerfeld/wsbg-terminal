@@ -17,6 +17,10 @@ inputs:
     description: 'Directory containing application images to bundle'
     required: false
     default: 'terminal/src/main/resources/images'
+  extra-dir:
+    description: 'Optional directory whose whole tree is copied verbatim into the package root (e.g. bin/shell/<platform>/wsbg-shell)'
+    required: false
+    default: ''
 
 outputs:
   manifest-path:
@@ -103,6 +107,14 @@ runs:
             cp "$img" "$STAGING_DIR/images/"
             echo "Bundled image: $(basename "$img")"
           done
+        fi
+
+        # --- 2b. Extra tree (native shell binaries, one folder per platform) ---
+        EXTRA_DIR="${{ inputs.extra-dir }}"
+        if [ -n "$EXTRA_DIR" ] && [ -d "$EXTRA_DIR" ]; then
+          cp -R "$EXTRA_DIR"/. "$STAGING_DIR"/
+          echo "Bundled extra tree from $EXTRA_DIR:"
+          (cd "$EXTRA_DIR" && find . -type f | sort)
         fi
 
         # --- 3. Generate Manifest ---

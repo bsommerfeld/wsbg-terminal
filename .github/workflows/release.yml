@@ -21,9 +21,59 @@ permissions:
   contents: write
 
 jobs:
+  # The native shell (shell/, Rust + system webview) is built once per platform
+  # and travels inside the ONE OTA package under bin/shell/<platform>/ - the
+  # launcher picks the folder for its own OS and starts the shell instead of the
+  # JVM window (ShellLocator). Platform names must match ShellLocator.platform().
+  build_shell:
+    name: Build shell (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            platform: macos-aarch64
+            binary: wsbg-shell
+          - os: windows-latest
+            platform: windows-x86_64
+            binary: wsbg-shell.exe
+          - os: ubuntu-latest
+            platform: linux-x86_64
+            binary: wsbg-shell
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: shell
+
+      # WebKitGTK is the webview on Linux; the other platforms ship theirs with the OS.
+      - name: Install Linux webview dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+
+      - name: Build shell
+        run: cargo build --release --manifest-path shell/Cargo.toml
+
+      - name: Upload shell binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: shell-${{ matrix.platform }}
+          path: shell/target/release/${{ matrix.binary }}
+          if-no-files-found: error
+
   build_and_release:
     name: Build, Test & Upload Artifacts
     runs-on: ubuntu-latest
+    needs: build_shell
 
     steps:
       - name: Checkout code
@@ -60,11 +110,30 @@ jobs:
       # (from copy-dependencies above) carries every runtime dependency —
       # including all first-party module jars via the Maven graph. New modules
       # need no entry here: depending on them from terminal is enough.
+      # One folder per platform, exactly where ShellLocator looks for it.
+      - name: Collect shell binaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: shell-*
+          path: shell-artifacts
+
+      - name: Stage shell binaries
+        run: |
+          set -euo pipefail
+          for dir in shell-artifacts/shell-*; do
+            platform="${dir#shell-artifacts/shell-}"
+            mkdir -p "shell-stage/bin/shell/$platform"
+            cp "$dir"/wsbg-shell* "shell-stage/bin/shell/$platform/"
+            chmod +x "shell-stage/bin/shell/$platform/"wsbg-shell*
+          done
+          find shell-stage -type f -exec ls -l {} \;
+
       - name: Package with TinyUpdate
         uses: ./updater/action
         with:
           artifact-dirs: 'terminal/target,terminal/target/deps'
           script-dir: '.script'
+          extra-dir: 'shell-stage'
 
       # Launcher self-update channel: the same TinyUpdate mechanism, second
       # instance. A SEPARATE asset pair (launcher-update.json/-files.zip) so

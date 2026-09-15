@@ -53,6 +53,23 @@ public class UserConfig {
             + "if a third-party reverse-scroll tool makes the direction wrong.")
     private boolean scrollInvert = true;
 
+    @Key("frame-rate")
+    @Comment("How fast the window may redraw: 'display' follows the monitor's refresh "
+            + "rate (default), '60' caps page updates at 60 per second, which is "
+            + "lighter on the machine. Only the native shell honours it (macOS).")
+    private String frameRate = FRAME_RATE_DISPLAY;
+
+    public static final String FRAME_RATE_DISPLAY = "display";
+    public static final String FRAME_RATE_60 = "60";
+
+    public String getFrameRate() {
+        return FRAME_RATE_60.equals(frameRate) ? FRAME_RATE_60 : FRAME_RATE_DISPLAY;
+    }
+
+    public void setFrameRate(String frameRate) {
+        this.frameRate = FRAME_RATE_60.equals(frameRate) ? FRAME_RATE_60 : FRAME_RATE_DISPLAY;
+    }
+
     public double getScrollSpeed() {
         return scrollSpeed;
     }

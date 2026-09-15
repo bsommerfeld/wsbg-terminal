@@ -32,7 +32,11 @@ public final class WindowDragHandler {
     }
 
     public void handle(String command, String edge) {
-        if (frame == null) return;
+        if (frame == null) {
+            // No Swing window: the shell owns the window, so the command goes there.
+            ExternalShell.command(command);
+            return;
+        }
         switch (command) {
             // Dispatch WINDOW_CLOSING (not frame.dispose()) so the HTML close
             // button runs BrowserWindow's full graceful shutdown — CEF teardown,

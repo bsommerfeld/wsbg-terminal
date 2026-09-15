@@ -19,6 +19,25 @@ export function initTitlebar(socket) {
       socket.send('window', { command: b.dataset.window });
     });
   });
+
+  // In the native shell on Windows the window has no OS caption at all (the
+  // shell draws no decorations), so the HTML bar has to be the caption: a press
+  // on its empty part starts the native move, a double click toggles maximise.
+  // Both travel as window commands to the backend, which hands them to the
+  // shell. macOS keeps the real title bar, Linux the native OS bar - and under
+  // the old embedded browser Windows does this natively (WM_NCHITTEST).
+  const bar = document.getElementById('titlebar');
+  const shell = window.__WSBG_SHELL__;
+  if (bar && shell && document.documentElement.dataset.platform === 'win') {
+    const onCaption = e => e.button === 0
+        && !e.target.closest('button, a, input, select, .tb-actions, .tb-controls');
+    bar.addEventListener('mousedown', e => {
+      if (onCaption(e)) socket.send('window', { command: 'drag-start' });
+    });
+    bar.addEventListener('dblclick', e => {
+      if (onCaption(e)) socket.send('window', { command: 'maximize-toggle' });
+    });
+  }
 }
 
 /**
