@@ -377,12 +377,13 @@ function fitCanvas(cv, [w, h]) {
 
 // ---- palette --------------------------------------------------------------
 
-// Canvas takes the tokens verbatim (they are oklch()); if this engine ever
-// rejects a colour string the assignment silently doesn't stick, so we probe
-// once and fall back to a flat hex twin rather than painting everything black.
+// Canvas takes the tokens verbatim; if this engine ever rejects a colour string
+// the assignment silently doesn't stick, so we probe once and fall back to a
+// flat twin rather than painting everything black. The twins ARE the tokens
+// (tokens.css) - keep them in step.
 const FALLBACK = {
-  dark:  { txt: '#ece7dd', mute: '#8a8375', mute2: '#5f5a51', line: '#494540', amber: '#f5c268', bg1: '#2a2825' },
-  light: { txt: '#1f1c19', mute: '#736f6b', mute2: '#97938f', line: '#c9c6c2', amber: '#b56400', bg1: '#edebe7' },
+  dark:  { txt: '#cfcecd', mute: '#8f8e8d', mute2: '#6f6e6d', line: '#424140', amber: '#ffb900', bg1: '#424140' },
+  light: { txt: '#222120', mute: '#6f6e6d', mute2: '#8f8e8d', line: '#cfcecd', amber: '#a07300', bg1: '#dfdedd' },
 };
 
 function palette() {

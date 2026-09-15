@@ -25,7 +25,7 @@ final class ModelPips extends JComponent {
     private static final int HEIGHT = DOT + 6;
 
     // Matches IslandIndicator's fill/track so the pips read as the same family.
-    private static final Color LIT = new Color(0xF9, 0xB6, 0x4F);
+    private static final Color LIT = LauncherTheme.ACCENT;
     private static final Color PENDING = new Color(60, 60, 66);
 
     private int total = 0;

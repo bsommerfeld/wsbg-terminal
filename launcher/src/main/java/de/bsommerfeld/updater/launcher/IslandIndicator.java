@@ -26,7 +26,7 @@ final class IslandIndicator extends JComponent {
     private static final Color BG_COLOR = LauncherTheme.BG;
 
     private static final Color TRACK_COLOR = new Color(45, 45, 50);
-    // Terminal accent (--amber oklch(0.82 0.14 75) ≈ #F9B64F).
+    // Terminal accent (--amber #FFB900 in web/css/tokens.css).
     private static final Color FILL_COLOR = LauncherTheme.ACCENT;
     // Same accent, fully transparent — the fade-out stops of the shimmer sweep.
     private static final Color FILL_TRANSPARENT =

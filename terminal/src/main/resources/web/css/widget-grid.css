@@ -25,8 +25,9 @@
      order, recomputed from the container size on every resize. */
   display: block;
   position: relative;
-  /* Subtle stage vignette so the cards read as elevated over a backdrop. */
-  background: radial-gradient(120% 95% at 50% 32%, var(--bg-1), var(--bg) 80%);
+  /* The frame, flat: the cards are islands on it and separate by rim and
+     shadow, like the widgets in the dashboard. */
+  background: var(--bg);
 }
 .main[data-view="grid"] > .vdivider { display: none; }
 
@@ -39,9 +40,11 @@
   position: absolute;
   /* Size comes from grid-layout.js: one uniform card size fitted to the
      fixed raster. No aspect-ratio here. */
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: var(--bg-elev);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  /* A card is an island on the frame, like the widgets in the dashboard -
+     rim, radius and tone from the same table (tokens.css). */
+  background: var(--pane);
   box-shadow: 0 26px 80px oklch(from var(--sh-ink) l c h / .45);
   /* Visible: the icon straddles the lower edge and the name pill hangs BELOW
      the card. Content clipping moved onto the body. */
@@ -50,7 +53,7 @@
 }
 .main[data-view="grid"] > .widget > .widget-body,
 .main > .widget.exit-card > .widget-body {
-  border-radius: 13px;
+  border-radius: 7px;
   /* Clips like overflow:hidden, but stays a real scroller: the miniature is
      scrolled natively by the wheel (see the pointer-events note below), which
      overflow:hidden would refuse. The scrollbar itself has no place on a card. */
@@ -73,7 +76,7 @@
 .main.view-busy > .widget.exit-card { transition: none; }
 .main[data-view="grid"].view-busy > .widget:hover {
   transform: none;
-  border-color: var(--line);
+  border-color: var(--line-soft);
   box-shadow: 0 26px 80px oklch(from var(--sh-ink) l c h / .45);
 }
 

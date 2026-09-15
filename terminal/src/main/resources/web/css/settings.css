@@ -9,7 +9,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: var(--pane);
+  background: var(--pane-2); /* a tool panel, not content - the sidebar tone */
   overflow: hidden;
 }
 /* The display:flex above would otherwise beat the UA [hidden] rule, leaving the

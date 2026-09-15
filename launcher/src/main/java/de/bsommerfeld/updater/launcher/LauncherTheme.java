@@ -17,8 +17,8 @@ final class LauncherTheme {
      */
     static final Color BG = new Color(0x1A, 0x1A, 0x1A);
 
-    /** Terminal accent (--amber oklch(0.82 0.14 75) ≈ #F9B64F). */
-    static final Color ACCENT = new Color(0xF9, 0xB6, 0x4F);
+    /** Terminal accent (--amber #FFB900 in web/css/tokens.css). */
+    static final Color ACCENT = new Color(0xFF, 0xB9, 0x00);
 
     /** The raised surface every choice screen puts its rows and cards on. */
     static final Color SURFACE = new Color(38, 38, 43);
@@ -27,7 +27,7 @@ final class LauncherTheme {
     static final Color SURFACE_HOVER = new Color(48, 48, 54);
 
     /** Accent wash over the selected surface — a tint, never a fill. */
-    static final Color SELECTED_TINT = new Color(0xF9, 0xB6, 0x4F, 26);
+    static final Color SELECTED_TINT = new Color(0xFF, 0xB9, 0x00, 26);
 
     /** Body text on the dark background. */
     static final Color TEXT_PRIMARY = new Color(222, 222, 226);

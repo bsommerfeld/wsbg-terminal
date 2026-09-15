@@ -40,13 +40,25 @@ html[data-platform="other"] .app {
 
 .main {
   display: grid;
-  grid-template-columns: 1fr 1px 1fr;
+  grid-template-columns: 1fr 1fr;
   overflow: hidden;
   min-height: 0;
 }
-.vdivider { background: var(--line); }
+/* Islands. The two widgets (and the settings view in their place) sit in the
+   frame the way the IDE's editor and tool windows do: 5px of ground between
+   them and to the window edge, an 8px corner, a 1px rim (see the table in
+   tokens.css). The old 1px divider column is gone - the gap IS the divider. */
+.main[data-view="dashboard"] {
+  column-gap: 5px; row-gap: 5px;
+  padding: 0 5px 5px;
+}
+.main[data-view="dashboard"] > .widget,
+.main[data-view="dashboard"] > .settings-view {
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+}
+.vdivider { display: none; }
 
 @media (max-width: 900px) {
-  .main { grid-template-columns: 1fr; grid-template-rows: 1fr 1px 1fr; }
-  .vdivider { height: 1px; width: 100%; }
+  .main { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
 }

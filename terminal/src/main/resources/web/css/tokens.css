@@ -39,23 +39,81 @@
   src: url("/fonts/inter-600.woff2") format("woff2");
 }
 
+/* Palette: the IDE theme this terminal sits next to - IntelliJ "Hiberbee Dark"
+   in the islands UI - taken over verbatim. Warm greys in ten steps up from
+   black (dark1-dark10) and ten steps down from white (light1-light10), one
+   amber, one green, one red, one blue. Hex on purpose: these are the IDE's
+   exact values, an oklch() twin would only round them. Every token names the
+   step it is, so the scheme can be read against the IDE's theme file line by
+   line.
+
+   How the IDE distributes them - measured pixel by pixel off a screenshot of
+   the IDE window (2026-09-15), every value below is a measured mode, not a
+   theme-file guess - and what each surface is here:
+
+     IDE surface                          hex      terminal surface        token
+     window frame: title bar, status bar,
+       tool strips, gaps between islands  #323130  title bar, footer,      --bg
+                                                   ground between islands
+     editor + terminal islands            #2b2b2b  the two headline lists  --pane
+     sidebar island (project tree)        #292828  settings view, popover, --pane-2
+                                                   modal, grid card body
+     island header strip (tool-window
+       tabs, project header)              #272625  widget header row       --head
+     rule under that header strip         #424140  header rule, dividers,  --line
+                                                   input borders
+     island rim (1px, a shade lighter
+       than the gap)                      #3d3b3a  island border, row rule --line-soft
+     text fields, buttons, tags           #424140  chips, inputs, code     --bg-1
+     editor current line                  #323232  row under the pointer   --bg-hover
+     reading text (tree)                  #cfcecd  body text               --txt
+     folder icons, keywords, tab marker   #ffb900  the accent              --amber
+
+   Geometry of an island, same source: 5px of frame between islands and to
+   the window edge, 8px corner radius, 1px rim. The window's own outer edge is
+   drawn by macOS (a 1px light rim), not by the IDE - nothing to copy here.
+
+   So the frame is the LIGHTEST of the greys and the content sits in it as
+   darker islands, each with a darker header strip. The old palette had the
+   terminal near-black with everything on one sheet; this one is built out
+   of tone. */
 :root {
-  --bg:           oklch(0.155 0.006 60);
-  --bg-1:         oklch(0.185 0.006 60);
-  --bg-hover:     oklch(0.21 0.008 60);
-  --line:         oklch(0.27 0.006 60);
-  --line-soft:    oklch(0.225 0.006 60);
-  --txt:          oklch(0.93 0.005 80);
-  --txt-2:        oklch(0.78 0.005 80);
-  --mute:         oklch(0.55 0.006 70);
-  --mute-2:       oklch(0.42 0.006 70);
-  --amber:        oklch(0.82 0.14 75);
-  --amber-soft:   oklch(0.82 0.14 75 / .12);
-  --green:        oklch(0.78 0.16 150);
-  --red:          oklch(0.72 0.19 28);
-  --red-soft:     oklch(0.72 0.19 28 / .10);
-  --blue:         oklch(0.78 0.12 230);
-  --blue-deep:    oklch(0.55 0.16 255);
+  /* Surfaces - see the table above. */
+  --bg:           #323130;  /* dark6  - window frame: title bar, footer, the ground between islands */
+  --pane:         #2b2b2b;  /* editor/terminal island - the content surface: the headline lists */
+  --pane-2:       #292828;  /* sidebar island - tool panels: settings, popovers, modals, grid cards */
+  --head:         #272625;  /* dark5  - the header strip of an island (IDE: ToolWindow.Header) */
+  --bg-elev:      var(--pane-2);
+  --bg-1:         #424140;  /* dark8  - inset fills: chips, inputs, code, icon-button hover (IDE: TextField, Button, tag) */
+  --bg-hover:     #323232;  /* a row under the pointer goes UP a hair (IDE: editor current line) */
+  /* A boxed read-out (a stat tile, the crypto panel): outlined only, because on
+     a dark ground an outline IS the box. On a light one an outline alone is a
+     wireframe, so it gets a filled body over there. */
+  --tile:         transparent;
+  /* The IDE has no shadow under its headers; the lists run up to the rule. */
+  --head-shadow:  none;
+
+  /* Rules. Two strengths, both measured: the rule under an island's header
+     strip, and the rim around the island itself. */
+  --line:         #424140;  /* dark8  - header rule, dividers, input borders */
+  --line-soft:    #3d3b3a;  /* the island rim; row rules */
+
+  /* Ink. The IDE's reading text is light7, not white - the whole scheme is
+     soft on purpose (9:1 on the content surface, where the old near-black
+     ground gave 15.9:1). The ladder below it is every second step. */
+  --txt:          #cfcecd;  /* light7 - body text (IDE: *.foreground, Tree.foreground) */
+  --txt-2:        #afaead;  /* light5 - secondary (IDE: ToolTip, Popup.Header) */
+  --mute:         #8f8e8d;  /* light3 - hints, disabled (IDE: infoForeground, disabledText) */
+  --mute-2:       #6f6e6d;  /* light1 - the faintest ink: dots, dashed guides */
+
+  /* Accents, verbatim. --bg is the ink on a filled accent in BOTH themes. */
+  --amber:        #ffb900;  /* IDE: accent */
+  --amber-soft:   #ffb9001f;
+  --green:        #92d923;
+  --red:          #ff5454;
+  --red-soft:     #ff54541a;
+  --blue:         #409cff;
+  --blue-deep:    #1f81e2;  /* the IDE blue two steps down (L .60) - the footer's after-hours figures */
 
   /* The LIT twin of an accent: the same colour as a piece of pure GRAPHIC -
      a gauge arc, a bar, a swatch, light spilling from the edge of a list -
@@ -68,43 +126,19 @@
   --green-lit:    var(--green);
   --red-lit:      var(--red);
 
-  /* Elevation. --bg is the ground the app is painted on; --bg-elev is a surface
-     that FLOATS over it (popover, modal panel, grid card). On a dark ground an
-     elevated surface is separated by its shadow and its hairline alone, so the
-     two are the same colour here; on a light ground a shadow cannot carry that
-     job by itself and --bg-elev goes lighter than the ground (see the light
-     block). Every floating surface reads --bg-elev, so the difference lives in
-     ONE place instead of in every panel rule. */
-  --bg-elev:      var(--bg);
-  /* The scrolling CONTENT surface, as opposed to the chrome around it (title
-     bar, widget header, footer). On a dark ground the two are the same sheet -
-     the accents on it carry the depth. On a light one nothing glows, so the
-     frame has to be built out of tone: the chrome sits a step down, the content
-     a step up, and the list visibly runs UNDER its own header (--head-shadow).
-     Both are no-ops here (transparent paints nothing at all, so not a single
-     pixel of the dark theme moves), and it stays one continuous sheet. */
-  --pane:         transparent;
-  --head-shadow:  none;
-  /* A boxed read-out (a stat tile, the crypto panel): outlined only, because on
-     a dark ground an outline IS the box. On a light one an outline alone is a
-     wireframe, so it gets a filled body over there. */
-  --tile:         transparent;
-
   /* Shadow ink. Every drop shadow in the app is `oklch(from var(--sh-ink) l c h
-     / <its own alpha>)` — the alphas stay where they are (each site knows how
-     hard it needs to sit), the INK is what the theme swaps. Black on a dark
-     ground; a light warm grey on a light one, where full-strength black turns a
-     soft elevation into a smear. */
-  --sh-ink:       oklch(0 0 0);
-  /* The inset hairline along a floating panel's top edge — what turns a
+     / <its own alpha>)` - the alphas stay where they are (each site knows how
+     hard it needs to sit), the INK is what the theme swaps. */
+  --sh-ink:       #070605;  /* dark1 - (IDE: darkShadow) */
+  /* The inset hairline along a floating panel's top edge - what turns a
      rectangle into a pane. Lit from above, so it is a lightening on both
      grounds, but on a dark one it has to come from the text colour to be seen
      at all. */
   --sh-edge:      color-mix(in oklch, var(--txt) 9%, transparent);
   /* The scrim behind a modal, and the veil that shades the lower edge of a grid
      card so the name pill below it has ground to stand on. */
-  --scrim:        oklch(0.08 0.005 60 / .72);
-  --card-veil:    oklch(0 0 0 / .30);
+  --scrim:        #070605b8;
+  --card-veil:    #0706054d;
 
   --titlebar-h:   38px;
   --widget-head-h: 47px; /* widget header row - the unread portals dock under it */
@@ -127,59 +161,61 @@
   --font-title:   0.88em;  /* WSBG · TERMINAL title */
 }
 
+/* The light theme is the same palette read from the other end: the IDE's
+   light steps become the surfaces, its dark steps the ink, the accents keep
+   their hue. The frame is again the off-tone around white islands - here a
+   step DARKER than the content, because on a light ground that is the only
+   direction a frame can go. The island header collapses onto the content:
+   its mirror would be lighter than white. */
 html[data-theme="light"] {
-  /* The ground is an off-white, NOT paper white: white is reserved for what
-     floats above it (--bg-elev). Without that headroom a popover over the app
-     is the same colour as the app and its only edge is a hairline - which is
-     what made every panel here read flat. */
-  --bg:           oklch(0.968 0.005 85);
-  --pane:         oklch(0.997 0.002 85);
-  --bg-elev:      oklch(1 0 0);
-  --tile:         oklch(0.955 0.005 85);
+  --bg:           #efeeed;  /* light9  - frame and ground; off-white, not paper: white is for the islands */
+  --pane:         #fffefd;  /* light10 - content */
+  --pane-2:       var(--pane); /* the sidebar's hair of difference has no lighter-than-white to go to */
+  --head:         var(--pane);
+  --bg-elev:      #fffefd;  /* light10 - popover, modal */
+  --tile:         #efeeed;  /* light9  - a filled body for the boxed read-outs */
+  /* Nothing glows on a light ground, so the list visibly runs UNDER its own
+     header. The rule's z-index pin for this lives in rows.css. */
   --head-shadow:  0 7px 16px -11px oklch(from var(--sh-ink) l c h / .95);
-  /* Inset fills (tags, inputs, chips at rest, code) go DOWN from the ground,
-     and by the same steps the dark theme goes up - a chip that is 0.02 off its
-     ground is not a chip, it is a rumour. */
-  --bg-1:         oklch(0.940 0.006 85);
-  --bg-hover:     oklch(0.930 0.007 85);
-  /* Rules need more separation on a light ground than the same ΔL buys on a
+  --bg-1:         #dfdedd;  /* light8 - inset fills go DOWN from the content */
+  --bg-hover:     #efeeed;  /* light9 - hover = the frame tone, as in the dark */
+  /* Rules need more separation on a light ground than the same step buys on a
      dark one: a light surface blooms and swallows a faint line. */
-  --line:         oklch(0.828 0.007 85);
-  --line-soft:    oklch(0.892 0.006 85);
-  --txt:          oklch(0.23 0.008 70);
-  --txt-2:        oklch(0.40 0.008 70);
-  --mute:         oklch(0.545 0.008 70);
-  --mute-2:       oklch(0.665 0.007 70);
-  /* Accents: MID lightness at the chroma ceiling of sRGB, not "the dark twin,
-     darkened". Pushed down to L≈0.48 - which is where they were - gold turns
-     brown and green turns bottle glass, because that far down sRGB has almost
-     no chroma left to give: every accent collapsed into the same dark smudge
-     and stopped telling the eye anything. Held at L 0.5-0.6 with the chroma
-     maxed out they are their own colour again, and they still carry white ink
-     on top (--bg is the ink on a filled accent in BOTH themes - it flips with
-     the theme, so one rule covers the pills and chips everywhere).
-     No amount of tuning makes gold read as gold at reading contrast on white;
-     a burnt amber is what this accent looks like down here, and that is a
-     colour, not mud. Where a shape needs the real gold, see the lit twins. */
-  --amber:        oklch(0.585 0.138 60);
-  --amber-soft:   oklch(0.585 0.138 60 / .14);
-  --green:        oklch(0.525 0.142 150);
-  --red:          oklch(0.525 0.205 27);
-  --red-soft:     oklch(0.525 0.205 27 / .10);
-  --blue:         oklch(0.525 0.118 240);
-  --blue-deep:    oklch(0.495 0.165 256);
-  /* …and the lit twins. A shape carries no text, so it is free to go where the
-     colour is actually vivid - which is the only way a fear→greed scale still
-     reads as red→gold→green down here instead of as three shades of mud. */
-  --amber-lit:    oklch(0.790 0.155 78);
-  --green-lit:    oklch(0.720 0.185 152);
-  --red-lit:      oklch(0.630 0.235 27);
+  --line:         #cfcecd;  /* light7 */
+  --line-soft:    #dfdedd;  /* light8 */
+  /* Ink: the IDE's dark steps are packed tight (L .12-.44), so the ladder is
+     picked by contrast, not by index - each rung lands where the dark theme's
+     rung lands on its own ground. */
+  --txt:          #222120;  /* dark4  - 16:1 on the content */
+  --txt-2:        #525150;  /* dark10 */
+  --mute:         #6f6e6d;  /* light1 */
+  --mute-2:       #8f8e8d;  /* light3 */
+  /* Accents: the IDE's hues, lowered to reading contrast. #ffb900 on white is
+     1.6:1 - no amount of tuning makes that gold read as text, so the text-
+     bearing accent is the same hue at L .585 (4.2:1, the same floor the old
+     light theme sat at), green/red/blue at L .525. sRGB runs out of chroma
+     that far down; amber and green give some up and land as mustard and
+     olive, red and blue keep theirs. Where a shape needs the real gold, see
+     the lit twins. */
+  --amber:        #a07300;
+  --amber-soft:   #a0730024;
+  --green:        #4e7900;
+  --red:          #c60d25;
+  --red-soft:     #c60d251a;
+  --blue:         #006ac4;
+  --blue-deep:    #00559f;
+  /* ...and the lit twins: a shape carries no text, so it takes the IDE accent
+     itself - which is the only way a fear->greed scale still reads as
+     red->gold->green down here instead of as three shades of mud. */
+  --amber-lit:    #ffb900;
+  --green-lit:    #92d923;
+  --red-lit:      #ff5454;
 
-  /* Shadows: warm light grey, never black. The alphas at the call sites are
-     tuned for black on black; the same numbers with black ink over white paint
-     dirt, not depth. */
-  --sh-ink:       oklch(0.48 0.025 70);
-  --sh-edge:      oklch(1 0 0 / .8);
-  --scrim:        oklch(0.30 0.015 70 / .40);
-  --card-veil:    oklch(0.35 0.02 70 / .05);
+  /* Shadows: the IDE's mid grey, never black. The alphas at the call sites
+     are tuned for black on black; the same numbers with black ink over white
+     paint dirt, not depth. */
+  --sh-ink:       #6f6e6d;  /* light1 */
+  --sh-edge:      #fffefdcc;
+  --scrim:        #37363566;
+  --card-veil:    #3736350d;
 }

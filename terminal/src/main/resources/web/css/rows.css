@@ -25,6 +25,9 @@
   height: var(--widget-head-h);
   padding: 0 var(--pad-x);
   border-bottom: 1px solid var(--line);
+  /* The island's header strip - a tone below the content it sits on (see
+     --head in tokens.css). */
+  background: var(--head);
   position: relative;       /* anchor for the centered rate-limit badge */
   box-shadow: var(--head-shadow);
 }
@@ -105,8 +108,8 @@ a.glyph:hover { opacity: .7; }
 }
 
 .widget-body {
-  /* The content surface. Identical to the ground in dark, a step above the
-     chrome in light - see --pane in tokens.css. */
+  /* The content surface: a step above the chrome in both themes - see --pane
+     in tokens.css. */
   background: var(--pane);
   overflow-y: auto; overflow-x: hidden; flex: 1;
   scrollbar-width: thin; scrollbar-color: var(--line) transparent;
