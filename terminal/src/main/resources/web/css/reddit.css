@@ -282,44 +282,60 @@
    postage stamp is noise, not a signal. */
 .main[data-view="grid"] > .widget .unread-portal { display: none; }
 
-/* Surface layer one: the long, slow swell riding on the standing rim glow.
-   Kept faint on purpose - it is a movement in the light, not a light of its
-   own. The blur is what turns the gradient into light instead of a stripe. */
+/* The two surface layers of the caustic are pseudo-elements that MOVE (transform),
+   each two tiles wide, inside this box that carries the mask. They used to be one
+   element whose background-position was animated under a blur - a property no
+   compositor can animate, so every frame was a main-thread repaint of a blurred,
+   masked surface (15-20 % of a core at display rate, measured 2026-09-15). A
+   translate of a layer that was rasterised once is compositor work only; the
+   picture is the same, since the drift covers exactly one tile per loop. */
 .up-rift {
   position: absolute;
   inset: -14px -40px -14px -40px;   /* blur bleeds inward, never a cut edge */
-  background-image: linear-gradient(90deg,
-    transparent, oklch(from var(--amber-lit) l c h / .17) 22%,
-    transparent 44%, oklch(from var(--amber-lit) l c h / .12) 68%, transparent);
-  background-size: 620px 100%;
-  background-repeat: repeat-x;
-  filter: blur(11px);
-  /* Two fades in one mask (the layer below inherits it): out towards the list,
-     and out towards both ends of the column so the light has no cut edges.
-     The percentages allow for the negative inset above - full brightness has
-     to reach the visible rim, which sits at ~22% of this box. */
+  /* Two fades in one mask (both layers inherit it): out towards the list, and
+     out towards both ends of the column so the light has no cut edges. The
+     percentages allow for the negative inset above - full brightness has to
+     reach the visible rim, which sits at ~22% of this box. */
   mask-image:
     linear-gradient(to top, black 24%, transparent 88%),
     linear-gradient(to right, transparent, black 12%, black 88%, transparent);
   mask-composite: intersect;
-  animation: unread-wave-a 34s linear infinite;
 }
-/* Surface layer two: shorter, quicker, running the other way. The crossings
-   of the two are the caustic. */
+.up-rift::before,
 .up-rift::after {
   content: "";
   position: absolute;
-  inset: 0;
+  top: 0; bottom: 0; left: 0;
+  background-repeat: repeat-x;
+  will-change: transform;
+}
+/* Surface layer one: the long, slow swell riding on the standing rim glow.
+   Kept faint on purpose - it is a movement in the light, not a light of its
+   own. The blur is what turns the gradient into light instead of a stripe. */
+.up-rift::before {
+  width: calc(100% + 620px);
+  background-image: linear-gradient(90deg,
+    transparent, oklch(from var(--amber-lit) l c h / .17) 22%,
+    transparent 44%, oklch(from var(--amber-lit) l c h / .12) 68%, transparent);
+  background-size: 620px 100%;
+  filter: blur(11px);
+  animation: unread-wave-a 34s linear infinite;
+}
+/* Surface layer two: shorter, quicker, running the other way. The crossings
+   of the two are the caustic. It used to sit INSIDE the 11px-blurred layer with
+   its own 9px blur; the two stacked to about 14px, which is what it gets now. */
+.up-rift::after {
+  width: calc(100% + 380px);
   background-image: linear-gradient(90deg,
     transparent, oklch(from var(--amber-lit) l c h / .12) 34%, transparent 62%);
   background-size: 380px 100%;
-  background-repeat: repeat-x;
-  filter: blur(9px);
+  filter: blur(14px);
   animation: unread-wave-b 21s linear infinite;
 }
-/* The drift covers exactly one tile, so the loop closes with no jump. */
-@keyframes unread-wave-a { to { background-position: 620px 0; } }
-@keyframes unread-wave-b { to { background-position: -380px 0; } }
+/* Each drift covers exactly one tile, so the loop closes with no jump. Layer
+   one travels right (the tile enters from the left), layer two travels left. */
+@keyframes unread-wave-a { from { transform: translateX(-620px); } to { transform: translateX(0); } }
+@keyframes unread-wave-b { from { transform: translateX(0); } to { transform: translateX(-380px); } }
 
 /* Motes: a few specks lifting off the rim and fading as they go. The light
    carries the effect; these only keep it from looking painted on. */
@@ -346,7 +362,7 @@
 
 /* AFK gate: nobody at the desk (or the window in the background) -> the loops
    stand still. Under software OSR an unwatched animation is pure paint cost. */
-html[data-idle] .up-rift,
+html[data-idle] .up-rift::before,
 html[data-idle] .up-rift::after,
 html[data-idle] .up-motes i {
   animation-play-state: paused;

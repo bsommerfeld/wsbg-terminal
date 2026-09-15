@@ -5,3 +5,4 @@
 ## Restliches
 
 - Modellauswahl: Die beiden Granite-Stufen sind jetzt Granite 4.2 statt 4.1. Wer 4.1 eingestellt hatte, landet beim Standardmodell und wählt 4.2 in den Einstellungen neu.
+- Schlagzeilen: Der kleine Ruckler im Sekundentakt ist weg; das Leuchten am Listenrand für Ungelesenes kostet keine Rechenzeit mehr.
