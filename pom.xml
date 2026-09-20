@@ -30,7 +30,6 @@
         <maven.compiler.source>25</maven.compiler.source>
         <maven.compiler.target>25</maven.compiler.target>
         <maven.compiler.release>25</maven.compiler.release>
-        <javafx.version>25.0.2</javafx.version>
 
         <langchain4j.version>1.11.0</langchain4j.version>
         <slf4j.version>2.0.9</slf4j.version>
@@ -92,33 +91,6 @@
                 <groupId>de.bsommerfeld</groupId>
                 <artifactId>terminal</artifactId>
                 <version>${project.version}</version>
-            </dependency>
-
-
-
-
-            <!-- JavaFX retained ONLY for the launcher module's installer UI.
-                 The main terminal app runs as Swing + JCEF, no JavaFX in
-                 the runtime classpath of the terminal module. -->
-            <dependency>
-                <groupId>org.openjfx</groupId>
-                <artifactId>javafx-controls</artifactId>
-                <version>${javafx.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.openjfx</groupId>
-                <artifactId>javafx-fxml</artifactId>
-                <version>${javafx.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.openjfx</groupId>
-                <artifactId>javafx-web</artifactId>
-                <version>${javafx.version}</version>
-            </dependency>
-             <dependency>
-                <groupId>org.openjfx</groupId>
-                <artifactId>javafx-graphics</artifactId>
-                <version>${javafx.version}</version>
             </dependency>
 
             <!-- JCEF: embedded Chromium for the main terminal UI.

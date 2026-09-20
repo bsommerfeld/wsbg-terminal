@@ -10,8 +10,9 @@
  * from GitHub via the {@code updater} library</li>
  * <li><strong>Environment setup</strong> — runs platform-specific scripts
  * that install prerequisites like Ollama and pull AI models</li>
- * <li><strong>Application launch</strong> — spawns the JavaFX application
- * in a separate JVM with the correct module-path and classpath</li>
+ * <li><strong>Application launch</strong> — spawns the terminal in a
+ * separate JVM with the correct classpath, as the sidecar of the native
+ * shell when one is installed</li>
  * </ol>
  *
  * <h2>Robustness contract</h2>

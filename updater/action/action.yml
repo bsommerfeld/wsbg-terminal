@@ -76,7 +76,7 @@ runs:
 
             # Dedup by full filename — only identical JARs from different dirs collapse.
             # Previous regex stripped classifiers, incorrectly merging e.g.
-            # javafx-web-25-ea+1-mac-aarch64.jar with javafx-web-25-ea+1.jar.
+            # foo-1.0-mac-aarch64.jar with foo-1.0.jar.
             if [ -n "${JAR_MAP[$basename]+x}" ]; then
               existing="${JAR_MAP[$basename]}"
               echo "  Dedup: replacing $(basename "$existing") with $basename"
