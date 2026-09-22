@@ -1,0 +1,77 @@
+/* Title bar: the system window buttons at one edge (macOS: the native traffic
+   lights, whose slot the HeaderBar reserves through its left system inset), the
+   title centred on the whole bar, the action strip at the other edge. */
+
+.titlebar {
+  -fx-background-color: -bg;
+  -fx-border-color: transparent transparent -line transparent;
+  -fx-border-width: 0 0 1 0;
+  -fx-min-height: 38;                     /* titlebar-h */
+  -fx-pref-height: 38;
+  -fx-max-height: 38;
+}
+
+/* Context title: the brand ("WSBG · Terminal") by default, the settings heading
+   while the settings view is open. Inter 600, uppercase, tracked .22em - the
+   tracking is laid out glyph by glyph by TrackedText, JavaFX CSS has no
+   letter-spacing. Centred by line box, not baseline: every glyph up here is
+   Inter at one size, so the boxes agree and the separator sits on the line. */
+.tb-title {
+  -fx-spacing: 10;
+  -fx-alignment: center;
+  -fx-font-family: "Inter SemiBold";
+  -fx-font-size: 0.88em;                  /* font-title */
+}
+.tb-title .tb-text { -fx-fill: -txt; }
+.tb-brand { -fx-spacing: 10; -fx-alignment: center; }
+.tb-title .sep { -fx-fill: -mute-2; -fx-font-family: "Inter"; }
+
+/* The G in WSBG wears the flag: three bands through the glyph, a hair of stroke
+   so the gold band keeps an edge, a faint warm glow. */
+.tb-title .flag {
+  -fx-fill: linear-gradient(from 0% 0% to 0% 100%,
+            #525252 0%, #525252 33%,
+            #ee0a00 33%, #ee0a00 66%,
+            #ffd000 66%, #ffd000 100%);
+  -fx-stroke: rgba(122, 119, 116, 0.4);
+  -fx-stroke-width: 0.4;
+  -fx-effect: dropshadow(gaussian, rgba(255, 70, 0, 0.22), 7, 0, 0, 0);
+}
+
+.tb-actions {
+  -fx-padding: 0 14;
+  -fx-spacing: 7;
+  -fx-alignment: center-right;
+}
+
+/* Icon buttons (grid, settings gear): one uniform box, one uniform glyph size,
+   so the strip spaces evenly. The glyph ink is a looked-up colour the button
+   flips on hover, so the paths need no state of their own. */
+.iconbtn {
+  -glyph-ink: -mute;
+  -fx-background-color: transparent;
+  -fx-background-radius: 6;
+  -fx-padding: 0;
+  -fx-min-width: 30;  -fx-pref-width: 30;  -fx-max-width: 30;
+  -fx-min-height: 28; -fx-pref-height: 28; -fx-max-height: 28;
+  -fx-cursor: hand;
+  transition: -fx-background-color 0.12s;
+}
+.iconbtn:hover { -fx-background-color: -bg-1; -glyph-ink: -txt; }
+.iconbtn .glyph {
+  -fx-fill: transparent;
+  -fx-stroke: -glyph-ink;
+  -fx-stroke-width: 1.6;
+  -fx-stroke-line-cap: round;
+  -fx-stroke-line-join: round;
+  transition: -fx-stroke 0.12s;
+}
+
+/* Settings gear: the cog spins up on hover (a single smooth turn, a touch of
+   overshoot). The back arrow it turns into while the settings are open is a
+   different node and does not move - the spin is a cog thing. */
+.gear-btn .gear-glyph {
+  -fx-rotate: 0;
+  transition: -fx-rotate 0.6s cubic-bezier(0.34, 1.2, 0.64, 1);
+}
+.gear-btn:hover .gear-glyph { -fx-rotate: 180; }
