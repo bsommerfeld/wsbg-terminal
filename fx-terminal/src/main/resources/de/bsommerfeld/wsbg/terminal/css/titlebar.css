@@ -1,0 +1,36 @@
+/* Title bar: the system window buttons at one edge (macOS: the native traffic
+   lights, whose slot the HeaderBar reserves through its left system inset) and
+   the brand centred on the whole bar. No rule underneath - the bar runs
+   straight into the ground, both are the frame. */
+
+.titlebar {
+  -fx-background-color: -bg;
+  -fx-min-height: 38;                     /* titlebar-h */
+  -fx-pref-height: 38;
+  -fx-max-height: 38;
+}
+
+/* The brand ("WSBG · Terminal"): Inter 600, uppercase, tracked .22em - the
+   tracking is laid out glyph by glyph by TrackedText, JavaFX CSS has no
+   letter-spacing. Centred by line box, not baseline: every glyph up here is
+   Inter at one size, so the boxes agree and the separator sits on the line. */
+.tb-brand {
+  -fx-spacing: 10;
+  -fx-alignment: center;
+  -fx-font-family: "Inter SemiBold";
+  -fx-font-size: 0.88em;                  /* font-title */
+}
+.tb-brand .tb-text { -fx-fill: -txt; }
+.tb-brand .sep { -fx-fill: -mute-2; -fx-font-family: "Inter"; }
+
+/* The G in WSBG wears the flag: three bands through the glyph, a hair of stroke
+   so the gold band keeps an edge, a faint warm glow. */
+.tb-brand .flag {
+  -fx-fill: linear-gradient(from 0% 0% to 0% 100%,
+            #525252 0%, #525252 33%,
+            #ee0a00 33%, #ee0a00 66%,
+            #ffd000 66%, #ffd000 100%);
+  -fx-stroke: rgba(122, 119, 116, 0.4);
+  -fx-stroke-width: 0.4;
+  -fx-effect: dropshadow(gaussian, rgba(255, 70, 0, 0.22), 7, 0, 0, 0);
+}

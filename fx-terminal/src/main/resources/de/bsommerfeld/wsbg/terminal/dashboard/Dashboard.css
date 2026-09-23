@@ -1,0 +1,4 @@
+/* The ground under the islands: 5px of frame to the window edge and between
+   islands - the gap IS the divider. The top edge runs straight into the title
+   bar's rule. */
+.dashboard { -fx-padding: 0 5 5 5; }

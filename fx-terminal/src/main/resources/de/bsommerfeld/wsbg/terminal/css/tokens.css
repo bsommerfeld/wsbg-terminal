@@ -1,0 +1,67 @@
+/* Design tokens: the colours everything visual descends from. Taken over
+   verbatim from the web UI - the IDE theme this terminal sits next to (IntelliJ
+   "Hiberbee Dark" in the islands UI), measured pixel by pixel off the IDE. Warm
+   greys, one amber, one green, one red, one blue.
+
+     IDE surface                          hex      terminal surface        token
+     window frame: title bar, status bar,
+       tool strips, gaps between islands  #323130  title bar, footer,      -bg
+                                                   ground between islands
+     editor + terminal islands            #2b2b2b  content islands         -pane
+     sidebar island (project tree)        #292828  settings, popover,      -pane-2
+                                                   modal, grid card body
+     island header strip                  #272625  widget header row       -head
+     rule under that header strip         #424140  header rule, dividers,  -line
+                                                   input borders
+     island rim (1px)                     #3d3b3a  island border, row rule -line-soft
+     text fields, buttons, tags           #424140  chips, inputs, code     -bg-1
+     editor current line                  #323232  row under the pointer   -bg-hover
+     reading text (tree)                  #cfcecd  body text               -txt
+     folder icons, keywords, tab marker   #ffb900  the accent              -amber
+
+   Geometry of an island: 5px of frame between islands and to the window edge,
+   8px corner radius, 1px rim. JavaFX CSS has no size tokens, so those are
+   literals at the point of use, each with the token name beside it:
+     titlebar-h 38   footer-h 38   pad-x 24   font-base 16px
+     font-meta .85em   font-chrome .86em   font-title .88em
+
+   Looked-up colours resolve up the scene graph, so a rule may override one of
+   these for its own subtree. */
+.root {
+  /* Surfaces */
+  -bg:        #323130;
+  -pane:      #2b2b2b;
+  -pane-2:    #292828;
+  -head:      #272625;
+  -bg-elev:   -pane-2;
+  -bg-1:      #424140;
+  -bg-hover:  #323232;
+
+  /* Rules: the one under an island's header strip, and the island's own rim. */
+  -line:      #424140;
+  -line-soft: #3d3b3a;
+
+  /* Ink. light7 for reading text, not white - the scheme is soft on purpose.
+     The ladder below it is every second step. */
+  -txt:       #cfcecd;
+  -txt-2:     #afaead;
+  -mute:      #8f8e8d;
+  -mute-2:    #6f6e6d;
+
+  /* Accents. -bg is the ink on a filled accent. */
+  -amber:      #ffb900;
+  -amber-soft: rgba(255, 185, 0, 0.12);
+  -green:      #92d923;
+  -red:        #ff5454;
+  -red-soft:   rgba(255, 84, 84, 0.10);
+  -blue:       #409cff;
+  -blue-deep:  #1f81e2;
+
+  /* Shadow ink: every drop shadow is -sh-ink at the alpha its site needs. The
+     scrim sits behind a modal, the veil shades the lower edge of a grid card,
+     the edge is the inset hairline along a floating panel's top. */
+  -sh-ink:     #070605;
+  -sh-edge:    rgba(207, 206, 205, 0.09);
+  -scrim:      rgba(7, 6, 5, 0.72);
+  -card-veil:  rgba(7, 6, 5, 0.30);
+}

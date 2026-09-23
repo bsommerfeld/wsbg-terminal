@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>de.bsommerfeld</groupId>
+        <artifactId>wsbg-terminal-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>fx-signals</artifactId>
+
+    <name>Signals</name>
+    <description>
+        Methods as signals: a call to a method annotated @Signal is reported to
+        whoever binds it in an enclosing scope. One artifact for both sides -
+        the runtime on the module path, the same jar on the processor path
+        generates the signal keys and the subclass that reports the calls. The
+        library knows no UI toolkit and no injector.
+    </description>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <!-- The processor must not run on its own sources. -->
+                    <proc>none</proc>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

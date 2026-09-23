@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>de.bsommerfeld</groupId>
+        <artifactId>wsbg-terminal-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>fx-terminal</artifactId>
+
+    <name>WSBG Terminal</name>
+
+    <dependencies>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>fx-signals</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-controls</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-fxml</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.google.inject</groupId>
+            <artifactId>guice</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>de.bsommerfeld</groupId>
+                            <artifactId>fx-signals</artifactId>
+                            <version>${project.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <argLine>--enable-native-access=javafx.graphics</argLine>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.openjfx</groupId>
+                <artifactId>javafx-maven-plugin</artifactId>
+                <configuration>
+                    <mainClass>de.bsommerfeld.wsbg.terminal/de.bsommerfeld.wsbg.terminal.TerminalApp</mainClass>
+                    <options>
+                        <option>--enable-native-access=javafx.graphics</option>
+                    </options>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
