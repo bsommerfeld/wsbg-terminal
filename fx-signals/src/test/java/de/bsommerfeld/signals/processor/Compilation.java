@@ -1,6 +1,6 @@
 package de.bsommerfeld.signals.processor;
 
-import de.bsommerfeld.signals.SignalKey;
+import de.bsommerfeld.signals.SignalStub;
 
 import javax.tools.Diagnostic;
 import javax.tools.DiagnosticCollector;
@@ -8,6 +8,7 @@ import javax.tools.JavaCompiler;
 import javax.tools.JavaFileObject;
 import javax.tools.SimpleJavaFileObject;
 import javax.tools.ToolProvider;
+import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
@@ -21,9 +22,13 @@ import java.util.Map;
 
 /**
  * Compiles sources in memory with the {@link SignalProcessor}, against the
- * runtime the tests run with, into a temporary directory.
+ * runtime the tests run with, into a temporary directory - or on top of an
+ * earlier compilation's output, as an IDE recompiles only what changed.
+ * {@code Signals} goes into the package {@value #PACKAGE}.
  */
 final class Compilation {
+
+    static final String PACKAGE = "calc";
 
     private final boolean succeeded;
     private final List<String> errors;
@@ -46,27 +51,36 @@ final class Compilation {
 
     static Compilation of(Map<String, String> sourcesByClassName) {
         try {
-            Path output = Files.createTempDirectory("signals");
-            JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
-            DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
-            List<JavaFileObject> sources = sourcesByClassName.entrySet().stream()
-                    .<JavaFileObject>map(entry -> new Source(entry.getKey(), entry.getValue()))
-                    .toList();
-            List<String> options = List.of(
-                    "-classpath", runtimeLocation().toString(),
-                    "-d", output.toString(),
-                    "-s", output.toString());
-            JavaCompiler.CompilationTask task = compiler.getTask(null, null, diagnostics, options, null, sources);
-            task.setProcessors(List.of(new SignalProcessor()));
-            boolean succeeded = task.call();
-            List<String> errors = diagnostics.getDiagnostics().stream()
-                    .filter(diagnostic -> diagnostic.getKind() == Diagnostic.Kind.ERROR)
-                    .map(diagnostic -> diagnostic.getMessage(null))
-                    .toList();
-            return new Compilation(succeeded, errors, output);
+            return into(Files.createTempDirectory("signals"), sourcesByClassName);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+    }
+
+    /** Compiles only these sources, against and into the output of {@code earlier}. */
+    static Compilation onTopOf(Compilation earlier, Map<String, String> sourcesByClassName) {
+        return into(earlier.output, sourcesByClassName);
+    }
+
+    private static Compilation into(Path output, Map<String, String> sourcesByClassName) {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
+        List<JavaFileObject> sources = sourcesByClassName.entrySet().stream()
+                .<JavaFileObject>map(entry -> new Source(entry.getKey(), entry.getValue()))
+                .toList();
+        List<String> options = List.of(
+                "-classpath", runtimeLocation() + File.pathSeparator + output,
+                "-A" + SignalProcessor.PACKAGE_OPTION + "=" + PACKAGE,
+                "-d", output.toString(),
+                "-s", output.toString());
+        JavaCompiler.CompilationTask task = compiler.getTask(null, null, diagnostics, options, null, sources);
+        task.setProcessors(List.of(new SignalProcessor()));
+        boolean succeeded = task.call();
+        List<String> errors = diagnostics.getDiagnostics().stream()
+                .filter(diagnostic -> diagnostic.getKind() == Diagnostic.Kind.ERROR)
+                .map(diagnostic -> diagnostic.getMessage(null))
+                .toList();
+        return new Compilation(succeeded, errors, output);
     }
 
     /** Loads a compiled class, all of them through one loader; the runtime is shared with the test. */
@@ -77,9 +91,14 @@ final class Compilation {
         return Class.forName(className, true, loader);
     }
 
+    /** The source of a generated class, as written. */
+    String generatedSource(String className) throws IOException {
+        return Files.readString(output.resolve(className.replace('.', '/') + ".java"));
+    }
+
     private static Path runtimeLocation() {
         try {
-            return Path.of(SignalKey.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+            return Path.of(SignalStub.class.getProtectionDomain().getCodeSource().getLocation().toURI());
         } catch (URISyntaxException e) {
             throw new IllegalStateException(e);
         }

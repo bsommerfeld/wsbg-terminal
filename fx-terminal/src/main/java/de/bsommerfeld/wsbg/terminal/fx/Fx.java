@@ -5,8 +5,6 @@ import com.google.inject.Guice;
 import com.google.inject.Injector;
 import com.google.inject.Module;
 import com.google.inject.Scopes;
-import de.bsommerfeld.signals.SignalScope;
-import de.bsommerfeld.signals.UnhandledSignalHandler;
 
 import java.util.Objects;
 import java.util.stream.Stream;
@@ -47,18 +45,12 @@ public final class Fx {
         return current;
     }
 
-    /**
-     * What the layer itself needs: {@link View @View} as a singleton scope, and
-     * the root of the signal scopes above the scene's topmost node. A signal no
-     * node binds ends there, and there it fails - an unbound signal is a wiring
-     * mistake, not something to swallow.
-     */
+    /** What the layer itself needs: {@link View @View} as a singleton scope. */
     private static final class Layer extends AbstractModule {
 
         @Override
         protected void configure() {
             bindScope(View.class, Scopes.SINGLETON);
-            bind(SignalScope.class).toInstance(SignalScope.root(UnhandledSignalHandler.failing()));
         }
     }
 }

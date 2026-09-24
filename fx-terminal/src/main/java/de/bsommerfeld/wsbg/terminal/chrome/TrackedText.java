@@ -29,11 +29,13 @@ public final class TrackedText extends HBox {
     public void setText(String text) {
         getChildren().clear();
         spacingProperty().unbind();
+
         text.toUpperCase(Locale.ROOT).codePoints().forEach(cp -> {
             Text glyph = new Text(Character.toString(cp));
             glyph.getStyleClass().addAll(glyphClasses);
             getChildren().add(glyph);
         });
+
         if (!getChildren().isEmpty()) {
             Text first = glyph(0);
             spacingProperty().bind(Bindings.createDoubleBinding(

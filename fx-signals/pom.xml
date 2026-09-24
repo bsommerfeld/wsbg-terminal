@@ -14,11 +14,13 @@
 
     <name>Signals</name>
     <description>
-        Methods as signals: a call to a method annotated @Signal is reported to
-        whoever binds it in an enclosing scope. One artifact for both sides -
+        Signals between views that do not know each other: a call to a method
+        annotated @Signal goes up to the ViewRegister, which alone knows the
+        views and wires where each signal goes. One artifact for both sides -
         the runtime on the module path, the same jar on the processor path
-        generates the signal keys and the subclass that reports the calls. The
-        library knows no UI toolkit and no injector.
+        generates the stubs, the subclass that reports the calls and the
+        Signals class to wire with. The library knows no UI toolkit and no
+        injector.
     </description>
 
     <dependencies>

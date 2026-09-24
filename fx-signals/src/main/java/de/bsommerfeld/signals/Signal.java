@@ -7,28 +7,29 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Marks a method whose call is a signal: something that happened, named by the
- * method. After the method has run, the call is reported to the nearest
- * {@link SignalScope} that binds it, with the argument as payload.
+ * Marks a method of a view whose call is a signal. After the method has run,
+ * the call goes up to the {@link ViewRegister}, and the register decides what
+ * it means - the view never learns who hears it.
  *
- * <p>The processor generates {@code OwnerSignals} beside the declaring class:
- * one static accessor per signal, returning the {@link SignalKey} to bind.
  * <pre>{@code
- * class CalculatorViewModel {
- *     @Signal void resultShown(Result result) {}
- * }
+ * @Signal
+ * public void checkHeadline(Headline headline) { ... }
  *
- * scope.bind(CalculatorViewModelSignals.resultShown(), result -> ...);
+ * // in the register
+ * wire(signal(DashboardView::new).checkHeadline())
+ *         .to(HeadlineCheckView.class, (view, headline) -> view.inspect(headline));
  * }</pre>
  *
  * <p>A signal method is overridable (not private, static or final), returns
- * void and takes at most one parameter - several values go into a record. Its
- * class is a concrete, non-final, non-generic top-level or static nested
- * class, and every signal in it has a name of its own. The processor rejects
- * everything else at compile time.
+ * void and takes at most one parameter - several values go into a record -,
+ * and its name is its own within the class. The class is public, not final,
+ * not abstract, not generic, and has a public constructor. The processor
+ * rejects everything else at compile time.
  */
 @Documented
-@Retention(RetentionPolicy.SOURCE)
+@Retention(RetentionPolicy.CLASS)
 @Target(ElementType.METHOD)
 public @interface Signal {
+
+    SignalType value() default SignalType.CHANGE_VIEW;
 }

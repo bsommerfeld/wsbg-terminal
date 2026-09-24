@@ -18,7 +18,8 @@ import javafx.stage.StageStyle;
 /**
  * The terminal window: an {@link StageStyle#EXTENDED extended} stage whose client
  * area runs up into the title bar, our own {@link TitleBar} in that strip, and
- * the {@link Dashboard} below it.
+ * below it the view the {@link TerminalViewRegister} shows - the
+ * {@link Dashboard} first.
  */
 public final class TerminalApp extends Application {
 
@@ -68,7 +69,10 @@ public final class TerminalApp extends Application {
     private static Scene shellScene() {
         BorderPane root = new BorderPane();
         root.setTop(new TitleBar());
-        root.setCenter(Fx.injector().getInstance(Dashboard.class));
+
+        TerminalViewRegister views = new TerminalViewRegister(root::setCenter);
+        views.init();
+        views.show(Dashboard.class);
 
         Scene scene = new Scene(root, WIDTH, HEIGHT, FRAME_COLOR);
         scene.getStylesheets().addAll(Stylesheets.all());

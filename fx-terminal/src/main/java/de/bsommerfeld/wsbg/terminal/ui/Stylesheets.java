@@ -1,6 +1,7 @@
 package de.bsommerfeld.wsbg.terminal.ui;
 
 import java.net.URL;
+import java.util.Arrays;
 import java.util.List;
 
 /** The application's stylesheets, in cascade order. */
@@ -12,7 +13,7 @@ public final class Stylesheets {
     }
 
     public static List<URL> urls() {
-        return java.util.Arrays.stream(FILES)
+        return Arrays.stream(FILES)
                 .map(f -> Stylesheets.class.getResource("/de/bsommerfeld/wsbg/terminal/css/" + f))
                 .toList();
     }

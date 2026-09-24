@@ -1,6 +1,7 @@
 package de.bsommerfeld.wsbg.terminal.fx;
 
 import com.google.inject.TypeLiteral;
+import de.bsommerfeld.signals.SignalEmitter;
 import javafx.fxml.FXMLLoader;
 
 import java.io.IOException;
@@ -33,12 +34,14 @@ final class FxmlReflections {
     /**
      * Loads {@code SimpleName.fxml} from beside the node's class into the node,
      * which is root and controller, then attaches {@code SimpleName.css} if
-     * there is one and adds the kebab-cased class name as style class.
+     * there is one and adds the kebab-cased class name as style class. A view
+     * with signals is built as its generated subclass; the names are those of
+     * the view as written.
      *
      * @throws IllegalStateException if the FXML is missing or does not load
      */
     static void inflate(FxmlNode<?> node) {
-        Class<?> type = node.getClass();
+        Class<?> type = node instanceof SignalEmitter ? node.getClass().getSuperclass() : node.getClass();
         String fxml = type.getSimpleName() + ".fxml";
         URL location = type.getResource(fxml);
         if (location == null) {

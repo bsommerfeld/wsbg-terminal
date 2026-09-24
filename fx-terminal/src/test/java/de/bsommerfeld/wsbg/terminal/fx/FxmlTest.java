@@ -66,27 +66,6 @@ class FxmlTest {
     }
 
     @Test
-    void aComponentsSignalReachesTheNodeThatEmbedsIt() throws Exception {
-        Host host = FxToolkit.onFxThread(Host::new);
-        FxToolkit.onFxThread(() -> {
-            host.first().viewModel().picked();
-            host.second().viewModel().picked();
-            return null;
-        });
-        assertEquals(2, host.viewModel().leavesPicked());
-    }
-
-    @Test
-    void aSignalNobodyBindsFails() throws Exception {
-        Leaf alone = FxToolkit.onFxThread(Leaf::new);
-        var e = assertThrows(IllegalStateException.class, () -> FxToolkit.onFxThread(() -> {
-            alone.viewModel().picked();
-            return null;
-        }));
-        assertTrue(e.getMessage().contains("LeafViewModel#picked"), e.getMessage());
-    }
-
-    @Test
     void refusesANodeWithoutMarkup() {
         var e = assertThrows(IllegalStateException.class, () -> FxToolkit.onFxThread(Orphan::new));
         assertTrue(e.getMessage().contains("Orphan.fxml"), e.getMessage());
