@@ -33,10 +33,14 @@ public final class TitleBar extends HeaderBar {
 
     private static HBox brand() {
         TrackedText wsbg = new TrackedText("WSBG", TRACKING_EM, "tb-text");
+        // Sets the germany colors for the fourth letter "G"
         wsbg.glyph(3).getStyleClass().setAll("flag");
+
         Text sep = new Text("·");
         sep.getStyleClass().add("sep");
+
         TrackedText terminal = new TrackedText("Terminal", TRACKING_EM, "tb-text");
+
         HBox brand = new HBox(wsbg, sep, terminal);
         brand.getStyleClass().add("tb-brand");
         return brand;

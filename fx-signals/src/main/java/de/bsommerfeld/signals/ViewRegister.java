@@ -118,6 +118,7 @@ public abstract class ViewRegister<N> {
                 route.delivery.accept(target, payload);
                 host.accept(target);
             }
+            default -> throw new IllegalArgumentException("This is not a valid option" + signal.type());
         }
     }
 
