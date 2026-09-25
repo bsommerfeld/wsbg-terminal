@@ -1,29 +1,43 @@
 # =============================================================================
 #  Release CI
 #
-#  Builds the terminal, packages it per platform with TinyUpdate and uploads
-#  the update assets to the GitHub Release, where a launcher's TinyUpdateClient
-#  picks them up (ReleaseAssetNames.of("wsbg", Platform.current())).
+#  Builds the terminal once, packages it per platform with TinyUpdate, and
+#  builds the native installers. Everything lands on the GitHub Release.
 #
-#  One package per platform: JavaFX ships its natives as platform jars, so
-#  each platform gets its own manifest and deps archive. The app archive (our
-#  own jars, the bin/ scripts) is the same everywhere and published once.
+#  Two update streams per platform, one per install, each updated by the
+#  other (TerminalUpdates in the terminal):
 #
-#    wsbg-app.zip                         shared by every platform
-#    wsbg-<platform>-deps.zip             third-party jars, JavaFX natives, Mesa
-#    wsbg-<platform>-files.zip            everything, the fallback archive
-#    wsbg-<platform>-update.json          the manifest
+#    wsbg-...           the terminal   - applied by the updater
+#    wsbg-updater-...   the updater    - applied by the terminal, right
+#                                        before it hands off to it
+#
+#  Each stream is a manifest plus archives; the app archive (our own jars and
+#  scripts) is the same on every platform and published once:
+#
+#    <prefix>-app.zip                     shared by every platform
+#    <prefix>-<platform>-deps.zip         third-party jars, natives
+#    <prefix>-<platform>-files.zip        everything, the fallback archive
+#    <prefix>-<platform>-update.json      the manifest
+#
+#  And one installer per platform, which carries both packages as the seed
+#  the starter lays out on the first start (.script/installer.sh):
+#
+#    WSBG-Terminal-macOS-arm64.dmg, WSBG-Terminal-macOS-x64.dmg,
+#    WSBG-Terminal-Windows.exe, WSBG-Terminal-Linux-x64.deb,
+#    WSBG-Terminal-Linux-x64.rpm, WSBG-Terminal-Linux-arm64.deb
 #
 #  The asset names are new on purpose: launchers of the 2.x line read
 #  update.json/files.zip/app.zip/deps.zip from the latest release. They find
 #  none of those here and keep running what they have.
 #
-#  Two jobs:
-#    build    builds and tests once, collects every platform's runtime jars
-#    package  one run per platform: packs those jars and uploads the assets
+#  Four jobs:
+#    build       builds and tests once, collects every platform's jars and natives
+#    sign-macos  signs the macOS packages' native libraries (with a certificate)
+#    package     one run per platform: packs both streams, uploads the assets
+#    installer   one run per installer, on that platform's own runner
 #
 #  Every platform's jars are resolved on Linux: -Djavafx.platform picks the
-#  JavaFX classifier, no runner of that OS is needed.
+#  JavaFX classifier. Only signing and the installers need their own OS.
 # =============================================================================
 
 name: Release CI
@@ -32,8 +46,8 @@ on:
   # A published release gets its assets attached.
   release:
     types: [published]
-  # Test builds: the same packages, uploaded as workflow artifacts instead of
-  # release assets (there is no release to attach them to).
+  # Test builds: the same packages and installers, uploaded as workflow
+  # artifacts instead of release assets (there is no release to attach them to).
   workflow_dispatch:
 
 # Uploading release assets needs write access to the repository contents.
@@ -41,9 +55,13 @@ permissions:
   contents: write
 
 env:
-  # Sets our assets apart from the 2.x line's (see the header) - the prefix
-  # a launcher passes to ReleaseAssetNames.of.
+  # Set our assets apart from the 2.x line's (see the header) - the prefixes
+  # TerminalUpdates passes to ReleaseAssetNames.of.
   ASSET_PREFIX: wsbg
+  UPDATER_ASSET_PREFIX: wsbg-updater
+  # The release tag, or the branch of a test build - what the manifests and
+  # the installers' seeds record as their version.
+  VERSION: ${{ github.event.release.tag_name || github.ref_name }}
   # Mesa's software renderer (llvmpipe), the OpenGL fallback of the Windows
   # package for machines whose driver has no OpenGL 4.1. Pinned with its hash;
   # bump both together. Only opengl32.dll and libgallium_wgl.dll are needed -
@@ -97,25 +115,35 @@ jobs:
       # -----------------------------------------------------------------------
       # 4. Build and test
       # -----------------------------------------------------------------------
-      # install, not package: step 5 resolves fx-terminal's dependencies with
-      # -pl fx-terminal, which finds our other modules only in the local
-      # repository. A failing test stops the release here - nothing is
-      # packaged, nothing uploaded.
+      # install, not package: step 5 resolves dependencies with -pl, which
+      # finds our other modules only in the local repository. A failing test
+      # stops the release here - nothing is packaged, nothing uploaded.
       - name: Build and test
         run: xvfb-run --auto-servernum ./mvnw -B -ntp clean install
 
       # -----------------------------------------------------------------------
       # 5. Collect the runtime jars per platform
       # -----------------------------------------------------------------------
-      # package/<platform>/ gets every jar the terminal runs with there: the
-      # terminal jar itself, our other modules via the Maven graph (new
-      # modules need no entry here) and the third-party jars, JavaFX in the
-      # platform's classifier. Platform names on the left are what the client
-      # calls the platform (Platform.current()), on the right JavaFX's
-      # classifier for it.
+      # Per platform, what each install runs with:
+      #   package/terminal/<platform>/   fx-terminal and all it needs
+      #   package/updater/<platform>/    fx-updater and all it needs - nothing
+      #                                  shared with the terminal's files
+      # Our other modules come in through the Maven graph (new modules need no
+      # entry here), JavaFX in the platform's classifier. Platform names on
+      # the left are the client's (Platform.current()), on the right JavaFX's
+      # classifier for it. The starter is one jar for every platform.
       - name: Collect the runtime jars per platform
         run: |
           set -euo pipefail
+
+          collect() {
+            local module="$1" target="$2" classifier="$3"
+            ./mvnw -B -ntp -q -pl "$module" dependency:copy-dependencies \
+              -DincludeScope=runtime \
+              -Djavafx.platform="$classifier" \
+              -DoutputDirectory="$target"
+            cp "$module"/target/"$module"-*.jar "$target/"
+          }
 
           for pair in macos-aarch64:mac-aarch64 \
                       macos-x86_64:mac \
@@ -124,24 +152,55 @@ jobs:
                       linux-aarch64:linux-aarch64; do
             platform="${pair%%:*}"
             classifier="${pair##*:}"
-
-            ./mvnw -B -ntp -q -pl fx-terminal dependency:copy-dependencies \
-              -DincludeScope=runtime \
-              -Djavafx.platform="$classifier" \
-              -DoutputDirectory="${GITHUB_WORKSPACE}/package/$platform"
-            cp fx-terminal/target/fx-terminal-*.jar "package/$platform/"
-
+            collect fx-terminal "package/terminal/$platform" "$classifier"
+            collect fx-updater "package/updater/$platform" "$classifier"
             echo "== $platform"
-            ls "package/$platform"
+            ls "package/terminal/$platform" "package/updater/$platform"
           done
 
+          mkdir -p package/starter
+          cp fx-starter/target/fx-starter-*.jar package/starter/fx-starter.jar
+
       # -----------------------------------------------------------------------
-      # 6. Hand the jars to the packaging jobs
+      # 6. Stage the terminal's native libraries
       # -----------------------------------------------------------------------
-      # The package runs start on fresh machines; this artifact is how the
-      # jars built here - and only these - reach them. A day is plenty: the
-      # packaging jobs run right after this one.
-      - name: Hand the jars to the packaging jobs
+      # package/extra/<platform>/lib/, which the packaging lays over the
+      # package root - so the libraries land in lib/ next to the jars, where
+      # their users look for them (the orb for Mesa, TinyFetch for curl). The
+      # module path skips files that are no jars.
+      #
+      # libcurl-impersonate for TinyFetch, every platform, at the version
+      # .script/natives.sh pins. Mesa for Windows only: downloaded, refused
+      # unless its hash matches, and only the two DLLs llvmpipe needs taken
+      # out. Both ship with the terminal's stream only: a third-party binary
+      # changes with a terminal release, never on its own.
+      - name: Stage the terminal's native libraries
+        run: |
+          set -euo pipefail
+
+          platforms="macos-aarch64 macos-x86_64 windows-x86_64 linux-x86_64 linux-aarch64"
+          ./.script/natives.sh $platforms
+          for platform in $platforms; do
+            mkdir -p "package/extra/$platform/lib"
+            cp .native/"$platform"/* "package/extra/$platform/lib/"
+          done
+
+          # 7-Zip reads Mesa's .7z; the runner image usually has it already.
+          command -v 7z >/dev/null || { sudo apt-get update && sudo apt-get install -y p7zip-full; }
+          archive="mesa3d-${MESA_VERSION}-release-msvc.7z"
+          curl -fL --retry 3 -o "$RUNNER_TEMP/$archive" \
+            "https://github.com/pal1000/mesa-dist-win/releases/download/${MESA_VERSION}/${archive}"
+          echo "${MESA_SHA256}  $RUNNER_TEMP/$archive" | sha256sum -c -
+          7z e -y -opackage/extra/windows-x86_64/lib "$RUNNER_TEMP/$archive" x64/opengl32.dll x64/libgallium_wgl.dll
+
+          find package/extra -type f | sort
+
+      # -----------------------------------------------------------------------
+      # 7. Hand everything to the next jobs
+      # -----------------------------------------------------------------------
+      # The later jobs start on fresh machines; this artifact is how the jars
+      # built here - and only these - reach them. A day is plenty.
+      - name: Hand everything to the next jobs
         uses: actions/upload-artifact@v4
         with:
           name: runtime-jars
@@ -150,27 +209,81 @@ jobs:
           retention-days: 1
 
   # ===========================================================================
+  #  sign-macos - the macOS packages' native libraries
+  # ===========================================================================
+  # Apple's notary service looks into every zip and jar of the DMG, the
+  # installer's seeds included, and refuses it over a single unsigned
+  # library. So the natives are signed here, before TinyUpdate packs them:
+  # the release's manifests then hash the signed jars, and the seed an
+  # installer carries stays byte for byte the release an update fetches.
+  #
+  # Without a certificate nothing is signed and the artifact stays as it is -
+  # the release still ships, unsigned.
+  sign-macos:
+    name: Sign macOS natives
+    runs-on: macos-15
+    needs: build
+    env:
+      APPLE_CERT_BASE64: ${{ secrets.APPLE_CERT_BASE64 }}
+      APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+    steps:
+
+      - name: Check out the sources
+        if: env.APPLE_CERT_BASE64 != ''
+        uses: actions/checkout@v4
+
+      - name: Fetch the runtime jars
+        if: env.APPLE_CERT_BASE64 != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: runtime-jars
+          path: package/
+
+      # Sets MAC_SIGN_IDENTITY and MAC_SIGN_KEYCHAIN for the steps below.
+      - name: Import the Developer ID certificate
+        if: env.APPLE_CERT_BASE64 != ''
+        run: ./.script/macos-keychain.sh
+
+      - name: Sign the native libraries
+        if: env.MAC_SIGN_IDENTITY != ''
+        run: |
+          ./.script/sign-macos-natives.sh "$MAC_SIGN_IDENTITY" "$MAC_SIGN_KEYCHAIN" \
+            package/terminal/macos-aarch64 package/terminal/macos-x86_64 \
+            package/updater/macos-aarch64 package/updater/macos-x86_64 \
+            package/extra/macos-aarch64 package/extra/macos-x86_64
+
+      # The same artifact, now with the signed files - the jobs after this one
+      # cannot tell the difference, and need not.
+      - name: Hand the signed jars on
+        if: env.MAC_SIGN_IDENTITY != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-jars
+          path: package/
+          if-no-files-found: error
+          retention-days: 1
+          overwrite: true
+
+  # ===========================================================================
   #  package - once per platform
   # ===========================================================================
   package:
     name: Package (${{ matrix.platform }})
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, sign-macos]
     strategy:
       # A platform that fails to package is simply missing from the release:
-      # its launchers find no manifest and keep their version. The others
+      # its installs find no manifest and keep their version. The others
       # still ship.
       fail-fast: false
       matrix:
         include:
           - platform: macos-aarch64
           - platform: macos-x86_64
-          # The only package with Mesa (step 3).
           - platform: windows-x86_64
-            mesa: true
-          # Uploads the shared app archive (step 6). Every platform packs an
-          # identical one; one upload is enough, and several parallel
-          # uploads of the same asset would race each other.
+          # Uploads the shared app archives (step 5). Every platform packs
+          # identical ones; one upload is enough, and several parallel uploads
+          # of the same asset would race each other.
           - platform: linux-x86_64
             app-archive: true
           - platform: linux-aarch64
@@ -181,15 +294,13 @@ jobs:
       # 1. Check out the sources
       # -----------------------------------------------------------------------
       # For the scripts in .script/ and the TinyUpdate action. The jars do
-      # not come from here: they come from the build job (step 2).
+      # not come from here: they come from the build job.
       - name: Check out the sources
         uses: actions/checkout@v4
 
       # -----------------------------------------------------------------------
       # 2. Fetch the runtime jars
       # -----------------------------------------------------------------------
-      # Every platform's jars from the build job's step 6, back under
-      # package/<platform>/. This run packs only its own.
       - name: Fetch the runtime jars
         uses: actions/download-artifact@v4
         with:
@@ -197,106 +308,311 @@ jobs:
           path: package/
 
       # -----------------------------------------------------------------------
-      # 3. Stage Mesa (Windows only)
+      # 3. Pack the terminal
       # -----------------------------------------------------------------------
-      # Downloads the pinned Mesa build, refuses it unless its hash matches,
-      # and takes out the two DLLs llvmpipe needs. They go to package/extra/
-      # lib/, which step 4 lays over the package root - so they land in lib/
-      # next to the jars. The module path skips files that are no jars, and
-      # launch.bat hands lib/ to the orb as its Mesa directory.
-      - name: Stage Mesa (Windows only)
-        if: matrix.mesa
-        run: |
-          set -euo pipefail
-
-          # 7-Zip reads Mesa's .7z; the runner image usually has it already.
-          command -v 7z >/dev/null || { sudo apt-get update && sudo apt-get install -y p7zip-full; }
-
-          archive="mesa3d-${MESA_VERSION}-release-msvc.7z"
-          curl -fL --retry 3 -o "$RUNNER_TEMP/$archive" \
-            "https://github.com/pal1000/mesa-dist-win/releases/download/${MESA_VERSION}/${archive}"
-          echo "${MESA_SHA256}  $RUNNER_TEMP/$archive" | sha256sum -c -
-
-          mkdir -p package/extra/lib
-          7z e -y -opackage/extra/lib "$RUNNER_TEMP/$archive" x64/opengl32.dll x64/libgallium_wgl.dll
-          ls -l package/extra/lib
-
-      # -----------------------------------------------------------------------
-      # 4. Pack with TinyUpdate
-      # -----------------------------------------------------------------------
-      # Manifest and archives for this platform, into updater-dist/. The
-      # scripts go to bin/: setup.* prepares the machine, launch.* starts the
-      # terminal. Jars built from de.bsommerfeld form the app archive.
-      - name: Pack with TinyUpdate
-        id: tinyupdate
+      # setup.* goes to bin/ - the updater runs it after every update. The
+      # natives go over the package root. Jars built from de.bsommerfeld form
+      # the app archive.
+      - name: Pack the terminal
+        id: terminal
         uses: ./tinyupdate/action
         with:
-          artifact-dirs: package/${{ matrix.platform }}
+          artifact-dirs: package/terminal/${{ matrix.platform }}
           script-dir: '.script'
-          scripts: 'setup.* launch.*'
-          extra-dir: ${{ matrix.mesa && 'package/extra' || '' }}
+          scripts: 'setup.*'
+          extra-dir: package/extra/${{ matrix.platform }}
           asset-prefix: ${{ env.ASSET_PREFIX }}
           platform: ${{ matrix.platform }}
           app-group-id: 'de.bsommerfeld'
+          output-dir: dist/terminal
 
       # -----------------------------------------------------------------------
-      # 5. Upload this platform's archives
+      # 4. Pack the updater
       # -----------------------------------------------------------------------
-      # Steps 5 to 7 keep an order: archives first, the manifest last. A
-      # client only acts on a release whose manifest is there, so it never
-      # sees a manifest whose files are still missing. --clobber lets a
-      # re-run replace what an earlier run uploaded.
-      - name: Upload this platform's archives
+      # Jars only: the updater has no scripts, and a script dir that does not
+      # exist leaves bin/ empty. Its own output dir, so the two packs of one
+      # platform never share a work tree.
+      - name: Pack the updater
+        id: updater
+        uses: ./tinyupdate/action
+        with:
+          artifact-dirs: package/updater/${{ matrix.platform }}
+          script-dir: 'no-scripts'
+          asset-prefix: ${{ env.UPDATER_ASSET_PREFIX }}
+          platform: ${{ matrix.platform }}
+          app-group-id: 'de.bsommerfeld'
+          output-dir: dist/updater
+
+      # -----------------------------------------------------------------------
+      # 5. Upload the archives, then the manifests
+      # -----------------------------------------------------------------------
+      # Archives first, the manifests last: an install only acts on a release
+      # whose manifest is there, so it never sees one whose files are still
+      # missing. Before the shared app archives land, the other platforms'
+      # installs find the split incomplete and take their full archive -
+      # slower, still correct. --clobber lets a re-run replace what an earlier
+      # run uploaded.
+      - name: Upload the archives, then the manifests
         if: github.event_name == 'release'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.release.tag_name }}
-          ZIP: ${{ steps.tinyupdate.outputs.zip-path }}
-          DEPS_ZIP: ${{ steps.tinyupdate.outputs.deps-zip-path }}
+          APP_ARCHIVE: ${{ matrix.app-archive }}
+          TERMINAL_ZIP: ${{ steps.terminal.outputs.zip-path }}
+          TERMINAL_DEPS: ${{ steps.terminal.outputs.deps-zip-path }}
+          TERMINAL_APP: ${{ steps.terminal.outputs.app-zip-path }}
+          TERMINAL_MANIFEST: ${{ steps.terminal.outputs.manifest-path }}
+          UPDATER_ZIP: ${{ steps.updater.outputs.zip-path }}
+          UPDATER_DEPS: ${{ steps.updater.outputs.deps-zip-path }}
+          UPDATER_APP: ${{ steps.updater.outputs.app-zip-path }}
+          UPDATER_MANIFEST: ${{ steps.updater.outputs.manifest-path }}
         run: |
           set -euo pipefail
-          gh release upload "$TAG" "$ZIP" --clobber
-          # The action writes no deps archive for a package without deps.
-          if [ -n "$DEPS_ZIP" ]; then
-            gh release upload "$TAG" "$DEPS_ZIP" --clobber
+
+          # An empty path is an archive the action did not write (an empty half).
+          upload() {
+            for asset in "$@"; do
+              [ -n "$asset" ] && gh release upload "$TAG" "$asset" --clobber
+            done
+            return 0
+          }
+
+          upload "$TERMINAL_ZIP" "$TERMINAL_DEPS" "$UPDATER_ZIP" "$UPDATER_DEPS"
+          if [ "$APP_ARCHIVE" = "true" ]; then
+            upload "$TERMINAL_APP" "$UPDATER_APP"
           fi
+          upload "$TERMINAL_MANIFEST" "$UPDATER_MANIFEST"
 
       # -----------------------------------------------------------------------
-      # 6. Upload the shared app archive
+      # 6. Hand the full archives to the installer
       # -----------------------------------------------------------------------
-      # From one platform run only (see the matrix). Before this lands, the
-      # other platforms' clients find the split incomplete and take their
-      # full archive - slower, still correct.
-      - name: Upload the shared app archive
-        if: github.event_name == 'release' && matrix.app-archive && steps.tinyupdate.outputs.app-zip-path != ''
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.event.release.tag_name }}
-          APP_ZIP: ${{ steps.tinyupdate.outputs.app-zip-path }}
-        run: gh release upload "$TAG" "$APP_ZIP" --clobber
+      # The installer's seeds are exactly these packages - the full archive of
+      # each stream - so a fresh install matches the release's manifests and
+      # its first update check finds nothing to do.
+      - name: Hand the full archives to the installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: seed-${{ matrix.platform }}
+          path: |
+            ${{ steps.terminal.outputs.zip-path }}
+            ${{ steps.updater.outputs.zip-path }}
+          if-no-files-found: error
+          retention-days: 1
 
       # -----------------------------------------------------------------------
-      # 7. Upload the manifest
+      # 7. Keep the packages as workflow artifacts (test builds)
       # -----------------------------------------------------------------------
-      # Last, on purpose (see step 5): from this moment on, this platform's
-      # launchers see the release.
-      - name: Upload the manifest
-        if: github.event_name == 'release'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.event.release.tag_name }}
-          MANIFEST: ${{ steps.tinyupdate.outputs.manifest-path }}
-        run: gh release upload "$TAG" "$MANIFEST" --clobber
-
-      # -----------------------------------------------------------------------
-      # 8. Keep the package as a workflow artifact (test builds)
-      # -----------------------------------------------------------------------
-      # A manual run has no release; its packages are downloadable from the
-      # run instead, one artifact per platform.
-      - name: Keep the package as a workflow artifact (test builds)
+      - name: Keep the packages as workflow artifacts (test builds)
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
           name: wsbg-${{ matrix.platform }}
-          path: updater-dist/*
+          path: |
+            dist/terminal/*
+            dist/updater/*
+          if-no-files-found: error
+
+  # ===========================================================================
+  #  installer - once per installer, on its platform's own runner
+  # ===========================================================================
+  # jpackage builds only for the OS it runs on, so every installer gets a
+  # runner of its own. The macOS ones are signed and notarized when the
+  # certificate and notary credentials are there, like on master; without
+  # them they ship unsigned. Windows is not signed (no certificate).
+  installer:
+    name: Installer (${{ matrix.asset }})
+    runs-on: ${{ matrix.runner }}
+    needs: [build, package]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-aarch64
+            runner: macos-15
+            type: dmg
+            asset: WSBG-Terminal-macOS-arm64.dmg
+          - platform: macos-x86_64
+            runner: macos-15-intel
+            type: dmg
+            asset: WSBG-Terminal-macOS-x64.dmg
+          - platform: windows-x86_64
+            runner: windows-latest
+            type: exe
+            asset: WSBG-Terminal-Windows.exe
+          - platform: linux-x86_64
+            runner: ubuntu-latest
+            type: deb
+            asset: WSBG-Terminal-Linux-x64.deb
+          - platform: linux-x86_64
+            runner: ubuntu-latest
+            type: rpm
+            asset: WSBG-Terminal-Linux-x64.rpm
+          - platform: linux-aarch64
+            runner: ubuntu-24.04-arm
+            type: deb
+            asset: WSBG-Terminal-Linux-arm64.deb
+    defaults:
+      run:
+        shell: bash
+    env:
+      # Secrets surfaced as job-level env so step conditions can read them.
+      # All optional: with none set, the installer is built unsigned.
+      # Developer ID Application certificate (.p12 with its private key), base64.
+      APPLE_CERT_BASE64: ${{ secrets.APPLE_CERT_BASE64 }}
+      APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+      # Notarization: EITHER the App Store Connect API-key trio ...
+      AC_API_KEY_P8_BASE64: ${{ secrets.AC_API_KEY_P8_BASE64 }}
+      AC_API_KEY_ID: ${{ secrets.AC_API_KEY_ID }}
+      AC_API_ISSUER_ID: ${{ secrets.AC_API_ISSUER_ID }}
+      # ... OR the Apple ID trio. Whichever set is present is used.
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+    steps:
+
+      # -----------------------------------------------------------------------
+      # 1. Check out the sources
+      # -----------------------------------------------------------------------
+      # For .script/installer.sh and the icons in .assets/icons.
+      - name: Check out the sources
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      # 2. Set up JDK 27
+      # -----------------------------------------------------------------------
+      # This platform's own: jlink links its runtime from it.
+      - name: Set up JDK 27
+        uses: actions/setup-java@v4
+        with:
+          java-version: '27'
+          distribution: 'zulu'
+
+      # -----------------------------------------------------------------------
+      # 3. Install the packaging tools
+      # -----------------------------------------------------------------------
+      # jpackage shells out to the WiX Toolset on Windows (the image usually
+      # ships it; no version pin - pinning below the preinstalled one makes
+      # choco fail) and to rpmbuild for rpm, which the Ubuntu image lacks.
+      - name: Install the packaging tools
+        if: matrix.type == 'exe' || matrix.type == 'rpm'
+        run: |
+          if [ "${{ matrix.type }}" = exe ]; then
+            choco install wixtoolset --no-progress -y
+          else
+            sudo apt-get update && sudo apt-get install -y rpm
+          fi
+
+      # -----------------------------------------------------------------------
+      # 4. Unpack the seeds
+      # -----------------------------------------------------------------------
+      # The two full archives from the package job, unpacked to the package
+      # trees installer.sh takes; the starter comes from the build job. jar
+      # unpacks them - every runner's JDK has it, not every runner has unzip.
+      - name: Fetch the full archives
+        uses: actions/download-artifact@v4
+        with:
+          name: seed-${{ matrix.platform }}
+          path: seed/
+      - name: Fetch the starter
+        uses: actions/download-artifact@v4
+        with:
+          name: runtime-jars
+          path: package/
+      - name: Unpack the seeds
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -euo pipefail
+          mkdir -p seed/app seed/updater
+          (cd seed/app && jar xf "../${ASSET_PREFIX}-${PLATFORM}-files.zip")
+          (cd seed/updater && jar xf "../${UPDATER_ASSET_PREFIX}-${PLATFORM}-files.zip")
+          ls seed/app seed/updater
+
+      # -----------------------------------------------------------------------
+      # 5. Import the Developer ID certificate (macOS)
+      # -----------------------------------------------------------------------
+      # Best-effort: a missing, wrong or expired certificate never blocks the
+      # release - MAC_SIGN_IDENTITY stays unset and the installer ships
+      # unsigned.
+      - name: Import the Developer ID certificate (macOS)
+        if: runner.os == 'macOS' && env.APPLE_CERT_BASE64 != ''
+        continue-on-error: true
+        run: ./.script/macos-keychain.sh
+
+      # -----------------------------------------------------------------------
+      # 6. Build the installer
+      # -----------------------------------------------------------------------
+      # Signs on macOS when step 5 left an identity behind.
+      - name: Build the installer
+        run: |
+          ./.script/installer.sh "$VERSION" seed/app seed/updater \
+            package/starter/fx-starter.jar installer-output "${{ matrix.type }}"
+
+      # -----------------------------------------------------------------------
+      # 7. Notarize and staple (macOS)
+      # -----------------------------------------------------------------------
+      # Signing alone is not enough: a downloaded DMG is blocked by Gatekeeper
+      # unless Apple has notarized it, and the stapled ticket lets it validate
+      # offline. Best-effort, as the certificate: bad or missing notary
+      # credentials leave a signed, unnotarized DMG.
+      - name: Notarize and staple (macOS)
+        if: matrix.type == 'dmg' && env.MAC_SIGN_IDENTITY != ''
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          DMG=$(find installer-output -maxdepth 1 -type f -name '*.dmg' | head -1)
+          if [ -z "$DMG" ]; then echo "::error::no DMG found to notarize"; exit 1; fi
+
+          if [ -n "$AC_API_KEY_P8_BASE64" ] && [ -n "$AC_API_KEY_ID" ] && [ -n "$AC_API_ISSUER_ID" ]; then
+            KEY="$RUNNER_TEMP/AuthKey.p8"
+            echo -n "$AC_API_KEY_P8_BASE64" | base64 --decode > "$KEY"
+            echo "Notarizing via App Store Connect API key"
+            xcrun notarytool submit "$DMG" \
+              --key "$KEY" --key-id "$AC_API_KEY_ID" --issuer "$AC_API_ISSUER_ID" --wait
+          elif [ -n "$APPLE_ID" ] && [ -n "$APPLE_APP_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
+            echo "Notarizing via Apple ID + app-specific password"
+            xcrun notarytool submit "$DMG" \
+              --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+          else
+            echo "::warning::Signed, but no notarization credentials - Gatekeeper still warns on download."
+            echo "::warning::Add the App Store Connect API-key trio OR the Apple ID trio to notarize."
+            exit 0
+          fi
+
+          xcrun stapler staple "$DMG"
+          xcrun stapler validate "$DMG"
+          echo "Notarized and stapled: $DMG"
+
+      # -----------------------------------------------------------------------
+      # 8. Name the installer
+      # -----------------------------------------------------------------------
+      # A stable, version-less name per platform, so a link to
+      # /releases/latest/download/<name> always finds the current installer.
+      - name: Name the installer
+        id: name
+        run: |
+          set -euo pipefail
+          source=$(find installer-output -maxdepth 1 -type f -name "*.${{ matrix.type }}" | head -1)
+          if [ -z "$source" ]; then
+            echo "::error::no .${{ matrix.type }} in installer-output/"; exit 1
+          fi
+          mv "$source" "installer-output/${{ matrix.asset }}"
+          echo "path=installer-output/${{ matrix.asset }}" >> "$GITHUB_OUTPUT"
+
+      # -----------------------------------------------------------------------
+      # 9. Upload the installer
+      # -----------------------------------------------------------------------
+      - name: Upload to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.event.release.tag_name }}" "${{ steps.name.outputs.path }}" --clobber
+
+      - name: Keep as a workflow artifact (test builds)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ steps.name.outputs.path }}
           if-no-files-found: error

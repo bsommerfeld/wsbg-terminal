@@ -85,7 +85,7 @@ new GitHubRepository("owner", "repo", "http://localhost:8080");
   uses: ./tinyupdate/action
   with:
     artifact-dirs: package/${{ matrix.platform }}
-    scripts: 'setup.* launch.*'
+    scripts: 'setup.*'
     asset-prefix: wsbg
     platform: ${{ matrix.platform }}
     app-group-id: de.bsommerfeld

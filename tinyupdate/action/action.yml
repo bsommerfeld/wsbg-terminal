@@ -191,7 +191,7 @@ runs:
     # -------------------------------------------------------------------------
     # The scripts the installed application is set up and started with. The
     # patterns are globbed inside script-dir, so the caller picks e.g.
-    # "setup.* launch.*" without listing every platform's variant. Copied
+    # "setup.* uninstall.*" without listing every platform's variant. Copied
     # byte for byte: line endings stay what the checkout made them (CRLF for
     # .bat/.ps1 via .gitattributes).
     - name: Collect the scripts into bin/
