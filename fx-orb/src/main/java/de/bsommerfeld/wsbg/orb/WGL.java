@@ -24,8 +24,9 @@ import static java.lang.foreign.ValueLayout.JAVA_SHORT;
  * The system driver is tried first. Where it offers no OpenGL 4.1 - a virtual
  * machine, Remote Desktop, a missing graphics driver: Windows' own
  * {@code opengl32.dll} then stops at 1.1 - the context comes from Mesa's
- * software renderer instead, if the application ships it in the directory named
- * by the system property {@value #MESA_PROPERTY}.
+ * software renderer instead, if the application ships it: in the directory
+ * named by the system property {@value #MESA_PROPERTY}, else next to the orb's
+ * own jar - where a package puts it ({@code lib/}).
  * <p>
  * The window uses the predefined {@code STATIC} class, which spares registering a
  * class of our own and the window procedure upcall that would take. It is never
@@ -126,11 +127,29 @@ final class WGL implements GL {
 
     private static Path mesaDirectory() {
         String property = System.getProperty(MESA_PROPERTY);
-        if (property == null || property.isBlank()) {
+        Path directory = property == null || property.isBlank() ? jarDirectory() : Path.of(property);
+        return directory != null && Files.isRegularFile(directory.resolve("opengl32.dll")) ? directory : null;
+    }
+
+    /**
+     * The directory of the jar this module was loaded from - as the module
+     * layer resolved it, so it holds on the module path and in a layer a
+     * starter builds alike. {@code null} for a module that is no jar (a
+     * build's classes directory).
+     */
+    private static Path jarDirectory() {
+        Module module = WGL.class.getModule();
+        ModuleLayer layer = module.getLayer();
+        if (layer == null) {
             return null;
         }
-        Path directory = Path.of(property);
-        return Files.isRegularFile(directory.resolve("opengl32.dll")) ? directory : null;
+        return layer.configuration().findModule(module.getName())
+                .flatMap(resolved -> resolved.reference().location())
+                .filter(location -> "file".equals(location.getScheme()))
+                .map(Path::of)
+                .filter(Files::isRegularFile)
+                .map(Path::getParent)
+                .orElse(null);
     }
 
     /** Builds the context; whatever was made before a failure is released again. */

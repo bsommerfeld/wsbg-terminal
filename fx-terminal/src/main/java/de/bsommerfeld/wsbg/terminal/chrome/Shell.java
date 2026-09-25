@@ -105,6 +105,11 @@ public final class Shell extends StackPane {
         frame.getChildren().setAll(view);
     }
 
+    /** The title bar's update notice - hidden until an update is offered. */
+    public UpdateNotice updateNotice() {
+        return titleBar.updateNotice();
+    }
+
     public BooleanProperty zenProperty() {
         return zen;
     }

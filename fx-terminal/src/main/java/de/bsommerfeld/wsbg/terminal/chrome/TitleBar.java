@@ -21,8 +21,9 @@ import javafx.stage.Stage;
 /**
  * The title bar of the extended stage: the system's own window buttons at one
  * edge (their slot is reserved by the {@link HeaderBar}), the zen switch at the
- * other, and the brand centred on the whole bar. The bar and the brand are the
- * drag region.
+ * other - with the {@link UpdateNotice} beside it, once there is an update -
+ * and the brand centred on the whole bar. The bar and the brand are the drag
+ * region.
  */
 public final class TitleBar extends HeaderBar {
 
@@ -41,6 +42,9 @@ public final class TitleBar extends HeaderBar {
     private static final PseudoClass ZEN = PseudoClass.getPseudoClass("zen");
 
     private final Button zenSwitch = new Button();
+    private final UpdateNotice updateNotice = new UpdateNotice();
+    /** The zen switch and the update notice: the edge opposite the system buttons. */
+    private final HBox tools = new HBox(updateNotice, zenSwitch);
 
     /** @param zen what the zen switch toggles, and whose state its icon shows */
     public TitleBar(BooleanProperty zen) {
@@ -63,15 +67,22 @@ public final class TitleBar extends HeaderBar {
         zen.subscribe(on -> zenSwitch.pseudoClassStateChanged(ZEN, on));
         zenSwitch.setFocusTraversable(false);
         zenSwitch.setOnAction(_ -> zen.set(!zen.get()));
-        HeaderBar.setAlignment(zenSwitch, Pos.CENTER);
-        HeaderBar.setMargin(zenSwitch, new Insets(0, 5, 0, 5));
-        setRight(zenSwitch);
+
+        tools.getStyleClass().add("tb-tools");
+        HeaderBar.setAlignment(tools, Pos.CENTER);
+        HeaderBar.setMargin(tools, new Insets(0, 5, 0, 5));
+        setRight(tools);
+    }
+
+    public UpdateNotice updateNotice() {
+        return updateNotice;
     }
 
     /**
      * Keeps the zen switch on the edge opposite the system window buttons - the
-     * right on macOS, the left on Windows. While the buttons are hidden their
-     * inset is empty on both sides; the switch then stays where it is.
+     * right on macOS, the left on Windows - and the update notice on its inner
+     * side. While the buttons are hidden their inset is empty on both sides;
+     * the switch then stays where it is.
      */
     public void followSystemButtons(Stage stage) {
         HeaderBar.leftSystemInsetProperty(stage).addListener((_, _, _) -> placeZenSwitch(stage));
@@ -82,10 +93,12 @@ public final class TitleBar extends HeaderBar {
     private void placeZenSwitch(Stage stage) {
         if (occupied(HeaderBar.getLeftSystemInset(stage))) {
             setLeft(null);
-            setRight(zenSwitch);
+            tools.getChildren().setAll(updateNotice, zenSwitch);
+            setRight(tools);
         } else if (occupied(HeaderBar.getRightSystemInset(stage))) {
             setRight(null);
-            setLeft(zenSwitch);
+            tools.getChildren().setAll(zenSwitch, updateNotice);
+            setLeft(tools);
         }
     }
 

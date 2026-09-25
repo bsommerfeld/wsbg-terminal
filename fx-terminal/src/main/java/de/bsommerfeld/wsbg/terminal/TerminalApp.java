@@ -2,11 +2,13 @@ package de.bsommerfeld.wsbg.terminal;
 
 import de.bsommerfeld.wsbg.terminal.chrome.Shell;
 import de.bsommerfeld.wsbg.terminal.chrome.TitleBar;
+import de.bsommerfeld.wsbg.terminal.chrome.UpdateNotice;
 import de.bsommerfeld.wsbg.terminal.dashboard.Dashboard;
 import de.bsommerfeld.wsbg.terminal.fx.Fx;
 import de.bsommerfeld.wsbg.terminal.intro.Intro;
 import de.bsommerfeld.wsbg.terminal.ui.Fonts;
 import de.bsommerfeld.wsbg.terminal.ui.Stylesheets;
+import de.bsommerfeld.wsbg.terminal.update.TerminalUpdates;
 import javafx.animation.PauseTransition;
 import javafx.application.Application;
 import javafx.application.ColorScheme;
@@ -19,6 +21,8 @@ import javafx.scene.paint.Color;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 import javafx.util.Duration;
+
+import java.io.IOException;
 
 /**
  * The terminal window: an {@link StageStyle#EXTENDED extended} stage whose client
@@ -51,6 +55,9 @@ public final class TerminalApp extends Application {
      */
     private static final int[] ICON_SIZES = {16, 24, 32, 48, 64, 128, 256, 512};
 
+    /** Updates of the installed terminal; {@code null} when it was not started installed. */
+    private TerminalUpdates updates;
+
     static void main(String[] args) {
         launch(args);
     }
@@ -69,6 +76,39 @@ public final class TerminalApp extends Application {
         Shell shell = new Shell(stage);
         stage.setScene(shellScene(stage, shell));
         stage.show();
+        watchForUpdates(shell.updateNotice());
+    }
+
+    @Override
+    public void stop() {
+        if (updates != null) {
+            updates.close();
+        }
+    }
+
+    /**
+     * Only the installed terminal asks for updates. When one is there, the
+     * title bar shows it; a click hands off to the updater and ends the
+     * terminal - the updater starts it again once the files are in place.
+     */
+    private void watchForUpdates(UpdateNotice notice) {
+        updates = TerminalUpdates.forRunningTerminal().orElse(null);
+        if (updates == null) {
+            return;
+        }
+        updates.watch(() -> Platform.runLater(() -> notice.offer(() -> handOff(notice))));
+    }
+
+    private void handOff(UpdateNotice notice) {
+        Thread.ofVirtual().name("update-handoff").start(() -> {
+            try {
+                updates.handOff();
+                Platform.runLater(Platform::exit);
+            } catch (IOException e) {
+                System.err.println("[update] Handoff failed: " + e);
+                Platform.runLater(notice::failed);
+            }
+        });
     }
 
     private static void decorate(Stage stage) {

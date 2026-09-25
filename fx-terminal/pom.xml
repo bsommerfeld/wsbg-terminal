@@ -24,6 +24,10 @@
             <artifactId>fx-orb</artifactId>
         </dependency>
         <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>tinyupdate</artifactId>
+        </dependency>
+        <dependency>
             <groupId>org.openjfx</groupId>
             <artifactId>javafx-controls</artifactId>
         </dependency>
@@ -81,8 +85,8 @@
     <profiles>
         <!-- javafx:run on macOS: the Dock shows the icon and name of the java
              process, not the window icons. Only here - other JVMs reject the
-             -Xdock options. -Xdock:name is left out, the plugin splits options
-             on spaces. -->
+             -Xdock options. The installed app shows its bundle's icon and name;
+             -Xdock:name is left out, the plugin splits options on spaces. -->
         <profile>
             <id>macos-dock</id>
             <activation>

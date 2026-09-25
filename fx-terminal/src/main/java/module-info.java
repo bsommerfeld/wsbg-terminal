@@ -9,6 +9,7 @@ open module de.bsommerfeld.wsbg.terminal {
     requires com.google.guice;
     requires de.bsommerfeld.signals;
     requires de.bsommerfeld.wsbg.orb;
+    requires de.bsommerfeld.tinyupdate;
 
     exports de.bsommerfeld.wsbg.terminal;
 }
