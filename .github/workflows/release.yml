@@ -511,6 +511,8 @@ jobs:
       # The two full archives from the package job, unpacked to the package
       # trees installer.sh takes; the starter comes from the build job. jar
       # unpacks them - every runner's JDK has it, not every runner has unzip.
+      # The artifact keeps the archives under their output dirs, terminal/
+      # and updater/ - their common parent is what upload-artifact strips.
       - name: Fetch the full archives
         uses: actions/download-artifact@v4
         with:
@@ -527,8 +529,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p seed/app seed/updater
-          (cd seed/app && jar xf "../${ASSET_PREFIX}-${PLATFORM}-files.zip")
-          (cd seed/updater && jar xf "../${UPDATER_ASSET_PREFIX}-${PLATFORM}-files.zip")
+          (cd seed/app && jar xf "../terminal/${ASSET_PREFIX}-${PLATFORM}-files.zip")
+          (cd seed/updater && jar xf "../updater/${UPDATER_ASSET_PREFIX}-${PLATFORM}-files.zip")
           ls seed/app seed/updater
 
       # -----------------------------------------------------------------------
