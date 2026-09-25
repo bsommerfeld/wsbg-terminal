@@ -136,8 +136,10 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Absolute: with -pl, Maven resolves a relative outputDirectory
+          # against the module, not against the workspace.
           collect() {
-            local module="$1" target="$2" classifier="$3"
+            local module="$1" target="$GITHUB_WORKSPACE/$2" classifier="$3"
             ./mvnw -B -ntp -q -pl "$module" dependency:copy-dependencies \
               -DincludeScope=runtime \
               -Djavafx.platform="$classifier" \
