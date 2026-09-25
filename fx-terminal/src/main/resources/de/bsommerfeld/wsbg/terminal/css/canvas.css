@@ -14,7 +14,7 @@
    window, 16, and a 1px -line-soft rim, dropped in zen mode.
 
    Geometry: grid-pitch 32, widget radius 8, header 36, pill radius 6, selection
-   frame 2; pill buttons 40, the orb 28. */
+   frame 5; pill buttons 40, the orb 28. */
 .desktop-canvas {
   -select:      -blue;
   -select-tint: rgba(64, 156, 255, 0.08);
@@ -81,10 +81,10 @@
 
 .dc-marquee {
   -fx-background-color: -blue-dark;
-  -fx-background-radius: 2;
+  -fx-background-radius: 5;
   -fx-border-color: -select;
   -fx-border-width: 1;
-  -fx-border-radius: 2;
+  -fx-border-radius: 5;
 }
 
 /* The pill: a popup, 6px corner, 6px inside and between its 40px buttons; a

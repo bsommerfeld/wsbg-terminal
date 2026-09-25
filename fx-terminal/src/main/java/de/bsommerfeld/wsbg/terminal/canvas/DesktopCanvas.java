@@ -64,8 +64,9 @@ import java.util.Set;
  *       move.</li>
  * </ul>
  * Canvas coordinates are the widgets' own; the view shows them scaled by the
- * zoom and shifted by the pan offset - the widgets and the frame sit on a
- * content layer that carries both, the dots and the pill stay in the view.
+ * zoom and shifted by the pan offset - the widgets and the frame sit on
+ * layers that carry both, the frame's under the dots, the widgets' above; the
+ * dots and the pill stay in the view.
  * {@link #getWidgets()} follows every move, cut, paste and delete.
  */
 public final class DesktopCanvas extends Region {
@@ -98,6 +99,8 @@ public final class DesktopCanvas extends Region {
     private final Set<String> selection = new LinkedHashSet<>();
 
     private final Path dots = new Path();
+    /** Carries the frame alone, under the dots, so the grid stays visible inside the selected area. */
+    private final Pane areaLayer = new Pane();
     private final Pane content = new Pane();
     private final Translate pan = new Translate();
     private final Scale zoom = new Scale(1, 1, 0, 0);
@@ -143,11 +146,14 @@ public final class DesktopCanvas extends Region {
         frame.setVisible(false);
         pill.setManaged(false);
         pill.setVisible(false);
-        // The frame lies under the widgets: the selected area is a zone they stand in.
-        content.getChildren().add(frame);
+        // The frame lies under the dots and the widgets: the selected area is a zone they stand in.
+        areaLayer.getChildren().add(frame);
+        areaLayer.setManaged(false);
+        areaLayer.setMouseTransparent(true);
+        areaLayer.getTransforms().addAll(pan, zoom);
         content.setManaged(false);
         content.getTransforms().addAll(pan, zoom);
-        getChildren().addAll(dots, content, pill);
+        getChildren().addAll(areaLayer, dots, content, pill);
 
         // Rounded like the window; the widgets and dots stay inside the corners.
         Rectangle clip = new Rectangle();
@@ -646,6 +652,7 @@ public final class DesktopCanvas extends Region {
         dots.relocate(0, 0);
         dots.setTranslateX(floorMod(pan.getX(), pitch));
         dots.setTranslateY(floorMod(pan.getY(), pitch));
+        areaLayer.relocate(0, 0);
         content.relocate(0, 0);
         for (CanvasWidget node : widgetNodes) {
             Rectangle2D b = node.canvasBounds();
