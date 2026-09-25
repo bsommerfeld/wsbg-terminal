@@ -33,3 +33,6 @@ CLAUDE.md
 
 # Internal working notes - never committed
 docs/
+
+# Native libraries fetched by .script/natives.sh
+.native/
