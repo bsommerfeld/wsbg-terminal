@@ -77,4 +77,32 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!-- javafx:run on macOS: the Dock shows the icon and name of the java
+             process, not the window icons. Only here - other JVMs reject the
+             -Xdock options. -Xdock:name is left out, the plugin splits options
+             on spaces. -->
+        <profile>
+            <id>macos-dock</id>
+            <activation>
+                <os>
+                    <family>mac</family>
+                </os>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.openjfx</groupId>
+                        <artifactId>javafx-maven-plugin</artifactId>
+                        <configuration>
+                            <options combine.children="append">
+                                <option>-Xdock:icon=${project.basedir}/../.assets/icons/dock/AppIcon.png</option>
+                            </options>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

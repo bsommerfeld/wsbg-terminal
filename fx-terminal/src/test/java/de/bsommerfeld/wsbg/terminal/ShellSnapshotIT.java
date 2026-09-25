@@ -31,6 +31,7 @@ class ShellSnapshotIT {
 
     @Test
     void rendersTheShell() throws Exception {
+        System.setProperty("wsbg.intro", "false");
         FxToolkit.boot();
         var errors = CssParser.errorsProperty();
         errors.clear();

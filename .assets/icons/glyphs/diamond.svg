@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024">
+  <!-- The stone the hands hold: the old outline, redrawn with round joins.
+       White on purpose: only the shape counts, build-icons.py pours the orb
+       in. -->
+  <g fill="none" stroke="#fff" stroke-width="26" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M364 252 H660 L758 368 L512 640 L266 368 Z"/>
+    <path d="M266 368 H758"/>
+    <path d="M364 252 L410 368 L512 252 L614 368 L660 252"/>
+    <path d="M410 368 L512 640 L614 368"/>
+  </g>
+</svg>

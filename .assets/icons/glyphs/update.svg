@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024">
+  <!-- Two arrows chasing each other round a circle, where the app icon has its
+       diamond - a little heavier stroke, because the shape is sparser. The
+       circle sits higher than the stone did so the lower arrowhead clears the
+       left thumb. White on purpose: only the shape counts, build-icons.py
+       pours the orb in. -->
+  <g stroke="#fff" stroke-width="32" stroke-linejoin="round" stroke-linecap="round">
+    <path fill="none" d="M356.0 358.2 A166 166 0 0 1 623.1 291.6 M668.0 471.8 A166 166 0 0 1 400.9 538.4"/>
+    <path fill="#fff" d="M634.4 237.2 L655.8 321.1 L570.1 308.6 Z M389.6 592.8 L368.2 508.9 L453.9 521.4 Z"/>
+  </g>
+</svg>

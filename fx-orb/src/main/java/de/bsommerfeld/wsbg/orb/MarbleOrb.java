@@ -111,7 +111,7 @@ public final class MarbleOrb extends Region {
         }
         int pixels = (int) Math.round(getSize() * window.getRenderScaleX());
         if (renderer == null) {
-            renderer = new OrbRenderer();
+            renderer = new OrbRenderer("orb.frag");
         }
         ByteBuffer target = renderer.resize(pixels, pixels);
         buffer = new PixelBuffer<>(pixels, pixels, target, PixelFormat.getByteBgraPreInstance());

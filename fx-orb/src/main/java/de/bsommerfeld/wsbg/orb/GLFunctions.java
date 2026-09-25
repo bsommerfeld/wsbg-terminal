@@ -31,6 +31,10 @@ final class GLFunctions {
     static final int GL_RGBA16 = 0x805B;
     static final int GL_BGRA = 0x80E1;
     static final int GL_UNSIGNED_SHORT = 0x1403;
+    static final int GL_R32F = 0x822E;
+    static final int GL_RED = 0x1903;
+    static final int GL_FLOAT = 0x1406;
+    static final int GL_CLAMP_TO_EDGE = 0x812F;
     static final int GL_UNSIGNED_INT_8_8_8_8_REV = 0x8367;
     static final int GL_FRAMEBUFFER = 0x8D40;
     static final int GL_RENDERBUFFER = 0x8D41;
