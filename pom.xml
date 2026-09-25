@@ -16,6 +16,7 @@
         <module>fx-signals</module>
         <module>fx-orb</module>
         <module>fx-terminal</module>
+        <module>fx-launcher</module>
     </modules>
 
     <properties>
@@ -33,6 +34,11 @@
 
     <dependencyManagement>
         <dependencies>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>tinyupdate</artifactId>
+                <version>${project.version}</version>
+            </dependency>
             <dependency>
                 <groupId>de.bsommerfeld</groupId>
                 <artifactId>fx-signals</artifactId>
