@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<?import javafx.scene.layout.StackPane?>
+<?import de.bsommerfeld.wsbg.terminal.canvas.DesktopCanvas?>
 
 <fx:root type="javafx.scene.layout.StackPane" xmlns="http://javafx.com/javafx" xmlns:fx="http://javafx.com/fxml/1">
-    <StackPane styleClass="island"/>
+    <DesktopCanvas fx:id="canvas"/>
 </fx:root>

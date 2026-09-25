@@ -1,16 +1,28 @@
 package de.bsommerfeld.wsbg.terminal.chrome;
 
+import javafx.beans.property.BooleanProperty;
+import javafx.css.PseudoClass;
+import javafx.geometry.Dimension2D;
+import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.Group;
+import javafx.scene.control.Button;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.HeaderBar;
 import javafx.scene.layout.HeaderDragType;
 import javafx.scene.layout.Region;
+import javafx.scene.paint.Color;
+import javafx.scene.shape.Rectangle;
+import javafx.scene.shape.SVGPath;
 import javafx.scene.text.Text;
+import javafx.scene.transform.Rotate;
+import javafx.stage.Stage;
 
 /**
  * The title bar of the extended stage: the system's own window buttons at one
- * edge (their slot is reserved by the {@link HeaderBar}) and the brand centred
- * on the whole bar. The bar and the brand are the drag region.
+ * edge (their slot is reserved by the {@link HeaderBar}), the zen switch at the
+ * other, and the brand centred on the whole bar. The bar and the brand are the
+ * drag region.
  */
 public final class TitleBar extends HeaderBar {
 
@@ -19,7 +31,19 @@ public final class TitleBar extends HeaderBar {
 
     private static final double TRACKING_EM = 0.22;
 
-    public TitleBar() {
+    /**
+     * The top-left of the zen icon's four corners, pointing out; the other three
+     * are it turned about the icon's centre. Spun half a turn about its own
+     * centre it points in - that is the switch's animation, in the stylesheet.
+     */
+    private static final String CORNER = "M4 9V4h5";
+
+    private static final PseudoClass ZEN = PseudoClass.getPseudoClass("zen");
+
+    private final Button zenSwitch = new Button();
+
+    /** @param zen what the zen switch toggles, and whose state its icon shows */
+    public TitleBar(BooleanProperty zen) {
         getStyleClass().add("titlebar");
 
         HBox brand = brand();
@@ -29,6 +53,54 @@ public final class TitleBar extends HeaderBar {
         HeaderBar.setAlignment(brand, Pos.CENTER);
         HeaderBar.setDragType(brand, HeaderDragType.DRAGGABLE_SUBTREE);
         setCenter(brand);
+
+        Group icon = new Group(new Rectangle(24, 24, Color.TRANSPARENT));
+        for (int quarter = 0; quarter < 4; quarter++) {
+            icon.getChildren().add(corner(quarter));
+        }
+        zenSwitch.setGraphic(icon);
+        zenSwitch.getStyleClass().setAll("tb-zen");
+        zen.subscribe(on -> zenSwitch.pseudoClassStateChanged(ZEN, on));
+        zenSwitch.setFocusTraversable(false);
+        zenSwitch.setOnAction(_ -> zen.set(!zen.get()));
+        HeaderBar.setAlignment(zenSwitch, Pos.CENTER);
+        HeaderBar.setMargin(zenSwitch, new Insets(0, 5, 0, 5));
+        setRight(zenSwitch);
+    }
+
+    /**
+     * Keeps the zen switch on the edge opposite the system window buttons - the
+     * right on macOS, the left on Windows. While the buttons are hidden their
+     * inset is empty on both sides; the switch then stays where it is.
+     */
+    public void followSystemButtons(Stage stage) {
+        HeaderBar.leftSystemInsetProperty(stage).addListener((_, _, _) -> placeZenSwitch(stage));
+        HeaderBar.rightSystemInsetProperty(stage).addListener((_, _, _) -> placeZenSwitch(stage));
+        placeZenSwitch(stage);
+    }
+
+    private void placeZenSwitch(Stage stage) {
+        if (occupied(HeaderBar.getLeftSystemInset(stage))) {
+            setLeft(null);
+            setRight(zenSwitch);
+        } else if (occupied(HeaderBar.getRightSystemInset(stage))) {
+            setRight(null);
+            setLeft(zenSwitch);
+        }
+    }
+
+    /** The top-left corner, turned {@code quarter} quarter turns clockwise about the icon's centre. */
+    private static Group corner(int quarter) {
+        SVGPath corner = new SVGPath();
+        corner.setContent(CORNER);
+        corner.getStyleClass().add("tb-corner");
+        Group quadrant = new Group(corner);
+        quadrant.getTransforms().add(new Rotate(90 * quarter, 12, 12));
+        return quadrant;
+    }
+
+    private static boolean occupied(Dimension2D inset) {
+        return inset != null && inset.getWidth() > 0;
     }
 
     private static HBox brand() {

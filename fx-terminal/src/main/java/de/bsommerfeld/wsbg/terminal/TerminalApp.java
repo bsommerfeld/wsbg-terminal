@@ -1,5 +1,6 @@
 package de.bsommerfeld.wsbg.terminal;
 
+import de.bsommerfeld.wsbg.terminal.chrome.Shell;
 import de.bsommerfeld.wsbg.terminal.chrome.TitleBar;
 import de.bsommerfeld.wsbg.terminal.dashboard.Dashboard;
 import de.bsommerfeld.wsbg.terminal.fx.Fx;
@@ -9,7 +10,6 @@ import javafx.application.Application;
 import javafx.application.ColorScheme;
 import javafx.scene.Scene;
 import javafx.scene.image.Image;
-import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HeaderBar;
 import javafx.scene.paint.Color;
 import javafx.stage.Stage;
@@ -17,9 +17,9 @@ import javafx.stage.StageStyle;
 
 /**
  * The terminal window: an {@link StageStyle#EXTENDED extended} stage whose client
- * area runs up into the title bar, our own {@link TitleBar} in that strip, and
- * below it the view the {@link TerminalViewRegister} shows - the
- * {@link Dashboard} first.
+ * area runs up into the title bar, and the {@link Shell}: our own
+ * {@link TitleBar} in that strip, and below it the view the
+ * {@link TerminalViewRegister} shows - the {@link Dashboard} first.
  */
 public final class TerminalApp extends Application {
 
@@ -46,7 +46,7 @@ public final class TerminalApp extends Application {
         Fonts.load();
         decorate(stage);
 
-        stage.setScene(shellScene());
+        stage.setScene(shellScene(stage));
         stage.show();
     }
 
@@ -66,11 +66,10 @@ public final class TerminalApp extends Application {
         HeaderBar.setSystemColorScheme(stage, ColorScheme.DARK);
     }
 
-    private static Scene shellScene() {
-        BorderPane root = new BorderPane();
-        root.setTop(new TitleBar());
+    private static Scene shellScene(Stage stage) {
+        Shell root = new Shell(stage);
 
-        TerminalViewRegister views = new TerminalViewRegister(root::setCenter);
+        TerminalViewRegister views = new TerminalViewRegister(root::show);
         views.init();
         views.show(Dashboard.class);
 

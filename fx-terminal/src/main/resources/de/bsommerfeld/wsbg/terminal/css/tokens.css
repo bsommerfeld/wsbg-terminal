@@ -57,6 +57,19 @@
   -blue:       #409cff;
   -blue-deep:  #1f81e2;
 
+  /* The rest of the theme's own ladder (HiberbeeDark.theme.json, "colors"),
+     under its names, for surfaces that take a theme key 1:1:
+       dark4  ToolWindow.Header.background   widget header strip
+       dark5  Editor.background              the canvas
+       dark7  ToolWindow.background          widget body
+       dark9  Popup.borderColor              pill rim
+       blueDark  DragAndDrop.areaBackground  selection area */
+  -dark4:     #222120;
+  -dark5:     #272625;
+  -dark7:     #373635;
+  -dark9:     #474645;
+  -blue-dark: rgba(37, 48, 71, 0.8);
+
   /* Shadow ink: every drop shadow is -sh-ink at the alpha its site needs. The
      scrim sits behind a modal, the veil shades the lower edge of a grid card,
      the edge is the inset hairline along a floating panel's top. */

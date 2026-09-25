@@ -7,7 +7,7 @@ import java.util.List;
 /** The application's stylesheets, in cascade order. */
 public final class Stylesheets {
 
-    private static final String[] FILES = {"tokens.css", "base.css", "titlebar.css"};
+    private static final String[] FILES = {"tokens.css", "base.css", "titlebar.css", "canvas.css"};
 
     private Stylesheets() {
     }

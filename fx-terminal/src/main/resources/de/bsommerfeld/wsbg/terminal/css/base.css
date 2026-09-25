@@ -1,4 +1,4 @@
-/* Global typography, the frame and the islands. */
+/* Global typography and the frame. */
 
 .root {
   -fx-background-color: -bg;
@@ -7,13 +7,4 @@
   -fx-text-fill: -txt;
   -fx-focus-color: -amber;
   -fx-faint-focus-color: -amber-soft;
-}
-
-/* An island: content surface, 8px corner, 1px rim. */
-.island {
-  -fx-background-color: -pane;
-  -fx-background-radius: 8;
-  -fx-border-color: -line-soft;
-  -fx-border-width: 1;
-  -fx-border-radius: 8;
 }

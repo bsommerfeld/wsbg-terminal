@@ -8,6 +8,7 @@ open module de.bsommerfeld.wsbg.terminal {
     requires javafx.fxml;
     requires com.google.guice;
     requires de.bsommerfeld.signals;
+    requires de.bsommerfeld.wsbg.orb;
 
     exports de.bsommerfeld.wsbg.terminal;
 }

@@ -1,0 +1,126 @@
+/* Desktop Canvas, 1:1 from the IDE theme (HiberbeeDark.theme.json, names in
+   tokens.css):
+
+     canvas            Editor.background             dark5   -dark5
+     grid dots         *.borderColor                 dark8   -line
+     widget body       ToolWindow.background         dark7   -dark7
+     widget header     ToolWindow.Header.background  dark4   -dark4
+     widget rim        *.borderColor                 dark8   -line
+     pill              *.background, Popup.borderColor  dark6 / dark9
+     pill button hover *.hoverBackground             dark5
+     selection area    DragAndDrop.areaBackground    blueDark, rim blue
+
+   The canvas itself is an island in the frame (Shell): the corner of a macOS
+   window, 16, and a 1px -line-soft rim, dropped in zen mode.
+
+   Geometry: grid-pitch 32, widget radius 8, header 36, pill radius 6, selection
+   frame 2; pill buttons 40, the orb 28. */
+.desktop-canvas {
+  -select:      -blue;
+  -select-tint: rgba(64, 156, 255, 0.08);
+
+  -fx-background-color: -dark5;
+  -fx-background-radius: 16;
+  -fx-border-color: -line-soft;
+  -fx-border-width: 1;
+  -fx-border-radius: 16;
+  -fx-font-family: "Inter";
+}
+/* In zen mode the canvas fills the window: the window's own edge is the rim. */
+.frame:zen .desktop-canvas { -fx-border-color: transparent; }
+
+.dc-dots { -fx-fill: -line; -fx-stroke: null; }
+
+/* A widget: a tool window - header strip over the body, 1px rim, 8px corner.
+   Marked, the rim turns selection blue with a second 1px ring outside and the
+   body takes the tint. */
+.dc-widget {
+  -fx-background-color: -dark7;
+  -fx-background-radius: 8;
+  -fx-border-color: -line;
+  -fx-border-width: 1;
+  -fx-border-radius: 8;
+  -fx-effect: dropshadow(gaussian, rgba(7, 6, 5, 0.35), 3, 0, 0, 1);  /* -sh-ink */
+}
+.dc-widget:selected {
+  -fx-background-color: -dark7, -select-tint;
+  -fx-background-radius: 8, 8;
+  -fx-border-color: -select, -select;
+  -fx-border-width: 1, 1;
+  -fx-border-insets: 0, -1;
+  -fx-border-radius: 8, 9;
+}
+.dc-widget-header {
+  -fx-background-color: -dark4;
+  -fx-background-radius: 7 7 0 0;          /* inside the 1px rim */
+  -fx-border-color: transparent transparent -line transparent;
+  -fx-border-width: 0 0 1 0;
+  -fx-alignment: center-left;
+  -fx-padding: 0 16;
+  -fx-min-height: 36;
+  -fx-pref-height: 36;
+  -fx-max-height: 36;
+}
+.dc-widget-body {
+  -fx-padding: 16;
+  -fx-spacing: 11;
+}
+.dc-skel {
+  -fx-background-color: -line;
+  -fx-background-radius: 4;
+  -fx-min-height: 8;
+  -fx-pref-height: 8;
+  -fx-max-height: 8;
+}
+.dc-skel.title {
+  -fx-background-color: -bg-1;
+  -fx-min-height: 10;
+  -fx-pref-height: 10;
+  -fx-max-height: 10;
+}
+
+.dc-marquee {
+  -fx-background-color: -blue-dark;
+  -fx-background-radius: 2;
+  -fx-border-color: -select;
+  -fx-border-width: 1;
+  -fx-border-radius: 2;
+}
+
+/* The pill: a popup, 6px corner, 6px inside and between its 40px buttons; a
+   hairline parts the orb from the functions. */
+.dc-pill {
+  -fx-background-color: -bg;
+  -fx-background-radius: 6;
+  -fx-border-color: -dark9;
+  -fx-border-width: 1;
+  -fx-border-radius: 6;
+  -fx-padding: 6;
+  -fx-spacing: 6;
+  -fx-alignment: center;
+  -fx-effect: dropshadow(gaussian, rgba(7, 6, 5, 0.5), 6, 0, 0, 2);  /* -sh-ink */
+}
+.dc-pill-btn {
+  -fx-background-color: transparent;
+  -fx-background-radius: 4;
+  -fx-padding: 0;
+  -fx-min-width: 40;  -fx-pref-width: 40;  -fx-max-width: 40;
+  -fx-min-height: 40; -fx-pref-height: 40; -fx-max-height: 40;
+  -fx-alignment: center;
+  -fx-cursor: hand;
+}
+.dc-pill-btn:hover { -fx-background-color: -dark5; }
+.dc-pill-btn:disabled { -fx-opacity: 0.35; }
+.dc-icon {
+  -fx-fill: null;
+  -fx-stroke: -mute;
+  -fx-stroke-width: 1.6;
+  -fx-stroke-line-cap: round;
+  -fx-stroke-line-join: round;
+}
+.dc-pill-btn:hover .dc-icon { -fx-stroke: -txt; }
+.dc-pill-sep {
+  -fx-background-color: -line;
+  -fx-min-width: 1; -fx-pref-width: 1; -fx-max-width: 1;
+  -fx-min-height: 22; -fx-pref-height: 22; -fx-max-height: 22;
+}

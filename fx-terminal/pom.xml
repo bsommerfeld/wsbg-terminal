@@ -20,6 +20,10 @@
             <artifactId>fx-signals</artifactId>
         </dependency>
         <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>fx-orb</artifactId>
+        </dependency>
+        <dependency>
             <groupId>org.openjfx</groupId>
             <artifactId>javafx-controls</artifactId>
         </dependency>
@@ -58,7 +62,7 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <argLine>--enable-native-access=javafx.graphics</argLine>
+                    <argLine>--enable-native-access=javafx.graphics,de.bsommerfeld.wsbg.orb</argLine>
                 </configuration>
             </plugin>
             <plugin>
@@ -67,7 +71,7 @@
                 <configuration>
                     <mainClass>de.bsommerfeld.wsbg.terminal/de.bsommerfeld.wsbg.terminal.TerminalApp</mainClass>
                     <options>
-                        <option>--enable-native-access=javafx.graphics</option>
+                        <option>--enable-native-access=javafx.graphics,de.bsommerfeld.wsbg.orb</option>
                     </options>
                 </configuration>
             </plugin>
