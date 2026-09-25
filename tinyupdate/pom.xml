@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>de.bsommerfeld</groupId>
+        <artifactId>wsbg-terminal-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>tinyupdate</artifactId>
+
+    <name>TinyUpdate</name>
+    <description>File-level updates for Java applications from GitHub Releases, per platform</description>
+
+    <!-- No runtime dependencies, on purpose: a launcher bundles this into its
+         minimal runtime image before anything else is installed. -->
+    <dependencies>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <!-- The tests stand up local HTTP servers; only they read jdk.httpserver,
+         the module itself does not. -->
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>default-testCompile</id>
+                        <configuration>
+                            <compilerArgs>
+                                <arg>--add-modules=jdk.httpserver</arg>
+                                <arg>--add-reads=de.bsommerfeld.tinyupdate=jdk.httpserver</arg>
+                            </compilerArgs>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <argLine>--add-modules=jdk.httpserver --add-reads=de.bsommerfeld.tinyupdate=jdk.httpserver</argLine>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

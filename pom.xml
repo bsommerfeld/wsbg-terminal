@@ -12,6 +12,7 @@
     <name>WSBG Terminal (parent)</name>
 
     <modules>
+        <module>tinyupdate</module>
         <module>fx-signals</module>
         <module>fx-orb</module>
         <module>fx-terminal</module>
