@@ -55,14 +55,24 @@ final class EGL implements GL {
     private static final MethodHandle GET_ERROR = downcall(LIBRARY, "eglGetError", JAVA_INT);
 
     private final MemorySegment display;
-    private final MemorySegment surface;
-    private final MemorySegment context;
+    private MemorySegment surface = MemorySegment.NULL;
+    private MemorySegment context = MemorySegment.NULL;
 
+    /** Builds the context; whatever was made before a failure is released again. */
     EGL() {
         display = (MemorySegment) call(GET_DISPLAY, MemorySegment.NULL);
         if (display.equals(MemorySegment.NULL)) {
             throw new IllegalStateException("eglGetDisplay found no display");
         }
+        try {
+            open();
+        } catch (RuntimeException failure) {
+            close();
+            throw failure;
+        }
+    }
+
+    private void open() {
         try (Arena arena = Arena.ofConfined()) {
             check((int) call(INITIALIZE, display, MemorySegment.NULL, MemorySegment.NULL), "eglInitialize");
             check((int) call(BIND_API, EGL_OPENGL_API), "eglBindAPI");
@@ -118,8 +128,14 @@ final class EGL implements GL {
     @Override
     public void close() {
         call(MAKE_CURRENT, display, MemorySegment.NULL, MemorySegment.NULL, MemorySegment.NULL);
-        call(DESTROY_CONTEXT, display, context);
-        call(DESTROY_SURFACE, display, surface);
+        if (!context.equals(MemorySegment.NULL)) {
+            call(DESTROY_CONTEXT, display, context);
+            context = MemorySegment.NULL;
+        }
+        if (!surface.equals(MemorySegment.NULL)) {
+            call(DESTROY_SURFACE, display, surface);
+            surface = MemorySegment.NULL;
+        }
     }
 
     private static Optional<SymbolLookup> openFirst(String... names) {

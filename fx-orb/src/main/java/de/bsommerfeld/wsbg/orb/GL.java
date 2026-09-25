@@ -20,7 +20,7 @@ sealed interface GL extends AutoCloseable permits CGL, WGL, EGL {
             return new CGL();
         }
         if (os.startsWith("windows")) {
-            return new WGL();
+            return WGL.create();
         }
         return new EGL();
     }

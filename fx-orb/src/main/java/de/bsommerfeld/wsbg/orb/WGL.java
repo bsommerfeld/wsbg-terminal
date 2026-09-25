@@ -5,6 +5,8 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SymbolLookup;
 import java.lang.invoke.MethodHandle;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 import static de.bsommerfeld.wsbg.orb.Native.call;
 import static de.bsommerfeld.wsbg.orb.Native.downcall;
@@ -19,11 +21,20 @@ import static java.lang.foreign.ValueLayout.JAVA_SHORT;
  * {@code wglCreateContextAttribsARB}, which a legacy context has to be current to
  * look up - so a throwaway legacy context comes first.
  * <p>
+ * The system driver is tried first. Where it offers no OpenGL 4.1 - a virtual
+ * machine, Remote Desktop, a missing graphics driver: Windows' own
+ * {@code opengl32.dll} then stops at 1.1 - the context comes from Mesa's
+ * software renderer instead, if the application ships it in the directory named
+ * by the system property {@value #MESA_PROPERTY}.
+ * <p>
  * The window uses the predefined {@code STATIC} class, which spares registering a
  * class of our own and the window procedure upcall that would take. It is never
  * shown; it dies with the context, on the thread that made it.
  */
 final class WGL implements GL {
+
+    /** The directory holding Mesa's {@code opengl32.dll} and {@code libgallium_wgl.dll}. */
+    static final String MESA_PROPERTY = "de.bsommerfeld.wsbg.orb.mesa";
 
     private static final int WS_POPUP = 0x80000000;
     private static final int WS_CLIPSIBLINGS = 0x04000000;
@@ -40,26 +51,100 @@ final class WGL implements GL {
     private static final SymbolLookup USER32 = SymbolLookup.libraryLookup("user32", Arena.global());
     private static final SymbolLookup GDI32 = SymbolLookup.libraryLookup("gdi32", Arena.global());
     private static final SymbolLookup KERNEL32 = SymbolLookup.libraryLookup("kernel32", Arena.global());
-    private static final SymbolLookup OPENGL32 = SymbolLookup.libraryLookup("opengl32", Arena.global());
 
     private static final MethodHandle CREATE_WINDOW = downcall(USER32, "CreateWindowExW", ADDRESS,
             JAVA_INT, ADDRESS, ADDRESS, JAVA_INT, JAVA_INT, JAVA_INT, JAVA_INT, JAVA_INT, ADDRESS, ADDRESS, ADDRESS, ADDRESS);
     private static final MethodHandle DESTROY_WINDOW = downcall(USER32, "DestroyWindow", JAVA_INT, ADDRESS);
     private static final MethodHandle GET_DC = downcall(USER32, "GetDC", ADDRESS, ADDRESS);
     private static final MethodHandle RELEASE_DC = downcall(USER32, "ReleaseDC", JAVA_INT, ADDRESS, ADDRESS);
-    private static final MethodHandle CHOOSE_PIXEL_FORMAT = downcall(GDI32, "ChoosePixelFormat", JAVA_INT, ADDRESS, ADDRESS);
-    private static final MethodHandle SET_PIXEL_FORMAT = downcall(GDI32, "SetPixelFormat", JAVA_INT, ADDRESS, JAVA_INT, ADDRESS);
     private static final MethodHandle GET_MODULE_HANDLE = downcall(KERNEL32, "GetModuleHandleW", ADDRESS, ADDRESS);
-    private static final MethodHandle CREATE_CONTEXT = downcall(OPENGL32, "wglCreateContext", ADDRESS, ADDRESS);
-    private static final MethodHandle MAKE_CURRENT = downcall(OPENGL32, "wglMakeCurrent", JAVA_INT, ADDRESS, ADDRESS);
-    private static final MethodHandle DELETE_CONTEXT = downcall(OPENGL32, "wglDeleteContext", JAVA_INT, ADDRESS);
-    private static final MethodHandle GET_PROC_ADDRESS = downcall(OPENGL32, "wglGetProcAddress", ADDRESS, ADDRESS);
 
-    private final MemorySegment window;
-    private final MemorySegment deviceContext;
-    private final MemorySegment context;
+    /**
+     * Where the WGL functions come from. The system's {@code opengl32.dll} leaves
+     * the pixel format to GDI, which hands it to the installed driver; Mesa
+     * brings its own and is asked directly, so GDI never has to pick between
+     * two {@code opengl32.dll} in one process.
+     */
+    private record Library(String name, SymbolLookup opengl,
+                           MethodHandle choosePixelFormat, MethodHandle setPixelFormat,
+                           MethodHandle createContext, MethodHandle makeCurrent,
+                           MethodHandle deleteContext, MethodHandle getProcAddress) {
 
-    WGL() {
+        static Library system() {
+            SymbolLookup opengl = SymbolLookup.libraryLookup("opengl32", Arena.global());
+            return of("system OpenGL", opengl,
+                    downcall(GDI32, "ChoosePixelFormat", JAVA_INT, ADDRESS, ADDRESS),
+                    downcall(GDI32, "SetPixelFormat", JAVA_INT, ADDRESS, JAVA_INT, ADDRESS));
+        }
+
+        /*
+         * libgallium_wgl.dll first, by its full path: opengl32.dll imports it by
+         * name, and a DLL of that name already in the process is what the loader
+         * resolves the import to - the application directory is not where it
+         * would look.
+         */
+        static Library mesa(Path directory) {
+            SymbolLookup.libraryLookup(directory.resolve("libgallium_wgl.dll"), Arena.global());
+            SymbolLookup opengl = SymbolLookup.libraryLookup(directory.resolve("opengl32.dll"), Arena.global());
+            return of("Mesa (" + directory + ")", opengl,
+                    downcall(opengl, "wglChoosePixelFormat", JAVA_INT, ADDRESS, ADDRESS),
+                    downcall(opengl, "wglSetPixelFormat", JAVA_INT, ADDRESS, JAVA_INT, ADDRESS));
+        }
+
+        private static Library of(String name, SymbolLookup opengl,
+                                  MethodHandle choosePixelFormat, MethodHandle setPixelFormat) {
+            return new Library(name, opengl, choosePixelFormat, setPixelFormat,
+                    downcall(opengl, "wglCreateContext", ADDRESS, ADDRESS),
+                    downcall(opengl, "wglMakeCurrent", JAVA_INT, ADDRESS, ADDRESS),
+                    downcall(opengl, "wglDeleteContext", JAVA_INT, ADDRESS),
+                    downcall(opengl, "wglGetProcAddress", ADDRESS, ADDRESS));
+        }
+    }
+
+    private final Library library;
+    private MemorySegment window = MemorySegment.NULL;
+    private MemorySegment deviceContext = MemorySegment.NULL;
+    private MemorySegment context = MemorySegment.NULL;
+
+    /** The system driver's context, or Mesa's where the driver has no OpenGL 4.1 and Mesa is shipped. */
+    static WGL create() {
+        try {
+            return new WGL(Library.system());
+        } catch (RuntimeException systemFailure) {
+            Path mesa = mesaDirectory();
+            if (mesa == null) {
+                throw systemFailure;
+            }
+            try {
+                return new WGL(Library.mesa(mesa));
+            } catch (RuntimeException mesaFailure) {
+                mesaFailure.addSuppressed(systemFailure);
+                throw mesaFailure;
+            }
+        }
+    }
+
+    private static Path mesaDirectory() {
+        String property = System.getProperty(MESA_PROPERTY);
+        if (property == null || property.isBlank()) {
+            return null;
+        }
+        Path directory = Path.of(property);
+        return Files.isRegularFile(directory.resolve("opengl32.dll")) ? directory : null;
+    }
+
+    /** Builds the context; whatever was made before a failure is released again. */
+    private WGL(Library library) {
+        this.library = library;
+        try {
+            open();
+        } catch (RuntimeException failure) {
+            close();
+            throw failure;
+        }
+    }
+
+    private void open() {
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment module = (MemorySegment) call(GET_MODULE_HANDLE, MemorySegment.NULL);
             window = created((MemorySegment) call(CREATE_WINDOW, 0,
@@ -76,18 +161,19 @@ final class WGL implements GL {
             descriptor.set(JAVA_BYTE, 8, (byte) 0);                                 // iPixelType: RGBA
             descriptor.set(JAVA_BYTE, 9, (byte) 32);                                // cColorBits
             descriptor.set(JAVA_BYTE, 16, (byte) 8);                                // cAlphaBits
-            int format = (int) call(CHOOSE_PIXEL_FORMAT, deviceContext, descriptor);
+            int format = (int) call(library.choosePixelFormat(), deviceContext, descriptor);
             if (format == 0) {
                 throw failure("ChoosePixelFormat");
             }
-            check((int) call(SET_PIXEL_FORMAT, deviceContext, format, descriptor), "SetPixelFormat");
+            check((int) call(library.setPixelFormat(), deviceContext, format, descriptor), "SetPixelFormat");
 
-            MemorySegment legacy = created((MemorySegment) call(CREATE_CONTEXT, deviceContext), "wglCreateContext");
+            MemorySegment legacy = created((MemorySegment) call(library.createContext(), deviceContext), "wglCreateContext");
             try {
-                check((int) call(MAKE_CURRENT, deviceContext, legacy), "wglMakeCurrent");
+                check((int) call(library.makeCurrent(), deviceContext, legacy), "wglMakeCurrent");
                 MemorySegment createContextAttributes = procAddress("wglCreateContextAttribsARB");
-                if (createContextAttributes.equals(MemorySegment.NULL)) {
-                    throw new IllegalStateException("The driver offers no core-profile OpenGL (wglCreateContextAttribsARB missing)");
+                if (missing(createContextAttributes)) {
+                    throw new IllegalStateException(library.name()
+                            + " offers no core-profile OpenGL (wglCreateContextAttribsARB missing)");
                 }
                 MemorySegment attributes = arena.allocateFrom(JAVA_INT,
                         WGL_CONTEXT_MAJOR_VERSION_ARB, 4,
@@ -96,46 +182,61 @@ final class WGL implements GL {
                         0);
                 MethodHandle createCore = downcall(createContextAttributes, ADDRESS, ADDRESS, ADDRESS, ADDRESS);
                 context = created((MemorySegment) call(createCore, deviceContext, MemorySegment.NULL, attributes),
-                        "wglCreateContextAttribsARB");
+                        "wglCreateContextAttribsARB (OpenGL 4.1 core)");
             } finally {
-                call(MAKE_CURRENT, MemorySegment.NULL, MemorySegment.NULL);
-                call(DELETE_CONTEXT, legacy);
+                call(library.makeCurrent(), MemorySegment.NULL, MemorySegment.NULL);
+                call(library.deleteContext(), legacy);
             }
         }
     }
 
     @Override
     public void makeCurrent() {
-        check((int) call(MAKE_CURRENT, deviceContext, context), "wglMakeCurrent");
+        check((int) call(library.makeCurrent(), deviceContext, context), "wglMakeCurrent");
     }
 
     /**
      * {@code wglGetProcAddress} only knows what came after OpenGL 1.1; the 1.1
-     * functions come straight from {@code opengl32.dll}. Some drivers answer an
-     * unknown name with 1, 2, 3 or -1 instead of null, so those count as missing too.
+     * functions come straight from the {@code opengl32.dll} in use.
      */
     @Override
     public MemorySegment function(String name) {
         MemorySegment address = procAddress(name);
-        long raw = address.address();
-        if (raw == 0 || raw == 1 || raw == 2 || raw == 3 || raw == -1) {
-            return OPENGL32.find(name).orElseThrow(() -> new IllegalStateException("OpenGL function missing: " + name));
+        if (missing(address)) {
+            return library.opengl().find(name)
+                    .orElseThrow(() -> new IllegalStateException("OpenGL function missing: " + name));
         }
         return address;
     }
 
-    private static MemorySegment procAddress(String name) {
+    private MemorySegment procAddress(String name) {
         try (Arena arena = Arena.ofConfined()) {
-            return (MemorySegment) call(GET_PROC_ADDRESS, arena.allocateFrom(name));
+            return (MemorySegment) call(library.getProcAddress(), arena.allocateFrom(name));
         }
     }
 
+    /** Some drivers answer an unknown name with 1, 2, 3 or -1 instead of null. */
+    private static boolean missing(MemorySegment address) {
+        long raw = address.address();
+        return raw == 0 || raw == 1 || raw == 2 || raw == 3 || raw == -1;
+    }
+
+    /** Releases whatever exists - also the parts of a context whose creation failed halfway. */
     @Override
     public void close() {
-        call(MAKE_CURRENT, MemorySegment.NULL, MemorySegment.NULL);
-        call(DELETE_CONTEXT, context);
-        call(RELEASE_DC, window, deviceContext);
-        call(DESTROY_WINDOW, window);
+        if (!context.equals(MemorySegment.NULL)) {
+            call(library.makeCurrent(), MemorySegment.NULL, MemorySegment.NULL);
+            call(library.deleteContext(), context);
+            context = MemorySegment.NULL;
+        }
+        if (!deviceContext.equals(MemorySegment.NULL)) {
+            call(RELEASE_DC, window, deviceContext);
+            deviceContext = MemorySegment.NULL;
+        }
+        if (!window.equals(MemorySegment.NULL)) {
+            call(DESTROY_WINDOW, window);
+            window = MemorySegment.NULL;
+        }
     }
 
     private static MemorySegment created(MemorySegment handle, String what) {
