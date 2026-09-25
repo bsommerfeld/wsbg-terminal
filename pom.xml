@@ -16,6 +16,7 @@
         <module>fx-signals</module>
         <module>fx-orb</module>
         <module>fx-terminal</module>
+        <module>fx-starter</module>
         <module>fx-launcher</module>
     </modules>
 
