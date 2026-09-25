@@ -13,6 +13,7 @@
 
     <modules>
         <module>fx-signals</module>
+        <module>fx-orb</module>
         <module>fx-terminal</module>
     </modules>
 
@@ -34,6 +35,11 @@
             <dependency>
                 <groupId>de.bsommerfeld</groupId>
                 <artifactId>fx-signals</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>fx-orb</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
