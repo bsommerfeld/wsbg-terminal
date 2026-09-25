@@ -1,0 +1,90 @@
+/* The updater window. Its own tokens, on purpose: the updater shares no file
+   with the application it updates, so it cannot borrow its stylesheets. The
+   values are the terminal's palette (warm greys, one amber, one red). */
+
+.root {
+  -bg:     #323130;
+  -pane:   #2b2b2b;
+  -bg-1:   #424140;
+  -line:   #424140;
+  -txt:    #cfcecd;
+  -mute:   #8f8e8d;
+  -amber:  #ffb900;
+  -red:    #ff5454;
+
+  -fx-font-size: 13px;
+  -fx-text-fill: -txt;
+}
+
+.updater {
+  -fx-background-color: -pane;
+}
+
+/* The header bar carries the system window buttons and the name. */
+.updater .header {
+  -fx-background-color: -bg;
+  -fx-min-height: 34;
+  -fx-pref-height: 34;
+}
+.updater .title {
+  -fx-text-fill: -mute;
+  -fx-font-size: 12px;
+}
+
+.updater .body {
+  -fx-padding: 18 22 18 22;
+  -fx-spacing: 10;
+}
+
+.updater .headline {
+  -fx-text-fill: -txt;
+  -fx-font-size: 15px;
+}
+
+.updater .detail {
+  -fx-text-fill: -mute;
+  -fx-font-size: 12px;
+  -fx-wrap-text: true;
+}
+
+/* A thin bar: the track in the frame colour, the fill amber - red once failed. */
+.updater .progress-bar {
+  -fx-pref-height: 6;
+  -fx-background-insets: 0;
+  -fx-padding: 0;
+}
+.updater .progress-bar > .track {
+  -fx-background-color: -bg-1;
+  -fx-background-radius: 3;
+  -fx-background-insets: 0;
+}
+.updater .progress-bar > .bar {
+  -fx-background-color: -amber;
+  -fx-background-radius: 3;
+  -fx-background-insets: 0;
+  -fx-padding: 3;
+}
+.updater:failed .progress-bar > .bar {
+  -fx-background-color: -red;
+}
+
+.updater .actions {
+  -fx-spacing: 8;
+}
+.updater .button {
+  -fx-background-color: -bg-1;
+  -fx-background-radius: 6;
+  -fx-text-fill: -txt;
+  -fx-padding: 6 14 6 14;
+  -fx-cursor: hand;
+}
+.updater .button:hover {
+  -fx-background-color: derive(-bg-1, 12%);
+}
+.updater .button.primary {
+  -fx-background-color: -amber;
+  -fx-text-fill: -bg;
+}
+.updater .button.primary:hover {
+  -fx-background-color: derive(-amber, 12%);
+}

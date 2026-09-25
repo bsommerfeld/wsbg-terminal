@@ -17,7 +17,7 @@
         <module>fx-orb</module>
         <module>fx-terminal</module>
         <module>fx-starter</module>
-        <module>fx-launcher</module>
+        <module>fx-updater</module>
     </modules>
 
     <properties>
