@@ -1,0 +1,177 @@
+# =============================================================================
+#  Release CI
+#
+#  Builds the terminal, packages it per platform with TinyUpdate and uploads
+#  the update assets to the GitHub Release, where a launcher's TinyUpdateClient
+#  picks them up (ReleaseAssetNames.of("wsbg", Platform.current())).
+#
+#  One package per platform: JavaFX ships its natives as platform jars, so
+#  each platform gets its own manifest and deps archive. The app archive (our
+#  own jars, the bin/ scripts) is the same everywhere and published once.
+#
+#    wsbg-app.zip                         shared by every platform
+#    wsbg-<platform>-deps.zip             third-party jars, JavaFX natives, Mesa
+#    wsbg-<platform>-files.zip            everything, the fallback archive
+#    wsbg-<platform>-update.json          the manifest
+#
+#  The asset names are new on purpose: launchers of the 2.x line read
+#  update.json/files.zip/app.zip/deps.zip from the latest release. They find
+#  none of those here and keep running what they have.
+#
+#  Every platform's jars are resolved on Linux: -Djavafx.platform picks the
+#  JavaFX classifier, no runner of that OS is needed.
+# =============================================================================
+
+name: Release CI
+
+on:
+  release:
+    types: [published]
+  # Test builds: the same packages, uploaded as workflow artifacts instead of
+  # release assets (there is no release to attach them to).
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  ASSET_PREFIX: wsbg
+  # Mesa's software renderer (llvmpipe), the OpenGL fallback of the Windows
+  # package for machines whose driver has no OpenGL 4.1. Pinned with its hash;
+  # bump both together. Only opengl32.dll and libgallium_wgl.dll are needed -
+  # their import tables reach nothing beyond the Windows system DLLs.
+  MESA_VERSION: '26.2.1'
+  MESA_SHA256: '78a0305844074535e73dfb6dcb5eb2a65f1d9dc445102e1f4c3c3e97dace19bf'
+
+jobs:
+  # Builds and tests once, then resolves the runtime jars of every platform.
+  # Building once matters: jars carry timestamps, and the shared app archive
+  # must hold byte for byte the jars every platform's manifest hashes.
+  build:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '27'
+          distribution: 'zulu'
+          cache: maven
+
+      # The JavaFX tests start the toolkit, which needs a display on Linux.
+      - name: Install virtual display
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
+      - name: Build and Test with Maven
+        run: xvfb-run --auto-servernum ./mvnw -B -ntp clean install
+
+      # package/<platform>/ carries every runtime jar for that platform: the
+      # terminal jar itself, our other modules via the Maven graph (new modules
+      # need no entry here) and the third-party jars, JavaFX in the platform's
+      # classifier.
+      - name: Collect runtime jars per platform
+        run: |
+          set -euo pipefail
+          for pair in macos-aarch64:mac-aarch64 macos-x86_64:mac windows-x86_64:win \
+                      linux-x86_64:linux linux-aarch64:linux-aarch64; do
+            platform="${pair%%:*}"
+            classifier="${pair##*:}"
+            ./mvnw -B -ntp -q -pl fx-terminal dependency:copy-dependencies \
+              -DincludeScope=runtime \
+              -Djavafx.platform="$classifier" \
+              -DoutputDirectory="${GITHUB_WORKSPACE}/package/$platform"
+            cp fx-terminal/target/fx-terminal-*.jar "package/$platform/"
+            echo "== $platform"; ls "package/$platform"
+          done
+
+      - name: Hand the jars to the packaging jobs
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-jars
+          path: package/
+          if-no-files-found: error
+          retention-days: 1
+
+  package:
+    name: Package (${{ matrix.platform }})
+    runs-on: ubuntu-latest
+    needs: build
+    strategy:
+      # A platform that fails to package is simply missing from the release:
+      # its launchers find no manifest and keep their version.
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-aarch64
+          - platform: macos-x86_64
+          - platform: windows-x86_64
+            mesa: true
+          # Publishes the shared app archive; every platform packs an identical one.
+          - platform: linux-x86_64
+            app-archive: true
+          - platform: linux-aarch64
+
+    steps:
+      # For the scripts and the action; the jars come from the build job.
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Fetch the runtime jars
+        uses: actions/download-artifact@v4
+        with:
+          name: runtime-jars
+          path: package/
+
+      - name: Stage Mesa (OpenGL fallback)
+        if: matrix.mesa
+        run: |
+          set -euo pipefail
+          command -v 7z >/dev/null || { sudo apt-get update && sudo apt-get install -y p7zip-full; }
+          ARCHIVE="mesa3d-${MESA_VERSION}-release-msvc.7z"
+          curl -fL --retry 3 -o "$RUNNER_TEMP/$ARCHIVE" \
+            "https://github.com/pal1000/mesa-dist-win/releases/download/${MESA_VERSION}/${ARCHIVE}"
+          echo "${MESA_SHA256}  $RUNNER_TEMP/$ARCHIVE" | sha256sum -c -
+          mkdir -p package/extra/lib
+          7z e -y -opackage/extra/lib "$RUNNER_TEMP/$ARCHIVE" x64/opengl32.dll x64/libgallium_wgl.dll
+          ls -l package/extra/lib
+
+      - name: Package with TinyUpdate
+        id: tinyupdate
+        uses: ./tinyupdate/action
+        with:
+          artifact-dirs: package/${{ matrix.platform }}
+          script-dir: '.script'
+          scripts: 'setup.* launch.*'
+          extra-dir: ${{ matrix.mesa && 'package/extra' || '' }}
+          asset-prefix: ${{ env.ASSET_PREFIX }}
+          platform: ${{ matrix.platform }}
+          app-group-id: 'de.bsommerfeld'
+
+      # Archives first, the manifest last: a client only acts on a release
+      # whose manifest is there, so it never sees a manifest without its files.
+      - name: Upload to Release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          gh release upload "$TAG" \
+            "${{ steps.tinyupdate.outputs.zip-path }}" \
+            "${{ steps.tinyupdate.outputs.deps-zip-path }}" \
+            --clobber
+          if [ "${{ matrix.app-archive }}" = "true" ]; then
+            gh release upload "$TAG" "${{ steps.tinyupdate.outputs.app-zip-path }}" --clobber
+          fi
+          gh release upload "$TAG" "${{ steps.tinyupdate.outputs.manifest-path }}" --clobber
+
+      - name: Upload as workflow artifact (test build)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: wsbg-${{ matrix.platform }}
+          path: updater-dist/*
+          if-no-files-found: error
