@@ -18,6 +18,10 @@
 #  update.json/files.zip/app.zip/deps.zip from the latest release. They find
 #  none of those here and keep running what they have.
 #
+#  Two jobs:
+#    build    builds and tests once, collects every platform's runtime jars
+#    package  one run per platform: packs those jars and uploads the assets
+#
 #  Every platform's jars are resolved on Linux: -Djavafx.platform picks the
 #  JavaFX classifier, no runner of that OS is needed.
 # =============================================================================
@@ -25,16 +29,20 @@
 name: Release CI
 
 on:
+  # A published release gets its assets attached.
   release:
     types: [published]
   # Test builds: the same packages, uploaded as workflow artifacts instead of
   # release assets (there is no release to attach them to).
   workflow_dispatch:
 
+# Uploading release assets needs write access to the repository contents.
 permissions:
   contents: write
 
 env:
+  # Sets our assets apart from the 2.x line's (see the header) - the prefix
+  # a launcher passes to ReleaseAssetNames.of.
   ASSET_PREFIX: wsbg
   # Mesa's software renderer (llvmpipe), the OpenGL fallback of the Windows
   # package for machines whose driver has no OpenGL 4.1. Pinned with its hash;
@@ -44,49 +52,95 @@ env:
   MESA_SHA256: '78a0305844074535e73dfb6dcb5eb2a65f1d9dc445102e1f4c3c3e97dace19bf'
 
 jobs:
-  # Builds and tests once, then resolves the runtime jars of every platform.
+
+  # ===========================================================================
+  #  build - once for all platforms
+  # ===========================================================================
   # Building once matters: jars carry timestamps, and the shared app archive
-  # must hold byte for byte the jars every platform's manifest hashes.
+  # must hold byte for byte the jars every platform's manifest hashes. Built
+  # per platform, the app archive of one run would fail the verification of
+  # every other platform.
   build:
     name: Build & Test
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+
+      # -----------------------------------------------------------------------
+      # 1. Check out the sources
+      # -----------------------------------------------------------------------
+      - name: Check out the sources
         uses: actions/checkout@v4
 
-      - name: Set up JDK
+      # -----------------------------------------------------------------------
+      # 2. Set up JDK 27
+      # -----------------------------------------------------------------------
+      # The build compiles for release 27 (root pom), JavaFX 27 needs it too.
+      # The Maven cache keeps the dependency downloads across runs.
+      - name: Set up JDK 27
         uses: actions/setup-java@v4
         with:
           java-version: '27'
           distribution: 'zulu'
           cache: maven
 
-      # The JavaFX tests start the toolkit, which needs a display on Linux.
-      - name: Install virtual display
-        run: sudo apt-get update && sudo apt-get install -y xvfb
-
-      - name: Build and Test with Maven
-        run: xvfb-run --auto-servernum ./mvnw -B -ntp clean install
-
-      # package/<platform>/ carries every runtime jar for that platform: the
-      # terminal jar itself, our other modules via the Maven graph (new modules
-      # need no entry here) and the third-party jars, JavaFX in the platform's
-      # classifier.
-      - name: Collect runtime jars per platform
+      # -----------------------------------------------------------------------
+      # 3. Install a virtual display
+      # -----------------------------------------------------------------------
+      # The JavaFX tests start the toolkit, and on Linux the toolkit needs a
+      # display to start at all. The runner has none; Xvfb stands in.
+      - name: Install a virtual display
         run: |
           set -euo pipefail
-          for pair in macos-aarch64:mac-aarch64 macos-x86_64:mac windows-x86_64:win \
-                      linux-x86_64:linux linux-aarch64:linux-aarch64; do
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+
+      # -----------------------------------------------------------------------
+      # 4. Build and test
+      # -----------------------------------------------------------------------
+      # install, not package: step 5 resolves fx-terminal's dependencies with
+      # -pl fx-terminal, which finds our other modules only in the local
+      # repository. A failing test stops the release here - nothing is
+      # packaged, nothing uploaded.
+      - name: Build and test
+        run: xvfb-run --auto-servernum ./mvnw -B -ntp clean install
+
+      # -----------------------------------------------------------------------
+      # 5. Collect the runtime jars per platform
+      # -----------------------------------------------------------------------
+      # package/<platform>/ gets every jar the terminal runs with there: the
+      # terminal jar itself, our other modules via the Maven graph (new
+      # modules need no entry here) and the third-party jars, JavaFX in the
+      # platform's classifier. Platform names on the left are what the client
+      # calls the platform (Platform.current()), on the right JavaFX's
+      # classifier for it.
+      - name: Collect the runtime jars per platform
+        run: |
+          set -euo pipefail
+
+          for pair in macos-aarch64:mac-aarch64 \
+                      macos-x86_64:mac \
+                      windows-x86_64:win \
+                      linux-x86_64:linux \
+                      linux-aarch64:linux-aarch64; do
             platform="${pair%%:*}"
             classifier="${pair##*:}"
+
             ./mvnw -B -ntp -q -pl fx-terminal dependency:copy-dependencies \
               -DincludeScope=runtime \
               -Djavafx.platform="$classifier" \
               -DoutputDirectory="${GITHUB_WORKSPACE}/package/$platform"
             cp fx-terminal/target/fx-terminal-*.jar "package/$platform/"
-            echo "== $platform"; ls "package/$platform"
+
+            echo "== $platform"
+            ls "package/$platform"
           done
 
+      # -----------------------------------------------------------------------
+      # 6. Hand the jars to the packaging jobs
+      # -----------------------------------------------------------------------
+      # The package runs start on fresh machines; this artifact is how the
+      # jars built here - and only these - reach them. A day is plenty: the
+      # packaging jobs run right after this one.
       - name: Hand the jars to the packaging jobs
         uses: actions/upload-artifact@v4
         with:
@@ -95,50 +149,85 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  # ===========================================================================
+  #  package - once per platform
+  # ===========================================================================
   package:
     name: Package (${{ matrix.platform }})
     runs-on: ubuntu-latest
     needs: build
     strategy:
       # A platform that fails to package is simply missing from the release:
-      # its launchers find no manifest and keep their version.
+      # its launchers find no manifest and keep their version. The others
+      # still ship.
       fail-fast: false
       matrix:
         include:
           - platform: macos-aarch64
           - platform: macos-x86_64
+          # The only package with Mesa (step 3).
           - platform: windows-x86_64
             mesa: true
-          # Publishes the shared app archive; every platform packs an identical one.
+          # Uploads the shared app archive (step 6). Every platform packs an
+          # identical one; one upload is enough, and several parallel
+          # uploads of the same asset would race each other.
           - platform: linux-x86_64
             app-archive: true
           - platform: linux-aarch64
 
     steps:
-      # For the scripts and the action; the jars come from the build job.
-      - name: Checkout code
+
+      # -----------------------------------------------------------------------
+      # 1. Check out the sources
+      # -----------------------------------------------------------------------
+      # For the scripts in .script/ and the TinyUpdate action. The jars do
+      # not come from here: they come from the build job (step 2).
+      - name: Check out the sources
         uses: actions/checkout@v4
 
+      # -----------------------------------------------------------------------
+      # 2. Fetch the runtime jars
+      # -----------------------------------------------------------------------
+      # Every platform's jars from the build job's step 6, back under
+      # package/<platform>/. This run packs only its own.
       - name: Fetch the runtime jars
         uses: actions/download-artifact@v4
         with:
           name: runtime-jars
           path: package/
 
-      - name: Stage Mesa (OpenGL fallback)
+      # -----------------------------------------------------------------------
+      # 3. Stage Mesa (Windows only)
+      # -----------------------------------------------------------------------
+      # Downloads the pinned Mesa build, refuses it unless its hash matches,
+      # and takes out the two DLLs llvmpipe needs. They go to package/extra/
+      # lib/, which step 4 lays over the package root - so they land in lib/
+      # next to the jars. The module path skips files that are no jars, and
+      # launch.bat hands lib/ to the orb as its Mesa directory.
+      - name: Stage Mesa (Windows only)
         if: matrix.mesa
         run: |
           set -euo pipefail
+
+          # 7-Zip reads Mesa's .7z; the runner image usually has it already.
           command -v 7z >/dev/null || { sudo apt-get update && sudo apt-get install -y p7zip-full; }
-          ARCHIVE="mesa3d-${MESA_VERSION}-release-msvc.7z"
-          curl -fL --retry 3 -o "$RUNNER_TEMP/$ARCHIVE" \
-            "https://github.com/pal1000/mesa-dist-win/releases/download/${MESA_VERSION}/${ARCHIVE}"
-          echo "${MESA_SHA256}  $RUNNER_TEMP/$ARCHIVE" | sha256sum -c -
+
+          archive="mesa3d-${MESA_VERSION}-release-msvc.7z"
+          curl -fL --retry 3 -o "$RUNNER_TEMP/$archive" \
+            "https://github.com/pal1000/mesa-dist-win/releases/download/${MESA_VERSION}/${archive}"
+          echo "${MESA_SHA256}  $RUNNER_TEMP/$archive" | sha256sum -c -
+
           mkdir -p package/extra/lib
-          7z e -y -opackage/extra/lib "$RUNNER_TEMP/$ARCHIVE" x64/opengl32.dll x64/libgallium_wgl.dll
+          7z e -y -opackage/extra/lib "$RUNNER_TEMP/$archive" x64/opengl32.dll x64/libgallium_wgl.dll
           ls -l package/extra/lib
 
-      - name: Package with TinyUpdate
+      # -----------------------------------------------------------------------
+      # 4. Pack with TinyUpdate
+      # -----------------------------------------------------------------------
+      # Manifest and archives for this platform, into updater-dist/. The
+      # scripts go to bin/: setup.* prepares the machine, launch.* starts the
+      # terminal. Jars built from de.bsommerfeld form the app archive.
+      - name: Pack with TinyUpdate
         id: tinyupdate
         uses: ./tinyupdate/action
         with:
@@ -150,25 +239,61 @@ jobs:
           platform: ${{ matrix.platform }}
           app-group-id: 'de.bsommerfeld'
 
-      # Archives first, the manifest last: a client only acts on a release
-      # whose manifest is there, so it never sees a manifest without its files.
-      - name: Upload to Release
+      # -----------------------------------------------------------------------
+      # 5. Upload this platform's archives
+      # -----------------------------------------------------------------------
+      # Steps 5 to 7 keep an order: archives first, the manifest last. A
+      # client only acts on a release whose manifest is there, so it never
+      # sees a manifest whose files are still missing. --clobber lets a
+      # re-run replace what an earlier run uploaded.
+      - name: Upload this platform's archives
         if: github.event_name == 'release'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.release.tag_name }}
+          ZIP: ${{ steps.tinyupdate.outputs.zip-path }}
+          DEPS_ZIP: ${{ steps.tinyupdate.outputs.deps-zip-path }}
         run: |
           set -euo pipefail
-          gh release upload "$TAG" \
-            "${{ steps.tinyupdate.outputs.zip-path }}" \
-            "${{ steps.tinyupdate.outputs.deps-zip-path }}" \
-            --clobber
-          if [ "${{ matrix.app-archive }}" = "true" ]; then
-            gh release upload "$TAG" "${{ steps.tinyupdate.outputs.app-zip-path }}" --clobber
+          gh release upload "$TAG" "$ZIP" --clobber
+          # The action writes no deps archive for a package without deps.
+          if [ -n "$DEPS_ZIP" ]; then
+            gh release upload "$TAG" "$DEPS_ZIP" --clobber
           fi
-          gh release upload "$TAG" "${{ steps.tinyupdate.outputs.manifest-path }}" --clobber
 
-      - name: Upload as workflow artifact (test build)
+      # -----------------------------------------------------------------------
+      # 6. Upload the shared app archive
+      # -----------------------------------------------------------------------
+      # From one platform run only (see the matrix). Before this lands, the
+      # other platforms' clients find the split incomplete and take their
+      # full archive - slower, still correct.
+      - name: Upload the shared app archive
+        if: github.event_name == 'release' && matrix.app-archive && steps.tinyupdate.outputs.app-zip-path != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
+          APP_ZIP: ${{ steps.tinyupdate.outputs.app-zip-path }}
+        run: gh release upload "$TAG" "$APP_ZIP" --clobber
+
+      # -----------------------------------------------------------------------
+      # 7. Upload the manifest
+      # -----------------------------------------------------------------------
+      # Last, on purpose (see step 5): from this moment on, this platform's
+      # launchers see the release.
+      - name: Upload the manifest
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
+          MANIFEST: ${{ steps.tinyupdate.outputs.manifest-path }}
+        run: gh release upload "$TAG" "$MANIFEST" --clobber
+
+      # -----------------------------------------------------------------------
+      # 8. Keep the package as a workflow artifact (test builds)
+      # -----------------------------------------------------------------------
+      # A manual run has no release; its packages are downloadable from the
+      # run instead, one artifact per platform.
+      - name: Keep the package as a workflow artifact (test builds)
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:

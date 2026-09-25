@@ -1,15 +1,39 @@
+# =============================================================================
+#  TinyUpdate Package
+#
+#  Turns a build's artifacts into the release assets a TinyUpdateClient reads:
+#  a manifest listing every file with its SHA-256 and size, the full archive,
+#  and that archive split into an app half (changes every release) and a deps
+#  half (rarely changes), so a typical update downloads only the small half.
+#
+#  Package layout (paths relative to the install directory):
+#    lib/     the JARs from artifact-dirs, plus whatever extra-dir puts there
+#    bin/     the scripts from script-dir
+#    images/  the PNGs from images-dir
+#
+#  Asset naming - MUST match ReleaseAssetNames in the Java client: the
+#  non-empty parts of asset-prefix, platform and the base name joined by "-".
+#  The app archive never carries the platform (its files are the same
+#  everywhere), so every platform run of one release writes an identical
+#  <prefix>-app.zip.
+#
+#    asset-prefix  platform          manifest                          archives
+#    ""            ""                update.json                       files.zip, app.zip, deps.zip
+#    wsbg          windows-x86_64    wsbg-windows-x86_64-update.json   wsbg-windows-x86_64-files.zip,
+#                                                                      wsbg-app.zip, wsbg-windows-x86_64-deps.zip
+#
+#  How the steps talk to each other: each step is its own bash process, so
+#  what later steps need (paths, asset names) goes through $GITHUB_ENV under
+#  a TINYUPDATE_ prefix - that file outlives the action for the rest of the
+#  job, and the prefix keeps it clear of the caller's own variables. Inputs
+#  reach the scripts as env variables, never spliced into the script text.
+#
+#  Requires bash 4 (associative arrays in step 2): the GitHub runners have
+#  bash 5; macOS ships 3.2.
+# =============================================================================
+
 name: 'TinyUpdate Package'
 description: 'Packages application artifacts with a SHA-256 manifest for TinyUpdate, optionally per platform'
-
-# Asset naming - MUST match ReleaseAssetNames in the Java client: the non-empty
-# parts of asset-prefix, platform and the base name joined by "-". The app
-# archive never carries the platform (its files are the same everywhere), so
-# every platform run of one release writes an identical <prefix>-app.zip.
-#
-#   asset-prefix  platform          manifest                          archives
-#   ""            ""                update.json                       files.zip, app.zip, deps.zip
-#   wsbg          windows-x86_64    wsbg-windows-x86_64-update.json   wsbg-windows-x86_64-files.zip,
-#                                                                     wsbg-app.zip, wsbg-windows-x86_64-deps.zip
 
 inputs:
   artifact-dirs:
@@ -51,37 +75,37 @@ inputs:
 outputs:
   manifest-path:
     description: 'Path to the generated manifest'
-    value: ${{ steps.package.outputs.manifest-path }}
+    value: ${{ steps.outputs.outputs.manifest-path }}
   zip-path:
     description: 'Path to the archive with every file'
-    value: ${{ steps.package.outputs.zip-path }}
+    value: ${{ steps.outputs.outputs.zip-path }}
   app-zip-path:
-    description: 'Path to the app archive (platform-neutral)'
-    value: ${{ steps.package.outputs.app-zip-path }}
+    description: 'Path to the app archive (platform-neutral); empty when the package has no app half'
+    value: ${{ steps.outputs.outputs.app-zip-path }}
   deps-zip-path:
-    description: 'Path to the deps archive'
-    value: ${{ steps.package.outputs.deps-zip-path }}
+    description: 'Path to the deps archive; empty when the package has no deps half'
+    value: ${{ steps.outputs.outputs.deps-zip-path }}
 
 runs:
   using: 'composite'
   steps:
-    - name: Package for TinyUpdate
-      id: package
+
+    # -------------------------------------------------------------------------
+    # 1. Name the assets and prepare the work tree
+    # -------------------------------------------------------------------------
+    # Everything later steps build on: the four asset names, the output dir as
+    # an absolute path (steps below cd around), and an empty staging tree.
+    # The work tree is per platform, so several runs of this action - one per
+    # platform - can share one output dir without overwriting each other's
+    # staging. The release version is the tag the workflow runs for.
+    - name: Name the assets and prepare the work tree
       shell: bash
       env:
-        ARTIFACT_DIRS: ${{ inputs.artifact-dirs }}
-        SCRIPT_DIR: ${{ inputs.script-dir }}
-        SCRIPT_PATTERNS: ${{ inputs.scripts }}
         OUTPUT_DIR: ${{ inputs.output-dir }}
-        IMAGES_DIR: ${{ inputs.images-dir }}
-        EXTRA_DIR: ${{ inputs.extra-dir }}
         ASSET_PREFIX: ${{ inputs.asset-prefix }}
         PLATFORM: ${{ inputs.platform }}
-        APP_GROUP_ID: ${{ inputs.app-group-id }}
       run: |
         set -euo pipefail
-
-        TAG_NAME="${GITHUB_REF_NAME:-unknown}"
 
         # Joins the non-empty parts with "-" - the rule ReleaseAssetNames applies.
         asset_name() {
@@ -92,31 +116,53 @@ runs:
           done
           echo "$name"
         }
-        MANIFEST_NAME=$(asset_name "$ASSET_PREFIX" "$PLATFORM" "update.json")
-        ZIP_NAME=$(asset_name "$ASSET_PREFIX" "$PLATFORM" "files.zip")
-        APP_ZIP_NAME=$(asset_name "$ASSET_PREFIX" "app.zip")
-        DEPS_ZIP_NAME=$(asset_name "$ASSET_PREFIX" "$PLATFORM" "deps.zip")
 
         mkdir -p "$OUTPUT_DIR"
-        OUTPUT_DIR=$(cd "$OUTPUT_DIR" && pwd)
+        output_dir=$(cd "$OUTPUT_DIR" && pwd)
+        work_dir="$output_dir/.work-${PLATFORM:-neutral}"
 
-        # One work tree per platform, so several runs can share one output dir.
-        WORK_DIR="$OUTPUT_DIR/.work-${PLATFORM:-neutral}"
-        STAGING_DIR="$WORK_DIR/staging"
-        rm -rf "$WORK_DIR"
-        mkdir -p "$STAGING_DIR/lib" "$STAGING_DIR/bin"
+        # A leftover tree from an earlier run would leak its files into this
+        # package, so it goes first.
+        rm -rf "$work_dir"
+        mkdir -p "$work_dir/staging/lib" "$work_dir/staging/bin"
+
+        {
+          echo "TINYUPDATE_VERSION=${GITHUB_REF_NAME:-unknown}"
+          echo "TINYUPDATE_OUTPUT_DIR=$output_dir"
+          echo "TINYUPDATE_WORK_DIR=$work_dir"
+          echo "TINYUPDATE_STAGING_DIR=$work_dir/staging"
+          echo "TINYUPDATE_MANIFEST_NAME=$(asset_name "$ASSET_PREFIX" "$PLATFORM" "update.json")"
+          echo "TINYUPDATE_ZIP_NAME=$(asset_name "$ASSET_PREFIX" "$PLATFORM" "files.zip")"
+          echo "TINYUPDATE_APP_ZIP_NAME=$(asset_name "$ASSET_PREFIX" "app.zip")"
+          echo "TINYUPDATE_DEPS_ZIP_NAME=$(asset_name "$ASSET_PREFIX" "$PLATFORM" "deps.zip")"
+        } >> "$GITHUB_ENV"
 
         echo "=== TinyUpdate Packager ==="
-        echo "Tag: $TAG_NAME"
+        echo "Version:  ${GITHUB_REF_NAME:-unknown}"
         echo "Platform: ${PLATFORM:-<neutral>}"
-        echo "Artifact dirs: $ARTIFACT_DIRS"
+        echo "Output:   $output_dir"
 
-        # --- 1. Collect JARs ---
-        declare -A JAR_MAP  # basename -> full path
+    # -------------------------------------------------------------------------
+    # 2. Collect the JARs into lib/
+    # -------------------------------------------------------------------------
+    # Every JAR of every artifact dir, except sources and javadoc JARs, which
+    # a running application never loads. A JAR present in several dirs lands
+    # once - deduplicated by its full file name, classifier included: cutting
+    # the classifier would merge foo-1.0-mac-aarch64.jar with foo-1.0.jar,
+    # which are different files. A missing dir is a warning, not a failure,
+    # so optional artifact dirs need no special casing by the caller.
+    - name: Collect the JARs into lib/
+      shell: bash
+      env:
+        ARTIFACT_DIRS: ${{ inputs.artifact-dirs }}
+      run: |
+        set -euo pipefail
 
-        IFS=',' read -ra DIRS <<< "$ARTIFACT_DIRS"
-        for dir in "${DIRS[@]}"; do
-          dir=$(echo "$dir" | xargs)  # trim whitespace
+        declare -A jars  # file name -> path; the last dir listed wins
+
+        IFS=',' read -ra dirs <<< "$ARTIFACT_DIRS"
+        for dir in "${dirs[@]}"; do
+          dir=$(echo "$dir" | xargs)  # trim the blanks around the comma
           if [ ! -d "$dir" ]; then
             echo "Warning: directory $dir not found, skipping"
             continue
@@ -124,137 +170,247 @@ runs:
 
           for jar in "$dir"/*.jar; do
             [ -f "$jar" ] || continue
-
-            basename=$(basename "$jar")
-
-            # Skip sources/javadoc JARs
-            if [[ "$basename" == *-sources.jar ]] || [[ "$basename" == *-javadoc.jar ]]; then
-              continue
+            name=$(basename "$jar")
+            case "$name" in
+              *-sources.jar|*-javadoc.jar) continue ;;
+            esac
+            if [ -n "${jars[$name]+x}" ]; then
+              echo "  Dedup: $name from $dir replaces the one from $(dirname "${jars[$name]}")"
             fi
+            jars["$name"]="$jar"
+          done
+        done
 
-            # Dedup by full filename - only identical JARs from different dirs
-            # collapse. Stripping classifiers would merge e.g.
-            # foo-1.0-mac-aarch64.jar with foo-1.0.jar.
-            if [ -n "${JAR_MAP[$basename]+x}" ]; then
-              existing="${JAR_MAP[$basename]}"
-              echo "  Dedup: replacing $(basename "$existing") with $basename"
+        for jar in "${jars[@]}"; do
+          cp "$jar" "$TINYUPDATE_STAGING_DIR/lib/"
+        done
+        echo "Collected ${#jars[@]} JARs"
+
+    # -------------------------------------------------------------------------
+    # 3. Collect the scripts into bin/
+    # -------------------------------------------------------------------------
+    # The scripts the installed application is set up and started with. The
+    # patterns are globbed inside script-dir, so the caller picks e.g.
+    # "setup.* launch.*" without listing every platform's variant. Copied
+    # byte for byte: line endings stay what the checkout made them (CRLF for
+    # .bat/.ps1 via .gitattributes).
+    - name: Collect the scripts into bin/
+      shell: bash
+      env:
+        SCRIPT_DIR: ${{ inputs.script-dir }}
+        SCRIPT_PATTERNS: ${{ inputs.scripts }}
+      run: |
+        set -euo pipefail
+
+        if [ ! -d "$SCRIPT_DIR" ]; then
+          echo "No script dir $SCRIPT_DIR - bin/ stays empty"
+          exit 0
+        fi
+
+        # $pattern unquoted on purpose: it is the glob.
+        for pattern in $SCRIPT_PATTERNS; do
+          for script in "$SCRIPT_DIR"/$pattern; do
+            [ -f "$script" ] || continue
+            cp "$script" "$TINYUPDATE_STAGING_DIR/bin/"
+            echo "Bundled script: $(basename "$script")"
+          done
+        done
+
+    # -------------------------------------------------------------------------
+    # 4. Collect the images into images/
+    # -------------------------------------------------------------------------
+    # Images a launcher shows before the application exists on disk (icons,
+    # logos). Only PNGs, flat. Skipped when the caller names no images dir.
+    - name: Collect the images into images/
+      if: inputs.images-dir != ''
+      shell: bash
+      env:
+        IMAGES_DIR: ${{ inputs.images-dir }}
+      run: |
+        set -euo pipefail
+
+        if [ ! -d "$IMAGES_DIR" ]; then
+          echo "Warning: images dir $IMAGES_DIR not found, skipping"
+          exit 0
+        fi
+
+        mkdir -p "$TINYUPDATE_STAGING_DIR/images"
+        for image in "$IMAGES_DIR"/*.png; do
+          [ -f "$image" ] || continue
+          cp "$image" "$TINYUPDATE_STAGING_DIR/images/"
+          echo "Bundled image: $(basename "$image")"
+        done
+
+    # -------------------------------------------------------------------------
+    # 5. Copy the extra tree into the package root
+    # -------------------------------------------------------------------------
+    # Anything the steps above do not cover - native libraries, binaries - in
+    # the exact place the caller put it relative to the package root. Copied
+    # last, so an extra file deliberately replaces a collected one.
+    - name: Copy the extra tree into the package root
+      if: inputs.extra-dir != ''
+      shell: bash
+      env:
+        EXTRA_DIR: ${{ inputs.extra-dir }}
+      run: |
+        set -euo pipefail
+
+        if [ ! -d "$EXTRA_DIR" ]; then
+          echo "Warning: extra dir $EXTRA_DIR not found, skipping"
+          exit 0
+        fi
+
+        cp -R "$EXTRA_DIR"/. "$TINYUPDATE_STAGING_DIR"/
+        echo "Bundled extra tree from $EXTRA_DIR:"
+        (cd "$EXTRA_DIR" && find . -type f | sort)
+
+    # -------------------------------------------------------------------------
+    # 6. Write the manifest
+    # -------------------------------------------------------------------------
+    # One entry per staged file: its path relative to the install dir, its
+    # SHA-256 and its size. The client diffs these hashes against the files
+    # on disk - that diff, not the version, decides what an update does - and
+    # verifies every file against them after extracting. Sorted, so the same
+    # package always yields the same manifest.
+    #
+    # Written by hand rather than with a JSON tool: the shape is fixed and
+    # its values (paths, hex hashes, numbers, the tag) carry no characters
+    # that would need escaping - which is also what the client's reader
+    # (ManifestJson) relies on.
+    - name: Write the manifest
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        manifest="$TINYUPDATE_OUTPUT_DIR/$TINYUPDATE_MANIFEST_NAME"
+        {
+          echo '{'
+          echo "  \"version\": \"$TINYUPDATE_VERSION\","
+          echo '  "files": ['
+
+          first=true
+          while read -r file; do
+            path="${file#$TINYUPDATE_STAGING_DIR/}"
+            sha256=$(shasum -a 256 "$file" | cut -d' ' -f1)
+            # BSD stat first (macOS), GNU stat second (the runners).
+            size=$(stat -f%z "$file" 2>/dev/null || stat --printf="%s" "$file")
+
+            if [ "$first" = true ]; then
+              first=false
+            else
+              echo ','
             fi
-            JAR_MAP["$basename"]="$jar"
-          done
-        done
+            printf '    { "path": "%s", "sha256": "%s", "size": %s }' "$path" "$sha256" "$size"
+          done < <(find "$TINYUPDATE_STAGING_DIR" -type f | sort)
 
-        echo "Collected ${#JAR_MAP[@]} unique JARs"
+          echo ''
+          echo '  ]'
+          echo '}'
+        } > "$manifest"
 
-        for jar_path in "${JAR_MAP[@]}"; do
-          cp "$jar_path" "$STAGING_DIR/lib/"
-        done
+        echo "$TINYUPDATE_MANIFEST_NAME: $(grep -c '"path"' "$manifest") entries"
 
-        # --- 2. Collect scripts and images ---
-        if [ -d "$SCRIPT_DIR" ]; then
-          for pattern in $SCRIPT_PATTERNS; do
-            for script in "$SCRIPT_DIR"/$pattern; do
-              [ -f "$script" ] || continue
-              cp "$script" "$STAGING_DIR/bin/"
-              echo "Bundled script: $(basename "$script")"
-            done
-          done
-        fi
+    # -------------------------------------------------------------------------
+    # 7. Build the full archive
+    # -------------------------------------------------------------------------
+    # Every file of the manifest in one zip - what the client falls back to
+    # whenever the release lacks one half of the split. Hidden files stay
+    # out: they are never part of the manifest either.
+    - name: Build the full archive
+      shell: bash
+      run: |
+        set -euo pipefail
 
-        if [ -n "$IMAGES_DIR" ] && [ -d "$IMAGES_DIR" ]; then
-          mkdir -p "$STAGING_DIR/images"
-          for img in "$IMAGES_DIR"/*.png; do
-            [ -f "$img" ] || continue
-            cp "$img" "$STAGING_DIR/images/"
-            echo "Bundled image: $(basename "$img")"
-          done
-        fi
+        zip_path="$TINYUPDATE_OUTPUT_DIR/$TINYUPDATE_ZIP_NAME"
+        rm -f "$zip_path"
+        (cd "$TINYUPDATE_STAGING_DIR" && zip -qr "$zip_path" . -x '.*')
+        echo "$TINYUPDATE_ZIP_NAME: $(du -h "$zip_path" | cut -f1)"
 
-        # --- 2b. Extra tree (native libraries, binaries), copied verbatim ---
-        if [ -n "$EXTRA_DIR" ] && [ -d "$EXTRA_DIR" ]; then
-          cp -R "$EXTRA_DIR"/. "$STAGING_DIR"/
-          echo "Bundled extra tree from $EXTRA_DIR:"
-          (cd "$EXTRA_DIR" && find . -type f | sort)
-        fi
+    # -------------------------------------------------------------------------
+    # 8. Split into the app and the deps archive
+    # -------------------------------------------------------------------------
+    # The app half is what changes on practically every release: bin/,
+    # images/ and the application's own JARs. Those identify themselves by
+    # the Maven descriptor maven-jar-plugin writes into every jar it builds
+    # (META-INF/maven/<groupId>/...), so no module list has to be kept. The
+    # trailing slash keeps sub-groups (e.g. de.bsommerfeld.jshepherd, an
+    # external library) classified as dependencies.
+    #
+    # Everything else - third-party JARs, native libraries, any file outside
+    # bin/ and images/ - is the deps half, so between them the two halves hold
+    # every file of the manifest; a file in neither would fail the client's
+    # verification.
+    #
+    # An empty half gets no archive (zip refuses to write one). The client
+    # then finds the split incomplete and takes the full archive instead.
+    - name: Split into the app and the deps archive
+      shell: bash
+      env:
+        APP_GROUP_ID: ${{ inputs.app-group-id }}
+      run: |
+        set -euo pipefail
 
-        # --- 3. Generate Manifest ---
-        echo "Generating $MANIFEST_NAME..."
+        app_dir="$TINYUPDATE_WORK_DIR/app"
+        deps_dir="$TINYUPDATE_WORK_DIR/deps"
+        mkdir -p "$app_dir" "$deps_dir"
 
-        MANIFEST="$OUTPUT_DIR/$MANIFEST_NAME"
-        echo '{' > "$MANIFEST"
-        echo "  \"version\": \"$TAG_NAME\"," >> "$MANIFEST"
-        echo '  "files": [' >> "$MANIFEST"
+        # Whether a staged JAR was built from the application's own group.
+        # grep without -q: it has to read the listing to the end. With -q it
+        # exits on the first hit, unzip dies of SIGPIPE on a long listing,
+        # and under pipefail the jar would count as foreign - depending on
+        # timing.
+        is_app_jar() {
+          [ -n "$APP_GROUP_ID" ] \
+            && unzip -Z1 "$1" 2>/dev/null | grep -F "META-INF/maven/$APP_GROUP_ID/" >/dev/null
+        }
 
-        FIRST=true
-        find "$STAGING_DIR" -type f | sort | while read -r file; do
-          rel_path="${file#$STAGING_DIR/}"
-          sha256=$(shasum -a 256 "$file" | cut -d' ' -f1)
-          size=$(stat -f%z "$file" 2>/dev/null || stat --printf="%s" "$file" 2>/dev/null)
-
-          if [ "$FIRST" = true ]; then
-            FIRST=false
-          else
-            echo ',' >> "$MANIFEST"
-          fi
-
-          printf '    { "path": "%s", "sha256": "%s", "size": %s }' "$rel_path" "$sha256" "$size" >> "$MANIFEST"
-        done
-
-        echo '' >> "$MANIFEST"
-        echo '  ]' >> "$MANIFEST"
-        echo '}' >> "$MANIFEST"
-
-        echo "Manifest generated with $(grep -c '"path"' "$MANIFEST") entries"
-
-        # --- 4. Create Zips ---
-        echo "Creating $ZIP_NAME..."
-        rm -f "$OUTPUT_DIR/$ZIP_NAME" "$OUTPUT_DIR/$APP_ZIP_NAME" "$OUTPUT_DIR/$DEPS_ZIP_NAME"
-        cd "$STAGING_DIR"
-        zip -qr "$OUTPUT_DIR/$ZIP_NAME" . -x '.*'
-
-        echo "Splitting $APP_ZIP_NAME and $DEPS_ZIP_NAME..."
-        mkdir -p "$WORK_DIR/app/lib" "$WORK_DIR/deps"
-
-        # The app half is what changes on practically every release: bin/,
-        # images/ and the application's own JARs. Those identify themselves by
-        # the Maven descriptor maven-jar-plugin writes into every jar it builds
-        # (META-INF/maven/<groupId>/...), so no module list has to be kept. The
-        # trailing slash keeps sub-groups (e.g. de.bsommerfeld.jshepherd, an
-        # external library) classified as dependencies. Everything else - third
-        # party JARs, native libraries, any file outside bin/ and images/ - is
-        # the deps half, so the split never drops a file of the manifest.
-        find . -type f ! -name '.*' | sed 's|^\./||' | sort | while read -r rel; do
-          target="deps"
-          case "$rel" in
-            bin/*|images/*) target="app" ;;
-            lib/*.jar)
-              # grep without -q: it has to read the listing to the end. With -q
-              # it exits on the first hit, unzip dies of SIGPIPE on a long
-              # listing, and under pipefail the jar would count as foreign -
-              # depending on timing.
-              if [ -n "$APP_GROUP_ID" ] && unzip -Z1 "$rel" 2>/dev/null | grep -F "META-INF/maven/$APP_GROUP_ID/" >/dev/null; then
-                target="app"
-              fi
-              ;;
+        cd "$TINYUPDATE_STAGING_DIR"
+        while read -r path; do
+          half="$deps_dir"
+          case "$path" in
+            bin/*|images/*) half="$app_dir" ;;
+            lib/*.jar)      is_app_jar "$path" && half="$app_dir" ;;
           esac
-          mkdir -p "$WORK_DIR/$target/$(dirname "$rel")"
-          cp "$rel" "$WORK_DIR/$target/$rel"
+          mkdir -p "$half/$(dirname "$path")"
+          cp "$path" "$half/$path"
+        done < <(find . -type f ! -name '.*' | sed 's|^\./||' | sort)
+
+        for half in app deps; do
+          if [ "$half" = app ]; then name="$TINYUPDATE_APP_ZIP_NAME"; else name="$TINYUPDATE_DEPS_ZIP_NAME"; fi
+          zip_path="$TINYUPDATE_OUTPUT_DIR/$name"
+          rm -f "$zip_path"
+          if [ -z "$(find "$TINYUPDATE_WORK_DIR/$half" -type f)" ]; then
+            echo "$name: no files - not written"
+            continue
+          fi
+          (cd "$TINYUPDATE_WORK_DIR/$half" && zip -qr "$zip_path" . -x '.*')
+          echo "$name: $(find "$TINYUPDATE_WORK_DIR/$half" -type f | wc -l | xargs) files, $(du -h "$zip_path" | cut -f1)"
         done
 
-        # An empty half gets no archive (zip refuses to write one). The client
-        # then finds the split incomplete and takes the full archive instead.
-        if [ -n "$(find "$WORK_DIR/app" -type f)" ]; then
-          (cd "$WORK_DIR/app" && zip -qr "$OUTPUT_DIR/$APP_ZIP_NAME" . -x '.*')
-        fi
-        if [ -n "$(find "$WORK_DIR/deps" -type f)" ]; then
-          (cd "$WORK_DIR/deps" && zip -qr "$OUTPUT_DIR/$DEPS_ZIP_NAME" . -x '.*')
-        fi
+    # -------------------------------------------------------------------------
+    # 9. Hand out the paths and clean up
+    # -------------------------------------------------------------------------
+    # The action's outputs are the absolute paths of what was written; an
+    # archive that step 8 did not write gets an empty path, so the caller can
+    # tell. The work tree goes - the output dir keeps only the assets.
+    - name: Hand out the paths and clean up
+      id: outputs
+      shell: bash
+      run: |
+        set -euo pipefail
 
-        cd "$OUTPUT_DIR"
-        rm -rf "$WORK_DIR"
-        ls -l "$MANIFEST_NAME" "$ZIP_NAME" "$APP_ZIP_NAME" "$DEPS_ZIP_NAME" 2>/dev/null || true
+        # The path of an asset in the output dir, or empty when it was not written.
+        asset_path() {
+          local path="$TINYUPDATE_OUTPUT_DIR/$1"
+          [ -f "$path" ] && echo "$path" || echo ""
+        }
 
+        {
+          echo "manifest-path=$(asset_path "$TINYUPDATE_MANIFEST_NAME")"
+          echo "zip-path=$(asset_path "$TINYUPDATE_ZIP_NAME")"
+          echo "app-zip-path=$(asset_path "$TINYUPDATE_APP_ZIP_NAME")"
+          echo "deps-zip-path=$(asset_path "$TINYUPDATE_DEPS_ZIP_NAME")"
+        } >> "$GITHUB_OUTPUT"
+
+        rm -rf "$TINYUPDATE_WORK_DIR"
         echo "=== Packaging Complete ==="
-        echo "manifest-path=$OUTPUT_DIR/$MANIFEST_NAME" >> "$GITHUB_OUTPUT"
-        echo "zip-path=$OUTPUT_DIR/$ZIP_NAME" >> "$GITHUB_OUTPUT"
-        echo "app-zip-path=$OUTPUT_DIR/$APP_ZIP_NAME" >> "$GITHUB_OUTPUT"
-        echo "deps-zip-path=$OUTPUT_DIR/$DEPS_ZIP_NAME" >> "$GITHUB_OUTPUT"
