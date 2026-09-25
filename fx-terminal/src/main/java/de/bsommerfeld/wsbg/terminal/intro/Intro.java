@@ -12,7 +12,6 @@ import javafx.geometry.Rectangle2D;
 import javafx.scene.Group;
 import javafx.scene.Node;
 import javafx.scene.Scene;
-import javafx.scene.SnapshotParameters;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.effect.BlurType;
@@ -29,7 +28,6 @@ import javafx.scene.shape.Path;
 import javafx.scene.shape.PathElement;
 import javafx.scene.shape.Rectangle;
 import javafx.scene.transform.Scale;
-import javafx.scene.transform.Transform;
 import javafx.util.Duration;
 
 import java.util.ArrayList;
@@ -37,7 +35,8 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * The startup intro: the app icon coming alive. A plate over the whole window.
+ * The startup intro: the app icon coming alive and settling into the canvas. A
+ * plate over the whole window, gone after 2.8 s.
  *
  * <pre>
  *   0      the room, in the terminal's greys
@@ -46,50 +45,24 @@ import java.util.List;
  *          glass comes up on them, and the room lights up warm around them.
  *          The glyph floats: a soft shadow lies on the ground beneath it
  *   580    the storm drifts on inside the glyph
- * </pre>
- *
- * Then one of two endings:
- *
- * <pre>
- *   SETTLE (2.8 s)
  *   1150   the glyph sinks to the ground, its shadow drawing in under it
  *   1500   it touches down and goes to water: loses its shape, spreads flat,
  *          and runs out over the ground as a wave of storm - from its outline,
  *          everything that faces outwards, in its shape at first and rounder
  *          the further it runs; a bright crest in front, soaking away behind.
- *          It stays on the canvas - the frame and the title bar are not ground. The room goes with the first of it; the
- *          terminal is the ground. Every canvas dot the crest crosses lights
- *          up in the storm's colours, lifted a little by the crest as if seen
- *          through water, and cools back to grey
- *
- *   DIVE (2 s)
- *   1150   the glyph draws back a little, taking a breath
- *   1350   the camera dives into the stone: the glyph grows past the window,
- *          and through its solid silhouette the terminal is already there -
- *          until it fills the view. The room darkens, so the terminal inside
- *          the silhouette reads as a window, not as more of the same grey
+ *          The room goes with the first of it; the terminal is the ground. The
+ *          wave stays on the canvas - the frame and the title bar are not
+ *          ground. Every canvas dot the crest crosses lights up in the storm's
+ *          colours, lifted a little by the crest as if seen through water, and
+ *          cools back to grey
  * </pre>
- *
- * The terminal the dive shows through the glyph is a snapshot of it, taken in
- * the first frames while only the room shows; the real one is under the plate,
- * identical, when the plate goes.
  *
  * The plate swallows every click and key while it is up - the app behind it is
  * booting and must not be poked through the animation.
  */
 public final class Intro extends Pane {
 
-    /** How the intro hands over to the terminal. */
-    public enum Ending {
-        /** The glyph settles on the ground like water, and the storm runs out into the canvas. */
-        SETTLE,
-        /** The camera dives into the stone, the terminal shows through its silhouette. */
-        DIVE
-    }
-
     // --- the timeline (ms) --------------------------------------------------------
-    /** The terminal is snapshotted while only the bare room shows - taking it costs a frame or more. */
-    private static final double T_SNAPSHOT = 40;
     private static final double T_POUR = 80;
     private static final Duration D_POUR = Duration.millis(500);
 
@@ -103,13 +76,6 @@ public final class Intro extends Pane {
     private static final double D_ROOM_OUT = 350;
     /** A lit dot takes this long to cool back to grey. */
     private static final double D_COOL = 450;
-
-    private static final double T_BREATH = 1150;
-    private static final double D_BREATH = 200;
-    private static final double T_DIVE = T_BREATH + D_BREATH;
-    private static final double D_DIVE = 650;
-    /** The storm leaves the glyph in the first part of the dive; after that it would only be a blur. */
-    private static final double D_STORM_OUT = 300;
 
     // --- the stage --------------------------------------------------------------
     /** The glyph's width: min(46vh, 42vw, 460px), as the old intro's logo. */
@@ -140,32 +106,10 @@ public final class Intro extends Pane {
     private static final double CREST_LIFT = 5;
     private static final double CREST_WIDTH = 22;
 
-    /** How far the glyph draws back before the dive. */
-    private static final double BREATH = 0.035;
-    /** How dark the room gets during the dive. */
-    private static final double DIVE_DUSK = 0.7;
-    /**
-     * The dive's target in the glyph images, as shares of them: the middle of
-     * the stone, and the largest circle around it that stays inside the solid
-     * stone - {@code .script/build-icons.py} prints both.
-     */
-    private static final double ZOOM_CENTRE_X = 0.501;
-    private static final double ZOOM_CENTRE_Y = 0.277;
-    private static final double ZOOM_REACH = 0.239;
-
     private static final Interpolator EASE = Interpolator.SPLINE(0.25, 0.1, 0.25, 1);
-    private static final Interpolator EASE_IN_OUT = Interpolator.SPLINE(0.42, 0, 0.58, 1);
     /** Coming down: slow off the float, settling softly onto the ground. */
     private static final Interpolator SINK = Interpolator.SPLINE(0.5, 0, 0.3, 1);
-    /**
-     * The dive: on the exponent of the zoom, where a linear run reads as a
-     * steady speed - so this starts slow and plunges. It ends at full speed on
-     * purpose: by then the glyph covers the window and nothing is left to stop.
-     */
-    private static final Interpolator DIVE = Interpolator.SPLINE(0.6, 0, 0.9, 0.95);
-
     private final Node terminal;
-    private final Ending ending;
 
     private final Backdrop backdrop = new Backdrop();
     private final Image glyphMask = new Image(Intro.class.getResource("intro-glyph.png").toExternalForm());
@@ -176,8 +120,8 @@ public final class Intro extends Pane {
     private final Group glyph = new Group(storm, sheen);
     private final DropShadow shadow = new DropShadow(BlurType.GAUSSIAN, Color.TRANSPARENT, 0, 0, 0, 0);
     private final GaussianBlur melt = new GaussianBlur(0);
-    /** One scale for the glyph and the dive's iris, about the glyph's point that stays put. */
-    private final Scale zoom = new Scale(1, 1);
+    /** The glyph's size: smaller on the ground, and going to water, about the plate's middle. */
+    private final Scale glyphScale = new Scale(1, 1);
 
     /** The storm laid down on the ground, as a wave. */
     private final MarbleSheet pool = new MarbleSheet();
@@ -186,11 +130,8 @@ public final class Intro extends Pane {
     private List<Point2D> dots;
     private double[] litAt;
 
-    /** The terminal, seen through the glyph's solid silhouette during the dive. */
-    private final ImageView window = new ImageView();
-    /** The glyph's solid silhouette - the dive's window, and the shape the settling wave runs out from. */
-    private final Image silhouette = new Image(Intro.class.getResource("intro-iris.png").toExternalForm());
-    private final ImageView iris = new ImageView(silhouette);
+    /** The glyph's solid silhouette - the shape the wave runs out from. */
+    private final Image silhouette = new Image(Intro.class.getResource("intro-silhouette.png").toExternalForm());
     private DistanceField field;
 
     private final Rectangle clip = new Rectangle();
@@ -212,12 +153,10 @@ public final class Intro extends Pane {
     };
 
     /**
-     * @param terminal what the plate opens onto - the dive shows it through the
-     *                 glyph, the settling storm lights its canvas dots
+     * @param terminal what the plate opens onto - the settling storm lights its canvas dots
      */
-    public Intro(Node terminal, Ending ending) {
+    public Intro(Node terminal) {
         this.terminal = terminal;
-        this.ending = ending;
 
         shape.setSmooth(true);
         sheen.setSmooth(true);
@@ -228,7 +167,7 @@ public final class Intro extends Pane {
         storm.setSpeed(STORM_SPEED);
         storm.setRevealDuration(D_POUR);
         glyph.setMouseTransparent(true);
-        glyph.getTransforms().add(zoom);
+        glyph.getTransforms().add(glyphScale);
         melt.setInput(shadow);
         glyph.setEffect(melt);
 
@@ -239,16 +178,8 @@ public final class Intro extends Pane {
         pool.setMouseTransparent(true);
         canvas.setMouseTransparent(true);
 
-        iris.setSmooth(true);
-        iris.getTransforms().add(zoom);
-        window.setClip(iris);
-        window.setMouseTransparent(true);
-        // Only the dive looks through: before it, the silhouette would show the
-        // terminal through every gap the storm has not filled yet.
-        window.setVisible(false);
-
         getStyleClass().add("intro");
-        getChildren().addAll(backdrop, pool, window, glyph, canvas);
+        getChildren().addAll(backdrop, pool, glyph, canvas);
         setClip(clip);
         // Every click lands on the plate, none on the app booting behind it.
         setOnMouseClicked(Event::consume);
@@ -307,19 +238,9 @@ public final class Intro extends Pane {
         sheen.setFitWidth(glyphWidth);
         sheen.setFitHeight(glyphHeight);
         sheen.relocate(left, top);
-        // The clip lives in the window view's coordinates, which are the plate's.
-        iris.setFitWidth(glyphWidth);
-        iris.setFitHeight(glyphHeight);
-        iris.setX(left);
-        iris.setY(top);
-        if (ending == Ending.DIVE) {
-            zoom.setPivotX(left + ZOOM_CENTRE_X * glyphWidth);
-            zoom.setPivotY(top + ZOOM_CENTRE_Y * glyphHeight);
-        } else {
-            // Settling, the glyph shrinks towards its middle and spreads from there - where the wave starts.
-            zoom.setPivotX(w / 2);
-            zoom.setPivotY(h / 2);
-        }
+        // The glyph shrinks towards its middle and spreads from there - where the wave starts.
+        glyphScale.setPivotX(w / 2);
+        glyphScale.setPivotY(h / 2);
     }
 
     // --- the timeline -----------------------------------------------------------
@@ -336,11 +257,7 @@ public final class Intro extends Pane {
         backdrop.setLight(EASE.interpolate(0.0, 1.0, poured));
         sheen.setOpacity(EASE.interpolate(0.0, 1.0, poured));
 
-        if (ending == Ending.DIVE) {
-            dive(now);
-        } else {
-            settle(now, poured);
-        }
+        settle(now, poured);
     }
 
     private void settle(double now, double poured) {
@@ -359,8 +276,8 @@ public final class Intro extends Pane {
 
         double melted = EASE.interpolate(0.0, 1.0, progress(now, T_TOUCH, D_MELT));
         double size = lerp(1, GROUND_SCALE, down);
-        zoom.setX(size * (1 + MELT_WIDEN * melted));
-        zoom.setY(size * (1 - MELT_FLATTEN * melted));
+        glyphScale.setX(size * (1 + MELT_WIDEN * melted));
+        glyphScale.setY(size * (1 - MELT_FLATTEN * melted));
         melt.setRadius(MELT_BLUR * melted);
         glyph.setOpacity(1 - melted);
 
@@ -417,44 +334,6 @@ public final class Intro extends Pane {
             gc.fillOval(dot.getX() + out.getX() - radius, dot.getY() + out.getY() - radius, radius * 2, radius * 2);
         }
         return glowing;
-    }
-
-    private void dive(double now) {
-        if (now >= T_SNAPSHOT && window.getImage() == null) {
-            window.setImage(snapshot(terminal));
-        }
-        window.setVisible(now >= T_DIVE);
-        double breath = 1 - BREATH * EASE_IN_OUT.interpolate(0.0, 1.0, progress(now, T_BREATH, D_BREATH));
-        double dive = Math.pow(diveDepth(), DIVE.interpolate(0.0, 1.0, progress(now, T_DIVE, D_DIVE)));
-        zoom.setX(breath * dive);
-        zoom.setY(breath * dive);
-        glyph.setOpacity(1 - EASE.interpolate(0.0, 1.0, progress(now, T_DIVE, D_STORM_OUT)));
-        backdrop.setDusk(DIVE_DUSK * EASE.interpolate(0.0, 1.0, progress(now, T_BREATH, D_BREATH + D_STORM_OUT)));
-
-        if (now >= T_DIVE + D_DIVE) {
-            finish();
-        }
-    }
-
-    /** How far the dive has to zoom until the solid stone covers the whole window. */
-    private double diveDepth() {
-        double reach = ZOOM_REACH * glyphWidth();
-        double farthest = Math.hypot(Math.max(zoom.getPivotX(), getWidth() - zoom.getPivotX()),
-                Math.max(zoom.getPivotY(), getHeight() - zoom.getPivotY()));
-        return farthest / reach * 1.05;
-    }
-
-    /** The node as it is now, at the window's output scale so it stays sharp. */
-    private Image snapshot(Node node) {
-        double scale = getScene() == null || getScene().getWindow() == null
-                ? 1 : getScene().getWindow().getRenderScaleX();
-        SnapshotParameters parameters = new SnapshotParameters();
-        parameters.setFill(Color.TRANSPARENT);
-        parameters.setTransform(Transform.scale(scale, scale));
-        Image image = node.snapshot(parameters, null);
-        window.setFitWidth(image.getWidth() / scale);
-        window.setFitHeight(image.getHeight() / scale);
-        return image;
     }
 
     /** The silhouette where the glyph lies once it is down: at its ground size, about the plate's middle. */

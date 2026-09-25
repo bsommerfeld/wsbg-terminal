@@ -20,8 +20,6 @@ import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 import javafx.util.Duration;
 
-import java.util.Locale;
-
 /**
  * The terminal window: an {@link StageStyle#EXTENDED extended} stage whose client
  * area runs up into the title bar, and the {@link Shell}: our own
@@ -45,11 +43,6 @@ public final class TerminalApp extends Application {
      * look at it.
      */
     private static final String INTRO_PROPERTY = "wsbg.intro";
-
-    /**
-     * {@code -Dwsbg.intro.ending=settle|dive} picks how the intro hands over.
-     */
-    private static final String ENDING_PROPERTY = "wsbg.intro.ending";
 
     /**
      * The window icon in every size .script/build-icons.py writes; each platform
@@ -119,7 +112,7 @@ public final class TerminalApp extends Application {
 
     /** The intro, with the system window buttons away while it covers the title bar. */
     private static Intro intro(Stage stage, StackPane root, Shell shell) {
-        Intro intro = new Intro(shell, ending());
+        Intro intro = new Intro(shell);
         HeaderBar.setSystemButtonHeight(stage, 0);
         intro.setOnFinished(() -> {
             HeaderBar.setSystemButtonHeight(stage, TitleBar.HEIGHT);
@@ -135,9 +128,5 @@ public final class TerminalApp extends Application {
         });
         stage.setOnShown(_ -> intro.play());
         return intro;
-    }
-
-    private static Intro.Ending ending() {
-        return Intro.Ending.valueOf(System.getProperty(ENDING_PROPERTY, "settle").toUpperCase(Locale.ROOT));
     }
 }

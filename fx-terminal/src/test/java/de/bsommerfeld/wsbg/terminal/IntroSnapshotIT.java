@@ -17,8 +17,7 @@ import java.util.concurrent.TimeUnit;
 /**
  * Plays the startup intro in a real window and writes what the scene shows
  * every {@value #STEP_MS} ms to {@code target/intro/} - a filmstrip for the eye,
- * named by the ms since the window opened. Opt-in: {@code INTRO_SNAPSHOT=true};
- * {@code INTRO_ENDING=settle|dive} films that ending.
+ * named by the ms since the window opened. Opt-in: {@code INTRO_SNAPSHOT=true}.
  */
 @Tag("visual")
 @EnabledIfEnvironmentVariable(named = "INTRO_SNAPSHOT", matches = "true")
@@ -29,10 +28,6 @@ class IntroSnapshotIT {
 
     @Test
     void filmsTheIntro() throws Exception {
-        String ending = System.getenv("INTRO_ENDING");
-        if (ending != null) {
-            System.setProperty("wsbg.intro.ending", ending);
-        }
         FxToolkit.boot();
 
         CompletableFuture<Stage> shown = new CompletableFuture<>();

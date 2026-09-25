@@ -33,16 +33,12 @@ final class Backdrop extends Region {
 
     private final ImageView room = new ImageView();
     private final ImageView pool = new ImageView();
-    /** Night over the room: the dive darkens it, so the terminal it opens onto stands out. */
-    private final Region dusk = new Region();
     private int paintedWidth;
     private int paintedHeight;
 
     Backdrop() {
         pool.setOpacity(0);
-        dusk.setStyle("-fx-background-color: #0c0b0a;");
-        dusk.setOpacity(0);
-        getChildren().addAll(room, pool, dusk);
+        getChildren().addAll(room, pool);
     }
 
     /** 0 the bare room, 1 the pool at full strength. */
@@ -50,14 +46,8 @@ final class Backdrop extends Region {
         pool.setOpacity(strength);
     }
 
-    /** 0 the room as lit, 1 dark. */
-    void setDusk(double darkness) {
-        dusk.setOpacity(darkness);
-    }
-
     @Override
     protected void layoutChildren() {
-        dusk.resize(getWidth(), getHeight());
         int w = (int) Math.ceil(getWidth());
         int h = (int) Math.ceil(getHeight());
         if (w > 0 && h > 0 && (w != paintedWidth || h != paintedHeight)) {

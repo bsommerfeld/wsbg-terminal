@@ -184,13 +184,13 @@ def intro_glyph():
                   storm under it, so only the alpha matters; one mask for both
                   keeps them exactly where the icon has them
     intro-sheen   the icon's glass on that mask
-    intro-iris    the same, but solid: the diamond with its facets filled - the
-                  window the terminal shows through when the intro zooms into it
+    intro-silhouette  the same, but solid: the diamond with its facets filled -
+                  the outline the intro's wave runs out from
     """
     hands, diamond = (glyph_mask(source, INTRO_SCALE) for source in ("hands.svg", "diamond.svg"))
     solid_diamond = ndimage.binary_fill_holes(diamond > 127)
     glyph = Image.fromarray(np.maximum(hands, diamond))
-    iris = Image.fromarray(np.maximum(np.maximum(hands, diamond), solid_diamond * 255).astype(np.uint8))
+    silhouette = Image.fromarray(np.maximum(np.maximum(hands, diamond), solid_diamond * 255).astype(np.uint8))
 
     pad = 4 * INTRO_SCALE
     left, top, right, bottom = glyph.getbbox()
@@ -203,18 +203,7 @@ def intro_glyph():
 
     save(white(glyph), INTRO / "intro-glyph.png")
     save(sheen(glyph.crop(box)), INTRO / "intro-sheen.png")
-    save(white(iris), INTRO / "intro-iris.png")
-
-    # Intro.java zooms into the middle of the stone: it pins that point as a
-    # share of these images, and how far the solid stone reaches from it in
-    # every direction (the largest circle around it that stays inside) as a
-    # share of their width. Printed, so a redesign does not silently drift.
-    ys, xs = np.nonzero(solid_diamond)
-    cx, cy = xs.mean(), ys.mean()
-    reach = ndimage.distance_transform_edt(solid_diamond)[round(cy), round(cx)]
-    width, height = box[2] - box[0], box[3] - box[1]
-    print(f"\n  Intro.java ZOOM_CENTRE {(cx - box[0]) / width:.3f}, {(cy - box[1]) / height:.3f}"
-          f"   ZOOM_REACH {reach / width:.3f}")
+    save(white(silhouette), INTRO / "intro-silhouette.png")
 
 
 # The glass the icon's layers are made of, for the intro: macOS lights the
