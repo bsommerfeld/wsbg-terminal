@@ -8,6 +8,7 @@ module de.bsommerfeld.tinyupdate {
 
     exports de.bsommerfeld.tinyupdate.api;
     exports de.bsommerfeld.tinyupdate.download;
+    exports de.bsommerfeld.tinyupdate.handoff;
     exports de.bsommerfeld.tinyupdate.hash;
     exports de.bsommerfeld.tinyupdate.json;
     exports de.bsommerfeld.tinyupdate.model;
