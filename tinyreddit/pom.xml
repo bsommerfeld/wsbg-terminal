@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>de.bsommerfeld</groupId>
+        <artifactId>wsbg-terminal-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>tinyreddit</artifactId>
+
+    <name>TinyReddit</name>
+    <description>Reads Reddit over OAuth, JSON or RSS - whichever works - through TinyFetch</description>
+
+    <!-- TinyFetch is the only dependency: JSON and Atom are read by the
+         module's own parsers. -->
+    <dependencies>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>tinyfetch</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <!-- The live test drives a real TinyFetch, which calls into the native library. -->
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <argLine>--enable-native-access=de.bsommerfeld.tinyfetch</argLine>
+                    <systemPropertyVariables>
+                        <tinyfetch.library.dir>${maven.multiModuleProjectDirectory}/.native</tinyfetch.library.dir>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
