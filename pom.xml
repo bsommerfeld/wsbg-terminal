@@ -15,6 +15,7 @@
         <module>tinyupdate</module>
         <module>tinyfetch</module>
         <module>tinyreddit</module>
+        <module>tinyunlock</module>
         <module>fx-signals</module>
         <module>fx-orb</module>
         <module>fx-terminal</module>
