@@ -128,10 +128,12 @@ seed "$UPDATER_PACKAGE" updater
 # ------------------------------------------------------------------------------
 # 2. Link the runtime
 # ------------------------------------------------------------------------------
+# bin/ stays (no --strip-native-commands): the terminal starts the unlock
+# engine (TinyUnlock) as a child JVM with the runtime's own java.
 "$JAVA_BIN/jlink" \
     --add-modules "$MODULES" \
     --include-locales "$LOCALES" \
-    --strip-debug --no-header-files --no-man-pages --strip-native-commands \
+    --strip-debug --no-header-files --no-man-pages \
     --output "$(native "$WORK/runtime")"
 
 # ------------------------------------------------------------------------------

@@ -198,7 +198,27 @@ jobs:
           find package/extra -type f | sort
 
       # -----------------------------------------------------------------------
-      # 7. Hand everything to the next jobs
+      # 7. Stage the unlock engine
+      # -----------------------------------------------------------------------
+      # TinyUnlock - embedded Chromium that opens a site once so TinyFetch can
+      # carry its session on - runs as its own child JVM and goes to engine/,
+      # never lib/: its headless browser lives in the org.cef.browser package
+      # the jcef-api jar owns as well, and on the terminal's module path the
+      # two would be a split package. The jars are the same on every platform;
+      # the Chromium build itself (~250 MB per platform) is not packaged but
+      # installed on first use (ProcessUnlocker.prepare).
+      - name: Stage the unlock engine
+        run: |
+          set -euo pipefail
+
+          for platform in macos-aarch64 macos-x86_64 windows-x86_64 linux-x86_64 linux-aarch64; do
+            mkdir -p "package/extra/$platform/engine"
+            cp tinyunlock/target/tinyunlock-*.jar tinyunlock/target/engine/*.jar "package/extra/$platform/engine/"
+          done
+          ls package/extra/macos-aarch64/engine
+
+      # -----------------------------------------------------------------------
+      # 8. Hand everything to the next jobs
       # -----------------------------------------------------------------------
       # The later jobs start on fresh machines; this artifact is how the jars
       # built here - and only these - reach them. A day is plenty.
