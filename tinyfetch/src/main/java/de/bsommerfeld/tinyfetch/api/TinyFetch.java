@@ -16,6 +16,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
@@ -47,7 +48,9 @@ import java.util.random.RandomGenerator;
  *   <li><b>Takes no for an answer.</b> A {@link Wall} - throttle, refusal,
  *       CAPTCHA - pauses the host with a doubling back-off; during the pause
  *       every request fails at once ({@link CooldownException}) without
- *       reaching the browser. Challenges are never solved or worked around.</li>
+ *       reaching the browser. Challenges are never solved or worked around
+ *       by the program; a CAPTCHA goes to the {@link CaptchaSolver}
+ *       ({@link Builder#captchaSolver}), which may let a person solve it.</li>
  * </ul>
  * The pace and back-off per host come from {@link HostPolicy}. Set them for
  * what a person would plausibly do on that site, never tighter than the site
@@ -84,6 +87,9 @@ public final class TinyFetch implements Fetcher, AutoCloseable {
     private final HostPolicy defaultPolicy;
     private final Map<String, HostPolicy> policies;
     private final Map<String, String> anchors;
+    private final CaptchaSolver captchaSolver;
+    /** Hosts whose CAPTCHA is with the solver right now - one call per host at a time. */
+    private final Set<String> solving = ConcurrentHashMap.newKeySet();
     private final RandomGenerator random = RandomGenerator.getDefault();
     private final AtomicLong requestIds = new AtomicLong();
 
@@ -95,6 +101,7 @@ public final class TinyFetch implements Fetcher, AutoCloseable {
         this.defaultPolicy = builder.defaultPolicy;
         this.policies = Map.copyOf(builder.policies);
         this.anchors = Map.copyOf(builder.anchors);
+        this.captchaSolver = builder.captchaSolver;
     }
 
     public static Builder builder() {
@@ -183,7 +190,35 @@ public final class TinyFetch implements Fetcher, AutoCloseable {
         LOG.log(System.Logger.Level.WARNING, "{0} answered {1} ({2}) - paused until {3}",
                 request.host(), answer.status(), wall,
                 session.pacer.pausedUntil().map(Instant::ofEpochMilli).orElse(Instant.now()));
+        if (wall == Wall.CHALLENGE) {
+            askSolver(session, new CaptchaChallenge(request.host(), url, answer.status()));
+        }
         return new FetchResponse(answer.status(), url, responseHeaders, answer.body(), wall);
+    }
+
+    /**
+     * Hands a CAPTCHA to the {@link CaptchaSolver} on a thread of its own:
+     * the request that met it returns now, the host stays paused meanwhile,
+     * and a solved one ends the pause.
+     */
+    private void askSolver(HostSession session, CaptchaChallenge challenge) {
+        if (!solving.add(challenge.host())) {
+            return;
+        }
+        Thread.ofVirtual().name("tinyfetch-captcha-" + challenge.host()).start(() -> {
+            try {
+                if (captchaSolver.solve(challenge)) {
+                    session.pacer.clearPause();
+                    LOG.log(System.Logger.Level.INFO, "{0}: CAPTCHA solved, pause lifted", challenge.host());
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } catch (RuntimeException e) {
+                LOG.log(System.Logger.Level.WARNING, "CAPTCHA solver failed for " + challenge.host(), e);
+            } finally {
+                solving.remove(challenge.host());
+            }
+        });
     }
 
     private HostSession openSession(String host) {
@@ -217,6 +252,7 @@ public final class TinyFetch implements Fetcher, AutoCloseable {
         private HostPolicy defaultPolicy = HostPolicy.defaults();
         private final Map<String, HostPolicy> policies = new HashMap<>();
         private final Map<String, String> anchors = new HashMap<>();
+        private CaptchaSolver captchaSolver = CaptchaSolver.NOBODY;
 
         private Builder() {
         }
@@ -266,6 +302,12 @@ public final class TinyFetch implements Fetcher, AutoCloseable {
                 throw new IllegalArgumentException("anchor must be an absolute URL: " + url);
             }
             anchors.put(host.toLowerCase(Locale.ROOT), url);
+            return this;
+        }
+
+        /** Who is asked when a host wants a person; {@link CaptchaSolver#NOBODY} unless set. */
+        public Builder captchaSolver(CaptchaSolver captchaSolver) {
+            this.captchaSolver = Objects.requireNonNull(captchaSolver, "captchaSolver");
             return this;
         }
 

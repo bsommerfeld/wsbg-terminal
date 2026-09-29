@@ -27,9 +27,10 @@ public enum Wall {
     /**
      * A page that wants proof of a human: a CAPTCHA, a JavaScript challenge,
      * a "blocked by network security" notice - whatever the status code.
-     * TinyFetch never tries to solve one. The host is paused for the policy's
-     * challenge back-off, which is long on purpose: the block is usually on
-     * the IP, and every further request confirms the suspicion.
+     * TinyFetch never tries to solve one; the {@link CaptchaSolver} may hand
+     * it to a person. The host is paused for the policy's challenge back-off,
+     * which is long on purpose: the block is usually on the IP, and every
+     * further request confirms the suspicion.
      */
     CHALLENGE
 }

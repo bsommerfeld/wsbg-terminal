@@ -5,6 +5,7 @@ import de.bsommerfeld.tinyfetch.engine.EngineAnswer;
 import de.bsommerfeld.tinyfetch.engine.EngineRequest;
 import org.junit.jupiter.api.Test;
 
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -12,7 +13,11 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -127,6 +132,53 @@ class TinyFetchTest {
             assertEquals(200, response.status());
             assertEquals(Wall.CHALLENGE, response.wall());
             assertFalse(response.ok());
+        }
+    }
+
+    @Test
+    void aCaptchaGoesToTheSolverWhileTheHostStaysPaused() throws Exception {
+        engine.answer = request -> answer(request, 200, "text/html", "<title>Reddit - Prove your humanity</title>");
+        BlockingQueue<CaptchaChallenge> asked = new LinkedBlockingQueue<>();
+        CountDownLatch personDone = new CountDownLatch(1);
+        CaptchaSolver person = challenge -> {
+            asked.add(challenge);
+            personDone.await();
+            return true;
+        };
+        try (TinyFetch fetch = TinyFetch.builder().engine(engine).defaultPolicy(INSTANT).captchaSolver(person).build()) {
+            FetchResponse walled = fetch.fetch(FetchRequest.of("https://www.reddit.com/r/x/new.json"));
+            assertEquals(Wall.CHALLENGE, walled.wall(), "the request returns at once - the person takes their time");
+
+            CaptchaChallenge challenge = asked.poll(5, TimeUnit.SECONDS);
+            assertEquals(new CaptchaChallenge("www.reddit.com", URI.create("https://www.reddit.com/r/x/new.json"), 200),
+                    challenge);
+            assertThrows(CooldownException.class, () -> fetch.fetch(FetchRequest.of("https://www.reddit.com/")),
+                    "paused while the person is at it");
+
+            personDone.countDown();
+            engine.answer = request -> answer(request, 200, "application/json", "{}");
+            long deadline = System.currentTimeMillis() + 5_000;
+            while (fetch.pausedUntil("www.reddit.com").isPresent() && System.currentTimeMillis() < deadline) {
+                Thread.sleep(10);
+            }
+            assertTrue(fetch.fetch(FetchRequest.of("https://www.reddit.com/")).ok(), "solved - the pause is over");
+        }
+        assertTrue(asked.isEmpty(), "asked once");
+    }
+
+    @Test
+    void anUnsolvedCaptchaKeepsThePause() throws Exception {
+        engine.answer = request -> answer(request, 200, "text/html", "<title>Reddit - Prove your humanity</title>");
+        CountDownLatch declined = new CountDownLatch(1);
+        try (TinyFetch fetch = TinyFetch.builder().engine(engine).defaultPolicy(INSTANT)
+                .captchaSolver(challenge -> {
+                    declined.countDown();
+                    return false;
+                }).build()) {
+            fetch.fetch(FetchRequest.of("https://www.reddit.com/"));
+            assertTrue(declined.await(5, TimeUnit.SECONDS));
+            Thread.sleep(50);
+            assertTrue(fetch.pausedUntil("www.reddit.com").isPresent());
         }
     }
 

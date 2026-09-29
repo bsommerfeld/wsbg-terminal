@@ -89,6 +89,14 @@ public final class HostPacer {
         nextSlot = Math.max(nextSlot, pausedUntil);
     }
 
+    /** Ends a pause early - a person solved the challenge, the reason for the pause is gone. */
+    public synchronized void clearPause() {
+        pausedUntil = 0;
+        wallsInRow = 0;
+        pauseReason = Wall.NONE;
+        nextSlot = Math.min(nextSlot, clock.getAsLong() + spacing());
+    }
+
     /** Books a request that got no answer - it still counts against the pace. */
     public synchronized void recordNoAnswer() {
         nextSlot = clock.getAsLong() + spacing();
