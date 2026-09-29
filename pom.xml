@@ -15,7 +15,7 @@
         <module>tinyupdate</module>
         <module>tinyfetch</module>
         <module>tinyreddit</module>
-        <module>tinyunlock</module>
+        <module>tinybrowser</module>
         <module>fx-signals</module>
         <module>fx-orb</module>
         <module>fx-terminal</module>
@@ -33,8 +33,9 @@
 
         <!-- Tests tagged "visual" open a real window and write a screenshot;
              they are opt-in (see .script/snapshot.sh). Tests tagged "live"
-             talk to real third-party hosts; they are opt-in as well:
-             mvn test -pl tinyfetch -Dtest.excludedGroups=visual -->
+             start the real browser engine (Chromium, installed on first use)
+             or talk to real third-party hosts; they are opt-in as well:
+             mvn test -pl tinybrowser -am -Dtest.excludedGroups=visual -->
         <test.excludedGroups>visual,live</test.excludedGroups>
     </properties>
 

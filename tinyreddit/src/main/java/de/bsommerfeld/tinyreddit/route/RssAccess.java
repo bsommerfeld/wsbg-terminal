@@ -17,8 +17,8 @@ import java.util.List;
 
 /**
  * {@link Route#RSS}: Reddit's Atom feeds on {@code www.reddit.com}, asked for
- * by a script of Reddit's front page in the visitor session, as the JSON route
- * does - the two share the host and its session.
+ * by Reddit's own front page in its visitor session, as the JSON route does -
+ * the two share the host, its tab and its session.
  */
 public final class RssAccess implements RouteAccess {
 
@@ -26,11 +26,9 @@ public final class RssAccess implements RouteAccess {
     private static final int FEED_LIMIT = 100;
 
     private final Fetcher fetcher;
-    private final RedditSession session;
 
-    public RssAccess(Fetcher fetcher, RedditSession session) {
+    public RssAccess(Fetcher fetcher) {
         this.fetcher = fetcher;
-        this.session = session;
     }
 
     @Override
@@ -78,9 +76,7 @@ public final class RssAccess implements RouteAccess {
 
     private List<AtomFeed.Entry> feed(String path, int limit)
             throws FetchException, RouteRefused, MalformedAnswerException, InterruptedException {
-        session.ensure();
-        FetchResponse response = fetcher.fetch(FetchRequest.data(RedditUrls.of(RedditUrls.WWW, path, "limit=" + limit))
-                .referer(RedditSession.HOME));
+        FetchResponse response = fetcher.fetch(FetchRequest.of(RedditUrls.of(RedditUrls.WWW, path, "limit=" + limit)));
         if (!response.ok()) {
             throw new RouteRefused(response);
         }

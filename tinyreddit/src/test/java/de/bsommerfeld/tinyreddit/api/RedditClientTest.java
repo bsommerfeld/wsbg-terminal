@@ -1,7 +1,5 @@
 package de.bsommerfeld.tinyreddit.api;
 
-import de.bsommerfeld.tinyfetch.api.BrowserSession;
-import de.bsommerfeld.tinyfetch.api.CaptchaRequiredException;
 import de.bsommerfeld.tinyfetch.api.CooldownException;
 import de.bsommerfeld.tinyfetch.api.FetchException;
 import de.bsommerfeld.tinyfetch.api.FetchRequest;
@@ -39,7 +37,7 @@ class RedditClientTest {
     }
 
     @Test
-    void jsonFirstAsAScriptOfTheFrontPage() throws Exception {
+    void jsonFirstAsTheFrontPageAsksForIt() throws Exception {
         reddit.answer("www.reddit.com/r/wallstreetbetsGER/new.json", ok(RedditFixtures.LISTING, "application/json"));
 
         Fetched<List<Post>> result = client().build().newPosts("wallstreetbetsGER", 25);
@@ -47,41 +45,9 @@ class RedditClientTest {
         assertEquals(Route.JSON, result.route());
         assertEquals(5, result.value().size());
         FetchRequest sent = reddit.requests.getFirst();
-        assertEquals(FetchRequest.Kind.DATA, sent.kind());
-        assertEquals("https://www.reddit.com/", sent.referer().orElseThrow().toString());
+        assertEquals("GET", sent.method());
         assertEquals("https://www.reddit.com/r/wallstreetbetsGER/new.json?limit=25&raw_json=1", sent.uri().toString());
         assertTrue(sent.headers().isEmpty(), "nothing of our own on an anonymous route - just the browser");
-    }
-
-    @Test
-    void visitorSessionIsOpenedOnceThenEveryRequestRidesIt() throws Exception {
-        SessionFetcher withSession = new SessionFetcher(reddit);
-        reddit.answer("www.reddit.com/r/", ok(RedditFixtures.LISTING, "application/json"));
-        RedditClient client = RedditClient.builder(withSession).clock(now::get).build();
-
-        client.newPosts("wallstreetbetsGER", 5);
-        client.hotPosts("wallstreetbetsGER", 5);
-
-        assertEquals(List.of("https://www.reddit.com/ [loid, token_v2]"), withSession.unlocks);
-        assertEquals(2, reddit.requests.size());
-    }
-
-    @Test
-    void unsolvedCaptchaStopsBothRoutesWithOneEngineRun() throws Exception {
-        SessionFetcher refused = new SessionFetcher(reddit);
-        refused.captcha = true;
-        RedditClient client = RedditClient.builder(refused).clock(now::get).build();
-
-        RedditException failure = assertThrows(RedditException.class, () -> client.newPosts("wallstreetbetsGER", 5));
-
-        assertEquals(1, refused.unlocks.size(), "RSS shares the session and must not unlock again");
-        assertTrue(failure.attempts().get(Route.JSON).startsWith("CAPTCHA unsolved"));
-        assertTrue(failure.attempts().get(Route.RSS).startsWith("CAPTCHA unsolved"));
-        assertTrue(reddit.requests.isEmpty(), "nothing went to Reddit without a session");
-
-        now.set(now.get().plus(Duration.ofMinutes(31)));
-        assertThrows(RedditException.class, () -> client.newPosts("wallstreetbetsGER", 5));
-        assertEquals(2, refused.unlocks.size(), "tried again once the memory ran out");
     }
 
     @Test
@@ -217,42 +183,6 @@ class RedditClientTest {
 
     // ---- fake ----------------------------------------------------------------
 
-    /** A fetcher with a session side: unlocking records the call and plants the cookies. */
-    private static final class SessionFetcher implements Fetcher, BrowserSession {
-        final ScriptedFetcher http;
-        final List<String> unlocks = new ArrayList<>();
-        final java.util.Set<String> cookies = new java.util.HashSet<>();
-        boolean captcha;
-
-        SessionFetcher(ScriptedFetcher http) {
-            this.http = http;
-        }
-
-        @Override
-        public FetchResponse fetch(FetchRequest request) throws FetchException {
-            return http.fetch(request);
-        }
-
-        @Override
-        public boolean hasCookie(String host, String name) {
-            return host.equals("www.reddit.com") && cookies.contains(name);
-        }
-
-        @Override
-        public boolean canUnlock() {
-            return true;
-        }
-
-        @Override
-        public void unlock(String url, java.util.Set<String> awaitCookies) throws FetchException {
-            unlocks.add(url + " " + awaitCookies);
-            if (captcha) {
-                throw new CaptchaRequiredException("www.reddit.com", "the page is a CAPTCHA and no one solved it");
-            }
-            cookies.addAll(awaitCookies);
-        }
-    }
-
     @FunctionalInterface
     private interface Answer {
         FetchResponse to(FetchRequest request) throws FetchException;
@@ -299,8 +229,8 @@ class RedditClientTest {
     }
 
     private static FetchResponse response(int status, String body, String contentType, Wall wall) {
-        return new FetchResponse(status, URI.create("https://www.reddit.com/"), "HTTP/2",
-                Map.of("content-type", List.of(contentType)), body.getBytes(StandardCharsets.UTF_8), wall, false);
+        return new FetchResponse(status, URI.create("https://www.reddit.com/"),
+                Map.of("content-type", List.of(contentType)), body.getBytes(StandardCharsets.UTF_8), wall);
     }
 
     private static String header(FetchRequest request, String name) {

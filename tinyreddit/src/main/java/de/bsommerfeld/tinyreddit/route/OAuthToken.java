@@ -71,7 +71,7 @@ public final class OAuthToken {
                 + "&device_id=" + URLEncoder.encode(deviceId, StandardCharsets.UTF_8);
 
         FetchResponse response = fetcher.fetch(FetchRequest
-                .data(RedditUrls.of(RedditUrls.WWW, "/api/v1/access_token", null))
+                .of(RedditUrls.of(RedditUrls.WWW, "/api/v1/access_token", null))
                 .post("application/x-www-form-urlencoded", form)
                 .header("authorization", "Basic " + credentials)
                 .header("user-agent", userAgent));

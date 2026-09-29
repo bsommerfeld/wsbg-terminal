@@ -1,7 +1,5 @@
 package de.bsommerfeld.tinyreddit.api;
 
-import de.bsommerfeld.tinyfetch.api.BrowserSession;
-import de.bsommerfeld.tinyfetch.api.CaptchaRequiredException;
 import de.bsommerfeld.tinyfetch.api.CooldownException;
 import de.bsommerfeld.tinyfetch.api.FetchException;
 import de.bsommerfeld.tinyfetch.api.Fetcher;
@@ -12,7 +10,6 @@ import de.bsommerfeld.tinyreddit.model.Post;
 import de.bsommerfeld.tinyreddit.route.JsonAccess;
 import de.bsommerfeld.tinyreddit.route.MalformedAnswerException;
 import de.bsommerfeld.tinyreddit.route.OAuthToken;
-import de.bsommerfeld.tinyreddit.route.RedditSession;
 import de.bsommerfeld.tinyreddit.route.RouteAccess;
 import de.bsommerfeld.tinyreddit.route.RouteRefused;
 import de.bsommerfeld.tinyreddit.route.RssAccess;
@@ -46,12 +43,10 @@ import java.util.function.Supplier;
  *
  * <h2>The visitor session</h2>
  * Reddit answers anonymous requests only inside a visitor session it issues
- * to a browser that ran its front page ({@code loid}, {@code token_v2}). When
- * the fetcher is also a {@link BrowserSession} that can unlock - a
- * {@code TinyFetch} with a {@code SessionUnlocker} - that session is opened
- * once, when missing or expired, and JSON and RSS are then asked for the way
- * the front page's own scripts would. Without it they are asked for as they
- * are, which Reddit refuses from many networks.
+ * to a browser that ran its front page ({@code loid}, {@code token_v2}).
+ * With {@code TinyFetch} there is nothing to arrange: its browser tab parked
+ * on {@code www.reddit.com} is that front page, sets the session up the way
+ * any visitor's does, and asks for JSON and RSS as its own scripts would.
  *
  * <h2>Routes</h2>
  * Routes are tried best data first ({@link Route}); OAuth only when
@@ -65,10 +60,7 @@ import java.util.function.Supplier;
  *
  * <h2>Usage</h2>
  * <pre>{@code
- * ProcessUnlocker unlocker = ProcessUnlocker.builder(tinyUnlockCommand)
- *         .captchaSolver(challenge -> askTheUserAndOpenTheWindow(challenge))
- *         .build();
- * TinyFetch.Builder http = TinyFetch.builder().browser(unlocker.browser()).unlocker(unlocker);
+ * TinyFetch.Builder http = TinyFetch.builder().engine(browserEngine);
  * RedditClient.hostPolicies().forEach(http::policy);
  *
  * try (TinyFetch fetch = http.build()) {
@@ -214,9 +206,6 @@ public final class RedditClient {
             } catch (CooldownException paused) {
                 demote(route, paused.until());
                 attempts.put(route, "host paused after " + paused.reason() + " until " + paused.until());
-            } catch (CaptchaRequiredException captcha) {
-                demote(route, clock.get());
-                attempts.put(route, "CAPTCHA unsolved: " + captcha.getMessage());
             } catch (RouteRefused refused) {
                 if (refused.status() == 404) {
                     throw new NotFoundException(what, route);
@@ -309,8 +298,6 @@ public final class RedditClient {
         }
 
         public RedditClient build() {
-            RedditSession session = new RedditSession(
-                    fetcher instanceof BrowserSession browser ? browser : null, clock);
             List<RouteAccess> routes = new ArrayList<>();
             for (Route route : new LinkedHashSet<>(order)) {
                 switch (route) {
@@ -320,8 +307,8 @@ public final class RedditClient {
                                     new OAuthToken(fetcher, clientId, deviceId, userAgent, clock)));
                         }
                     }
-                    case JSON -> routes.add(JsonAccess.anonymous(fetcher, session));
-                    case RSS -> routes.add(new RssAccess(fetcher, session));
+                    case JSON -> routes.add(JsonAccess.anonymous(fetcher));
+                    case RSS -> routes.add(new RssAccess(fetcher));
                 }
             }
             if (routes.isEmpty()) {

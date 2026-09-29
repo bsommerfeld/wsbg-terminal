@@ -1,89 +1,59 @@
 package de.bsommerfeld.tinyreddit.api;
 
-import de.bsommerfeld.tinyfetch.api.Browser;
-import de.bsommerfeld.tinyfetch.api.CaptchaSolver;
-import de.bsommerfeld.tinyfetch.api.ProcessUnlocker;
+import de.bsommerfeld.tinyfetch.api.BrowserEngine;
 import de.bsommerfeld.tinyfetch.api.TinyFetch;
 import de.bsommerfeld.tinyreddit.model.Comment;
 import de.bsommerfeld.tinyreddit.model.Post;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Optional;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
- * Real requests to Reddit - opt-in, and run sparingly:
+ * Real requests to Reddit through the real browser engine - opt-in, and run
+ * sparingly: {@code mvn package -pl tinybrowser -am -DskipTests}, then
  * {@code mvn test -pl tinyreddit -Dtest=RedditLiveTest -Dtest.excludedGroups=visual}.
+ * Chromium comes from {@code tinybrowser/target/chromium} (installed on first
+ * use), the profile stays in {@code tinybrowser/target/reddit-profile}, so the
+ * runs are one returning visitor.
  *
- * <p>With the unlock engine built ({@code mvn package -pl tinyunlock}) and
- * {@code -Dtinyunlock.bundle=<chromium build> -Dtinyunlock.profile=<dir>}
- * (optionally {@code -Dtinyunlock.seed=<old profile>}), the visitor session is
- * opened through it first; {@code -Dtinyunlock.captchaWindow=true} lets the
- * person at the machine solve a CAPTCHA in a window. Without them the client
- * asks Reddit as it is.
- *
- * <p>Either outcome passes: Reddit answers and everything parses, or it
- * refuses and the client says so without trying a second route on the same
- * paused host.
+ * <p>The JSON route has to answer - it is the one the terminal lives on, and
+ * the browser engine exists to keep it open. A refusal fails the test.
  */
 @Tag("live")
 class RedditLiveTest {
 
-    @BeforeAll
-    static void requireLibrary() {
-        assumeTrue(TinyFetch.libraryAvailable(), "libcurl-impersonate not installed - run .script/natives.sh");
-    }
-
     @Test
     void newPostsAndTheCommentStream() throws Exception {
-        TinyFetch.Builder http = TinyFetch.builder().browser(Browser.CHROMIUM_EMBEDDED);
-        unlocker().ifPresent(http::unlocker);
+        Path target = Path.of(System.getProperty("tinybrowser.target", "../tinybrowser/target")).toAbsolutePath();
+        assumeTrue(Files.isDirectory(target.resolve("engine")), "TinyBrowser not packaged - mvn package -pl tinybrowser -am");
+        BrowserEngine engine = BrowserEngine.of(List.of(target.resolve("classes"), target.resolve("engine").resolve("*")),
+                target.resolve("chromium"), target.resolve("reddit-profile"));
+
+        TinyFetch.Builder http = TinyFetch.builder().engine(engine);
         RedditClient.hostPolicies().forEach(http::policy);
 
         try (TinyFetch fetch = http.build()) {
-            RedditClient reddit = RedditClient.builder(fetch).build();
-            try {
-                Fetched<List<Post>> posts = reddit.newPosts("wallstreetbetsGER", 5);
-                System.out.println("Reddit answered via " + posts.route() + ": " + posts.value().size() + " posts");
-                posts.value().forEach(post -> System.out.println("  " + post.id() + " | " + post.title()));
-                assertFalse(posts.value().isEmpty());
+            RedditClient reddit = RedditClient.builder(fetch).routes(Route.JSON).build();
 
-                Fetched<List<Comment>> comments = reddit.latestComments("wallstreetbets", 100);
-                System.out.println("Comment stream via " + comments.route() + ": " + comments.value().size());
-                comments.value().stream().limit(3).forEach(comment ->
-                        System.out.println("  " + comment.postId() + " | " + comment.author() + " (" + comment.score() + ")"));
-                assertFalse(comments.value().isEmpty());
-            } catch (RedditException refused) {
-                System.out.println("Reddit refused: " + refused.attempts());
-                String rss = refused.attempts().get(Route.RSS);
-                assertTrue(rss.startsWith("host paused") || rss.startsWith("CAPTCHA unsolved"),
-                        "RSS must not send a request after JSON was refused: " + refused.attempts());
-            }
-        }
-    }
+            Fetched<List<Post>> posts = reddit.newPosts("wallstreetbetsGER", 5);
+            System.out.println("Reddit answered via " + posts.route() + ": " + posts.value().size() + " posts");
+            posts.value().forEach(post -> System.out.println("  " + post.id() + " | " + post.title()));
+            assertEquals(Route.JSON, posts.route());
+            assertFalse(posts.value().isEmpty());
 
-    private static Optional<ProcessUnlocker> unlocker() {
-        String bundle = System.getProperty("tinyunlock.bundle");
-        String profile = System.getProperty("tinyunlock.profile");
-        if (bundle == null || profile == null) {
-            return Optional.empty();
+            Fetched<List<Comment>> comments = reddit.latestComments("wallstreetbets", 100);
+            System.out.println("Comment stream via " + comments.route() + ": " + comments.value().size());
+            comments.value().stream().limit(3).forEach(comment ->
+                    System.out.println("  " + comment.postId() + " | " + comment.author() + " (" + comment.score() + ")"));
+            assertEquals(Route.JSON, comments.route());
+            assertFalse(comments.value().isEmpty());
         }
-        Path engine = Path.of(System.getProperty("tinyunlock.dir", "../tinyunlock/target")).toAbsolutePath();
-        String seed = System.getProperty("tinyunlock.seed");
-        List<String> command = ProcessUnlocker.tinyUnlockCommand(
-                Path.of(ProcessHandle.current().info().command().orElse("java")),
-                List.of(engine.resolve("classes"), engine.resolve("engine").resolve("*")),
-                Path.of(bundle), Path.of(profile), seed == null ? null : Path.of(seed));
-        CaptchaSolver solver = Boolean.getBoolean("tinyunlock.captchaWindow")
-                ? challenge -> Optional.of(challenge.openWindow("Reddit - please confirm you are human"))
-                : CaptchaSolver.NOBODY;
-        return Optional.of(ProcessUnlocker.builder(command).captchaSolver(solver).build());
     }
 }

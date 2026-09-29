@@ -11,80 +11,44 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * One request, described the way a browser would make it. Immutable; every
- * {@code with}-style method returns a new request.
+ * One request, as the {@code fetch()} of a page parked on the target's site
+ * makes it. Immutable; every {@code with}-style method returns a new request.
  *
- * <h3>Two kinds, because a browser has two</h3>
- * <ul>
- *   <li>{@link #page(String)} - the person opens the address: typed, bookmarked
- *       or followed from a link ({@link #referer}). The browser asks for a
- *       document ({@code sec-fetch-mode: navigate}). Use it for pages, feeds,
- *       and for an API address a person would open directly.</li>
- *   <li>{@link #data(String)} - the site's own script asks its backend, as the
- *       open page does while the person watches it ({@code sec-fetch-mode: cors}).
- *       Use it for the JSON endpoints a site's frontend calls; the referer is
- *       the page that would make the call and defaults to the target's origin.</li>
- * </ul>
- * Picking the kind that matches how a person would actually cause the request
- * is what keeps the traffic indistinguishable from theirs: an XHR-only endpoint
- * opened as a top-level document, or a document fetched in CORS mode, stands out.
+ * <p>What a browser owns itself - user agent aside ({@link #header}), cookies,
+ * referer, origin, encoding and the {@code sec-*} headers - is the page's to
+ * set, not the caller's.
  */
 public final class FetchRequest {
-
-    /** How the request comes about in a browser. */
-    public enum Kind {
-        /** Top-level navigation: the person opens the address. */
-        PAGE,
-        /** A script of the open page fetches it. */
-        DATA
-    }
 
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(30);
 
     private final URI uri;
-    private final Kind kind;
     private final String method;
     private final String contentType;
     private final byte[] body;
-    private final URI referer;
     private final List<Map.Entry<String, String>> headers;
     private final Duration timeout;
 
-    private FetchRequest(URI uri, Kind kind, String method, String contentType, byte[] body, URI referer,
+    private FetchRequest(URI uri, String method, String contentType, byte[] body,
             List<Map.Entry<String, String>> headers, Duration timeout) {
         this.uri = uri;
-        this.kind = kind;
         this.method = method;
         this.contentType = contentType;
         this.body = body;
-        this.referer = referer;
         this.headers = headers;
         this.timeout = timeout;
     }
 
-    /** The person opens {@code url}. */
-    public static FetchRequest page(String url) {
-        return new FetchRequest(parse(url), Kind.PAGE, "GET", null, null, null, List.of(), DEFAULT_TIMEOUT);
-    }
-
-    /** The open page's script fetches {@code url}. */
-    public static FetchRequest data(String url) {
-        return new FetchRequest(parse(url), Kind.DATA, "GET", null, null, null, List.of(), DEFAULT_TIMEOUT);
+    /** A {@code GET} of {@code url}. */
+    public static FetchRequest of(String url) {
+        return new FetchRequest(parse(url), "GET", null, null, List.of(), DEFAULT_TIMEOUT);
     }
 
     /**
-     * The page the request comes from: the page a link was clicked on, or the
-     * page whose script fetches. Cut down to its origin when it is not the
-     * target's own origin, as Chrome's default referrer policy does.
-     */
-    public FetchRequest referer(String referer) {
-        return new FetchRequest(uri, kind, method, contentType, body, parse(referer), headers, timeout);
-    }
-
-    /**
-     * A header of the caller's own, e.g. {@code authorization}. It replaces the
-     * browser's header of the same name in place - so overriding {@code accept}
-     * keeps its position - otherwise it joins after {@code accept}.
+     * A header of the caller's own, e.g. {@code authorization} or
+     * {@code accept}. A {@code user-agent} replaces the browser's own for this
+     * request - for APIs that want the application to name itself; the other
+     * names a browser owns are dropped by the page.
      */
     public FetchRequest header(String name, String value) {
         Objects.requireNonNull(name, "name");
@@ -94,14 +58,14 @@ public final class FetchRequest {
         }
         List<Map.Entry<String, String>> copy = new ArrayList<>(headers);
         copy.add(Map.entry(name.toLowerCase(Locale.ROOT), value));
-        return new FetchRequest(uri, kind, method, contentType, body, referer, List.copyOf(copy), timeout);
+        return new FetchRequest(uri, method, contentType, body, List.copyOf(copy), timeout);
     }
 
     /** Sends {@code body} as a POST, e.g. a form ({@code application/x-www-form-urlencoded}). */
     public FetchRequest post(String contentType, byte[] body) {
         Objects.requireNonNull(contentType, "contentType");
         Objects.requireNonNull(body, "body");
-        return new FetchRequest(uri, kind, "POST", contentType, body.clone(), referer, headers, timeout);
+        return new FetchRequest(uri, "POST", contentType, body.clone(), headers, timeout);
     }
 
     /** {@link #post(String, byte[])} with a UTF-8 text body. */
@@ -109,12 +73,12 @@ public final class FetchRequest {
         return post(contentType, body.getBytes(StandardCharsets.UTF_8));
     }
 
-    /** Whole-transfer timeout, redirects included; 30 s unless set. */
+    /** How long the page waits for the answer, redirects included; 30 s unless set. */
     public FetchRequest timeout(Duration timeout) {
         if (timeout.isNegative() || timeout.isZero()) {
             throw new IllegalArgumentException("timeout must be positive");
         }
-        return new FetchRequest(uri, kind, method, contentType, body, referer, headers, timeout);
+        return new FetchRequest(uri, method, contentType, body, headers, timeout);
     }
 
     public URI uri() {
@@ -124,10 +88,6 @@ public final class FetchRequest {
     /** Lower-case host - the unit of pacing. */
     public String host() {
         return uri.getHost().toLowerCase(Locale.ROOT);
-    }
-
-    public Kind kind() {
-        return kind;
     }
 
     public String method() {
@@ -143,18 +103,9 @@ public final class FetchRequest {
         return body == null ? null : body.clone();
     }
 
-    public Optional<URI> referer() {
-        return Optional.ofNullable(referer);
-    }
-
     /** The caller's own headers, names lower-cased, in the order they were added. */
     public List<Map.Entry<String, String>> headers() {
         return headers;
-    }
-
-    /** Whether the caller set {@code name} (lower-case) itself. */
-    public boolean hasHeader(String name) {
-        return headers.stream().anyMatch(header -> header.getKey().equals(name));
     }
 
     public Duration timeout() {
@@ -163,7 +114,7 @@ public final class FetchRequest {
 
     @Override
     public String toString() {
-        return method + " " + uri + " (" + kind + ")";
+        return method + " " + uri;
     }
 
     private static URI parse(String url) {

@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>de.bsommerfeld</groupId>
+        <artifactId>wsbg-terminal-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>tinybrowser</artifactId>
+
+    <name>TinyBrowser</name>
+    <description>TinyFetch's browser: embedded Chromium in its own JVM, a hidden tab per site that fetches for it</description>
+
+    <!-- Deliberately NOT a Java module: its headless browser has to live in
+         org.cef.browser (CefBrowser_N is package-private), a package the
+         jcef-api jar owns too. It only ever runs in its own child JVM on the
+         class path; the application never loads it. TinyFetch is on that
+         class path for the protocol (de.bsommerfeld.tinyfetch.engine). -->
+
+    <properties>
+        <!-- Chromium 132, the engine the terminal's JCEF runs on master. -->
+        <jcefmaven.version>132.3.1</jcefmaven.version>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>tinyfetch</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>me.friwi</groupId>
+            <artifactId>jcefmaven</artifactId>
+            <version>${jcefmaven.version}</version>
+            <!-- JOGL and GlueGen serve JCEF's own OpenGL windowless browser,
+                 which the engine never creates (HeadlessCefBrowser draws
+                 nothing). Left out, the engine is several MB and a set of
+                 jar-embedded natives smaller - natives macOS would want signed. -->
+            <exclusions>
+                <exclusion>
+                    <groupId>me.friwi</groupId>
+                    <artifactId>jogl-all</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>me.friwi</groupId>
+                    <artifactId>gluegen-rt</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- target/engine/ holds every jar the child JVM needs besides
+                 this module's own classes - the directory a caller puts on
+                 the child's class path. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.8.1</version>
+                <executions>
+                    <execution>
+                        <id>engine-classpath</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>copy-dependencies</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/engine</outputDirectory>
+                            <includeScope>runtime</includeScope>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- The live test starts the real engine on the test's own class
+                 path, with Chromium in target/chromium/ (installed on first
+                 use) and a fresh profile per run. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <systemPropertyVariables>
+                        <tinybrowser.chromium>${project.build.directory}/chromium</tinybrowser.chromium>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

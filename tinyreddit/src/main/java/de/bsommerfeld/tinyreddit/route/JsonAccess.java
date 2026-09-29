@@ -21,9 +21,9 @@ import java.util.List;
  * payloads, on two hosts and asked for in two ways.
  *
  * <ul>
- *   <li>JSON: {@code www.reddit.com/<path>.json}, asked for by a script of
- *       Reddit's own front page ({@link FetchRequest#data}), in the visitor
- *       session {@link RedditSession} keeps open.</li>
+ *   <li>JSON: {@code www.reddit.com/<path>.json}, asked for by Reddit's own
+ *       front page - the browser tab parked there, in the visitor session
+ *       that page set up for itself.</li>
  *   <li>OAuth: {@code oauth.reddit.com/<path>}, with the bearer token and the
  *       app's own user agent, as Reddit's API rules ask. A {@code 401} fetches
  *       a new token once.</li>
@@ -38,22 +38,20 @@ public final class JsonAccess implements RouteAccess {
 
     private final Fetcher fetcher;
     private final OAuthToken token;
-    private final RedditSession session;
 
-    private JsonAccess(Fetcher fetcher, OAuthToken token, RedditSession session) {
+    private JsonAccess(Fetcher fetcher, OAuthToken token) {
         this.fetcher = fetcher;
         this.token = token;
-        this.session = session;
     }
 
     /** Anonymous, through {@code www.reddit.com}, in the visitor session. */
-    public static JsonAccess anonymous(Fetcher fetcher, RedditSession session) {
-        return new JsonAccess(fetcher, null, session);
+    public static JsonAccess anonymous(Fetcher fetcher) {
+        return new JsonAccess(fetcher, null);
     }
 
     /** Application-only OAuth, through {@code oauth.reddit.com}. */
     public static JsonAccess oauth(Fetcher fetcher, OAuthToken token) {
-        return new JsonAccess(fetcher, token, null);
+        return new JsonAccess(fetcher, token);
     }
 
     @Override
@@ -102,9 +100,7 @@ public final class JsonAccess implements RouteAccess {
         String fullQuery = query == null ? "raw_json=1" : query + "&raw_json=1";
         FetchResponse response;
         if (token == null) {
-            session.ensure();
-            response = fetcher.fetch(FetchRequest.data(RedditUrls.of(RedditUrls.WWW, path + ".json", fullQuery))
-                    .referer(RedditSession.HOME));
+            response = fetcher.fetch(FetchRequest.of(RedditUrls.of(RedditUrls.WWW, path + ".json", fullQuery)));
         } else {
             response = authorized(RedditUrls.of(RedditUrls.OAUTH, path, fullQuery));
         }
@@ -130,7 +126,7 @@ public final class JsonAccess implements RouteAccess {
 
     private FetchRequest bearer(String url)
             throws FetchException, RouteRefused, MalformedAnswerException, InterruptedException {
-        return FetchRequest.data(url)
+        return FetchRequest.of(url)
                 .header("authorization", "bearer " + token.current())
                 .header("user-agent", token.userAgent());
     }

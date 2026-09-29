@@ -1,11 +1,13 @@
 /**
- * TinyFetch: HTTP that looks and behaves like one person using a browser.
- * Requests carry a real browser's TLS and HTTP/2 fingerprint, go out one at a
- * time per host at a human pace, and stop as soon as a host signals it wants
- * less - see {@link de.bsommerfeld.tinyfetch.api.TinyFetch} for the rules.
+ * TinyFetch: HTTP that is one person's browser. Every request is the
+ * {@code fetch()} of a real Chromium page parked on the target's site, so it
+ * carries that browser's fingerprint, cookies and session; requests go out one
+ * at a time per host at a human pace and stop as soon as a host signals it
+ * wants less - see {@link de.bsommerfeld.tinyfetch.api.TinyFetch} for the rules.
  *
- * <p>Underneath is libcurl-impersonate, bound through FFM; the module therefore
- * needs {@code --enable-native-access=de.bsommerfeld.tinyfetch}.
+ * <p>Chromium runs in its own JVM, TinyBrowser, never in the application's
+ * process. {@code de.bsommerfeld.tinyfetch.engine} is the protocol between the
+ * two; TinyBrowser reads it from the class path, so it is not exported.
  */
 module de.bsommerfeld.tinyfetch {
     exports de.bsommerfeld.tinyfetch.api;

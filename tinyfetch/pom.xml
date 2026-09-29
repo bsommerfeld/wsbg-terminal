@@ -13,10 +13,10 @@
     <artifactId>tinyfetch</artifactId>
 
     <name>TinyFetch</name>
-    <description>HTTP that looks and behaves like one person's browser: Chrome's fingerprint, per-host pacing, walls respected</description>
+    <description>HTTP that is one person's browser: every request a real Chromium page's fetch(), at a person's pace, walls respected</description>
 
-    <!-- No Java dependencies, on purpose: the only thing underneath is
-         libcurl-impersonate, bound through FFM (.script/natives.sh). -->
+    <!-- No dependencies, on purpose: the browser is TinyBrowser, a child
+         process TinyFetch starts and speaks to over a local socket. -->
     <dependencies>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
@@ -24,36 +24,4 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
-
-    <!-- The tests stand up local HTTP servers (jdk.httpserver) and call into
-         the native library, which needs native access granted. -->
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>default-testCompile</id>
-                        <configuration>
-                            <compilerArgs>
-                                <arg>--add-modules=jdk.httpserver</arg>
-                                <arg>--add-reads=de.bsommerfeld.tinyfetch=jdk.httpserver</arg>
-                            </compilerArgs>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
-                <configuration>
-                    <argLine>--add-modules=jdk.httpserver --add-reads=de.bsommerfeld.tinyfetch=jdk.httpserver --enable-native-access=de.bsommerfeld.tinyfetch</argLine>
-                    <systemPropertyVariables>
-                        <tinyfetch.library.dir>${maven.multiModuleProjectDirectory}/.native</tinyfetch.library.dir>
-                    </systemPropertyVariables>
-                </configuration>
-            </plugin>
-        </plugins>
-    </build>
 </project>

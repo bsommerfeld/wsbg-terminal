@@ -29,16 +29,17 @@
         </dependency>
     </dependencies>
 
-    <!-- The live test drives a real TinyFetch, which calls into the native library. -->
+    <!-- The live test starts the real browser engine: TinyBrowser's
+         classes and jars (mvn package -pl tinybrowser -am) and Chromium,
+         installed on first use. -->
     <build>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <argLine>--enable-native-access=de.bsommerfeld.tinyfetch</argLine>
                     <systemPropertyVariables>
-                        <tinyfetch.library.dir>${maven.multiModuleProjectDirectory}/.native</tinyfetch.library.dir>
+                        <tinybrowser.target>${maven.multiModuleProjectDirectory}/tinybrowser/target</tinybrowser.target>
                     </systemPropertyVariables>
                 </configuration>
             </plugin>

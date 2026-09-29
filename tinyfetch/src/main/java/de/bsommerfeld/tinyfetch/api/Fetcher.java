@@ -3,7 +3,7 @@ package de.bsommerfeld.tinyfetch.api;
 /**
  * Anything that answers a {@link FetchRequest}. {@link TinyFetch} is the real
  * one; code built on top takes this interface, so its tests can answer from
- * memory without the native library.
+ * memory without a browser.
  */
 @FunctionalInterface
 public interface Fetcher {
@@ -13,7 +13,7 @@ public interface Fetcher {
      * answer - any HTTP status, walls included.
      *
      * @throws CooldownException   the host is paused after a wall; nothing was sent
-     * @throws FetchException      no HTTP answer (network, TLS, timeout, body too large)
+     * @throws FetchException      no HTTP answer (network, timeout, CORS, the engine is not there)
      * @throws InterruptedException interrupted while waiting for the host's pace
      */
     FetchResponse fetch(FetchRequest request) throws FetchException, InterruptedException;
