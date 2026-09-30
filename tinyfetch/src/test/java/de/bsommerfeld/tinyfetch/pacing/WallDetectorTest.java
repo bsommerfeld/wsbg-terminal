@@ -53,6 +53,58 @@ class WallDetectorTest {
     }
 
     @Test
+    void redditsOlderNetworkBlockIsAChallenge() {
+        String page = "<h1>whoa there, pardner!</h1><p>Your request has been blocked due to a network policy.</p>";
+        assertEquals(Wall.CHALLENGE, WallDetector.classify(403, HTML, bytes(page)));
+    }
+
+    @Test
+    void googleSorryPageIsAChallengeNotAThrottleInAnyLanguage() {
+        // Excerpt of the real German page (measured 2026-09-30), served with 429.
+        String page = "Unsere Systeme haben ungewöhnlichen Datenverkehr aus Ihrem Computernetzwerk festgestellt."
+                + " <a href=\"//support.google.com/websearch/answer/86640\">Weitere Informationen</a>";
+        assertEquals(Wall.CHALLENGE, WallDetector.classify(429, HTML, bytes(page)));
+    }
+
+    @Test
+    void challengeHeadersDecideForAnyContentType() {
+        assertEquals(Wall.CHALLENGE, WallDetector.classify(403,
+                headers(Map.of("content-type", "application/json", "cf-mitigated", "challenge")), bytes("{}")));
+        assertEquals(Wall.CHALLENGE, WallDetector.classify(405,
+                headers(Map.of("x-amzn-waf-action", "captcha")), bytes("")));
+        assertEquals(Wall.CHALLENGE, WallDetector.classify(429,
+                headers(Map.of("x-vercel-mitigated", " Challenge ")), bytes("")));
+    }
+
+    @Test
+    void aMitigationThatIsNoChallengeStaysARefusal() {
+        assertEquals(Wall.FORBIDDEN, WallDetector.classify(403,
+                headers(Map.of("x-vercel-mitigated", "deny")), bytes("")));
+    }
+
+    @Test
+    void cloudflaresBotScriptOnANormalPageIsNoWall() {
+        // fool.com and businessinsider.de carry it on every page (measured 2026-09-30).
+        String page = "<title>Stock Market News</title><script>a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js'";
+        assertEquals(Wall.NONE, WallDetector.classify(200, HTML, bytes(page)));
+    }
+
+    @Test
+    void perimeterXBlockPageIsAChallenge() {
+        String page = "<title>Bloomberg - Are you a robot?</title><style>#px-captcha { width: 320px; }</style>"
+                + "<script src=\"https://captcha.px-cloud.net/PXabc/captcha.js\"></script>";
+        assertEquals(Wall.CHALLENGE, WallDetector.classify(403, HTML, bytes(page)));
+    }
+
+    @Test
+    void perimeterXsHiddenCaptchaSlotOnANormalPageIsNoWall() {
+        // Seeking Alpha keeps it in every page (measured 2026-09-30).
+        String page = "<style>.px-captcha-visible{display:flex}</style>"
+                + "<div id=\"px-captcha-wrapper\"><div id=\"px-captcha\"></div></div><h1>Market News</h1>";
+        assertEquals(Wall.NONE, WallDetector.classify(200, HTML, bytes(page)));
+    }
+
+    @Test
     void aLoginFormsCaptchaWidgetIsNoWall() {
         String page = "<form id=\"login\"><div class=\"g-recaptcha\" data-sitekey=\"x\"></div></form>";
         assertEquals(Wall.NONE, WallDetector.classify(200, HTML, bytes(page)));
