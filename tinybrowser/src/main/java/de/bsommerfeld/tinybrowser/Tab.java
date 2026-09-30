@@ -20,16 +20,20 @@ import java.util.concurrent.atomic.AtomicInteger;
  * cookies. The site sees its own page asking, because it is.
  *
  * <h3>Readiness</h3>
- * The anchor's load event is not trusted: Cloudflare's interstitial is a page
- * too, and it often resolves without a second load. So a warmup poller probes
- * with a real request until the site answers without refusing. A refusal first
- * loads the anchor once more - the second visit, see {@link #revisit()} - and
- * then backs off exponentially, honouring {@code Retry-After}. Callers wait
+ * Without a readiness check, the tab is ready once its anchor has loaded, and
+ * a refusal goes back to the caller as it came - for sites that let any
+ * visitor in, where every probe is one more request against a rate limit.
+ * With one, the anchor's load event is not trusted: Cloudflare's interstitial
+ * is a page too, and it often resolves without a second load. So a warmup poller probes
+ * with a real request until the site answers without refusing. A 403 first
+ * loads the anchor once more - the second visit, see {@link #revisit()}; a 429
+ * or 503 asks for less and gets no extra request - and then it backs off
+ * exponentially, honouring {@code Retry-After}. Callers wait
  * on a healthy tab, fail fast on one whose warmup ran out, and get the refusal
  * itself, at once, while the site is refusing.
  *
  * <h3>Health</h3>
- * A refused request mid-session re-anchors the tab (at most once a minute). A
+ * A 403 mid-session re-anchors the tab (at most once a minute). A
  * fetch without any reply is re-issued once - the reply is what gets lost,
  * not the request; twice mute re-anchors, and once more tears the tab down,
  * which {@link Tabs} replaces on the next request.
@@ -88,6 +92,7 @@ final class Tab {
     private final String anchorUrl;
     private final String probeUrl;
     private final Map<String, String> probeHeaders;
+    private final boolean readinessCheck;
     private final String label;
     private final String credentials;
 
@@ -117,19 +122,23 @@ final class Tab {
     private volatile long lastReloadAt;
 
     /**
-     * @param anchorUrl    the page the tab parks on
-     * @param probeUrl     what the warmup asks for to learn the site lets it through
-     * @param probeHeaders the headers the probe goes out with
-     * @param credentials  {@code include}: the site's cookies go along
+     * @param anchorUrl      the page the tab parks on
+     * @param probeUrl       what the warmup asks for to learn the site lets it through
+     * @param probeHeaders   the headers the probe goes out with
+     * @param credentials    {@code include}: the site's cookies go along
+     * @param readinessCheck whether to probe until the site lets the tab through -
+     *                       without, the tab is ready once its page has loaded, and a
+     *                       refusal is handed back as it is instead of reloading the page
      */
     Tab(Browser browser, String anchorUrl, String probeUrl, Map<String, String> probeHeaders, String label,
-            String credentials) {
+            String credentials, boolean readinessCheck) {
         this.browser = browser;
         this.anchorUrl = anchorUrl;
         this.probeUrl = probeUrl;
         this.probeHeaders = Map.copyOf(probeHeaders);
         this.label = label;
         this.credentials = credentials;
+        this.readinessCheck = readinessCheck;
     }
 
     /**
@@ -172,7 +181,7 @@ final class Tab {
         lastUsedAt = System.currentTimeMillis();
         // A refusal mid-session usually means the document's session went
         // stale: the next request runs against a fresh page.
-        if (isRestricted(result.status())) {
+        if (readinessCheck && wantsRevisit(result.status())) {
             reloadAnchor(false);
         }
         return result;
@@ -257,6 +266,16 @@ final class Tab {
         return tab.fetch(url, method, headers, body, credentials, timeout);
     }
 
+    /**
+     * Whether loading the page again may get past this refusal: a 403 is a
+     * visitor check a second visit passes (Reddit's first visit, 2026-09-29).
+     * A 429 or 503 is a site asking for less - a reload would be one more
+     * request against it (FinancialJuice's Cloudflare ban, 2026-09-30).
+     */
+    static boolean wantsRevisit(int status) {
+        return status == 403;
+    }
+
     static boolean isRestricted(int status) {
         return status == 403 || status == 429 || status == 503;
     }
@@ -331,7 +350,7 @@ final class Tab {
      * run gave up.
      */
     private void kickWarmup() {
-        if (ready || page == null || !warmupRunning.compareAndSet(false, true)) {
+        if (!readinessCheck || ready || page == null || !warmupRunning.compareAndSet(false, true)) {
             return;
         }
         Thread.ofVirtual().name("tinybrowser-warmup-" + label).start(() -> {
@@ -360,7 +379,7 @@ final class Tab {
                     // interstitial still resolving: the quick cadence.
                     if (probe != null && isRestricted(probe.status())) {
                         lastRefusal = probe;
-                        if (revisit()) {
+                        if (wantsRevisit(probe.status()) && revisit()) {
                             continue;
                         }
                         delay = warmupBackoff(delay, probe.headers());
@@ -448,10 +467,17 @@ final class Tab {
         if (loaded != null) {
             loaded.source(source -> Log.debug(label + ": anchor document " + describe(source)));
         }
-        if (!ready) {
-            Log.info(label + ": anchor loaded (" + status + "), verifying the session");
-            kickWarmup();
+        if (ready) {
+            return;
         }
+        if (!readinessCheck) {
+            ready = true;
+            readyLatch.countDown();
+            Log.info(label + ": anchor loaded (" + status + "), ready without a readiness check");
+            return;
+        }
+        Log.info(label + ": anchor loaded (" + status + "), verifying the session");
+        kickWarmup();
     }
 
     /** One line for the log: the document's title and size. */

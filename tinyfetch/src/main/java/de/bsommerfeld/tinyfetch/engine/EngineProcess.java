@@ -6,6 +6,7 @@ import java.io.BufferedReader;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.io.InputStreamReader;
 import java.net.StandardProtocolFamily;
 import java.net.UnixDomainSocketAddress;
@@ -483,6 +484,11 @@ public final class EngineProcess implements Engine, SocketEngine {
         }
     }
 
+    /**
+     * The stop thread and {@link #close()} may both get here at once; a walk
+     * whose entry the other one just deleted throws unchecked, and that is
+     * as quiet as the rest.
+     */
     private static void deleteQuietly(Path directory) {
         if (directory == null || !Files.exists(directory)) {
             return;
@@ -495,7 +501,7 @@ public final class EngineProcess implements Engine, SocketEngine {
                     // a temporary directory; the system cleans up after us
                 }
             });
-        } catch (IOException ignored) {
+        } catch (IOException | UncheckedIOException ignored) {
             // as above
         }
     }

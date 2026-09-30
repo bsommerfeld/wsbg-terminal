@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -89,6 +90,27 @@ class TinyFetchTest {
         assertNull(plain.body());
         assertNull(plain.anchor(), "no anchor of its own - the engine parks on the host's root");
         assertTrue(plain.id() != sent.id());
+        assertEquals(Step.ALL, plain.steps(), "every step unless told otherwise");
+    }
+
+    @Test
+    void theStepsReachTheEngine() throws Exception {
+        try (TinyFetch fetch = client()) {
+            fetch.fetch(FetchRequest.of("https://www.financialjuice.com/feed.ashx?xy=rss", Step.FETCH));
+            fetch.fetch(FetchRequest.of("https://www.reddit.com/r/x/new.json", Step.LOAD_PAGE, Step.FETCH)
+                    .timeout(Duration.ofSeconds(5)));
+        }
+        assertEquals(Set.of(Step.FETCH), engine.requests.get(0).steps());
+        assertEquals(Set.of(Step.LOAD_PAGE, Step.FETCH), engine.requests.get(1).steps(), "kept through with-methods");
+    }
+
+    @Test
+    void stepsThatMakeNoSenseAreRefused() {
+        assertThrows(IllegalArgumentException.class, () -> FetchRequest.of("https://example.org/", Step.LOAD_PAGE));
+        assertThrows(IllegalArgumentException.class,
+                () -> FetchRequest.of("https://example.org/", Step.READINESS_CHECK, Step.FETCH));
+        assertEquals(Step.ALL, FetchRequest.of("https://example.org/",
+                Step.FETCH, Step.READINESS_CHECK, Step.LOAD_PAGE).steps(), "order does not matter");
     }
 
     @Test

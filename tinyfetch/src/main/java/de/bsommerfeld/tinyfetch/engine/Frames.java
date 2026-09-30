@@ -9,10 +9,14 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
+import de.bsommerfeld.tinyfetch.api.Step;
+
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * The protocol between the clients - TinyFetch, TinySocket - and their
@@ -121,12 +125,32 @@ public final class Frames {
         writeBytes(out, request.body());
         writeText(out, request.anchor());
         out.writeLong(request.timeoutMillis());
+        out.writeByte(stepBits(request.steps()));
         out.flush();
     }
 
     public static EngineRequest readRequest(DataInputStream in) throws IOException {
         return new EngineRequest(in.readLong(), readText(in), readText(in), readHeaders(in), readBytes(in),
-                readText(in), in.readLong());
+                readText(in), in.readLong(), steps(in.readUnsignedByte()));
+    }
+
+    /** One bit per {@link Step}, by its ordinal. */
+    private static int stepBits(Set<Step> steps) {
+        int bits = 0;
+        for (Step step : steps) {
+            bits |= 1 << step.ordinal();
+        }
+        return bits;
+    }
+
+    private static Set<Step> steps(int bits) {
+        EnumSet<Step> steps = EnumSet.noneOf(Step.class);
+        for (Step step : Step.values()) {
+            if ((bits & 1 << step.ordinal()) != 0) {
+                steps.add(step);
+            }
+        }
+        return steps;
     }
 
     public static void writeAnswer(DataOutputStream out, EngineAnswer answer) throws IOException {

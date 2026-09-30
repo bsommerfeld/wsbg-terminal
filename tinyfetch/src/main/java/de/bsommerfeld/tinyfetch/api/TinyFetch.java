@@ -38,6 +38,14 @@ import java.util.random.RandomGenerator;
  * {@link BrowserEngine}); a host whose root cannot hold a tab gets its
  * {@link Builder#anchor}.
  *
+ * <h2>As much browser as the site needs</h2>
+ * The tab, and the probing until the site lets it through, cost requests of
+ * their own - more than a strict rate limit allows for one feed. So each
+ * request names its {@link Step steps}: {@code FetchRequest.of(url)} is all of
+ * them, {@code FetchRequest.of(url, Step.FETCH)} a single request from the
+ * browser's network stack without any page - still the same browser, its
+ * cookies and its TLS, and still paced and paused like every other request.
+ *
  * <h2>It behaves like a person</h2>
  * <ul>
  *   <li><b>One thing at a time per host.</b> Requests to a host queue and go
@@ -163,7 +171,7 @@ public final class TinyFetch implements Fetcher, AutoCloseable {
         request.contentType().ifPresent(type -> headers.add(Map.entry("content-type", type)));
         EngineRequest engineRequest = new EngineRequest(requestIds.incrementAndGet(), request.uri().toString(),
                 request.method(), headers, request.body(), anchors.get(request.host()),
-                request.timeout().toMillis());
+                request.timeout().toMillis(), request.steps());
 
         EngineAnswer answer;
         try {

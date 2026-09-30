@@ -9,6 +9,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * One request, as the {@code fetch()} of a page parked on the target's site
@@ -17,6 +18,9 @@ import java.util.Optional;
  * <p>What a browser owns itself - user agent aside ({@link #header}), cookies,
  * referer, origin, encoding and the {@code sec-*} headers - is the page's to
  * set, not the caller's.
+ *
+ * <p>How much browser the request gets - a page parked on the site, a
+ * readiness check, or the bare request - is its {@link Step steps}.
  */
 public final class FetchRequest {
 
@@ -28,20 +32,28 @@ public final class FetchRequest {
     private final byte[] body;
     private final List<Map.Entry<String, String>> headers;
     private final Duration timeout;
+    private final Set<Step> steps;
 
     private FetchRequest(URI uri, String method, String contentType, byte[] body,
-            List<Map.Entry<String, String>> headers, Duration timeout) {
+            List<Map.Entry<String, String>> headers, Duration timeout, Set<Step> steps) {
         this.uri = uri;
         this.method = method;
         this.contentType = contentType;
         this.body = body;
         this.headers = headers;
         this.timeout = timeout;
+        this.steps = steps;
     }
 
-    /** A {@code GET} of {@code url}. */
-    public static FetchRequest of(String url) {
-        return new FetchRequest(parse(url), "GET", null, null, List.of(), DEFAULT_TIMEOUT);
+    /**
+     * A {@code GET} of {@code url}, with the given {@link Step steps} - every
+     * step when none are named.
+     *
+     * @throws IllegalArgumentException steps without {@link Step#FETCH}, or a
+     *                                  {@link Step#READINESS_CHECK} without {@link Step#LOAD_PAGE}
+     */
+    public static FetchRequest of(String url, Step... steps) {
+        return new FetchRequest(parse(url), "GET", null, null, List.of(), DEFAULT_TIMEOUT, Step.of(steps));
     }
 
     /**
@@ -58,14 +70,14 @@ public final class FetchRequest {
         }
         List<Map.Entry<String, String>> copy = new ArrayList<>(headers);
         copy.add(Map.entry(name.toLowerCase(Locale.ROOT), value));
-        return new FetchRequest(uri, method, contentType, body, List.copyOf(copy), timeout);
+        return new FetchRequest(uri, method, contentType, body, List.copyOf(copy), timeout, steps);
     }
 
     /** Sends {@code body} as a POST, e.g. a form ({@code application/x-www-form-urlencoded}). */
     public FetchRequest post(String contentType, byte[] body) {
         Objects.requireNonNull(contentType, "contentType");
         Objects.requireNonNull(body, "body");
-        return new FetchRequest(uri, "POST", contentType, body.clone(), headers, timeout);
+        return new FetchRequest(uri, "POST", contentType, body.clone(), headers, timeout, steps);
     }
 
     /** {@link #post(String, byte[])} with a UTF-8 text body. */
@@ -78,7 +90,7 @@ public final class FetchRequest {
         if (timeout.isNegative() || timeout.isZero()) {
             throw new IllegalArgumentException("timeout must be positive");
         }
-        return new FetchRequest(uri, method, contentType, body, headers, timeout);
+        return new FetchRequest(uri, method, contentType, body, headers, timeout, steps);
     }
 
     public URI uri() {
@@ -110,6 +122,11 @@ public final class FetchRequest {
 
     public Duration timeout() {
         return timeout;
+    }
+
+    /** What the browser does for it; {@link Step#ALL} unless named. */
+    public Set<Step> steps() {
+        return steps;
     }
 
     @Override

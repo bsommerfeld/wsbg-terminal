@@ -1,6 +1,7 @@
 package de.bsommerfeld.tinyfetch.engine;
 
 import de.bsommerfeld.tinyfetch.api.FetchException;
+import de.bsommerfeld.tinyfetch.api.Step;
 import org.junit.jupiter.api.Test;
 
 import java.net.URISyntaxException;
@@ -37,7 +38,7 @@ class EngineProcessTest {
     }
 
     private static EngineRequest request(long id, String url, long timeoutMillis) {
-        return new EngineRequest(id, url, "GET", List.of(), null, null, timeoutMillis);
+        return new EngineRequest(id, url, "GET", List.of(), null, null, timeoutMillis, Step.ALL);
     }
 
     @Test

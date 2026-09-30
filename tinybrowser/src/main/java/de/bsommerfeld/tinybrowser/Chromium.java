@@ -20,6 +20,7 @@ import org.cef.network.CefCookieManager;
 import javax.swing.SwingUtilities;
 import java.nio.file.Path;
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
 import java.util.List;
@@ -214,6 +215,12 @@ final class Chromium implements Browser {
         } else {
             SwingUtilities.invokeAndWait(create);
         }
+    }
+
+    @Override
+    public Tab.Result request(String url, String method, Map<String, String> headers, byte[] body, Duration timeout)
+            throws InterruptedException {
+        return NetworkRequest.send(url, method, headers, body, timeout);
     }
 
     /**

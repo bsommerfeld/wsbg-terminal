@@ -1,5 +1,6 @@
 package de.bsommerfeld.tinybrowser;
 
+import de.bsommerfeld.tinyfetch.api.Step;
 import de.bsommerfeld.tinyfetch.engine.EngineAnswer;
 import de.bsommerfeld.tinyfetch.engine.EngineRequest;
 
@@ -17,7 +18,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * master. A request goes to the tab parked on its own origin (or on the
  * anchor TinyFetch names for its host), opened on first use; idle tabs are
  * closed again, and reopened when needed - a cold tab costs a page load and a
- * warmup, which only rarely asked sites ever pay.
+ * warmup, which only rarely asked sites ever pay. The warmup is the request's
+ * {@code READINESS_CHECK} step; a request without {@code LOAD_PAGE} gets no
+ * tab at all and goes out through {@link Browser#request}.
  */
 final class Tabs {
 
@@ -67,13 +70,22 @@ final class Tabs {
         if (requestOrigin == null) {
             return EngineAnswer.failed(request.id(), "no origin in " + request.url());
         }
+        if (!request.steps().contains(Step.LOAD_PAGE)) {
+            // No page, so nothing is cross-origin: only what the browser owns drops out.
+            return answer(request.id(), browser.request(request.url(), request.method(),
+                    sanitizeHeaders(request.headers(), false, false), request.body(),
+                    Duration.ofMillis(request.timeoutMillis())));
+        }
+        boolean readinessCheck = request.steps().contains(Step.READINESS_CHECK);
         String anchorUrl = request.anchor() != null ? request.anchor() : requestOrigin + "/";
         String anchorOrigin = originOf(anchorUrl);
         if (anchorOrigin == null) {
             return EngineAnswer.failed(request.id(), "no origin in anchor " + anchorUrl);
         }
         boolean crossOrigin = !anchorOrigin.equals(requestOrigin);
-        Map<String, String> sent = sanitizeHeaders(request.headers(), crossOrigin);
+        Map<String, String> sent = sanitizeHeaders(request.headers(), crossOrigin, true);
+        // A tab that checks the site's readiness and one that does not are two tabs.
+        String key = readinessCheck ? anchorOrigin : anchorOrigin + " (unchecked)";
 
         Tab.Result result;
         /*
@@ -81,13 +93,13 @@ final class Tabs {
          * drop it and open a new one instead of failing the request.
         */
         while (true) {
-            Tab tab = byAnchorOrigin.computeIfAbsent(anchorOrigin, origin -> {
+            Tab tab = byAnchorOrigin.computeIfAbsent(key, origin -> {
                 // A same-origin GET is its own best probe: when it goes
                 // through, the site let the tab in. Anything else probes the
                 // anchor page.
                 boolean probeWithRequest = !crossOrigin && request.method().equals("GET");
                 return new Tab(browser, anchorUrl, probeWithRequest ? request.url() : anchorUrl,
-                        probeWithRequest ? sent : Map.of(), hostOf(anchorOrigin), "include");
+                        probeWithRequest ? sent : Map.of(), hostOf(anchorOrigin), "include", readinessCheck);
             });
             if (tab.tryBeginFetch()) {
                 try {
@@ -98,12 +110,16 @@ final class Tabs {
                 }
                 break;
             }
-            byAnchorOrigin.remove(anchorOrigin, tab);
+            byAnchorOrigin.remove(key, tab);
         }
         evictIdle();
+        return answer(request.id(), result);
+    }
+
+    private static EngineAnswer answer(long id, Tab.Result result) {
         return result.failure() != null
-                ? EngineAnswer.failed(request.id(), result.failure())
-                : new EngineAnswer(request.id(), result.status(), result.url(), result.headers(), result.body(), null);
+                ? EngineAnswer.failed(id, result.failure())
+                : new EngineAnswer(id, result.status(), result.url(), result.headers(), result.body(), null);
     }
 
     /**
@@ -157,12 +173,14 @@ final class Tabs {
     }
 
     /**
-     * The caller's headers, reduced to what the page may send: the names a
-     * browser owns drop out, a cross-origin fetch keeps only the CORS
-     * safelist, and a same-origin {@code user-agent} travels under
-     * {@link ResourcePolicy#USER_AGENT_MARKER}.
+     * The caller's headers, reduced to what may be sent: the names a browser
+     * owns drop out, a cross-origin fetch keeps only the CORS safelist, and a
+     * same-origin {@code user-agent} travels under
+     * {@link ResourcePolicy#USER_AGENT_MARKER} when a page sends it - without
+     * a page it is simply the request's own.
      */
-    static Map<String, String> sanitizeHeaders(List<Map.Entry<String, String>> headers, boolean crossOrigin) {
+    static Map<String, String> sanitizeHeaders(List<Map.Entry<String, String>> headers, boolean crossOrigin,
+            boolean fromPage) {
         Map<String, String> sent = new LinkedHashMap<>();
         for (Map.Entry<String, String> header : headers) {
             String name = header.getKey();
@@ -175,7 +193,7 @@ final class Tabs {
             }
             if (lower.equals("user-agent")) {
                 if (!crossOrigin) {
-                    sent.put(ResourcePolicy.USER_AGENT_MARKER, header.getValue());
+                    sent.put(fromPage ? ResourcePolicy.USER_AGENT_MARKER : name, header.getValue());
                 }
                 continue;
             }

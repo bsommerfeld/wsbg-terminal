@@ -87,7 +87,7 @@ class TabsTest {
         Map<String, String> sent = Tabs.sanitizeHeaders(headers(
                 "accept", "application/rss+xml",
                 "if-none-match", "\"abc\"",
-                "authorization", "bearer token"), false);
+                "authorization", "bearer token"), false, true);
         assertEquals(Map.of("accept", "application/rss+xml", "if-none-match", "\"abc\"",
                 "authorization", "bearer token"), sent);
     }
@@ -100,7 +100,7 @@ class TabsTest {
                 "Referer", "https://example.org/",
                 "Sec-Fetch-Mode", "cors",
                 "Proxy-Authorization", "x",
-                "Accept", "application/json"), false);
+                "Accept", "application/json"), false, true);
         assertEquals(Map.of("Accept", "application/json"), sent,
                 "Chromium supplies its own session - only the negotiation header survives");
     }
@@ -108,9 +108,16 @@ class TabsTest {
     @Test
     void aCallersUserAgentTravelsUnderTheMarker() {
         assertEquals(Map.of(ResourcePolicy.USER_AGENT_MARKER, "java:app:1.0 (by /u/someone)"),
-                Tabs.sanitizeHeaders(headers("user-agent", "java:app:1.0 (by /u/someone)"), false));
-        assertTrue(Tabs.sanitizeHeaders(headers("user-agent", "x"), true).isEmpty(),
+                Tabs.sanitizeHeaders(headers("user-agent", "java:app:1.0 (by /u/someone)"), false, true));
+        assertTrue(Tabs.sanitizeHeaders(headers("user-agent", "x"), true, true).isEmpty(),
                 "cross-origin it would cost a preflight");
+    }
+
+    @Test
+    void withoutAPageTheUserAgentIsTheRequestsOwn() {
+        assertEquals(Map.of("user-agent", "java:app:1.0"),
+                Tabs.sanitizeHeaders(headers("user-agent", "java:app:1.0", "cookie", "x=1"), false, false),
+                "no page, no marker - and still nothing the browser owns");
     }
 
     @Test
@@ -118,7 +125,7 @@ class TabsTest {
         Map<String, String> sent = Tabs.sanitizeHeaders(headers(
                 "Accept", "application/json",
                 "Accept-Language", "de-DE",
-                "If-None-Match", "\"abc\""), true);
+                "If-None-Match", "\"abc\""), true, true);
         assertEquals(Map.of("Accept", "application/json", "Accept-Language", "de-DE"), sent,
                 "a validator here would trigger a preflight the API never answers");
     }

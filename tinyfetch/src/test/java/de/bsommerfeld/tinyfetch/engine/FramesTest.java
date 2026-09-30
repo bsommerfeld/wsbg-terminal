@@ -1,5 +1,6 @@
 package de.bsommerfeld.tinyfetch.engine;
 
+import de.bsommerfeld.tinyfetch.api.Step;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
@@ -10,6 +11,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -35,7 +37,7 @@ class FramesTest {
         byte[] body = {0, (byte) 0xff, 1, (byte) 0xe4};
         EngineRequest sent = new EngineRequest(42, "https://www.reddit.com/r/wallstreetbetsGER/new.json?ä=1", "POST",
                 List.of(Map.entry("authorization", "bearer x"), Map.entry("accept", "application/json")),
-                body, "https://www.reddit.com/", 30_000);
+                body, "https://www.reddit.com/", 30_000, Set.of(Step.LOAD_PAGE, Step.FETCH));
 
         DataInputStream in = roundTrip(out -> Frames.writeRequest(out, sent));
         assertEquals(Frames.REQUEST, Frames.readType(in));
@@ -48,11 +50,22 @@ class FramesTest {
         assertArrayEquals(body, received.body());
         assertEquals(sent.anchor(), received.anchor());
         assertEquals(sent.timeoutMillis(), received.timeoutMillis());
+        assertEquals(Set.of(Step.LOAD_PAGE, Step.FETCH), received.steps());
+    }
+
+    @Test
+    void everyStepCombinationSurvivesTheWire() throws IOException {
+        for (Set<Step> steps : List.of(Set.of(Step.FETCH), Set.of(Step.LOAD_PAGE, Step.FETCH), Step.ALL)) {
+            EngineRequest sent = new EngineRequest(1, "https://example.org/", "GET", List.of(), null, null, 1, steps);
+            DataInputStream in = roundTrip(out -> Frames.writeRequest(out, sent));
+            Frames.readType(in);
+            assertEquals(steps, Frames.readRequest(in).steps());
+        }
     }
 
     @Test
     void absentBodyAndAnchorStayAbsent() throws IOException {
-        EngineRequest sent = new EngineRequest(1, "https://example.org/", "GET", List.of(), null, null, 1);
+        EngineRequest sent = new EngineRequest(1, "https://example.org/", "GET", List.of(), null, null, 1, Step.ALL);
         DataInputStream in = roundTrip(out -> Frames.writeRequest(out, sent));
         Frames.readType(in);
         EngineRequest received = Frames.readRequest(in);

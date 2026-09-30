@@ -1,6 +1,8 @@
 package de.bsommerfeld.tinybrowser;
 
+import java.time.Duration;
 import java.time.Instant;
+import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 
@@ -22,6 +24,17 @@ interface Browser {
      * @param loaded  every main-frame load end of the page, with its HTTP status
      */
     void open(String url, Consumer<Page> created, IntConsumer loaded) throws Exception;
+
+    /**
+     * One request from the browser's network stack, without any page - the
+     * profile's cookies and cache, the browser's TLS, no document around it.
+     *
+     * @param headers the caller's own; the browser adds its own as for a typed-in address
+     * @param body    {@code null} for none
+     * @return the answer after redirects, or the reason for none
+     */
+    Tab.Result request(String url, String method, Map<String, String> headers, byte[] body, Duration timeout)
+            throws Exception;
 
     /**
      * Sets a cookie for {@code site} and every subdomain of it.

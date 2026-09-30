@@ -65,6 +65,14 @@ class EnginePartsTest {
     }
 
     @Test
+    void onlyAVisitorCheckIsWorthASecondVisit() {
+        assertTrue(Tab.wantsRevisit(403), "Reddit's first visit - the second one passes");
+        assertFalse(Tab.wantsRevisit(429), "a rate limit - a reload is one more request against it");
+        assertFalse(Tab.wantsRevisit(503));
+        assertFalse(Tab.wantsRevisit(200));
+    }
+
+    @Test
     void warmupBackoffDoublesUpToItsCeilingButHonoursALongerRetryAfter() {
         assertEquals(5_000, Tab.warmupBackoff(2_500, List.of()));
         assertEquals(60_000, Tab.warmupBackoff(40_000, List.of()));
