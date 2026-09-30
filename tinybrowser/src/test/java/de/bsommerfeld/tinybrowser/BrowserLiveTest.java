@@ -41,6 +41,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class BrowserLiveTest {
 
     private static final HostPolicy LOCAL = HostPolicy.defaults().withMinInterval(Duration.ZERO);
+    private static final Path TARGET =
+            Path.of(System.getProperty("tinybrowser.chromium", "target/chromium")).toAbsolutePath().getParent();
 
     private static HttpServer server;
     private static String base;
@@ -76,14 +78,13 @@ class BrowserLiveTest {
         server.start();
         base = "http://127.0.0.1:" + server.getAddress().getPort();
 
-        Path target = Path.of(System.getProperty("tinybrowser.chromium", "target/chromium")).toAbsolutePath().getParent();
         List<Path> classPath = Arrays.stream(System.getProperty("surefire.test.class.path",
                         System.getProperty("java.class.path")).split(System.getProperty("path.separator")))
                 .filter(entry -> !entry.isBlank())
                 .map(Path::of)
                 .toList();
         TinyFetch.Builder builder = TinyFetch.builder()
-                .engine(BrowserEngine.of(classPath, target.resolve("chromium"), target.resolve("live-profile")))
+                .engine(BrowserEngine.of(classPath, TARGET.resolve("chromium"), TARGET.resolve("live-profile")))
                 .policy("127.0.0.1", LOCAL);
         fetch = builder.build();
     }
@@ -114,6 +115,18 @@ class BrowserLiveTest {
 
     private static FetchResponse get(String url) throws Exception {
         return fetch.fetch(FetchRequest.of(url).timeout(Duration.ofSeconds(60)));
+    }
+
+    @Test
+    void version() throws Exception {
+        // Since we don't want any surprises, we hard-test the version to
+        // catch any changes early.
+        String wantedVersion = "146.0.7680.179";
+
+        // Its own profile: the engine's child process holds live-profile.
+        Chromium chromium = Chromium.start(TARGET.resolve("chromium"), TARGET.resolve("version-profile"));
+
+        assertEquals("Chromium " + wantedVersion, chromium.version());
     }
 
     @Test
