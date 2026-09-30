@@ -5,6 +5,7 @@ import de.bsommerfeld.tinyfetch.api.FetchException;
 import de.bsommerfeld.tinyfetch.api.FetchRequest;
 import de.bsommerfeld.tinyfetch.api.FetchResponse;
 import de.bsommerfeld.tinyfetch.api.Fetcher;
+import de.bsommerfeld.tinyfetch.api.Step;
 import de.bsommerfeld.tinyfetch.api.Wall;
 import de.bsommerfeld.tinyreddit.RedditFixtures;
 import de.bsommerfeld.tinyreddit.model.Post;
@@ -58,6 +59,7 @@ class RedditClientTest {
 
         Fetched<List<Post>> first = client.newPosts("wallstreetbetsGER", 25);
         assertEquals(Route.RSS, first.route());
+        assertEquals(Step.ALL, reddit.requests.get(1).steps(), "RSS rides the same visitor session as JSON");
         assertEquals(Instant.parse("2026-09-25T12:10:00Z"), client.demotedUntil(Route.JSON).orElseThrow());
 
         reddit.requests.clear();

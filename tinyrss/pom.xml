@@ -10,21 +10,18 @@
         <version>0.1.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>tinyreddit</artifactId>
+    <artifactId>tinyrss</artifactId>
 
-    <name>TinyReddit</name>
-    <description>Reads Reddit over JSON or RSS - whichever works - through TinyFetch</description>
+    <name>TinyRss</name>
+    <description>Reads any site's RSS or Atom feed through TinyFetch - and still reads it when the feed is broken</description>
 
-    <!-- TinyFetch carries every request, TinyRss reads the feeds; JSON is
-         read by the module's own parser. -->
+    <!-- TinyFetch is the only dependency: feeds are read by the module's own
+         tolerant parser, not by an XML parser that gives up at the first
+         mistake. -->
     <dependencies>
         <dependency>
             <groupId>de.bsommerfeld</groupId>
             <artifactId>tinyfetch</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>de.bsommerfeld</groupId>
-            <artifactId>tinyrss</artifactId>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
