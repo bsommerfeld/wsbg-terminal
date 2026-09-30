@@ -238,6 +238,15 @@ public final class EngineProcess implements Engine {
                 String version = Frames.readHello(in);
                 LOG.log(System.Logger.Level.INFO, "browser engine up: {0}", version);
                 hello.complete(version);
+
+                /*
+                 * Parks in the read until the next frame, and ends only by an
+                 * IOException: EOFException when the engine leaves,
+                 * AsynchronousCloseException when stop() closes the channel,
+                 * or a corrupt frame. A flag could not end it - the thread
+                 * sits in the read and would see the flag only after the next
+                 * frame; closing the channel is the only way to wake it.
+                */
                 while (true) {
                     byte type = Frames.readType(in);
                     if (type != Frames.ANSWER) {
@@ -249,6 +258,7 @@ public final class EngineProcess implements Engine {
                         waiting.complete(answer);
                     }
                 }
+
             } catch (IOException e) {
                 stop("connection lost: " + describe(e));
             }
