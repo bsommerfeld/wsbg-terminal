@@ -22,8 +22,8 @@
          class path for the protocol (de.bsommerfeld.tinyfetch.engine). -->
 
     <properties>
-        <!-- Chromium 132, the engine the terminal's JCEF runs on master. -->
-        <jcefmaven.version>132.3.1</jcefmaven.version>
+        <!-- Chromium 146, the newest jcefmaven (May 2026); 132 was master's. -->
+        <jcefmaven.version>146.0.10</jcefmaven.version>
     </properties>
 
     <dependencies>

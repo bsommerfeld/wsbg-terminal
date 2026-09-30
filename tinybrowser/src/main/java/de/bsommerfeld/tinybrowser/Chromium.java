@@ -14,11 +14,14 @@ import org.cef.browser.HeadlessCefBrowser;
 import org.cef.callback.CefQueryCallback;
 import org.cef.handler.CefLoadHandlerAdapter;
 import org.cef.handler.CefMessageRouterHandlerAdapter;
+import org.cef.network.CefCookie;
 import org.cef.network.CefCookieManager;
 
 import javax.swing.SwingUtilities;
 import java.nio.file.Path;
 import java.security.SecureRandom;
+import java.time.Instant;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -27,6 +30,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.function.IntConsumer;
 
 /**
  * The embedded Chromium: one CEF app, one client, one message router that
@@ -37,7 +41,7 @@ import java.util.function.Consumer;
  * can look for a fixed one. Its messages start with the tag of the tab they
  * belong to ({@link PageFetch}); {@link #onMessages} routes them there.
  */
-final class Chromium {
+final class Chromium implements Browser {
 
     /**
      * Chromium's switches for pages nobody looks at, as the terminal's
@@ -145,8 +149,9 @@ final class Chromium {
         return new Chromium(app[0], randomName());
     }
 
-    /** {@code Chromium 132.0.6834.83}. */
-    String version() {
+    /** {@code Chromium 146.0.7680.179}. */
+    @Override
+    public String version() {
         var version = app.getVersion();
         return version == null ? "Chromium" : "Chromium " + version.getChromeVersion();
     }
@@ -182,12 +187,15 @@ final class Chromium {
      * @param created receives the tab before it starts loading, so a load-end
      *                listener comparing browsers already knows it
      */
-    void openTab(String url, Consumer<CefBrowser> created) throws Exception {
+    @Override
+    public void open(String url, Consumer<Page> created, IntConsumer loaded) throws Exception {
+        ChromiumPage page = new ChromiumPage(this, url, loaded);
         Runnable create = () -> {
             CefBrowserSettings settings = new CefBrowserSettings();
             settings.windowless_frame_rate = 1;
             HeadlessCefBrowser browser = new HeadlessCefBrowser(client, url, settings);
-            created.accept(browser);
+            page.attach(browser);
+            created.accept(page);
             browser.createImmediately();
         };
         if (SwingUtilities.isEventDispatchThread()) {
@@ -216,8 +224,19 @@ final class Chromium {
         });
     }
 
-    /** Writes the cookies to the profile now - before the engine leaves without a shutdown. */
-    void flushCookies(long timeoutMillis) {
+    @Override
+    public boolean plantCookie(String site, String name, String value, Instant expires) {
+        Date now = new Date();
+        return CefCookieManager.getGlobalManager().setCookie("https://www." + site + "/",
+                new CefCookie(name, value, "." + site, "/", true, false, now, now, true, Date.from(expires)));
+    }
+
+    /**
+     * Writes the cookies to the profile now, and that is all: the engine
+     * leaves without CEF's shutdown, which has been known to hang.
+     */
+    @Override
+    public void leave(long timeoutMillis) {
         CountDownLatch flushed = new CountDownLatch(1);
         try {
             CefCookieManager manager = CefCookieManager.getGlobalManager();

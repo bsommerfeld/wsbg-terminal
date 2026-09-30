@@ -1,12 +1,8 @@
 package de.bsommerfeld.tinybrowser;
 
-import org.cef.network.CefCookie;
-import org.cef.network.CefCookieManager;
-
 import java.net.URI;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -54,7 +50,7 @@ final class ConsentCookies {
     }
 
     /** Plants the cookies for {@code anchorUrl}'s site, if it has any and they are not planted yet. */
-    static void seedFor(String anchorUrl) {
+    static void seedFor(Browser browser, String anchorUrl) {
         String host;
         try {
             host = URI.create(anchorUrl).getHost();
@@ -73,14 +69,10 @@ final class ConsentCookies {
                 return;
             }
             try {
-                CefCookieManager manager = CefCookieManager.getGlobalManager();
-                Date now = new Date();
-                Date expires = Date.from(Instant.now().plus(365, ChronoUnit.DAYS));
+                Instant expires = Instant.now().plus(365, ChronoUnit.DAYS);
                 boolean accepted = true;
                 for (Seed seed : entry.getValue()) {
-                    accepted &= manager.setCookie("https://www." + site + "/",
-                            new CefCookie(seed.name(), seed.value(), "." + site, "/",
-                                    true, false, now, now, true, expires));
+                    accepted &= browser.plantCookie(site, seed.name(), seed.value(), expires);
                 }
                 if (accepted) {
                     Log.info("consent cookies planted for ." + site);

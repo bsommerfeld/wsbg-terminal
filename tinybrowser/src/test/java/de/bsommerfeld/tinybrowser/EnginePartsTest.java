@@ -42,8 +42,8 @@ class EnginePartsTest {
     void pageHeadersArriveAsPairs() {
         char pair = PageFetch.HEADER_DELIMITER;
         assertEquals(List.of(Map.entry("content-type", "application/json"), Map.entry("x-empty", "")),
-                Tab.headers("content-type" + pair + "application/json" + pair + "x-empty" + pair));
-        assertTrue(Tab.headers("").isEmpty());
+                PageFetch.headers("content-type" + pair + "application/json" + pair + "x-empty" + pair));
+        assertTrue(PageFetch.headers("").isEmpty());
     }
 
     @Test

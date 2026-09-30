@@ -55,11 +55,11 @@ final class Tabs {
      */
     private static final Set<String> CORS_SAFELISTED = Set.of("accept", "accept-language", "content-language");
 
-    private final Chromium chromium;
+    private final Browser browser;
     private final Map<String, Tab> byAnchorOrigin = new ConcurrentHashMap<>();
 
-    Tabs(Chromium chromium) {
-        this.chromium = chromium;
+    Tabs(Browser browser) {
+        this.browser = browser;
     }
 
     EngineAnswer fetch(EngineRequest request) throws Exception {
@@ -86,7 +86,7 @@ final class Tabs {
                 // through, the site let the tab in. Anything else probes the
                 // anchor page.
                 boolean probeWithRequest = !crossOrigin && request.method().equals("GET");
-                return new Tab(chromium, anchorUrl, probeWithRequest ? request.url() : anchorUrl,
+                return new Tab(browser, anchorUrl, probeWithRequest ? request.url() : anchorUrl,
                         probeWithRequest ? sent : Map.of(), hostOf(anchorOrigin), "include");
             });
             if (tab.tryBeginFetch()) {

@@ -34,8 +34,8 @@ import java.nio.file.Path;
  */
 public final class BrowserMain {
 
-    /** How long the cookie store may take to reach the disk on the way out. */
-    private static final long COOKIE_FLUSH_MILLIS = 2_000;
+    /** How long the browser may take to write its cookies on the way out. */
+    private static final long LEAVE_MILLIS = 2_000;
 
     private BrowserMain() {
     }
@@ -67,11 +67,10 @@ public final class BrowserMain {
         DataInputStream in = Frames.reader(channel);
         DataOutputStream out = Frames.writer(channel);
 
-        Chromium chromium = Chromium.start(arguments.chromium(), arguments.profile());
-        Tabs tabs = new Tabs(chromium);
-        Frames.writeHello(out, chromium.version());
-
+        Browser browser = Chromium.start(arguments.chromium(), arguments.profile());
         try {
+            Tabs tabs = new Tabs(browser);
+            Frames.writeHello(out, browser.version());
             while (true) {
                 byte type = Frames.readType(in);
                 if (type != Frames.REQUEST) {
@@ -83,8 +82,9 @@ public final class BrowserMain {
             }
         } catch (IOException closed) {
             // TinyFetch closed the socket - or went away
+        } finally {
+            browser.leave(LEAVE_MILLIS);
         }
-        chromium.flushCookies(COOKIE_FLUSH_MILLIS);
     }
 
     private static void answer(Tabs tabs, EngineRequest request, DataOutputStream out) {

@@ -1,22 +1,12 @@
 package de.bsommerfeld.tinybrowser;
 
-import org.cef.browser.CefBrowser;
-
-import javax.swing.SwingUtilities;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Base64;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.BiConsumer;
 
 /**
  * One hidden tab, parked on a site, that fetches for it - the terminal's
@@ -26,7 +16,7 @@ import java.util.function.BiConsumer;
  * The tab loads {@code anchorUrl} (e.g. {@code https://www.reddit.com/}). From
  * then on its document's origin is that site, so a {@code fetch()} run in it
  * of any address on the same origin is a same-origin request - no CORS, every
- * response header readable - on Chromium's network stack with the site's
+ * response header readable - on the browser's network stack with the site's
  * cookies. The site sees its own page asking, because it is.
  *
  * <h3>Readiness</h3>
@@ -45,8 +35,8 @@ import java.util.function.BiConsumer;
  * which {@link Tabs} replaces on the next request.
  *
  * <h3>Threading</h3>
- * {@link #fetch} is safe from any number of threads except the EDT, which
- * JCEF needs to pump the very work a fetch waits for.
+ * {@link #fetch} is safe from any number of threads, within what the
+ * browser's {@link Page} allows.
  */
 final class Tab {
 
@@ -93,16 +83,13 @@ final class Tab {
      * the answer.
      */
     private static final Duration READY_WAIT_REFUSED = Duration.ZERO;
-    /** The page-side abort, beyond the caller's own timeout. */
-    private static final long PAGE_ABORT_MARGIN_MS = 30_000;
 
-    private final Chromium chromium;
+    private final Browser browser;
     private final String anchorUrl;
     private final String probeUrl;
     private final Map<String, String> probeHeaders;
     private final String label;
     private final String credentials;
-    private final String tag = PageFetch.randomTag();
 
     private final AtomicBoolean started = new AtomicBoolean();
     private final AtomicBoolean closed = new AtomicBoolean();
@@ -126,12 +113,8 @@ final class Tab {
     private volatile long warmupBackoffUntil;
     /** The warmup's last refusing answer - what callers get while the site refuses. */
     private volatile Result lastRefusal;
-    private volatile CefBrowser browser;
+    private volatile Page page;
     private volatile long lastReloadAt;
-    private volatile BiConsumer<CefBrowser, Integer> loadEndListener;
-
-    private final AtomicLong nextId = new AtomicLong();
-    private final Map<Long, Pending> pending = new ConcurrentHashMap<>();
 
     /**
      * @param anchorUrl    the page the tab parks on
@@ -139,9 +122,9 @@ final class Tab {
      * @param probeHeaders the headers the probe goes out with
      * @param credentials  {@code include}: the site's cookies go along
      */
-    Tab(Chromium chromium, String anchorUrl, String probeUrl, Map<String, String> probeHeaders, String label,
+    Tab(Browser browser, String anchorUrl, String probeUrl, Map<String, String> probeHeaders, String label,
             String credentials) {
-        this.chromium = chromium;
+        this.browser = browser;
         this.anchorUrl = anchorUrl;
         this.probeUrl = probeUrl;
         this.probeHeaders = Map.copyOf(probeHeaders);
@@ -159,9 +142,6 @@ final class Tab {
      */
     Result fetch(String url, String method, Map<String, String> headers, byte[] body, Duration timeout)
             throws Exception {
-        if (SwingUtilities.isEventDispatchThread()) {
-            throw new IllegalStateException("Tab.fetch must not run on the EDT - JCEF is pumped there");
-        }
         if (!ensureReady(readyWait())) {
             Result refusal = lastRefusal;
             if (refusal != null) {
@@ -251,23 +231,17 @@ final class Tab {
         return lastUsedAt;
     }
 
-    /** Closes the tab and unhooks it from the router and the load events. Idempotent. */
+    /** Closes the tab, and with it its page. Idempotent. */
     void dispose() {
         if (!closed.compareAndSet(false, true)) {
             return;
         }
-        chromium.removeMessages(tag);
-        BiConsumer<CefBrowser, Integer> listener = loadEndListener;
-        if (listener != null) {
-            chromium.removeLoadEndListener(listener);
-        }
-        CefBrowser closing = browser;
-        browser = null;
+        Page closing = page;
+        page = null;
         ready = false;
         if (closing != null) {
-            chromium.closeTab(closing);
+            closing.close();
         }
-        pending.values().forEach(waiting -> waiting.future.complete(Result.failed("tab closed")));
         Log.info(label + ": tab closed");
     }
 
@@ -276,20 +250,11 @@ final class Tab {
     /** One page-side fetch, without waiting for readiness - for callers once ready, and for the warmup. */
     private Result rawFetch(String url, String method, Map<String, String> headers, byte[] body, Duration timeout)
             throws Exception {
-        CefBrowser tab = browser;
+        Page tab = page;
         if (tab == null) {
             throw new IllegalStateException("tab for " + label + " is closed");
         }
-        long id = nextId.incrementAndGet();
-        Pending waiting = new Pending();
-        pending.put(id, waiting);
-        try {
-            tab.executeJavaScript(PageFetch.script(chromium.queryFunction(), tag, credentials, id, url, method,
-                    headers, body, timeout.toMillis() + PAGE_ABORT_MARGIN_MS), anchorUrl, 0);
-            return waiting.future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
-        } finally {
-            pending.remove(id);
-        }
+        return tab.fetch(url, method, headers, body, credentials, timeout);
     }
 
     static boolean isRestricted(int status) {
@@ -320,14 +285,14 @@ final class Tab {
             return;
         }
         lastReloadAt = now;
-        CefBrowser tab = browser;
+        Page tab = page;
         if (tab == null) {
             return;
         }
         ready = false;
         readyLatch = new CountDownLatch(1);
         Log.info(label + ": refused or stale - re-anchoring on " + anchorUrl);
-        SwingUtilities.invokeLater(() -> tab.loadURL(anchorUrl));
+        tab.load(anchorUrl);
     }
 
     // ---- lifecycle -----------------------------------------------------------
@@ -357,7 +322,7 @@ final class Tab {
      * run gave up.
      */
     private void kickWarmup() {
-        if (ready || browser == null || !warmupRunning.compareAndSet(false, true)) {
+        if (ready || page == null || !warmupRunning.compareAndSet(false, true)) {
             return;
         }
         Thread.ofVirtual().name("tinybrowser-warmup-" + label).start(() -> {
@@ -428,7 +393,7 @@ final class Tab {
      * @return whether the anchor was loaded again
      */
     private boolean revisit() throws InterruptedException {
-        CefBrowser tab = browser;
+        Page tab = page;
         synchronized (this) {
             long now = System.currentTimeMillis();
             if (tab == null || now - lastReloadAt < RELOAD_COOLDOWN_MS) {
@@ -439,7 +404,7 @@ final class Tab {
         CountDownLatch loaded = new CountDownLatch(1);
         nextLoad = loaded;
         Log.info(label + ": refused on arrival - visiting " + anchorUrl + " again");
-        SwingUtilities.invokeLater(() -> tab.loadURL(anchorUrl));
+        tab.load(anchorUrl);
         if (!loaded.await(ANCHOR_LOAD_WAIT_MS, TimeUnit.MILLISECONDS)) {
             Log.debug(label + ": second visit still not loaded after " + ANCHOR_LOAD_WAIT_MS + " ms - probing anyway");
         }
@@ -456,24 +421,10 @@ final class Tab {
         if (!started.compareAndSet(false, true)) {
             return;
         }
-        chromium.onMessages(tag, this::handleMessage);
-        loadEndListener = (loaded, status) -> {
-            if (loaded != browser) {
-                return;
-            }
-            anchorLoaded.countDown();
-            nextLoad.countDown();
-            loaded.getSource(source -> Log.debug(label + ": anchor document " + describe(source)));
-            if (!ready) {
-                Log.info(label + ": anchor loaded (" + status + "), verifying the session");
-                kickWarmup();
-            }
-        };
-        chromium.addLoadEndListener(loadEndListener);
         // Before the anchor loads: a fresh profile gets a consent wall otherwise.
-        ConsentCookies.seedFor(anchorUrl);
+        ConsentCookies.seedFor(browser, anchorUrl);
         try {
-            chromium.openTab(anchorUrl, created -> browser = created);
+            browser.open(anchorUrl, created -> page = created, this::anchorLoaded);
             Log.info(label + ": tab opened on " + anchorUrl);
         } catch (Exception e) {
             dispose();
@@ -481,37 +432,17 @@ final class Tab {
         }
     }
 
-    // ---- the way home ----------------------------------------------------------
-
-    /** One router message of this tab, in {@link PageFetch}'s layout. Runs on the browser UI thread. */
-    private void handleMessage(String message) {
-        String[] parts = message.split(String.valueOf(PageFetch.DELIMITER), 3);
-        char type = parts[1].charAt(0);
-        String rest = parts[2];
-        switch (type) {
-            case 'M' -> {
-                String[] fields = rest.split(String.valueOf(PageFetch.DELIMITER), 5);
-                Pending waiting = pending.get(Long.parseLong(fields[0]));
-                if (waiting != null) {
-                    waiting.onMeta(Integer.parseInt(fields[1]), Integer.parseInt(fields[2]), fields[3],
-                            headers(fields.length > 4 ? fields[4] : ""));
-                }
-            }
-            case 'C' -> {
-                String[] fields = rest.split(String.valueOf(PageFetch.DELIMITER), 3);
-                Pending waiting = pending.get(Long.parseLong(fields[0]));
-                if (waiting != null) {
-                    waiting.onChunk(Integer.parseInt(fields[1]), fields.length > 2 ? fields[2] : "");
-                }
-            }
-            case 'E' -> {
-                String[] fields = rest.split(String.valueOf(PageFetch.DELIMITER), 2);
-                Pending waiting = pending.get(Long.parseLong(fields[0]));
-                if (waiting != null) {
-                    waiting.future.complete(Result.failed("page fetch failed: " + (fields.length > 1 ? fields[1] : "")));
-                }
-            }
-            default -> Log.debug(label + ": unknown message type " + type);
+    /** Every main-frame load end of the tab's page. */
+    private void anchorLoaded(int status) {
+        anchorLoaded.countDown();
+        nextLoad.countDown();
+        Page loaded = page;
+        if (loaded != null) {
+            loaded.source(source -> Log.debug(label + ": anchor document " + describe(source)));
+        }
+        if (!ready) {
+            Log.info(label + ": anchor loaded (" + status + "), verifying the session");
+            kickWarmup();
         }
     }
 
@@ -522,65 +453,5 @@ final class Tab {
         int end = lower.indexOf("</title>");
         String title = start >= 0 && end > start ? html.substring(start + 7, end).trim() : "?";
         return "\"" + title + "\", " + html.length() + " chars";
-    }
-
-    static List<Map.Entry<String, String>> headers(String joined) {
-        List<Map.Entry<String, String>> headers = new ArrayList<>();
-        if (joined.isEmpty()) {
-            return headers;
-        }
-        String[] parts = joined.split(String.valueOf(PageFetch.HEADER_DELIMITER), -1);
-        for (int i = 0; i + 1 < parts.length; i += 2) {
-            headers.add(Map.entry(parts[i], parts[i + 1]));
-        }
-        return headers;
-    }
-
-    /** Collects the meta and the chunks of one fetch until it is whole. */
-    private static final class Pending {
-        final CompletableFuture<Result> future = new CompletableFuture<>();
-        private final Map<Integer, String> chunks = new HashMap<>();
-        private int total = -1;
-        private int status;
-        private String url = "";
-        private List<Map.Entry<String, String>> headers = List.of();
-
-        synchronized void onMeta(int total, int status, String url, List<Map.Entry<String, String>> headers) {
-            this.total = total;
-            this.status = status;
-            this.url = url;
-            this.headers = headers;
-            maybeComplete();
-        }
-
-        synchronized void onChunk(int sequence, String data) {
-            chunks.put(sequence, data);
-            maybeComplete();
-        }
-
-        private void maybeComplete() {
-            if (future.isDone() || total < 0 || chunks.size() < total) {
-                return;
-            }
-            /*
-             * This runs on the browser UI thread. Joining and decoding a body
-             * of several MB there would hold up every tab; the thread waiting
-             * for it does it instead.
-            */
-            int count = total;
-            Map<Integer, String> parts = new HashMap<>(chunks);
-            Result meta = new Result(status, url, headers, null, null);
-            future.completeAsync(() -> {
-                StringBuilder encoded = new StringBuilder();
-                for (int i = 0; i < count; i++) {
-                    String part = parts.get(i);
-                    if (part != null) {
-                        encoded.append(part);
-                    }
-                }
-                byte[] body = Base64.getDecoder().decode(encoded.toString());
-                return new Result(meta.status(), meta.url(), meta.headers(), body, null);
-            });
-        }
     }
 }

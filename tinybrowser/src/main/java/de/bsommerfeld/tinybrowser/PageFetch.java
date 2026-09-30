@@ -1,13 +1,15 @@
 package de.bsommerfeld.tinybrowser;
 
 import java.security.SecureRandom;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.List;
 import java.util.Map;
 
 /**
  * The page side of a fetch: the script a tab runs, and the messages it sends
- * home through the router. Encoder here, decoder in {@link Tab}; both read the
- * layout from this one place.
+ * home through the router. Encoder here, decoder in {@link ChromiumPage}; both
+ * read the layout from this one place.
  *
  * <pre>
  * &lt;tag&gt;M&lt;id&gt;&lt;total&gt;&lt;status&gt;&lt;url&gt;&lt;headers&gt;  meta, once
@@ -87,6 +89,19 @@ final class PageFetch {
                 + "q(TAG+D+'M'+D+ID+D+total+D+r.status+D+r.url+D+h.join(H));"
                 + "for(var j=0;j<total;j++){q(TAG+D+'C'+D+ID+D+j+D+t.substr(j*CH,CH));}"
                 + "});}).catch(function(e){q(TAG+D+'E'+D+ID+D+String(e));});})();";
+    }
+
+    /** The header field of a meta message, as pairs. */
+    static List<Map.Entry<String, String>> headers(String joined) {
+        List<Map.Entry<String, String>> headers = new ArrayList<>();
+        if (joined.isEmpty()) {
+            return headers;
+        }
+        String[] parts = joined.split(String.valueOf(HEADER_DELIMITER), -1);
+        for (int i = 0; i + 1 < parts.length; i += 2) {
+            headers.add(Map.entry(parts[i], parts[i + 1]));
+        }
+        return headers;
     }
 
     /** {@code value} as a double-quoted JavaScript string literal. */
