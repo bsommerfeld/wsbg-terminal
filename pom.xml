@@ -16,6 +16,7 @@
         <module>tinyfetch</module>
         <module>tinyreddit</module>
         <module>tinysearch</module>
+        <module>tinysocket</module>
         <module>tinybrowser</module>
         <module>fx-signals</module>
         <module>fx-orb</module>
@@ -61,6 +62,11 @@
             <dependency>
                 <groupId>de.bsommerfeld</groupId>
                 <artifactId>tinysearch</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>de.bsommerfeld</groupId>
+                <artifactId>tinysocket</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

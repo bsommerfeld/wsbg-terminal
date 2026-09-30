@@ -145,7 +145,7 @@ public final class TinyFetch implements Fetcher, AutoCloseable {
         return session == null ? Optional.empty() : session.pacer.pausedUntil().map(Instant::ofEpochMilli);
     }
 
-    /** Stops the engine; requests afterwards fail. */
+    /** Lets go of the engine - stopping it, unless TinySocket still uses it; requests afterwards fail. */
     @Override
     public void close() {
         if (closed) {
@@ -312,8 +312,9 @@ public final class TinyFetch implements Fetcher, AutoCloseable {
         }
 
         /**
-         * Starts the engine in the background - requests made before it is
-         * up wait for it, within their patience.
+         * Starts the engine in the background - or joins the one already
+         * running on the same {@link BrowserEngine}, TinySocket's. Requests
+         * made before it is up wait for it, within their patience.
          *
          * @throws FetchException the engine could not be launched at all
          */
@@ -324,9 +325,7 @@ public final class TinyFetch implements Fetcher, AutoCloseable {
             if (browserEngine == null) {
                 throw new IllegalStateException("no engine - set one with engine(BrowserEngine)");
             }
-            EngineProcess process = new EngineProcess(browserEngine.command());
-            process.start();
-            return new TinyFetch(this, process);
+            return new TinyFetch(this, EngineProcess.shared(browserEngine.command()));
         }
     }
 }

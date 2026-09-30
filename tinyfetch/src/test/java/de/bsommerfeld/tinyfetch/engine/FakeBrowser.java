@@ -15,7 +15,9 @@ import java.util.Map;
  * A stand-in for TinyBrowser, run as a real child process: it speaks the
  * protocol, but answers without a browser. {@code --mode} picks how:
  * <ul>
- *   <li>{@code echo} - 200, the body {@code <method> <url>}</li>
+ *   <li>{@code echo} - 200, the body {@code <method> <url>}; a socket opens
+ *       with the first subprotocol offered, echoes every message and answers
+ *       a close with the same close - unless its URL says {@code refuse}</li>
  *   <li>{@code crash} - logs a warning and exits with code 3 on the first request</li>
  *   <li>{@code silent} - never answers</li>
  *   <li>{@code mute} - connects but never greets, and leaves when the socket closes</li>
@@ -52,8 +54,23 @@ public final class FakeBrowser {
         Frames.writeHello(out, "FakeChromium 1.0");
         try {
             while (true) {
-                if (Frames.readType(in) != Frames.REQUEST) {
-                    throw new IOException("not a request");
+                byte type = Frames.readType(in);
+                if (type != Frames.REQUEST) {
+                    SocketFrame reply = switch (Frames.readSocket(type, in)) {
+                        case SocketFrame.Open open when open.url().contains("refuse") ->
+                                new SocketFrame.Close(open.id(), 1006, "");
+                        case SocketFrame.Open open ->
+                                new SocketFrame.Opened(open.id(), open.protocols().isEmpty() ? "" : open.protocols().getFirst());
+                        case SocketFrame other -> other;
+                    };
+                    if (mode.equals("crash")) {
+                        System.err.println("W about to crash");
+                        System.exit(3);
+                    }
+                    synchronized (out) {
+                        Frames.writeSocket(out, reply);
+                    }
+                    continue;
                 }
                 EngineRequest request = Frames.readRequest(in);
                 switch (mode) {

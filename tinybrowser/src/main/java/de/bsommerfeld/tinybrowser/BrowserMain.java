@@ -3,6 +3,7 @@ package de.bsommerfeld.tinybrowser;
 import de.bsommerfeld.tinyfetch.engine.EngineAnswer;
 import de.bsommerfeld.tinyfetch.engine.EngineRequest;
 import de.bsommerfeld.tinyfetch.engine.Frames;
+import de.bsommerfeld.tinyfetch.engine.SocketFrame;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
@@ -13,9 +14,10 @@ import java.nio.channels.SocketChannel;
 import java.nio.file.Path;
 
 /**
- * TinyBrowser, the engine TinyFetch starts: embedded Chromium in its own JVM,
- * with a hidden tab per site that carries out TinyFetch's requests as that
- * site's own {@code fetch()}.
+ * TinyBrowser, the engine TinyFetch and TinySocket start: embedded Chromium in
+ * its own JVM, with a hidden tab per site that carries out TinyFetch's
+ * requests as that site's own {@code fetch()}, and one per site that holds
+ * TinySocket's WebSockets ({@link Sockets}).
  *
  * <h3>Arguments</h3>
  * <pre>
@@ -28,9 +30,10 @@ import java.nio.file.Path;
  * <h3>Lifetime</h3>
  * Connects first, then starts Chromium - which may install it - and greets
  * with its version. Every request runs on its own virtual thread; answers go
- * back as they come. When the socket closes, TinyFetch is gone or done: the
- * cookies are written and the process leaves without CEF's shutdown, which
- * has been known to hang.
+ * back as they come. Socket frames are handled on the reading thread, in the
+ * order they came; what a socket says goes back as it comes. When the socket
+ * closes, its client is gone or done: the cookies are written and the process
+ * leaves without CEF's shutdown, which has been known to hang.
  */
 public final class BrowserMain {
 
@@ -70,15 +73,26 @@ public final class BrowserMain {
         Browser browser = Chromium.start(arguments.chromium(), arguments.profile());
         try {
             Tabs tabs = new Tabs(browser);
+            Sockets sockets = new Sockets(browser);
             Frames.writeHello(out, browser.version());
             while (true) {
                 byte type = Frames.readType(in);
-                if (type != Frames.REQUEST) {
-                    throw new IOException("corrupt frame of type " + type);
+                if (type == Frames.REQUEST) {
+                    EngineRequest request = Frames.readRequest(in);
+                    Thread.ofVirtual().name("tinybrowser-request-" + request.id())
+                            .start(() -> answer(tabs, request, out));
+                    continue;
                 }
-                EngineRequest request = Frames.readRequest(in);
-                Thread.ofVirtual().name("tinybrowser-request-" + request.id())
-                        .start(() -> answer(tabs, request, out));
+                SocketFrame socketFrame = Frames.readSocket(type, in);
+                try {
+                    switch (socketFrame) {
+                        case SocketFrame.Open open -> sockets.open(open, frame -> tell(out, frame));
+                        case SocketFrame frame -> sockets.send(frame);
+                    }
+                } catch (RuntimeException failure) {
+                    // One socket's trouble must not end the loop every request and socket depends on.
+                    Log.warn("socket " + socketFrame.id() + " failed: " + failure);
+                }
             }
         } catch (IOException closed) {
             // TinyFetch closed the socket - or went away
@@ -101,6 +115,16 @@ public final class BrowserMain {
             }
         } catch (IOException gone) {
             // TinyFetch is gone; the main loop ends with it
+        }
+    }
+
+    private static void tell(DataOutputStream out, SocketFrame frame) {
+        try {
+            synchronized (out) {
+                Frames.writeSocket(out, frame);
+            }
+        } catch (IOException gone) {
+            // the client is gone; the main loop ends with it
         }
     }
 

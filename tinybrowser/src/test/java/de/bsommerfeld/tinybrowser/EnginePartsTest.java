@@ -39,6 +39,15 @@ class EnginePartsTest {
     }
 
     @Test
+    void aSocketParksOnItsOwnHostsRoot() {
+        assertEquals("https://stream.example.org:9443/", Sockets.anchorOf("wss://stream.example.org:9443/ws/a?b=c"));
+        assertEquals("http://127.0.0.1:8080/", Sockets.anchorOf("ws://127.0.0.1:8080/echo"),
+                "an insecure socket needs an insecure page");
+        assertEquals(null, Sockets.anchorOf("ftp://example.org/"));
+        assertEquals(null, Sockets.anchorOf("not a url"));
+    }
+
+    @Test
     void pageHeadersArriveAsPairs() {
         char pair = PageFetch.HEADER_DELIMITER;
         assertEquals(List.of(Map.entry("content-type", "application/json"), Map.entry("x-empty", "")),

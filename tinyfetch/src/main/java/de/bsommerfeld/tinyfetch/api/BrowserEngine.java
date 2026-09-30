@@ -21,7 +21,9 @@ import java.util.stream.Collectors;
  * <h3>The profile</h3>
  * The browser's memory - cookies, the HTTP cache, what sites stored - lives
  * in the profile directory and carries over from run to run, as a returning
- * visitor's does. One engine at a time per profile: Chromium locks it.
+ * visitor's does. One engine at a time per profile: Chromium locks it - so
+ * TinyFetch and TinySocket built on the same {@code BrowserEngine} share one
+ * browser and one process.
  */
 public final class BrowserEngine {
 
@@ -72,8 +74,12 @@ public final class BrowserEngine {
         return new BrowserEngine(classPath, chromium, profile, seedProfile, Objects.requireNonNull(java, "java"));
     }
 
-    /** The command line that starts the engine, without the socket TinyFetch appends. */
-    List<String> command() {
+    /**
+     * The command line that starts the engine, without the socket the client
+     * appends - and what tells engines apart: clients with the same command
+     * line share one.
+     */
+    public List<String> command() {
         List<String> command = new ArrayList<>(List.of(
                 java.toString(),
                 "--enable-native-access=ALL-UNNAMED",

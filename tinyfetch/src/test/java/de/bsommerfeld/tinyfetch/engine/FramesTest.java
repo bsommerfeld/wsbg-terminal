@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class FramesTest {
 
@@ -84,6 +85,36 @@ class FramesTest {
         EngineAnswer second = Frames.readAnswer(in);
         assertEquals(0, second.status());
         assertEquals("page fetch failed: TypeError", second.failure());
+    }
+
+    @Test
+    void socketFramesSurviveTheWireInOrder() throws IOException {
+        byte[] binary = {0, (byte) 0xff, 1};
+        DataInputStream in = roundTrip(out -> {
+            Frames.writeSocket(out, new SocketFrame.Open(3, "wss://push.example.org/q?ä=1", List.of("v2", "v1"), null));
+            Frames.writeSocket(out, new SocketFrame.Opened(3, "v2"));
+            Frames.writeSocket(out, new SocketFrame.Message(3, false, "kurs ä".getBytes(StandardCharsets.UTF_8)));
+            Frames.writeSocket(out, new SocketFrame.Message(3, true, binary));
+            Frames.writeSocket(out, new SocketFrame.Close(3, 4001, "tschüss"));
+        });
+
+        SocketFrame.Open open = (SocketFrame.Open) Frames.readSocket(Frames.readType(in), in);
+        assertEquals("wss://push.example.org/q?ä=1", open.url());
+        assertEquals(List.of("v2", "v1"), open.protocols());
+        assertNull(open.anchor());
+        assertEquals(new SocketFrame.Opened(3, "v2"), Frames.readSocket(Frames.readType(in), in));
+        SocketFrame.Message text = (SocketFrame.Message) Frames.readSocket(Frames.readType(in), in);
+        assertEquals("kurs ä", new String(text.data(), StandardCharsets.UTF_8));
+        SocketFrame.Message bytes = (SocketFrame.Message) Frames.readSocket(Frames.readType(in), in);
+        assertTrue(bytes.binary());
+        assertArrayEquals(binary, bytes.data());
+        assertEquals(new SocketFrame.Close(3, 4001, "tschüss"), Frames.readSocket(Frames.readType(in), in));
+    }
+
+    @Test
+    void anUnknownTypeIsNoSocketFrame() {
+        DataInputStream in = new DataInputStream(new ByteArrayInputStream(new byte[16]));
+        assertThrows(IOException.class, () -> Frames.readSocket(Frames.ANSWER, in));
     }
 
     @Test

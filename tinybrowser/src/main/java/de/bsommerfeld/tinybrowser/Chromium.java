@@ -69,6 +69,7 @@ final class Chromium implements Browser {
     private final String queryFunction;
     private final Map<String, Consumer<String>> messageHandlers = new ConcurrentHashMap<>();
     private final List<BiConsumer<CefBrowser, Integer>> loadEndListeners = new CopyOnWriteArrayList<>();
+    private final List<Consumer<CefBrowser>> terminationListeners = new CopyOnWriteArrayList<>();
 
     private Chromium(CefApp app, String queryFunction) {
         this.app = app;
@@ -113,7 +114,8 @@ final class Chromium implements Browser {
                 }
             }
         });
-        client.addRequestHandler(new ResourcePolicy());
+        client.addRequestHandler(new ResourcePolicy(died ->
+                terminationListeners.forEach(listener -> listener.accept(died))));
     }
 
     /**
@@ -177,6 +179,15 @@ final class Chromium implements Browser {
 
     void removeLoadEndListener(BiConsumer<CefBrowser, Integer> listener) {
         loadEndListeners.remove(listener);
+    }
+
+    /** Every tab whose renderer died. */
+    void addTerminationListener(Consumer<CefBrowser> listener) {
+        terminationListeners.add(listener);
+    }
+
+    void removeTerminationListener(Consumer<CefBrowser> listener) {
+        terminationListeners.remove(listener);
     }
 
     /**

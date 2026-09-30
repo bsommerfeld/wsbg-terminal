@@ -118,7 +118,7 @@ final class PageFetch {
                 case ' ' -> out.append("\\u2028");
                 case ' ' -> out.append("\\u2029");
                 default -> {
-                    if (c < 0x20 || c == '<' || c == '>') {
+                    if (c < 0x20 || c == '<' || c == '>' || Character.isSurrogate(c)) {
                         out.append(String.format("\\u%04x", (int) c));
                     } else {
                         out.append(c);

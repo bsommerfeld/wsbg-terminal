@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>de.bsommerfeld</groupId>
+        <artifactId>wsbg-terminal-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>tinysocket</artifactId>
+
+    <name>TinySocket</name>
+    <description>WebSockets that are one person's browser: every socket Chromium's own, opened in a hidden tab of TinyFetch's engine</description>
+
+    <!-- TinyFetch is the only dependency: its engine - TinyBrowser, the child
+         process - opens the sockets, and its protocol carries them. -->
+    <dependencies>
+        <dependency>
+            <groupId>de.bsommerfeld</groupId>
+            <artifactId>tinyfetch</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <!-- The live test starts the real browser engine: TinyBrowser's
+         classes and jars (mvn package -pl tinybrowser -am) and Chromium,
+         installed on first use. -->
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <systemPropertyVariables>
+                        <tinybrowser.target>${maven.multiModuleProjectDirectory}/tinybrowser/target</tinybrowser.target>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

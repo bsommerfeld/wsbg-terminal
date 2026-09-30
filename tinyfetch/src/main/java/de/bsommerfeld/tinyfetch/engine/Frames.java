@@ -15,15 +15,22 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The protocol between TinyFetch and its engine, both ends of it: typed frames
- * over one local socket.
+ * The protocol between the clients - TinyFetch, TinySocket - and their
+ * engine, both ends of it: typed frames over one local socket.
  *
  * <pre>
- * engine → client  HELLO   once, when Chromium is up: its version
- * client → engine  REQUEST an {@link EngineRequest}
- * engine → client  ANSWER  an {@link EngineAnswer}, in any order
+ * engine → client  HELLO          once, when Chromium is up: its version
+ * client → engine  REQUEST        an {@link EngineRequest}
+ * engine → client  ANSWER         an {@link EngineAnswer}, in any order
+ * client → engine  SOCKET_OPEN    a {@link SocketFrame.Open}
+ * engine → client  SOCKET_OPENED  a {@link SocketFrame.Opened}
+ * both ways        SOCKET_MESSAGE a {@link SocketFrame.Message}
+ * both ways        SOCKET_CLOSE   a {@link SocketFrame.Close}
  * </pre>
- * Closing the socket is the only way to stop the engine; it goes when the
+ * A socket's frames keep their order in both directions; between sockets,
+ * and between sockets and answers, there is none.
+ *
+ * <p>Closing the socket is the only way to stop the engine; it goes when the
  * client does, crashes included.
  *
  * <h3>Why a socket, not stdout</h3>
@@ -35,6 +42,10 @@ public final class Frames {
     public static final byte HELLO = 'H';
     public static final byte REQUEST = 'R';
     public static final byte ANSWER = 'A';
+    public static final byte SOCKET_OPEN = 'O';
+    public static final byte SOCKET_OPENED = 'U';
+    public static final byte SOCKET_MESSAGE = 'M';
+    public static final byte SOCKET_CLOSE = 'C';
 
     /** Upper bounds a sane frame stays within - a broken stream fails instead of allocating gigabytes. */
     private static final int MAX_TEXT = 16 * 1024 * 1024;
@@ -136,6 +147,68 @@ public final class Frames {
         List<Map.Entry<String, String>> headers = readHeaders(in);
         byte[] body = readBytes(in);
         return new EngineAnswer(id, status, url, headers, body == null ? new byte[0] : body, readText(in));
+    }
+
+    public static void writeSocket(DataOutputStream out, SocketFrame frame) throws IOException {
+        switch (frame) {
+            case SocketFrame.Open open -> {
+                out.writeByte(SOCKET_OPEN);
+                out.writeLong(open.id());
+                writeText(out, open.url());
+                out.writeInt(open.protocols().size());
+                for (String protocol : open.protocols()) {
+                    writeText(out, protocol);
+                }
+                writeText(out, open.anchor());
+            }
+            case SocketFrame.Opened opened -> {
+                out.writeByte(SOCKET_OPENED);
+                out.writeLong(opened.id());
+                writeText(out, opened.protocol());
+            }
+            case SocketFrame.Message message -> {
+                out.writeByte(SOCKET_MESSAGE);
+                out.writeLong(message.id());
+                out.writeBoolean(message.binary());
+                writeBytes(out, message.data());
+            }
+            case SocketFrame.Close close -> {
+                out.writeByte(SOCKET_CLOSE);
+                out.writeLong(close.id());
+                out.writeInt(close.code());
+                writeText(out, close.reason());
+            }
+        }
+        out.flush();
+    }
+
+    /**
+     * The socket frame whose {@code type} was just read.
+     *
+     * @throws IOException {@code type} is none of the socket frames
+     */
+    public static SocketFrame readSocket(byte type, DataInputStream in) throws IOException {
+        return switch (type) {
+            case SOCKET_OPEN -> {
+                long id = in.readLong();
+                String url = readText(in);
+                int count = bounded(in.readInt(), MAX_HEADERS, "protocol count");
+                List<String> protocols = new ArrayList<>(count);
+                for (int i = 0; i < count; i++) {
+                    protocols.add(readText(in));
+                }
+                yield new SocketFrame.Open(id, url, protocols, readText(in));
+            }
+            case SOCKET_OPENED -> new SocketFrame.Opened(in.readLong(), readText(in));
+            case SOCKET_MESSAGE -> {
+                long id = in.readLong();
+                boolean binary = in.readBoolean();
+                byte[] data = readBytes(in);
+                yield new SocketFrame.Message(id, binary, data == null ? new byte[0] : data);
+            }
+            case SOCKET_CLOSE -> new SocketFrame.Close(in.readLong(), in.readInt(), readText(in));
+            default -> throw new IOException("corrupt frame of type " + type);
+        };
     }
 
     // ---- fields ---------------------------------------------------------------

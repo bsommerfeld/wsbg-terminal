@@ -20,6 +20,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -27,6 +28,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 
 /**
  * The engine as a child process - TinyBrowser, embedded Chromium in its own
@@ -41,15 +44,28 @@ import java.util.concurrent.TimeoutException;
  * is the engine's signal to save its cookies and go, and waits until it has
  * gone - killing it after {@link #STOP_WAIT}.
  *
+ * <h3>Shared</h3>
+ * Chromium locks its profile, so there is one engine per profile, and the
+ * clients built on the same one share it: {@link #shared} hands TinyFetch and
+ * TinySocket the same process, and the last of them to close it stops it.
+ *
+ * <h3>Sockets</h3>
+ * A WebSocket lives as long as the engine that opened it. One that stops
+ * closes every socket with {@code 1006}; they are not reopened - the next
+ * open starts the engine again, as the next request does.
+ *
  * <h3>Output</h3>
  * The engine's standard output and error are one stream of log lines,
  * forwarded to {@code System.Logger} {@code de.bsommerfeld.tinyfetch.engine};
  * a line starting with {@code I }, {@code W } or {@code D } carries its level.
  * The last few lines go into the message of every failure they may explain.
  */
-public final class EngineProcess implements Engine {
+public final class EngineProcess implements Engine, SocketEngine {
 
     private static final System.Logger LOG = System.getLogger("de.bsommerfeld.tinyfetch.engine");
+
+    /** The engines handed out by {@link #shared}, by command line. */
+    private static final Map<List<String>, EngineProcess> SHARED = new HashMap<>();
 
     /**
      * Beyond twice a request's own timeout - the engine re-issues a fetch
@@ -68,15 +84,37 @@ public final class EngineProcess implements Engine {
     private final List<String> command;
     private final Duration grace;
     private final Object lifecycle = new Object();
+    private final AtomicLong socketIds = new AtomicLong();
     private Connection connection;
     private long startedAt;
     private boolean closed;
+    /** How many took this engine from {@link #shared} and have not closed it yet. Guarded by {@link #SHARED}. */
+    private int holders;
 
     /**
      * @param command the engine's command line; {@code --socket <path>} is appended
      */
     public EngineProcess(List<String> command) {
         this(command, ENGINE_GRACE);
+    }
+
+    /**
+     * The engine for {@code command} - launched now, unless it already runs
+     * for another client. Every caller closes it once; the last close stops it.
+     *
+     * @throws FetchException the engine could not be launched at all
+     */
+    public static EngineProcess shared(List<String> command) throws FetchException {
+        synchronized (SHARED) {
+            EngineProcess engine = SHARED.get(command);
+            if (engine == null) {
+                engine = new EngineProcess(command);
+                engine.start();
+                SHARED.put(engine.command, engine);
+            }
+            engine.holders++;
+            return engine;
+        }
     }
 
     /** With another grace than {@link #ENGINE_GRACE} - for tests that must not wait a minute. */
@@ -100,7 +138,37 @@ public final class EngineProcess implements Engine {
     }
 
     @Override
+    public long openSocket(String url, List<String> protocols, String anchor, Consumer<SocketFrame> events,
+            long timeoutMillis) throws FetchException, InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMillis + grace.toMillis();
+        long id = socketIds.incrementAndGet();
+        connection().openSocket(new SocketFrame.Open(id, url, protocols, anchor), events, deadline);
+        return id;
+    }
+
+    /** Never starts the engine: a socket is gone with the engine that opened it. */
+    @Override
+    public void sendSocket(SocketFrame frame) throws FetchException {
+        Connection current;
+        synchronized (lifecycle) {
+            current = connection;
+        }
+        if (current == null || !current.sockets.containsKey(frame.id())) {
+            throw new FetchException("socket " + frame.id() + " is closed");
+        }
+        current.write(frame);
+    }
+
+    @Override
     public void close() {
+        synchronized (SHARED) {
+            if (SHARED.get(command) == this) {
+                if (--holders > 0) {
+                    return;
+                }
+                SHARED.remove(command);
+            }
+        }
         Connection last;
         synchronized (lifecycle) {
             closed = true;
@@ -156,6 +224,8 @@ public final class EngineProcess implements Engine {
         private final Process process;
         private final CompletableFuture<String> hello = new CompletableFuture<>();
         private final Map<Long, CompletableFuture<EngineAnswer>> pending = new ConcurrentHashMap<>();
+        /** Every socket opened here until its Close arrives, with where its frames go. */
+        private final Map<Long, Consumer<SocketFrame>> sockets = new ConcurrentHashMap<>();
         private final Deque<String> output = new ArrayDeque<>();
         private final Object writeLock = new Object();
         private final Thread outputReader;
@@ -182,7 +252,7 @@ public final class EngineProcess implements Engine {
             this.directory = socketDirectory;
             this.server = socketServer;
             this.outputReader = Thread.ofVirtual().name("tinyfetch-engine-output").start(this::readOutput);
-            Thread.ofVirtual().name("tinyfetch-engine-answers").start(this::readAnswers);
+            Thread.ofVirtual().name("tinyfetch-engine-frames").start(this::readFrames);
             process.onExit().thenRun(() -> stop("exited with code " + process.exitValue()));
         }
 
@@ -215,6 +285,33 @@ public final class EngineProcess implements Engine {
             }
         }
 
+        void openSocket(SocketFrame.Open open, Consumer<SocketFrame> events, long deadline)
+                throws FetchException, InterruptedException {
+            awaitHello(deadline);
+            sockets.put(open.id(), events);
+            if (stopReason != null) {
+                sockets.remove(open.id());
+                throw stopped();
+            }
+            try {
+                write(open);
+            } catch (FetchException e) {
+                sockets.remove(open.id());
+                throw e;
+            }
+        }
+
+        void write(SocketFrame frame) throws FetchException {
+            try {
+                synchronized (writeLock) {
+                    Frames.writeSocket(out, frame);
+                }
+            } catch (IOException e) {
+                stop("cannot write to it: " + describe(e));
+                throw stopped();
+            }
+        }
+
         private void awaitHello(long deadline) throws FetchException, InterruptedException {
             try {
                 hello.get(Math.max(0, deadline - System.currentTimeMillis()), TimeUnit.MILLISECONDS);
@@ -225,7 +322,7 @@ public final class EngineProcess implements Engine {
             }
         }
 
-        private void readAnswers() {
+        private void readFrames() {
             try {
                 SocketChannel accepted = server.accept();
                 closeQuietly(server);
@@ -250,7 +347,10 @@ public final class EngineProcess implements Engine {
                 while (true) {
                     byte type = Frames.readType(in);
                     if (type != Frames.ANSWER) {
-                        throw new IOException("corrupt frame of type " + type);
+                        SocketFrame frame = Frames.readSocket(type, in);
+                        deliver(frame instanceof SocketFrame.Close ? sockets.remove(frame.id())
+                                : sockets.get(frame.id()), frame);
+                        continue;
                     }
                     EngineAnswer answer = Frames.readAnswer(in);
                     CompletableFuture<EngineAnswer> waiting = pending.remove(answer.id());
@@ -309,6 +409,9 @@ public final class EngineProcess implements Engine {
             hello.completeExceptionally(failure);
             pending.values().forEach(waiting -> waiting.completeExceptionally(failure));
             pending.clear();
+            for (Long id : sockets.keySet()) {
+                deliver(sockets.remove(id), new SocketFrame.Close(id, 1006, failure.getMessage()));
+            }
             closeQuietly(server);
             closeQuietly(channel);
             if (!reason.equals("closed")) {
@@ -354,6 +457,18 @@ public final class EngineProcess implements Engine {
             synchronized (output) {
                 return output.isEmpty() ? "" : " | " + String.join(" | ", output);
             }
+        }
+    }
+
+    /** Hands a socket's frame to its events, if it still has any; events that throw must not end the reading. */
+    private static void deliver(Consumer<SocketFrame> events, SocketFrame frame) {
+        if (events == null) {
+            return;
+        }
+        try {
+            events.accept(frame);
+        } catch (RuntimeException e) {
+            LOG.log(System.Logger.Level.WARNING, "socket " + frame.id() + " dropped a frame", e);
         }
     }
 

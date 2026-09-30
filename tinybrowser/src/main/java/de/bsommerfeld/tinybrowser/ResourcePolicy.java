@@ -2,6 +2,7 @@ package de.bsommerfeld.tinybrowser;
 
 import org.cef.browser.CefBrowser;
 import org.cef.browser.CefFrame;
+import org.cef.handler.CefRequestHandler;
 import org.cef.handler.CefRequestHandlerAdapter;
 import org.cef.handler.CefResourceRequestHandler;
 import org.cef.handler.CefResourceRequestHandlerAdapter;
@@ -10,6 +11,7 @@ import org.cef.network.CefRequest;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.function.Consumer;
 
 /**
  * What a hidden tab may load, and the one header it may change.
@@ -25,11 +27,17 @@ import java.util.Map;
  * A page's {@code fetch()} cannot set {@code User-Agent}. An API that wants
  * the application to name itself (SEC EDGAR's, Wikimedia's) gets the caller's
  * value through {@link #USER_AGENT_MARKER}, swapped in here.
+ *
+ * <h3>Renderers</h3>
+ * A client has one request handler, and CEF says through it alone that a
+ * tab's renderer died - word this passes on.
  */
 final class ResourcePolicy extends CefRequestHandlerAdapter {
 
     /** Carries a caller's user agent from the page to here; never leaves the browser. */
     static final String USER_AGENT_MARKER = "x-tinybrowser-user-agent";
+
+    private final Consumer<CefBrowser> rendererDied;
 
     private final CefResourceRequestHandler handler = new CefResourceRequestHandlerAdapter() {
         @Override
@@ -50,6 +58,18 @@ final class ResourcePolicy extends CefRequestHandlerAdapter {
             return false;
         }
     };
+
+    /** @param rendererDied told the tab whose renderer died, on the browser UI thread */
+    ResourcePolicy(Consumer<CefBrowser> rendererDied) {
+        this.rendererDied = rendererDied;
+    }
+
+    @Override
+    public void onRenderProcessTerminated(CefBrowser browser, CefRequestHandler.TerminationStatus status,
+            int errorCode, String errorString) {
+        Log.info("a tab's renderer died: " + status + " " + errorCode + " " + errorString);
+        rendererDied.accept(browser);
+    }
 
     @Override
     public CefResourceRequestHandler getResourceRequestHandler(CefBrowser browser, CefFrame frame,
