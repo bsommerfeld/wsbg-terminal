@@ -34,3 +34,6 @@ CLAUDE.md
 # Internal working notes - never committed
 docs/
 
+# Werkbank app data (board, sessions, layout) - local only
+.werkbank/
+
