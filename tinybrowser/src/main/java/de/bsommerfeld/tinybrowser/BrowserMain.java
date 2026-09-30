@@ -48,7 +48,13 @@ public final class BrowserMain {
         System.setOut(System.err);
         Thread.setDefaultUncaughtExceptionHandler((thread, failure) ->
                 Log.warn("uncaught in " + thread.getName() + ": " + failure));
-        // Before anything starts AWT: no Dock icon, no menu bar.
+        /*
+         * Before anything starts AWT: no Dock icon, no menu bar. Only macOS
+         * needs this - it gives any process that starts AWT a Dock icon.
+         * Windows and Linux list a process in the taskbar only for a visible
+         * window, and the engine opens none; the console window Windows would
+         * give java.exe the JDK suppresses (CREATE_NO_WINDOW, stdio piped).
+        */
         System.setProperty("apple.awt.UIElement", "true");
 
         int exit = 0;
