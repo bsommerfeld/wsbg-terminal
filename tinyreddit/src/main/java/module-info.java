@@ -1,5 +1,5 @@
 /**
- * TinyReddit: reads Reddit over OAuth, JSON or RSS, whichever currently
+ * TinyReddit: reads Reddit over JSON or RSS, whichever currently
  * works, through TinyFetch - see {@link de.bsommerfeld.tinyreddit.api.RedditClient}.
  */
 module de.bsommerfeld.tinyreddit {

@@ -7,7 +7,6 @@ import java.net.URISyntaxException;
 final class RedditUrls {
 
     static final String WWW = "www.reddit.com";
-    static final String OAUTH = "oauth.reddit.com";
 
     private RedditUrls() {
     }

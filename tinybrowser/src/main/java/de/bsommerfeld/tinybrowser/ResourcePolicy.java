@@ -23,7 +23,7 @@ import java.util.Map;
  *
  * <h3>User agent</h3>
  * A page's {@code fetch()} cannot set {@code User-Agent}. An API that wants
- * the application to name itself (Reddit's OAuth rules) gets the caller's
+ * the application to name itself (SEC EDGAR's, Wikimedia's) gets the caller's
  * value through {@link #USER_AGENT_MARKER}, swapped in here.
  */
 final class ResourcePolicy extends CefRequestHandlerAdapter {

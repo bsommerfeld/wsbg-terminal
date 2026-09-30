@@ -47,7 +47,7 @@ class RedditClientTest {
         FetchRequest sent = reddit.requests.getFirst();
         assertEquals("GET", sent.method());
         assertEquals("https://www.reddit.com/r/wallstreetbetsGER/new.json?limit=25&raw_json=1", sent.uri().toString());
-        assertTrue(sent.headers().isEmpty(), "nothing of our own on an anonymous route - just the browser");
+        assertTrue(sent.headers().isEmpty(), "nothing of our own - just the browser");
     }
 
     @Test
@@ -124,49 +124,6 @@ class RedditClientTest {
     }
 
     @Test
-    void oauthFetchesATokenAndIdentifiesAsTheApp() throws Exception {
-        reddit.answer("www.reddit.com/api/v1/access_token",
-                ok("{\"access_token\": \"tok1\", \"expires_in\": 3600}", "application/json"));
-        reddit.answer("oauth.reddit.com/r/wallstreetbetsGER/hot", ok(RedditFixtures.LISTING, "application/json"));
-        String userAgent = "java:de.bsommerfeld.test:1.0 (by /u/tester)";
-
-        Fetched<List<Post>> result = client().oauth("client-id", userAgent).build().hotPosts("wallstreetbetsGER", 10);
-
-        assertEquals(Route.OAUTH, result.route());
-        FetchRequest tokenRequest = reddit.requests.get(0);
-        assertEquals("POST", tokenRequest.method());
-        assertEquals("Basic Y2xpZW50LWlkOg==", header(tokenRequest, "authorization"));
-        String form = new String(tokenRequest.body(), StandardCharsets.UTF_8);
-        assertTrue(form.startsWith("grant_type=https%3A%2F%2Foauth.reddit.com%2Fgrants%2Finstalled_client&device_id="));
-
-        FetchRequest dataRequest = reddit.requests.get(1);
-        assertEquals("bearer tok1", header(dataRequest, "authorization"));
-        assertEquals(userAgent, header(dataRequest, "user-agent"));
-        assertEquals("/r/wallstreetbetsGER/hot", dataRequest.uri().getPath());
-    }
-
-    @Test
-    void oauthRenewsARejectedTokenOnce() throws Exception {
-        List<String> tokens = new ArrayList<>(List.of("old", "new"));
-        reddit.answer("www.reddit.com/api/v1/access_token", request -> ok(
-                "{\"access_token\": \"" + tokens.removeFirst() + "\", \"expires_in\": 3600}", "application/json"));
-        reddit.answer("oauth.reddit.com/", request -> header(request, "authorization").equals("bearer old")
-                ? response(401, "{}", "application/json", Wall.NONE)
-                : ok(RedditFixtures.LISTING, "application/json"));
-
-        Fetched<List<Post>> result = client().oauth("id", "ua").build().newPosts("wallstreetbetsGER", 5);
-
-        assertEquals(Route.OAUTH, result.route());
-        assertEquals(4, reddit.requests.size(), "token, 401, new token, data");
-    }
-
-    @Test
-    void withoutOauthConfiguredTheRouteDoesNotExist() throws Exception {
-        reddit.answer("www.reddit.com/", ok(RedditFixtures.LISTING, "application/json"));
-        assertEquals(Route.JSON, client().build().newPosts("wallstreetbetsGER", 5).route());
-    }
-
-    @Test
     void limitsAreBoundedAndNamesChecked() throws Exception {
         reddit.answer("www.reddit.com/", ok(RedditFixtures.LISTING, "application/json"));
         client().build().newPosts("wallstreetbetsGER", 5000);
@@ -178,7 +135,6 @@ class RedditClientTest {
     void hostPoliciesKeepTheAnonymousBudget() {
         Map<String, de.bsommerfeld.tinyfetch.api.HostPolicy> policies = RedditClient.hostPolicies();
         assertEquals(Duration.ofSeconds(6), policies.get("www.reddit.com").minInterval());
-        assertEquals(Duration.ofSeconds(1), policies.get("oauth.reddit.com").minInterval());
     }
 
     // ---- fake ----------------------------------------------------------------
@@ -195,10 +151,6 @@ class RedditClientTest {
 
         void answer(String prefix, FetchResponse response) {
             answers.put(prefix, request -> response);
-        }
-
-        void answer(String prefix, Answer answer) {
-            answers.put(prefix, answer);
         }
 
         void fail(String prefix, FetchException failure) {
@@ -231,13 +183,5 @@ class RedditClientTest {
     private static FetchResponse response(int status, String body, String contentType, Wall wall) {
         return new FetchResponse(status, URI.create("https://www.reddit.com/"),
                 Map.of("content-type", List.of(contentType)), body.getBytes(StandardCharsets.UTF_8), wall);
-    }
-
-    private static String header(FetchRequest request, String name) {
-        return request.headers().stream()
-                .filter(header -> header.getKey().equals(name))
-                .map(Map.Entry::getValue)
-                .findFirst()
-                .orElse("");
     }
 }

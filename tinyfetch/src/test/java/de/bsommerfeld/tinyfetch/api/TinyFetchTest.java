@@ -119,7 +119,7 @@ class TinyFetchTest {
                     () -> fetch.fetch(FetchRequest.of("https://www.reddit.com/b")));
             assertEquals(Wall.THROTTLED, paused.reason());
             assertTrue(fetch.pausedUntil("www.reddit.com").isPresent());
-            assertTrue(fetch.pausedUntil("oauth.reddit.com").isEmpty(), "the pause is the host's alone");
+            assertTrue(fetch.pausedUntil("old.reddit.com").isEmpty(), "the pause is the host's alone");
         }
         assertEquals(1, engine.requests.size(), "the paused request never left");
     }

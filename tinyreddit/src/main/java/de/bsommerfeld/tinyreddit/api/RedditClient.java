@@ -9,7 +9,6 @@ import de.bsommerfeld.tinyreddit.model.Discussion;
 import de.bsommerfeld.tinyreddit.model.Post;
 import de.bsommerfeld.tinyreddit.route.JsonAccess;
 import de.bsommerfeld.tinyreddit.route.MalformedAnswerException;
-import de.bsommerfeld.tinyreddit.route.OAuthToken;
 import de.bsommerfeld.tinyreddit.route.RouteAccess;
 import de.bsommerfeld.tinyreddit.route.RouteRefused;
 import de.bsommerfeld.tinyreddit.route.RssAccess;
@@ -24,7 +23,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
@@ -34,7 +32,7 @@ import java.util.function.Supplier;
  *
  * <h2>Traffic</h2>
  * Everything goes out through the {@link Fetcher} it is given - in production
- * a {@code TinyFetch}, so the anonymous routes are the user's own browser
+ * a {@code TinyFetch}, so every route is the user's own browser
  * reading Reddit, at a person's pace, stopping at the first sign of refusal.
  * Give that client {@link #hostPolicies()}: Reddit's anonymous budget is small,
  * and the policy is what keeps a poll loop inside it. Every call is exactly one
@@ -49,13 +47,13 @@ import java.util.function.Supplier;
  * any visitor's does, and asks for JSON and RSS as its own scripts would.
  *
  * <h2>Routes</h2>
- * Routes are tried best data first ({@link Route}); OAuth only when
- * configured. A route that Reddit refuses (a wall) or whose host is paused is
- * left alone for {@link Builder#demotion} or until the pause ends, whichever
- * is later, and the next route answers meanwhile. A route that merely failed
- * (network, malformed answer) is only skipped for that one call. {@code JSON}
- * and {@code RSS} share {@code www.reddit.com}: when Reddit pauses the host,
- * RSS fails at once as well, without a request - the refusal was for the
+ * Routes are tried best data first ({@link Route}). A route that Reddit
+ * refuses (a wall) or whose host is paused is left alone for
+ * {@link Builder#demotion} or until the pause ends, whichever is later, and
+ * the next route answers meanwhile. A route that merely failed (network,
+ * malformed answer) is only skipped for that one call. {@code JSON} and
+ * {@code RSS} share {@code www.reddit.com}: when Reddit pauses the host, RSS
+ * fails at once as well, without a request - the refusal was for the
  * network, not the format.
  *
  * <h2>Usage</h2>
@@ -106,15 +104,12 @@ public final class RedditClient {
     }
 
     /**
-     * The pace Reddit's hosts are to be asked at - hand these to the
+     * The pace Reddit's host is to be asked at - hand these to the
      * {@code TinyFetch} builder. {@code www.reddit.com}: one request every
-     * 6 s at most (10 a minute, Reddit's anonymous budget) plus jitter;
-     * {@code oauth.reddit.com}: one a second (100 a minute per app).
+     * 6 s at most (10 a minute, Reddit's anonymous budget) plus jitter.
      */
     public static Map<String, HostPolicy> hostPolicies() {
-        HostPolicy anonymous = HostPolicy.defaults().withMinInterval(Duration.ofSeconds(6));
-        HostPolicy api = HostPolicy.defaults().withMinInterval(Duration.ofSeconds(1));
-        return Map.of("www.reddit.com", anonymous, "oauth.reddit.com", api);
+        return Map.of("www.reddit.com", HostPolicy.defaults().withMinInterval(Duration.ofSeconds(6)));
     }
 
     /** The newest posts of a subreddit, newest first. */
@@ -236,14 +231,11 @@ public final class RedditClient {
 
     // ---- builder ------------------------------------------------------------
 
-    /** Configures a {@link RedditClient}. Without OAuth it reads over JSON, then RSS. */
+    /** Configures a {@link RedditClient}. It reads over JSON, then RSS, unless told otherwise. */
     public static final class Builder {
 
         private final Fetcher fetcher;
-        private String clientId;
-        private String userAgent;
-        private String deviceId = UUID.randomUUID().toString().replace("-", "").substring(0, 25);
-        private List<Route> order = List.of(Route.OAUTH, Route.JSON, Route.RSS);
+        private List<Route> order = List.of(Route.JSON, Route.RSS);
         private Duration demotion = Duration.ofMinutes(10);
         private Supplier<Instant> clock = Instant::now;
 
@@ -251,32 +243,7 @@ public final class RedditClient {
             this.fetcher = Objects.requireNonNull(fetcher, "fetcher");
         }
 
-        /**
-         * Enables {@link Route#OAUTH}.
-         *
-         * @param clientId  of an "installed app" registered at {@code reddit.com/prefs/apps}
-         * @param userAgent Reddit's required form, {@code <platform>:<app id>:<version> (by /u/<user>)}
-         */
-        public Builder oauth(String clientId, String userAgent) {
-            this.clientId = Objects.requireNonNull(clientId, "clientId");
-            this.userAgent = Objects.requireNonNull(userAgent, "userAgent");
-            return this;
-        }
-
-        /**
-         * The installation's OAuth device id, 20-30 characters. Keep it
-         * stable across runs - Reddit reads a new one as a new device. Random
-         * per process unless set.
-         */
-        public Builder deviceId(String deviceId) {
-            if (deviceId.length() < 20 || deviceId.length() > 30) {
-                throw new IllegalArgumentException("device id must be 20-30 characters");
-            }
-            this.deviceId = deviceId;
-            return this;
-        }
-
-        /** The routes to use, in the order to try them; OAuth is only used when configured. */
+        /** The routes to use, in the order to try them. */
         public Builder routes(Route... order) {
             if (order.length == 0) {
                 throw new IllegalArgumentException("at least one route");
@@ -291,7 +258,7 @@ public final class RedditClient {
             return this;
         }
 
-        /** The clock for token expiry and demotion; for tests. */
+        /** The clock for demotion; for tests. */
         public Builder clock(Supplier<Instant> clock) {
             this.clock = Objects.requireNonNull(clock, "clock");
             return this;
@@ -300,19 +267,10 @@ public final class RedditClient {
         public RedditClient build() {
             List<RouteAccess> routes = new ArrayList<>();
             for (Route route : new LinkedHashSet<>(order)) {
-                switch (route) {
-                    case OAUTH -> {
-                        if (clientId != null) {
-                            routes.add(JsonAccess.oauth(fetcher,
-                                    new OAuthToken(fetcher, clientId, deviceId, userAgent, clock)));
-                        }
-                    }
-                    case JSON -> routes.add(JsonAccess.anonymous(fetcher));
-                    case RSS -> routes.add(new RssAccess(fetcher));
-                }
-            }
-            if (routes.isEmpty()) {
-                throw new IllegalStateException("no usable route - OAuth alone needs oauth(clientId, userAgent)");
+                routes.add(switch (route) {
+                    case JSON -> new JsonAccess(fetcher);
+                    case RSS -> new RssAccess(fetcher);
+                });
             }
             return new RedditClient(routes, demotion, clock);
         }

@@ -10,8 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Reddit's JSON (the {@code .json} pages and the OAuth API share one shape)
- * to the model. Requests ask for {@code raw_json=1}, so text arrives unescaped.
+ * Reddit's JSON (the {@code .json} pages) to the model. Requests ask for {@code raw_json=1}, so text arrives unescaped.
  */
 public final class JsonMapper {
 

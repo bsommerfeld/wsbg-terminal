@@ -13,7 +13,7 @@
     <artifactId>tinyreddit</artifactId>
 
     <name>TinyReddit</name>
-    <description>Reads Reddit over OAuth, JSON or RSS - whichever works - through TinyFetch</description>
+    <description>Reads Reddit over JSON or RSS - whichever works - through TinyFetch</description>
 
     <!-- TinyFetch is the only dependency: JSON and Atom are read by the
          module's own parsers. -->
