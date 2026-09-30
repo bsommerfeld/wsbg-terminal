@@ -56,6 +56,15 @@ class EnginePartsTest {
     }
 
     @Test
+    void warmupBackoffDoublesUpToItsCeilingButHonoursALongerRetryAfter() {
+        assertEquals(5_000, Tab.warmupBackoff(2_500, List.of()));
+        assertEquals(60_000, Tab.warmupBackoff(40_000, List.of()));
+        assertEquals(30_000, Tab.warmupBackoff(2_500, List.of(Map.entry("Retry-After", "30"))));
+        assertEquals(120_000, Tab.warmupBackoff(2_500, List.of(Map.entry("Retry-After", "120"))),
+                "a site asking for more than the ceiling gets it");
+    }
+
+    @Test
     void seedCopiesTheProfileOnceAndLeavesLocksAndCachesBehind() throws Exception {
         Path old = directory.resolve("old");
         Files.createDirectories(old.resolve("Default/Local Storage"));

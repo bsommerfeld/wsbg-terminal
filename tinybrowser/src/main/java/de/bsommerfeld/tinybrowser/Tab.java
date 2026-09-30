@@ -276,6 +276,15 @@ final class Tab {
     }
 
     /**
+     * The warmup's pause after a refusal: the last one doubled, up to
+     * {@link #WARMUP_MAX_BACKOFF_MS} - but never shorter than the refusal's
+     * {@code Retry-After}, which may run past that ceiling.
+     */
+    static long warmupBackoff(long delay, List<Map.Entry<String, String>> headers) {
+        return Math.max(retryAfterMillis(headers), Math.min(WARMUP_MAX_BACKOFF_MS, delay * 2));
+    }
+
+    /**
      * Reloads the anchor to renew the session, and makes the next fetch wait
      * for the fresh page. {@code force} skips {@link #RELOAD_COOLDOWN_MS}.
      */
@@ -354,8 +363,7 @@ final class Tab {
                         if (revisit()) {
                             continue;
                         }
-                        delay = Math.max(retryAfterMillis(probe.headers()),
-                                Math.min(WARMUP_MAX_BACKOFF_MS, delay * 2));
+                        delay = warmupBackoff(delay, probe.headers());
                         warmupBackoffUntil = System.currentTimeMillis() + delay;
                         Log.debug(label + ": warmup probe " + attempt + " refused with " + probe.status()
                                 + ", backing off " + delay + " ms");

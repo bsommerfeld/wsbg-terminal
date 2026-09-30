@@ -69,6 +69,14 @@ class HostPacerTest {
     }
 
     @Test
+    void retryAfterBeyondMaxBackoffIsCapped() {
+        HostPacer pacer = pacer(0);
+        long eightHours = Duration.ofHours(8).toSeconds();
+        pacer.recordAnswer(Wall.THROTTLED, headers(Map.of("retry-after", String.valueOf(eightHours))));
+        assertEquals(Optional.of(START + Duration.ofHours(6).toMillis()), pacer.pausedUntil());
+    }
+
+    @Test
     void retryAfterAsHttpDate() {
         clock.set(784_111_777_000L - 90_000); // 90 s before the date below
         HostPacer pacer = pacer(0);
